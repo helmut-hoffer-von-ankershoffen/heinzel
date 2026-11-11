@@ -319,10 +319,18 @@ class _Mount:
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
             match entry:
                 case OperationLet():
+                    expert = entry.audience == "expert"
+                    summary = self.help(entry.summary, expert=expert)
+                    detail = None
+                    if not self.plain and (qualname, entry.name) == ("system", "update"):
+                        detail = inspect.getdoc(entry.func)
                     parent.command(
-                        name=entry.name, help=self.help(entry.summary, expert=entry.audience == "expert"),
-                        epilog=footer, hidden=self.hides(expert=entry.audience == "expert"),
-                    )(self._command(entry, (qualname, entry.name)))  # fmt: skip
+                        name=entry.name,
+                        help=detail or summary,
+                        short_help=summary if detail else None,
+                        epilog=footer,
+                        hidden=self.hides(expert=expert),
+                    )(self._command(entry, (qualname, entry.name)))
                     count += _count(entry)
                 case ModuleRecord():
                     count += self._module(parent, qualname, entry)

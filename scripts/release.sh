@@ -68,6 +68,8 @@ if [[ -f CHANGELOG.md ]]; then cp CHANGELOG.md "$work/previous.md"; fi
 uv run --frozen --no-sync --no-build git-cliff --offline --tag "$tag" --output CHANGELOG.md
 uv run --frozen --no-sync --no-build python scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next" \
   --intro "${INTRO:-}"
+# A combine's squash commit lists its members in the body; give each its own entry, and the intro their titles.
+uv run --frozen --no-sync --no-build python scripts/changelog_combines.py CHANGELOG.md --version "$next"
 git add --update
 git commit --quiet --message "chore(release): $tag"
 

@@ -107,7 +107,8 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 4. **Dialogs answer a question**, so their row is right-aligned and every action keeps its words: Cancel (outline)
    first, the committing action (filled) last, red when it destroys something. Inline confirmations follow the same
    order. A destructive action anywhere else is a red icon that opens such a dialog.
-5. **One look.** Buttons are 32px high (44px on touch), icon-only buttons as wide as high, 16px icons, 6px apart.
+5. **One look.** Buttons are 32px high, with a 44px minimum target on touch-capable devices and at phone viewport sizes.
+   Icon-only buttons are as wide as high, with 16px icons and 6px gaps.
    Content actions are outlined; the one `primary` per container is filled; chrome and list-row actions are ghost.
    A disabled action is the same button dimmed. Pages put at most two outlined icon+words actions in their header.
 6. **No links as actions.** A text link exists only inside running text (see Links below). `to=` navigates inside
@@ -173,7 +174,7 @@ top-right on one card and bottom-left on the next; a wizard that puts Next befor
 - `web/src/test/links-standards.test.ts` fails on a link tag (`a`, `Link`, `NavLink`, `role="link"`) in a file that is
   not listed, on any link look (`underline`, `text-primary`, `variant="link"`) on a control, and on `data-prose-link`
   outside prose. Its list of files only shrinks; a row marked `CONVERT` leaves it with its conversion.
-- `web/src/lib/pane-actions-standards.test.ts` fails on a hand-drawn `border-t`
+- `web/src/lib/paneActionsStandards.test.ts` fails on a hand-drawn `border-t`
   row, a right-aligned button row outside `PaneActions`, an icon button without a name, a raw `<button>` outside the
   listed kinds (switch, tab, menu row, nav) and an unlisted `freeform` container.
 - The mobile browser sweep opens every footer pane, one dialog and one Today card at phone width on Chromium and

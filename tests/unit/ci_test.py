@@ -59,7 +59,14 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "python3 -I scripts/release_candidate.py": "selects or records release source",
+        "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/focused_plan.py": "routes exact source to a reviewed focused plan or a full candidate",
+        'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
+            "restricts scheduled maintenance to canonical main"
+        ),
+        "uv run --no-build --frozen --script scripts/focused_coverage.py": "runs and measures reviewed test selectors",
+        "required=(admission changes lint": "requires every owning focused job",
+        "sudo sed -i ": "uses the primary signed Ubuntu archive for focused browser runtime setup",
         "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
             "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
         ),
@@ -69,7 +76,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
-        'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
+        'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
@@ -84,6 +91,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
+        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
         '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
@@ -262,11 +270,20 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     assert "lint" in jobs["ci-ok"]["needs"]
-    assert any(step.get("run") == "make managed-backend-setup managed-backend-check" for step in jobs["lint"]["steps"])
-    runs = [step.get("run") for step in jobs["lint"]["steps"]]
-    assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
+    runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
+    assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
+    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_release != 'true'"
+    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+def test_core_lint_does_not_export_an_empty_github_token_to_zizmor():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["lint"]
+    [lint] = [step for step in job["steps"] if step.get("run") == "make lint"]
+    for scope in (workflow, job, lint):
+        assert {"GH_TOKEN", "GITHUB_TOKEN"}.isdisjoint(scope.get("env", {}))
 
 
 @pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
@@ -894,15 +911,18 @@ def test_the_release_keeps_changelog_introductions():
         )
     )
     assert save < regenerate < restore < commit < notes
+    expand = script.index(
+        'uv run --frozen --no-sync --no-build python scripts/changelog_combines.py CHANGELOG.md --version "$next"'
+    )
+    assert restore < expand < commit, "combine entries become their members' entries before the release commit"
     assert '--intro "${INTRO:-}"' in script
     release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    assert (
-        REPO / "template" / "scripts" / "changelog_intros.py.jinja"
-    ).resolve() == REPO / "scripts" / "changelog_intros.py"
+    for name in ("changelog_intros", "changelog_combines"):
+        assert (REPO / "template" / "scripts" / f"{name}.py.jinja").resolve() == REPO / "scripts" / f"{name}.py"
 
 
 def test_pushing_runs_check_fast_through_a_hook():
@@ -974,7 +994,7 @@ def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp
     inherited_units = tmp_path / "user-units"
     monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
     monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
-    monkeypatch.setattr("shutil.which", lambda _name: "/isolated/uv")
+    monkeypatch.setattr("shutil.which", lambda _name, **_: "/isolated/uv")
     calls = []
 
     def run(command, **kwargs):
@@ -1448,10 +1468,15 @@ def test_everything_else_runs_the_app_jobs(tmp_path, ci_paths, event, changed):
 def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     for name in ("test", "coverage", "perf", "e2e"):
-        assert jobs[name]["if"] == "needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'"
+        assert jobs[name]["if"] == (
+            "needs.changes.outputs.full_release == 'true' && "
+            "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+        )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
-    assert jobs["site-tests"]["if"] == "needs.changes.outputs.site_only == 'true'"
+    assert jobs["site-tests"]["if"] == (
+        "needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true')"
+    )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
 
@@ -1511,6 +1536,124 @@ def _ci_jobs() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
 
 
+@pytest.mark.parametrize(
+    ("event", "candidate", "selected"),
+    [
+        ("schedule", False, {"maintenance"}),
+        ("pull_request", False, {"release", "focused", "paths"}),
+        ("push", False, {"release", "focused", "paths"}),
+        ("workflow_dispatch", False, {"release", "focused", "paths"}),
+        ("pull_request", True, {"release", "paths"}),
+        ("workflow_dispatch", True, {"release", "paths"}),
+    ],
+)
+def test_changed_paths_event_policy(event, candidate, selected):
+    changes = _ci_jobs()["changes"]
+    nonscheduled = "github.event_name != 'schedule'"
+    conditions = {
+        "github.event_name == 'schedule'": event == "schedule",
+        nonscheduled: event != "schedule",
+        nonscheduled + " && steps.release.outputs.full_release != 'true'": event != "schedule" and not candidate,
+    }
+    assert {step["id"] for step in changes["steps"] if "id" in step and conditions[step["if"]]} == selected
+    assert all(step["if"] == nonscheduled for step in changes["steps"] if "uses" in step)
+    assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
+    assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
+    assert changes["outputs"]["focused_mode"] == "${{ steps.focused.outputs.focused_mode }}"
+
+
+@pytest.mark.parametrize(
+    ("repository", "ref", "selected"),
+    [
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/main", True),
+        ("someone/heinzel", "refs/heads/main", False),
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/other", False),
+    ],
+)
+def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository, ref, selected):
+    step = next(step for step in _ci_jobs()["changes"]["steps"] if step.get("id") == "maintenance")
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"GITHUB_REPOSITORY": repository, "GITHUB_REF": ref, "GITHUB_OUTPUT": str(output)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert (result.returncode == 0) is selected
+    if selected:
+        assert output.read_text() == "selected=true\n"
+    else:
+        assert not output.exists()
+
+
+SCHEDULED_REQUIRED = ("admission", "changes", "lint", "secrets", "audit", "quarantine-registry")
+
+
+def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
+    jobs = _ci_jobs()
+    assert set(SCHEDULED_REQUIRED) <= set(jobs["ci-ok"]["needs"])
+    for name in ("lint", "audit"):
+        assert jobs[name]["needs"] == "changes"
+        assert "needs.changes.outputs.scheduled_maintenance == 'true'" in jobs[name]["if"]
+    for name, job in jobs.items():
+        if name in (*SCHEDULED_REQUIRED, "ci-ok"):
+            continue
+        condition = job["if"]
+        assert condition.startswith(
+            (
+                "needs.changes.outputs.full_release == 'true'",
+                "${{ !cancelled() && needs.changes.outputs.full_release == 'true'",
+                "github.event_name == 'pull_request'",
+                "failure() && github.event_name == 'pull_request'",
+                "github.event_name == 'push' &&",
+                "needs.changes.outputs.focused_mode != ''",
+                "${{ !cancelled() && needs.local-plugin-plan.outputs.selected == 'True'",
+                "needs.consumer-plan.outputs.selected == 'True'",
+            )
+        ), name
+    assert "scheduled_maintenance" not in _template_sync_module().ci_workflow()
+
+
+@pytest.mark.parametrize(
+    ("job", "outcome", "maintenance", "error"),
+    [
+        (None, "success", "true", ""),
+        (None, "success", "", "Scheduled maintenance was not selected"),
+        *(
+            (job, outcome, "true", f"Required schedule workload job did not pass: {job}")
+            for job in SCHEDULED_REQUIRED
+            for outcome in ("failure", "cancelled", "skipped")
+        ),
+    ],
+)
+def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, maintenance, error):
+    jobs = _ci_jobs()
+    step = next(step for step in jobs["ci-ok"]["steps"] if "EVENT" in step.get("env", {}))
+    assert step["if"] == "github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''"
+    results = {
+        name: {"result": "success" if name in SCHEDULED_REQUIRED else "skipped"} for name in jobs["ci-ok"]["needs"]
+    }
+    if job is not None:
+        results[job]["result"] = outcome
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            "PATH": os.environ["PATH"],
+            "EVENT": "schedule",
+            "SCHEDULED_MAINTENANCE": maintenance,
+            "RESULTS": json.dumps(results),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert result.returncode == bool(error)
+    assert error in result.stdout
+
+
 def _oses(value: str | list[str], event: str, *, macos_full: bool = False, release: bool = False) -> list[str]:
     """The matrix values for an event, from a plain list or a pull-request conditional."""
     if isinstance(value, list):
@@ -1550,33 +1693,22 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
     assert "needs.changes.outputs.macos_full" not in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_suite():
+def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
     jobs = _ci_jobs()
-    on_pull_request, on_main = set(), set()
-    for name, job in jobs.items():
-        runs_on = str(job.get("runs-on", ""))
-        matrix = job.get("strategy", {}).get("matrix")
-        oses = matrix.get("os") if isinstance(matrix, dict) else None  # a planned matrix lists plugins, on Linux
-        for event, found in (("pull_request", on_pull_request), ("push", on_main)):
-            if event == "pull_request" and not _runs_on_pull_request(job):
-                continue
-            if event == "push" and "github.event_name == 'pull_request'" in str(job.get("if", "")):
-                continue
-            if "macos" in runs_on or (oses is not None and any("macos" in os for os in _oses(oses, event))):
-                found.add(name)
-    include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]'" in include
-    assert on_pull_request == {"macos-smoke"}
-    # and the test matrix's macOS shards; `quarantine` is the non-blocking lane, run when tests/quarantine.toml asks
-    assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron", "quarantine"}
+    candidate_only = "needs.changes.outputs.full_release == 'true'"
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron", "quarantine"):
+        assert jobs[name]["if"].startswith(candidate_only)
+    assert jobs["focused-tests"]["if"] == "needs.changes.outputs.focused_mode != ''"
+    assert "fromJSON(needs.changes.outputs.focused_matrix" in jobs["focused-tests"]["strategy"]["matrix"]
+    assert "focused-tests" in jobs["ci-ok"]["needs"]
     assert "quarantine" not in jobs["ci-ok"]["needs"]
-    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "workflow_dispatch") == [
         "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
     ]  # fmt: skip
     smoke = jobs["macos-smoke"]
     assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
     assert smoke["timeout-minutes"] <= 10
-    assert smoke["if"].startswith("github.event_name == 'pull_request' && ")
+    assert "needs.changes.outputs.full_release != 'true'" in smoke["if"]
     runs = {step.get("run"): step.get("if") for step in smoke["steps"] if "run" in step}
     assert runs["make test-macos-smoke"] is None
     assert runs["make notifier"] is None  # the macos_specific real-launch tests must not skip

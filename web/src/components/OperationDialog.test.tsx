@@ -1,11 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
 import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
-import { dismissOperation, requestOperation, trackOperation } from "@/lib/operationRun";
+import {
+  dismissOperation,
+  type Phase,
+  requestDrivenOperation,
+  requestOperation,
+  resumeDrivenOperation,
+  startOperation,
+  trackOperation,
+} from "@/lib/operationRun";
+import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
+import { useEffectRunner } from "./Contributions";
 import { OperationDialog } from "./OperationDialog";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -61,6 +72,19 @@ function mount() {
   return { ...view, invalidate };
 }
 
+/** The same effect runner used by footer contributions. */
+function FooterRestart() {
+  const { run, dialog } = useEffectRunner();
+  return (
+    <>
+      <button type="button" onClick={() => run({ kind: "command", command: "hz system daemon restart", runs: true })}>
+        Footer restart
+      </button>
+      {dialog}
+    </>
+  );
+}
+
 const plan = async (phase: ReturnType<typeof liveStream>["phase"]) => {
   for (const id of Object.keys(LABELS)) await phase(id, "pending");
 };
@@ -70,7 +94,7 @@ describe("OperationDialog", () => {
     const { fetchMock } = liveStream();
     const { container } = mount();
     act(() => requestOperation(DAEMON_INSTALL));
-    const dialog = await screen.findByRole("alertdialog", {
+    const dialog = await screen.findByRole("dialog", {
       name: "Keep my Heinzelmännchen working while the app is closed.",
     });
     expect(dialog).toHaveTextContent("registers a background service that starts whenever you sign in");
@@ -79,7 +103,7 @@ describe("OperationDialog", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     await expectAccessible(container);
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -91,10 +115,31 @@ describe("OperationDialog", () => {
     expect(live.fetchMock).toHaveBeenCalledOnce();
     expect(screen.queryByText(/This changes something/)).not.toBeInTheDocument();
     expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument();
+    await plan(live.phase);
+    await live.phase("session", "done");
+    await live.phase("unit", "failed");
     await live.end("error", { error: "previous handover cannot be verified" });
     const failed = await screen.findByRole("alert");
     expect(failed).toHaveTextContent("The daemon could not restart. Try again in a moment.");
     expect(failed).not.toHaveTextContent("handover");
+    const steps = within(screen.getByRole("list", { name: "Steps" }));
+    expect(steps.getByText(/Checking this is your Mac.s desktop session/)).toHaveTextContent("done");
+    expect(steps.getByText(/Writing the service definition/)).toHaveTextContent("failed");
+  });
+
+  it.each([
+    [true, "Restart requested. If the service is active, its next tick will confirm the version."],
+    [false, "The daemon was not restarted. Install it and try again."],
+    [null, "The restart result is unavailable. Check the daemon status."],
+  ])("reports the streamed restart outcome %s accurately", async (restarted, message) => {
+    const live = liveStream();
+    mount();
+    act(() => requestOperation(DAEMON_RESTART));
+    expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+    await live.end("result", { data: restarted === null ? {} : { restarted } });
+    expect(await screen.findByRole("status")).toHaveTextContent(message);
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Done" }));
   });
 
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {
@@ -108,7 +153,7 @@ describe("OperationDialog", () => {
     expect(new URL(request[0].url).pathname).toBe("/api/stream/system/daemon/install");
     expect(request[0].method).toBe("POST");
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     await plan(live.phase);
     await live.phase("session", "running");
     expect(within(dialog).getByRole("progressbar", { name: "Steps" })).toHaveAttribute("value", "0");
@@ -134,7 +179,7 @@ describe("OperationDialog", () => {
     expect(within(dialog).queryByRole("button", { name: /Cancel|Close/ })).not.toBeInTheDocument();
     expect(dialog).toHaveTextContent("can't be stopped halfway");
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(live.fetchMock).toHaveBeenCalledOnce();
 
     for (const id of ["unit", "load", "verify"]) {
@@ -150,8 +195,8 @@ describe("OperationDialog", () => {
       expect(keys).toContain(JSON.stringify(["ui"]));
       expect(keys).toContain(JSON.stringify(daemonStatusKey));
     });
-    await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("says specifically what failed and what it did not change, and can try again", async () => {
@@ -168,7 +213,7 @@ describe("OperationDialog", () => {
     });
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Nothing was changed.");
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/Checking this is your Mac's desktop session/)).toHaveTextContent("failed");
     expect(within(dialog).getByText("SSH is not the desktop")).toBeInTheDocument();
     expect(dialog).toHaveFocus();
@@ -184,7 +229,7 @@ describe("OperationDialog", () => {
     const live = liveStream();
     mount();
     act(() => requestOperation(DAEMON_UNINSTALL));
-    const dialog = await screen.findByRole("alertdialog", { name: "Stop the background service?" });
+    const dialog = await screen.findByRole("dialog", { name: "Stop the background service?" });
     expect(dialog).toHaveTextContent("Your receipts and logs stay");
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Uninstall" }));
     await live.close();
@@ -197,7 +242,76 @@ describe("OperationDialog", () => {
     mount();
     act(() => requestOperation(DAEMON_INSTALL));
     act(() => requestOperation(DAEMON_UNINSTALL));
-    expect(await screen.findByRole("alertdialog")).toHaveAttribute("data-operation", "/system/daemon/install");
+    expect(await screen.findByRole("dialog")).toHaveAttribute("data-operation", "/system/daemon/install");
+  });
+
+  it.each(["disconnect", "timeout"])(
+    "keeps the footer from starting another restart after an unconfirmed %s until Close",
+    async (failure) => {
+      const timeout = new AbortController();
+      const originalTimeout = AbortSignal.timeout;
+      const timer = vi
+        .spyOn(AbortSignal, "timeout")
+        .mockImplementation((ms) => (ms === 30_000 ? timeout.signal : originalTimeout(ms)));
+      const live = liveStream();
+      sessionStorage.setItem("hz.token", "test-token");
+      render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <FooterRestart />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+      if (failure === "disconnect") await live.close();
+      else await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
+      expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      await act(async () => startOperation(() => {}));
+      const drive = {
+        consent: [],
+        runningTitle: "Running",
+        doneTitle: "Done",
+        running: "Running",
+        action: "Run",
+        run: vi.fn(async () => undefined),
+      };
+      act(() => requestDrivenOperation(DAEMON_INSTALL, drive));
+      await act(async () => resumeDrivenOperation(DAEMON_INSTALL, drive));
+      await expect(trackOperation(DAEMON_INSTALL, drive.run)).rejects.toThrow("outcome is unconfirmed");
+      expect(drive.run).not.toHaveBeenCalled();
+      expect(live.fetchMock).toHaveBeenCalledOnce();
+      expect(screen.getByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      timer.mockRestore();
+      const next = liveStream();
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      await screen.findByText("Restarting the daemon…", { selector: "output" });
+      expect(next.fetchMock).toHaveBeenCalledOnce();
+      await next.end("result", { data: { restarted: true } });
+      await user.click(await screen.findByRole("button", { name: "Done" }));
+    },
+  );
+
+  it.each([null, 7, "unknown"])("keeps the footer from repeating a restart with unknown result %s", async (result) => {
+    const live = liveStream();
+    sessionStorage.setItem("hz.token", "test-token");
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <FooterRestart />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    await live.end("result", { data: result });
+    expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    expect(live.fetchMock).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Done" }));
   });
 
   it("shows a write the app drives with the steps it reports, and never retries it here", async () => {
@@ -225,7 +339,7 @@ describe("OperationDialog", () => {
           }),
       ).catch(() => undefined);
     });
-    const dialog = await screen.findByRole("alertdialog", { name: "Updating" });
+    const dialog = await screen.findByRole("dialog", { name: "Updating" });
     expect(dialog).toHaveAttribute("data-tracked");
     act(() =>
       report([
@@ -244,5 +358,118 @@ describe("OperationDialog", () => {
     expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     act(() => dismissOperation());
+  });
+
+  describe("a write the app drives", () => {
+    const call = {
+      path: "/system/plugin/add",
+      method: "POST" as const,
+      query: {},
+      command: "hz system plugin add heinzel-crm --confirm",
+      summary: "Install heinzel-crm",
+      read_only: false,
+    };
+    const drive = (run: (report: (phases: Phase[]) => void) => Promise<unknown>) => ({
+      consent: ["Runs as code on this computer with your permissions.", "hz restarts and this page reloads itself."],
+      runningTitle: "Installing heinzel-crm",
+      doneTitle: "Installed heinzel-crm",
+      running: "Installing…",
+      action: "Install",
+      run,
+    });
+    const plan = (states: Phase["state"][]): Phase[] =>
+      ["preserve", "write", "restart", "wait", "reload", "check"].map((id, index) => ({
+        id,
+        label: `Step ${id}`,
+        state: states[index] ?? "pending",
+      }));
+
+    it("asks once in the dialog, then shows the same dialog's progress in place and ends with Done", async () => {
+      mount();
+      const user = userEvent.setup();
+      let report!: (phases: Phase[]) => void;
+      let finish!: () => void;
+      const run = vi.fn(
+        (tell: (phases: Phase[]) => void) =>
+          new Promise<void>((resolve) => {
+            report = tell;
+            finish = resolve;
+          }),
+      );
+      act(() => requestDrivenOperation(call, drive(run)));
+      const dialog = await screen.findByRole("dialog", { name: "Install heinzel-crm" });
+      expect(dialog).toHaveTextContent("Runs as code on this computer with your permissions.");
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      const row = within(dialog)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim() || button.getAttribute("aria-label"));
+      expect(row).toEqual(["Close", "Cancel", "Install"]);
+      expect(run).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole("button", { name: "Install" }));
+      expect(run).toHaveBeenCalledOnce();
+      act(() => report(plan(["done", "running"])));
+      const running = screen.getByRole("dialog", { name: "Installing heinzel-crm" });
+      expect(running).toBe(dialog);
+      expect(within(dialog).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Installing…" })).toBeDisabled();
+      expect(within(dialog).getByText("Step 2 of 6: Step write")).toBeInTheDocument();
+      expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 2 of 6");
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await act(async () => {
+        report(plan(["done", "done", "done", "done", "done", "done"]));
+        finish();
+      });
+      const done = await screen.findByRole("dialog", { name: "Installed heinzel-crm" });
+      expect(within(done).getByRole("button", { name: "Done" })).toHaveFocus();
+      await user.click(within(done).getByRole("button", { name: "Done" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("needs the person's attention when hz has not come back, and keeps waiting on their word", async () => {
+      mount();
+      const user = userEvent.setup();
+      const run = vi
+        .fn<(report: (phases: Phase[]) => void) => Promise<unknown>>()
+        .mockImplementationOnce(async (report) => {
+          report(plan(["done", "done", "done", "warn"]));
+          throw new NeedsAttention("hz has not come back yet.");
+        })
+        .mockImplementationOnce(async (report) => {
+          report(plan(["done", "done", "done", "done", "done", "done"]));
+        });
+      act(() => requestDrivenOperation(call, drive(run)));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Install" }));
+      const dialog = await screen.findByRole("dialog");
+      await within(dialog).findByText("hz has not come back yet.");
+      expect(
+        within(dialog)
+          .getAllByRole("status")
+          .some((status) => status.textContent?.includes("hz has not come back yet.")),
+      ).toBe(true);
+      expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+      await user.click(within(dialog).getByRole("button", { name: "Keep waiting" }));
+      expect(await screen.findByRole("dialog", { name: "Installed heinzel-crm" })).toBeInTheDocument();
+      expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it("names the failed step and offers Try again, which runs the same write again", async () => {
+      mount();
+      const user = userEvent.setup();
+      const run = vi.fn(async (report: (phases: Phase[]) => void) => {
+        report(plan(["done", "failed"]));
+        throw new Error("Could not download heinzel-crm.");
+      });
+      act(() => requestDrivenOperation(call, drive(run)));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Install" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("Could not download heinzel-crm.");
+      expect(within(dialog).getByText(/Step write/)).toHaveTextContent("failed");
+      await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+      expect(run).toHaveBeenCalledTimes(2);
+      act(() => dismissOperation());
+    });
   });
 });

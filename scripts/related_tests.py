@@ -25,30 +25,34 @@ DOCUMENT = re.compile(r"(?:.*\.md|docs/.*|mkdocs\.yml)")
 MAPPABLE = re.compile(r"(?:src/heinzel/.*|tests/.*|scripts/[^/]*)\.py")
 
 
-def module_file(dotted: str) -> str | None:
-    """The file of a dotted module path (`heinzel.kernel.x`), or None when it is not ours."""
+def module_file(dotted: str, files: frozenset[str]) -> str | None:
+    """The file of a dotted module path (`heinzel.kernel.x`) among the project's files, or None when it is not ours."""
     top, _, rest = dotted.partition(".")
     base = PYTHON_ROOTS.get(top)
     if base is None:
         return None
-    path = Path(base, *rest.split(".")) if rest else Path(base)
-    for candidate in (path.with_suffix(".py"), path / "__init__.py"):
-        if (ROOT / candidate).is_file():
-            return candidate.as_posix()
+    path = "/".join((base, *rest.split("."))) if rest else base
+    for candidate in (f"{path}.py", f"{path}/__init__.py"):
+        if candidate in files:
+            return candidate
     return None
 
 
-def statements(tree: ast.AST) -> list[ast.stmt]:
-    """Every statement at any depth, without descending into expressions: imports are statements."""
-    found: list[ast.stmt] = []
-    stack: list[ast.AST] = [tree]
+def import_statements(text: str) -> list[tuple[bool, ast.Import | ast.ImportFrom]]:
+    """Parse the whole file so valid Python syntax cannot hide an import from the graph."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    found: list[tuple[bool, ast.Import | ast.ImportFrom]] = []
+    stack: list[tuple[ast.AST, bool]] = [(tree, True)]
     while stack:
-        for child in ast.iter_child_nodes(stack.pop()):
-            if isinstance(child, ast.stmt):
-                found.append(child)
-                stack.append(child)
-            elif isinstance(child, ast.excepthandler | ast.match_case):
-                stack.append(child)
+        parent, top_level = stack.pop()
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(child, ast.Import | ast.ImportFrom):
+                found.append((top_level, child))
+            elif isinstance(child, ast.stmt | ast.ExceptHandler | ast.match_case):
+                stack.append((child, False))
     return found
 
 
@@ -62,19 +66,16 @@ class Graph:
     """Who imports whom among the project's own files, resolved to the defining module."""
 
     def __init__(self) -> None:
-        """Parse every Python file once; the graph is built from these trees."""
+        """Read every Python file once; the graph is built from their import statements."""
         self.files = sorted(
             path.relative_to(ROOT).as_posix()
             for base in (*PYTHON_ROOTS.values(), "scripts")
             for path in (ROOT / base).rglob("*.py")
             if "__pycache__" not in path.parts
         )
-        self.trees: dict[str, ast.Module] = {}
-        for file in self.files:
-            try:
-                self.trees[file] = ast.parse((ROOT / file).read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
-                self.trees[file] = ast.parse("")
+        self.known = frozenset(self.files)
+        self.statements = {file: import_statements(_text(file)) for file in self.files}
+        self._resolved: dict[tuple[str, str], str | None] = {}
         self.imports = {file: self._imports(file) for file in self.files}
 
     def package(self, file: str) -> str:
@@ -88,9 +89,9 @@ class Graph:
 
     def _imports(self, file: str) -> set[str]:
         found: set[str] = set()
-        for node in statements(self.trees[file]):
+        for _, node in self.statements[file]:
             if isinstance(node, ast.Import):
-                found.update(filter(None, (module_file(alias.name) for alias in node.names)))
+                found.update(filter(None, (module_file(alias.name, self.known) for alias in node.names)))
             elif isinstance(node, ast.ImportFrom):
                 base = node.module or ""
                 if node.level:
@@ -98,24 +99,35 @@ class Graph:
                     parent = parent[: len(parent) - node.level + 1]
                     base = ".".join([*parent, *([node.module] if node.module else [])])
                 for alias in node.names:
-                    target = self.resolve(base, alias.name, set())
+                    target = self.resolved(base, alias.name)
                     if target:
                         found.add(target)
         found.discard(file)
         return found
 
+    def resolved(self, package: str, name: str) -> str | None:
+        """`resolve` once per imported name: the same names are imported by hundreds of files."""
+        key = (package, name)
+        if key not in self._resolved:
+            self._resolved[key] = self.resolve(package, name, set())
+        return self._resolved[key]
+
     def resolve(self, package: str, name: str, seen: set[str]) -> str | None:
         """The file that defines `name` imported from `package`: a submodule, a re-export's source, else the package."""
-        sub = module_file(f"{package}.{name}")
+        sub = module_file(f"{package}.{name}", self.known)
         if sub:
             return sub
-        init = module_file(package)
+        init = module_file(package, self.known)
         if init is None or init in seen:
             return init
         seen.add(init)
-        if init.endswith("__init__.py") and init in self.trees:
-            for node in self.trees[init].body:
-                if isinstance(node, ast.ImportFrom) and any((a.asname or a.name) == name for a in node.names):
+        if init.endswith("__init__.py"):
+            for top_level, node in self.statements[init]:
+                if (
+                    top_level
+                    and isinstance(node, ast.ImportFrom)
+                    and any((a.asname or a.name) == name for a in node.names)
+                ):
                     base = node.module or ""
                     if node.level:
                         parent = self.package(init).split(".")
@@ -147,7 +159,7 @@ def related_tests(changed: list[str]) -> list[str] | None:
     if others or any(path.endswith("conftest.py") for path in code):
         return None
     tree = graph()
-    existing = [path for path in code if path in tree.trees]  # a deleted file leaves its importers to the graph's
+    existing = [path for path in code if path in tree.known]  # a deleted file leaves its importers to the graph's
     reached = tree.dependents(set(existing))  # names, which no longer resolve: its tests simply fail in CI
     tests = {path for path in reached if re.fullmatch(r"tests/unit/.*_test\.py", path)}  # the hook runs unit tests
     for path in code:

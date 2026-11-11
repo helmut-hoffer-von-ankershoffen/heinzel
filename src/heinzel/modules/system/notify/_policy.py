@@ -136,4 +136,11 @@ def decide(
 
 def repeated(recent: Sequence[Notice], key: str, now: datetime, window: timedelta) -> Notice | None:
     """The notice with the same `key` recorded within `window`, which a new one would only repeat; None if none."""
-    return next((notice for notice in recent if notice.key == key and now - window < notice.at <= now), None)
+    return next(
+        (
+            notice
+            for notice in recent
+            if notice.key == key and notice.resolved_at is None and now - window < notice.at <= now
+        ),
+        None,
+    )
