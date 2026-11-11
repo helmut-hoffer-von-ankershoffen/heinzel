@@ -20,3 +20,17 @@ def overlap_milliseconds(directory: Path) -> int | None:
         return None
     overlap = min(negative_end, companion_end) - max(negative_start, companion_start)
     return max(0, overlap // 1_000_000)
+
+
+def worker_receipt(directory: Path) -> str:
+    """Require all three cases to have distinct, expected xdist worker identities."""
+    workers = []
+    for case in ("true", "false", "companion"):
+        try:
+            worker = (directory / f"worker.{case}").read_text()
+        except OSError:
+            return "unavailable"
+        if re.fullmatch(r"gw[0-2]", worker) is None:
+            return "unavailable"
+        workers.append(worker)
+    return "distinct" if len(set(workers)) == len(("true", "false", "companion")) else "not_distinct"

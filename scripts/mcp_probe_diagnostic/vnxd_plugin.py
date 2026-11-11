@@ -94,7 +94,9 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> 
         if call.when == "call":
             report = result.get_result()
             if report.outcome in ("passed", "failed", "skipped"):
-                (Path(os.environ["VNXD_PHASE_DIR"]) / "companion.call").write_text(report.outcome)
+                directory = Path(os.environ["VNXD_PHASE_DIR"])
+                (directory / "companion.call").write_text(report.outcome)
+                (directory / "worker.companion").write_text(os.environ.get("PYTEST_XDIST_WORKER", ""))
         return
     if TARGET not in item.nodeid or call.when not in ("setup", "call", "teardown"):
         return
@@ -104,7 +106,10 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> 
     case = "false" if "[False]" in item.nodeid else "true"
     exception = call.excinfo.value if call.excinfo is not None else None
     line = phase_record(case, call.when, report.outcome, exception, report.duration)
-    (Path(os.environ["VNXD_PHASE_DIR"]) / f"{case}.{call.when}").write_text(line + "\n")
+    directory = Path(os.environ["VNXD_PHASE_DIR"])
+    (directory / f"{case}.{call.when}").write_text(line + "\n")
+    if call.when == "setup":
+        (directory / f"worker.{case}").write_text(os.environ.get("PYTEST_XDIST_WORKER", ""))
 
 
 @pytest.hookimpl(hookwrapper=True)

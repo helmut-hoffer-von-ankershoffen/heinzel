@@ -8,12 +8,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from overlap import overlap_milliseconds
+from overlap import overlap_milliseconds, worker_receipt
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument("--workers", choices=("2", "3"), default="3")
 args = parser.parse_args()
+if os.environ.get("GITHUB_ACTIONS") == "true" and args.workers != "3":
+    raise SystemExit(2)
 if sys.platform != "darwin" or sys.version_info[:2] != (3, 15):
     msg = "diagnostic requires macOS Python 3.15"
     raise SystemExit(msg)
@@ -80,11 +82,13 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
                 lines.append(line)
     for line in lines:
         print(line)
+    recorded_phases = 0
     for case in ("true", "false"):
         for phase in ("setup", "call", "teardown"):
             path = Path(tmp) / f"{case}.{phase}"
             line = path.read_text().strip() if path.is_file() else ""
             if phase_allowed.fullmatch(line):
+                recorded_phases += 1
                 print(line)
             else:
                 print(f"VNXD case={case} phase={phase} outcome=not_recorded")
@@ -97,6 +101,8 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
     if companion not in ("passed", "failed", "skipped"):
         companion = "not_recorded"
     print(f"VNXD companion={companion}")
+    workers = worker_receipt(Path(tmp))
+    print(f"VNXD workers={workers}")
     overlap = overlap_milliseconds(Path(tmp))
     if overlap is None:
         print("VNXD overlap=unavailable")
@@ -105,7 +111,14 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
     else:
         print(f"VNXD overlap=confirmed ms={overlap}")
     print("VNXD runner=" + ("pass" if run.returncode == 0 else "fail"))
-    if len(lines) != len(("true", "false")) or companion != "passed" or overlap is None or overlap == 0:
+    if (
+        len(lines) != len(("true", "false"))
+        or recorded_phases != len(("true", "false")) * len(("setup", "call", "teardown"))
+        or companion != "passed"
+        or workers != "distinct"
+        or overlap is None
+        or overlap == 0
+    ):
         print("VNXD evidence=incomplete")
         raise SystemExit(1)
     raise SystemExit(run.returncode)

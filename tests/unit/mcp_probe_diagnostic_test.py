@@ -228,3 +228,26 @@ def test_companion_records_a_bounded_synthetic_interval(monkeypatch, tmp_path):
     companion.test_cpu_companion()
     assert (tmp_path / "companion.start").read_text() == "100"
     assert (tmp_path / "companion.end").read_text() == "3500000200"
+
+
+@pytest.mark.parametrize(
+    ("workers", "expected"),
+    [
+        (("gw0", "gw1", "gw2"), "distinct"),
+        (("gw0", "gw1", "gw1"), "not_distinct"),
+        (("gw0", "gw1", "private-secret"), "unavailable"),
+    ],
+)
+def test_worker_receipt_requires_three_distinct_workers(tmp_path, workers, expected):
+    overlap_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_overlap_workers",
+        Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/overlap.py",
+    )
+    assert overlap_spec
+    assert overlap_spec.loader
+    overlap = importlib.util.module_from_spec(overlap_spec)
+    overlap_spec.loader.exec_module(overlap)
+    assert overlap.worker_receipt(tmp_path) == "unavailable"
+    for case, worker in zip(("true", "false", "companion"), workers, strict=True):
+        (tmp_path / f"worker.{case}").write_text(worker)
+    assert overlap.worker_receipt(tmp_path) == expected
