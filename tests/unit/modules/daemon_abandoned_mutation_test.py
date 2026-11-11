@@ -12,6 +12,7 @@ import pytest
 
 from heinzel import HeinzelError
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+from heinzel.modules.system.daemon import _abandoned_mutation as abandoned
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, parse_marker
 from heinzel.modules.system.daemon._runtime import lock
 from tests.fixtures.daemon_manager import RecordedManager as Runner
@@ -270,3 +271,20 @@ def test_host_boot_reads_this_machine_without_a_subprocess(monkeypatch):
         assert started is not None
         assert started < datetime.now(UTC).timestamp() * 1_000_000_000
         assert started > (datetime.now(UTC) - timedelta(days=3650)).timestamp() * 1_000_000_000
+
+
+def test_linux_boot_evidence_handles_missing_or_invalid_kernel_identity(monkeypatch):
+    values = {abandoned._LINUX_BOOT_ID: "invalid\n", abandoned._PROC_STAT: "cpu 1 2 3\nbtime 123\n"}
+    monkeypatch.setattr(abandoned, "_read", values.__getitem__)
+    assert abandoned.host_boot("linux") == (None, 123_000_000_000)
+    values[abandoned._LINUX_BOOT_ID] = BOOT_BEFORE.upper() + "\n"
+    values[abandoned._PROC_STAT] = "cpu 1 2 3\n"
+    assert abandoned.host_boot("linux") == (BOOT_BEFORE, None)
+
+
+def test_linux_boot_evidence_is_unknown_when_kernel_read_fails(monkeypatch):
+    def unavailable(_path):
+        raise OSError
+
+    monkeypatch.setattr(abandoned, "_read", unavailable)
+    assert abandoned.host_boot("linux") == (None, None)

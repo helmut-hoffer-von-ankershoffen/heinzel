@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
 import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
@@ -9,10 +10,13 @@ import {
   type Phase,
   requestDrivenOperation,
   requestOperation,
+  resumeDrivenOperation,
+  startOperation,
   trackOperation,
 } from "@/lib/operationRun";
 import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
+import { useEffectRunner } from "./Contributions";
 import { OperationDialog } from "./OperationDialog";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -68,6 +72,19 @@ function mount() {
   return { ...view, invalidate };
 }
 
+/** The same effect runner used by footer contributions. */
+function FooterRestart() {
+  const { run, dialog } = useEffectRunner();
+  return (
+    <>
+      <button type="button" onClick={() => run({ kind: "command", command: "hz system daemon restart", runs: true })}>
+        Footer restart
+      </button>
+      {dialog}
+    </>
+  );
+}
+
 const plan = async (phase: ReturnType<typeof liveStream>["phase"]) => {
   for (const id of Object.keys(LABELS)) await phase(id, "pending");
 };
@@ -98,10 +115,31 @@ describe("OperationDialog", () => {
     expect(live.fetchMock).toHaveBeenCalledOnce();
     expect(screen.queryByText(/This changes something/)).not.toBeInTheDocument();
     expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument();
+    await plan(live.phase);
+    await live.phase("session", "done");
+    await live.phase("unit", "failed");
     await live.end("error", { error: "previous handover cannot be verified" });
     const failed = await screen.findByRole("alert");
     expect(failed).toHaveTextContent("The daemon could not restart. Try again in a moment.");
     expect(failed).not.toHaveTextContent("handover");
+    const steps = within(screen.getByRole("list", { name: "Steps" }));
+    expect(steps.getByText(/Checking this is your Mac.s desktop session/)).toHaveTextContent("done");
+    expect(steps.getByText(/Writing the service definition/)).toHaveTextContent("failed");
+  });
+
+  it.each([
+    [true, "Restart requested. If the service is active, its next tick will confirm the version."],
+    [false, "The daemon was not restarted. Install it and try again."],
+    [null, "The restart result is unavailable. Check the daemon status."],
+  ])("reports the streamed restart outcome %s accurately", async (restarted, message) => {
+    const live = liveStream();
+    mount();
+    act(() => requestOperation(DAEMON_RESTART));
+    expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+    await live.end("result", { data: restarted === null ? {} : { restarted } });
+    expect(await screen.findByRole("status")).toHaveTextContent(message);
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Done" }));
   });
 
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {
@@ -205,6 +243,75 @@ describe("OperationDialog", () => {
     act(() => requestOperation(DAEMON_INSTALL));
     act(() => requestOperation(DAEMON_UNINSTALL));
     expect(await screen.findByRole("dialog")).toHaveAttribute("data-operation", "/system/daemon/install");
+  });
+
+  it.each(["disconnect", "timeout"])(
+    "keeps the footer from starting another restart after an unconfirmed %s until Close",
+    async (failure) => {
+      const timeout = new AbortController();
+      const originalTimeout = AbortSignal.timeout;
+      const timer = vi
+        .spyOn(AbortSignal, "timeout")
+        .mockImplementation((ms) => (ms === 30_000 ? timeout.signal : originalTimeout(ms)));
+      const live = liveStream();
+      sessionStorage.setItem("hz.token", "test-token");
+      render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <FooterRestart />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+      if (failure === "disconnect") await live.close();
+      else await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
+      expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      await act(async () => startOperation(() => {}));
+      const drive = {
+        consent: [],
+        runningTitle: "Running",
+        doneTitle: "Done",
+        running: "Running",
+        action: "Run",
+        run: vi.fn(async () => undefined),
+      };
+      act(() => requestDrivenOperation(DAEMON_INSTALL, drive));
+      await act(async () => resumeDrivenOperation(DAEMON_INSTALL, drive));
+      await expect(trackOperation(DAEMON_INSTALL, drive.run)).rejects.toThrow("outcome is unconfirmed");
+      expect(drive.run).not.toHaveBeenCalled();
+      expect(live.fetchMock).toHaveBeenCalledOnce();
+      expect(screen.getByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      timer.mockRestore();
+      const next = liveStream();
+      await user.click(screen.getByRole("button", { name: "Footer restart" }));
+      await screen.findByText("Restarting the daemon…", { selector: "output" });
+      expect(next.fetchMock).toHaveBeenCalledOnce();
+      await next.end("result", { data: { restarted: true } });
+      await user.click(await screen.findByRole("button", { name: "Done" }));
+    },
+  );
+
+  it.each([null, 7, "unknown"])("keeps the footer from repeating a restart with unknown result %s", async (result) => {
+    const live = liveStream();
+    sessionStorage.setItem("hz.token", "test-token");
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <FooterRestart />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    await live.end("result", { data: result });
+    expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    expect(live.fetchMock).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Done" }));
   });
 
   it("shows a write the app drives with the steps it reports, and never retries it here", async () => {

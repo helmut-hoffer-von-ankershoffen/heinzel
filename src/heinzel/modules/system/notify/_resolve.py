@@ -19,8 +19,13 @@ logger = logging.getLogger(__name__)
 RELEASE_KEY = "release:"
 """The key prefix of a release notice; the rest is the announced version."""
 
+DOCTOR_KEY = "doctor:"
+"""The key prefix of a doctor notice: `doctor:<status>:<check>|<check>…`."""
+
 CapabilityProbe = Callable[[CapabilityState], bool | None]
 """Whether a capability is in the state named; None when it can't tell, which never resolves a notice."""
+ProblemsProbe = Callable[[], set[str] | None]
+"""The checks explicitly up (`<module>: <check>`); None when doctor cannot tell, which resolves nothing."""
 
 
 def installed_version() -> str:
@@ -48,25 +53,41 @@ def _at_least(installed: str, wanted: str) -> bool:
 
 
 def condition(notice: Notice) -> ResolveWhen | None:
-    """The notice's condition: its own, or the one a legacy release notice's key implies; None for none."""
+    """The notice's condition: its own, or the one a legacy release or doctor notice's key implies; None for none.
+
+    So notices recorded before conditions existed resolve too, without a sweep.
+    """
     if notice.resolve_when is not None:
         return notice.resolve_when
-    if notice.kind is NoticeKind.RELEASE and notice.key.startswith(RELEASE_KEY):
-        try:
+    try:
+        if notice.kind is NoticeKind.RELEASE and notice.key.startswith(RELEASE_KEY):
             return ResolveWhen(installed_version_at_least=notice.key.removeprefix(RELEASE_KEY))
-        except ValueError:
-            return None
+        if notice.kind is NoticeKind.DOCTOR and notice.key.startswith(DOCTOR_KEY):
+            _, _, checks = notice.key.removeprefix(DOCTOR_KEY).partition(":")
+            return ResolveWhen(checks_up=checks.split("|")) if checks else None
+    except ValueError:
+        return None
     return None
 
 
-def holds(when: ResolveWhen, installed: str, probe: CapabilityProbe | None) -> str | None:
-    """Why `when` holds now, in words; None while it doesn't, or when a capability can't be asked (`probe` None)."""
+def at_read(when: ResolveWhen) -> bool:
+    """Whether `when` can be evaluated from installed metadata without running another operation."""
+    return when.capability is None and when.checks_up is None
+
+
+def holds(
+    when: ResolveWhen, installed: str, probe: CapabilityProbe | None, problems: ProblemsProbe | None = None
+) -> str | None:
+    """Why `when` holds now, in words; None while it doesn't, or when what it names can't be asked (a probe None)."""
     reasons: list[str] = []
     if (wanted := when.installed_version_at_least) is not None:
         if not _at_least(installed, wanted):
             return None
         reasons.append(f"hz {installed} is installed")
     if (capability := when.capability) is not None:
+        # Unrecognised or damaged on-disk envelopes must never resolve via a capability probe.
+        if capability.operation.startswith("system.notify:condition_v"):
+            return None
         if probe is None or probe(capability) is not True:
             return None
         reasons.append(f"{capability.operation} reports {capability.field} = {capability.equals!r}")
@@ -74,7 +95,25 @@ def holds(when: ResolveWhen, installed: str, probe: CapabilityProbe | None) -> s
         if not all(plugin_installed(name) for name in plugins):
             return None
         reasons.append(f"{', '.join(plugins)} {'is' if len(plugins) == 1 else 'are'} installed")
+    if (checks := when.checks_up) is not None:
+        up = problems() if problems is not None else None
+        # Absence, including a failed or removed provider, is unknown rather than healthy.
+        if up is None or not set(checks) <= up:
+            return None
+        reasons.append(f"{', '.join(checks)} {'is' if len(checks) == 1 else 'are'} up again")
     return "; ".join(reasons) or None
+
+
+def once(problems: ProblemsProbe) -> ProblemsProbe:
+    """`problems`, asking doctor at most once per pass."""
+    answer: list[set[str] | None] = []
+
+    def ask() -> set[str] | None:
+        if not answer:
+            answer.append(problems())
+        return answer[0]
+
+    return ask
 
 
 def cached(probe: CapabilityProbe) -> CapabilityProbe:

@@ -98,6 +98,7 @@ _STARTUP_MODULES = {
     "_bootstrap_external",
     "site.py",
     "sitecustomize.py",
+    "_heinzel_fixture_startup_diagnostics.py",
     "heinzel/__main__.py",
     "heinzel/heads/cli/__init__.py",
     "heinzel/heads/cli/_serve.py",
@@ -202,9 +203,12 @@ def startup_diagnostics(prefix, directory):
     packages = list((prefix / "lib").glob("python*/site-packages"))
     assert len(packages) == 1
     assert packages[0].resolve().is_relative_to(prefix.resolve()), "Startup diagnostics must stay in the fixture SDK."
-    target = packages[0] / "sitecustomize.py"
-    assert not target.exists(), "The fixture must not replace existing startup code."
-    assert not target.is_symlink(), "The fixture must not replace an existing startup link."
+    site = packages[0]
+    target = site / "_heinzel_fixture_startup_diagnostics.py"
+    loader = target.with_suffix(".pth")
+    for startup in (site / "sitecustomize.py", target, loader):
+        assert not startup.exists(), "The fixture must not replace existing startup code."
+        assert not startup.is_symlink(), "The fixture must not replace an existing startup link."
     destination = directory / "startup-stacks.txt"
     descriptor = destination.open("xb")
     descriptor.close()
@@ -213,11 +217,17 @@ def startup_diagnostics(prefix, directory):
         "import faulthandler, os, sys\n"
         # The stable shim execs isolated Python before importing hz; observe that app, not its short-lived shim.
         "if sys.flags.isolated:\n"
+        # -I implies -E, so PYTHONFAULTHANDLER is ignored after the shim exec.
+        "    faulthandler.enable()\n"
         f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
         "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
     )
     with target.open("x") as handle:
         handle.write(source)
+    # The base interpreter can supply sitecustomize before the SDK on sys.path (Ubuntu's system Python does).
+    # Process the SDK's private hook alongside the other site configuration files instead.
+    with loader.open("x") as handle:
+        handle.write(f"import {target.stem}\n")
 
 
 def _sample_role(line):
@@ -225,6 +235,21 @@ def _sample_role(line):
     if "com.apple.main-thread" in line:
         return "main"
     return "publication" if "(when_started)" in line else "other"
+
+
+def _diagnostic_frame(line):
+    match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
+    if match is None:
+        return None
+    normalized = match[1].replace("\\", "/")
+    frozen = {
+        "<frozen importlib._bootstrap>": "_bootstrap",
+        "<frozen importlib._bootstrap_external>": "_bootstrap_external",
+    }
+    label = frozen.get(normalized) or next(
+        (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
+    )
+    return label, int(match[2])
 
 
 class RunningService:
@@ -289,7 +314,8 @@ class RunningService:
                 pytest.fail(
                     "The owned web server exited before readiness; "
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
-                    f"publication failure={self.publication_failure(output + errors)}."
+                    f"publication failure={self.publication_failure(output + errors)}"
+                    + (f", crash trace={self.crash_trace(errors)}." if returncode < 0 else ".")
                 )
             changed.wait(0.02)
         pytest.fail(
@@ -299,6 +325,25 @@ class RunningService:
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
             f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
+
+    @staticmethod
+    def crash_trace(errors):
+        """Summarize fatal Python stderr without exposing arbitrary files, functions or output."""
+        lines = errors[-64 * 1024 :].decode("utf-8", errors="replace").splitlines()
+        prefix = "Fatal Python error: "
+        for index, line in enumerate(lines):
+            if line.startswith(prefix):
+                kind = line.removeprefix(prefix)
+                kinds = {
+                    "Segmentation fault",
+                    "Bus error",
+                    "Aborted",
+                    "Floating-point exception",
+                    "Illegal instruction",
+                }
+                frames = (frame for line in lines[index + 1 :] if (frame := _diagnostic_frame(line)) is not None)
+                return {"error": kind if kind in kinds else "other", "frames": list(islice(frames, 32))}
+        return "none (no faulthandler output)"
 
     @staticmethod
     def publication_failure(output):
@@ -322,7 +367,7 @@ class RunningService:
         cpu = self.startup_cpu()
         pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
         result = {"cpu": cpu, "runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
-        # A real tool replacement removes the fixture-only sitecustomize; never attribute its old stack to an exec.
+        # A real tool replacement removes the fixture-only startup hook; never attribute its old stack to an exec.
         result["startup"] = self.startup_metadata() if initial else "not-initial-startup"
         result["native"] = self.native_state()
         result["runtime_after_sample"] = self.service.runtime.exists()
@@ -382,18 +427,8 @@ class RunningService:
                 frames = []
                 snapshots.append(frames)
             elif frames is not None and len(frames) < 32:
-                match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
-                if match is None:
-                    continue
-                normalized = match[1].replace("\\", "/")
-                frozen = {
-                    "<frozen importlib._bootstrap>": "_bootstrap",
-                    "<frozen importlib._bootstrap_external>": "_bootstrap_external",
-                }
-                label = frozen.get(normalized) or next(
-                    (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
-                )
-                frames.append((label, int(match[2])))
+                if (frame := _diagnostic_frame(line)) is not None:
+                    frames.append(frame)
         return snapshots
 
     def native_state(self):

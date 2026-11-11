@@ -238,5 +238,5 @@ Actions follow [design/README.md](https://github.com/helmut-hoffer-von-ankershof
 the single source: chrome as at most three ghost icons in the title row; content actions in one bottom row under a
 divider, the first with icon and words, the rest named icons, destructive last and red; dialogs right-aligned with
 words. Use `PaneActions`, `PaneAction` and `PaneTitle` (also in the plugin SDK) or `FooterItem actions={…}`; never a
-text link as an action or a hand-drawn row. `assertActionStructure` and `web/src/lib/pane-actions-standards.test.ts`
+text link as an action or a hand-drawn row. `assertActionStructure` and `web/src/lib/paneActionsStandards.test.ts`
 enforce this.
