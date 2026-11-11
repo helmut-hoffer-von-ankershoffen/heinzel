@@ -4,6 +4,7 @@ date: 2026-11-08
 implementation: built
 decision-makers: maintainer
 related: 0019, 0047, 0068, 0138
+amended-by: 0143
 ---
 
 # 0142: MCP over HTTP takes per-agent bearer tokens with read and write scopes
