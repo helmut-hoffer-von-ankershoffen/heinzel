@@ -68,12 +68,23 @@ jobs:
         with:
           fetch-depth: 0 # the install-from-git end-to-end tests clone this repository
           persist-credentials: false
+      - name: Verify the one-off MCP diagnostic request
+        if: github.ref_name == 'ci/mcp-macos-diagnostic'
+        env:
+          EXPECTED_SHA: ${{ inputs.selector }}
+          REQUESTED_OS: ${{ inputs.os }}
+          REQUESTED_KIND: ${{ inputs.kind }}
+          REQUESTED_REPEAT: ${{ inputs.repeat }}
+          REQUESTED_STRESS: ${{ inputs.stress }}
+        run: python3 -I scripts/mcp_probe_diagnostic/guard.py
       - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
+          python-version: ${{ github.ref_name == 'ci/mcp-macos-diagnostic' && '3.15' || '' }}
           cache-dependency-glob: uv.lock
           save-cache: false # a dispatched diagnostic never writes the cache main and pull requests read
       - name: Validate the selection before installing anything
+        if: github.ref_name != 'ci/mcp-macos-diagnostic'
         run: uv run --no-build --quiet --script scripts/focused_job.py --check
       - name: Reuse the browsers this lockfile's Playwright installs
         if: inputs.kind == 'e2e' && inputs.selector != 'cli'
@@ -86,7 +97,18 @@ jobs:
       - name: Install browser runtimes and host dependencies
         if: inputs.kind == 'e2e' && inputs.selector != 'cli'
         run: make test-browser-deps
+      - name: Set up the isolated MCP diagnostic
+        if: github.ref_name == 'ci/mcp-macos-diagnostic'
+        env:
+          UV_PYTHON: '3.15'
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
+      - name: Run the isolated MCP diagnostic
+        if: github.ref_name == 'ci/mcp-macos-diagnostic'
+        run: uv run --frozen --no-sync --python 3.15 python scripts/mcp_probe_diagnostic/run.py
       - name: Run the selection
+        if: github.ref_name != 'ci/mcp-macos-diagnostic'
         run: uv run --no-build --quiet --script scripts/focused_job.py
         env:
           # read-only (contents: read), as in ci.yml's end-to-end job: the tests ask GitHub's API, which rate-limits

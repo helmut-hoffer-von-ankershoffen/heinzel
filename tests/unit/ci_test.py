@@ -96,6 +96,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
+        "python3 -I scripts/mcp_probe_diagnostic/guard.py": "restricts the one-off diagnostic to its exact dispatch",
+        "uv run --frozen --no-sync --python 3.15 python scripts/mcp_probe_diagnostic/run.py": (
+            "runs the bounded macOS diagnostic on the explicitly pinned validation ref"
+        ),
     },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
