@@ -319,8 +319,8 @@ def test_alternate_asset_bytes_must_match_the_published_digest(monkeypatch, tmp_
         release._download(target, 16 * 1024, ASSET)
 
     assert len(requests) == 2
-    assert [(r.msg, r.outcome, r.error) for r in caplog.records if r.phase == "end"] == [
-        ("desktop.install.release_fallback", "failed", "HeinzelError")
+    assert [(r.msg, r.outcome, r.error_type) for r in caplog.records if r.phase == "end"] == [
+        ("desktop.install.release_fallback", "error", "HeinzelError")
     ]
 
 
