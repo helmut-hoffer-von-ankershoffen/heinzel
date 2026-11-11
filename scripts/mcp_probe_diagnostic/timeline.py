@@ -27,7 +27,7 @@ ALLOWED = frozenset(
 )
 
 
-def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[str, int]]]:  # noqa: C901, PLR0911, PLR0912
+def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[str, int]]]:  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Reject unexpected, duplicate, oversized, or inconsistent marker sequences."""
     try:
         with path.open("rb") as stream:
@@ -65,6 +65,27 @@ def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[s
     )
     if any(first in events and second in events and events[first] > events[second] for first, second in order):
         return "invalid", []
+    if "client.401" in events:
+        if "client.enter.ok" in events and events["client.401"] < events["client.enter.ok"]:
+            return "invalid", []
+        if "client.exit.start" in events and events["client.401"] > events["client.exit.start"]:
+            return "invalid", []
+        if "observe.exit" in events and events["client.401"] > events["observe.exit"]:
+            return "invalid", []
+    for operation in ("init", "list"):
+        for outcome in ("ok", "error"):
+            terminal = f"{operation}.{outcome}"
+            if (
+                terminal in events
+                and "session.exit.start" in events
+                and events[terminal] > events["session.exit.start"]
+            ):
+                return "invalid", []
+    if fake and "client.401" in events:
+        if "init.start" in events and events["client.401"] < events["init.start"]:
+            return "invalid", []
+        if "init.error" in events and events["client.401"] > events["init.error"]:
+            return "invalid", []
     if "init.error" in events and any(name.startswith("list.") for name in events):
         return "invalid", []
     if "list.start" in events and "init.ok" not in events:
@@ -102,7 +123,7 @@ def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[s
     if "init.ok" in events:
         required.add("list.start")
     if fake:
-        required.update(("client.401", "fake.server.401_sent"))
+        required.update(("client.401", "fake.server.401_sent", "init.start", "init.error"))
     return ("complete" if required <= events.keys() else "incomplete"), values
 
 

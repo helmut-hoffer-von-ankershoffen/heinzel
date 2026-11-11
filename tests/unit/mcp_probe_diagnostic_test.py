@@ -253,7 +253,7 @@ def test_worker_receipt_requires_three_distinct_workers(tmp_path, workers, expec
     assert overlap.worker_receipt(tmp_path) == expected
 
 
-def test_timeline_requires_unique_ordered_allowlisted_markers_and_correlated_fake(tmp_path):
+def test_timeline_requires_unique_ordered_allowlisted_markers_and_correlated_fake(tmp_path):  # noqa: PLR0915
     timeline_spec = importlib.util.spec_from_file_location(
         "mcp_timeline", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/timeline.py"
     )
@@ -316,6 +316,28 @@ def test_timeline_requires_unique_ordered_allowlisted_markers_and_correlated_fak
     write(late_inner_exit)
     assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
     write([*labels, "list.start"])
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    early_cleanup = labels.copy()
+    early_cleanup.remove("session.exit.start")
+    early_cleanup.remove("session.exit.error")
+    position = early_cleanup.index("init.start")
+    early_cleanup[position:position] = ["session.exit.start", "session.exit.error"]
+    write(early_cleanup)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    late_401 = labels.copy()
+    late_401.remove("client.401")
+    late_401.append("client.401")
+    write(late_401)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    during_cleanup = labels.copy()
+    during_cleanup.remove("client.401")
+    during_cleanup.insert(during_cleanup.index("client.exit.start") + 1, "client.401")
+    write(during_cleanup)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    before_init = labels.copy()
+    before_init.remove("client.401")
+    before_init.insert(before_init.index("init.start"), "client.401")
+    write(before_init)
     assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
     path.write_bytes(b"x" * 8193)
     assert timeline.parse_timeline(path, fake=True) == ("invalid", [])
