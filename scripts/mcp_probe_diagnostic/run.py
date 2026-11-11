@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from overlap import overlap_milliseconds, worker_receipt
-from timeline import parse_timeline
+from timeline import fake_control_complete, parse_timeline, valid_phase
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
@@ -23,10 +23,6 @@ if sys.platform != "darwin" or sys.version_info[:2] != (3, 15):
 allowed = re.compile(
     r"VNXD case=(?:true|false) elapsed_ms=[0-9]+ sample=(?:not_needed|unavailable|other|"
     r"import|network|wait|import_network|import_wait|network_wait|import_network_wait)\Z"
-)
-phase_allowed = re.compile(
-    r"VNXD case=(?:true|false|fake) phase=(?:setup|call|teardown) "
-    r"outcome=(?:passed|failed|skipped) kind=(?:none|timeout|assertion|exception|unknown) duration_ms=[0-9]+\Z"
 )
 with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
     env = os.environ.copy()
@@ -88,7 +84,7 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
         file = Path(tmp) / case
         if file.is_file():
             line = file.read_text().strip()
-            if allowed.fullmatch(line):
+            if allowed.fullmatch(line) and line.startswith(f"VNXD case={case} "):
                 lines.append(line)
     for line in lines:
         print(line)
@@ -97,15 +93,17 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
         for phase in ("setup", "call", "teardown"):
             path = Path(tmp) / f"{case}.{phase}"
             line = path.read_text().strip() if path.is_file() else ""
-            if phase_allowed.fullmatch(line):
+            if valid_phase(line, case, phase):
                 recorded_phases += 1
                 print(line)
             else:
                 print(f"VNXD case={case} phase={phase} outcome=not_recorded")
+    fake_phases = {}
     for phase in ("setup", "call", "teardown"):
         path = Path(tmp) / f"fake.{phase}"
         line = path.read_text().strip() if path.is_file() else ""
-        if phase_allowed.fullmatch(line):
+        if valid_phase(line, "fake", phase):
+            fake_phases[phase] = line
             print(line)
         else:
             print(f"VNXD case=fake phase={phase} outcome=not_recorded")
@@ -116,7 +114,8 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
         print(f"VNXD case={case} timeline={status}")
         for name, offset in events:
             print(f"VNXD case={case} event={name} offset_ms={offset}")
-    print("VNXD fake_control=" + ("pass" if fake_code == 0 and timelines["fake"] == "complete" else "fail"))
+    fake_complete = fake_control_complete(fake_code, timelines["fake"], fake_phases)
+    print("VNXD fake_control=" + ("pass" if fake_complete else "fail"))
     if run.returncode and "ImportError" in run.stderr:
         print("VNXD error=plugin_import")
     if run.returncode and "usage: pytest" in run.stderr:
@@ -143,7 +142,7 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
         or workers != "distinct"
         or overlap is None
         or overlap == 0
-        or fake_code != 0
+        or not fake_complete
         or any(status != "complete" for status in timelines.values())
     ):
         print("VNXD evidence=incomplete")

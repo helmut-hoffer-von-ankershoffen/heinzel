@@ -305,6 +305,18 @@ def test_timeline_requires_unique_ordered_allowlisted_markers_and_correlated_fak
     reordered[3], reordered[4] = reordered[4], reordered[3]
     write(reordered)
     assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    early_exit = labels.copy()
+    early_exit.remove("observe.exit")
+    early_exit.insert(early_exit.index("init.start"), "observe.exit")
+    write(early_exit)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    late_inner_exit = labels.copy()
+    late_inner_exit.remove("session.exit.error")
+    late_inner_exit.insert(late_inner_exit.index("transport.exit.start") + 1, "session.exit.error")
+    write(late_inner_exit)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    write([*labels, "list.start"])
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
     path.write_bytes(b"x" * 8193)
     assert timeline.parse_timeline(path, fake=True) == ("invalid", [])
 
@@ -353,7 +365,8 @@ def test_context_proxy_preserves_suppression_and_cancellation(monkeypatch):
     assert events == ["transport.enter.start", "transport.enter.error"]
 
 
-def test_marker_open_failure_falls_back_before_original_spawn(monkeypatch, tmp_path):
+@pytest.mark.parametrize("failure", ["open", "bootstrap"])
+def test_marker_setup_failure_falls_back_before_original_spawn(monkeypatch, tmp_path, failure):
     import os
     import subprocess
     import threading
@@ -381,13 +394,25 @@ def test_marker_open_failure_falls_back_before_original_spawn(monkeypatch, tmp_p
 
     monkeypatch.setattr(subprocess, "Popen", Original)
     real_open = os.open
+    real_read = Path.read_text
+    opened = []
 
     def fail_marker(path, *args, **kwargs):
-        if str(path).endswith(".events"):
+        is_marker = str(path).endswith(".events")
+        if is_marker and failure == "open":
             raise OSError
-        return real_open(path, *args, **kwargs)
+        fd = real_open(path, *args, **kwargs)
+        if is_marker:
+            opened.append(fd)
+        return fd
+
+    def fail_bootstrap(path, *args, **kwargs):
+        if path.name == "bootstrap.py" and failure == "bootstrap":
+            raise OSError
+        return real_read(path, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", fail_marker)
+    monkeypatch.setattr(Path, "read_text", fail_bootstrap)
 
     def fail_thread(_thread):
         raise RuntimeError
@@ -404,4 +429,36 @@ def test_marker_open_failure_falls_back_before_original_spawn(monkeypatch, tmp_p
             next(hook)
     assert calls[0] == (argv, {"env": {"PATH": "/bin"}})
     assert calls[1][1]["input"] == "hzmcp_synthetic"
-    assert not (tmp_path / "false.events").exists()
+    if failure == "open":
+        assert not (tmp_path / "false.events").exists()
+    else:
+        assert len(opened) == 1
+        with pytest.raises(OSError, match="Bad file descriptor"):
+            os.fstat(opened[0])
+
+
+def test_fake_control_requires_every_identity_matched_phase(tmp_path):
+    del tmp_path
+    timeline_spec = importlib.util.spec_from_file_location(
+        "mcp_timeline_fake", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/timeline.py"
+    )
+    assert timeline_spec
+    assert timeline_spec.loader
+    timeline = importlib.util.module_from_spec(timeline_spec)
+    timeline_spec.loader.exec_module(timeline)
+    phases = {
+        phase: f"VNXD case=fake phase={phase} outcome=passed kind=none duration_ms=1"
+        for phase in ("setup", "call", "teardown")
+    }
+    assert timeline.fake_control_complete(0, "complete", phases)
+    assert not timeline.fake_control_complete(1, "complete", phases)
+    assert not timeline.fake_control_complete(0, "incomplete", phases)
+    missing = dict(phases)
+    del missing["setup"]
+    assert not timeline.fake_control_complete(0, "complete", missing)
+    wrong = dict(phases, call=phases["call"].replace("case=fake", "case=true"))
+    assert not timeline.fake_control_complete(0, "complete", wrong)
+    wrong_phase = dict(phases, call=phases["setup"])
+    assert not timeline.fake_control_complete(0, "complete", wrong_phase)
+    failed_phase = dict(phases, call=phases["call"].replace("outcome=passed", "outcome=failed"))
+    assert not timeline.fake_control_complete(0, "complete", failed_phase)

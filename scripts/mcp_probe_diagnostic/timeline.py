@@ -65,12 +65,23 @@ def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[s
     )
     if any(first in events and second in events and events[first] > events[second] for first, second in order):
         return "invalid", []
+    if "init.error" in events and any(name.startswith("list.") for name in events):
+        return "invalid", []
+    if "list.start" in events and "init.ok" not in events:
+        return "invalid", []
+    for inner, outer in (("session", "transport"), ("transport", "client")):
+        for outcome in ("ok", "error"):
+            end, outer_start = f"{inner}.exit.{outcome}", f"{outer}.exit.start"
+            if end in events and outer_start in events and events[end] > events[outer_start]:
+                return "invalid", []
     for phase in PAIRS:
         start, ok, error = (f"{phase}.{suffix}" for suffix in ("start", "ok", "error"))
         if ok in events and error in events:
             return "invalid", []
         end = ok if ok in events else error if error in events else None
         if end and (start not in events or events[end] < events[start]):
+            return "invalid", []
+        if end and "observe.exit" in events and events[end] > events["observe.exit"]:
             return "invalid", []
     values = [(name, (stamp - base) // 1_000_000) for name, stamp in sorted(events.items(), key=lambda e: e[1])]
     required = {*BASE, "observe.exit", "client.enter.start"}
@@ -93,3 +104,30 @@ def parse_timeline(path: Path, *, fake: bool = False) -> tuple[str, list[tuple[s
     if fake:
         required.update(("client.401", "fake.server.401_sent"))
     return ("complete" if required <= events.keys() else "incomplete"), values
+
+
+def valid_phase(line: str, case: str, phase: str) -> bool:
+    """Match a phase receipt to its expected fixed case and phase."""
+    if case not in ("true", "false", "fake") or phase not in ("setup", "call", "teardown"):
+        return False
+    return (
+        re.fullmatch(
+            rf"VNXD case={case} phase={phase} outcome=(?:passed|failed|skipped) "
+            r"kind=(?:none|timeout|assertion|exception|unknown) duration_ms=[0-9]+",
+            line,
+        )
+        is not None
+    )
+
+
+def fake_control_complete(code: int, status: str, phases: dict[str, str]) -> bool:
+    """A control needs all three identity-matched phase receipts and a complete 401 timeline."""
+    return (
+        code == 0
+        and status == "complete"
+        and set(phases) == {"setup", "call", "teardown"}
+        and all(
+            valid_phase(line, "fake", phase) and f"phase={phase} outcome=passed kind=none " in line
+            for phase, line in phases.items()
+        )
+    )
