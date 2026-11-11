@@ -107,6 +107,54 @@ def untrusted_record(path: Path) -> Problem:
     )
 
 
+def unsafe_folder(path: Path) -> Problem:
+    """A folder hz would install into is not private to the person (wrong owner, permissions or kind)."""
+    return Problem(
+        f"hz will not install into {path}: it is not a plain folder that only you can change.",
+        "Fix who owns it and who can write to it, then run hz app install again.",
+    )
+
+
+def no_safe_start() -> Problem:
+    """The file that keeps two installs from running at once is not what hz expects."""
+    return Problem(
+        "hz could not start the install safely: a file it needs has the wrong owner or permissions.",
+        "Run hz app install --details and report what it prints.",
+    )
+
+
+def not_matching() -> Problem:
+    """The app or the files hz keeps about it do not match an install hz made."""
+    return Problem(
+        "The app in Applications and hz's record of its install do not match, so hz leaves them alone.",
+        "Run hz app doctor, or run hz app install --details and report what it prints.",
+    )
+
+
+def bad_archive() -> Problem:
+    """The downloaded app is not the Apple silicon app hz expected, so it was not installed."""
+    return Problem(
+        "The downloaded app is not the Apple silicon app hz expected, so nothing was installed.",
+        "Run hz app install again, or run hz app install --details and report what it prints.",
+    )
+
+
+def needs_apple_silicon() -> Problem:
+    """The desktop app is built for Apple silicon Macs only."""
+    return Problem(
+        "The Heinzelmännchen desktop app needs a Mac with Apple silicon (M1 or newer).",
+        "Run hz ui open instead to use Heinzel in your browser.",
+    )
+
+
+def needs_stable_hz() -> Problem:
+    """The installer only places a released hz and needs to find where it runs."""
+    return Problem(
+        "The desktop app can only be installed by a released hz that can be found on this Mac.",
+        "Install a released hz, then run hz app install again.",
+    )
+
+
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
     return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")
