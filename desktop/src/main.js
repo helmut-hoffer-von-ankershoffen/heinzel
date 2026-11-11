@@ -81,7 +81,7 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      guardUiNavigation(window.webContents, connection);
+      guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
