@@ -26,6 +26,8 @@ export type AutoUpdateStatus = {
   holds?: PluginHold[];
   /** When this server last looked for news, and whether hz and the plugins each answered; null before the first look. */
   checked_at?: string | null;
+  /** A newer Heinzel release held back because its release is not accepted yet; a manual update still installs it. */
+  core_held?: string | null;
   core_checked?: boolean | null;
   plugins_checked?: boolean | null;
 };

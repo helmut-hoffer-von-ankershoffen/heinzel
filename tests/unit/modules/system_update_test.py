@@ -154,6 +154,16 @@ def test_a_tag_pinned_install_moves_to_the_latest_release_keeping_plugins(tmp_pa
     assert result.message.splitlines()[0] == "Updated hz 0.2.0 → 0.4.0."
 
 
+def test_a_manual_update_never_asks_for_the_acceptance_verdict(tmp_path):
+    class Unaccepted(FakeReleases):
+        def accepted(self, version: str, timeout: float) -> bool:
+            pytest.fail("hz system update must not wait for acceptance")
+
+    uv = FakeUv("0.2.0")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), Unaccepted("0.4.0"))
+    assert service.update(current="0.2.0").updated
+
+
 def test_the_latest_release_installed_changes_nothing(tmp_path):
     uv = FakeUv("0.4.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
