@@ -2,6 +2,7 @@
 
 import re
 import threading
+import time
 
 _TAIL = 32768
 _LINE = 8192
@@ -85,8 +86,9 @@ def sanitize_timeout(error):
 class MobileServerOutput:
     """Drain stderr in bounded chunks while discovering the startup URL."""
 
-    def __init__(self, process):
+    def __init__(self, process, *, bare_url=False):
         self.process = process
+        self.bare_url = bare_url
         self.tail = b""
         self.url = None
         self.lock = threading.Lock()
@@ -110,9 +112,14 @@ class MobileServerOutput:
                             line = b""
                             overflow = True
                     if part.endswith((b"\n", b"\r")):
-                        if not overflow and b"runs at" in line:
+                        if not overflow and (b"runs at" in line or self.bare_url):
                             candidate = line.decode("utf-8", errors="replace").strip().rsplit(" ", 1)[-1]
-                            if candidate.startswith("http://127.0.0.1:") and "#token=" in candidate:
+                            valid = (
+                                bool(re.fullmatch(r"http://127\.0\.0\.1:\d{1,5}/?#token=[^#&\s]+", candidate))
+                                if self.bare_url
+                                else candidate.startswith("http://127.0.0.1:") and "#token=" in candidate
+                            )
+                            if valid:
                                 self.url = candidate
                                 self.ready.set()
                         line = b""
@@ -120,10 +127,13 @@ class MobileServerOutput:
         finally:
             self.ready.set()
 
-    def wait_url(self):
+    def wait_url(self, timeout=None):
         """Wait for URL or owned process exit; the enclosing E2E timeout remains the deadline."""
+        deadline = None if timeout is None else time.monotonic() + timeout
         while not self.ready.wait(0.1):
             if self.process.poll() is not None:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
                 break
         if self.url is None:
             msg = "The mobile test server did not announce its loopback URL"

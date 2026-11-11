@@ -64,6 +64,26 @@ def test_crash_before_cleanup_is_observed_and_missing_token_hides_stderr():
             child.stderr.close()
 
 
+def test_bare_startup_requires_owned_loopback_and_token():
+    code = (
+        "import sys; s=sys.stderr; "
+        "s.write('http://example.invalid:1/#token=nope\\n'); "
+        "s.write('http://127.0.0.1:1234/#token=fictional\\n'); s.flush()"
+    )
+    child = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE)
+    capture = MobileServerOutput(child, bare_url=True)
+    try:
+        assert capture.wait_url(timeout=5) == "http://127.0.0.1:1234/#token=fictional"
+        assert child.wait(timeout=5) == 0
+        capture.close()
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        if child.stderr is not None:
+            child.stderr.close()
+
+
 def test_timeout_retains_type_and_deadline_without_command_or_output():
     error = subprocess.TimeoutExpired(["url#token=secret"], 300, output=b"secret", stderr=b"secret")
     sanitize_timeout(error)

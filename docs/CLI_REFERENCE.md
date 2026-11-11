@@ -3199,6 +3199,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `repair`: (expert) Install every plugin an installed...
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
+* `showcase`: (expert) Preview an owning public plugin&#x27;s...
 
 #### `hz system plugin add`
 
@@ -3508,6 +3509,26 @@ $ hz system plugin search [OPTIONS]
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
 * `--refresh / --no-refresh`: Ask GitHub again instead of using the answer kept for the last minute.  [default: no-refresh]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin showcase`
+
+(expert) Preview an owning public plugin&#x27;s UI and CLI screenshots without installing it.
+
+**Usage**:
+
+```console
+$ hz system plugin showcase [OPTIONS] {spec}
+```
+
+**Arguments**:
+
+* `spec <str>`: The selected catalog plugin&#x27;s install specification.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

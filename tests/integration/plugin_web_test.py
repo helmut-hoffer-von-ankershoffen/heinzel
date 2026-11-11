@@ -51,6 +51,7 @@ def kernel(make_kernel, tmp_path, monkeypatch):
     """A kernel with one plugin (heinzel-test, module `crm`) and your configuration files."""
     kernel = make_kernel(builtins=True, config=Config.load(tmp_path), crm=crm())
     service = kernel.resolve(PluginService)
+    service.feed = list
     runs: list[list[str]] = []
     installed = []
 
@@ -480,3 +481,103 @@ def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_sessi
     sock, token, resumed = web._session(f"999999:{TOKEN}", 0)
     sock.close()
     assert not resumed
+
+
+def test_handover_socket_fallback_accepts_listener_but_rejects_connected_or_closed_socket(monkeypatch):
+    """A platform without SO_ACCEPTCONN must not resume from an established connection."""
+    import socket
+
+    original = socket.socket.getsockopt
+
+    def unsupported(sock, level, option, *args):
+        if (level, option) == (socket.SOL_SOCKET, socket.SO_ACCEPTCONN):
+            msg = "SO_ACCEPTCONN unavailable"
+            raise OSError(msg)
+        return original(sock, level, option, *args)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.connect(listener.getsockname())
+            with listener.accept()[0]:
+                monkeypatch.setattr(socket.socket, "getsockopt", unsupported)
+                assert web._listening_on_loopback(listener)
+                assert not web._listening_on_loopback(client)
+        closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        closed.close()
+        assert not web._listening_on_loopback(closed)
+
+
+@pytest.mark.parametrize("provider", [None, "https://attacker.invalid", "youtube"])
+def test_page_csp_only_admits_the_fixed_known_stream_provider(provider):
+    from unittest.mock import Mock
+
+    kernel = Mock()
+    kernel.provides.return_value = True
+    kernel.resolve.return_value.stream_provider.return_value = provider
+    policy = web.page_csp(kernel)
+    if provider == "youtube":
+        assert policy == web.CSP + "; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
+    else:
+        assert policy == web.CSP
+
+
+def test_page_csp_remains_strict_when_the_sound_provider_fails():
+    from unittest.mock import Mock
+
+    kernel = Mock()
+    kernel.provides.return_value = True
+    kernel.resolve.return_value.stream_provider.side_effect = RuntimeError("fixture provider failure")
+    assert web.page_csp(kernel) == web.CSP
+
+
+def test_public_gallery_is_lazy_authenticated_metadata_without_running_plugin_code(kernel, client):
+    project = b"""[project]
+name="heinzel-harbor"
+[[tool.heinzel.catalog.screenshots]]
+path="docs/ui.png"
+surface="ui"
+caption="Harbor in the app"
+"""
+    revision, blob = "a" * 40, "b" * 40
+    calls = []
+
+    def github(path):
+        calls.append(path)
+        if path == "repos/fictional-lab/harbor":
+            return {"private": False, "visibility": "public", "default_branch": "main"}
+        if "/commits/" in path:
+            return {"sha": revision}
+        if "/git/trees/" in path:
+            return {
+                "tree": [
+                    {"path": "pyproject.toml", "type": "blob", "mode": "100644", "size": len(project), "sha": blob},
+                    {"path": "docs/ui.png", "type": "blob", "mode": "100644", "size": 500},
+                ]
+            }
+        assert path.endswith("/git/blobs/" + blob)
+        import base64
+
+        return {"content": base64.b64encode(project).decode()}
+
+    kernel.resolve(PluginService).github_api = github
+    spec = "heinzel-harbor @ git+https://github.com/fictional-lab/harbor"
+    assert client.get("/api/system/plugin/showcase", params={"spec": spec}).status_code == 401
+    assert calls == []
+    response = client.get("/api/system/plugin/showcase", params={"spec": spec}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["screenshots"] == [
+        {
+            "url": f"https://raw.githubusercontent.com/fictional-lab/harbor/{revision}/docs/ui.png",
+            "surface": "ui",
+            "caption": "Harbor in the app",
+        }
+    ]
+    assert kernel.runs == []
+    assert "system_plugin_showcase" not in {operation.name for operation in exposed(kernel, "api")}
+    assert "system_plugin_showcase" not in {operation.name for operation in exposed(kernel, "mcp-http")}
+    shown = CliRunner().invoke(cli_app(kernel), ["system", "plugin", "showcase", spec, "--json"])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.output)["screenshots"] == response.json()["screenshots"]
+    assert kernel.runs == []
