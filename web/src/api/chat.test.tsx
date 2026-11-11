@@ -17,7 +17,7 @@ describe("The chat's operations", () => {
   it("opens a session about a context with what the opener knows", async () => {
     const { calls } = mockApi({ "/api/system/runner/chat/open": { id: "s1" } });
     await openChat("event:42", "A job failed");
-    const url = new URL(calls[0].url);
+    const url = new URL(calls[0]?.url ?? "");
     expect(url.searchParams.get("context")).toBe("event:42");
     expect(url.searchParams.get("detail")).toBe("A job failed");
   });
@@ -25,7 +25,7 @@ describe("The chat's operations", () => {
   it("sends no detail when the opener has none", async () => {
     const { calls } = mockApi({ "/api/system/runner/chat/open": { id: "s1" } });
     await openChat(null, "");
-    const url = new URL(calls[0].url);
+    const url = new URL(calls[0]?.url ?? "");
     expect(url.searchParams.has("context")).toBe(false);
     expect(url.searchParams.has("detail")).toBe(false);
   });
@@ -43,7 +43,7 @@ describe("The chat's operations", () => {
     const { wrapper } = setup();
     const { result } = renderHook(() => useChatSession("s9"), { wrapper });
     await waitFor(() => expect(result.current.data).toEqual({ id: "s9" }));
-    expect(new URL(calls[0].url).searchParams.get("session")).toBe("s9");
+    expect(new URL(calls[0]?.url ?? "").searchParams.get("session")).toBe("s9");
   });
 
   it("lists the sessions only when the switcher is open", async () => {
@@ -70,7 +70,7 @@ describe("Deciding on a proposed action", () => {
       "/api/system/runner/chat/confirm",
       "/api/system/runner/chat/decline",
     ]);
-    expect(new URL(calls[0].url).searchParams.get("action")).toBe("a1");
+    expect(new URL(calls[0]?.url ?? "").searchParams.get("action")).toBe("a1");
     expect(client.getQueryData(chatKey("s1"))).toEqual({ id: "s1", state: "confirmed" });
     expect(client.getQueryData(chatKey("s2"))).toEqual({ id: "s2", state: "declined" });
   });
