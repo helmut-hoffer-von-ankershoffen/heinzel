@@ -8,7 +8,7 @@ import stat
 import sys
 import tempfile
 import tomllib
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeGuard, cast
@@ -213,6 +213,18 @@ class ConfigService(ConfigEditor):
         """
         with _serialized(self._scope_file(scope)):
             return self._write(key, value, scope)
+
+    def update(self, key: str, transform: Callable[[object], object], scope: Scope = "user") -> Path:
+        """Transform the stored value while holding the same lock as ordinary setting writes."""
+        with _serialized(self._scope_file(scope)):
+            section, name, model = self._locate(key)
+            self._require(model.model_fields[name], write=True)
+            path = self._scope_file(scope)
+            stored = _table(_load(path), section).unwrap().get(name, {})
+            updated = transform(stored)
+            if updated != stored:
+                return self._write(key, updated, scope)
+            return path
 
     def change_list(
         self,

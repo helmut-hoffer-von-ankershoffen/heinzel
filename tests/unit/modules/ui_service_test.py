@@ -333,6 +333,24 @@ def test_cli_restore_today_restores_all_hidden_widgets_and_keeps_other_choices(m
     assert service.chosen()["acme:wrong-type"]["today"] is True
 
 
+def test_restore_today_keeps_a_concurrent_footer_change(service, monkeypatch):
+    service.show("acme:wrong-type", "today", shown=False)
+    listing = service.listing
+    pending = True
+
+    def interleaved_listing():
+        nonlocal pending
+        if pending:
+            pending = False
+            service.show("acme:down", "footer", shown=False)
+        return listing()
+
+    monkeypatch.setattr(service, "listing", interleaved_listing)
+    service.restore_today()
+    assert service.chosen()["acme:down"]["footer"] is False
+    assert service.chosen()["acme:wrong-type"]["today"] is True
+
+
 def test_restore_today_preserves_environment_choice_and_other_user_settings(service, monkeypatch):
     service.show("acme:wrong-type", "today", shown=False)
     monkeypatch.setenv("HZ_SYSTEM_UI__CONTRIBUTIONS", '{"acme:writes": {"today": false}}')

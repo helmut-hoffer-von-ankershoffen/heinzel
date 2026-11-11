@@ -17,7 +17,7 @@ Kernel settings live in the `[hz]` table, module settings in a table named after
 import json
 import os
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -277,6 +277,14 @@ class ConfigEditor:
 
         Raises:
             HeinzelError: If the key is unknown or the value is invalid for it.
+        """
+        raise NotImplementedError
+
+    def update(self, key: str, transform: Callable[[object], object], scope: WritableScope = "user") -> Path:
+        """Atomically transform one setting in the selected file under the normal writer lock.
+
+        The transform receives that file's stored value, or an empty mapping if absent. The result is validated as
+        an ordinary setting write. A transform must not perform another configuration write.
         """
         raise NotImplementedError
 

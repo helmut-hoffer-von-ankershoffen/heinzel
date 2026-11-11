@@ -112,23 +112,18 @@ class UiService:
             return {}
 
     @staticmethod
-    def _in_user_file() -> dict[str, dict[Slot, bool]]:
-        """The choices in the user file alone: a toggle writes there, never copying a site file's or a variable's.
+    def _user_choices(value: object) -> dict[str, dict[Slot, bool]]:
+        """Validate the user file's choices before a transactional update.
 
         Raises:
-            HeinzelError: If the user file's table isn't valid, rather than overwriting what the person wrote.
+            HeinzelError: If the saved choices are invalid.
         """
-        config = Config.load()
-        for file, content in config.layers:
-            if file.scope == "user":
-                table = Config(files=(), data=content).section(SECTION)
-                try:
-                    found = UiSettings.model_validate({"contributions": table.get("contributions", {})})
-                except ValidationError as exc:
-                    msg = f"`[{SECTION}] contributions` in {file.path} isn't valid; fix or remove it first"
-                    raise HeinzelError(msg) from exc
-                return {key: dict(value) for key, value in found.contributions.items()}
-        return {}
+        try:
+            found = UiSettings.model_validate({"contributions": value})
+        except ValidationError as exc:
+            msg = f"`[{SECTION}] contributions` in the user file isn't valid; fix or remove it first"
+            raise HeinzelError(msg) from exc
+        return {key: dict(slots) for key, slots in found.contributions.items()}
 
     def slots(
         self, contribution: "Contribution", chosen: dict[str, dict[Slot, bool]] | None = None
@@ -176,26 +171,31 @@ class UiService:
         if picked is None:
             msg = f"{item} shows in {', '.join(allowed)}; name one with --slot"
             raise HeinzelError(msg)
-        chosen = self._in_user_file()
-        decided: dict[Slot, bool] = dict(chosen.get(item, {}))
-        decided[picked] = shown
-        chosen[item] = decided
-        self._editor.write(KEY, chosen, "user")
+
+        def change(value: object) -> dict[str, dict[Slot, bool]]:
+            chosen = self._user_choices(value)
+            chosen.setdefault(item, {})[picked] = shown
+            return chosen
+
+        self._editor.update(KEY, change, "user")
         return self.listing()
 
     def restore_today(self) -> list[ContributionInfo]:
         """Restore every normally visible Today widget hidden by its effective setting."""
         with step(log, "system.ui.restore_today") as restoring:
-            chosen = self._in_user_file()
             hidden = [
                 info.id
                 for info in self.listing()
                 if info.kind == "widget" and info.slots.get("today") is False and info.defaults.get("today") is True
             ]
-            if hidden:
+
+            def change(value: object) -> dict[str, dict[Slot, bool]]:
+                chosen = self._user_choices(value)
                 for item in hidden:
                     chosen.setdefault(item, {})["today"] = True
-                self._editor.write(KEY, chosen, "user")
+                return chosen
+
+            self._editor.update(KEY, change, "user")
             restoring.note(requested=len(hidden))
             return self.listing()
 

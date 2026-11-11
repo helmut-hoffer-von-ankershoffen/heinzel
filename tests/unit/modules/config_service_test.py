@@ -1,4 +1,6 @@
 import tomllib
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from pydantic import BaseModel, Field
@@ -150,6 +152,30 @@ def test_write_validates_values_and_models_and_writes_tables(make_kernel, tmp_pa
     }
     with pytest.raises(HeinzelError, match=r"set tables\.limits '\{ a = 1 \}'"):
         service.write("tables.limits", "many")
+
+
+def test_transactional_updates_preserve_independent_concurrent_choices(make_kernel, tmp_path, monkeypatch):
+    class Tables(ModuleSettings):
+        """A shared mutable setting."""
+
+        limits: dict[str, int] = Field(default_factory=dict)
+
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = Module("tables", "x")
+    module.settings(Tables)
+    service = ConfigService(make_kernel(tables=module))
+    start = Barrier(2)
+
+    def change(key):
+        start.wait(timeout=5)
+        return service.update("tables.limits", lambda current: {**current, key: 1})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        paths = list(pool.map(change, ("first", "second")))
+    assert tomllib.loads(paths[0].read_text(encoding="utf-8"))["tables"]["limits"] == {"first": 1, "second": 1}
+    with pytest.raises(HeinzelError, match="Invalid value"):
+        service.update("tables.limits", lambda current: {**current, "bad": "not an integer"})
+    assert tomllib.loads(paths[0].read_text(encoding="utf-8"))["tables"]["limits"] == {"first": 1, "second": 1}
 
 
 def test_write_drops_none_and_refuses_it_alone(kernel, tmp_path, monkeypatch):
