@@ -40,6 +40,7 @@ for (const [engine, launcher] of [
       }),
     );
     await page.route("**/api/ai/access/chatgpt-sign-in", async (route) => {
+      console.error(`SIGN_IN_BROWSER ${engine} route-enter ${Date.now()}`);
       const request = route.request();
       const headers = await request.allHeaders();
       assert.equal(request.method(), "POST");
@@ -47,7 +48,9 @@ for (const [engine, launcher] of [
       assert.equal(headers.origin, target.origin);
       if (headers["sec-fetch-site"] !== undefined) assert.equal(headers["sec-fetch-site"], "same-origin");
       // The fixture's environment credential backend cannot connect a plan or launch the OAuth browser.
+      console.error(`SIGN_IN_BROWSER ${engine} fetch-start ${Date.now()}`);
       const refused = await route.fetch();
+      console.error(`SIGN_IN_BROWSER ${engine} fetch-return ${Date.now()}`);
       assert.deepEqual(await refused.json(), { outcome: "failed" });
       starts += 1;
       connected = true;

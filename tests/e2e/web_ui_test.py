@@ -24,6 +24,7 @@ import pytest
 
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
 from tests.e2e._reopen_server import receipt_tail
+from tests.e2e._signin_trace_server import drive_traced_signin
 
 pytestmark = pytest.mark.e2e
 
@@ -978,7 +979,11 @@ def test_local_chatgpt_sign_in_fits_phone_viewports(environment, tmp_path):
     env, _recorded = environment
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run([*run, "exec", "playwright-core", "install", "webkit"], cwd=REPO, check=True, timeout=600)
-    assert drive_ui_script(env, tmp_path, "chatgpt-sign-in.mjs") == {"engines": ["chromium", "webkit"]}
+    web_build.ensure_built()
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"], cwd=REPO, check=True, timeout=600, capture_output=True
+    )
+    assert drive_traced_signin(env, tmp_path, run, REPO, verify_stream_fixture) == {"engines": ["chromium", "webkit"]}
 
 
 @pytest.mark.timeout(600)
