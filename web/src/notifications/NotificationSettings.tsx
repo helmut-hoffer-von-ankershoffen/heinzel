@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { InstallApp } from "@/pwa/InstallApp";
 import { setDesktop, useDesktopState } from "./desktop";
-import { NotificationTest } from "./NotificationTest";
+import { NotificationInstallHelp, NotificationTest } from "./NotificationTest";
 import { notificationSoundAvailable, notificationSoundEnabled, setNotificationSoundEnabled } from "./sound";
 
 export function NotificationSettings() {
@@ -63,6 +63,7 @@ export function NotificationSettings() {
         {t("notify.toggle")}
       </label>
       <p className="text-xs text-muted-foreground">{t(`notify.state.${state}`)}</p>
+      {state === "install" && <NotificationInstallHelp />}
       <div className="flex flex-col gap-1">
         <label htmlFor={soundId} className="flex items-center gap-2 text-sm">
           <input
