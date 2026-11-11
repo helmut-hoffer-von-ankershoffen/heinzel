@@ -4,6 +4,7 @@
 // Talks to its parent on stdout/stdin: READY / "stopped" / DOWN / "started" -> final JSON.
 import { createInterface } from "node:readline";
 import { chromium, webkit } from "playwright-core";
+import { waitForCachedOffline } from "./reconnect-observation.mjs";
 import { until } from "./until.mjs";
 
 const [engineName, profile, link, origin] = process.argv.slice(2);
@@ -88,8 +89,8 @@ try {
   note("hz stopped");
   // The window is opened again while hz is down, as after a reboot.
   await page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
-  const status = page.getByRole("status");
-  await status.filter({ hasText: /isn't answering/ }).waitFor({ timeout: 30000 });
+  // The cached page must show this build’s disconnected state and an active retry.
+  await waitForCachedOffline(page);
   const offline = await page.evaluate(() => ({
     text: document.body.innerText,
     icon: document.images[0]?.complete && document.images[0].naturalWidth > 0,

@@ -4,6 +4,7 @@
 
 import { createInterface } from "node:readline";
 import { chromium, webkit } from "playwright-core";
+import { visibleSplashCount, waitForDisconnectedSplash } from "./reconnect-observation.mjs";
 import { steady } from "./steady.mjs";
 import { until } from "./until.mjs";
 
@@ -104,6 +105,7 @@ try {
     timeout: 20000,
     message: "The stopped daemon still answers",
   });
+  await waitForDisconnectedSplash(page);
   note("the daemon no longer answers");
   console.log("DOWN");
 
@@ -120,7 +122,7 @@ try {
       const state = {
         reloaded: await reloaded(),
         signedIn: await signedIn(),
-        banner: await steady(() => page.getByText(/isn't answering|Reconnecting/i).count()),
+        banner: await steady(() => visibleSplashCount(page)),
       };
       const now = JSON.stringify(state);
       if (now !== seen) note(`window ${now}`);

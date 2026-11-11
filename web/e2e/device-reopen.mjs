@@ -116,7 +116,7 @@ try {
   const page = context.pages()[0] ?? (await context.newPage());
   current = page;
   await page.goto(url);
-  const failed = page.getByText(/Sign in again|isn't answering|Open the link/);
+  const failed = page.getByText(/Sign in again|Connection unavailable|Open the link/);
   const ready = page.getByRole("contentinfo");
   await Promise.race([ready.waitFor({ timeout: 20000 }), failed.first().waitFor({ timeout: 20000 })]).catch(
     () => undefined,

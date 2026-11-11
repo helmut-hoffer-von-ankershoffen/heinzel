@@ -226,7 +226,7 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     splash = result["splash"]
     assert splash["light"] == {"line": "Connecting to hz…", "background": "rgb(250, 248, 243)", "gone": True}
     assert splash["dark"] == {"line": "Connecting to hz…", "background": "rgb(24, 35, 30)", "gone": True}
-    assert "hz isn't answering" in splash["error"]
+    assert "Connection unavailable" in splash["error"]
     assert "hz ui" in splash["error"]
     assert result["navigation"] == {
         "providerSettings": True,
