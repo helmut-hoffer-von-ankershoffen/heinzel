@@ -618,3 +618,21 @@ def test_a_capability_that_raises_a_bug_logs_an_event_and_answers_nothing(caplog
     (event,) = [r for r in caplog.records if getattr(r, "event", "") == "notify.condition.failed"]
     assert event.operation == "weather:now"
     assert event.exc_info is not None
+
+
+def test_installed_version_falls_back_to_the_running_package_when_metadata_is_missing(monkeypatch):
+    def missing(_name):
+        raise _resolve.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(_resolve.metadata, "version", missing)
+    assert _resolve.installed_version() == _resolve.__version__
+
+
+def test_plugin_installed_reads_distribution_metadata(monkeypatch):
+    monkeypatch.setattr(_resolve.metadata, "distribution", lambda _name: object())
+    assert _resolve.plugin_installed("heinzel-acme")
+
+
+def test_an_invalid_version_never_counts_as_at_least():
+    assert not _resolve._at_least("not a version", "1.0")
+    assert not _resolve._at_least("1.0", "not a version")
