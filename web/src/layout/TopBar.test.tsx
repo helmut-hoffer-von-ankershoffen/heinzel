@@ -137,9 +137,8 @@ it("distinguishes explicit refreshes from overlapping background work", async ()
     </QueryClientProvider>,
   );
   const button = screen.getByRole("button", { name: "Refresh data" });
-  button.focus();
+  fireEvent.focus(button);
   expect(screen.getByRole("tooltip")).toHaveTextContent("Refresh data");
-  expect(screen.getByRole("tooltip")).toHaveClass("group-focus-within:block", "group-hover:block");
   act(() => {
     void client.fetchQuery({
       queryKey: ["background"],
@@ -165,4 +164,62 @@ it("distinguishes explicit refreshes from overlapping background work", async ()
   await waitFor(() => expect(button).toHaveAttribute("aria-label", "Refresh data"));
   expect(button).toHaveAttribute("aria-busy", "false");
   expect(button.querySelector("svg")).not.toHaveClass("animate-spin");
+});
+
+it("shows a hoverable tooltip and dismisses it on Escape, click and blur", () => {
+  render(bar(false));
+  const button = screen.getByRole("button", { name: "Refresh data" });
+  const wrapper = button.parentElement;
+  if (!wrapper) throw new Error("Refresh button has no tooltip wrapper");
+  fireEvent.mouseEnter(wrapper);
+  const tooltip = screen.getByRole("tooltip");
+  expect(tooltip).not.toHaveClass("pointer-events-none");
+  fireEvent.mouseOver(tooltip, { relatedTarget: button });
+  expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.mouseLeave(wrapper);
+  fireEvent.focus(button);
+  expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  fireEvent.click(button);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.blur(button);
+  fireEvent.focus(button);
+  expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  fireEvent.blur(button);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+});
+
+it("keeps manual busy until repeated refreshes settle, including a rejection", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const pending: { resolve: () => void; reject: (error: Error) => void }[] = [];
+  vi.spyOn(client, "invalidateQueries").mockImplementation(
+    () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
+  );
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <TopBar
+          chatOpen={false}
+          onToggleChat={() => {}}
+          terminalOpen={false}
+          onToggleTerminal={() => {}}
+          calendarOpen={false}
+          onOpenCalendar={() => {}}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const button = screen.getByRole("button", { name: "Refresh data" });
+  fireEvent.click(button);
+  fireEvent.click(button);
+  await waitFor(() => expect(pending).toHaveLength(2));
+  const [first, second] = pending;
+  if (!first || !second) throw new Error("Expected two pending refreshes");
+  await act(async () => first.reject(new Error("refresh failed")));
+  expect(button).toHaveAttribute("aria-busy", "true");
+  expect(button).toHaveAttribute("aria-label", "Refreshing data…");
+  await act(async () => second.resolve());
+  await waitFor(() => expect(button).toHaveAttribute("aria-busy", "false"));
+  expect(button).toHaveAttribute("aria-label", "Refresh data");
 });

@@ -66,6 +66,18 @@ export function TopBar({
   const playful = usePlayful();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState<"command" | "link" | null>(null);
+  const [refreshHover, setRefreshHover] = useState(false);
+  const [refreshFocus, setRefreshFocus] = useState(false);
+  const [refreshDismissed, setRefreshDismissed] = useState(false);
+  const refreshTooltipOpen = (refreshHover || refreshFocus) && !refreshDismissed;
+  useEffect(() => {
+    if (!refreshTooltipOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRefreshDismissed(true);
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [refreshTooltipOpen]);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
@@ -176,24 +188,42 @@ export function TopBar({
           <Calendar aria-hidden />
         </Button>
         {/* Reload stays the last action before the mascot; it spins while the refetch runs, so a click shows it worked. */}
-        <div className="group relative">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: The wrapper tracks pointer travel between the button and its tooltip; the button owns the action. */}
+        <div
+          className="relative"
+          onMouseEnter={() => {
+            setRefreshHover(true);
+            setRefreshDismissed(false);
+          }}
+          onMouseLeave={() => setRefreshHover(false)}
+        >
           <Button
             variant="ghost"
             size="icon"
-            onClick={refresh}
+            onClick={() => {
+              setRefreshDismissed(true);
+              refresh();
+            }}
+            onFocus={() => {
+              setRefreshFocus(true);
+              setRefreshDismissed(false);
+            }}
+            onBlur={() => setRefreshFocus(false)}
             aria-label={refreshLabel}
             aria-busy={busy}
-            aria-describedby="refresh-reason"
+            aria-describedby={refreshTooltipOpen ? "refresh-reason" : undefined}
           >
             <RefreshCw aria-hidden className={cn(busy && "motion-safe:animate-spin")} />
           </Button>
-          <span
-            id="refresh-reason"
-            role="tooltip"
-            className="pointer-events-none absolute right-0 top-full z-50 hidden whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover:block group-focus-within:block"
-          >
-            {refreshLabel}
-          </span>
+          {refreshTooltipOpen && (
+            <span
+              id="refresh-reason"
+              role="tooltip"
+              className="absolute right-0 top-full z-50 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"
+            >
+              {refreshLabel}
+            </span>
+          )}
         </div>
         <span className="sr-only" role="status">
           {busy ? refreshLabel : ""}
