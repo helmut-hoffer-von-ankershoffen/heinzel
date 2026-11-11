@@ -418,9 +418,15 @@ const en = {
   "sound.playbackHelp": "Playback or sign-in trouble?",
   "sound.needsAttention": "(needs attention)",
   "sound.privateHelp":
-    "The private player may not use your YouTube sign-in. Try the regular player to use your YouTube account.",
+    "The private player may not use your YouTube sign-in. Open Heinzel in the same browser profile where you signed in to YouTube, then choose Use YouTube sign-in.",
   "sound.accountHelp":
-    "Sign in to YouTube in this browser, then retry. You may need to allow YouTube's embedded content or third-party cookies. If sign-in is blocked, play on YouTube instead; it uses YouTube's controls.",
+    "Use the same browser profile where you signed in to YouTube, then retry. Embedded sign-in may still be restricted.",
+  "sound.desktopHelp":
+    "Heinzel desktop has its own browser session. Copy this video link and open it in the Chrome profile where you signed in to YouTube.",
+  "sound.copyYouTubeLink": "Copy YouTube link",
+  "sound.videoLink": "YouTube video link",
+  "sound.linkCopied": "Link copied. Paste it into your signed-in Chrome profile.",
+  "sound.copyFailed": "Couldn't copy the link. Select and copy it below.",
   "sound.accountPlayer": "Use YouTube sign-in",
   "sound.privatePlayer": "Use private player",
   "sound.playOnYouTube": "Play on YouTube",
