@@ -118,7 +118,7 @@ export const en = {
   "daemon.unsupported": "The daemon needs launchd or systemd on this machine.",
   "daemon.mismatch": "The background service is still running an older version. Restart it to use the installed one.",
   "daemon.restarting": "Restarting the daemon…",
-  "daemon.restarted": "Restart requested. If the service is active, its next tick will confirm the version.",
+  "daemon.restarted": "Restart sent. Active service confirms version on next tick.",
   "daemon.notRestarted": "The daemon was not restarted. Install it and try again.",
   "daemon.restartUnknown": "The restart result is unavailable. Check the daemon status.",
   "daemon.restartFailed": "The daemon could not restart. Try again in a moment.",
@@ -528,7 +528,7 @@ export const en = {
   "op.daemon.install.done": "Installed. Its first check comes within 5 minutes.",
   "op.daemon.restart.running": "Restarting the daemon…",
   "op.daemon.restart.failed": "The daemon could not restart. Try again in a moment.",
-  "op.daemon.restart.unknown": "The restart is still unconfirmed. Check the daemon status before trying again.",
+  "op.daemon.restart.unknown": "The restart is still unconfirmed. Check status before retry.",
   "op.daemon.uninstall.title": "Stop the background service?",
   "op.daemon.uninstall.consent":
     "Scheduled work stops until you install it again. Your receipts and logs stay where they are.",
