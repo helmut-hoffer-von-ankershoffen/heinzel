@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { guardGalleryRequest } from "./gallery-route.mjs";
 
 const origin = "http://127.0.0.1:1234";

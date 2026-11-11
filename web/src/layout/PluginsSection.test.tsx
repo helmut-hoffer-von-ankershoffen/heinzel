@@ -1560,6 +1560,15 @@ describe("PluginGallery", () => {
     imageRect.mockReturnValue({ top: 50, bottom: 200 } as DOMRect);
     fireEvent.load(image);
     expect(pane.scrollTop).toBe(62);
+    vi.stubGlobal(
+      "visualViewport",
+      Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 20, width: 320, height: 240 }),
+    );
+    pane.scrollTop = 0;
+    imageRect.mockReturnValue({ top: 100, bottom: 350 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(98);
+    expect(open).toHaveFocus();
   });
 
   it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {
@@ -1580,7 +1589,7 @@ describe("PluginGallery", () => {
     );
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0]?.url ?? "").searchParams.get("spec")).toBe("harbor");
-    await user.click(within(gallery).getByRole("button", { name: "CLI: Harbor in the terminal" }));
+    await user.click(within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" }));
     expect(within(gallery).getByRole("img", { name: "Harbor in the terminal" })).toHaveAttribute(
       "src",
       GALLERY.screenshots[1]?.url,
@@ -1589,10 +1598,12 @@ describe("PluginGallery", () => {
       "href",
       GALLERY.screenshots[1]?.url,
     );
-    expect(within(gallery).getByRole("button", { name: "CLI: Harbor in the terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const cliChoice = within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" });
+    expect(cliChoice).toBeChecked();
+    cliChoice.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(within(gallery).getByRole("radio", { name: "UI: Harbor in the app" })).toBeChecked();
+    expect(within(gallery).getByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
     expect(within(gallery).getByRole("link", { name: /Harbor tide/ })).toHaveAttribute(
       "href",
       GALLERY.soundscapes[0]?.url,
