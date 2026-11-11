@@ -22,8 +22,32 @@ import related_tests as scoped_related  # noqa: E402 - needs the scripts path ab
 
 @pytest.fixture(autouse=True)
 def _without_host_gate(monkeypatch):
-    """Keep dispatch tests independent of the developer's PATH."""
+    """Keep mocked dispatch independent of the caller's gate and source-bound hook packet."""
     monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
+
+
+def test_mocked_dispatch_isolates_an_inherited_source_bound_packet(monkeypatch, tmp_path):
+    packet = tmp_path / "caller-scope.json"
+    data = json.dumps(
+        {
+            "schema": 1,
+            "base": "a" * 40,
+            "head": "b" * 40,
+            "tree": "c" * 40,
+            "owning": ["tests/unit/caller_test.py"],
+            "hosted_only": [],
+        }
+    ).encode()
+    packet.write_bytes(data)
+    monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE", str(packet))
+    monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", hashlib.sha256(data).hexdigest())
+    # Reproduce entering this module from the real pre-push environment.
+    _without_host_gate.__wrapped__(monkeypatch)
+    assert "HZ_LOCAL_TEST_SCOPE" not in os.environ
+    assert "HZ_LOCAL_TEST_SCOPE_SHA256" not in os.environ
+    assert scoped.local_python_scope(["docs/guides/install.md"], "d" * 40) is None
 
 
 @pytest.fixture
