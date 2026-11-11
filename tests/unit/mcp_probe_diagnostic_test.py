@@ -106,3 +106,53 @@ def test_probe_continues_if_monitor_thread_cannot_start(monkeypatch, tmp_path):
             next(hook)
     assert subprocess.Popen is original
     assert "sample=unavailable" in (tmp_path / "true").read_text()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_sample_report_is_private_and_removed_on_success_or_failure(tmp_path, fail):
+    import subprocess
+    import threading
+
+    plugin_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_plugin_report",
+        Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/vnxd_plugin.py",
+    )
+    assert plugin_spec
+    assert plugin_spec.loader
+    plugin = importlib.util.module_from_spec(plugin_spec)
+    plugin_spec.loader.exec_module(plugin)
+    tmp_path.chmod(0o700)
+    reports = []
+
+    class Sampler:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            if fail and timeout:
+                msg = "sample"
+                raise subprocess.TimeoutExpired(msg, timeout)
+            return (None, None)
+
+        def poll(self):
+            return None if fail else 0
+
+        def kill(self):
+            self.returncode = -9
+
+    def launch(args, *, stdout, stderr):
+        assert args[:5] == ["/usr/bin/sample", "123", "1", "1", "-file"]
+        assert stdout == stderr == subprocess.DEVNULL
+        path = Path(args[5])
+        assert path.parent.parent == tmp_path
+        assert path.parent.stat().st_mode & 0o077 == 0
+        path.write_text("synthetic-private kevent")
+        reports.append(path)
+        return Sampler()
+
+    observed = {"sample": "unavailable", "sampler": None}
+    plugin.collect_sample(123, tmp_path, threading.Event(), threading.Lock(), observed, launcher=launch)
+    assert observed["sample"] == ("unavailable" if fail else "wait")
+    assert len(reports) == 1
+    assert not reports[0].exists()
+    assert not reports[0].parent.exists()
+    assert list(tmp_path.iterdir()) == []

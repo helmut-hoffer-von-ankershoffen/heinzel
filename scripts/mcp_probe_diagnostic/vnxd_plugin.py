@@ -3,10 +3,12 @@
 import contextlib
 import os
 import re
+import stat
 import subprocess
+import tempfile
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,43 @@ def classify(raw: bytes) -> str:
     return "_".join(categories) if categories else "other"
 
 
+def collect_sample(  # noqa: PLR0913 - explicit state for bounded sampler cleanup
+    pid: int,
+    phase_dir: Path,
+    done: threading.Event,
+    lock: threading.Lock,
+    observed: dict[str, Any],
+    *,
+    launcher: Callable[..., subprocess.Popen[bytes]],
+) -> None:
+    """Keep the raw report in a private directory and remove it after reaping."""
+    try:
+        info = phase_dir.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            return
+        with tempfile.TemporaryDirectory(prefix="sample-", dir=phase_dir) as private:
+            report = Path(private) / "report.txt"
+            with lock:
+                if done.is_set():
+                    return
+                sampler = launcher(
+                    ["/usr/bin/sample", str(pid), "1", "1", "-file", str(report)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                observed["sampler"] = sampler
+            try:
+                sampler.communicate(timeout=2)
+                if sampler.returncode == 0:
+                    observed["sample"] = classify(report.read_bytes())
+            finally:
+                if sampler.poll() is None:
+                    sampler.kill()
+                    sampler.communicate()
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noqa: C901
     """Observe the probe without changing its arguments, streams or timeout."""
@@ -43,25 +82,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noq
     def sample(pid: int) -> None:
         if done.wait(2):
             return
-        try:
-            with lock:
-                if done.is_set():
-                    return
-                observed["sample"] = "unavailable"
-                sampler = original(
-                    ["/usr/bin/sample", str(pid), "1", "1"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-                )
-                observed["sampler"] = sampler
-            try:
-                raw, _ = sampler.communicate(timeout=2)
-                if sampler.returncode == 0:
-                    observed["sample"] = classify(raw)
-            finally:
-                if sampler.poll() is None:
-                    sampler.kill()
-                    sampler.communicate()
-        except (OSError, subprocess.SubprocessError):
-            return
+        observed["sample"] = "unavailable"
+        collect_sample(pid, Path(os.environ["VNXD_PHASE_DIR"]), done, lock, observed, launcher=original)
 
     class Observed(original):  # type: ignore[valid-type,misc]
         def __init__(self, args: Any, *a: Any, **kw: Any) -> None:  # noqa: ANN401
