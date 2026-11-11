@@ -107,6 +107,22 @@ def untrusted_record(path: Path) -> Problem:
     )
 
 
+def not_matching() -> Problem:
+    """The app or the files hz keeps about it do not match an install hz made."""
+    return Problem(
+        "The app in Applications and hz's record of its install do not match, so hz leaves them alone.",
+        "Run hz app doctor, or run hz app install --details and report what it prints.",
+    )
+
+
+def bad_archive() -> Problem:
+    """The downloaded app is not the Apple silicon app hz expected, so it was not installed."""
+    return Problem(
+        "The downloaded app is not the Apple silicon app hz expected, so nothing was installed.",
+        "Run hz app install again, or run hz app install --details and report what it prints.",
+    )
+
+
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
     return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")
