@@ -147,7 +147,11 @@ def inspect_core_git_commit(prefix: Path) -> str:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise HeinzelError(msg) from exc
     vcs = direct.get("vcs_info") if direct else None
-    commit = vcs.get("commit_id") if isinstance(vcs, dict) and vcs.get("vcs") == "git" else None
+    if isinstance(vcs, dict):
+        vcs = cast("dict[str, object]", vcs)
+        commit = vcs.get("commit_id") if vcs.get("vcs") == "git" else None
+    else:
+        commit = None
     if not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit):
         raise HeinzelError(msg)
     return commit
