@@ -359,7 +359,7 @@ function useSplashElement(state: SplashState, now: () => number) {
     const element = byId("splash");
     const text = byId("splash-line");
     if (element) element.dataset.state = state.phase === "error" ? "error" : "busy";
-    if (text && state.phase !== "error") text.textContent = line(state);
+    if (text) text.textContent = line(state);
   }, [state]);
 }
 
