@@ -28,8 +28,10 @@ from scripts.focused_plan import (
     git,
     git_blob,
     raw_diff,
+    registry_slots,
     require_pr_base_ancestor,
     resolve,
+    selected_registry,
     unique_object,
     web_production,
 )
@@ -446,10 +448,12 @@ def _tested_source_after_main_moves(
     return GateSource(source.run, recovered, commit)
 
 
-def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes]) -> str:
+def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes], *, slots: tuple[str, ...] = ()) -> str:
     """Return a typed verdict for the completed original CI attempt, without publishing checks."""
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
+    if not candidate:
+        manifest = selected_registry(manifest, slots, f"pull_request:{gate.head}")
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
     source = _pr_source(gate, run, snapshot, candidate=candidate)
     if (
@@ -509,12 +513,14 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
     return verdict
 
 
-def verify_main(
+def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, evidence and transport
     gate: Gate,
     run_id: int,
     base: str,
     manifest: str,
     read: Callable[[str], bytes],
+    *,
+    slots: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Verify focused resulting-main evidence for the caller's independently validated aggregate base.
 
@@ -537,7 +543,7 @@ def verify_main(
         "main advanced or does not contain the expected aggregate base",
     )
     source = WorkloadSource("push", REPOSITORY, "refs/heads/main", {}, base, gate.head, raw_diff(base, gate.head))
-    scope = resolve(source, gate.head, manifest)
+    scope = resolve(source, gate.head, manifest, slots=slots)
     if not isinstance(scope, Scope):
         message = "focused main evidence cannot stand in for a full candidate"
         raise CandidateError(message)
@@ -570,9 +576,13 @@ def main() -> None:
     run = int(os.environ["CI_RUN_ID"])
     manifests = os.environ.get(PLAN_VARIABLE, "")
     if base := os.environ.get("FOCUSED_MAIN_BASE"):
-        print(json.dumps(verify_main(gate, run, base, manifests, read), sort_keys=True))
+        print(
+            json.dumps(
+                verify_main(gate, run, base, manifests, read, slots=registry_slots(dict(os.environ))), sort_keys=True
+            )
+        )
         return
-    verdict = verify(gate, run, manifests, read)
+    verdict = verify(gate, run, manifests, read, slots=registry_slots(dict(os.environ)))
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"verdict={verdict}\n")
     print(verdict)
