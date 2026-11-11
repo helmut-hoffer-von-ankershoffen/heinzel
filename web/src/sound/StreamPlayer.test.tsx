@@ -104,7 +104,26 @@ describe("stream recovery", () => {
     openHelp();
     fireEvent.click(screen.getByRole("button", { name: "Copy YouTube link" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Couldn't copy"));
-    expect(screen.getByText("https://www.youtube.com/watch?v=tRsQsTMvPNg")).toHaveClass("select-all");
+    expect(screen.getByRole("textbox", { name: "YouTube video link" })).toHaveValue(
+      "https://www.youtube.com/watch?v=tRsQsTMvPNg",
+    );
+  });
+
+  it("allows keyboard selection of the fallback when copying is denied", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    mount();
+    info().focus();
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't copy");
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    const field = screen.getByRole<HTMLInputElement>("textbox", { name: "YouTube video link" });
+    expect(field).toHaveFocus();
+    expect(field).toHaveAttribute("readonly");
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe(field.value.length);
   });
 
   it("uses mute and pause on iPhone when the stream cannot change its volume", () => {
@@ -231,7 +250,10 @@ describe("stream recovery", () => {
 describe("video link placement", () => {
   it("retains the header link in a browser and no bottom row", () => {
     mount();
-    expect(screen.getByRole("link", { name: "Open on YouTube" }).closest("header")).not.toBeNull();
+    const link = screen.getByRole("link", { name: "Open on YouTube" });
+    expect(link.closest("header")).not.toBeNull();
+    expect(link).toHaveAttribute("title", "Open on YouTube");
+    expect(link.textContent?.trim()).toBe("");
     expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
   });
 

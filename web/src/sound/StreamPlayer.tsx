@@ -211,7 +211,15 @@ function Player({
           {copyState !== "idle" && (
             <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
           )}
-          {copyState === "failed" && copyUrl && <p className="break-all select-all">{copyUrl}</p>}
+          {copyState === "failed" && copyUrl && (
+            <input
+              aria-label={t("sound.videoLink")}
+              className="w-full rounded border border-border bg-transparent px-1"
+              readOnly
+              value={copyUrl}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
         </PlayerHelp>
       </div>
     </PlayerCard>
