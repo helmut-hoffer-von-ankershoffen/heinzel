@@ -14,6 +14,7 @@ from importlib import metadata
 from packaging.version import InvalidVersion, Version
 
 from heinzel import CapabilityState, HeinzelError, Kernel, Notice, NoticeKind, OperationLet, ResolveWhen, __version__
+from heinzel.kernel._logging import log_event
 
 logger = logging.getLogger(__name__)
 RELEASE_KEY = "release:"
@@ -142,8 +143,14 @@ def kernel_probe(kernel: Kernel) -> CapabilityProbe:
             result = kernel.invoke(found)
         except HeinzelError:
             return None
-        except Exception:
-            logger.warning("asking %s for a notice's condition failed", capability.operation, exc_info=True)
+        except Exception:  # noqa: BLE001 - a plugin's bug never breaks resolving; the event keeps the trace
+            log_event(
+                logger,
+                "notify.condition.failed",
+                level=logging.WARNING,
+                exc_info=True,
+                operation=capability.operation,
+            )
             return None
         if not hasattr(result, capability.field):
             return None
