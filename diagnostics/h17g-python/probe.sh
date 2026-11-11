@@ -106,8 +106,7 @@ probe_route() {
   timeout -k 2s 10s sudo apt-get "${update_opts[@]}" indextargets --format '$(RELEASE)|$(COMPONENT)|$(ARCHITECTURE)|$(TRUSTED)|$(FILENAME)' 'Identifier: Packages' > "$out/$route-packages-targets.log" 2>&1 || return 1
   python3 "${RUNNER_TEMP:?}/h17g-python-check-indexes.py" "$conf/ubuntu.sources" "$lists" "$out/$route-packages-targets.log" > "$out/$route-packages-proof.log" 2>&1 || return 1
   (cd "$download" && timeout -k 2s 10s sudo apt-get "${opts[@]}" --print-uris download libnss3:amd64) > "$out/$route-uris.log" 2>&1 || return 1
-  expected=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); x=set(re.findall(r"SHA256:([0-9a-fA-F]{64})",s)); sys.exit(2) if len(x)!=1 else print(x.pop().lower())' "$out/$route-uris.log") || return 1
-  printf '%s  libnss3.deb\n' "$expected" > "$out/$route-expected.sha256"
+  python3 "${RUNNER_TEMP:?}/h17g-python-check-download.py" parse "$out/$route-uris.log" "$conf/apt-mirrors.txt" > "$out/$route-package-record.log" 2>&1 || return 1
   (cd "$download" && timeout -k 2s 15s sudo apt-get "${opts[@]}" download libnss3:amd64) > "$out/$route-download.log" 2>&1
   download_rc=$?
   printf 'PACKAGE_FETCH_RC=%s\n' "$download_rc"
@@ -117,9 +116,7 @@ probe_route() {
   if [[ $download_rc != 0 ]]; then return 1; fi
   files=("$download"/*.deb)
   if [[ ! -f ${files[0]} || ${#files[@]} != 1 ]]; then printf '%s\n' 'PACKAGE_FETCH_INVALID=1'; return 1; fi
-  actual=$(sudo sha256sum "${files[0]}" | cut -d' ' -f1) || return 1
-  printf '%s  libnss3.deb\n' "$actual" > "$out/$route-package.sha256"
-  [[ $actual == "$expected" ]] || { printf '%s\n' 'PACKAGE_HASH_MISMATCH'; return 1; }
+  sudo python3 "${RUNNER_TEMP:?}/h17g-python-check-download.py" verify "$out/$route-uris.log" "$conf/apt-mirrors.txt" "${files[0]}" > "$out/$route-package-proof.log" 2>&1 || return 1
   package=$(sudo dpkg-deb -f "${files[0]}" Package) || return 1
   version=$(sudo dpkg-deb -f "${files[0]}" Version) || return 1
   arch=$(sudo dpkg-deb -f "${files[0]}" Architecture) || return 1

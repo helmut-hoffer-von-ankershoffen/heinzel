@@ -9,12 +9,14 @@ pin:
 	test "$$(git rev-parse HEAD)" = "$(GITHUB_SHA)"
 	sha256sum .github/workflows/h17g-python-mirror.yml diagnostics/h17g-python/diagnostic.mk >> "$(RUNNER_TEMP)/h17g-python-output/bootstrap.log"
 	printf '%s  %s\n' \
-	  '0e5d9c739ac88956183d109c00b4574b47d6c667b23981fdc907925f7781c1ac' 'diagnostics/h17g-python/probe.sh' \
+	  '63701651aa24e4fd5ce712f8e2821cad1b3adc0b2706f061a4d9a71aaf533d87' 'diagnostics/h17g-python/probe.sh' \
+	  '127250452f10de8f0e7da73415726c59f3e0ddb1390e3964a0510ac2c9b9edda' 'diagnostics/h17g-python/check_download.py' \
 	  'e4aad9a4fefc431a67b14ba2638b00caab98a348396d12de0e4df138b13466e9' 'diagnostics/h17g-python/access.sh' \
 	  'fde88e643905efde62f23a0a3b56e9acf15467edaf446e043aaebc9524736902' 'diagnostics/h17g-python/check_indexes.py' \
 	  'db885b4911fa7adce7c856dad82aa39e56c41c5b6683874c854221110fc303f4' 'diagnostics/h17g-python/sources.py' \
 	  '3d15b10d3d9777587ed11fa1170e857c3eba5c92b71874b849caf86c8156a76d' 'diagnostics/h17g-python/smoke.py' | sha256sum -c -
 	cp diagnostics/h17g-python/probe.sh "$(RUNNER_TEMP)/h17g-python-probe.sh"
+	cp diagnostics/h17g-python/check_download.py "$(RUNNER_TEMP)/h17g-python-check-download.py"
 	cp diagnostics/h17g-python/access.sh "$(RUNNER_TEMP)/h17g-python-access.sh"
 	cp diagnostics/h17g-python/check_indexes.py "$(RUNNER_TEMP)/h17g-python-check-indexes.py"
 	cp diagnostics/h17g-python/sources.py "$(RUNNER_TEMP)/h17g-python-sources.py"
