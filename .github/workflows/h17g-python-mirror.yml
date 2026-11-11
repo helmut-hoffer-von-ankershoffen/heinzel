@@ -1,0 +1,55 @@
+# One-shot read-only transport experiment, isolated from release/PR workflows.
+name: h17g Python Docs mirror qualification
+run-name: h17g Python Docs mirror qualification
+on:
+  push:
+    branches: [diag/h17g-python-ubuntu-mirror]
+permissions:
+  contents: read
+jobs:
+  probe:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/diag/h17g-python-ubuntu-mirror'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Initialize evidence and enforce first attempt
+        timeout-minutes: 1
+        run: |
+          make -f - init <<'MAKE'
+          .RECIPEPREFIX := >
+          init:
+          >@mkdir -p "$${RUNNER_TEMP}/h17g-python-output"
+          >@date +%s > "$${RUNNER_TEMP}/h17g-python-output/pin-epoch.txt"
+          >@printf 'RUN=%s ATTEMPT=%s TRANSPORT=%s\n' "$${GITHUB_RUN_ID}" "$${GITHUB_RUN_ATTEMPT}" "$${GITHUB_SHA}" > "$${RUNNER_TEMP}/h17g-python-output/initial.log"
+          >@test "$${GITHUB_RUN_ATTEMPT}" = 1
+          MAKE
+      - name: Checkout exact diagnostic transport
+        timeout-minutes: 1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Authenticate and preserve transport closure
+        run: make -f diagnostics/h17g-python/diagnostic.mk pin
+      - name: Checkout immutable Docs candidate
+        timeout-minutes: 1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 700d2d634062b41c6336ad2774ec53a4b385b25b
+          persist-credentials: false
+      - name: Verify exact candidate and Docs inputs
+        run: make -f "$RUNNER_TEMP/h17g-python.mk" verify
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+        timeout-minutes: 1
+        with:
+          enable-cache: false
+      - name: Compare signed routes and actual Python Docs setup
+        run: make -f "$RUNNER_TEMP/h17g-python.mk" probe
+      - name: Preserve runner-owned diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: h17g-python-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h17g-python-output/
+          if-no-files-found: error
+          retention-days: 7

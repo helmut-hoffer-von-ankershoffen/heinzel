@@ -1,0 +1,31 @@
+SHELL := /bin/bash
+.SHELLFLAGS := -euo pipefail -c
+.ONESHELL:
+.PHONY: pin verify probe
+
+pin:
+	mkdir -p "$(RUNNER_TEMP)/h17g-python-output"
+	printf 'RUN=%s ATTEMPT=%s TRANSPORT=%s IMAGE=%s VERSION=%s\n' "$(GITHUB_RUN_ID)" "$(GITHUB_RUN_ATTEMPT)" "$(GITHUB_SHA)" "$(ImageOS)" "$(ImageVersion)" > "$(RUNNER_TEMP)/h17g-python-output/bootstrap.log"
+	test "$$(git rev-parse HEAD)" = "$(GITHUB_SHA)"
+	sha256sum .github/workflows/h17g-python-mirror.yml diagnostics/h17g-python/diagnostic.mk >> "$(RUNNER_TEMP)/h17g-python-output/bootstrap.log"
+	printf '%s  %s\n' \
+	  'd38aeda27ebc3918b6102dc5235cd5ad1cfec324df81c41aaf5114bccf16706d' 'diagnostics/h17g-python/probe.sh' \
+	  'db885b4911fa7adce7c856dad82aa39e56c41c5b6683874c854221110fc303f4' 'diagnostics/h17g-python/sources.py' \
+	  '3d15b10d3d9777587ed11fa1170e857c3eba5c92b71874b849caf86c8156a76d' 'diagnostics/h17g-python/smoke.py' | sha256sum -c -
+	cp diagnostics/h17g-python/probe.sh "$(RUNNER_TEMP)/h17g-python-probe.sh"
+	cp diagnostics/h17g-python/sources.py "$(RUNNER_TEMP)/h17g-python-sources.py"
+	cp diagnostics/h17g-python/smoke.py "$(RUNNER_TEMP)/h17g-python-smoke.py"
+	cp diagnostics/h17g-python/diagnostic.mk "$(RUNNER_TEMP)/h17g-python.mk"
+
+verify:
+	test "$$(git rev-parse HEAD)" = 700d2d634062b41c6336ad2774ec53a4b385b25b
+	printf '%s  %s\n' \
+	  'e69654046a38ffedf715b297e62c000486725720dc8cb2c81651453fecfe2711' '.github/workflows/docs.yml' \
+	  '02b35da38b6570bf550e606e3d6d11800238f69d96244b9f8b911acb29f8f18e' 'scripts/site_check.py' \
+	  '1716f502d5316f3d650e1f32d9953145a00464d9369a81d2c92ba6568975ecee' 'Makefile' \
+	  '3a3e2331fa05ff7441568d6a24ca3cfc9bb10374dcde704952b699173836ed42' 'uv.lock' \
+	  '837f04108c53cab21f2841af0a7e165c72f6c1f1ddea0e4aadd9ece2ab634d90' 'web/pnpm-lock.yaml' | sha256sum -c - | tee "$(RUNNER_TEMP)/h17g-python-output/source-pins.log"
+	python3 -c 'import tomllib; p=[x for x in tomllib.load(open("uv.lock","rb"))["package"] if x["name"]=="playwright"]; assert len(p)==1 and p[0]["version"]=="1.64.1"; print("PROJECT_LOCK_PLAYWRIGHT=1.64.1")' | tee -a "$(RUNNER_TEMP)/h17g-python-output/source-pins.log"
+
+probe:
+	bash "$(RUNNER_TEMP)/h17g-python-probe.sh" 2>&1 | tee "$(RUNNER_TEMP)/h17g-python-output/summary.log"
