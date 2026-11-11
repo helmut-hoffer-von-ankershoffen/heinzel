@@ -1,5 +1,5 @@
 // Test-only bootstrap: isolate Electron before its single-instance lock and observe only owned child metadata.
-import { app, dialog } from "electron";
+import { app, dialog, shell } from "electron";
 import childProcess from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -16,6 +16,13 @@ writeFileSync(join(root, "electron-paths"), JSON.stringify({
   sessionData: app.getPath("sessionData"),
 }), { mode: 0o600 });
 dialog.showErrorBox = (title) => writeFileSync(join(root, "error-title"), title, { mode: 0o600 });
+if (process.env.HZ_NATIVE_TEST_PUBLIC_MEDIA === "1") {
+  // Record handoffs without launching the owner's browser or contacting a public provider.
+  shell.openExternal = async (url) => {
+    appendFileSync(join(root, "public-media"), `${JSON.stringify(url)}\n`, { mode: 0o600 });
+    if (url.endsWith("abcdefghijl")) throw new Error("Synthetic opener failure.");
+  };
+}
 
 // What the app did and when, with no URL or token, so a launch that never exits says where it stopped.
 const phase = (text) => appendFileSync(join(root, "phases"), `${Math.round(performance.now())} ${text}\n`, { mode: 0o600 });
