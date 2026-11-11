@@ -105,3 +105,31 @@ def test_a_skipped_plugin_logs_an_event_with_its_name_and_problem(monkeypatch, c
     _discovery.discover()
     (event,) = [r for r in caplog.records if getattr(r, "event", "") == "kernel.discovery.skipped"]
     assert (event.plugin, event.problem) == ("bad", "ImportError: missing")
+
+
+def test_a_failed_captured_initializer_or_walk_is_reported_and_never_reloaded(monkeypatch):
+    class Captures:
+        def try_capture(self, entry_point, _origin):
+            if entry_point.name == "captured":
+                message = "initializer failed"
+                raise RuntimeError(message)
+
+    package = types.ModuleType("walk_breaks")
+    entry_points = [
+        FakeEntryPoint("captured", error=AssertionError("must not reload")),
+        FakeEntryPoint("walks", target=package),
+    ]
+    monkeypatch.setattr(_discovery, "entry_points", lambda group: entry_points)
+    real_walk = _discovery.walk
+
+    def walk(target, *args, **kwargs):
+        if target is package:
+            message = "bad module tree"
+            raise ValueError(message)
+        return real_walk(target, *args, **kwargs)
+
+    monkeypatch.setattr(_discovery, "walk", walk)
+
+    _, errors = _discovery.discover(source_discovery=Captures())
+
+    assert errors == {"captured": "RuntimeError: initializer failed", "walks": "ValueError: bad module tree"}
