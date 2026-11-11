@@ -251,3 +251,157 @@ def test_worker_receipt_requires_three_distinct_workers(tmp_path, workers, expec
     for case, worker in zip(("true", "false", "companion"), workers, strict=True):
         (tmp_path / f"worker.{case}").write_text(worker)
     assert overlap.worker_receipt(tmp_path) == expected
+
+
+def test_timeline_requires_unique_ordered_allowlisted_markers_and_correlated_fake(tmp_path):
+    timeline_spec = importlib.util.spec_from_file_location(
+        "mcp_timeline", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/timeline.py"
+    )
+    assert timeline_spec
+    assert timeline_spec.loader
+    timeline = importlib.util.module_from_spec(timeline_spec)
+    timeline_spec.loader.exec_module(timeline)
+    path = tmp_path / "events"
+    labels = [
+        "launch.before",
+        "launch.after",
+        "communicate.before",
+        "child.entry",
+        "child.import_done",
+        "client.enter.start",
+        "client.enter.ok",
+        "transport.enter.start",
+        "transport.enter.ok",
+        "session.enter.start",
+        "session.enter.ok",
+        "init.start",
+        "fake.server.401_sent",
+        "client.401",
+        "init.error",
+        "session.exit.start",
+        "session.exit.error",
+        "transport.exit.start",
+        "transport.exit.error",
+        "client.exit.start",
+        "client.exit.ok",
+        "observe.exit",
+        "communicate.after",
+    ]
+
+    def write(entries):
+        path.write_text("".join(f"{name} {index + 1}\n" for index, name in enumerate(entries)))
+
+    write(labels)
+    status, events = timeline.parse_timeline(path, fake=True)
+    assert status == "complete"
+    assert all("private" not in event for event, _ in events)
+    write([name for name in labels if name != "client.401"])
+    assert timeline.parse_timeline(path, fake=True)[0] == "incomplete"
+    write([*labels, "client.401"])
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    write([*labels, "private_secret"])
+    assert timeline.parse_timeline(path, fake=True) == ("invalid", [])
+    reordered = labels.copy()
+    reordered[3], reordered[4] = reordered[4], reordered[3]
+    write(reordered)
+    assert timeline.parse_timeline(path, fake=True)[0] == "invalid"
+    path.write_bytes(b"x" * 8193)
+    assert timeline.parse_timeline(path, fake=True) == ("invalid", [])
+
+
+def test_context_proxy_preserves_suppression_and_cancellation(monkeypatch):
+    import asyncio
+
+    bootstrap_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_bootstrap", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/bootstrap.py"
+    )
+    assert bootstrap_spec
+    assert bootstrap_spec.loader
+    bootstrap = importlib.util.module_from_spec(bootstrap_spec)
+    bootstrap_spec.loader.exec_module(bootstrap)
+    events = []
+    monkeypatch.setattr(bootstrap, "emit", events.append)
+    cancelled = asyncio.CancelledError("private")
+
+    class Original:
+        async def __aenter__(self):
+            return "value"
+
+        async def __aexit__(self, *args):
+            assert args == (None, None, None)
+            return False
+
+    async def normal():
+        proxy = bootstrap.ContextProxy(Original())
+        assert await proxy.__aenter__() == "value"
+        assert await proxy.__aexit__(None, None, None) is False
+
+    asyncio.run(normal())
+    assert events == ["transport.enter.start", "transport.enter.ok", "transport.exit.start", "transport.exit.ok"]
+
+    class Cancelled:
+        async def __aenter__(self):
+            raise cancelled
+
+    async def failing():
+        with pytest.raises(asyncio.CancelledError) as seen:
+            await bootstrap.ContextProxy(Cancelled()).__aenter__()
+        assert seen.value is cancelled
+
+    events.clear()
+    asyncio.run(failing())
+    assert events == ["transport.enter.start", "transport.enter.error"]
+
+
+def test_marker_open_failure_falls_back_before_original_spawn(monkeypatch, tmp_path):
+    import os
+    import subprocess
+    import threading
+    from types import SimpleNamespace
+
+    plugin_spec = importlib.util.spec_from_file_location(
+        "mcp_plugin_fallback", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/vnxd_plugin.py"
+    )
+    assert plugin_spec
+    assert plugin_spec.loader
+    plugin = importlib.util.module_from_spec(plugin_spec)
+    plugin_spec.loader.exec_module(plugin)
+    monkeypatch.setenv("VNXD_PHASE_DIR", str(tmp_path))
+    calls = []
+
+    class Original:
+        pid = 123
+
+        def __init__(self, args, *a, **kw):
+            calls.append((args, kw))
+
+        def communicate(self, *a, **kw):
+            calls.append((a, kw))
+            return ("", None)
+
+    monkeypatch.setattr(subprocess, "Popen", Original)
+    real_open = os.open
+
+    def fail_marker(path, *args, **kwargs):
+        if str(path).endswith(".events"):
+            raise OSError
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", fail_marker)
+
+    def fail_thread(_thread):
+        raise RuntimeError
+
+    monkeypatch.setattr(threading.Thread, "start", fail_thread)
+    hook = plugin.pytest_runtest_call(SimpleNamespace(nodeid=plugin.TARGET + "[False]"))
+    next(hook)
+    argv = ["python", "-I", "-m", plugin.PROBE, "http://127.0.0.1:123/mcp"]
+    try:
+        process = subprocess.Popen(argv, env={"PATH": "/bin"})
+        process.communicate(input="hzmcp_synthetic")
+    finally:
+        with pytest.raises(StopIteration):
+            next(hook)
+    assert calls[0] == (argv, {"env": {"PATH": "/bin"}})
+    assert calls[1][1]["input"] == "hzmcp_synthetic"
+    assert not (tmp_path / "false.events").exists()

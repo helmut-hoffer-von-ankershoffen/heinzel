@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from overlap import overlap_milliseconds, worker_receipt
+from timeline import parse_timeline
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
@@ -24,7 +25,7 @@ allowed = re.compile(
     r"import|network|wait|import_network|import_wait|network_wait|import_network_wait)\Z"
 )
 phase_allowed = re.compile(
-    r"VNXD case=(?:true|false) phase=(?:setup|call|teardown) "
+    r"VNXD case=(?:true|false|fake) phase=(?:setup|call|teardown) "
     r"outcome=(?:passed|failed|skipped) kind=(?:none|timeout|assertion|exception|unknown) duration_ms=[0-9]+\Z"
 )
 with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
@@ -73,6 +74,15 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
     except subprocess.TimeoutExpired:
         print("VNXD runner=timeout")
         raise SystemExit(1) from None
+    fake_cmd = [*cmd[:-2], "scripts/mcp_probe_diagnostic/fake_control_test.py::test_fake_auth_rejection"]
+    fake_cmd[fake_cmd.index("-n") + 1] = "0"
+    try:
+        fake_run = subprocess.run(  # noqa: S603 - fixed control selection
+            fake_cmd, cwd=root, env=env, capture_output=True, text=True, timeout=45, check=False
+        )
+        fake_code = fake_run.returncode
+    except subprocess.TimeoutExpired:
+        fake_code = 124
     lines = []
     for case in ("true", "false"):
         file = Path(tmp) / case
@@ -92,6 +102,21 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
                 print(line)
             else:
                 print(f"VNXD case={case} phase={phase} outcome=not_recorded")
+    for phase in ("setup", "call", "teardown"):
+        path = Path(tmp) / f"fake.{phase}"
+        line = path.read_text().strip() if path.is_file() else ""
+        if phase_allowed.fullmatch(line):
+            print(line)
+        else:
+            print(f"VNXD case=fake phase={phase} outcome=not_recorded")
+    timelines = {}
+    for case in ("true", "false", "fake"):
+        status, events = parse_timeline(Path(tmp) / f"{case}.events", fake=case == "fake")
+        timelines[case] = status
+        print(f"VNXD case={case} timeline={status}")
+        for name, offset in events:
+            print(f"VNXD case={case} event={name} offset_ms={offset}")
+    print("VNXD fake_control=" + ("pass" if fake_code == 0 and timelines["fake"] == "complete" else "fail"))
     if run.returncode and "ImportError" in run.stderr:
         print("VNXD error=plugin_import")
     if run.returncode and "usage: pytest" in run.stderr:
@@ -118,6 +143,8 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
         or workers != "distinct"
         or overlap is None
         or overlap == 0
+        or fake_code != 0
+        or any(status != "complete" for status in timelines.values())
     ):
         print("VNXD evidence=incomplete")
         raise SystemExit(1)
