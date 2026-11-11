@@ -292,7 +292,14 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     kind = LANES[lane][2]
     selected = scope.selection[lane]
     commands = (
-        _managed_commands(selected, out) if kind == "managed" else focused_job.plan(kind, " ".join(selected), out)
+        _managed_commands(selected, out)
+        if kind == "managed"
+        else focused_job.plan(
+            kind,
+            " ".join(selected),
+            out,
+            max_ids=focused_job.PYTHON_CI_MAX_IDS if lane == "python" else focused_job.MAX_IDS,
+        )
     )
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))

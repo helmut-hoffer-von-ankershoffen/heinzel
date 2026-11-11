@@ -100,6 +100,7 @@ class HostToolCatalog:
 
     The host supplies its allowlist, never the model. Invoke only while the owning turn holds its main writer,
     so approval changes cannot interleave with an operation call. No operation marked write is ever invoked here.
+    An optional host projection handles oversized metadata; its output still must meet the same result limit.
     """
 
     def __init__(  # noqa: PLR0913 - dependencies and trusted policy are independently supplied
@@ -113,6 +114,7 @@ class HostToolCatalog:
         verified_code: Callable[[Exposed], str] | None = None,
         argument_policies: Mapping[str, ExactArgumentPolicy] | None = None,
         code_evidence: str = "Implementation identity asserted by host verifier; independently unverified here.",
+        oversized_result: Callable[[str, int], str] | None = None,
     ) -> None:
         self._kernel = kernel
         self._current = current
@@ -122,6 +124,7 @@ class HostToolCatalog:
         self._host_reads = frozenset(host_reads)
         self._verified_code = verified_code
         self._code_evidence = code_evidence
+        self._oversized_result = oversized_result
         self._argument_policies = dict(argument_policies or {})
         if kernel.resolve(CurrentUser) is not current or current.principal().id != self._owner:
             msg = "The operation catalog owner cannot be verified"
@@ -262,6 +265,15 @@ class HostToolCatalog:
             raise HeinzelError(msg)
         return selected
 
+    def _result(self, value: object) -> str:
+        text = json.dumps(to_jsonable_python(value, fallback=str), ensure_ascii=False, separators=(",", ":"))
+        if len(text.encode()) > _MAX_RESULT and self._oversized_result is not None:
+            text = self._oversized_result(text, _MAX_RESULT)
+        if len(text.encode()) > _MAX_RESULT:
+            msg = "The operation result exceeds the safe limit"
+            raise OperationFailedError(msg)
+        return text
+
     def invoke(
         self, grant: ModelGrant, name: str, arguments: Mapping[str, JsonValue], *, turn_writer: SessionWriter
     ) -> str:
@@ -319,10 +331,7 @@ class HostToolCatalog:
             raise HeinzelError(msg)
         try:
             result = self._kernel.invoke(item.operation, **validated)
-            text = json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False, separators=(",", ":"))
-            if len(text.encode()) > _MAX_RESULT:
-                msg = "The operation result exceeds the safe limit"
-                raise OperationFailedError(msg)  # noqa: TRY301 - an invoked operation failed to produce usable output
+            text = self._result(result)
         except Exception:  # noqa: BLE001 - never expose operation diagnostics to the model
             msg = "The operation was invoked but did not produce a usable result"
             raise OperationFailedError(msg) from None

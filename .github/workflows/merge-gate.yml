@@ -84,6 +84,10 @@ jobs:
           PR_NUMBER: ${{ steps.pull.outputs.number }}
           CI_RUN_ID: ${{ github.event.workflow_run.id }}
           FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           PYTHONPATH: .
           UV_PYTHON: "3.14.8"
         run: uv run --no-build --frozen --script scripts/focused_gate.py
