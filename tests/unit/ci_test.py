@@ -61,6 +61,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "ci.yml": {
         "python3 -I scripts/release_candidate.py": "records release source",
         "python3 -I scripts/focused_plan.py": "routes exact source to a reviewed focused plan or a full candidate",
+        'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
+            "restricts scheduled maintenance to canonical main"
+        ),
         "uv run --no-build --frozen --script scripts/focused_coverage.py": "runs and measures reviewed test selectors",
         "required=(admission changes lint": "requires every owning focused job",
         "sudo sed -i ": "uses the primary signed Ubuntu archive for focused browser runtime setup",
@@ -1531,6 +1534,124 @@ def test_native_face_compile_has_a_required_serial_job_with_a_real_notifier_buil
 
 def _ci_jobs() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+
+
+@pytest.mark.parametrize(
+    ("event", "candidate", "selected"),
+    [
+        ("schedule", False, {"maintenance"}),
+        ("pull_request", False, {"release", "focused", "paths"}),
+        ("push", False, {"release", "focused", "paths"}),
+        ("workflow_dispatch", False, {"release", "focused", "paths"}),
+        ("pull_request", True, {"release", "paths"}),
+        ("workflow_dispatch", True, {"release", "paths"}),
+    ],
+)
+def test_changed_paths_event_policy(event, candidate, selected):
+    changes = _ci_jobs()["changes"]
+    nonscheduled = "github.event_name != 'schedule'"
+    conditions = {
+        "github.event_name == 'schedule'": event == "schedule",
+        nonscheduled: event != "schedule",
+        nonscheduled + " && steps.release.outputs.full_release != 'true'": event != "schedule" and not candidate,
+    }
+    assert {step["id"] for step in changes["steps"] if "id" in step and conditions[step["if"]]} == selected
+    assert all(step["if"] == nonscheduled for step in changes["steps"] if "uses" in step)
+    assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
+    assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
+    assert changes["outputs"]["focused_mode"] == "${{ steps.focused.outputs.focused_mode }}"
+
+
+@pytest.mark.parametrize(
+    ("repository", "ref", "selected"),
+    [
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/main", True),
+        ("someone/heinzel", "refs/heads/main", False),
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/other", False),
+    ],
+)
+def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository, ref, selected):
+    step = next(step for step in _ci_jobs()["changes"]["steps"] if step.get("id") == "maintenance")
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"GITHUB_REPOSITORY": repository, "GITHUB_REF": ref, "GITHUB_OUTPUT": str(output)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert (result.returncode == 0) is selected
+    if selected:
+        assert output.read_text() == "selected=true\n"
+    else:
+        assert not output.exists()
+
+
+SCHEDULED_REQUIRED = ("admission", "changes", "lint", "secrets", "audit", "quarantine-registry")
+
+
+def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
+    jobs = _ci_jobs()
+    assert set(SCHEDULED_REQUIRED) <= set(jobs["ci-ok"]["needs"])
+    for name in ("lint", "audit"):
+        assert jobs[name]["needs"] == "changes"
+        assert "needs.changes.outputs.scheduled_maintenance == 'true'" in jobs[name]["if"]
+    for name, job in jobs.items():
+        if name in (*SCHEDULED_REQUIRED, "ci-ok"):
+            continue
+        condition = job["if"]
+        assert condition.startswith(
+            (
+                "needs.changes.outputs.full_release == 'true'",
+                "${{ !cancelled() && needs.changes.outputs.full_release == 'true'",
+                "github.event_name == 'pull_request'",
+                "failure() && github.event_name == 'pull_request'",
+                "github.event_name == 'push' &&",
+                "needs.changes.outputs.focused_mode != ''",
+                "${{ !cancelled() && needs.local-plugin-plan.outputs.selected == 'True'",
+                "needs.consumer-plan.outputs.selected == 'True'",
+            )
+        ), name
+    assert "scheduled_maintenance" not in _template_sync_module().ci_workflow()
+
+
+@pytest.mark.parametrize(
+    ("job", "outcome", "maintenance", "error"),
+    [
+        (None, "success", "true", ""),
+        (None, "success", "", "Scheduled maintenance was not selected"),
+        *(
+            (job, outcome, "true", f"Required schedule workload job did not pass: {job}")
+            for job in SCHEDULED_REQUIRED
+            for outcome in ("failure", "cancelled", "skipped")
+        ),
+    ],
+)
+def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, maintenance, error):
+    jobs = _ci_jobs()
+    step = next(step for step in jobs["ci-ok"]["steps"] if "EVENT" in step.get("env", {}))
+    assert step["if"] == "github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''"
+    results = {
+        name: {"result": "success" if name in SCHEDULED_REQUIRED else "skipped"} for name in jobs["ci-ok"]["needs"]
+    }
+    if job is not None:
+        results[job]["result"] = outcome
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            "PATH": os.environ["PATH"],
+            "EVENT": "schedule",
+            "SCHEDULED_MAINTENANCE": maintenance,
+            "RESULTS": json.dumps(results),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert result.returncode == bool(error)
+    assert error in result.stdout
 
 
 def _oses(value: str | list[str], event: str, *, macos_full: bool = False, release: bool = False) -> list[str]:
