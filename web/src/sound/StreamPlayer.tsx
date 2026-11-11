@@ -65,6 +65,8 @@ function Player({
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
   const deviceVolume = isIOS();
+  const desktop =
+    typeof (window as Window & { heinzelDesktop?: { lifecycle?: unknown } }).heinzelDesktop?.lifecycle === "function";
 
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
@@ -177,7 +179,7 @@ function Player({
             </>
           }
         >
-          <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+          <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
         </PlayerHelp>
       </div>
     </PlayerCard>

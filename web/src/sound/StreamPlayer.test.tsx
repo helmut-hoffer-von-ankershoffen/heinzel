@@ -43,11 +43,38 @@ function mount() {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
   resetSound();
 });
 
 describe("stream recovery", () => {
+  it.each([false, true])("explains same-profile recovery for browser or standalone mode: %s", (standalone) => {
+    const matchMedia = window.matchMedia;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      ...matchMedia(query),
+      matches: query === "(display-mode: standalone)" && standalone,
+    }));
+    mount();
+    openHelp();
+    expect(screen.getByText(/same browser profile where you signed in to YouTube/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use YouTube sign-in" }));
+    openHelp();
+    expect(screen.getByText(/Embedded sign-in may still be restricted/)).toBeInTheDocument();
+    expect(screen.queryByText(/Heinzel desktop has its own browser session/)).toBeNull();
+  });
+
+  it("explains the separate Electron session before and after choosing the account player", () => {
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    mount();
+    openHelp();
+    expect(screen.getByText(/Heinzel desktop has its own browser session/)).toBeInTheDocument();
+    expect(screen.getByText(/same Chrome profile where you signed in to YouTube/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use YouTube sign-in" }));
+    openHelp();
+    expect(screen.getByText(/Heinzel desktop has its own browser session/)).toBeInTheDocument();
+  });
+
   it("uses mute and pause on iPhone when the stream cannot change its volume", () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
     const view = mount();
@@ -201,7 +228,7 @@ describe("playback help pane", () => {
     mount();
     fireEvent.mouseEnter(info());
     const pane = screen.getByRole("region", { name: "Playback or sign-in trouble?" });
-    expect(pane).toHaveTextContent("Try the regular player");
+    expect(pane).toHaveTextContent("same browser profile where you signed in to YouTube");
     expect(screen.getByRole("link", { name: "Play on YouTube" }).parentElement).toHaveClass("border-t");
     // The shared action row: the first action leads with its words, the rest are named icons.
     expectPaneStructure(pane);
