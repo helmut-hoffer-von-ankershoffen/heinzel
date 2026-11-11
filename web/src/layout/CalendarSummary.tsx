@@ -7,6 +7,7 @@ import { MessageSquareText, PanelRight, ShieldCheck, TimerReset, UserX, Video } 
 import { token } from "@/api/token";
 import { PaneAction } from "@/components/PaneActions";
 import { conferenceLink } from "@/lib/conferenceLink";
+import { externalHref } from "@/lib/externalActions";
 import { cn } from "@/lib/utils";
 import { type GlyphModel, spanText } from "./calendarModel";
 import { CONNECTORS } from "./settingsSections";
@@ -173,12 +174,12 @@ export function calendarActions({
   writable?: boolean;
 }) {
   const meeting = active ?? upcoming;
-  const join = full ? conferenceLink(meeting?.conference_url) : null;
+  const join = full ? externalHref("join-meeting", conferenceLink(meeting?.conference_url)) : null;
   const title = meeting?.title ?? "";
   return (
     <>
       {join && (
-        <PaneAction key="join" icon={Video} href={join}>
+        <PaneAction key="join" icon={Video} href={join} externalAction="join-meeting">
           {`Join ${title}`}
         </PaneAction>
       )}

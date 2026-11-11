@@ -4,6 +4,7 @@ import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
+import { externalHref, usesNativeExternalLinks } from "@/lib/externalActions";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
@@ -137,8 +138,9 @@ function Player({
   }, [ready, level.gain, level.seconds, level.playing, origin, deviceVolume]);
 
   if (!src) return null;
+  const watch = externalHref("watch-video", stream.watch_url);
   return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+    <PlayerCard title={soundscape.title} watchUrl={watch} host="YouTube">
       <div className="group/video relative">
         {blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
@@ -171,9 +173,16 @@ function Player({
               <PaneAction icon={RotateCw} onClick={retry}>
                 {t("sound.retryPlayer")}
               </PaneAction>
-              <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
-                {t("sound.playOnYouTube")}
-              </PaneAction>
+              {watch && (
+                <PaneAction
+                  icon={ExternalLink}
+                  href={watch}
+                  externalAction="watch-video"
+                  onClick={usesNativeExternalLinks() ? undefined : stop}
+                >
+                  {t("sound.playOnYouTube")}
+                </PaneAction>
+              )}
             </>
           }
         >
