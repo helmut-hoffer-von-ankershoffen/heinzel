@@ -230,3 +230,53 @@ def test_open_logs_why_it_did_not_launch(launcher, caplog):
     ]
     check = caplog.records[-1]
     assert (check.happened, check.action) == tuple(say.would_not_open(APP).lines())
+
+
+def test_interrupted_install_reports_cancellation_without_success(installer, monkeypatch):
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(desktop, "install_desktop", interrupt)
+    output, error, out, err = _consoles()
+    assert _exit_code(lambda: _app._install_app(None, output, error)) == 130
+    assert say.CANCELLED_INSTALL in err.getvalue()
+    assert "Opened" not in out.getvalue()
+
+
+def test_deferred_install_reports_running_app(installer, monkeypatch):
+    monkeypatch.setattr(desktop, "install_desktop", lambda *_args, **_kwargs: "deferred")
+    monkeypatch.setattr(_app, "_where_installed", lambda: APP.parent)
+    output, error, _out, err = _consoles()
+    assert _exit_code(lambda: _app._install_app(None, output, error)) == 1
+    for line in say.app_running(APP.parent).lines():
+        assert line in err.getvalue()
+
+
+def test_missing_install_after_reported_success_is_not_success(monkeypatch):
+    monkeypatch.setattr(desktop, "install_desktop", lambda *_args, **_kwargs: "installed")
+    monkeypatch.setattr(desktop, "desktop_location", lambda: None)
+
+    monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: Path("/nonexistent/hz"))
+    output, error, out, err = _consoles()
+    assert _exit_code(lambda: _app._install_app(None, output, error)) == 1
+    assert say.LOST in err.getvalue()
+    assert str(APP) not in out.getvalue()
+
+
+def test_uninstall_reports_when_no_owned_install_exists(monkeypatch):
+    monkeypatch.setattr(desktop, "uninstall_desktop", lambda **_kwargs: None)
+    output, error, out, _err = _consoles()
+    assert _exit_code(lambda: _app._uninstall(output, error)) == 0
+    assert say.NOT_INSTALLED in out.getvalue()
+
+
+def test_doctor_reports_failure_in_json_without_claiming_installed(monkeypatch):
+    def fail(*_args, **_kwargs):
+        msg = "fictional doctor failure"
+        raise OSError(msg)
+
+    monkeypatch.setattr(desktop, "doctor_desktop", fail)
+    output, error, out, err = _consoles()
+    assert _exit_code(lambda: _app._doctor(output, error, fix=False, as_json=True)) == 1
+    assert '"installed": null' in out.getvalue()
+    assert "fictional doctor failure" in err.getvalue()
