@@ -4,6 +4,9 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { TopBar } from "./TopBar";
 
+vi.mock("@/api/queries", () => ({ usePlayful: () => false }));
+vi.mock("@/components/Contributions", () => ({ HeaderActions: () => null }));
+
 function bar(chatOpen: boolean) {
   return (
     <QueryClientProvider client={new QueryClient()}>
@@ -98,7 +101,7 @@ describe("TopBar reload", () => {
     );
     act(() => pending.shift()?.("first"));
     await screen.findByText("first");
-    const reload = screen.getByRole("button", { name: "Refresh" });
+    const reload = screen.getByRole("button", { name: "Refresh data" });
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"));
     fireEvent.click(reload);
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "true"));
@@ -107,4 +110,59 @@ describe("TopBar reload", () => {
     await screen.findByText("second");
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"));
   });
+});
+
+it("distinguishes explicit refreshes from overlapping background work", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let finishManual!: () => void;
+  let finishBackground!: (value: string) => void;
+  vi.spyOn(client, "invalidateQueries").mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finishManual = resolve;
+      }),
+  );
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <TopBar
+          chatOpen={false}
+          onToggleChat={() => {}}
+          terminalOpen={false}
+          onToggleTerminal={() => {}}
+          calendarOpen={false}
+          onOpenCalendar={() => {}}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const button = screen.getByRole("button", { name: "Refresh data" });
+  button.focus();
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Refresh data");
+  expect(screen.getByRole("tooltip")).toHaveClass("group-focus-within:block", "group-hover:block");
+  act(() => {
+    void client.fetchQuery({
+      queryKey: ["background"],
+      queryFn: () =>
+        new Promise<string>((resolve) => {
+          finishBackground = resolve;
+        }),
+    });
+  });
+  await waitFor(() => expect(button).toHaveAttribute("aria-label", "Refreshing data in the background"));
+  expect(button).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("status")).toHaveTextContent("Refreshing data in the background");
+  fireEvent.click(button);
+  await waitFor(() => expect(button).toHaveAttribute("aria-label", "Refreshing data…"));
+  await waitFor(() => expect(finishManual).toBeDefined());
+  await act(async () => {
+    finishManual();
+  });
+  await waitFor(() => expect(button).toHaveAttribute("aria-label", "Refreshing data in the background"));
+  await act(async () => {
+    finishBackground("done");
+  });
+  await waitFor(() => expect(button).toHaveAttribute("aria-label", "Refresh data"));
+  expect(button).toHaveAttribute("aria-busy", "false");
+  expect(button.querySelector("svg")).not.toHaveClass("animate-spin");
 });

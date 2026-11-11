@@ -90,13 +90,22 @@ export function TopBar({
   };
   // Reload refetches every query the screen shows, without a page reload that would drop open panels and drafts.
   const fetching = useIsFetching() > 0;
+  const [manualRefreshes, setManualRefreshes] = useState(0);
+  const busy = manualRefreshes > 0 || fetching;
+  const refreshLabel = t(
+    manualRefreshes > 0 ? "top.refreshingManual" : fetching ? "top.refreshingBackground" : "top.refresh",
+  );
   const refresh = () => {
     setMenu(false);
     // Abort reads still in flight first, so an older response can never land after the refetch and overwrite it.
+    setManualRefreshes((count) => count + 1);
     void Promise.all([
       queries.cancelQueries({ queryKey: ["org", "calendar"] }),
       queries.cancelQueries({ queryKey: ["org", "agenda"], exact: true }),
-    ]).then(() => queries.invalidateQueries());
+    ])
+      .then(() => queries.invalidateQueries())
+      .catch(() => undefined)
+      .finally(() => setManualRefreshes((count) => count - 1));
   };
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
@@ -167,16 +176,28 @@ export function TopBar({
           <Calendar aria-hidden />
         </Button>
         {/* Reload stays the last action before the mascot; it spins while the refetch runs, so a click shows it worked. */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={refresh}
-          aria-label={t("top.refresh")}
-          title={t("top.refresh")}
-          aria-busy={fetching}
-        >
-          <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />
-        </Button>
+        <div className="group relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={refresh}
+            aria-label={refreshLabel}
+            aria-busy={busy}
+            aria-describedby="refresh-reason"
+          >
+            <RefreshCw aria-hidden className={cn(busy && "motion-safe:animate-spin")} />
+          </Button>
+          <span
+            id="refresh-reason"
+            role="tooltip"
+            className="pointer-events-none absolute right-0 top-full z-50 hidden whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover:block group-focus-within:block"
+          >
+            {refreshLabel}
+          </span>
+        </div>
+        <span className="sr-only" role="status">
+          {busy ? refreshLabel : ""}
+        </span>
         {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button
           variant="ghost"

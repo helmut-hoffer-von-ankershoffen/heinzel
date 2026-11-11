@@ -277,7 +277,9 @@ const en = {
     "The outcome needs inspection; confirmation will not be retried. Check the outcome or start a new review below.",
   "readSet.decisionUnclear":
     "The decision outcome needs inspection; it will not be retried. Select Check decision outcome to look again.",
-  "top.refresh": "Refresh",
+  "top.refresh": "Refresh data",
+  "top.refreshingManual": "Refreshing data…",
+  "top.refreshingBackground": "Refreshing data in the background",
   "command.copied": "Copied",
   "app.skip": "Skip to content",
   "nav.label": "Main",
