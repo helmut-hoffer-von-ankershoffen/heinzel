@@ -22,6 +22,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.kernel import Emit, HeinzelError, Kernel, OperationLet, Progress
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._progress import Advance
 
 log = logging.getLogger(__name__)
@@ -98,8 +99,8 @@ def streamed(
             emit("result", {"data": to_jsonable_python(result, fallback=str)})
         except HeinzelError as exc:
             emit("error", {"error": str(exc)})
-        except Exception:
-            log.exception("Streaming %s failed", operation.name)
+        except Exception:  # noqa: BLE001 - the browser gets a plain error; the event keeps the trace
+            log_event(log, "stream.operation.failed", level=logging.ERROR, exc_info=True, operation=operation.name)
             emit("error", {"error": f"{operation.name} failed with a bug; the log of `hz ui serve` says why."})
         finally:
             emit(END, {})
