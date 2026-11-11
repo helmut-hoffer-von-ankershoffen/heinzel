@@ -194,10 +194,12 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
         "PYTHONPATH": os.pathsep.join((str(REPO), str(tmp_path))),
         "COVERAGE_FILE": str(tmp_path / ".coverage"),
         "PYTEST_ADDOPTS": "",
+        # The disposable probe needs real xdist, not unrelated installed pytest plugins.
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
     }
     run = [sys.executable, "-m", "coverage"]
     subprocess.run(
-        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-n", "2", "-q", str(probe)],
+        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "2", "-q", str(probe)],
         cwd=tmp_path,
         env=env,
         check=True,
@@ -232,6 +234,27 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
         f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
         "build/test/backend.test.js",
     ]
+
+
+@pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
+def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
+    from dataclasses import replace
+
+    lane, expected = case
+    scope = replace(scope, selection={lane: ("tests/unit/ci_test.py",)})
+
+    class ObservedError(Exception):
+        pass
+
+    def plan(kind, selector, out, *, max_ids):
+        assert kind == "pytest"
+        assert selector == "tests/unit/ci_test.py"
+        assert max_ids == expected
+        raise ObservedError
+
+    monkeypatch.setattr(coverage.focused_job, "plan", plan)
+    with pytest.raises(ObservedError):
+        coverage.run_lane(scope, lane, tmp_path / "evidence", 123, 1)
 
 
 def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):

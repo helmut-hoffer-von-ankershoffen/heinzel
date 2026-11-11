@@ -4,6 +4,7 @@
 import { type ReactNode, useEffect, useId, useSyncExternalStore } from "react";
 import type { SchemaOperationCall } from "@/api/client";
 import { stream } from "@/api/stream";
+import { daemonRestartResult } from "@/lib/daemonRestart";
 
 export type PhaseState = "pending" | "running" | "done" | "warn" | "skipped" | "failed";
 export type Phase = { id: string; label: string; state: PhaseState; detail?: string };
@@ -12,6 +13,8 @@ export type Phase = { id: string; label: string; state: PhaseState; detail?: str
  * dialog asks with `consent`, `details` and `action`, then runs `run`, which reports every step it takes.
  */
 export type DrivenOperation = {
+  /** Stable identity for reconnecting a restored write to its existing dialog across component remounts. */
+  identity?: string;
   /** What it does and what follows from it, one short line each, shown above the buttons. */
   consent: string[];
   /** The title while it runs and once it is done, e.g. Installing heinzel-x and Installed heinzel-x. */
@@ -34,7 +37,14 @@ export type OperationRun =
   | ({ stage: "confirm"; call: SchemaOperationCall } & Driven)
   | ({ stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true } & Driven)
   | ({ stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true } & Driven)
-  | ({ stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true } & Driven)
+  | ({
+      stage: "failed";
+      call: SchemaOperationCall;
+      phases: Phase[];
+      error: string;
+      tracked?: true;
+      outcomeUnknown?: true;
+    } & Driven)
   | ({ stage: "attention"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked: true } & Driven);
 
 /** What a head reports for one step; anything else in a `phase` event is ignored. */
@@ -53,6 +63,7 @@ export function mergePhase(phases: Phase[], phase: Phase): Phase[] {
 }
 
 let current: OperationRun = { stage: "idle" };
+const dismissedDrivenIdentities = new Set<string>();
 let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const set = (next: OperationRun) => {
@@ -68,8 +79,22 @@ const subscribe = (listener: () => void) => {
 
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
 
+/** A dismissed receipt must not be reoffered by a component remount in the same page. */
+export const wasDrivenOperationDismissed = (identity: string): boolean => dismissedDrivenIdentities.has(identity);
+
+// A disconnected restart may still be running. Keep its outcome visible until the person explicitly closes it;
+// every entry point shares this guard, including footer contributions and already-driven writes.
+export const restartOutcomeUnconfirmed = (run: OperationRun): boolean =>
+  (run.stage === "failed" && run.outcomeUnknown === true) ||
+  (run.stage === "done" &&
+    run.call.path === "/system/daemon/restart" &&
+    daemonRestartResult(run.result) === "daemon.restartUnknown");
+
+const outcomeUnconfirmed = () => restartOutcomeUnconfirmed(current);
+
 /** Ask the person to confirm `call`; nothing runs yet. Ignored while another write is being asked about or running. */
 export function requestOperation(call: SchemaOperationCall): boolean {
+  if (outcomeUnconfirmed()) return false;
   if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return false;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call });
@@ -98,18 +123,20 @@ export function confirmOperation(call: SchemaOperationCall): Promise<unknown> {
 }
 
 /** Ask the person to confirm a write the app drives (`driven`); nothing runs until they choose its action. */
-export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): void {
-  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return;
+export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): boolean {
+  if (outcomeUnconfirmed()) return false;
+  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return false;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
+  return true;
 }
 
 /**
  * Show a driven write that is already under way, e.g. one resumed at its restart after the page reloaded: the
  * dialog opens in its progress view, never asking again.
  */
-export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> {
-  if (current.stage === "confirm" || current.stage === "running") return Promise.resolve();
+export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> | null {
+  if (current.stage !== "idle") return null;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
   return startDriven();
@@ -146,6 +173,7 @@ async function startDriven(): Promise<void> {
 /** Close the confirmation, or the outcome; a running operation can't be closed, it can't be stopped safely. */
 export function dismissOperation(): void {
   if (current.stage === "running") return;
+  if (current.stage === "confirm" && current.driven?.identity) dismissedDrivenIdentities.add(current.driven.identity);
   set({ stage: "idle" });
   // The focus goes back to the button that asked.
   const back = opener;
@@ -155,6 +183,7 @@ export function dismissOperation(): void {
 
 /** Start the confirmed write. A second call while it runs does nothing: one click starts one operation. */
 export async function startOperation(onSettled: () => void): Promise<void> {
+  if (outcomeUnconfirmed()) return;
   if (
     current.stage === "attention" ||
     ((current.stage === "confirm" || current.stage === "failed") && current.driven)
@@ -169,6 +198,8 @@ export async function startOperation(onSettled: () => void): Promise<void> {
   if (current.stage !== "confirm" && current.stage !== "failed") return;
   const { call } = current;
   let phases: Phase[] = [];
+  const timeout = call.path === "/system/daemon/restart" ? AbortSignal.timeout(30_000) : undefined;
+  let confirmedFailure = false;
   set({ stage: "running", call, phases, task: null });
   try {
     const result = await stream<unknown>(
@@ -176,6 +207,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       call.query,
       ({ event, data }) => {
         if (current.stage !== "running") return;
+        if (event === "error") confirmedFailure = true;
         if (event === "phase") {
           const phase = parsePhase(data);
           if (!phase) return;
@@ -185,13 +217,19 @@ export async function startOperation(onSettled: () => void): Promise<void> {
           set({ stage: "running", call, phases, task: data.text });
         }
       },
-      undefined,
+      timeout,
       call.body,
     );
     set({ stage: "done", call, phases: settle(phases), result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    set({ stage: "failed", call, phases, error: message });
+    set({
+      stage: "failed",
+      call,
+      phases,
+      error: message,
+      ...(timeout && !confirmedFailure ? { outcomeUnknown: true } : {}),
+    });
   } finally {
     onSettled();
   }
@@ -206,7 +244,8 @@ export async function trackOperation<T>(
   call: SchemaOperationCall,
   run: (report: (phases: Phase[]) => void) => Promise<T>,
 ): Promise<T> {
-  if (current.stage === "confirm" || current.stage === "running") throw new Error("Another write is running.");
+  if (current.stage === "confirm" || current.stage === "running" || outcomeUnconfirmed())
+    throw new Error("Another write is running or its outcome is unconfirmed.");
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   let phases: Phase[] = [];
   set({ stage: "running", call, phases, task: null, tracked: true });
@@ -236,6 +275,7 @@ export const getRun = (): OperationRun => current;
 
 /** Reset for tests. */
 export function resetOperationRun(): void {
+  dismissedDrivenIdentities.clear();
   set({ stage: "idle" });
 }
 

@@ -717,7 +717,7 @@ MOBILE_VIEWPORTS = (
     "wide-landscape",
     "short-landscape",
 )
-MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit")
+MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit", "updates-actions")
 # The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
 # (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
 # its expected time, and a hung one fails in two minutes instead of five.
@@ -748,6 +748,14 @@ def check_mobile_result(section, result):
         assert result["cases"] == []
         assert result["dockedPlayer"]["popOutUsable"] is True
         assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
+    elif section == "updates-actions":
+        assert result["cases"] == []
+        assert [profile["name"] for profile in result["updateActions"]] == [
+            "desktop-fine",
+            "portrait-fine",
+            "landscape-fine",
+            "desktop-coarse",
+        ]
     else:
         assert [case["name"] for case in result["cases"]] == [section]
         assert "dockedPlayer" not in result
@@ -767,8 +775,11 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     env, _recorded = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    use_webkit = section == "share-webkit" or (
+        section != "share-chromium" and os.environ.get("PLAYWRIGHT_BROWSER") == "webkit"
+    )
     subprocess.run(
-        [*run, "exec", "playwright-core", "install", "webkit" if section == "share-webkit" else "chromium"],
+        [*run, "exec", "playwright-core", "install", "webkit" if use_webkit else "chromium"],
         cwd=REPO,
         check=True,
         timeout=600,

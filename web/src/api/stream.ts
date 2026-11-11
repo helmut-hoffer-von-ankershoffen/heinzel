@@ -83,7 +83,10 @@ export async function stream<T>(
       buffer = rest;
       for (const event of events) {
         if (event.event === "result") return event.data.data as T;
-        if (event.event === "error") throw problem(400, event.data);
+        if (event.event === "error") {
+          onEvent(event);
+          throw problem(400, event.data);
+        }
         onEvent(event);
       }
       if (done) throw problem(502, { error: "The stream ended without a result." });

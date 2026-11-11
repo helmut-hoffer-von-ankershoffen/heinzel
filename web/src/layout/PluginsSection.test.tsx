@@ -1,9 +1,20 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { OperationDialog } from "@/components/OperationDialog";
-import { getRun, resetOperationRun } from "@/lib/operationRun";
+import { DAEMON_INSTALL, DAEMON_RESTART } from "@/lib/operationCalls";
+import {
+  getRun,
+  requestDrivenOperation,
+  requestOperation,
+  resetOperationRun,
+  startOperation,
+  trackOperation,
+} from "@/lib/operationRun";
+import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
 import {
   CandidateDetails,
@@ -15,6 +26,20 @@ import {
 } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
+
+// Use the acceptance harness's actual selectors against the real React dialogs, never hand-built dialog HTML.
+const acceptanceDialogs: Record<string, Record<string, string>> = JSON.parse(
+  execFileSync(
+    "python3",
+    [
+      "-I",
+      "-c",
+      "import json,runpy,sys; h=runpy.run_path(sys.argv[1]); print(json.dumps({a:{s:h['plugin_dialog'](a,s) for s in ['confirm','running','done','failed']} for a in ['add','remove']}))",
+      resolve("../scripts/acceptance/run_acceptance.py"),
+    ],
+    { encoding: "utf8", timeout: 5_000 },
+  ),
+);
 
 const installed = {
   distribution: "heinzel-clock",
@@ -246,6 +271,68 @@ function base(url: URL): { status?: number; body: unknown } | undefined {
   }
 }
 
+function seedAcknowledgedRestart(operationId: string) {
+  sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+  sessionStorage.setItem(
+    "hz.plugin-add-restart.v1",
+    JSON.stringify({
+      operation_id: operationId,
+      acknowledged: true,
+      observation: { retired: ["old"], version: "0.9.23", settings: [] },
+    }),
+  );
+}
+
+function serveFailedVerification(operationId: string) {
+  let verifies = 0;
+  const calls = serve((url) => {
+    if (url.pathname === "/api/system/plugin/operation")
+      return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+    if (url.pathname === "/api/lifecycle")
+      return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
+    if (url.pathname === "/api/lifecycle/verify")
+      return ++verifies === 1
+        ? { status: 403, body: { error: "verification failed" } }
+        : { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+    return base(url);
+  });
+  return { calls, verifies: () => verifies };
+}
+
+function serveDiscoverInstall(withOther: boolean, needsRestart: boolean) {
+  let done = false;
+  const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
+  const discovered = {
+    name: "heinzel-crm",
+    short_name: "crm",
+    description: "CRM notes.",
+    source: "github",
+    install_spec: candidate.spec,
+    installed: false,
+    community: true,
+  };
+  const other = {
+    name: "heinzel-other",
+    short_name: "other",
+    description: "Another plugin.",
+    source: "github",
+    install_spec: "heinzel-other",
+    installed: false,
+    community: true,
+  };
+  return serve((url) => {
+    if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
+    if (url.pathname === "/api/system/plugin/search")
+      return { body: { plugins: withOther ? [discovered, other] : [discovered], warnings: [] } };
+    if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+      done = url.searchParams.get("confirm") === "true";
+      const extra = { plugins: done ? [installed, crm] : [installed] };
+      return { body: change("add", done, needsRestart ? extra : { ...extra, restart_required: false }) };
+    }
+    return base(url);
+  });
+}
+
 function show(props: Parameters<typeof PluginsSection>[0] = {}) {
   sessionStorage.setItem("hz.token", "test-token");
   return render(
@@ -284,6 +371,177 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("recovers an acknowledged restart on remount after closing failed verification", async () => {
+    const operationId = "acknowledged-restart";
+    const key = "hz.plugin-add-restart.v1";
+    seedAcknowledgedRestart(operationId);
+    const { calls, verifies } = serveFailedVerification(operationId);
+    const reload = vi.fn();
+    const first = show({ reload, restartInterval: 1 });
+    const failed = await dialog(/Installing heinzel-crm/);
+    const user = userEvent.setup();
+    await within(failed).findByRole("button", { name: "Try again" });
+    const close = within(failed).getAllByRole("button", { name: "Close" }).at(-1);
+    if (!close) throw new Error("Missing Close button");
+    await user.click(close);
+    expect(getRun().stage).toBe("idle");
+    expect(sessionStorage.getItem(key)).not.toBeNull();
+    first.unmount();
+
+    show({ reload, restartInterval: 1 });
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    await waitFor(() => expect(verifies()).toBe(2), {
+      timeout: 1000,
+      onTimeout: (error) => error,
+    });
+    expect(reload).toHaveBeenCalledOnce();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+  });
+  it("does not reopen an admitted restored receipt when Settings remounts and it is cancelled", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.token", "test-token");
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    const first = show();
+    await dialog(/Install heinzel-crm/);
+    const originalRun = getRun();
+    first.unmount();
+    show();
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    expect(getRun()).toBe(originalRun);
+    const user = userEvent.setup();
+    await user.click(within(await dialog(/Install heinzel-crm/)).getByRole("button", { name: "Cancel" }));
+    expect(getRun().stage).toBe("idle");
+    expect(screen.queryByRole("dialog", { name: /Install heinzel-crm/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBe(operationId);
+  });
+  it("does not reopen when cancellation precedes the remounted receipt response", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    const first = show();
+    await dialog(/Install heinzel-crm/);
+    first.unmount();
+    const fetchReceipt = globalThis.fetch;
+    let releaseReceipt!: () => void;
+    const receiptReady = new Promise<void>((resolve) => {
+      releaseReceipt = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (new URL(request.url).pathname === "/api/system/plugin/operation") await receiptReady;
+        return fetchReceipt(request);
+      }),
+    );
+    show();
+    const user = userEvent.setup();
+    await user.click(within(await dialog(/Install heinzel-crm/)).getByRole("button", { name: "Cancel" }));
+    releaseReceipt();
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole("dialog", { name: /Install heinzel-crm/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBe(operationId);
+  });
+  it.each(["done", "attention"])("keeps a saved check until an unrelated %s result is closed", async (stage) => {
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list") return { body: [] };
+      return base(url);
+    });
+    sessionStorage.setItem("hz.token", "test-token");
+    if (stage === "done") {
+      await act(async () => {
+        await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
+      });
+    } else {
+      act(() =>
+        requestDrivenOperation(DAEMON_INSTALL, {
+          consent: [],
+          runningTitle: "Installing",
+          doneTitle: "Installed",
+          running: "Installing",
+          action: "Install",
+          run: async () => {
+            throw new NeedsAttention("Still waiting");
+          },
+        }),
+      );
+      await act(async () => {
+        await startOperation(() => {});
+      });
+    }
+    expect(getRun().stage).toBe(stage);
+    const key = "hz.plugin-operation.v1";
+    const saved = JSON.stringify({ pending: { action: "remove", name: "heinzel-clock" }, phases: [] });
+    sessionStorage.setItem(key, saved);
+    show();
+    expect(sessionStorage.getItem(key)).toBe(saved);
+    expect(getRun().stage).toBe(stage);
+    if (stage === "attention") {
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Keep waiting" }));
+      await waitFor(() => expect(getRun().stage).toBe("attention"));
+      expect(sessionStorage.getItem(key)).toBe(saved);
+    }
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/list")).toHaveLength(1),
+    );
+    const beforeClose = 1;
+    const closeButtons = await screen.findAllByRole("button", { name: stage === "done" ? "Done" : "Close" });
+    const closeButton = closeButtons[closeButtons.length - 1];
+    if (!closeButton) throw new Error("Missing close button");
+    await userEvent.setup().click(closeButton);
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+    expect(await screen.findByRole("dialog", { name: /Removed heinzel-clock/ })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/list")).toHaveLength(
+      beforeClose + 1,
+    );
+  });
+  it("preserves a saved final check until an unconfirmed restart is closed", async () => {
+    const calls = serve((url) => {
+      if (url.pathname === "/api/stream/system/daemon/restart") throw new Error("connection lost");
+      if (url.pathname === "/api/system/plugin/list") return { body: [] };
+      return base(url);
+    });
+    sessionStorage.setItem("hz.token", "test-token");
+    await act(async () => {
+      requestOperation(DAEMON_RESTART);
+      await startOperation(() => {});
+    });
+    expect(getRun()).toMatchObject({ stage: "failed", outcomeUnknown: true });
+    const key = "hz.plugin-operation.v1";
+    const saved = JSON.stringify({ pending: { action: "remove", name: "heinzel-clock" }, phases: [] });
+    sessionStorage.setItem(key, saved);
+    show();
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(sessionStorage.getItem(key)).toBe(saved);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+    expect(await screen.findByRole("dialog", { name: /Removed heinzel-clock/ })).toBeInTheDocument();
+    expect(
+      calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/daemon/restart"),
+    ).toHaveLength(1);
+  });
   it("says outright which installed version a plugin replaces, without opening the details", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
@@ -406,35 +664,7 @@ describe("PluginsSection", () => {
   });
 
   it("moves a completed install to Installed and reconciles a stale Discover snapshot without restarting", async () => {
-    let done = false;
-    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
-      if (url.pathname === "/api/system/plugin/search")
-        return {
-          body: {
-            plugins: [
-              {
-                name: "heinzel-crm",
-                short_name: "crm",
-                description: "CRM notes.",
-                source: "github",
-                install_spec: candidate.spec,
-                installed: false,
-                community: true,
-              },
-            ],
-            warnings: [],
-          },
-        };
-      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
-        done = url.searchParams.get("confirm") === "true";
-        return {
-          body: change("add", done, { plugins: done ? [installed, crm] : [installed], restart_required: false }),
-        };
-      }
-      return base(url);
-    });
+    const calls = serveDiscoverInstall(false, false);
     const reload = vi.fn();
     const user = userEvent.setup();
     show({ reload });
@@ -510,42 +740,7 @@ describe("PluginsSection", () => {
   });
 
   it("restarts once and reloads after a Discover install whose row leaves the list", async () => {
-    let done = false;
-    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
-      if (url.pathname === "/api/system/plugin/search")
-        return {
-          body: {
-            plugins: [
-              {
-                name: "heinzel-crm",
-                short_name: "crm",
-                description: "CRM notes.",
-                source: "github",
-                install_spec: candidate.spec,
-                installed: false,
-                community: true,
-              },
-              {
-                name: "heinzel-other",
-                short_name: "other",
-                description: "Another plugin.",
-                source: "github",
-                install_spec: "heinzel-other",
-                installed: false,
-                community: true,
-              },
-            ],
-            warnings: [],
-          },
-        };
-      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
-        done = url.searchParams.get("confirm") === "true";
-        return { body: change("add", done, { plugins: done ? [installed, crm] : [installed] }) };
-      }
-      return base(url);
-    });
+    const calls = serveDiscoverInstall(true, true);
     // The restart request takes a moment, as over a real connection, while the installed row leaves Discover.
     restartDelay = 50;
     const reload = vi.fn();
@@ -616,6 +811,37 @@ describe("PluginsSection", () => {
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
   });
 
+  it("retains an unobserved completed receipt while an unconfirmed restart is open", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.token", "test-token");
+    await act(async () => {
+      await trackOperation(DAEMON_RESTART, async () => null);
+    });
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    show();
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toBe(true),
+    );
+    const restart = getRun();
+    expect(restart.stage).toBe("done");
+    expect(restart.stage !== "idle" && restart.call).toEqual(DAEMON_RESTART);
+    expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+    const close = await screen.findAllByRole("button", { name: "Done" });
+    await userEvent.setup().click(close[close.length - 1] as HTMLElement);
+    const prompt = await dialog(/Install heinzel-crm/);
+    expect(within(prompt).getByRole("button", { name: "Install" })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(0);
+    await userEvent.setup().click(within(prompt).getByRole("button", { name: "Cancel" }));
+    sessionStorage.removeItem("hz.plugin-add-operation.v1");
+    act(() => resetOperationRun());
+  });
+
   it("restores a confirmed restart receipt and skips every retiring instance", async () => {
     const operationId = "previous-operation";
     sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
@@ -653,12 +879,109 @@ describe("PluginsSection", () => {
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(0);
   });
 
+  it.each(["done", "attention"])(
+    "retains a restored restart receipt until an unrelated %s result closes",
+    async (stage) => {
+      const operationId = "previous-operation";
+      sessionStorage.setItem("hz.token", "test-token");
+      if (stage === "done") {
+        await act(async () => {
+          await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
+        });
+      } else {
+        act(() => {
+          requestDrivenOperation(DAEMON_INSTALL, {
+            consent: [],
+            runningTitle: "Installing",
+            doneTitle: "Installed",
+            running: "Installing",
+            action: "Install",
+            run: async () => {
+              throw new NeedsAttention("Still waiting");
+            },
+          });
+        });
+        await act(async () => {
+          await startOperation(() => {});
+        });
+      }
+      sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+      const key = "hz.plugin-add-restart.v1";
+      const saved = JSON.stringify({
+        operation_id: operationId,
+        acknowledged: true,
+        observation: { retired: ["old"], version: "0.9.23", settings: [] },
+      });
+      sessionStorage.setItem(key, saved);
+      const calls = serve((url) => {
+        if (url.pathname === "/api/system/plugin/operation")
+          return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+        if (url.pathname === "/api/lifecycle")
+          return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
+        if (url.pathname === "/api/lifecycle/verify")
+          return { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+        return base(url);
+      });
+      const reload = vi.fn();
+      show({ reload, restartInterval: 1 });
+      await waitFor(() =>
+        expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toBe(true),
+      );
+      expect(sessionStorage.getItem(key)).toBe(saved);
+      expect(getRun().stage).toBe(stage);
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify")).toHaveLength(0);
+      if (stage === "attention") {
+        await userEvent.setup().click(await screen.findByRole("button", { name: "Keep waiting" }));
+        await waitFor(() => expect(getRun().stage).toBe("attention"));
+        expect(sessionStorage.getItem(key)).toBe(saved);
+      }
+      const close = await screen.findAllByRole("button", { name: stage === "done" ? "Done" : "Close" });
+      const closeButton = close[close.length - 1];
+      if (!closeButton) throw new Error("Missing close button");
+      await userEvent.setup().click(closeButton);
+      await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify")).toHaveLength(1);
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    },
+  );
+
+  it("keeps a deferred restart receipt through a failed verification and retry", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.token", "test-token");
+    await act(async () => {
+      await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
+    });
+    seedAcknowledgedRestart(operationId);
+    const { calls, verifies } = serveFailedVerification(operationId);
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toBe(true),
+    );
+    const close = await screen.findAllByRole("button", { name: "Done" });
+    const closeButton = close[close.length - 1];
+    if (!closeButton) throw new Error("Missing close button");
+    const user = userEvent.setup();
+    await user.click(closeButton);
+    const failed = await dialog(/Installing heinzel-crm/);
+    await user.click(await within(failed).findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(verifies()).toBe(2);
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(0);
+  });
+
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
+    let installedNow = false;
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        if (url.searchParams.get("confirm") === "true") installedNow = true;
         return {
           body: change("add", url.searchParams.get("confirm") === "true"),
         };
+      }
+      if (url.pathname === "/api/system/plugin/list" && installedNow) {
+        return { body: [installed, { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0" }] };
       }
       return base(url);
     });
@@ -666,12 +989,15 @@ describe("PluginsSection", () => {
     const reload = vi.fn();
     // The confirmed install answers after a moment, so its running view can be read.
     confirmedStreamDelay = 300;
-    show({ reload, restartInterval: 1 });
+    const mounted = show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
 
     const preview = await dialog(/Install heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBe(preview);
+    expect(document.querySelector(acceptanceDialogs.remove?.confirm ?? "")).toBeNull();
+    expect(document.querySelector(acceptanceDialogs.add?.done ?? "")).toBeNull();
     expectNoOldConfirmation();
     // One question: Cancel, then Install, beside the title row's Close; the dialog opens on Cancel.
     expect(
@@ -709,6 +1035,8 @@ describe("PluginsSection", () => {
     expect(adds()).toHaveLength(1);
     await user.click(within(preview).getByRole("button", { name: "Install" }));
     const running = await dialog(/Installing heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.running ?? "")).toBe(running);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBeNull();
     expect(within(running).getByText(/Step \d of 6: /)).toBeInTheDocument();
     expect(within(running).getByRole("progressbar")).toBeInTheDocument();
     const steps = within(within(running).getByRole("list", { name: /steps/i })).getAllByRole("listitem");
@@ -737,6 +1065,15 @@ describe("PluginsSection", () => {
     const saved = JSON.parse(sessionStorage.getItem("hz.plugin-operation.v1") ?? "null");
     expect(saved?.pending?.action).toBe("add");
     expect(saved?.phases?.find((phase: { id: string }) => phase.id === "reload")?.state).toBe("running");
+    // A fresh mount, as after the document reload, must finish the stored operation without another write.
+    mounted.unmount();
+    resetOperationRun();
+    show({ reload, restartInterval: 1 });
+    const completed = await dialog(/Installed heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.done ?? "")).toBe(completed);
+    expect(document.querySelector(acceptanceDialogs.add?.failed ?? "")).toBeNull();
+    expect(adds()).toHaveLength(2);
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(1);
     await choose(user, /Installed heinzel-crm/, "Done");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expectNoOldConfirmation();
@@ -858,8 +1195,15 @@ describe("PluginsSection", () => {
     await choose(user, /Install heinzel-crm/, "Cancel");
     await waitFor(() => expect(remove).toBeEnabled());
     await user.click(remove);
+    const removal = await dialog(/Remove heinzel-clock\?/);
+    expect(document.querySelector(acceptanceDialogs.remove?.confirm ?? "")).toBe(removal);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBeNull();
+    expect(within(removal).getByText("Its modules stop and its files are deleted.")).toBeInTheDocument();
+    expect(within(removal).getByText("hz restarts and this page reloads itself.")).toBeInTheDocument();
     await choose(user, /Remove heinzel-clock\?/, "Remove");
-    await dialog(/Removed heinzel-clock/);
+    const removalDone = await dialog(/Removed heinzel-clock/);
+    expect(document.querySelector(acceptanceDialogs.remove?.done ?? "")).toBe(removalDone);
+    expect(document.querySelector(acceptanceDialogs.remove?.failed ?? "")).toBeNull();
 
     const writes = () =>
       calls
