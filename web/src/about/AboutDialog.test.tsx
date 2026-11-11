@@ -81,6 +81,16 @@ describe("About dialog", () => {
     expect(screen.getByRole("cell", { name: long })).toHaveClass("break-all");
   });
 
+  it("keeps the header mascot inside its head-sized slot", () => {
+    show();
+    act(() => requestMenuAction("about"));
+    const dialog = screen.getByRole("dialog", { name: "Heinzelmännchen" });
+    const mascot = within(dialog).getByRole("img", { name: "Heinzelmännchen" });
+    expect(mascot).toHaveAttribute("data-view", "head");
+    expect(mascot).toHaveClass("size-12", "overflow-hidden");
+    expect(mascot).not.toHaveClass("overflow-visible");
+  });
+
   it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {
     const text = detailsText(info as never, { version: "0.9.29", path: "/Applications/H.app" });
     expect(text).toContain("hz 1.2.3\n");

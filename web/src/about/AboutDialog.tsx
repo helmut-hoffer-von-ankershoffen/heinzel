@@ -140,7 +140,7 @@ export function AboutDialog() {
       <div className="flex max-h-full w-[min(32rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-sm shadow-2xl">
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <header className="flex items-center gap-3">
-            <HeinzelAvatar view="head" label={t("app.name")} className="size-12" />
+            <HeinzelAvatar view="head" label={t("app.name")} className="size-12 overflow-hidden" />
             <div>
               <h2 id={titleId} className="text-lg font-medium">
                 {t("app.name")}
