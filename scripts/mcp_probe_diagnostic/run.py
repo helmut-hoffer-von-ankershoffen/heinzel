@@ -19,6 +19,10 @@ allowed = re.compile(
     r"VNXD case=(?:true|false) elapsed_ms=[0-9]+ sample=(?:not_needed|unavailable|other|"
     r"import|network|wait|import_network|import_wait|network_wait|import_network_wait)\Z"
 )
+phase_allowed = re.compile(
+    r"VNXD case=(?:true|false) phase=(?:setup|call|teardown) "
+    r"outcome=(?:passed|failed|skipped) kind=(?:none|timeout|assertion|exception|unknown) duration_ms=[0-9]+\Z"
+)
 with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
     env = os.environ.copy()
     env.update(
@@ -73,6 +77,14 @@ with tempfile.TemporaryDirectory(dir=root / ".venv", prefix="vnxd-") as tmp:
                 lines.append(line)
     for line in lines:
         print(line)
+    for case in ("true", "false"):
+        for phase in ("setup", "call", "teardown"):
+            path = Path(tmp) / f"{case}.{phase}"
+            line = path.read_text().strip() if path.is_file() else ""
+            if phase_allowed.fullmatch(line):
+                print(line)
+            else:
+                print(f"VNXD case={case} phase={phase} outcome=not_recorded")
     if run.returncode and "ImportError" in run.stderr:
         print("VNXD error=plugin_import")
     if run.returncode and "usage: pytest" in run.stderr:

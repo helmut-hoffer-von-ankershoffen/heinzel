@@ -156,3 +156,28 @@ def test_sample_report_is_private_and_removed_on_success_or_failure(tmp_path, fa
     assert not reports[0].exists()
     assert not reports[0].parent.exists()
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("outcome", "exception", "kind"),
+    [
+        ("passed", None, "none"),
+        ("skipped", RuntimeError("private"), "none"),
+        ("failed", AssertionError("private"), "assertion"),
+        ("failed", ValueError("private"), "exception"),
+        ("failed", None, "unknown"),
+        ("failed", pytest.fail.Exception("Timeout (>5.0s) private"), "timeout"),
+    ],
+)
+def test_phase_records_expose_only_fixed_failure_kind(outcome, exception, kind):
+    plugin_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_plugin_phases",
+        Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/vnxd_plugin.py",
+    )
+    assert plugin_spec
+    assert plugin_spec.loader
+    plugin = importlib.util.module_from_spec(plugin_spec)
+    plugin_spec.loader.exec_module(plugin)
+    result = plugin.phase_record("false", "call", outcome, exception, 1.234)
+    assert result == f"VNXD case=false phase=call outcome={outcome} kind={kind} duration_ms=1234"
+    assert "private" not in result

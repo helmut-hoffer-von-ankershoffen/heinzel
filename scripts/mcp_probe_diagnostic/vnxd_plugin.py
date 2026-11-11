@@ -67,6 +67,34 @@ def collect_sample(  # noqa: PLR0913 - explicit state for bounded sampler cleanu
         return
 
 
+def phase_record(case: str, phase: str, outcome: str, exc: BaseException | None, duration: float) -> str:
+    """Reduce a pytest phase to fixed labels; never return exception contents."""
+    kind = "none"
+    if outcome == "failed":
+        if exc is not None and type(exc).__name__ == "Failed" and str(exc).startswith("Timeout (>5.0s)"):
+            kind = "timeout"
+        elif isinstance(exc, AssertionError):
+            kind = "assertion"
+        else:
+            kind = "exception" if exc is not None else "unknown"
+    return f"VNXD case={case} phase={phase} outcome={outcome} kind={kind} duration_ms={max(0, round(duration * 1000))}"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> Generator[None, Any, None]:
+    """Persist only the outcome of each requested case and test phase."""
+    result = yield
+    if TARGET not in item.nodeid or call.when not in ("setup", "call", "teardown"):
+        return
+    report = result.get_result()
+    if report.outcome not in ("passed", "failed", "skipped"):
+        return
+    case = "false" if "[False]" in item.nodeid else "true"
+    exception = call.excinfo.value if call.excinfo is not None else None
+    line = phase_record(case, call.when, report.outcome, exception, report.duration)
+    (Path(os.environ["VNXD_PHASE_DIR"]) / f"{case}.{call.when}").write_text(line + "\n")
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noqa: C901
     """Observe the probe without changing its arguments, streams or timeout."""
@@ -119,6 +147,7 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noq
                     sampler.kill()
         for thread in threads:
             thread.join(timeout=1)
-        valid = "false" if "[False]" in item.nodeid else "true"
-        line = f"VNXD case={valid} elapsed_ms={observed['elapsed']} sample={observed['sample']}"
-        (Path(os.environ["VNXD_PHASE_DIR"]) / valid).write_text(line + "\n")
+        if observed["start"] is not None:
+            valid = "false" if "[False]" in item.nodeid else "true"
+            line = f"VNXD case={valid} elapsed_ms={observed['elapsed']} sample={observed['sample']}"
+            (Path(os.environ["VNXD_PHASE_DIR"]) / valid).write_text(line + "\n")
