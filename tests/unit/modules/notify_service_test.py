@@ -1125,3 +1125,19 @@ def test_health_reads_the_verified_descriptor_when_its_path_is_replaced(make, mo
     assert opens == 1
     assert retained.read_bytes() == original_bytes
     assert stat.S_IMODE(retained.stat().st_mode) == 0o600
+
+
+def test_store_read_and_marker_failures_log_named_events(make, settings, monkeypatch, caplog):
+    service = make()
+    draft(service)
+    (settings.state_dir / "notify" / "notices.json").write_text("{not json", encoding="utf-8")
+
+    def broken(*_args, **_kwargs):
+        raise OSError
+
+    monkeypatch.setattr("heinzel.modules.system.notify._store._write_private", broken)
+    with caplog.at_level(logging.WARNING, logger="heinzel.system.notify"):
+        assert service.recent() == []
+        service.store.watched(datetime(2026, 10, 21, 12, 0, tzinfo=BERLIN))
+    assert [record.message for record in caplog.records] == ["notify.store.read_failed", "notify.store.write_failed"]
+    assert caplog.records[1].marker == "viewer"
