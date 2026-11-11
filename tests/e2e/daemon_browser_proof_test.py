@@ -40,7 +40,7 @@ def test_daemon_browser_fixture_request_guard(tmp_path):
     env = os.environ.copy()
     env.update(HOME=str(home), PLAYWRIGHT_BROWSERS_PATH=str(BROWSER_CACHE))
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/web_build.py"), "exec", "node", "--test", "e2e/local-fixture.test.mjs"],
+        [sys.executable, str(ROOT / "scripts/web_build.py"), "exec", "node", "--test", "e2e/local-fixture.check.mjs"],
         cwd=ROOT,
         env=env,
         capture_output=True,
