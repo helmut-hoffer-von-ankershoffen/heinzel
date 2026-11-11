@@ -1,7 +1,7 @@
 // A choice among two to four exclusive options (design/README.md, Choices): a radiogroup of radio segments on a muted
-// track. The chosen segment is the one filled primary in its container; a choice the app cannot offer stays in the
-// group, dimmed and aria-disabled, with its reason as the tooltip. Roving tabindex: Tab enters at the chosen segment,
-// arrows move between segments.
+// track. The chosen segment is the one filled primary in its container. A choice this device cannot take is not passed
+// in at all: there is no dimmed or disabled segment. While a choice is being asked for, the group is busy and ignores
+// presses. Roving tabindex: Tab enters at the chosen segment, arrows move between segments.
 import type { LucideIcon } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { type KeyboardEvent, useId, useLayoutEffect, useRef } from "react";
@@ -11,8 +11,6 @@ export type Segment<T extends string> = {
   readonly value: T;
   readonly label: string;
   readonly icon: LucideIcon;
-  /** Why it cannot be chosen here; the segment stays reachable so the reason is read. */
-  readonly unavailable?: string;
 };
 
 type Props<T extends string> = {
@@ -24,6 +22,8 @@ type Props<T extends string> = {
   readonly selectOnArrow?: boolean;
   /** The segment being asked for: the selected look with a spinner, the group busy. */
   readonly busy?: T | null;
+  /** A cancellation choice that remains actionable while a request is pending. */
+  readonly allowWhileBusy?: T;
 };
 
 export function SegmentedControl<T extends string>({
@@ -33,6 +33,7 @@ export function SegmentedControl<T extends string>({
   onSelect,
   selectOnArrow = false,
   busy = null,
+  allowWhileBusy,
 }: Props<T>) {
   const legendId = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -56,7 +57,7 @@ export function SegmentedControl<T extends string>({
     const next = (index + step + segments.length) % segments.length;
     buttons.current[next]?.focus();
     const segment = segments[next];
-    if (selectOnArrow && segment && !segment.unavailable) onSelect(segment.value);
+    if (selectOnArrow && segment && !busy) onSelect(segment.value);
   };
   return (
     <div className="space-y-1">
@@ -88,12 +89,11 @@ export function SegmentedControl<T extends string>({
               type="button"
               role="radio"
               aria-checked={checked}
-              aria-disabled={segment.unavailable || (busy && !checked) ? true : undefined}
-              title={segment.unavailable}
+              aria-disabled={busy && segment.value !== allowWhileBusy ? true : undefined}
               tabIndex={index === focusable ? 0 : -1}
               onKeyDown={(event) => move(event, index)}
               onClick={() => {
-                if (busy) return;
+                if (busy && segment.value !== allowWhileBusy) return;
                 onSelect(segment.value);
               }}
               className={cn(
@@ -102,7 +102,6 @@ export function SegmentedControl<T extends string>({
                 checked
                   ? "bg-primary font-medium text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                segment.unavailable && "opacity-50",
               )}
             >
               <Icon aria-hidden className={cn("size-4", busy === segment.value && "animate-spin")} />
