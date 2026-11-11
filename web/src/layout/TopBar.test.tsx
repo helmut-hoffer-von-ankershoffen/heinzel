@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
+import { BrowserPanel } from "./BrowserPanel";
 import { TopBar } from "./TopBar";
 
 vi.mock("@/api/queries", () => ({ usePlayful: () => false }));
@@ -222,4 +223,54 @@ it("keeps manual busy until repeated refreshes settle, including a rejection", a
   await act(async () => second.resolve());
   await waitFor(() => expect(button).toHaveAttribute("aria-busy", "false"));
   expect(button).toHaveAttribute("aria-label", "Refresh data");
+});
+
+it("hides and restores the native browser for the refresh tooltip", async () => {
+  const browser = vi.fn(async () => ({ status: "ready" }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  const bounds = new DOMRect(10, 20, 100, 200);
+  const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(bounds);
+  const rects = vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([bounds] as unknown as DOMRectList);
+  const client = new QueryClient();
+  const layout = { action: "layout", bounds: { x: 10, y: 20, width: 100, height: 200 } };
+  try {
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <TopBar
+            chatOpen={false}
+            onToggleChat={() => {}}
+            terminalOpen={false}
+            onToggleTerminal={() => {}}
+            calendarOpen={false}
+            onOpenCalendar={() => {}}
+          />
+          <BrowserPanel active onClose={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(browser).toHaveBeenLastCalledWith(layout));
+    const button = screen.getByRole("button", { name: "Refresh data" });
+    act(() => button.focus());
+    expect(button).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    await waitFor(() => expect(browser).toHaveBeenLastCalledWith({ action: "hide" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+    await waitFor(() => expect(browser).toHaveBeenLastCalledWith(layout));
+    act(() => button.blur());
+    act(() => button.focus());
+    await waitFor(() => expect(browser).toHaveBeenLastCalledWith({ action: "hide" }));
+    fireEvent.click(button);
+    expect(button).toHaveFocus();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await waitFor(() => expect(browser).toHaveBeenLastCalledWith(layout));
+    view.unmount();
+  } finally {
+    measure.mockRestore();
+    rects.mockRestore();
+    Reflect.deleteProperty(window, "heinzelDesktop");
+    client.clear();
+  }
 });
