@@ -6,7 +6,13 @@ import { RestartApplyError } from "./controller";
 function steps(plan = FULL_PLAN, restored?: Phase[]) {
   const reports: Phase[][] = [];
   let now = 1000;
-  const subject = new ApplySteps((phases) => reports.push(phases), {}, restored, () => now, plan);
+  const subject = new ApplySteps(
+    (phases) => reports.push(phases),
+    {},
+    restored,
+    () => now,
+    plan,
+  );
   return { subject, reports, tick: (ms: number) => (now += ms) };
 }
 
