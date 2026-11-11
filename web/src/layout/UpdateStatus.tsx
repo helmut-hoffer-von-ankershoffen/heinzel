@@ -2,14 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
-import { api, unwrap } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
 import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
-import { KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
+import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 import { describe, partSegments } from "@/updates/updateState";
 
@@ -49,23 +48,15 @@ export function UpdateStatus() {
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState(0);
-  // One GET /system/release asks GitHub for the latest release (and updates the cache); the two status
-  // queries only read that cache, so they are refreshed after it.
+  // The updater checks core and plugin news together; its plan is shared by all windows.
   const check = useMutation({
-    mutationFn: async () => {
-      console.info(JSON.stringify({ event: "web.update.check", outcome: "start" }));
-      return unwrap(api.GET("/system/release"));
-    },
-    onSuccess: async (result) => {
-      console.info(
-        JSON.stringify({ event: "web.update.check", outcome: "done", update_available: result.update_available }),
-      );
+    mutationFn: checkNow,
+    onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["web", "update-status"] }),
         queryClient.invalidateQueries({ queryKey: KEY }),
       ]);
     },
-    onError: () => console.info(JSON.stringify({ event: "web.update.check", outcome: "failed" })),
   });
   const { mutate: runCheck } = check;
   // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
@@ -220,11 +211,6 @@ export function UpdateStatus() {
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
         <AutoUpdateToggle />
-        {check.data?.warnings.map((warning) => (
-          <p key={warning} role="alert" className="text-xs text-bad">
-            {warning}
-          </p>
-        ))}
         {check.isError && (
           <p role="alert" className="text-bad">
             {t("updates.checkFailed")}

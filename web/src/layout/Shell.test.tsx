@@ -316,7 +316,7 @@ describe("Desktop menu actions", () => {
     vi.stubGlobal("innerWidth", 640);
     const { calls } = mockApi({
       ...answers,
-      "/api/system/release": { current: "0.1.0", latest: "0.1.0", update_available: false, warnings: [] },
+      "/api/auto-update/check": { enabled: false, phase: "off", plugins: {} },
     });
     renderAt("/doctor");
     act(() => requestMenuAction("terminal"));
@@ -328,6 +328,8 @@ describe("Desktop menu actions", () => {
     expect(await screen.findByRole("contentinfo")).toBeVisible();
     expect(await screen.findByRole("button", { name: "Check for updates" })).toBeVisible();
     expect(within(terminal).getByRole("button", { name: "Full screen" })).toBeVisible();
-    expect(calls.filter((request) => request.url.endsWith("/api/system/release"))).toHaveLength(1);
+    expect(
+      calls.filter((request) => request.url.endsWith("/api/auto-update/check") && request.method === "POST"),
+    ).toHaveLength(1);
   });
 });

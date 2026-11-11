@@ -354,37 +354,41 @@ it("observes the live plan instead of the indefinitely cached installation facts
   expect(startUpdate).not.toHaveBeenCalled();
 });
 
-const release = { current: "0.1.0", latest: "0.2.0", update_available: true, url: null, source: "x", warnings: [] };
-
-it("asks for the latest release once when Check for updates is pressed", async () => {
-  const { calls } = mockApi({ ...shell, "/api/update-status": status, "/api/system/release": release });
-  const user = userEvent.setup();
-  renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
-  await user.click(await screen.findByRole("button", { name: "Check for updates" }));
-  await waitFor(() => expect(calls.filter((call) => call.url.endsWith("/api/system/release"))).toHaveLength(1));
-});
-
-it("checks once and opens the pane when the desktop menu asks", async () => {
-  const { calls } = mockApi({ ...shell, "/api/update-status": status, "/api/system/release": release });
-  renderAt("/");
-  await screen.findByRole("button", { name: "Updates available, warning" });
-  act(() => requestMenuAction("updates"));
-  expect(await screen.findByRole("button", { name: "Check for updates" })).toBeInTheDocument();
-  await waitFor(() => expect(calls.filter((call) => call.url.endsWith("/api/system/release"))).toHaveLength(1));
-});
-
-it("shows why the check could not ask", async () => {
-  mockApi({
+it.each(["button", "menu"] as const)("refreshes a failed plugin lookup through the %s", async (source) => {
+  let fresh = false;
+  const updated = { ...plan, plugins_checked: true, core_checked: true, plugins: { "heinzel-example": "2.0.0" } };
+  const { calls } = mockApi({
     ...shell,
     "/api/update-status": status,
-    "/api/system/release": { ...release, warnings: ["Could not ask GitHub (offline)."] },
+    "/api/auto-update": () => (fresh ? updated : { ...plan, plugins_checked: false }),
+    "/api/auto-update/check": () => {
+      fresh = true;
+      return updated;
+    },
   });
   const user = userEvent.setup();
   renderAt("/");
+  const icon = await screen.findByRole("button", { name: "Updates available, warning" });
+  if (source === "button") {
+    await user.click(icon);
+    await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+  } else {
+    act(() => requestMenuAction("updates"));
+  }
+  expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
+  const checks = calls.filter((call) => new URL(call.url).pathname === "/api/auto-update/check");
+  expect(checks).toHaveLength(1);
+  expect(checks[0]?.method).toBe("POST");
+  expect(calls.some((call) => call.url.endsWith("/api/system/release"))).toBe(false);
+});
+
+it("shows when the update check fails", async () => {
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update/check": { status: 503, body: {} } });
+  const user = userEvent.setup();
+  renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   await user.click(await screen.findByRole("button", { name: "Check for updates" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+  expect(await screen.findByRole("alert")).toHaveTextContent("The check for updates did not finish.");
 });
 
 const planWith = {
