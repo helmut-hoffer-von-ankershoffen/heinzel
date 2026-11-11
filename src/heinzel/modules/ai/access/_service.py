@@ -25,6 +25,7 @@ from heinzel import (
     UsageLog,
 )
 from heinzel.kernel import CapabilityView, clean_text
+from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._models import (
     AccessList,
     AccessOption,
@@ -121,7 +122,9 @@ def _isolated[T](name: str, what: str, call: Callable[[], T]) -> T | str:
     try:
         return call()
     except Exception as exc:  # noqa: BLE001 - isolate plugins: one broken option leaves the others listed
-        logger.warning("AI access %s: %s failed: %s", name, what, type(exc).__name__)
+        log_event(
+            logger, "ai.access.option_failed", level=logging.WARNING, option=name, call=what, error=type(exc).__name__
+        )
         return clean_text(f"its {what} failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
 
 
@@ -301,7 +304,7 @@ class AccessService:
         try:
             self._tests.keep(name, last)
         except OSError as exc:
-            logger.warning("Keeping the test of %s failed: %s", name, exc)
+            log_event(logger, "ai.access.keep_test_failed", level=logging.WARNING, option=name, error=str(exc))
         return AccessTestReport(name=name, **result.model_dump())
 
     def checks(self) -> list[Check]:

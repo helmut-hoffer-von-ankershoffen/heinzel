@@ -1,5 +1,6 @@
 """Chat sessions (ADR 0045): storage and retention, the prompt and caps of a message, and confirmation in code."""
 
+import logging
 import os
 import sys
 import time
@@ -495,15 +496,33 @@ def test_what_the_person_reads_is_built_from_what_runs_and_only_parameters_run(s
     assert seen == [{"kernel": "Kernel", "times": 3}]  # the injected kernel, never the forged argument
 
 
-def test_a_bug_in_a_confirmed_action_is_recorded_and_it_never_runs_again(service, store, seen):
+def test_a_bug_in_a_confirmed_action_is_recorded_and_it_never_runs_again(service, store, seen, caplog):
     chat = service.open(None)
     store.propose(replace(call("crash"), session=chat.id, arguments={}))
-    failed = service.confirm(chat.id, "a1")
+    with caplog.at_level(logging.ERROR):
+        failed = service.confirm(chat.id, "a1")
+    (event,) = [r for r in caplog.records if r.message == "runner.chat.confirm_failed"]
+    assert (event.action, event.session) == ("a1", chat.id)
     assert failed.actions[0].status == "failed"
     assert failed.actions[0].result == "RuntimeError: failed with a bug; the log says why"
     with pytest.raises(HeinzelError, match="failed already"):
         service.confirm(chat.id, "a1")
     assert seen == [{"crash": True}]
+
+
+def test_a_failed_schedule_reconciliation_is_logged_and_the_action_stays_uncertain(service, store, monkeypatch, caplog):
+    chat = service.open(None)
+    store.propose(replace(call("crash"), session=chat.id, arguments={}))
+    action = store.load(chat.id).actions[0]
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError
+
+    monkeypatch.setattr(service._kernel, "provides", broken)
+    with caplog.at_level(logging.ERROR):
+        service._reconcile_schedule_confirmation(action)
+    (event,) = [r for r in caplog.records if r.message == "runner.chat.reconcile_failed"]
+    assert event.action == "a1"
 
 
 def test_an_unreadable_or_foreign_session_file_names_the_fix(store):

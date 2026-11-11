@@ -34,6 +34,7 @@ from heinzel.kernel import (
     Weather,
     daypart,
 )
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system.theme._models import (
     ThemeFontView,
     ThemeList,
@@ -363,18 +364,39 @@ class ThemeService(ThemeFonts, ThemeChoice):
             self._read[key] = (now, cached[1] if cached else None)
         operation = next((op for _, op in self._kernel.lets(OperationLet) if op.func is let.func), None)
         if operation is None:
-            logger.warning("Signals %s have no operation; they stay unknown", key)
+            log_event(logger, "theme.signals.no_operation", level=logging.WARNING, signals=key)
             return None
         published: ThemeSignals | None = None
         try:
             result = self._workers.submit(self._kernel.invoke, operation).result(timeout=DEADLINE.total_seconds())
             published = ThemeSignals.model_validate(result.model_dump() if isinstance(result, ThemeSignals) else result)
         except FutureTimeout:
-            logger.warning("Signals %s took longer than %s; they stay unknown until %s", key, DEADLINE, let.every)
+            log_event(
+                logger,
+                "theme.signals.timeout",
+                level=logging.WARNING,
+                signals=key,
+                deadline=str(DEADLINE),
+                retry_after=str(let.every),
+            )
         except ValidationError as exc:
-            logger.warning("Signals %s aren't ThemeSignals (%s); they stay unknown until %s", key, exc, let.every)
-        except Exception:
-            logger.warning("Signals %s failed; they stay unknown until %s", key, let.every, exc_info=True)
+            log_event(
+                logger,
+                "theme.signals.malformed",
+                level=logging.WARNING,
+                signals=key,
+                error=str(exc),
+                retry_after=str(let.every),
+            )
+        except Exception:  # noqa: BLE001 - a plugin can fail any way; its signals stay unknown
+            log_event(
+                logger,
+                "theme.signals.failed",
+                level=logging.WARNING,
+                exc_info=True,
+                signals=key,
+                retry_after=str(let.every),
+            )
         with self._lock:
             self._read[key] = (now, published)
         return published
