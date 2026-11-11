@@ -61,7 +61,7 @@ def test_vitest_files_run_with_or_without_the_web_prefix():
         assert "--maxWorkers=2" in command
 
 
-@pytest.mark.parametrize("path", ["src/test/choices-standards.test.ts", "src/lib/pane-actions-standards.test.ts"])
+@pytest.mark.parametrize("path", ["src/test/choices-standards.test.ts", "src/lib/mobile-standards.test.ts"])
 def test_vitest_accepts_hyphenated_owning_test_paths(path):
     for selector in (path, f"web/{path}"):
         assert focused_job.plan("vitest", selector, OUT)[0][-1] == path
