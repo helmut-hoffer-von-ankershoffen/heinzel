@@ -328,7 +328,7 @@ async function updateActionTargets() {
       const pane = await openFooterPane(page, "@updates", "Updates", touch ? "tap" : "click");
       const row = pane.locator("[data-pane-actions]");
       const manual = row.getByRole("button", { name: "Manually update…", exact: true });
-      const retry = row.getByRole("button", { name: "Check again", exact: true });
+      const retry = row.getByRole("button", { name: "Check for updates", exact: true });
       await manual.waitFor();
       await retry.waitFor();
       if (compact) await row.evaluate((element) => element.style.setProperty("--spacing", "3px"));
