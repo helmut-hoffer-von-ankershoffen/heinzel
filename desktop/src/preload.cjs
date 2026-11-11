@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
+  // System loopback is offered only where Electron main reports it; a choice arms exactly one capture.
+  systemAudio: () => ipcRenderer.invoke("hz:system-audio"),
+  audioSource: (source) => ipcRenderer.invoke("hz:audio-source", source === "system" ? "system" : "workspace"),
   onFullscreen: (callback) => {
     const listener = (_event, full) => callback(full === true);
     ipcRenderer.on("hz:fullscreen", listener);
