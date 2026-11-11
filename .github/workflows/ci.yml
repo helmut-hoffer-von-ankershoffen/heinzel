@@ -95,26 +95,39 @@ jobs:
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
+      scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
       focused_matrix: ${{ steps.focused.outputs.focused_matrix }}
       focused_mode: ${{ steps.focused.outputs.focused_mode }}
       focused_base: ${{ steps.focused.outputs.focused_base }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: maintenance
+        name: Select bounded scheduled main maintenance
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Scheduled maintenance requires the canonical main branch"
+            exit 1
+          fi
+          echo 'selected=true' >> "$GITHUB_OUTPUT"
+      - if: github.event_name != 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-uv
+      - if: github.event_name != 'schedule'
+        uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
       - id: release
         name: Recognize the canonical open release candidate
+        if: github.event_name != 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
       - id: focused
         name: Resolve the exact reviewed focused plan
-        if: steps.release.outputs.full_release != 'true'
+        if: github.event_name != 'schedule' && steps.release.outputs.full_release != 'true'
         env:
           FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
           FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
@@ -125,6 +138,7 @@ jobs:
         run: python3 -I scripts/focused_plan.py
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
+        if: github.event_name != 'schedule'
         env:
           EVENT: ${{ github.event_name }}
           FULL_RELEASE: ${{ steps.release.outputs.full_release }}
@@ -242,7 +256,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -329,7 +343,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1172,14 +1186,23 @@ jobs:
             esac
           done
       - name: Require successful focused workload and all owning checks
-        if: needs.changes.outputs.focused_mode != ''
+        if: github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SCHEDULED_MAINTENANCE: ${{ needs.changes.outputs.scheduled_maintenance }}
         run: |
-          required=(admission changes lint secrets audit quarantine-registry focused-tests)
-          if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
+          required=(admission changes lint secrets audit quarantine-registry)
+          if [ "$EVENT" = schedule ]; then
+            if [ "$SCHEDULED_MAINTENANCE" != true ]; then
+              echo "::error::Scheduled maintenance was not selected"
+              exit 1
+            fi
+          else
+            required+=(focused-tests)
+            if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
+          fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
-              || { echo "::error::Reviewed focused job did not pass: $job"; exit 1; }
+              || { echo "::error::Required $EVENT workload job did not pass: $job"; exit 1; }
           done
