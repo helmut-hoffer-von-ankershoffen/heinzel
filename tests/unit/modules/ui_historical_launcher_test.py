@@ -24,7 +24,7 @@ def launcher(tmp_path: Path) -> HistoricalLauncher:
         directory=root / "state" / "ui",
         executable=executable,
         uv=root / "uvbin" / "uv",
-        profile={"HZ_HOME": str(root / "home"), "HOME": str(root / "home")},
+        profile={"PROFILE_HOME": str(root / "home"), "HOME": str(root / "home")},
     )
 
 
@@ -44,7 +44,7 @@ def test_the_rendered_script_serves_on_the_port_with_the_generation_and_a_clean_
     result = _run(
         launcher.render(8123, "gen-7"),
         tmp_path,
-        HZ_SECRET="must-not-leak",
+        MANAGER_CREDENTIAL="must-not-leak",
         LANG="en_US.UTF-8",
         UNLISTED="dropped",
     )
@@ -55,8 +55,8 @@ def test_the_rendered_script_serves_on_the_port_with_the_generation_and_a_clean_
         line.split("=", 1) for line in result.stdout.splitlines() if "=" in line and not line.startswith("ARGS:")
     )
     assert environment["LANG"] == "en_US.UTF-8"  # an OS-session variable is forwarded
-    assert environment["HZ_HOME"] == launcher.profile["HZ_HOME"]
-    assert "HZ_SECRET" not in environment
+    assert environment["PROFILE_HOME"] == launcher.profile["PROFILE_HOME"]
+    assert "MANAGER_CREDENTIAL" not in environment
     assert "UNLISTED" not in environment
     assert environment["PATH"].split(":")[:2] == [str(launcher.uv.parent), str(launcher.executable.parent)]
 
@@ -72,7 +72,7 @@ def test_a_profile_given_to_render_replaces_the_launchers_own(launcher, tmp_path
     result = _run(launcher.render(1, "g", {"ONLY_THIS": "yes"}), tmp_path)
 
     assert "ONLY_THIS=yes" in result.stdout.splitlines()
-    assert not [line for line in result.stdout.splitlines() if line.startswith("HZ_HOME=")]
+    assert not [line for line in result.stdout.splitlines() if line.startswith("PROFILE_HOME=")]
 
 
 @pytest.mark.parametrize(
