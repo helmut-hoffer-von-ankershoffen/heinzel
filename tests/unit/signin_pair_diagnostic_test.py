@@ -1,11 +1,15 @@
 """Offline contracts for the bounded sign-in diagnostic; no browser or server is launched."""
 
 import os
+import subprocess
 import sys
+import threading
 from io import BytesIO
 
 import pytest
+import yaml
 
+from tests.e2e import _signin_diagnostic_guard as guard
 from tests.e2e import _signin_pair_diagnostic as pair
 from tests.e2e import _signin_trace_server as trace
 
@@ -140,3 +144,102 @@ def test_diagnostic_process_drains_without_leaking_output():
     status, markers = pair.execute([sys.executable, "-c", code], {"PATH": "/usr/bin:/bin"})
     assert status == 0
     assert markers == ["SIGN_IN_SERVER handler-enter 1234567890123"]
+
+
+def test_timed_out_owned_child_is_killed_and_bounded_markers_retained():
+    code = (
+        "import subprocess,sys,time; "
+        "subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        "print('SIGN_IN_SERVER handler-enter 1234567890123', flush=True); time.sleep(30)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code], env={"PATH": "/usr/bin:/bin"}, stdout=subprocess.PIPE, start_new_session=True
+    )
+    markers = []
+    reader = threading.Thread(target=pair.drain, args=(process, markers), daemon=True)
+    assert pair.run_command(process, reader, timeout=0.5) is None
+    assert process.poll() is not None
+    assert not reader.is_alive()
+    assert markers == ["SIGN_IN_SERVER handler-enter 1234567890123"]
+
+
+def test_failure_to_start_cleanup_reader_still_reaps_owned_child():
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        env={"PATH": "/usr/bin:/bin"},
+        stdout=subprocess.PIPE,
+        start_new_session=True,
+    )
+
+    class BrokenReader:
+        ident = None
+
+        def start(self):
+            msg = "synthetic failure"
+            raise RuntimeError(msg)
+
+        def is_alive(self):
+            return False
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        pair.run_command(process, BrokenReader(), timeout=0.5)
+    assert process.poll() is not None
+
+
+def test_cleanup_failure_emits_only_fixed_marker(monkeypatch):
+    monkeypatch.setattr(pair.subprocess, "Popen", lambda *a, **kw: object())
+    monkeypatch.setattr(pair, "run_command", lambda *a: (_ for _ in ()).throw(RuntimeError("secret")))
+    status, markers = pair.execute(["fixed"], {})
+    assert status is None
+    assert markers == ["SIGN_IN_CLEANUP_UNCERTAIN"]
+
+
+def test_one_shot_guard_rejects_each_unpinned_or_unsafe_dimension():
+    sha = "a" * 40
+    env = {
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REPOSITORY": "helmut-hoffer-von-ankershoffen/heinzel",
+        "GITHUB_REF": "refs/heads/ci/706-signin-pair-diagnostic",
+        "FOCUSED_REF": "ci/706-signin-pair-diagnostic",
+        "REQUESTED_OS": "macos-latest",
+        "FOCUSED_KIND": "pytest",
+        "FOCUSED_REPEAT": "1",
+        "FOCUSED_STRESS": "false",
+        "FOCUSED_SELECTOR": sha,
+        "GITHUB_SHA": sha,
+    }
+    assert guard.authorized(env, sha, "Darwin", "arm64")
+    for key in env:
+        assert not guard.authorized({**env, key: "wrong"}, sha, "Darwin", "arm64")
+    assert not guard.authorized(env, "b" * 40, "Darwin", "arm64")
+    assert not guard.authorized(env, sha, "Linux", "arm64")
+    assert not guard.authorized(env, sha, "Darwin", "x86_64")
+
+
+def test_report_never_outputs_untrusted_lines(tmp_path, capsys):
+    marker = tmp_path / "sanitized-signin-markers.txt"
+    marker.write_text("SIGN_IN_SERVER handler-enter 1234567890123\n", encoding="utf-8")
+    guard.report(tmp_path)
+    assert capsys.readouterr().out == "SIGN_IN_SERVER handler-enter 1234567890123\n"
+    marker.write_text("SIGN_IN_SERVER handler-enter secret\n", encoding="utf-8")
+    guard.report(tmp_path)
+    assert capsys.readouterr().out == "Sign-in diagnostic markers invalid\n"
+
+
+def test_diagnostic_workflow_guards_before_setup_and_never_uploads_raw_output():
+    workflow = yaml.safe_load((pair.ROOT / ".github/workflows/focused-job.yml").read_text())
+    job = workflow["jobs"]["focused"]
+    steps = job["steps"]
+    names = [step.get("name", "") for step in steps]
+    assert names.index("Verify the one-off sign-in diagnostic request") < names.index(
+        "Install browser runtimes and host dependencies"
+    )
+    diagnostic = steps[names.index("Run the isolated sign-in diagnostic")]
+    assert diagnostic["if"] == "github.ref_name == 'ci/706-signin-pair-diagnostic'"
+    assert "env -i " in diagnostic["run"]
+    assert "GITHUB_TOKEN" not in diagnostic.get("env", {})
+    assert "> /dev/null 2>&1" in diagnostic["run"]
+    generic = steps[names.index("Run the selection")]
+    assert generic["if"] == "github.ref_name != 'ci/706-signin-pair-diagnostic'"
+    upload = steps[names.index("Keep the report, tally, screenshots and logs")]
+    assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in upload["if"]

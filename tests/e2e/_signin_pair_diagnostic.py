@@ -21,7 +21,7 @@ CASES = (
 MARKER = re.compile(
     r"SIGN_IN_(?:BROWSER (?:chromium|webkit) (?:route-enter|fetch-start|fetch-return) \d{13}|"
     r"SERVER (?:handler-enter|handler-pending|handler-return|prepare-enter|prepare-refused|prepare-return) \d{13}|"
-    r"STDERR_PENDING \d+|STACK (?:_chatgpt_signin[.]py|_chatgpt[.]py|rich/console[.]py|"
+    r"STDERR_PENDING \d+|CLEANUP_UNCERTAIN|STACK (?:_chatgpt_signin[.]py|_chatgpt[.]py|rich/console[.]py|"
     r"logging/__init__[.]py|h11_impl[.]py):\d{1,6})"
 )
 
@@ -67,11 +67,11 @@ def drain(process, markers):
                 pending += bytes((byte,))
 
 
-def run_command(process, reader):
+def run_command(process, reader, timeout=1080):
     """Wait within the original lane budget, always cleaning up owned children."""
     try:
         reader.start()
-        return process.wait(timeout=1080)
+        return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         return None
     finally:
@@ -85,11 +85,11 @@ def run_command(process, reader):
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
                 reader.join(timeout=10)
-        if process.stdout is not None:
-            process.stdout.close()
         if reader.is_alive():
             msg = "Diagnostic output reader did not stop"
             raise RuntimeError(msg)
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 def execute(command, env):
@@ -104,7 +104,10 @@ def execute(command, env):
     )
     markers = []
     reader = threading.Thread(target=drain, args=(process, markers), daemon=True)
-    return run_command(process, reader), markers
+    try:
+        return run_command(process, reader), markers
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        return None, [*markers[:99], "SIGN_IN_CLEANUP_UNCERTAIN"]
 
 
 def summarize_junit(path):

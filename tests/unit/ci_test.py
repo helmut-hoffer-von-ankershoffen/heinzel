@@ -96,6 +96,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
+        "python3 -I tests/e2e/_signin_diagnostic_guard.py": "guards the one-shot sign-in diagnostic before setup",
+        'umask 077\nwork="$(mktemp -d "$RUNNER_TEMP/signin-706.XXXXXX")"': (
+            "runs the separately pinned sign-in study with private bounded output"
+        ),
     },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
