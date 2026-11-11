@@ -9,7 +9,7 @@ pin:
 	test "$$(git rev-parse HEAD)" = "$(GITHUB_SHA)"
 	sha256sum .github/workflows/h17g-python-mirror.yml diagnostics/h17g-python/diagnostic.mk >> "$(RUNNER_TEMP)/h17g-python-output/bootstrap.log"
 	printf '%s  %s\n' \
-	  '553bba29cccbb1224b5f867b67920888cbaa1a637cb93dbb69f8e09707830721' 'diagnostics/h17g-python/probe.sh' \
+	  '0e5d9c739ac88956183d109c00b4574b47d6c667b23981fdc907925f7781c1ac' 'diagnostics/h17g-python/probe.sh' \
 	  'e4aad9a4fefc431a67b14ba2638b00caab98a348396d12de0e4df138b13466e9' 'diagnostics/h17g-python/access.sh' \
 	  'fde88e643905efde62f23a0a3b56e9acf15467edaf446e043aaebc9524736902' 'diagnostics/h17g-python/check_indexes.py' \
 	  'db885b4911fa7adce7c856dad82aa39e56c41c5b6683874c854221110fc303f4' 'diagnostics/h17g-python/sources.py' \

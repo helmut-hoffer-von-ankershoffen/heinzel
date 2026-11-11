@@ -3,12 +3,12 @@ name: h17g Python Docs mirror qualification
 run-name: h17g Python Docs mirror qualification
 on:
   push:
-    branches: [diag/h17g-apt-retry-v3]
+    branches: [diag/h17g-language-list-v4]
 permissions:
   contents: read
 jobs:
   probe:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/diag/h17g-apt-retry-v3'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/diag/h17g-language-list-v4'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

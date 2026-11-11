@@ -65,9 +65,22 @@ probe_route() {
   apt-config "${update_opts[@]}" shell CNF_META 'Acquire::IndexTargets::deb::CNF::MetaKey' RETRIES 'Acquire::Retries' LANGUAGES 'Acquire::Languages' CNF_ENABLED 'Acquire::IndexTargets::deb::CNF::DefaultEnabled' PACKAGES_ENABLED 'Acquire::IndexTargets::deb::Packages::DefaultEnabled' > "$out/$route-apt-config.log" 2>&1 || return 1
   grep -Fq '$(COMPONENT)/cnf/Commands-$(NATIVE_ARCHITECTURE)' "$out/$route-apt-config.log" || { printf '%s\n' 'CNF_TARGET_UNCONFIRMED'; return 1; }
   grep -Fxq "RETRIES='1'" "$out/$route-apt-config.log" || return 1
-  grep -Fxq "LANGUAGES='none'" "$out/$route-apt-config.log" || return 1
   grep -Fxq "CNF_ENABLED='false'" "$out/$route-apt-config.log" || return 1
   grep -Fxq "PACKAGES_ENABLED='true'" "$out/$route-apt-config.log" || return 1
+  # Languages is a list: apt-config shell reads only its scalar, which can be
+  # empty even when list entries exist. Ask APT's target planner instead, using
+  # the same options and sources as update, without consulting Release files.
+  if ! timeout -k 2s 8s sudo apt-get "${update_opts[@]}" indextargets --no-release-info --format '$(CREATED_BY)|$(IDENTIFIER)|$(METAKEY)|$(LANGUAGE)' > "$out/$route-target-plan.log" 2> "$out/$route-target-plan.err"; then
+    printf 'APT_TARGET_PLAN=FAILED ROUTE=%s\n' "$route"; return 1
+  fi
+  if ! awk -F '|' '
+    NF != 4 || $4 != "$(LANGUAGE)" || tolower($1) ~ /translations/ || tolower($2) ~ /translations/ || tolower($3) ~ /(^|\/)i18n\/translation-/ { bad=1 }
+    $1 == "Packages" && $2 == "Packages" && $3 ~ /^[^\/]+\/binary-amd64\/Packages$/ { packages=1 }
+    END { exit (bad || !packages) }
+  ' "$out/$route-target-plan.log"; then
+    printf 'APT_TARGET_PLAN=UNEXPECTED ROUTE=%s\n' "$route"; return 1
+  fi
+  printf 'APT_TARGET_PLAN=PACKAGES_PRESENT_NO_TRANSLATIONS ROUTE=%s\n' "$route"
   timeout -k 2s 35s sudo apt-get "${update_opts[@]}" update > "$out/$route-update.log" 2>&1
   update_rc=$?
   printf 'SIGNED_UPDATE_RC=%s\n' "$update_rc"
