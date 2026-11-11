@@ -21,18 +21,18 @@ describe("The Today cards from the doctor's report", () => {
     const [down] = doctorCards(report("down", checks));
     const [degraded] = doctorCards(report("degraded", checks));
     expect(down).toMatchObject({ tone: "bad", detail: "web port", route: "/doctor", context: "route:/doctor" });
-    expect(down.title).toContain("1");
-    expect(degraded.tone).toBe("warn");
+    expect(down?.title).toContain("1");
+    expect(degraded?.tone).toBe("warn");
   });
 
   it("shortens a long list of failing checks to three and an ellipsis", () => {
     const checks = { m: ["a", "b", "c", "d"].map((name) => ({ name, status: "down" })) };
-    expect(doctorCards(report("down", checks))[0].detail).toBe("m a, m b, m c…");
+    expect(doctorCards(report("down", checks))[0]?.detail).toBe("m a, m b, m c…");
   });
 
   it("changes the id when what fails changes, so a dismissed card comes back", () => {
-    const one = doctorCards(report("down", { m: [{ name: "a", status: "down" }] }))[0].id;
-    const two = doctorCards(report("down", { m: [{ name: "b", status: "down" }] }))[0].id;
+    const one = doctorCards(report("down", { m: [{ name: "a", status: "down" }] }))[0]?.id;
+    const two = doctorCards(report("down", { m: [{ name: "b", status: "down" }] }))[0]?.id;
     expect(one).not.toBe(two);
   });
 });
@@ -46,8 +46,8 @@ describe("The Today cards from the daemon's jobs", () => {
     ] as unknown as SchemaJobInfo[];
     const cards = jobCards(jobs);
     expect(cards.map((card) => card.id.split(":")[1])).toEqual(["broke", "stuck"]);
-    expect(cards[1].detail).toBe("no schedule");
-    expect(cards[0].detail).toMatch(/^Last run /);
+    expect(cards[1]?.detail).toBe("no schedule");
+    expect(cards[0]?.detail).toMatch(/^Last run /);
     expect(cards[0]).toMatchObject({ tone: "bad", route: "/contracts", context: "text:the daemon job broke" });
   });
 
@@ -58,9 +58,9 @@ describe("The Today cards from the daemon's jobs", () => {
 
 describe("The Today card from your profile", () => {
   it("asks to finish an incomplete profile and says what is missing", () => {
-    const [card] = profileCards({ complete: false, missing: ["name", "city"] } as unknown as SchemaProfile);
+    const card = profileCards({ complete: false, missing: ["name", "city"] } as unknown as SchemaProfile)[0];
     expect(card).toMatchObject({ tone: "info", route: "/profile", id: "profile:name,city" });
-    expect(card.detail).toContain("name, city");
+    expect(card?.detail).toContain("name, city");
   });
 
   it("has none for a complete or unread profile", () => {
