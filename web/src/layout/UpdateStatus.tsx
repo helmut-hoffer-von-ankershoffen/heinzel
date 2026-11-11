@@ -50,13 +50,18 @@ export function UpdateStatus() {
   const [openRequest, setOpenRequest] = useState(0);
   // The updater checks core and plugin news together; its plan is shared by all windows.
   const check = useMutation({
-    mutationFn: checkNow,
+    mutationFn: async () => {
+      console.info(JSON.stringify({ event: "web.update.check", outcome: "start" }));
+      return checkNow();
+    },
     onSuccess: async () => {
+      console.info(JSON.stringify({ event: "web.update.check", outcome: "done" }));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["web", "update-status"] }),
         queryClient.invalidateQueries({ queryKey: KEY }),
       ]);
     },
+    onError: () => console.info(JSON.stringify({ event: "web.update.check", outcome: "failed" })),
   });
   const { mutate: runCheck } = check;
   // "Check for Updates…" in the desktop app menu opens this pane and does the same check.

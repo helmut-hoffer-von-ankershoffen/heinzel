@@ -355,6 +355,7 @@ it("observes the live plan instead of the indefinitely cached installation facts
 });
 
 it.each(["button", "menu"] as const)("refreshes a failed plugin lookup through the %s", async (source) => {
+  const logs = vi.spyOn(console, "info").mockImplementation(() => {});
   let fresh = false;
   const updated = { ...plan, plugins_checked: true, core_checked: true, plugins: { "heinzel-example": "2.0.0" } };
   const { calls } = mockApi({
@@ -380,15 +381,23 @@ it.each(["button", "menu"] as const)("refreshes a failed plugin lookup through t
   expect(checks).toHaveLength(1);
   expect(checks[0]?.method).toBe("POST");
   expect(calls.some((call) => call.url.endsWith("/api/system/release"))).toBe(false);
+  await waitFor(() =>
+    expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "done" })),
+  );
+  expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "start" }));
+  logs.mockRestore();
 });
 
 it("shows when the update check fails", async () => {
+  const logs = vi.spyOn(console, "info").mockImplementation(() => {});
   mockApi({ ...shell, "/api/update-status": status, "/api/auto-update/check": { status: 503, body: {} } });
   const user = userEvent.setup();
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   await user.click(await screen.findByRole("button", { name: "Check for updates" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("The check for updates did not finish.");
+  expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "failed" }));
+  logs.mockRestore();
 });
 
 const planWith = {
