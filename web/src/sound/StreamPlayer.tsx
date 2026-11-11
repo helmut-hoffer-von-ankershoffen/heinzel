@@ -140,7 +140,7 @@ function Player({
   if (!src) return null;
   const watch = externalHref("watch-video", stream.watch_url);
   return (
-    <PlayerCard title={soundscape.title} watchUrl={watch} host="YouTube">
+    <PlayerCard title={soundscape.title} host="YouTube">
       <div className="group/video relative">
         {blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">

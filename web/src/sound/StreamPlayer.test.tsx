@@ -157,7 +157,7 @@ describe("stream recovery", () => {
     expect(new URL(player().src).origin).toBe("https://www.youtube.com");
   });
 
-  it.each(["Play on YouTube", "Open on YouTube"])("%s opens the actual video and stops the embedded player", (name) => {
+  it.each(["Play on YouTube"])("%s opens the actual video and stops the embedded player", (name) => {
     toggle();
     mount();
     openHelp();
@@ -170,7 +170,7 @@ describe("stream recovery", () => {
 });
 
 describe("open on YouTube", () => {
-  it.each(["Play on YouTube", "Open on YouTube"])("desktop %s stops playback only after native handoff", (name) => {
+  it.each(["Play on YouTube"])("desktop %s stops playback only after native handoff", (name) => {
     vi.stubGlobal("heinzelDesktop", { externalLinks: true });
     toggle();
     mount();
@@ -184,20 +184,17 @@ describe("open on YouTube", () => {
     expect(soundState()).toMatchObject({ playing: false, started: false });
   });
 
-  it("keeps both links out of a desktop shell without native handoff", () => {
+  it("keeps external links out of a desktop shell without native handoff", () => {
     vi.stubGlobal("heinzelDesktop", { titlebar: null });
     mount();
     openHelp();
     expect(screen.queryByRole("link", { name: /on YouTube/ })).not.toBeInTheDocument();
   });
 
-  it("is one small icon in the card header with a tooltip, and no bottom row", () => {
+  it("has no Open on YouTube header icon or bottom row", () => {
     toggle();
     mount();
-    const link = screen.getByRole("link", { name: "Open on YouTube" });
-    expect(link.closest("header")).not.toBeNull();
-    expect(link).toHaveAttribute("title", "Open on YouTube");
-    expect(link.textContent?.trim()).toBe("");
+    expect(screen.queryByRole("link", { name: "Open on YouTube" })).not.toBeInTheDocument();
     expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
   });
 });

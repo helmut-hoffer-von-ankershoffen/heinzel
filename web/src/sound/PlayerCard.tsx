@@ -4,7 +4,7 @@
 // nothing overlaps); floating it is a card over the content that can be dragged, moved with the arrow keys, and
 // snapped back by letting go near the dock spot. In the collapsed rail the docked card is hidden, with playback
 // controlled by the rail button; the same iframe remains mounted when the full sidebar returns.
-import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PaneAction } from "@/components/PaneActions";
@@ -22,9 +22,9 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = { title: string; watchUrl: string | null; host: string; children: ReactNode };
+type Props = { title: string; host: string; children: ReactNode };
 
-export function PlayerCard({ title, watchUrl, host, children }: Props) {
+export function PlayerCard({ title, host, children }: Props) {
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -232,17 +232,6 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
                 {t("sound.dock")}
               </PaneAction>
             )
-          )}
-          {watchUrl && (
-            <PaneAction
-              ghost
-              icon={ExternalLink}
-              href={watchUrl}
-              externalAction="watch-video"
-              onClick={native ? undefined : stop}
-            >
-              {t("sound.openOn", { host })}
-            </PaneAction>
           )}
           <PaneAction ghost icon={X} onClick={stop}>
             {t("sound.close")}
