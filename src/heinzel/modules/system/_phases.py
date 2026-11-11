@@ -15,13 +15,19 @@ from contextlib import contextmanager
 from typing import Literal
 
 from heinzel import HeinzelError, Progress
+from heinzel.kernel._logging import get_logger, log_event
 
 State = Literal["pending", "running", "done", "warn", "skipped", "failed"]
 EVENT = "phase"
 """The kind of the event a streaming head sends: `{id, label, state, detail?}` for each step, in order."""
 START = "operation.step.start"
 OUTCOME = "operation.step.outcome"
-logger = logging.getLogger("heinzel.operation")
+logger = get_logger("operation")
+
+
+def _event(name: str, fields: dict[str, object], level: int = logging.INFO) -> None:
+    """One structured operation event: the stable name and fields, never a formatted sentence."""
+    log_event(logger, name, level=level, **fields)  # type: ignore[arg-type]  # step fields never include level or exc_info
 
 
 class Phases:
@@ -73,14 +79,15 @@ class Phases:
             fields["version"] = version
         if state == "running":
             self._started[id_] = self._clock()
-            logger.info(START, extra=fields)
+            _event(START, fields | {"phase": "start"})
             return
         started = self._started.pop(id_, None)
         if started is None:
             started = self._clock()
-            logger.info(START, extra=fields)
+            _event(START, fields | {"phase": "start"})
         fields |= {"outcome": state, "duration_ms": round((self._clock() - started) * 1000), "detail": detail}
-        (logger.warning if state in {"failed", "warn"} else logger.info)(OUTCOME, extra=fields)
+        level = logging.WARNING if state in {"failed", "warn"} else logging.INFO
+        _event(OUTCOME, fields | {"phase": "end"}, level)
 
     @contextmanager
     def step(self, id_: str, label: str) -> Generator[None]:
