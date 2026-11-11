@@ -5,6 +5,7 @@
 // of its own; installed providers declare their own pages and semantic icons.
 import {
   Bell,
+  Cable,
   Cpu,
   Download,
   FileCog,
@@ -196,6 +197,14 @@ export const PAGES: Page[] = [
     heading: "computer",
     owns: ["system.daemon"],
     keywords: "background service",
+  },
+  {
+    id: "managed-mcp",
+    title: "Managed MCP server",
+    icon: Cable,
+    heading: "computer",
+    owns: ["system.mcp"],
+    keywords: "local server start stop check managed http",
   },
   {
     id: FILES,

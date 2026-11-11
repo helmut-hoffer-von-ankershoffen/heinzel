@@ -170,6 +170,7 @@ from heinzel.kernel._git import (
 from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
+    HostIntegrationRemoval,
     HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
@@ -177,6 +178,7 @@ from heinzel.kernel._host_maintenance import (
     host_maintenance_directory,
     host_maintenance_gate,
     host_maintenance_lock,
+    launchd_labels,
 )
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
@@ -583,6 +585,7 @@ __all__ = [
     "HeinzelError",
     "Homebrew",
     "HostIntegration",
+    "HostIntegrationRemoval",
     "HostIntegrationScope",
     "HostMaintenanceIntegration",
     "HostServiceManager",
@@ -814,6 +817,7 @@ __all__ = [
     "installation_mutation_paths",
     "installation_mutation_pending",
     "jsonable",
+    "launchd_labels",
     "link_problem",
     "operation_path",
     "owns_path",

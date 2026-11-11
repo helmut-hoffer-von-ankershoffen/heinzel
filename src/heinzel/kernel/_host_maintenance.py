@@ -165,6 +165,38 @@ MANAGER_COLUMNS = 3
 MAX_MANAGER_BYTES = 1_000_000
 
 
+def _manager_refused() -> Never:
+    msg = "The integration manager identity is foreign, ambiguous or not proven quiescent."
+    raise HeinzelError(msg)
+
+
+def launchd_labels(manager: HostServiceManager) -> frozenset[str]:
+    """Observe a complete, unambiguous listing in the verified user session.
+
+    Raises:
+        HeinzelError: If registration absence cannot be proved from the listing.
+    """
+    result = manager.command(["/bin/launchctl", "list"])
+    rows = result.stdout.splitlines()
+    if (
+        result.returncode
+        or len(result.stdout.encode()) > MAX_MANAGER_BYTES
+        or not rows
+        or rows[0].split() != ["PID", "Status", "Label"]
+        or any(
+            len(row.split()) != MANAGER_COLUMNS
+            or not re.fullmatch(r"-|[1-9][0-9]{0,9}", row.split()[0])
+            or not re.fullmatch(r"-?[0-9]{1,10}", row.split()[1])
+            for row in rows[1:]
+        )
+    ):
+        _manager_refused()
+    labels = frozenset(row.split()[-1] for row in rows[1:])
+    if len(labels) != len(rows) - 1:
+        _manager_refused()
+    return labels
+
+
 class HostIntegrationRemoval:
     """Runtime-only verified stop/final-delete plan; recovery retains only the descriptor's plain data."""
 
@@ -197,21 +229,7 @@ class HostIntegrationRemoval:
         item = self.integration
         result = self.manager.command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{item.name}"])
         if result.returncode:
-            listing = self.manager.command(["/bin/launchctl", "list"])
-            rows = listing.stdout.splitlines()
-            if (
-                listing.returncode
-                or not rows
-                or rows[0].split() != ["PID", "Status", "Label"]
-                or any(
-                    len(row.split()) != MANAGER_COLUMNS
-                    or not re.fullmatch(r"-|[1-9][0-9]{0,9}", row.split()[0])
-                    or not re.fullmatch(r"-?[0-9]{1,10}", row.split()[1])
-                    or row.split()[-1] == item.name
-                    for row in rows[1:]
-                )
-                or len({row.split()[-1] for row in rows[1:]}) != len(rows) - 1
-            ):
+            if item.name in launchd_labels(self.manager):
                 self._refuse()
             return False, None, False
         text = result.stdout
@@ -277,14 +295,11 @@ class HostIntegrationRemoval:
 
     @staticmethod
     def _refuse() -> Never:
-        msg = "The integration manager identity is foreign, ambiguous or not proven quiescent."
-        raise HeinzelError(msg)
+        _manager_refused()
 
     def stop(self) -> None:
         """Stop only the captured owned unit; preserve definitions and observe quiescence before returning."""
-        self._verify_files()
-        if self._observe() != self._state:
-            self._refuse()
+        self.verify_current()
         if self._state[0]:
             command = (
                 ["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{self.integration.name}"]
@@ -298,6 +313,32 @@ class HostIntegrationRemoval:
             result = self.manager.command(["/usr/bin/systemctl", "--user", "is-enabled", self.integration.name])
             if result.stdout.strip() != "disabled":
                 self._refuse()
+
+    @property
+    def registered(self) -> bool:
+        """Whether the captured exact job is registered in this user session."""
+        return self._state[0]
+
+    @property
+    def running(self) -> bool:
+        """Whether the captured exact registration has a live leader observation."""
+        loaded, pid, active = self._state
+        return loaded and pid is not None and active
+
+    @property
+    def observed_pid(self) -> int | None:
+        """Bind a private readiness observation to this snapshot, never to a signal target."""
+        return self._state[1]
+
+    def verify_current(self) -> None:
+        """Revalidate the exact captured registration and files after an asynchronous probe.
+
+        Raises:
+            HeinzelError: If files, manager registration or process observation changed.
+        """
+        self._verify_files()
+        if self._observe() != self._state:
+            self._refuse()
 
     def _settled(self) -> bool:
         """Bound native stop settlement; every observation retains exact file and manager ownership."""

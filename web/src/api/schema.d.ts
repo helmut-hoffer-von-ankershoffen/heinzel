@@ -2846,6 +2846,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/mcp/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check the owned MCP server and authenticate its current endpoint without starting anything.
+         * @description Check the owned MCP server and authenticate its current endpoint without starting anything.
+         */
+        get: operations["system_mcp_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/mcp/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the managed local MCP server after confirmation, or verify the same running generation.
+         * @description Start the managed local MCP server after confirmation, or verify the same running generation.
+         *
+         *     Raises:
+         *         HeinzelError: If confirmation or owned lifecycle evidence is missing.
+         */
+        post: operations["system_mcp_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/mcp/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop this profile's owned MCP server and verify its listener is closed.
+         * @description Stop this profile's owned MCP server and verify its listener is closed.
+         *
+         *     Raises:
+         *         HeinzelError: If confirmation or scoped shutdown evidence is missing.
+         */
+        post: operations["system_mcp_stop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/modules": {
         parameters: {
             query?: never;
@@ -9232,6 +9298,69 @@ export interface components {
              * @default
              */
             url: string;
+        };
+        /**
+         * McpStatus
+         * @description Only observed service facts. No bearer, profile path, PID or raw diagnostics are returned.
+         */
+        McpStatus: {
+            /**
+             * Can Start
+             * @default false
+             */
+            can_start: boolean;
+            /**
+             * Can Stop
+             * @default false
+             */
+            can_stop: boolean;
+            /**
+             * Descendants
+             * @default unverified
+             * @constant
+             */
+            descendants: "unverified";
+            /** Endpoint */
+            endpoint?: string | null;
+            /** Generation */
+            generation?: string | null;
+            /**
+             * Mode
+             * @default managed-http
+             * @constant
+             */
+            mode: "managed-http";
+            /**
+             * Owned Server
+             * @default unverified
+             * @enum {string}
+             */
+            owned_server: "closed" | "unverified";
+            /**
+             * Ownership
+             * @default unverified
+             * @enum {string}
+             */
+            ownership: "verified" | "unverified";
+            /**
+             * Readiness
+             * @default unverified
+             * @enum {string}
+             */
+            readiness: "authenticated-initialized" | "unverified";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unavailable" | "not-created" | "ready" | "stopped" | "unverified";
+            /**
+             * Termination
+             * @default unverified
+             * @constant
+             */
+            termination: "unverified";
+            /** Tools */
+            tools?: number | null;
         };
         /**
          * Measurements
@@ -16560,6 +16689,24 @@ export interface components {
              */
             flow: string;
         };
+        /** system_mcp_start_Input */
+        system_mcp_start_Input: {
+            /**
+             * Confirm
+             * @description Confirm starting one temporary loopback server for this profile.
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** system_mcp_stop_Input */
+        system_mcp_stop_Input: {
+            /**
+             * Confirm
+             * @description Confirm stopping only the captured server owned by this profile.
+             * @default false
+             */
+            confirm: boolean;
+        };
         /** system_runner_chat_propose_release_draft_share_Input */
         system_runner_chat_propose_release_draft_share_Input: {
             /**
@@ -16728,6 +16875,7 @@ export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaManualInstall = components['schemas']['ManualInstall'];
+export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
@@ -16950,6 +17098,8 @@ export type SchemaSystemConnectorCancelInput = components['schemas']['system_con
 export type SchemaSystemConnectorConnectInput = components['schemas']['system_connector_connect_Input'];
 export type SchemaSystemConnectorDisconnectInput = components['schemas']['system_connector_disconnect_Input'];
 export type SchemaSystemConnectorOpenInput = components['schemas']['system_connector_open_Input'];
+export type SchemaSystemMcpStartInput = components['schemas']['system_mcp_start_Input'];
+export type SchemaSystemMcpStopInput = components['schemas']['system_mcp_stop_Input'];
 export type SchemaSystemRunnerChatProposeReleaseDraftShareInput = components['schemas']['system_runner_chat_propose_release_draft_share_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -21182,6 +21332,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StackView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_mcp_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpStatus"];
+                };
+            };
+        };
+    };
+    system_mcp_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_mcp_start_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_mcp_stop: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_mcp_stop_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpStatus"];
                 };
             };
             /** @description Validation Error */

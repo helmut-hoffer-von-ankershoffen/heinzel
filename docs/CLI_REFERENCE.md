@@ -2069,6 +2069,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `expert`: Expert mode: list every command, or just...
 * `info`: (expert) Show versions, interpreter,...
 * `layer`: (expert) Show the layer plugins installed...
+* `mcp`: (expert) Start, check and stop this...
 * `modules`: (expert) List every module and the lets it...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, enable,...
@@ -3004,6 +3005,76 @@ $ hz system layer show [OPTIONS]
 **Options**:
 
 * `--layer <str>`: Show this layer&#x27;s stack instead of yours, e.g. acme-payments-checkout.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system mcp`
+
+(expert) Start, check and stop this profile&#x27;s managed local MCP HTTP server.
+
+**Usage**:
+
+```console
+$ hz system mcp [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `check`: (expert) Check the owned MCP server and...
+* `start`: (expert) Start the managed local MCP...
+* `stop`: (expert) Stop this profile&#x27;s owned MCP...
+
+#### `hz system mcp check`
+
+(expert) Check the owned MCP server and authenticate its current endpoint without starting anything.
+
+**Usage**:
+
+```console
+$ hz system mcp check [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system mcp start`
+
+(expert) Start the managed local MCP server after confirmation, or verify the same running generation.
+
+**Usage**:
+
+```console
+$ hz system mcp start [OPTIONS]
+```
+
+**Options**:
+
+* `--confirm / --no-confirm`: Confirm starting one temporary loopback server for this profile.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system mcp stop`
+
+(expert) Stop this profile&#x27;s owned MCP server and verify its listener is closed.
+
+**Usage**:
+
+```console
+$ hz system mcp stop [OPTIONS]
+```
+
+**Options**:
+
+* `--confirm / --no-confirm`: Confirm stopping only the captured server owned by this profile.  [default: no-confirm]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

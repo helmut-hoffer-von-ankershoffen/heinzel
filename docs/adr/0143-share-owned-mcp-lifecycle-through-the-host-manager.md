@@ -1,7 +1,7 @@
 ---
 status: proposed
 date: 2026-11-11
-implementation: planned
+implementation: partial
 decision-makers: maintainer, reviewer
 related: 0019, 0020, 0078, 0126, 0133
 amends: 0142
@@ -58,7 +58,11 @@ managed HTTP remain distinct; matching client configuration, real clients, weath
 
 ### Confirmation
 
-Review only until the focused CLI/web, ownership, isolation, maintenance and rendered consent tests are in place.
+The focused CLI and authenticated web tests use separate kernels, a fictional manager and real isolated Core
+workers. They cover shared readiness, idempotent Start, disabling the preview, recovery, retained uncertainty,
+foreign and changed registrations, credential handling, private configuration and the SDK maintenance fence.
+Mounted Chromium and WebKit tests exercise the actual Settings page and confirmation dialog. A verified installed
+macOS supervisor and packaged desktop are still required before enabling the preview.
 
 ## More Information
 

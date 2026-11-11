@@ -27,6 +27,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.expert`](#systemexpert) | Expert mode: list every command, or just the everyday ones. |
 | [`system.layer`](#systemlayer) | Show the layer plugins installed and the stack you are in, general to specific. |
+| [`system.mcp`](#systemmcp) | Start, check and stop this profile's managed local MCP HTTP server. |
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
@@ -320,6 +321,16 @@ Show the layer plugins installed and the stack you are in, general to specific.
 | Show your stack: company, org and site, team; what the layers bring and the settings they recommend. | `hz system layer show` | `system_layer_show` | `GET /system/layer/show` | `GET /api/system/layer/show` |  | expert |
 
 Health checks: reported by `hz system doctor`.
+
+## `system.mcp`
+
+Start, check and stop this profile's managed local MCP HTTP server.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Start the managed local MCP server after confirmation, or verify the same running generation. | `hz system mcp start` | — | — | `POST /api/system/mcp/start` | yes | expert |
+| Check the owned MCP server and authenticate its current endpoint without starting anything. | `hz system mcp check` | — | — | `GET /api/system/mcp/check` |  | expert |
+| Stop this profile's owned MCP server and verify its listener is closed. | `hz system mcp stop` | — | — | `POST /api/system/mcp/stop` | yes | expert |
 
 ## `system.notify`
 

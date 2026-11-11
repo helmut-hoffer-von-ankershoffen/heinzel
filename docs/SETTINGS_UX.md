@@ -19,8 +19,8 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
    first), the list can be reordered, the first is marked, and adding "my own" is one click.
 4. **Group by what people think about, not by where the code lives.** Every setting lives in exactly one place:
    Preferences (appearance, World Clock, notifications), Customize (AI, connectors, plugins, skills), Organisation
-   (you, team) and This computer (daemon, files, From Claude, updates). A module gets its own entry only where it adds a
-   page of its own; settings of a plugin that connects a tool belong with that connector; a section is called by its
+   (you, team) and This computer (daemon, managed MCP server, files, From Claude, updates). A module gets its own
+   entry only where it adds a page of its own; settings of a plugin that connects a tool belong with that connector; a section is called by its
    title ("Notifications"), never by its TOML table (`[system.notify]`). Every entry has an icon of its own, and every
    module's page opens with the same header: its name and kinds on the left, where it comes from and its version on the
    right. A "show in …" setting is a row with the placement in words, a live preview of how it looks there and a switch.
@@ -50,6 +50,10 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
     showing the core version or inferring "Private".
 15. **Private actions use the shared JSON wire.** A contribution forwards its server-built flat parameter object as
     a JSON request body, including validated nested values. Sensitive parameters never fall back to query strings.
+16. **Managed MCP is separate from client configuration.** This computer shows whether the profile's local HTTP
+    server was authenticated and initialized. Starting and stopping use the normal operation confirmation. Stopping
+    stays available for an owned server when the preview is disabled. Say when the listener is closed and leave
+    descendant cleanup unverified; a project stdio entry does not connect to this server.
 
 ## Navigation acceptance checks
 

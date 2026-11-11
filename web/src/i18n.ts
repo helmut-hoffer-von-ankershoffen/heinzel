@@ -4,6 +4,21 @@ const IOS_INSTALL =
   "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.";
 
 const en = {
+  "managedMcp.title": "Managed MCP server",
+  "managedMcp.description":
+    "Run one local HTTP server for this profile. Client-started stdio configuration is separate.",
+  "managedMcp.local": "Open Settings on this computer to control the managed MCP server.",
+  "managedMcp.unverified": "The managed server's state could not be verified.",
+  "managedMcp.checking": "Checking the managed server…",
+  "managedMcp.unavailable": "The managed server preview is unavailable for this profile.",
+  "managedMcp.notCreated": "This profile has not started a managed server.",
+  "managedMcp.ready": "The owned server authenticated and initialized with {count} tools.",
+  "managedMcp.stopped": "The owned server's listener is closed. Descendant processes have not been verified.",
+  "managedMcp.start": "Start managed server",
+  "managedMcp.check": "Check managed server",
+  "managedMcp.stop": "Stop managed server",
+  "managedMcp.confirm.start": "Start one local MCP server for this profile? It will not start at login.",
+  "managedMcp.confirm.stop": "Stop only this profile's owned MCP server?",
   "personal.title": "Personal Heinzels",
   "personal.intro": "Give each personal Heinzel a name and look. Creating one does not start a schedule.",
   "personal.choose": "Personal Heinzel",

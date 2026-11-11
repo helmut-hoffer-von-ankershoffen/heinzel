@@ -8857,6 +8857,116 @@
         "title": "ManualInstall",
         "type": "object"
       },
+      "McpStatus": {
+        "additionalProperties": false,
+        "description": "Only observed service facts. No bearer, profile path, PID or raw diagnostics are returned.",
+        "properties": {
+          "can_start": {
+            "default": false,
+            "title": "Can Start",
+            "type": "boolean"
+          },
+          "can_stop": {
+            "default": false,
+            "title": "Can Stop",
+            "type": "boolean"
+          },
+          "descendants": {
+            "const": "unverified",
+            "default": "unverified",
+            "title": "Descendants",
+            "type": "string"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "mode": {
+            "const": "managed-http",
+            "default": "managed-http",
+            "title": "Mode",
+            "type": "string"
+          },
+          "owned_server": {
+            "default": "unverified",
+            "enum": [
+              "closed",
+              "unverified"
+            ],
+            "title": "Owned Server",
+            "type": "string"
+          },
+          "ownership": {
+            "default": "unverified",
+            "enum": [
+              "verified",
+              "unverified"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          },
+          "readiness": {
+            "default": "unverified",
+            "enum": [
+              "authenticated-initialized",
+              "unverified"
+            ],
+            "title": "Readiness",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "unavailable",
+              "not-created",
+              "ready",
+              "stopped",
+              "unverified"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "termination": {
+            "const": "unverified",
+            "default": "unverified",
+            "title": "Termination",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "McpStatus",
+        "type": "object"
+      },
       "Measurements": {
         "description": "A contract's success test so far: its drafts, how long drafting took and how much was changed.",
         "properties": {
@@ -21614,6 +21724,32 @@
         "title": "system_connector_open_Input",
         "type": "object"
       },
+      "system_mcp_start_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "default": false,
+            "description": "Confirm starting one temporary loopback server for this profile.",
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "title": "system_mcp_start_Input",
+        "type": "object"
+      },
+      "system_mcp_stop_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "default": false,
+            "description": "Confirm stopping only the captured server owned by this profile.",
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "title": "system_mcp_stop_Input",
+        "type": "object"
+      },
       "system_runner_chat_propose_release_draft_share_Input": {
         "additionalProperties": false,
         "properties": {
@@ -27863,6 +27999,112 @@
           }
         },
         "summary": "Show your stack: company, org and site, team; what the layers bring and the settings they recommend.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/mcp/check": {
+      "get": {
+        "description": "Check the owned MCP server and authenticate its current endpoint without starting anything.",
+        "operationId": "system_mcp_check",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check the owned MCP server and authenticate its current endpoint without starting anything.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/mcp/start": {
+      "post": {
+        "description": "Start the managed local MCP server after confirmation, or verify the same running generation.\n\nRaises:\n    HeinzelError: If confirmation or owned lifecycle evidence is missing.",
+        "operationId": "system_mcp_start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_mcp_start_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start the managed local MCP server after confirmation, or verify the same running generation.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/mcp/stop": {
+      "post": {
+        "description": "Stop this profile's owned MCP server and verify its listener is closed.\n\nRaises:\n    HeinzelError: If confirmation or scoped shutdown evidence is missing.",
+        "operationId": "system_mcp_stop",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_mcp_stop_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop this profile's owned MCP server and verify its listener is closed.",
         "tags": [
           "system"
         ]
