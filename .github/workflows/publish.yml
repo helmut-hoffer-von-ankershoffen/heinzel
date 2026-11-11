@@ -217,7 +217,7 @@ jobs:
           gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag "${hold[@]}"
 
       - name: Request the independent release docs refresh
-        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && !inputs.hold
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
         timeout-minutes: 1
         env:
           GH_TOKEN: ${{ github.token }}
