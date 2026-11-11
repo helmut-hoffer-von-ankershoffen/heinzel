@@ -30,7 +30,6 @@ FORMATTED_ALLOWED: dict[str, int] = {
     "src/heinzel/modules/ai/access/_service.py": 2,
     "src/heinzel/modules/heinzel/_service.py": 2,
     "src/heinzel/modules/org/_sync.py": 2,
-    "src/heinzel/modules/system/daemon/_abandoned_mutation.py": 1,
     "src/heinzel/modules/system/daemon/_service.py": 2,
     "src/heinzel/modules/system/notify/_resolve.py": 1,
     "src/heinzel/modules/system/notify/_service.py": 9,
