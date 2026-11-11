@@ -2,13 +2,16 @@
 # One disposable GitHub Ubuntu runner; no custom resolvers, addresses, or trust changes.
 set -uo pipefail
 out="${RUNNER_TEMP:?}/h17g-python-output"
-state="${RUNNER_TEMP:?}/h17g-python-apt-state"
-mkdir -p "$out" "$state"
+mkdir -p "$out"
 phase=bootstrap
 finish() { code=$?; printf 'END_UTC=%s PHASE=%s EXIT=%s\n' "$(date -u +%FT%TZ)" "$phase" "$code"; }
 trap finish EXIT
 printf 'START_UTC=%s RUN=%s ATTEMPT=%s TRANSPORT=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID:-}" "${GITHUB_RUN_ATTEMPT:-}" "${GITHUB_SHA:-}"
 [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_OS:-} == Linux && $(uname -m) == x86_64 ]] || exit 2
+# The hosted Linux /tmp parent is traversable to _apt; never place APT state under runner-temp ancestors.
+state=$(mktemp -d /tmp/h17g-python-XXXXXXXX) || exit 2
+chmod 755 "$state" || exit 2
+printf 'APT_SCRATCH=%s\n' "$state"
 [[ $(git rev-parse HEAD) == 700d2d634062b41c6336ad2774ec53a4b385b25b ]] || exit 2
 [[ $(dpkg --print-architecture) == amd64 ]] || exit 2
 [[ -r /usr/share/keyrings/ubuntu-archive-keyring.gpg ]] || exit 2
@@ -43,12 +46,15 @@ probe_route() {
   config_rc=$?
   printf 'CONFIG_RC=%s\n' "$config_rc"
   if [[ $config_rc != 0 ]]; then cat "$out/$route-config.log"; return 1; fi
-  if ! sudo -u _apt test -r "$conf/ubuntu.sources" || ! sudo -u _apt test -r "$conf/apt-mirrors.txt" ||
-     ! sudo -u _apt test -w "$lists/partial" || ! sudo -u _apt test -w "$archives/partial" ||
-     ! sudo -u _apt test -w "$download" || ! sudo -u _apt test -r /usr/share/keyrings/ubuntu-archive-keyring.gpg; then
-    printf 'APT_UNPRIVILEGED_ACCESS=FAILED ROUTE=%s\n' "$route"; return 1
+  if ! chmod 644 "$conf/ubuntu.sources" "$conf/apt-mirrors.txt"; then
+    printf 'APT_CONFIG_MODE=FAILED ROUTE=%s\n' "$route"; return 1
   fi
-  printf 'APT_UNPRIVILEGED_ACCESS=PASS ROUTE=%s\n' "$route"
+  if ! bash "${RUNNER_TEMP:?}/h17g-python-access.sh" "$state" "$route" > "$out/$route-access.log" 2>&1; then
+    printf 'APT_UNPRIVILEGED_ACCESS=FAILED ROUTE=%s\n' "$route"
+    cat "$out/$route-access.log"
+    return 1
+  fi
+  cat "$out/$route-access.log"
   cp "$conf/ubuntu.sources" "$out/$route-ubuntu.sources"
   cp "$conf/apt-mirrors.txt" "$out/$route-apt-mirrors.txt"
   opts=(-o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$conf" -o "Dir::State::lists=$lists" -o "Dir::Cache::archives=$archives" -o Dir::Cache::pkgcache= -o Dir::Cache::srcpkgcache= -o Acquire::Retries=0 -o Acquire::http::Timeout=8 -o Acquire::https::Timeout=8 -o APT::Update::Error-Mode=any -o Acquire::Check-Date=true -o Acquire::Check-Valid-Until=true -o Acquire::AllowInsecureRepositories=false -o APT::Get::AllowUnauthenticated=false)
