@@ -95,7 +95,6 @@ const RAW: Record<string, number> = {
   "../layout/InfoDialog.tsx": 2,
   "../layout/NotificationCenter.tsx": 3,
   "../layout/PluginsSection.tsx": 5,
-  "../layout/SchemaValue.tsx": 1,
   "../layout/SettingControls.tsx": 1,
   "../layout/SettingsDialog.tsx": 2,
   "../layout/Sidebar.tsx": 9,
