@@ -92,11 +92,34 @@ def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan,
     assert focused_plan._selections({"selection": {"python": ids[:32]}}, MERGE)["python"] == tuple(ids[:32])
     with pytest.raises(focused_plan.CandidateError, match="broad focused lane python"):
         focused_plan._selections({"selection": {"python": ids}}, MERGE)
-    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
+    for lane in (
+        "python312",
+        "python315",
+        "macos",
+        "macos-notifier",
+        "web",
+        "web-2",
+        "web-3",
+        "managed",
+        "browser",
+        "macos-browser",
+        "macos-browser-webkit",
+    ):
         with pytest.raises(focused_plan.CandidateError, match="broad focused lane"):
             focused_plan._selections({"selection": {lane: ids[:11]}}, MERGE)
     with pytest.raises(focused_plan.CandidateError, match="duplicate selection"):
         focused_plan._selections({"selection": {"python": ids[:31] + ids[:1]}}, MERGE)
+
+
+def test_web_lanes_bind_distinct_owning_files_without_expanding_the_per_lane_cap(focused_plan, git_objects):
+    paths = [f"web/src/part{i}.test.ts" for i in range(23)]
+    selections = {"web": paths[:10], "web-2": paths[10:20], "web-3": paths[20:]}
+    assert focused_plan._selections({"selection": selections}, MERGE) == {
+        lane: tuple(tests) for lane, tests in selections.items()
+    }
+    selections["web-3"].append(paths[0])
+    with pytest.raises(focused_plan.CandidateError, match="duplicate selection across web lanes"):
+        focused_plan._selections({"selection": selections}, MERGE)
 
 
 @pytest.mark.parametrize(

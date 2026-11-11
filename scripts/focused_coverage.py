@@ -303,6 +303,8 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     )
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
+    if lane in {"macos-browser", "macos-browser-webkit"}:
+        env["PLAYWRIGHT_BROWSER"] = "webkit" if lane == "macos-browser-webkit" else "chromium"
     if lane == "python315":
         env["UV_PYTHON"] = LANES[lane][1]
         commands[0].append("--no-install-package=pyyaml")

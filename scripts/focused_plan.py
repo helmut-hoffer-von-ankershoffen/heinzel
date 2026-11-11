@@ -50,8 +50,11 @@ LANES = {
     "macos-notifier": ("macos-latest", "3.14", "pytest"),
     "managed": ("ubuntu-24.04", "3.14", "managed"),
     "web": ("ubuntu-24.04", "3.14", "vitest"),
+    "web-2": ("ubuntu-24.04", "3.14", "vitest"),
+    "web-3": ("ubuntu-24.04", "3.14", "vitest"),
     "browser": ("ubuntu-24.04", "3.14", "e2e"),
     "macos-browser": ("macos-latest", "3.14", "e2e"),
+    "macos-browser-webkit": ("macos-latest", "3.14", "e2e"),
 }
 ARTIFACT_PREFIX = "focused-pr-evidence"
 PLAN_VARIABLE = "FOCUSED_CI_PLANS"
@@ -374,6 +377,8 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
             require(kind != "pytest" or not path.startswith("tests/e2e/"), "browser tests require their owning lane")
             git_blob(commit, path)
         selected[lane] = tuple(tests)
+    web_tests = [test for lane in ("web", "web-2", "web-3") for test in selected.get(lane, ())]
+    require(len(web_tests) == len(set(web_tests)), "duplicate selection across web lanes")
     return selected
 
 
@@ -467,7 +472,7 @@ def _scope(  # noqa: PLR0913 - the reader separately supplies the current protec
     require(not production or "python" in selection, "Python production requires a Linux coverage selection")
     if any(web_production(path) for path in changes):
         require(
-            "web" in selection and bool({"browser", "macos-browser"} & selection.keys()),
+            "web" in selection and bool({"browser", "macos-browser", "macos-browser-webkit"} & selection.keys()),
             "web production requires reviewed Vitest and browser selections",
         )
     require(

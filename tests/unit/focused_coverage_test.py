@@ -284,3 +284,28 @@ def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, 
     assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
     assert tests[-1] == "tests/unit/focused_coverage_test.py"
     assert {python for _, python in calls} == {"3.15"}
+
+
+@pytest.mark.parametrize("case", [("macos-browser", "chromium"), ("macos-browser-webkit", "webkit"), ("browser", None)])
+def test_browser_engine_is_bound_to_the_reviewed_lane(coverage, scope, monkeypatch, tmp_path, case):
+    from dataclasses import replace
+
+    lane, expected = case
+    junit = b'<testsuite><testcase classname="test_web" name="test_mobile"/></testsuite>'
+    scope = replace(
+        scope, selection={lane: ("tests/e2e/web_ui_test.py",)}, case_digests={lane: coverage.cases_digest(junit)}
+    )
+    out = tmp_path / "evidence"
+    calls = []
+
+    def execute(args, env):
+        calls.append(env.get("PLAYWRIGHT_BROWSER"))
+        if "pytest" in args:
+            (out / coverage.JUNIT).write_bytes(junit)
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSER", "untrusted-ambient-value")
+    monkeypatch.setattr(coverage, "_execute", execute)
+    coverage.run_lane(scope, lane, out, 123, 1)
+    assert calls
+    assert set(calls) == {expected}
+    assert json.loads((out / coverage.REPORT).read_bytes())["lane"] == lane
