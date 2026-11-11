@@ -5,6 +5,9 @@ import { requestMenuAction } from "@/about/menu";
 import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+// The desktop menu is plain runtime JavaScript shared with Electron, without TypeScript declarations.
+// @ts-expect-error The desktop module is outside the web TypeScript project.
+import { appMenuTemplate, menuScript } from "../../../desktop/src/app-menu.js";
 
 const answers = {
   ...shell,
@@ -179,6 +182,38 @@ describe("Shell", () => {
       "href",
       "https://heinzel.team/guides/first-steps/",
     );
+  });
+});
+
+describe("Native menu to application routing", () => {
+  it("routes Settings and Updates from the real menu template into the mounted shell", async () => {
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/config/show": config,
+      "/api/auto-update/check": { enabled: false, phase: "off", plugins: {} },
+    });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    const menus = appMenuTemplate({
+      name: "Heinzel",
+      send: (action: string) => {
+        Function(menuScript(action))();
+      },
+      open: () => {},
+    }) as Array<{ submenu: Array<{ label?: string; click?: () => void }> }>;
+    const app = menus[0];
+    if (!app) throw new Error("Missing app menu");
+    const settingsItem = app.submenu.find((item) => item.label === "Settings…");
+    const updatesItem = app.submenu.find((item) => item.label === "Check for Updates…");
+    if (!settingsItem?.click || !updatesItem?.click) throw new Error("Missing menu actions");
+    act(() => settingsItem.click?.());
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => updatesItem.click?.());
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeVisible();
+    expect(
+      calls.filter((request) => request.url.endsWith("/api/auto-update/check") && request.method === "POST"),
+    ).toHaveLength(1);
   });
 });
 
