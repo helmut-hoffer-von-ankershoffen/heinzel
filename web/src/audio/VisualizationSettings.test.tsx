@@ -18,6 +18,10 @@ it("shows every style on by default, applies a change at once and keeps it", () 
   fireEvent.click(aurora);
   expect(aurora).not.toBeChecked();
   expect(JSON.parse(localStorage.getItem("hz.audio.viz") ?? "{}").styles.aurora).toBe(false);
+  // With the master switch off no style can be chosen, so none is shown, not a greyed-out list.
   act(() => setMaster(false));
-  expect(spectrum).toBeDisabled();
+  expect(screen.queryByRole("checkbox", { name: /^Spectrum/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: /^Aurora/ })).not.toBeInTheDocument();
+  act(() => setMaster(true));
+  expect(screen.getByRole("checkbox", { name: /^Aurora/ })).not.toBeChecked();
 });
