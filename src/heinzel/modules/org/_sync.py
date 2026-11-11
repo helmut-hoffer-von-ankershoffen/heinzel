@@ -25,6 +25,7 @@ from rich.text import Text
 
 from heinzel import Check, ConfigEditor, Credentials, HeinzelError, Kernel, Status
 from heinzel.kernel import CapabilityView, LayerStack, OrgContext, Recommendation
+from heinzel.kernel._logging import log_event
 
 logger = logging.getLogger(__name__)
 WORKFLOW = "heinzel"
@@ -209,12 +210,14 @@ class SyncService:
         for item in items:
             if item.kind == "binding":
                 self._editor.write(f"capabilities.{_key(item.name)}", item.recommended)
-                logger.info("Applied the team's recommendation %s", item.id)
+                log_event(logger, "org.sync.applied", recommendation=item.id)
         contracts = {item.name: f"{item.name}@{item.recommended}" for item in items if item.kind == "contract"}
         if contracts:
             kept = [e for e in self._schedule_team() if e.partition("@")[0] not in contracts]
             self._editor.write(f"{WORKFLOW}.schedule_team", [*kept, *contracts.values()])
-            logger.info("Applied the team's recommendations %s", ", ".join(f"contract:{n}" for n in contracts))
+            log_event(
+                logger, "org.sync.contracts_applied", recommendations=", ".join(f"contract:{n}" for n in contracts)
+            )
 
 
 def layer_bindings(stack: LayerStack, taken: set[str]) -> list[Recommendation]:

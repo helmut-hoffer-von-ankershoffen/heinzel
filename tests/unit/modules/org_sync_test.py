@@ -310,3 +310,11 @@ def test_a_capability_you_turned_off_is_your_choice_and_all_leaves_it_off(make):
     assert states(service.report())["binding:documents"] == "differs"
     service.sync("all")
     assert user_file().get("capabilities", {}).get("documents") is None
+
+
+def test_accepting_logs_one_event_per_binding_and_one_for_the_contracts(make, caplog):
+    caplog.set_level("INFO", logger="heinzel.modules.org._sync")
+    make().sync("binding:documents,contract:monthly")
+    events = {r.event: r for r in caplog.records if hasattr(r, "event")}
+    assert events["org.sync.applied"].recommendation == "binding:documents"
+    assert events["org.sync.contracts_applied"].recommendations == "contract:monthly"
