@@ -54,13 +54,24 @@
       code {
         font-family: ui-monospace, monospace;
       }
+      button {
+        padding: 8px 16px;
+        border: 1px solid currentColor;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <img src="/favicon.svg" alt="" width="28" height="28" />
     <h1>Heinzelmännchen</h1>
-    <p id="boot-status" role="status" aria-live="polite">Looking for hz…</p>
-    <p>This window reconnects by itself and opens the app as soon as hz answers. An installed hz starts again on its own; otherwise run <code>hz ui serve</code> in a terminal.</p>
+    <p id="boot-hint">Checking this page's connection…</p>
+    <p id="boot-status" role="status" aria-live="polite">Checking connection…</p>
+    <p id="boot-guidance">This page will keep checking its connection.</p>
+    <button id="boot-retry" type="button">Try now</button>
     <script src="/boot-retry.js" data-mode="offline"></script>
   </body>
 </html>

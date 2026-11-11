@@ -5,9 +5,11 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 type Api = {
   delayFor: (attempt: number) => number;
   statusFor: (attempt: number, delay: number) => string;
+  guidanceFor: (hostname: string) => string;
   probe: (fetcher: unknown, now?: () => number) => Promise<boolean>;
   mayReload: (storage: Pick<Storage, "getItem" | "setItem">, now?: number) => boolean;
   retry: (options: Record<string, unknown>) => { stop: () => void; now: () => void };
+  start: (mode: string) => { stop: () => void };
 };
 let api: Api;
 
@@ -23,9 +25,43 @@ describe("boot-retry", () => {
   });
 
   it("says what is happening in words that carry no version", () => {
-    expect(api.statusFor(2, 2000)).toBe("hz isn't answering. Trying again in 2 seconds (try 2).");
-    expect(api.statusFor(1, 1000)).toContain("1 second ");
+    expect(api.statusFor(2, 2000)).toBe("Next try in 2s");
+    expect(api.statusFor(1, 1000)).toBe("Next try in 1s");
     expect(api.statusFor(3, 4000)).not.toMatch(/v\d|0\.\d+\.\d+/);
+  });
+
+  it("offers a terminal command only for known local loopback", () => {
+    expect(api.guidanceFor("localhost")).toContain("hz ui serve");
+    expect(api.guidanceFor("[::1]")).toContain("hz ui serve");
+    expect(api.guidanceFor("remote.tailnet.ts.net")).toContain("Tailscale");
+    expect(api.guidanceFor("127.0.0.1.evil")).not.toContain("hz ui serve");
+  });
+
+  it("does not overlap manual and scheduled attempts while a probe is pending", async () => {
+    let resolve: (value: boolean) => void = () => undefined;
+    const ask = vi.fn(
+      () =>
+        new Promise<boolean>((done) => {
+          resolve = done;
+        }),
+    );
+    const said: string[] = [];
+    const checking: boolean[] = [];
+    const running = api.retry({
+      probe: ask,
+      say: (text: string) => said.push(text),
+      checking: (value: boolean) => checking.push(value),
+      reload: () => undefined,
+    });
+    running.now();
+    running.now();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(said.at(-1)).toBe("Checking connection…");
+    resolve(false);
+    await Promise.resolve();
+    expect(said.at(-1)).toBe("Next try in 1s");
+    expect(checking).toEqual([true, false]);
+    running.stop();
   });
 
   it("counts only a manifest as hz answering, not the app's page or an error", async () => {
@@ -113,10 +149,40 @@ describe("boot-retry", () => {
   it("ships an offline page with an accessible status line, no version and the current command", () => {
     const page = readFileSync(resolve("public/offline.html"), "utf8");
     expect(page).toMatch(/id="boot-status" role="status" aria-live="polite"/);
-    expect(page).toContain("hz ui serve");
+    expect(page).toContain('id="boot-retry"');
+    expect(page).not.toContain("hz ui serve");
     expect(page).not.toMatch(/v?\d+\.\d+\.\d+/);
     expect(page).not.toMatch(/<script>[^<]/); // no inline script: the CSP admits only the splash's, by hash
     expect(page).toContain('src="/boot-retry.js"');
+  });
+
+  it("drives the cached offline page with actual browser hints, probe state and retry control", async () => {
+    const page = readFileSync(resolve("public/offline.html"), "utf8");
+    document.body.innerHTML = new DOMParser().parseFromString(page, "text/html").body.innerHTML;
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    let finish: (response: Response) => void = () => undefined;
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const running = api.start("offline");
+    expect(document.getElementById("boot-hint")).toHaveTextContent("browser reports that this device is offline");
+    expect(document.getElementById("boot-status")).toHaveTextContent("Checking connection…");
+    expect(document.getElementById("boot-retry")).toBeDisabled();
+    finish(new Response("", { status: 503 }));
+    await vi.waitFor(() => expect(document.getElementById("boot-status")).toHaveTextContent("Next try in 1s"));
+    expect(document.getElementById("boot-retry")).not.toBeDisabled();
+    online.mockReturnValue(true);
+    window.dispatchEvent(new Event("online"));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(document.getElementById("boot-status")).toHaveTextContent("Checking connection…");
+    running.stop();
+    finish(new Response("", { status: 503 }));
+    fetcher.mockRestore();
+    online.mockRestore();
+    document.body.innerHTML = "";
   });
 });
 

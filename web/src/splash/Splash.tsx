@@ -73,7 +73,7 @@ export async function probeServer(timeoutMs = PROBE_TIMEOUT_MS): Promise<ProbeRe
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const sent = token();
-    const { data, response } = await api.GET("/system/info", { signal: controller.signal });
+    const { data, response } = await api.GET("/system/info", { signal: controller.signal, cache: "no-store" });
     // The session token of an `hz ui` that has since restarted: the client dropped it for this browser's device token
     // (dropRefusedDevice), so ask again with that before telling a paired window to sign in. Once only: a refused
     // device token is dropped too, and nothing is left to ask with.
@@ -195,21 +195,61 @@ function PasteLink() {
 }
 
 /** The fix for a problem: what happened, what to do, and the command that does it. */
-function Fix({ problem }: { problem: Problem }) {
+export function isLocalLoopback(hostname: string): boolean {
+  return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname.toLowerCase());
+}
+
+function Fix({
+  problem,
+  offline,
+  checking,
+  seconds,
+  retry,
+  hostname,
+}: {
+  problem: Problem;
+  offline: boolean;
+  checking: boolean;
+  seconds: number | null;
+  retry: () => void;
+  hostname: string;
+}) {
   const installed = installState() === "installed";
-  const [title, text, lead] =
-    problem === "token"
-      ? (["splash.tokenTitle", installed ? "splash.tokenApp" : "splash.token", "splash.tokenCommand"] as const)
-      : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
+  const local = isLocalLoopback(hostname);
+  if (problem === "unreachable")
+    return (
+      <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
+        <SleepingUnderTree />
+        <h1 className="text-lg font-semibold text-foreground">Connection unavailable</h1>
+        <p className="text-muted-foreground">
+          {offline ? "Your browser reports that this device is offline." : "This page could not reach its server."}
+        </p>
+        <p className="text-muted-foreground">
+          {local
+            ? "Check the connection on this computer. If needed, start the web server in a terminal:"
+            : "Check this device's connection and your remote network or Tailscale connection."}
+        </p>
+        {local && <Command command={START} />}
+        <p role="status" className="text-xs text-muted-foreground">
+          {checking ? "Checking connection…" : seconds !== null ? `Next try in ${seconds}s` : "Waiting to retry…"}
+        </p>
+        <Button type="button" size="sm" onClick={retry} disabled={checking}>
+          Try now
+        </Button>
+      </div>
+    );
+  const [title, text, lead] = [
+    "splash.tokenTitle",
+    installed ? "splash.tokenApp" : "splash.token",
+    "splash.tokenCommand",
+  ] as const;
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
-      {problem === "unreachable" && <SleepingUnderTree />}
       <h1 className="text-lg font-semibold text-foreground">{t(title)}</h1>
       <p className="text-muted-foreground">{t(text, { command: START })}</p>
       <p className="text-muted-foreground">{t(lead, { command: START })}</p>
       <Command command={START} />
-      {problem === "token" && <PasteLink />}
-      {problem === "unreachable" && <p className="text-xs text-muted-foreground">{t("splash.retrying")}</p>}
+      <PasteLink />
     </div>
   );
 }
@@ -226,8 +266,8 @@ function SleepingUnderTree() {
         className="absolute inset-0 size-full text-emerald-700/70 dark:text-emerald-300/70"
       >
         <path
-          d="M83 14v74M83 30c-19-22-45-16-51 1 15-4 28 2 38 12M83 26c14-22 39-22 48-5-15-1-28 6-39 17"
-          fill="none"
+          d="M83 8 63 32h10L55 52h13L46 75h74L98 52h13L93 32h10L83 8Z"
+          fill="currentColor"
           stroke="currentColor"
           strokeWidth="5"
           strokeLinecap="round"
@@ -239,7 +279,7 @@ function SleepingUnderTree() {
           strokeWidth="3"
           strokeLinecap="round"
         />
-        <path d="M66 86h48" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+        <path d="M83 74v14M66 86h48" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
       </svg>
       <HeinzelAvatar state="sleeping" age="young" shirt="teal" className="relative z-10 h-[4.5rem] w-11" />
     </div>
@@ -328,6 +368,7 @@ type Props = {
   probe?: () => Promise<ProbeResult>;
   now?: () => number;
   reload?: () => void;
+  hostname?: string;
 };
 /** The version the last start remembered is not hz's until hz says so: a phone that cannot reach it must not show an
  * old build's number as if it were the one it is connecting to. */
@@ -339,7 +380,13 @@ function forgetShownVersion() {
 const reloadPage = () => window.location.reload();
 const clock = () => performance.now();
 
-export function Splash({ store = splash, probe = probeServer, now = clock, reload = reloadPage }: Props) {
+export function Splash({
+  store = splash,
+  probe = probeServer,
+  now = clock,
+  reload = reloadPage,
+  hostname = window.location.hostname,
+}: Props) {
   const state = useSyncExternalStore(store.subscribe, store.get);
   const client = useQueryClient();
   const theme = useSelectedTheme();
@@ -348,6 +395,10 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
   useSplashElement(state, now);
   const asking = polling(state);
   const waits = waiting(state);
+  const [offline, setOffline] = useState(() => navigator.onLine === false);
+  const [checking, setChecking] = useState(false);
+  const [seconds, setSeconds] = useState<number | null>(null);
+  const retryNow = useRef<() => void>(() => undefined);
 
   useEffect(() => store.send({ type: "mounted" }), [store]);
 
@@ -379,7 +430,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
         store.send({ type: "refused" });
         return false;
       }
-      if (!store.get().booted) forgetShownVersion();
+      forgetShownVersion();
       store.send({ type: "unreachable", at: now() });
       return polling(store.get());
     },
@@ -389,18 +440,29 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
   // Answers apply in the order the questions went out: a late "not there" never undoes a newer answer.
   const asked = useRef(0);
   const applied = useRef(0);
+  const inFlight = useRef<Promise<boolean> | null>(null);
   /** Ask hz once and tell the machine; whether to ask again. `confirm` asks twice before calling hz gone. */
   const ask = useCallback(
-    async (confirm = false): Promise<boolean> => {
-      const number = ++asked.current;
-      let answer = await probe();
-      if (confirm && answer.kind === "unreachable") {
-        await new Promise((resolve) => setTimeout(resolve, CONFIRM_MS));
-        answer = await probe();
-      }
-      if (number < applied.current) return false;
-      applied.current = number;
-      return apply(answer);
+    (confirm = false): Promise<boolean> => {
+      if (inFlight.current) return inFlight.current;
+      const request = (async () => {
+        setChecking(true);
+        setSeconds(null);
+        const number = ++asked.current;
+        let answer = await probe();
+        if (confirm && answer.kind === "unreachable") {
+          await new Promise((resolve) => setTimeout(resolve, CONFIRM_MS));
+          answer = await probe();
+        }
+        if (number < applied.current) return false;
+        applied.current = number;
+        return apply(answer);
+      })().finally(() => {
+        inFlight.current = null;
+        setChecking(false);
+      });
+      inFlight.current = request;
+      return request;
     },
     [probe, apply],
   );
@@ -410,19 +472,52 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
     if (!asking) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    let running = false;
     let misses = 0;
+    const clear = () => {
+      clearTimeout(timer);
+      clearInterval(ticker);
+    };
     const loop = async () => {
-      if (stopped) return;
+      if (stopped || running) return;
+      clear();
+      running = true;
       if (await ask()) {
-        if (!stopped) timer = setTimeout(loop, retryDelay(++misses));
+        if (!stopped) {
+          const delay = retryDelay(++misses);
+          const due = Date.now() + delay;
+          const update = () => setSeconds(Math.max(0, Math.ceil((due - Date.now()) / 1000)));
+          update();
+          ticker = setInterval(update, 250);
+          timer = setTimeout(loop, delay);
+        }
       }
+      running = false;
+    };
+    retryNow.current = () => {
+      if (!running) void loop();
     };
     void loop();
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      clear();
+      retryNow.current = () => undefined;
     };
   }, [asking, ask]);
+
+  useEffect(() => {
+    const update = () => {
+      setOffline(navigator.onLine === false);
+      if (navigator.onLine !== false) retryNow.current();
+    };
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
 
   // Something suspects hz went away (a call couldn't reach it): ask once; the loop above takes over if it is gone.
   const handled = useRef(0);
@@ -453,7 +548,20 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
   return (
     <>
       {brand && createPortal(<Branding theme={theme} dark={dark} />, brand)}
-      {problem && state.phase === "error" && state.problem && createPortal(<Fix problem={state.problem} />, problem)}
+      {problem &&
+        state.phase === "error" &&
+        state.problem &&
+        createPortal(
+          <Fix
+            problem={state.problem}
+            offline={offline}
+            checking={checking}
+            seconds={seconds}
+            retry={() => retryNow.current()}
+            hostname={hostname}
+          />,
+          problem,
+        )}
       {connecting && byId("splash-art") && createPortal(<SearchingScene />, byId("splash-art") as HTMLElement)}
     </>
   );

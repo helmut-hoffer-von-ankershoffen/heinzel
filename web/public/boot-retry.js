@@ -21,9 +21,14 @@
   }
 
   /** The words for the status line; nothing in them is version- or command-specific beyond the current command. */
-  function statusFor(attempt, delay) {
-    const seconds = Math.round(delay / 1000);
-    return `hz isn't answering. Trying again in ${seconds} ${seconds === 1 ? "second" : "seconds"} (try ${attempt}).`;
+  function statusFor(_attempt, delay) {
+    return `Next try in ${Math.ceil(delay / 1000)}s`;
+  }
+
+  function guidanceFor(hostname) {
+    return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname.toLowerCase())
+      ? "Check this computer's connection. If needed, run hz ui serve in a terminal."
+      : "Check this device's connection and your remote network or Tailscale connection.";
   }
 
   /** Whether hz answered: the manifest, not the app's page that every unknown path gets. */
@@ -60,16 +65,25 @@
    * Probe until hz answers, then `reload`. `say` receives the status line; `schedule` is setTimeout, replaceable.
    * Returns a stop function.
    */
-  function retry({ probe: ask, say, reload, schedule = setTimeout, cancel = clearTimeout }) {
+  function retry({ probe: ask, say, reload, schedule = setTimeout, cancel = clearTimeout, checking = () => {} }) {
     let attempt = 0;
     let timer;
     let stopped = false;
     let busy = false;
+    let ticker;
+    const clear = () => {
+      cancel(timer);
+      clearInterval(ticker);
+    };
     const step = async () => {
       if (stopped || busy) return;
+      clear();
       busy = true;
+      checking(true);
+      say("Checking connection…");
       const up = await ask();
       busy = false;
+      checking(false);
       if (stopped) return;
       if (up) {
         say("hz answered. Opening…");
@@ -78,18 +92,20 @@
       }
       attempt += 1;
       const delay = delayFor(attempt);
-      say(statusFor(attempt, delay));
+      const due = Date.now() + delay;
+      const update = () => say(statusFor(attempt, Math.max(0, due - Date.now())));
+      update();
+      ticker = setInterval(update, 250);
       timer = schedule(step, delay);
     };
     const now = () => {
-      cancel(timer);
-      void step();
+      if (!busy) void step();
     };
     void step();
     return {
       stop: () => {
         stopped = true;
-        cancel(timer);
+        clear();
       },
       now,
     };
@@ -97,6 +113,9 @@
 
   function start(mode) {
     const status = document.getElementById("boot-status") ?? document.getElementById("splash-line");
+    const hint = document.getElementById("boot-hint");
+    const guidance = document.getElementById("boot-guidance");
+    const button = document.getElementById("boot-retry");
     const say = (text) => {
       if (status) status.textContent = text;
     };
@@ -108,22 +127,41 @@
       // Whatever version the last start showed is not the version that will answer.
       const version = document.getElementById("splash-version");
       if (version) version.textContent = "";
-      const running = retry({ probe, say, reload });
+      const showHint = () => {
+        if (hint)
+          hint.textContent =
+            navigator.onLine === false
+              ? "Your browser reports that this device is offline."
+              : "This page could not reach its server.";
+      };
+      if (guidance) guidance.textContent = guidanceFor(globalThis.location.hostname);
+      showHint();
+      const running = retry({
+        probe,
+        say,
+        reload,
+        checking: (value) => {
+          if (button) button.disabled = value;
+        },
+      });
+      button?.addEventListener("click", running.now);
+      globalThis.addEventListener("offline", showHint);
       for (const [target, name] of [
         [globalThis, "online"],
         [globalThis, "focus"],
         [document, "visibilitychange"],
       ]) {
         target.addEventListener(name, () => {
+          showHint();
           if (name !== "visibilitychange" || document.visibilityState === "visible") running.now();
         });
       }
       // A new worker took over: the page it serves may be newer than this one.
-      navigator.serviceWorker?.addEventListener("controllerchange", reload);
+      navigator.serviceWorker?.addEventListener("controllerchange", running.now);
+      return running;
     };
     if (mode === "offline") {
-      engage();
-      return;
+      return engage();
     }
     setTimeout(() => {
       const root = document.getElementById("root");
@@ -131,7 +169,7 @@
     }, WATCH_MS);
   }
 
-  const api = { delayFor, statusFor, probe, mayReload, retry, start };
+  const api = { delayFor, statusFor, guidanceFor, probe, mayReload, retry, start };
   globalThis.hzBootRetry = api;
   const mode = document.currentScript?.dataset.mode;
   if (mode === "offline" || mode === "watch") start(mode);

@@ -1,12 +1,21 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acmeTheme, config, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { GIVE_UP_MS, initial, reduce, type SplashEvent } from "./machine";
-import { PROBE_TIMEOUT_MS, type ProbeResult, probeServer, Splash, SplashGone, START, signInFromLink } from "./Splash";
+import {
+  isLocalLoopback,
+  PROBE_TIMEOUT_MS,
+  type ProbeResult,
+  probeServer,
+  Splash,
+  SplashGone,
+  START,
+  signInFromLink,
+} from "./Splash";
 import { createSplashStore } from "./store";
 
 const page = readFileSync(join(process.cwd(), "index.html"), "utf8"); // vitest runs in web/
@@ -23,12 +32,17 @@ const ready = () =>
     ([{ type: "mounted" }, { type: "answered" }, { type: "themed" }] as SplashEvent[]).reduce(reduce, initial),
   );
 
-function mount(probe: () => Promise<ProbeResult>, store = createSplashStore(), reload: () => void = () => undefined) {
+function mount(
+  probe: () => Promise<ProbeResult>,
+  store = createSplashStore(),
+  reload: () => void = () => undefined,
+  hostname?: string,
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const refresh = vi.spyOn(client, "invalidateQueries");
   render(
     <QueryClientProvider client={client}>
-      <Splash store={store} probe={probe} now={now} reload={reload} />
+      <Splash store={store} probe={probe} now={now} reload={reload} hostname={hostname} />
     </QueryClientProvider>,
     { container: document.getElementById("root") as HTMLElement },
   );
@@ -106,10 +120,10 @@ describe("the splash", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     await passes(200);
     await passes(0); // playful preference query settles before inspecting its optional illustration
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
     expect(screen.getByTestId("offline-scene")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("An installed hz starts again on its own");
-    expect(screen.getByRole("alert")).toHaveTextContent("Trying again every few seconds");
+    expect(screen.getByRole("alert")).toHaveTextContent("This page could not reach its server");
+    expect(screen.getByRole("alert")).toHaveTextContent(/Next try in \d+s/);
     expect(screen.getByRole("button", { name: `Copy the command ${START}` })).toBeInTheDocument();
     expect(splash().dataset.state).toBe("error");
     answer = ok;
@@ -149,7 +163,7 @@ describe("the splash", () => {
     await act(async () => answer(gone));
     await passes(GIVE_UP_MS + 100);
     expect(screen.queryByTestId("offline-scene")).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
     expect(screen.getByRole("button", { name: `Copy the command ${START}` })).toBeInTheDocument();
   });
 
@@ -166,12 +180,60 @@ describe("the splash", () => {
     expect(START).not.toBe("hz ui");
   });
 
+  it("distinguishes offline hints from a failed remote probe and never offers a local command remotely", async () => {
+    expect(["localhost", "127.0.0.1", "[::1]"].every(isLocalLoopback)).toBe(true);
+    expect(["mini.tailnet.ts.net", "127.0.0.1.example", "192.168.1.2"].some(isLocalLoopback)).toBe(false);
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    mount(
+      async () => gone,
+      createSplashStore(),
+      () => undefined,
+      "mini.tailnet.ts.net",
+    );
+    await passes(GIVE_UP_MS + 100);
+    expect(screen.getByRole("alert")).toHaveTextContent("browser reports that this device is offline");
+    expect(screen.getByRole("alert")).toHaveTextContent("Tailscale");
+    expect(screen.queryByText(START)).toBeNull();
+    online.mockReturnValue(true);
+    window.dispatchEvent(new Event("online"));
+    await passes(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("could not reach its server");
+    online.mockRestore();
+  });
+
+  it("shows real checking state and never starts a second probe when Try now is pressed", async () => {
+    let finish: (result: ProbeResult) => void = () => undefined;
+    let calls = 0;
+    let pending = false;
+    const probe = vi.fn(() => {
+      calls++;
+      return pending
+        ? new Promise<ProbeResult>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(gone);
+    });
+    mount(probe);
+    await passes(GIVE_UP_MS + 100);
+    pending = true;
+    fireEvent.click(screen.getByRole("button", { name: "Try now" }));
+    await passes(0);
+    expect(within(screen.getByRole("alert")).getByRole("status")).toHaveTextContent("Checking connection…");
+    const count = calls;
+    fireEvent.click(screen.getByRole("button", { name: "Try now" }));
+    window.dispatchEvent(new Event("online"));
+    await passes(0);
+    expect(calls).toBe(count);
+    await act(async () => finish(gone));
+    expect(within(screen.getByRole("alert")).getByRole("status")).toHaveTextContent(/Next try in \d+s/);
+  });
+
   it("keeps asking with bounded waits for as long as hz is down, then opens the app by itself", async () => {
     let calls = 0;
     const probe = vi.fn(async (): Promise<ProbeResult> => (++calls > 12 ? ok : gone));
     mount(probe);
     await passes(GIVE_UP_MS + 100);
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
     await passes(10 * 60_000);
     expect(calls).toBeGreaterThan(12);
     expect(screen.queryByRole("alert")).toBeNull();
@@ -277,7 +339,7 @@ describe("the splash", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     await act(async () => answer(gone));
     await passes(0);
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
   });
 
   it("says to sign in again, with the command, when hz refuses the token, and stops asking", async () => {
@@ -356,7 +418,7 @@ describe("the splash", () => {
     await passes(600 + GIVE_UP_MS - 200);
     expect(line()).toBe("Reconnecting to hz…");
     await passes(400);
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
   });
 
   it("shows the restart's line until the reload", async () => {
@@ -368,7 +430,7 @@ describe("the splash", () => {
     expect(splash().hidden).toBe(false);
     expect(line()).toBe("Restarting hz…");
     act(() => store.send({ type: "restart-failed" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection unavailable");
   });
 
   it("goes at once when the page has no token, which says how to get one", async () => {

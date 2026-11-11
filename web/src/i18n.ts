@@ -441,8 +441,7 @@ const en = {
   "splash.ready": "Ready",
   "splash.opening": "Opening…",
   "splash.unreachableTitle": "hz isn't answering",
-  "splash.unreachable":
-    "{command} isn't running on this machine, or it stopped. An installed hz starts again on its own, and this app connects by itself once it runs.",
+  "splash.unreachable": "This page could not reach its server.",
   "splash.unreachableCommand": "If it does not, start it in a terminal:",
   "splash.tokenTitle": "Sign in again",
   "splash.token":
