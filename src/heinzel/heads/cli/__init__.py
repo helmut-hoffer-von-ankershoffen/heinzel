@@ -528,7 +528,7 @@ def _banner(kernel: Kernel) -> None:
         return  # the flag is parsed later; a script asking for JSON gets no art
     if _playful.allowed(kernel.settings, console):
         lines = ["Heinzelmännchen", f"{TAGLINE},", "like the little elves from Cologne"]
-        console.print(_playful.banner(lines), end="")
+        console.print(_playful.banner(lines, width=console.width), end="")
 
 
 def _print_version(kernel: Kernel, value: bool) -> None:

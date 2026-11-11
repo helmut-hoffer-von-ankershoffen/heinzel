@@ -25,6 +25,7 @@ def test_show_keeps_optional_providers_unknown():
     text = output.getvalue()
     assert "Scheduler: running · scheduler loaded; current tick unknown" in text
     assert "Web server: unknown" in text
+    assert "Sharing" not in text
 
 
 def test_interactive_bare_invocation_adds_status_to_banner_and_help(monkeypatch: pytest.MonkeyPatch):
@@ -188,3 +189,24 @@ def test_forced_color_does_not_make_redirected_output_interactive(monkeypatch):
     cli.main()
     show_screen.assert_not_called()
     build.assert_called_once_with(kernel)
+
+
+def _banner_text(width):
+    from heinzel.heads.cli import _playful
+
+    lines = ["Heinzelmännchen", "tagline,", "like the little elves from Cologne"]
+    return _playful.banner(lines, width=width).plain.split("\n")
+
+
+def test_wide_banner_puts_text_right_of_the_art_and_keeps_a_blank_line_below():
+    rows = _banner_text(120)
+    assert rows[-1] == ""
+    assert rows[-2] == ""
+    assert rows[-3].rstrip().endswith("like the little elves from Cologne")
+    assert rows[-3].lstrip() != rows[-3]
+    assert rows[-5].rstrip().endswith("Heinzelmännchen")
+
+
+def test_narrow_banner_stacks_the_text_below_the_art():
+    rows = _banner_text(40)
+    assert rows[-5:-1] == ["", "Heinzelmännchen", "tagline,", "like the little elves from Cologne"]

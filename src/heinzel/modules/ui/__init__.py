@@ -6,11 +6,13 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Config, HeinzelError, Kernel, Module, Settings
-from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh
+from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh, WebOverview
+from heinzel.modules.ui._overview import WebOverviewService
 from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
 module.service(WebService, WebService.for_user)
+module.service(WebOverview, WebOverviewService)
 
 
 def _persistent_web(kernel: Kernel) -> PersistentWeb:
