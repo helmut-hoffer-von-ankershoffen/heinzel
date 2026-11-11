@@ -40,5 +40,16 @@ def test_a_failing_step_logs_the_two_lines_and_the_error_type(caplog):
     with pytest.raises(FailureError), _desktop_log.step("install", "run"):
         raise FailureError
     end = _events(caplog)[-1]
-    assert (end.outcome, end.error_type, end.error, end.levelname) == ("error", "FailureError", "no room", "ERROR")
+    assert (end.outcome, end.error_type, end.levelname) == ("error", "FailureError", "ERROR")
+    assert not hasattr(end, "error")
     assert (end.happened, end.action) == ("There is no room.", "Free some space.")
+
+
+def test_failure_never_logs_exception_message_or_verifier_output(caplog):
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    detail = "fictional verifier detail"
+    with pytest.raises(RuntimeError, match=detail), _desktop_log.step("install", "verify"):
+        raise RuntimeError(detail)
+    end = _events(caplog)[-1]
+    assert (end.outcome, end.error_type) == ("error", "RuntimeError")
+    assert "fictional verifier detail" not in str(end.__dict__)
