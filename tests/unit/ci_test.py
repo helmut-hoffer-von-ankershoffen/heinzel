@@ -185,6 +185,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --frozen --script scripts/source_review.py": "the guard and the tool-free review",
         ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
+    "v0938-node-diagnostic.yml": {
+        ': "v0938-diagnostic-bind-fixture"': "binds the one-shot diagnostic to the exact reviewed fixture",
+        ': "v0938-diagnostic-run-fixture"': (
+            "runs and records the exact standalone Node fixture without installing packages"
+        ),
+    },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         'files="$(git diff': "picks the review tier from the changed files",

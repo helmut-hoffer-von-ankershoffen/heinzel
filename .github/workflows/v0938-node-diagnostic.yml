@@ -20,13 +20,15 @@ jobs:
       - name: Bind transport and fixture
         shell: bash
         run: |
+          : "v0938-diagnostic-bind-fixture"
           set -euo pipefail
           fixture=24ea6df215c023c1cb16d4bdf8e071f64025b0cc
           test "$GITHUB_EVENT_NAME" = push
           test "$GITHUB_REF" = refs/heads/validation/v0938-node-24ea
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse "$fixture^{tree}")" = 7b9bedcbe043cb0f96952008258e389c04026525
-          test "$(git diff --name-only "$fixture" HEAD)" = .github/workflows/v0938-node-diagnostic.yml
+          expected="$(printf '%s\n' .github/workflows/v0938-node-diagnostic.yml tests/unit/ci_test.py)"
+          test "$(git diff --name-only "$fixture" HEAD)" = "$expected"
           test -z "$(git status --porcelain)"
           sha256sum -c <<'CHECKSUMS'
           93c2b6644ed0fcfd60ee9a3c287af2b5701441392a9a535050715b44f33ffd55  desktop/test/window-options.test.js
@@ -42,6 +44,7 @@ jobs:
         id: node
         shell: bash
         run: |
+          : "v0938-diagnostic-run-fixture"
           set -euo pipefail
           test "$(node --version)" = v24.19.0
           binary="$(command -v node)"
