@@ -31,6 +31,13 @@ try {
   ]) {
     const page = await browser.newPage({ viewport });
     page.on("pageerror", (error) => result.errors.push(String(error)));
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "127.0.0.1" && url.port === String(address.port) && !url.pathname.startsWith("/api/"))
+        return route.continue();
+      result.errors.push("Unexpected non-fixture browser request");
+      return route.abort();
+    });
     await page.goto(`http://127.0.0.1:${address.port}/e2e/audio-visualizer.html`);
     const trigger = page
       .getByRole("region", { name: "Audio visualizer", exact: true })
@@ -125,8 +132,88 @@ try {
     result.realSignal = true;
     // What the person sees: a region of the page away from the controls must change while the aurora paints and
     // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
-    const away = { x: 40, y: Math.round(viewport.height / 3), width: Math.round(viewport.width / 4), height: 200 };
+    const away = { x: 260, y: Math.round(viewport.height / 3), width: Math.min(80, viewport.width - 260), height: 200 };
     const lit = await page.screenshot({ clip: away });
+    // The Heinzel styles, from the same signal: the Halo's rays are drawn, and the Swarm's figures move.
+    const heinzels = () =>
+      page.evaluate(() => {
+        const halo = document.querySelector("canvas[data-testid=audio-halo]");
+        let ink = 0;
+        if (halo)
+          for (const [index, value] of halo.getContext("2d").getImageData(0, 0, halo.width, halo.height).data.entries())
+            if (index % 4 === 3) ink += value;
+        const moving = [...document.querySelectorAll("[data-swarm-figure]")].filter((figure) => figure.style.transform);
+        return {
+          halo: Boolean(halo),
+          ink,
+          figures: document.querySelectorAll("[data-swarm-figure]").length,
+          moving: moving.length,
+        };
+      });
+    // Show is pick-any: unchecking the Halo chip takes the Halo away, checking it brings it back.
+    const haloChip = pane.getByRole("checkbox", { name: "Halo", exact: true });
+    // The chip is the label a person presses; its native checkbox is visually hidden.
+    const haloLabel = pane.locator("label").filter({ hasText: /^Halo$/ });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), false);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor({ state: "detached" });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), true);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor();
+    const swarmChip = pane.getByRole("checkbox", { name: "Swarm", exact: true });
+    const swarmLabel = pane.locator("label").filter({ hasText: /^Swarm$/ });
+    await swarmLabel.click();
+    assert.equal(await swarmChip.isChecked(), false);
+    await page.locator("canvas[data-testid=audio-swarm]").waitFor({ state: "detached" });
+    assert.equal(await page.locator("[data-swarm-figure]").count(), 0);
+    await swarmLabel.click();
+    assert.equal(await swarmChip.isChecked(), true);
+    await page.locator("canvas[data-testid=audio-swarm]").waitFor();
+    await page.waitForTimeout(400);
+    const playing = await heinzels();
+    assert(
+      playing.halo && playing.figures === 3,
+      `${viewport.width}px: Halo and Swarm must stand: ${JSON.stringify(playing)}`,
+    );
+    // The portal must belong to the real Sidebar, immediately before its real PlayerCard dock, not a fixture stand-in.
+    const geometry = await page.evaluate(() => {
+      const sidebar = document.querySelector('aside[aria-label="Main"]');
+      const stage = sidebar?.querySelector("[data-viz-stage]");
+      const dock = sidebar?.querySelector("[data-sound-dock]");
+      const card = document.querySelector('[data-dock="docked"]');
+      if (!stage || !dock || !card || !stage.contains(document.querySelector('[data-testid="audio-halo"]')))
+        return null;
+      const s = stage.getBoundingClientRect(),
+        d = dock.getBoundingClientRect(),
+        p = card.getBoundingClientRect();
+      return {
+        ordered: Boolean(stage.compareDocumentPosition(dock) & Node.DOCUMENT_POSITION_FOLLOWING),
+        stageTop: s.top,
+        stageBottom: s.bottom,
+        stageWidth: s.width,
+        dockTop: d.top,
+        cardTop: p.top,
+        cardWidth: p.width,
+      };
+    });
+    assert(
+      geometry?.ordered &&
+        geometry.stageWidth > 0 &&
+        geometry.stageBottom <= geometry.dockTop + 1 &&
+        Math.abs(geometry.dockTop - geometry.cardTop) <= 2 &&
+        geometry.cardWidth > 0 &&
+        geometry.stageTop >= 0,
+      `${viewport.width}px: real Sidebar stage and player must be visible and not overlap: ${JSON.stringify(geometry)}`,
+    );
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("[data-swarm-figure]")].some((figure) => figure.style.transform),
+    );
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.waitForFunction(() => {
+      const figures = [...document.querySelectorAll("[data-swarm-figure]")];
+      return figures.length === 3 && figures.every((figure) => !figure.style.transform);
+    });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
       window.audioFixture.gain.gain.value = 0;
@@ -140,6 +227,11 @@ try {
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
+    const resting = await heinzels();
+    assert(
+      resting.moving === 0 && playing.ink > resting.ink * 1.5,
+      `${viewport.width}px: the Halo must grow with the sound and the Swarm stand still in silence: ${JSON.stringify({ playing, resting })}`,
+    );
     assert(
       !lit.equals(await page.screenshot({ clip: away })),
       `${viewport.width}px: the aurora painted but nothing on the page changed: it is hidden under another layer`,
@@ -181,6 +273,9 @@ try {
     // Not offered any more: the choice leaves the group and one line says why.
     await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
     assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
+    // The fixture offers no microphone either, so nothing is left to choose: no group, not a lone "Off".
+    assert.equal(await pane.getByRole("radiogroup", { name: "Listen to" }).count(), 0);
+    assert.equal(await pane.getByRole("radio", { name: "Microphone", exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => window.audioFixture.requests), beforeUnsupported);
     const bounds = await pane.boundingBox();
     assert(
@@ -201,6 +296,33 @@ try {
       })),
     );
     assert.deepEqual(violations, [], `${viewport.width}px axe: ${JSON.stringify(violations)}`);
+    // And in dark mode: the chip and segment fills keep their contrast.
+    await page.evaluate(() => {
+      localStorage.setItem("hz.theme", "dark");
+      window.dispatchEvent(new Event("hz:mode"));
+    });
+    await page.waitForFunction(
+      () =>
+        document.documentElement.classList.contains("dark") &&
+        getComputedStyle(document.body).color === "rgb(233, 237, 229)" &&
+        Number(getComputedStyle(document.querySelector('[data-testid="heinzel-wordmark"]')).color.match(/\d+/)?.[0]) >
+          200,
+    );
+    const dark = await page.evaluate(async () =>
+      (
+        await window.axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
+        })
+      ).violations.map((item) => ({
+        id: item.id,
+        nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+      })),
+    );
+    await page.evaluate(() => {
+      localStorage.setItem("hz.theme", "light");
+      window.dispatchEvent(new Event("hz:mode"));
+    });
+    assert.deepEqual(dark, [], `${viewport.width}px axe, dark: ${JSON.stringify(dark)}`);
     await page.keyboard.press("Escape");
     await pane.waitFor({ state: "hidden" });
     assert(await trigger.evaluate((element) => element === document.activeElement));
