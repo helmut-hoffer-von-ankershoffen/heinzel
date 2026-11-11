@@ -7,6 +7,7 @@ layer. Nothing reaches the network.
 
 import importlib
 import json
+import logging
 import shutil
 import sys
 from datetime import UTC, datetime, timedelta
@@ -579,13 +580,18 @@ def test_a_plugins_signals_are_read_once_per_interval(acme, monkeypatch):
 
 
 @pytest.mark.parametrize("answer", [RuntimeError("offline"), {"weather": "sunny"}, "rain"])
-def test_signals_that_fail_or_are_malformed_stay_unknown(acme, answer):
+def test_signals_that_fail_or_are_malformed_stay_unknown(acme, answer, caplog):
     from heinzel.kernel import ThemeFonts
 
     module, _ = weather_plugin([answer])
     service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
-    signals = service.signals()  # type: ignore[attr-defined]
+    with caplog.at_level(logging.WARNING):
+        signals = service.signals()  # type: ignore[attr-defined]
     assert (signals.weather, signals.sources) == (None, [])
+    events = [record for record in caplog.records if record.message.startswith("theme.signals.")]
+    expected = "theme.signals.failed" if isinstance(answer, RuntimeError) else "theme.signals.malformed"
+    assert [record.message for record in events] == [expected]
+    assert events[0].signals == "skies:now"
 
 
 def test_the_first_module_publishing_a_signal_wins(acme):

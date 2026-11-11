@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, ModuleSettings, OperationLet, Settings
@@ -21,7 +23,7 @@ def test_orders_modules_parents_first(make_kernel):
     assert kernel.module("a.child").parent == "a"
 
 
-def test_colliding_plugin_modules_are_skipped_and_reported(settings):
+def test_colliding_plugin_modules_are_skipped_and_reported(settings, caplog):
     plugin = Origin(distribution="heinzel-x", version="1", builtin=False)
     builtin = Origin(distribution="heinzel", version="1", builtin=True)
     parent = _module("a", "b")
@@ -30,9 +32,13 @@ def test_colliding_plugin_modules_are_skipped_and_reported(settings):
         ModuleRecord(qualname="a", module=_module("a"), origin=plugin),
         ModuleRecord(qualname="a.b", module=_module("b"), origin=plugin),
     ]
-    kernel = Kernel(settings, records)
+    with caplog.at_level(logging.WARNING):
+        kernel = Kernel(settings, records)
     assert [r.module for r in kernel.modules] == [parent]
     assert set(kernel.errors) == {"a", "a.b"}
+    skipped = [r for r in caplog.records if r.message == "kernel.module.skipped"]
+    assert sorted(r.qualname for r in skipped) == ["a", "a.b"]
+    assert {r.distribution for r in skipped} == {"heinzel-x"}
     assert "already has an operation named 'b'" in kernel.errors["a.b"]
 
 

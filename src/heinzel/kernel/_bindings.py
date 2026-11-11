@@ -23,6 +23,7 @@ from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capabi
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
+from heinzel.kernel._logging import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -445,7 +446,14 @@ class Capabilities:
             # No traceback and no message: pydantic's and a plugin's messages may repeat a URL with a token in it,
             # and warnings reach the terminal.
             name = getattr(function, "__qualname__", repr(function))
-            logger.warning("Reading the hosts of adapter %s through %s failed: %s", let.name, name, type(exc).__name__)
+            log_event(
+                logger,
+                "kernel.hosts.read_failed",
+                level=logging.WARNING,
+                adapter=let.name,
+                source=name,
+                error=type(exc).__name__,
+            )
             return (), f"the hosts of {let.name} come from its settings, which couldn't be read ({type(exc).__name__})"
         hosts = [host_of(value) if isinstance(value, str) else None for value in values]
         if invalid := [str(number) for number, host in enumerate(hosts, 1) if host is None]:

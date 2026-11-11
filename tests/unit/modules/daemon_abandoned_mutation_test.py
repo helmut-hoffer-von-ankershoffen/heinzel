@@ -288,3 +288,86 @@ def test_linux_boot_evidence_is_unknown_when_kernel_read_fails(monkeypatch):
 
     monkeypatch.setattr(abandoned, "_read", unavailable)
     assert abandoned.host_boot("linux") == (None, None)
+
+
+def test_archiving_a_marker_logs_one_event_with_the_reason_and_receipt(service, host, caplog):
+    marker = _legacy(service)
+    host.reboot(marker)
+    service.tick()
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "daemon.mutation.archived"]
+    (receipt,) = _receipts(service)
+    assert event.reason == receipt["evidence"]
+    assert event.receipt.endswith(".receipt.json")
+
+
+class _FakeSysctl:
+    """libSystem's sysctlbyname(3) for one host, so the Darwin path runs the same on every platform."""
+
+    def __init__(self, values: dict[bytes, bytes | None], *, fail_read: bool = False) -> None:
+        self.values, self.fail_read = values, fail_read
+
+    def sysctlbyname(self, name, buffer, size, _new, _new_size):
+        value = self.values.get(name)
+        if value is None:
+            return -1
+        if buffer is None:
+            size._obj.value = len(value)
+            return 0
+        if self.fail_read:
+            return -1
+        abandoned.ctypes.memmove(buffer, value, len(value))
+        return 0
+
+
+def _darwin(monkeypatch, library):
+    monkeypatch.setattr(abandoned.ctypes, "CDLL", lambda *_args, **_kwargs: library)
+
+
+def test_darwin_boot_evidence_reads_session_and_boot_time_through_sysctl(monkeypatch):
+    timeval = abandoned._TIMEVAL.pack(1_700_000_000, 250_000)
+    _darwin(
+        monkeypatch,
+        _FakeSysctl({b"kern.bootsessionuuid": BOOT_BEFORE.upper().encode() + b"\0", b"kern.boottime": timeval}),
+    )
+    assert abandoned.host_boot("darwin") == (BOOT_BEFORE, 1_700_000_000_250_000_000)
+
+
+@pytest.mark.parametrize(
+    ("values", "fail_read", "expected"),
+    [
+        ({}, False, (None, None)),
+        ({b"kern.bootsessionuuid": b"", b"kern.boottime": b""}, False, (None, None)),
+        ({b"kern.bootsessionuuid": b"not-a-boot\0", b"kern.boottime": b"\1"}, False, (None, None)),
+        ({b"kern.boottime": abandoned._TIMEVAL.pack(0, 5)}, False, (None, None)),
+        ({b"kern.bootsessionuuid": b"x" * 37, b"kern.boottime": abandoned._TIMEVAL.pack(9, 0)}, True, (None, None)),
+        ({b"kern.bootsessionuuid": b"x" * (abandoned._LIMIT + 1)}, False, (None, None)),
+    ],
+)
+def test_darwin_boot_evidence_is_unknown_when_sysctl_cannot_answer(monkeypatch, values, fail_read, expected):
+    _darwin(monkeypatch, _FakeSysctl(values, fail_read=fail_read))
+    assert abandoned.host_boot("darwin") == expected
+
+
+def test_darwin_boot_evidence_is_unknown_when_the_library_cannot_load(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise OSError
+
+    monkeypatch.setattr(abandoned.ctypes, "CDLL", unavailable)
+    assert abandoned.host_boot("darwin") == (None, None)
+
+
+def test_an_unknown_platform_has_no_boot_evidence():
+    assert abandoned.host_boot("win32") == (None, None)
+
+
+def test_a_process_of_another_user_counts_as_existing(monkeypatch):
+    def denied(_pid, _signal):
+        raise PermissionError
+
+    monkeypatch.setattr(abandoned.os, "kill", denied)
+    assert abandoned.process_exists(7)
+
+
+def test_a_record_drops_an_unrecognized_boot_and_markers_need_a_valid_token():
+    assert abandoned.mutation_record(TOKEN, 7, "not-a-boot") == {"token": TOKEN, "pid": 7}
+    assert parse_marker((json.dumps({"token": "short", "pid": 7}, indent=2) + "\n").encode()) is None

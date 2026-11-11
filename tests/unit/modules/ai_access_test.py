@@ -1,21 +1,24 @@
 """The AI access options and their status words (ADR 0057): gateway, Pydantic AI and Claude Code, without a model."""
 
+import logging
 import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from heinzel import AccessStatus, Config, Credentials, Settings
+from heinzel import AccessStatus, AccessTest, Config, Credentials, Settings
 from heinzel.kernel import EnvironmentBackend
 from heinzel.modules.ai.access._discovery import ModelCache, fetch, is_local, listing
 from heinzel.modules.ai.access._gateway import Finished, GatewayAccess, environment, run_command
 from heinzel.modules.ai.access._models import AccessSettings, Bindings, LastTest
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, endpoint_model, model_hosts
-from heinzel.modules.ai.access._service import ResultStore, setup_of, state
+from heinzel.modules.ai.access._service import AccessService, ResultStore, setup_of, state
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
@@ -493,3 +496,23 @@ def test_the_listing_never_asks_for_a_restart_to_apply_a_runner():
     source = (Path(__file__).parents[3] / "src/heinzel/modules/ai/access/_service.py").read_text()
     assert "restart `hz ui serve`" not in source
     assert "this hz process started with" not in source
+
+
+def test_a_broken_option_and_an_unwritable_result_are_logged_as_named_events(settings, monkeypatch, caplog):
+    def broken() -> AccessTest:
+        msg = "offline"
+        raise RuntimeError(msg)
+
+    service = AccessService({"acme": object()}, Mock(), Mock(), settings, Mock())  # type: ignore[arg-type]
+
+    def unwritable(*_args: object) -> None:
+        raise OSError
+
+    monkeypatch.setattr(service._tests, "keep", unwritable)
+    with caplog.at_level(logging.WARNING):
+        report = service.test("acme", {"acme": SimpleNamespace(test=broken)})  # type: ignore[arg-type]
+    assert not report.ok
+    events = {r.message: r for r in caplog.records if r.message.startswith("ai.access.")}
+    assert events["ai.access.option_failed"].error == "RuntimeError"
+    assert (events["ai.access.option_failed"].option, events["ai.access.option_failed"].call) == ("acme", "test")
+    assert events["ai.access.keep_test_failed"].option == "acme"

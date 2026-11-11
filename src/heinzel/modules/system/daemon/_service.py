@@ -62,6 +62,7 @@ from heinzel.kernel import (
     private_write,
     tick_interval,
 )
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.daemon import _process_birth
@@ -2339,9 +2340,7 @@ class DaemonService:
             }
             data.update({f"birth_{key}": value for key, value in fence.items()})
             self._write_state("handover-request.json", data)
-            logger.info(
-                "The daemon's registration record names another version; the next tick records %s.", __version__
-            )
+            log_event(logger, "daemon.registration.rearmed", version=__version__)
         except Exception:  # noqa: BLE001 - self-healing never fails a tick; the mismatch stays visible in status
             logger.warning("The daemon's registration record could not be re-armed; status shows the mismatch.")
 
@@ -2495,7 +2494,7 @@ class DaemonService:
         if not sep or any(j.id == job for j in jobs) or (renamed := self._kernel.renamed(module)) is None:
             return job
         current = f"{renamed}:{name}"
-        logger.warning("Job %s is now %s; the old id works for one more minor release.", job, current)
+        log_event(logger, "daemon.job.renamed", level=logging.WARNING, old=job, current=current)
         return current
 
     def _post_notices(self, log: TickLog) -> None:

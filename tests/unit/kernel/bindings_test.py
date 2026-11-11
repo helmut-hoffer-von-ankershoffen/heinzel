@@ -1,6 +1,7 @@
 """Binding capabilities to adapters and the handles requesters get (ADR 0028), with test-only adapters."""
 
 import inspect
+import logging
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -463,10 +464,14 @@ def test_two_plugins_with_one_adapter_name_make_the_binding_ambiguous(make_kerne
         run(kernel, "digest", "show")
 
 
-def test_an_adapter_class_must_define_the_methods_of_its_declared_modes(make_kernel):
+def test_an_adapter_class_must_define_the_methods_of_its_declared_modes(make_kernel, caplog):
     module = Module("broken", "Claims to write without a write method.")
     module.provides("documents", modes={"read", "write"})(Reader)
-    kernel = make_kernel(broken=module)
+    with caplog.at_level(logging.WARNING):
+        kernel = make_kernel(broken=module)
+    skipped = [record for record in caplog.records if record.message == "kernel.adapter.skipped"]
+    assert [record.qualname for record in skipped] == ["broken"]
+    assert "lacks replace_section" in skipped[0].problem
     assert kernel.errors["broken"] == "Adapter skipped: adapter broken:documents lacks replace_section of documents"
     assert not kernel._capabilities.adapters
 
@@ -505,7 +510,7 @@ def test_a_builtin_adapter_collision_is_a_bug(settings):
         Kernel(settings, records)
 
 
-def test_one_function_registered_for_two_operations_is_refused(make_kernel, settings):
+def test_one_function_registered_for_two_operations_is_refused(make_kernel, settings, caplog):
     def show() -> None:
         """Show."""
 
@@ -515,7 +520,9 @@ def test_one_function_registered_for_two_operations_is_refused(make_kernel, sett
         module.operation(name="again")(show)
         return module
 
-    kernel = make_kernel(twice=twice())
+    with caplog.at_level(logging.WARNING):
+        kernel = make_kernel(twice=twice())
+    assert [r.message for r in caplog.records if r.message.startswith("kernel.")] == ["kernel.requirement.skipped"]
     assert kernel.errors["twice"] == (
         "Requirement skipped: test_one_function_registered_for_two_operations_is_refused.<locals>.show "
         "is registered for twice show and twice again; a function acts for one only"
@@ -778,9 +785,9 @@ def test_hosts_that_cant_be_read_are_unknown_and_the_problem_repeats_no_value(ma
 
 def test_reading_hosts_logs_no_value_and_no_message(make_kernel, caplog):
     acme_hosts(make_kernel, failing, api_url="https://s3cret@acme.invalid")
-    assert [record.getMessage() for record in caplog.records] == [
-        "Reading the hosts of adapter acme:documents through failing failed: RuntimeError"
-    ]
+    (event,) = caplog.records
+    assert event.event == "kernel.hosts.read_failed"
+    assert (event.adapter, event.source, event.error) == ("acme:documents", "failing", "RuntimeError")
     assert not any(record.exc_info for record in caplog.records)
 
 

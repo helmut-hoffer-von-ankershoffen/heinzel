@@ -35,6 +35,7 @@ from heinzel import (
 )
 from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._store import MAX_MESSAGES, ChatStore, dumps, now
@@ -1055,8 +1056,10 @@ class ChatService:
                 self._reconcile_schedule_confirmation(found)
             else:
                 found.status, found.result = "failed", str(exc)
-        except Exception as exc:
-            log.exception("Confirmed action %s of chat %s failed", found.id, session)
+        except Exception as exc:  # noqa: BLE001 - a bug in an action is recorded, never raised
+            log_event(
+                log, "runner.chat.confirm_failed", level=logging.ERROR, exc_info=True, action=found.id, session=session
+            )
             if self._is_reconciled_confirmation(found):
                 self._reconcile_schedule_confirmation(found)
             else:
@@ -1097,8 +1100,8 @@ class ChatService:
         try:
             if self._kernel.provides(ApprovalIssuer):
                 applied = self._kernel.resolve(ApprovalIssuer).applied(found.module, found.operation, found.arguments)
-        except Exception:
-            log.exception("Could not reconcile schedule action %s after confirmation failed", found.id)
+        except Exception:  # noqa: BLE001 - an unreadable journal leaves the action uncertain
+            log_event(log, "runner.chat.reconcile_failed", level=logging.ERROR, exc_info=True, action=found.id)
         if applied:
             found.status = "done"
             found.result = (

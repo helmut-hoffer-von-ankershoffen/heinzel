@@ -128,3 +128,40 @@ def test_nothing_is_recorded_when_no_module_keeps_a_log(make_kernel):
 def test_midnight_is_local():
     assert midnight(NOW) <= NOW
     assert NOW - midnight(NOW) < timedelta(days=1)
+
+
+def test_a_failed_recording_logs_the_error_type_only(settings, tmp_path, caplog):
+    blocked = tmp_path / "blocked"
+    blocked.write_text("", encoding="utf-8")
+    UsageLedger(settings.model_copy(update={"state_dir": blocked}), Config.empty()).record(entry(1))
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "ai.usage.record_failed"]
+    assert event.error in {"NotADirectoryError", "FileExistsError"}
+    assert not event.exc_info
+
+
+def test_a_broken_access_setting_records_the_entry_without_an_access(settings):
+    class Broken:
+        def settings(self, *_args):
+            raise ValueError
+
+    ledger = UsageLedger(settings, Broken())
+    ledger.record(entry(1, access=None))
+    assert [e.access for e in ledger.entries()] == [None]
+
+
+def test_a_failed_prune_leaves_no_temporary_file_and_never_fails_recording(ledger, monkeypatch):
+    import heinzel.modules.ai._usage as usage
+
+    monkeypatch.setattr(usage, "LIMIT", 10)
+
+    def refuse(self, _target):
+        raise OSError
+
+    monkeypatch.setattr(usage.Path, "replace", refuse)
+    ledger.record(entry(1))
+    assert len(ledger.entries()) == 1
+    assert [p.name for p in ledger.path.parent.iterdir()] == [ledger.path.name]
+
+
+def test_a_missing_ledger_has_no_entries(ledger):
+    assert ledger.entries() == []
