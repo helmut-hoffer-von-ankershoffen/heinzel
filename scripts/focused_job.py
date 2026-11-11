@@ -125,6 +125,116 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int =
     raise SelectorError(kind or "(none)", problem)
 
 
+# One-shot validation overlay. The parent and every change in this ref are pinned before any dependency install.
+NATIVE_BRANCH = "validation/vnxd-native-33033"
+NATIVE_PARENT = "33033cabd3ded19e18329ea19710dd8d29e48a13"
+NATIVE_FILES = frozenset({"scripts/focused_job.py", "tests/unit/focused_job_test.py"})
+
+
+def native_authorized(env: dict[str, str], head: str, parent: str, changed: set[str]) -> bool:
+    """Only the explicit one-shot macOS request may run the fixed original tests."""
+    return (
+        env.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+        and env.get("GITHUB_REF") == f"refs/heads/{NATIVE_BRANCH}"
+        and env.get("GITHUB_REF_NAME") == NATIVE_BRANCH
+        and env.get("FOCUSED_REF") == NATIVE_BRANCH
+        and env.get("RUNNER_OS") == "macOS"
+        and env.get("FOCUSED_KIND") == "pytest"
+        and env.get("FOCUSED_REPEAT") == "1"
+        and env.get("FOCUSED_STRESS") == "false"
+        and re.fullmatch(r"[0-9a-f]{40}", head) is not None
+        and env.get("FOCUSED_SELECTOR") == env.get("GITHUB_SHA") == head
+        and parent == NATIVE_PARENT
+        and changed == NATIVE_FILES
+    )
+
+
+def native_plan() -> list[list[str]]:
+    """Install locked Python 3.15 and run the two owning test files once."""
+    return [
+        [
+            "uv",
+            "sync",
+            "--frozen",
+            "--no-build",
+            "--no-dev",
+            "--group",
+            "test",
+            "--no-install-package=pyyaml",
+            "--python",
+            "3.15",
+        ],
+        ["bash", "scripts/bootstrap-pyyaml.sh"],
+        [
+            "uv",
+            "run",
+            "--frozen",
+            "--no-sync",
+            "--python",
+            "3.15",
+            "python",
+            "-I",
+            "-c",
+            (
+                "import sys; assert sys.version_info[:2] == (3, 15); "
+                'print("VNXD runtime=" + ".".join(map(str, sys.version_info[:3])))'
+            ),
+        ],
+        [
+            "uv",
+            "run",
+            "--frozen",
+            "--no-sync",
+            "--python",
+            "3.15",
+            "pytest",
+            "-m",
+            "(unit or integration) and not perf",
+            "-n",
+            "0",
+            "-q",
+            "--tb=no",
+            "--show-capture=no",
+            "--session-timeout=120",
+            "tests/unit/heads/mcp_http_check_test.py",
+            "tests/integration/mcp_http_check_test.py",
+        ],
+    ]
+
+
+def native_identity(env: dict[str, str]) -> bool:
+    """Bind the dispatched commit, its parent and its complete overlay file list."""
+    try:
+
+        def git(*args: str) -> str:
+            return subprocess.check_output(["git", *args], cwd=ROOT, text=True, timeout=10).strip()  # noqa: S603, S607
+
+        head = git("rev-parse", "HEAD")
+        parent = git("rev-parse", "HEAD^")
+        changed = set(git("diff", "--name-only", parent, head).splitlines())
+    except (OSError, subprocess.SubprocessError):
+        return False
+    authorized = native_authorized(env, head, parent, changed)
+    if authorized:
+        print(f"VNXD identity head={head} parent={parent}")
+    return authorized
+
+
+def selected_plan(native: bool, kind: str, selector: str, out: Path, repeat: int) -> list[list[str]]:
+    """Select the regular plan or the strictly authenticated one-shot plan.
+
+    Raises:
+        SelectorError: The native ref does not match the authenticated request.
+    """
+    if not native:
+        return plan(kind, selector, out, repeat)
+    if not native_identity(dict(os.environ)):
+        problem = "one-shot native validation identity mismatch"
+        msg = "pytest"
+        raise SelectorError(msg, problem)
+    return native_plan()
+
+
 # The pytest plugin (`-p focused_job`): every selected test runs FOCUSED_REPEAT times in this one process, round by
 # round in collection order, and each round's outcome goes to tally.json.
 _ROUNDS: dict[int, bool] = {}
@@ -218,9 +328,10 @@ def main(argv: list[str]) -> int:
     selector = os.environ.get("FOCUSED_SELECTOR", "")
     stress = os.environ.get("FOCUSED_STRESS", "false") == "true"
     out = Path(os.environ.get("FOCUSED_OUT") or "focused-artifacts")
+    native = os.environ.get("GITHUB_REF_NAME") == NATIVE_BRANCH
     try:
         repeat = repeat_count(kind, os.environ.get("FOCUSED_REPEAT", "1"))
-        commands = plan(kind, selector, out, repeat)
+        commands = selected_plan(native, kind, selector, out, repeat)
     except SelectorError as error:
         print(f"::error::{error}")
         return 2
@@ -233,6 +344,8 @@ def main(argv: list[str]) -> int:
     (out / "tally.json").unlink(missing_ok=True)
     env = dict(os.environ, HZ_SCREENSHOTS=str((out / "screenshots").resolve()), VERBOSE="1", FOCUSED_REPEAT=str(repeat))
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(ROOT / "scripts"), env.get("PYTHONPATH")]))
+    if native:
+        env["UV_PYTHON"] = "3.15"
     start = time.monotonic()
     code = 0
     for command in commands[:-1]:

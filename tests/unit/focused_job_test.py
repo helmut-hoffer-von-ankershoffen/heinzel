@@ -221,3 +221,76 @@ def test_the_nested_session_never_cleans_the_shared_pytest_temp_root(tmp_path, m
 )
 def test_a_failure_is_booked_to_its_round(nodeid, booked):
     assert focused_job._round_of(SimpleNamespace(nodeid=nodeid)) == booked
+
+
+def test_native_validation_is_exactly_pinned_and_fixed():
+    sha = "a" * 40
+    branch = focused_job.NATIVE_BRANCH
+    env = {
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": f"refs/heads/{branch}",
+        "GITHUB_REF_NAME": branch,
+        "FOCUSED_REF": branch,
+        "RUNNER_OS": "macOS",
+        "FOCUSED_KIND": "pytest",
+        "FOCUSED_REPEAT": "1",
+        "FOCUSED_STRESS": "false",
+        "FOCUSED_SELECTOR": sha,
+        "GITHUB_SHA": sha,
+    }
+    files = set(focused_job.NATIVE_FILES)
+    assert focused_job.native_authorized(env, sha, focused_job.NATIVE_PARENT, files)
+    for key, value in (
+        ("GITHUB_EVENT_NAME", "push"),
+        ("RUNNER_OS", "Linux"),
+        ("FOCUSED_REPEAT", "2"),
+        ("FOCUSED_STRESS", "true"),
+        ("FOCUSED_REF", "main"),
+        ("FOCUSED_SELECTOR", "b" * 40),
+    ):
+        assert not focused_job.native_authorized({**env, key: value}, sha, focused_job.NATIVE_PARENT, files)
+    assert not focused_job.native_authorized(env, sha, "b" * 40, files)
+    assert not focused_job.native_authorized(env, sha, focused_job.NATIVE_PARENT, files | {"src/heinzel/__init__.py"})
+    plan = focused_job.native_plan()
+    assert "--no-install-package=pyyaml" in plan[0]
+    assert plan[1] == ["bash", "scripts/bootstrap-pyyaml.sh"]
+    assert plan[-1][-2:] == ["tests/unit/heads/mcp_http_check_test.py", "tests/integration/mcp_http_check_test.py"]
+    assert plan[-1][plan[-1].index("-n") + 1] == "0"
+
+
+def test_native_identity_refusal_happens_before_any_plan_runs(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_REF_NAME", focused_job.NATIVE_BRANCH)
+    monkeypatch.setenv("FOCUSED_KIND", "pytest")
+    monkeypatch.setenv("FOCUSED_REPEAT", "1")
+    monkeypatch.setattr(focused_job, "native_identity", lambda _env: False)
+    monkeypatch.setattr(focused_job, "_run", pytest.fail)
+    assert focused_job.main(["focused_job.py"]) == 2
+    assert "identity mismatch" in capsys.readouterr().out
+
+
+def test_native_run_executes_fixed_plan_once_after_identity(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REF_NAME", focused_job.NATIVE_BRANCH)
+    monkeypatch.setenv("FOCUSED_KIND", "pytest")
+    monkeypatch.setenv("FOCUSED_REPEAT", "1")
+    monkeypatch.setenv("FOCUSED_STRESS", "false")
+    monkeypatch.setenv("FOCUSED_SELECTOR", "a" * 40)
+    monkeypatch.setenv("FOCUSED_OUT", str(tmp_path / "out"))
+    monkeypatch.setattr(focused_job, "native_identity", lambda _env: True)
+    monkeypatch.setattr(focused_job, "_summary", lambda _lines: None)
+    calls = []
+
+    def execute(command, env, timeout):
+        assert env["UV_PYTHON"] == "3.15"
+        assert timeout > 0
+        calls.append(command)
+        return 0
+
+    monkeypatch.setattr(focused_job, "_run", execute)
+    assert focused_job.main(["focused_job.py"]) == 0
+    assert calls == focused_job.native_plan()
+    assert json.loads((tmp_path / "out/tally.json").read_text()) == {
+        "rounds": 1,
+        "green": 1,
+        "asked": 1,
+        "stress": False,
+    }
