@@ -65,6 +65,11 @@ def test_the_source_digest_changes_with_any_source_and_nothing_else(tmp_path):
     assert build.source_digest(web) == before
     (web / "src" / "main.tsx").write_text("render(2)", encoding="utf-8")
     assert build.source_digest(web) != before
+    after = build.source_digest(web)
+    external_policy = tmp_path / "desktop" / "src" / "external-links.js"
+    external_policy.parent.mkdir(parents=True)
+    external_policy.write_text("export const allow = [];", encoding="utf-8")
+    assert build.source_digest(web) != after
 
 
 def test_a_built_app_is_current_only_while_its_stamp_matches_the_sources(tmp_path):

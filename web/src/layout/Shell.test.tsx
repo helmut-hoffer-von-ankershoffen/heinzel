@@ -1,6 +1,8 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { requestMenuAction } from "@/about/menu";
+import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -177,5 +179,155 @@ describe("Shell", () => {
       "href",
       "https://heinzel.team/guides/first-steps/",
     );
+  });
+});
+
+describe("Desktop menu actions", () => {
+  it("opens Settings from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("settings"));
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("opens the daemon settings and the Doctor from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/graph");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("daemon"));
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByRole("heading", { name: /daemon/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("doctor"));
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
+  });
+
+  it("opens the changelog panel from the Help menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config, "/api/system/changelog": "# Changes\n" });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("changelog"));
+    expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
+  });
+
+  it("starts a new chat and focuses its composer whether the workspace is open or closed", async () => {
+    sessionStorage.setItem("hz.chat", answered.id);
+    mockApi({ ...answers, "/api/system/runner/chat/show": answered });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const panel = await screen.findByRole("complementary", { name: "Chat" });
+    expect(await within(panel).findByText("Make me the lead")).toBeInTheDocument();
+
+    act(() => requestMenuAction("new-chat"));
+    expect(within(panel).queryByText("Make me the lead")).not.toBeInTheDocument();
+    expect(within(panel).getByLabelText("Your message")).toHaveFocus();
+    expect(sessionStorage.getItem("hz.chat")).toBeNull();
+
+    await user.click(within(panel).getByRole("button", { name: "Close the chat" }));
+    expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
+    act(() => requestMenuAction("new-chat"));
+    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+  });
+
+  it("leaves a linked personal chat when starting a new chat from the menu", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const { calls } = mockApi({
+      ...answers,
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Personal Heinzel", messages: [] },
+    });
+    renderAt(`/doctor?chat=${id}`);
+    expect(await screen.findByRole("heading", { name: "Personal Heinzel" })).toBeInTheDocument();
+    act(() => requestMenuAction("new-chat"));
+    expect(screen.queryByRole("heading", { name: "Personal Heinzel" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+    expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
+  });
+
+  it.each([
+    { width: 640, placement: "below", chatButton: "Show chat", terminalButton: "Show terminal" },
+    { width: 1440, placement: "beside", chatButton: "Close the chat", terminalButton: "Close the terminal" },
+  ])(
+    "toggles workspace panels from the View menu with the workspace $placement",
+    async ({ width, placement, chatButton, terminalButton }) => {
+      vi.stubGlobal("innerWidth", width);
+      localStorage.setItem("hz.chat.open", "false");
+      mockApi({
+        ...answers,
+        "/api/system/config/show": {
+          ...config,
+          settings: [
+            ...config.settings,
+            {
+              section: "hz",
+              key: "features",
+              value: ["sidebar_browser"],
+              default: [],
+              source: "user",
+              env: "HZ_FEATURES",
+              description: "Preview features",
+            },
+          ],
+        },
+      });
+      const user = userEvent.setup();
+      renderAt("/doctor");
+      await screen.findByRole("button", { name: "Open the browser" });
+
+      for (const [action, name, toolbarName] of [
+        ["chat", "Chat", chatButton],
+        ["browser", "Browser", "Close the browser"],
+        ["terminal", "Terminal", terminalButton],
+      ] as const) {
+        act(() => requestMenuAction(action));
+        const panel = screen.getByRole("tabpanel", { name });
+        expect(panel.closest("[data-placement]")).toHaveAttribute("data-placement", placement);
+        act(() => requestMenuAction(action));
+        expect(panel).not.toBeInTheDocument();
+
+        act(() => requestMenuAction(action));
+        const reopened = screen.getByRole("tabpanel", { name });
+        await user.click(screen.getByRole("button", { name: toolbarName, pressed: true }));
+        if (placement === "below") {
+          expect(reopened).toBeVisible();
+          act(() => requestMenuAction(action));
+        } else {
+          expect(reopened).not.toBeInTheDocument();
+        }
+      }
+    },
+  );
+
+  it("answers the View, Go and Help menu actions", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
+    act(() => requestMenuAction("go:plugins"));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /doctor/i })).not.toBeInTheDocument());
+    act(() => requestMenuAction("help"));
+    expect(await screen.findByRole("dialog", { name: /help/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("search"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("reveals Updates from the desktop menu when a full-screen terminal hides the narrow footer", async () => {
+    vi.stubGlobal("innerWidth", 640);
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/release": { current: "0.1.0", latest: "0.1.0", update_available: false, warnings: [] },
+    });
+    renderAt("/doctor");
+    act(() => requestMenuAction("terminal"));
+    const terminal = await screen.findByRole("tabpanel", { name: "Terminal" });
+    await userEvent.setup().click(within(terminal).getByRole("button", { name: "Full screen" }));
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
+
+    act(() => requestMenuAction("updates"));
+    expect(await screen.findByRole("contentinfo")).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeVisible();
+    expect(within(terminal).getByRole("button", { name: "Full screen" })).toBeVisible();
+    expect(calls.filter((request) => request.url.endsWith("/api/system/release"))).toHaveLength(1);
   });
 });

@@ -1,6 +1,8 @@
 """Service of the system module."""
 
+import importlib.metadata
 import json
+import logging
 import platform
 import re
 import sys
@@ -8,7 +10,8 @@ import unicodedata
 import urllib.error
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Any, cast, override
+from pathlib import Path
+from typing import Any, Literal, cast, override
 from urllib.parse import urlsplit
 
 from packaging.version import InvalidVersion, Version
@@ -16,8 +19,9 @@ from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseFacts, ReleaseSource
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
+from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
@@ -313,6 +317,36 @@ def installed_releases(installation: Installation, channel: str = "stable") -> G
     return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
+def _installed_on(distribution: str) -> date | None:
+    """The day a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
+    try:
+        dist = importlib.metadata.distribution(distribution)
+        metadata = next((file for file in dist.files or [] if file.name == "METADATA"), None)
+        if metadata is None:
+            return None
+        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone().date()
+    except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
+        return None
+
+
+def _source_of(distribution: str) -> Literal["PyPI", "git", "path"]:
+    """Where a distribution was installed from, per its `direct_url.json` (PEP 610); no such file means an index."""
+    try:
+        text = importlib.metadata.distribution(distribution).read_text("direct_url.json") or "{}"
+        parsed: object = json.loads(text)
+    except (importlib.metadata.PackageNotFoundError, ValueError):
+        return "PyPI"
+    if not isinstance(parsed, dict):
+        return "PyPI"
+    direct = cast("dict[str, Any]", parsed)
+    if "vcs_info" in direct:
+        return "git"
+    return "path" if "dir_info" in direct or str(direct.get("url", "")).startswith("file:") else "PyPI"
+
+
+logger = logging.getLogger(__name__)
+
+
 class SystemService:
     """Reports on the Heinzelmännchen installation."""
 
@@ -340,16 +374,37 @@ class SystemService:
             )
         return infos
 
+    def _plugins(self) -> list[InstalledPlugin]:
+        """One entry per installed plugin distribution (a distribution may ship several modules), by name."""
+        found: dict[str, InstalledPlugin] = {}
+        for record in self._kernel.modules:
+            origin = record.origin
+            if not origin.builtin and origin.distribution not in found:
+                found[origin.distribution] = InstalledPlugin(
+                    name=origin.distribution,
+                    version=origin.version,
+                    source=_source_of(origin.distribution),
+                    repository=origin.url,
+                    installed=_installed_on(origin.distribution),
+                )
+        return sorted(found.values(), key=lambda plugin: plugin.name)
+
     def info(self) -> SystemInfo:
         """Versions, interpreter, settings, modules and the sections modules contribute."""
+        modules = self.modules()
+        plugins = self._plugins()
+        log_event(logger, "system.info.read", outcome="ok", modules=len(modules), plugins=len(plugins))
         return SystemInfo(
             version=__version__,
             repository=next((r.origin.url for r in self._kernel.modules if r.origin.builtin), None),
             python_version=platform.python_version(),
             python_executable=sys.executable,
             platform=platform.platform(),
+            installed=_installed_on("heinzel"),
+            installation="uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment",
             settings=self._kernel.settings.model_dump(mode="json"),
-            modules=self.modules(),
+            modules=modules,
+            plugins=plugins,
             plugin_errors=dict(self._kernel.errors),
             sections={
                 record.qualname: section
