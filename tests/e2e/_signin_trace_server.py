@@ -39,6 +39,20 @@ _CANONICAL_ENVIRONMENT = {
     "UV_RUN_RECURSION_DEPTH",
     "VIRTUAL_ENV",
     "__CF_USER_TEXT_ENCODING",
+    "COLUMNS",
+    "TERMINAL_WIDTH",
+    "_TYPER_FORCE_DISABLE_TERMINAL",
+    "GOOGLE_WORKSPACE_CLI_CONFIG_DIR",
+    "HZ_CONFIG_HOME",
+    "HZ_DATA_DIR",
+    "HZ_CACHE_DIR",
+    "HZ_STATE_DIR",
+    "HZ_LOG_DIR",
+    "HZ_SYSTEM_DAEMON__UNIT_DIR",
+    "HZ_SYSTEM_CREDENTIAL__BACKEND",
+    "HZ_UPDATE_CHECK",
+    "HZ_SYSTEM_NOTIFY__NATIVE",
+    "HZ_SYSTEM_NOTIFY__DOCTOR",
 }
 
 
@@ -89,11 +103,11 @@ def _drive_browser(command, repo, token):
     return json.loads(driven.stdout.strip().splitlines()[-1])
 
 
-def drive_traced_signin(env, tmp_path, run, repo, verify_stream):
-    """Keep the original undrained pipe and capture fixed markers from the owned child."""
+def validate_environment(parent, env):
+    """Refuse a noncanonical runner or a credential-bearing server fixture."""
     # The canonical lane supplies a restricted parent environment. Refuse extras rather than silently
     # changing the original asymmetry: Node inherits the parent; the server receives the fixture's env.
-    if set(os.environ) - _CANONICAL_ENVIRONMENT:
+    if set(parent) - _CANONICAL_ENVIRONMENT:
         msg = "Sign-in diagnostic requires the canonical lane environment"
         raise RuntimeError(msg)
     if env.get("HZ_SYSTEM_CREDENTIAL__BACKEND") != "environment" or any(
@@ -101,6 +115,11 @@ def drive_traced_signin(env, tmp_path, run, repo, verify_stream):
     ):
         msg = "Sign-in diagnostic requires the isolated environment backend"
         raise RuntimeError(msg)
+
+
+def drive_traced_signin(env, tmp_path, run, repo, verify_stream):
+    """Keep the original undrained pipe and capture fixed markers from the owned child."""
+    validate_environment(os.environ, env)
     phases, stacks = tmp_path / "sign-in-phases.txt", tmp_path / "sign-in-stacks.txt"
     command = [sys.executable, "-m", "tests.e2e._signin_trace_server", str(phases), str(stacks)]
     server = subprocess.Popen(command, cwd=repo, env=env, stderr=subprocess.PIPE, text=True)

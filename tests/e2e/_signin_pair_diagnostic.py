@@ -1,16 +1,16 @@
 """A bounded diagnostic of the original canonical macOS browser case ordering."""
 
 import contextlib
+import json
 import os
 import re
+import shutil
 import signal
 import subprocess
+import sys
 import threading
+import xml.etree.ElementTree as ET
 from pathlib import Path
-
-import pytest
-
-pytestmark = pytest.mark.e2e
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "UV_PYTHON", "PLAYWRIGHT_BROWSERS_PATH", "SYSTEMROOT")
@@ -67,11 +67,11 @@ def drain(process, markers):
                 pending += bytes((byte,))
 
 
-def run_pair(process, reader):
+def run_command(process, reader):
     """Wait within the original lane budget, always cleaning up owned children."""
     try:
         reader.start()
-        return process.wait(timeout=1020)
+        return process.wait(timeout=1080)
     except subprocess.TimeoutExpired:
         return None
     finally:
@@ -92,12 +92,10 @@ def run_pair(process, reader):
             raise RuntimeError(msg)
 
 
-@pytest.mark.timeout(1100)
-def test_canonical_ordered_signin_diagnostic(tmp_path):
-    """Run the original pair with bounded, sanitized failure markers; a pass is inconclusive."""
-    env = pair_environment(os.environ, tmp_path / "screenshots")
+def execute(command, env):
+    """Run one canonical command and retain only bounded, sanitized markers."""
     process = subprocess.Popen(
-        pair_command(tmp_path / "pair.xml"),
+        command,
         cwd=ROOT,
         env=env,
         stdout=subprocess.PIPE,
@@ -106,8 +104,59 @@ def test_canonical_ordered_signin_diagnostic(tmp_path):
     )
     markers = []
     reader = threading.Thread(target=drain, args=(process, markers), daemon=True)
-    status = run_pair(process, reader)
-    # Fixed markers only: never expose tokens, URLs, credential values, or raw child stderr.
+    return run_command(process, reader), markers
+
+
+def summarize_junit(path):
+    """Keep only fixed case names and outcomes; delete raw private test output."""
+    expected = (
+        "test_client_install_survives_dialog_close_and_reopen",
+        "test_local_chatgpt_sign_in_fits_phone_viewports",
+    )
+    try:
+        if path.stat().st_size > 2 * 1024 * 1024:
+            return {"valid": False, "cases": []}
+        root = ET.fromstring(path.read_bytes())  # noqa: S314 - owned local pytest output, bounded above
+        cases = [
+            (case.get("name"), any(case.find(tag) is not None for tag in ("failure", "error", "skipped")))
+            for case in root.iter("testcase")
+        ]
+        return {
+            "valid": tuple(name for name, _ in cases) == expected and not any(bad for _, bad in cases),
+            "cases": [name for name, _ in cases if name in expected],
+        }
+    except (OSError, ET.ParseError):
+        return {"valid": False, "cases": []}
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def main():
+    """Run the original pair directly; a passing diagnostic remains inconclusive."""
+    if len(sys.argv) != 2:
+        msg = "Supply one new private evidence directory"
+        raise SystemExit(msg)
+    output = Path(sys.argv[1]).resolve()
+    output.mkdir(mode=0o700, parents=False, exist_ok=False)
+    env = pair_environment(os.environ, output / "screenshots")
+    prep, _ = execute(["make", "e2e-prepare"], env)
+    if prep != 0:
+        msg = "Diagnostic preparation failed or timed out"
+        raise SystemExit(msg)
+    status, markers = execute(pair_command(output / "pair.xml"), env)
+    summary = summarize_junit(output / "pair.xml")
+    # Screenshots may contain fixture content; the diagnostic retains only fixed, bounded evidence.
+    if (output / "screenshots").exists():
+        shutil.rmtree(output / "screenshots")
     evidence = "\n".join(markers) + "\n"
-    (tmp_path / "sanitized-signin-markers.txt").write_text(evidence, encoding="utf-8")
-    assert status == 0, f"Ordered sign-in diagnostic failed; sanitized markers:\n{evidence}"
+    (output / "sanitized-signin-markers.txt").write_text(evidence, encoding="utf-8")
+    (output / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    if status != 0 or not summary["valid"]:
+        sys.stderr.write(evidence)
+        msg = "Ordered sign-in diagnostic failed or timed out"
+        raise SystemExit(msg)
+    sys.stdout.write("Ordered sign-in diagnostic passed; cause remains unresolved\n")
+
+
+if __name__ == "__main__":
+    main()
