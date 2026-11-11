@@ -99,7 +99,7 @@ const RAW: Record<string, number> = {
   "../layout/SettingControls.tsx": 1,
   "../layout/SettingsDialog.tsx": 2,
   "../layout/Sidebar.tsx": 9,
-  "../layout/TerminalPanel.tsx": 8,
+  "../layout/TerminalPanel.tsx": 7,
   "../layout/ThemePreviews.tsx": 2,
   "../layout/TimeZonePicker.tsx": 1,
   "../layout/TopBar.tsx": 2,
