@@ -11,6 +11,30 @@ from heinzel.heads import _desktop_installation as desktop
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("failure", ["running", "trash-unavailable"])
+def test_replacing_unowned_app_preserves_it_when_trashing_is_unsafe(monkeypatch, tmp_path, failure):
+    bundle = tmp_path / "Heinzelmaennchen.app"
+    bundle.mkdir()
+    contents = bundle / "fictional-data"
+    contents.write_text("retain")
+    monkeypatch.setattr(desktop, "_bundles", lambda _home: (bundle, tmp_path / "absent.app"))
+    monkeypatch.setattr(desktop, "_owned_installation", lambda *_args: None)
+    monkeypatch.setattr(desktop, "_in_use", lambda _bundle: failure == "running")
+
+    moves = []
+
+    def refuse_move(*args):
+        moves.append(args)
+        raise OSError(13, "permission denied")
+
+    monkeypatch.setattr(desktop, "_rename", refuse_move)
+    with pytest.raises(desktop.DesktopInstallationError):
+        desktop._trash_unowned(tmp_path, tmp_path / "config")
+    assert len(moves) == (0 if failure == "running" else 1)
+    assert contents.read_text() == "retain"
+    assert not (tmp_path / ".Trash").exists()
+
+
 def test_move_status_rejects_unexpected_file_identity_and_reverses(tmp_path, monkeypatch):
     public, private = tmp_path / "public", tmp_path / "private"
     private.write_text("owned")
