@@ -294,3 +294,21 @@ def test_native_run_executes_fixed_plan_once_after_identity(monkeypatch, tmp_pat
         "asked": 1,
         "stress": False,
     }
+
+
+def test_native_expired_start_window_cannot_pass_without_the_selection(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REF_NAME", focused_job.NATIVE_BRANCH)
+    monkeypatch.setenv("FOCUSED_KIND", "pytest")
+    monkeypatch.setenv("FOCUSED_REPEAT", "1")
+    monkeypatch.setenv("FOCUSED_STRESS", "false")
+    monkeypatch.setenv("FOCUSED_SELECTOR", "a" * 40)
+    monkeypatch.setenv("FOCUSED_OUT", str(tmp_path / "out"))
+    monkeypatch.setattr(focused_job, "native_identity", lambda _env: True)
+    monkeypatch.setattr(focused_job, "_summary", lambda _lines: None)
+    ticks = iter((0, 1, 1, 1, focused_job.DEADLINE + 1))
+    monkeypatch.setattr(focused_job, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    calls = []
+    monkeypatch.setattr(focused_job, "_run", lambda command, _env, _timeout: calls.append(command) or 0)
+    assert focused_job.main(["focused_job.py"]) == 1
+    assert calls == focused_job.native_plan()[:-1]
+    assert json.loads((tmp_path / "out/tally.json").read_text())["green"] == 0

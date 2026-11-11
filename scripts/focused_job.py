@@ -322,7 +322,7 @@ def _tally(out: Path, kind: str, repeat: int, counted: tuple[int, int], code: in
     return 1, int(code == 0)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str]) -> int:  # noqa: C901 - one-shot fail-closed guard
     """Validate the inputs, then run the plan (or only print it with `--check`); the exit code is the selection's."""
     kind = os.environ.get("FOCUSED_KIND", "")
     selector = os.environ.get("FOCUSED_SELECTOR", "")
@@ -352,12 +352,14 @@ def main(argv: list[str]) -> int:
         if code := _run(command, env, TIMEOUT - (time.monotonic() - start)):
             break
     rounds = green = 0
+    selected_executed = False
     burners = _burners(stress) if not code else []
     try:
         # pytest repeats inside its one process (the plugin); vitest files repeat as separate runs in this job
         loops = 0 if code else repeat if kind == "vitest" else 1
         while rounds < loops and time.monotonic() - start < DEADLINE:
             rounds += 1
+            selected_executed = True
             result = _run(commands[-1], env, TIMEOUT - (time.monotonic() - start))
             green += result == 0
             if loops == 1:
@@ -365,6 +367,8 @@ def main(argv: list[str]) -> int:
     finally:
         for burner in burners:
             burner.kill()
+    if native and not selected_executed:
+        code = code or 1
     rounds, green = _tally(out, kind, repeat, (rounds, green), code)
     (out / "tally.json").write_text(json.dumps({"rounds": rounds, "green": green, "asked": repeat, "stress": stress}))
     code = code or (0 if green == rounds == repeat else 1)
