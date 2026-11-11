@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
+  about: () => ipcRenderer.invoke("hz:about"),
   onFullscreen: (callback) => {
     const listener = (_event, full) => callback(full === true);
     ipcRenderer.on("hz:fullscreen", listener);
@@ -21,6 +22,17 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
 // A trusted native click is required; renderer scripts receive no callable external-opening bridge.
 document.addEventListener("click", (event) => {
   if (!event.isTrusted || event.button !== 0 || !navigator.userActivation.isActive || !(event.target instanceof Element)) return;
+  const about = event.target.closest("[data-hz-about-dialog] a[href]");
+  if (about instanceof HTMLAnchorElement && !event.defaultPrevented) {
+    const repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
+    const release = `${repository}/releases/tag/v`;
+    const action = about.href === repository ? "repository" : about.href.startsWith(release) ? "release" : null;
+    if (action) {
+      event.preventDefault();
+      void ipcRenderer.invoke("hz:about-link", action, action === "release" ? about.href.slice(release.length) : null).catch(() => {});
+      return;
+    }
+  }
   const anchor = event.target.closest("a[data-hz-public-media]");
   if (!(anchor instanceof HTMLAnchorElement)) return;
   event.preventDefault();

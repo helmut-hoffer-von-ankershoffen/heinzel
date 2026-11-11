@@ -26,4 +26,5 @@ export async function assertBundleIcon(bundle) {
 }
 
 /** Extra Info.plist keys: Finder shows the umlaut name while the file name stays ASCII. */
-export const EXTEND_INFO = { CFBundleDisplayName: "Heinzelmännchen" };
+// The menu bar title reads CFBundleName; the packager sets it from the ASCII file name.
+export const EXTEND_INFO = { CFBundleName: "Heinzelmännchen", CFBundleDisplayName: "Heinzelmännchen" };

@@ -81,7 +81,7 @@ test("the isolated preload exposes no opener and requires trusted activated prim
     CustomEvent: class { constructor(name, options) { this.name = name; this.detail = options.detail; } },
   });
   vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
-  assert.deepEqual(Object.keys(exposed), ["workspaceAudio", "titlebar", "browser", "lifecycle", "onFullscreen"]);
+  assert.deepEqual(Object.keys(exposed), ["workspaceAudio", "titlebar", "browser", "lifecycle", "about", "onFullscreen"]);
   const anchor = new Anchor();
   let prevented = 0;
   const event = { isTrusted: true, button: 0, target: anchor, preventDefault: () => { prevented++; } };
@@ -97,4 +97,46 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   assert.deepEqual(invoked, [["hz:public-media", sound]]);
   assert.equal(prevented, 1);
   assert.deepEqual(results, [false]);
+});
+
+test("About links use keyed IPC only after an activated click inside the dialog", async () => {
+  let click, exposed;
+  const invoked = [];
+  class Element {}
+  class Anchor extends Element {
+    href = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
+    inAbout = true;
+    closest(selector) { return selector.startsWith("[data-hz-about-dialog]") && this.inAbout ? this : null; }
+  }
+  const activation = { isActive: true };
+  vm.runInNewContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), {
+    require: () => ({
+      contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
+      ipcRenderer: { invoke: async (...args) => { invoked.push(args); return true; } },
+    }),
+    document: { addEventListener: (_name, handler) => { click = handler; } },
+    navigator: { userActivation: activation }, Element, HTMLAnchorElement: Anchor,
+  });
+  assert.equal(exposed.openAboutLink, undefined);
+  const anchor = new Anchor();
+  let prevented = 0;
+  const event = { isTrusted: true, button: 0, target: anchor, preventDefault: () => { prevented++; } };
+  click({ ...event, isTrusted: false });
+  click({ ...event, button: 1 });
+  click({ ...event, defaultPrevented: true });
+  activation.isActive = false;
+  click(event);
+  activation.isActive = true;
+  anchor.inAbout = false;
+  click(event);
+  anchor.inAbout = true;
+  assert.deepEqual(invoked, []);
+  click(event);
+  anchor.href += "/releases/tag/v0.9.38";
+  click(event);
+  anchor.href = "https://example.com/releases/tag/v0.9.38";
+  click(event);
+  await Promise.resolve();
+  assert.deepEqual(invoked, [["hz:about-link", "repository", null], ["hz:about-link", "release", "0.9.38"]]);
+  assert.equal(prevented, 2);
 });

@@ -2,13 +2,16 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
+import { Info as InfoIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { requestMenuAction } from "@/about/menu";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -84,6 +87,9 @@ function ReleaseNotes({ version }: { version: string }) {
           <span className="block">{t("status.tagline")}</span>
           <span className="block">{t("status.origin")}</span>
         </p>
+        <PaneAction ghost icon={InfoIcon} onClick={() => requestMenuAction("about")}>
+          {t("about.open")}
+        </PaneAction>
         <a
           href={`${RELEASES}/v${version}`}
           target="_blank"
