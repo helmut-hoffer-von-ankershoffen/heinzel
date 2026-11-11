@@ -5,7 +5,7 @@ implementation: partial
 decision-makers: maintainer, reviewer
 related: 0019, 0020, 0078, 0126, 0133
 amends: 0142
-amends-0142: A temporary private probe credential for a managed generation
+amends-0142: A temporary private probe credential for one TLS-pinned managed generation
 ---
 
 # 0143: Share owned MCP lifecycle through the host manager
@@ -37,18 +37,24 @@ the same ownership independently without a remembered PID, public control endpoi
   has no login persistence or automatic restart. The fixed verified CLI runs through `env -i` in an owned
   generation directory with private site/user/project configuration, plugins and update checks off, and a literal
   loopback endpoint. No caller-supplied executable, URL, port, environment or credential is accepted.
-- A prepared receipt binds installation, profile, generation and exact unit before bootstrap. Same-generation
+- A prepared receipt binds installation, profile, generation and exact unit before bootstrap. Each generation gets
+  its own manager label and certificate, with the exact certificate digest in the receipt. Same-generation
   Start reauthenticates an owned healthy job without minting a credential or bootstrapping again. Unknown state,
   changed definitions or a foreign registration are never replaced. Check proves actual authenticated MCP
-  initialization and tool discovery with the same manager identity. Stop requires positive manager absence and
-  endpoint refusal; arbitrary descendant cleanup remains unverified. No numeric PID or process group is signalled.
+  initialization and tool discovery with the same manager identity. The client verifies the private certificate
+  on every TLS connection before transmitting a credential, including after reconnect. It never follows redirects.
 - The server token registry still keeps only digests. This managed mode additionally keeps one short-lived
   read-only probe bearer in an owner-only generation file for independent CLI/web checks, outside unit contents,
   maintenance backups, project files and responses. Its value is passed to the check on stdin and never logged.
+- Stop authenticates the same TLS identity and uses a distinct private credential to ask that worker to exit.
+  It proves worker exit from positive manager absence or an exact inactive registration, plus endpoint refusal.
+  It does not signal a numeric PID or act on a mutable manager label. A retained inactive registration is reported
+  as pending cleanup, and arbitrary descendant cleanup stays unverified. A fresh generation can use a new label
+  after verified exit. Only exact closed definitions with positive absence can be reclaimed at the inventory bound.
 - The existing SDK-wide and profile locks and provider-free maintenance inventory cover every matching owned
-  registration before SDK removal. Active or uncertain MCP generations block SDK mutation until the ordinary
-  Stop proves both manager absence and endpoint closure; offline recovery does not invent an MCP probe. No work
-  starts while installation mutation is pending. An unsupported host or SDK stays unavailable.
+  registration before SDK removal. Active or uncertain generations block SDK mutation. A closed worker's
+  registration must also be absent before SDK removal. Retained registrations may last until the user manager's
+  session ends. No work starts while installation mutation is pending. An unsupported host or SDK stays unavailable.
 
 ### Consequences
 
@@ -60,9 +66,11 @@ managed HTTP remain distinct; matching client configuration, real clients, weath
 
 The focused CLI and authenticated web tests use separate kernels, a fictional manager and real isolated Core
 workers. They cover shared readiness, idempotent Start, disabling the preview, recovery, retained uncertainty,
-foreign and changed registrations, credential handling, private configuration and the SDK maintenance fence.
+foreign and changed registrations, private configuration and the SDK maintenance fence. Real transport controls
+replace the listener after observation, switch certificates at reconnect, and attempt redirects and malformed trust.
 Mounted Chromium and WebKit tests exercise the actual Settings page and confirmation dialog. A verified installed
-macOS supervisor and packaged desktop are still required before enabling the preview.
+macOS supervisor and packaged desktop are still required before enabling the preview. `launchctl print` output is
+not a documented API, so the recognized inactive shape needs qualification on the supported macOS versions.
 
 ## More Information
 

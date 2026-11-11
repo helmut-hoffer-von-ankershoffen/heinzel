@@ -18,6 +18,7 @@ const empty: SchemaMcpStatus = {
   ownership: "unverified",
   readiness: "unverified",
   owned_server: "unverified",
+  manager_cleanup: "unverified",
   termination: "unverified",
   descendants: "unverified",
   can_start: true,
@@ -27,7 +28,7 @@ const ready: SchemaMcpStatus = {
   ...empty,
   state: "ready",
   generation: "fictional",
-  endpoint: "http://127.0.0.1:8123/mcp",
+  endpoint: "https://127.0.0.1:8123/mcp",
   tools: 12,
   ownership: "verified",
   readiness: "authenticated-initialized",
@@ -36,10 +37,11 @@ const ready: SchemaMcpStatus = {
 };
 const stopped: SchemaMcpStatus = {
   ...empty,
-  state: "stopped",
+  state: "worker-closed",
   generation: "fictional",
   ownership: "verified",
   owned_server: "closed",
+  manager_cleanup: "pending",
 };
 
 afterEach(() => {
@@ -98,6 +100,7 @@ it("allows recovery Stop even when new starts are unavailable and retains uncert
   expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Run it" }));
   expect(await screen.findByText(/Descendant processes have not been verified/)).toBeVisible();
+  expect(screen.getByText(/macOS registration is still present/)).toBeVisible();
   expect(calls.filter((request) => request.method === "POST").map((request) => new URL(request.url).pathname)).toEqual([
     "/api/stream/system/mcp/stop",
   ]);

@@ -8899,6 +8899,16 @@
             ],
             "title": "Generation"
           },
+          "manager_cleanup": {
+            "default": "unverified",
+            "enum": [
+              "cleared",
+              "pending",
+              "unverified"
+            ],
+            "title": "Manager Cleanup",
+            "type": "string"
+          },
           "mode": {
             "const": "managed-http",
             "default": "managed-http",
@@ -8937,6 +8947,7 @@
               "unavailable",
               "not-created",
               "ready",
+              "worker-closed",
               "stopped",
               "unverified"
             ],

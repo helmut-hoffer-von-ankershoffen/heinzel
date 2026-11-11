@@ -44,7 +44,7 @@ def test_mounted_managed_mcp_consent_readiness_and_owned_stop(managed, tmp_path,
         output = guarded.capture.text("stderr") + "\n" + guarded.capture.text("stdout")
         check_browser(status, output.replace(server.token, "<redacted-session>"))
 
-    assert [args[1] for args in manager.calls if args[1] in {"bootstrap", "bootout"}] == ["bootstrap", "bootout"]
-    assert manager.process is None
+    assert [args[1] for args in manager.calls if args[1] in {"bootstrap", "bootout"}] == ["bootstrap"]
+    assert manager.process.poll() == 0
     assert calls.count("mcp-token") == 1
     assert "mcp-check" in calls

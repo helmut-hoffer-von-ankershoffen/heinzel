@@ -63,7 +63,12 @@ try {
   assert.equal(posts.length, 1);
   await stopDialog.getByRole("button", { name: "Run it" }).click();
   await stopDialog.getByRole("button", { name: "Done" }).click();
-  await pane.getByText(/listener is closed\. Descendant processes have not been verified/).waitFor();
+  await pane
+    .getByText(
+      /listener is closed\. Its macOS registration is still present\. Descendant processes have not been verified/,
+    )
+    .waitFor();
+  await pane.getByRole("button", { name: "Start managed server" }).waitFor();
   assert.deepEqual(posts, [
     ["/api/stream/system/mcp/start", "", { confirm: true }],
     ["/api/stream/system/mcp/stop", "", { confirm: true }],

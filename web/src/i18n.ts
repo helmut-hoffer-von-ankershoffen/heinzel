@@ -14,6 +14,8 @@ const en = {
   "managedMcp.notCreated": "This profile has not started a managed server.",
   "managedMcp.ready": "The owned server authenticated and initialized with {count} tools.",
   "managedMcp.stopped": "The owned server's listener is closed. Descendant processes have not been verified.",
+  "managedMcp.workerClosed":
+    "The owned server's listener is closed. Its macOS registration is still present. Descendant processes have not been verified.",
   "managedMcp.start": "Start managed server",
   "managedMcp.check": "Check managed server",
   "managedMcp.stop": "Stop managed server",

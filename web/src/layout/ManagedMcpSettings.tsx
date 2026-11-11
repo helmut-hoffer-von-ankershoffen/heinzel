@@ -41,6 +41,8 @@ export function ManagedMcpSettings() {
   if (!state) message = t("managedMcp.checking");
   else if (state === "unavailable") message = t("managedMcp.unavailable");
   else if (state === "not-created") message = t("managedMcp.notCreated");
+  else if (report?.owned_server === "closed" && state === "worker-closed" && report.manager_cleanup === "pending")
+    message = t("managedMcp.workerClosed");
   else if (state === "stopped" && report?.owned_server === "closed") message = t("managedMcp.stopped");
   else if (
     state === "ready" &&
@@ -78,7 +80,7 @@ export function ManagedMcpSettings() {
                 {t("managedMcp.start")}
               </Button>
             )}
-            {report?.can_stop && report.state !== "stopped" && (
+            {report?.can_stop && report.owned_server !== "closed" && (
               <Button
                 type="button"
                 className="min-h-11"

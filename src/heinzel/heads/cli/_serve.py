@@ -118,6 +118,7 @@ def serve_group(
 
     _add_mcp_check(serve, footer, err_console)
     _add_mcp_project_install(serve, footer, err_console)
+    _add_managed_mcp_worker(serve, err_console)
 
     serve.add_typer(_mcp_token_group(group_cls, footer, err_console))
 
@@ -334,6 +335,19 @@ def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console
             err_console.print(message("Can't install:", str(exc)))
             raise typer.Exit(1) from None
         typer.echo(json.dumps({"configuration": "created", "path": str(path), "mcp_readiness": "unverified"}))
+
+
+def _add_managed_mcp_worker(serve: typer.Typer, err_console: Console) -> None:
+    @serve.command(name="managed-mcp-worker", hidden=True)
+    def managed_mcp_worker(
+        port: Annotated[int, typer.Option()],
+        cert_sha256: Annotated[str, typer.Option()],
+        stop_sha256: Annotated[str, typer.Option()],
+    ) -> None:
+        """Run the private generation worker selected by the local lifecycle service."""
+        from heinzel.heads.mcp._managed import serve as run  # noqa: PLC0415
+
+        _refused_or_served(lambda: run(port, cert_sha256, stop_sha256), err_console)
 
 
 def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console) -> None:

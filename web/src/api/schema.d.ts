@@ -9325,6 +9325,12 @@ export interface components {
             /** Generation */
             generation?: string | null;
             /**
+             * Manager Cleanup
+             * @default unverified
+             * @enum {string}
+             */
+            manager_cleanup: "cleared" | "pending" | "unverified";
+            /**
              * Mode
              * @default managed-http
              * @constant
@@ -9352,7 +9358,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "unavailable" | "not-created" | "ready" | "stopped" | "unverified";
+            state: "unavailable" | "not-created" | "ready" | "worker-closed" | "stopped" | "unverified";
             /**
              * Termination
              * @default unverified

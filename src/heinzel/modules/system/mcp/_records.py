@@ -12,9 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from heinzel import HeinzelError
 from heinzel.kernel import (
     HostIntegration,
+    HostIntegrationRemoval,
     HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
+    MaintenanceLocks,
     OwnedIntegrationFile,
     capture_owned_integration_file,
     host_maintenance_directory,
@@ -51,16 +53,20 @@ def manager_prefix(prefix: Path) -> str:
 
 
 class Generation(BaseModel):
-    """A durable prepared/stopped observation, never a cached readiness or PID."""
+    """A durable generation observation, never a cached readiness or PID."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     profile: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
     generation: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
     installation: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    sequence: Annotated[int, Field(ge=1)]
     probe_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    stop_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    cert_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    key_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     port: Annotated[int, Field(ge=1, le=65535)]
-    phase: Literal["prepared", "stopped"] = "prepared"
+    phase: Literal["prepared", "worker-closed", "stopped"] = "prepared"
 
     def directory(self, prefix: Path) -> Path:
         """Derive the private working directory; no path in the receipt is executable authority."""
@@ -83,14 +89,16 @@ class Generation(BaseModel):
     @property
     def endpoint(self) -> str:
         """Never accept a caller-provided endpoint."""
-        return f"http://127.0.0.1:{self.port}/mcp"
+        return f"https://127.0.0.1:{self.port}/mcp"
 
     def label(self, prefix: Path) -> str:
-        """One stable manager identity per selected profile."""
-        return manager_prefix(prefix) + self.profile
+        """One manager label per generation, with no reuse on restart."""
+        return manager_prefix(prefix) + self.profile + "." + self.generation
 
     def arguments(self, prefix: Path, executable: Path) -> tuple[str, ...]:
         """Explicit env -i clears the GUI session environment before the fixed executable runs."""
+        if self.cert_sha256 is None or self.stop_sha256 is None:
+            refuse()
         return (
             str(ENV),
             "-i",
@@ -98,14 +106,18 @@ class Generation(BaseModel):
             str(executable),
             "system",
             "serve",
-            "mcp",
-            "--transport",
-            "streamable-http",
-            "--host",
-            "127.0.0.1",
+            "managed-mcp-worker",
             "--port",
             str(self.port),
+            "--cert-sha256",
+            self.cert_sha256,
+            "--stop-sha256",
+            self.stop_sha256,
         )
+
+    def path(self, prefix: Path, suffix: str) -> Path:
+        """Derive this generation's own immutable label and files from its checked identifiers."""
+        return root(prefix) / f"{FILE_PREFIX}{self.profile}-{self.generation}{suffix}"
 
     def definition(self, prefix: Path, executable: Path) -> str:
         """Render the exact transient job. Its definition is never installed in LaunchAgents."""
@@ -131,8 +143,8 @@ class Generation(BaseModel):
         Raises:
             HeinzelError: If a receipt or definition changed.
         """
-        receipt = capture_owned_integration_file(record_path(prefix, self.profile))
-        unit = unit_path(prefix, self.profile)
+        receipt = capture_owned_integration_file(self.path(prefix, ".json"))
+        unit = self.path(prefix, ".plist")
         if receipt.content != self.text().encode():
             refuse()
         files: tuple[OwnedIntegrationFile, ...] = (receipt,)
@@ -155,16 +167,6 @@ class Generation(BaseModel):
         )
 
 
-def record_path(prefix: Path, profile: str) -> Path:
-    """The single current receipt in this SDK's bounded inventory."""
-    return root(prefix) / f"{FILE_PREFIX}{profile}.json"
-
-
-def unit_path(prefix: Path, profile: str) -> Path:
-    """A private, non-login plist for this profile only."""
-    return root(prefix) / f"{FILE_PREFIX}{profile}.plist"
-
-
 def profile_lock(prefix: Path, profile: str) -> Path:
     """Use the same physical profile lock for operations and SDK maintenance."""
     return root(prefix) / "locks" / f"{profile}.lock"
@@ -181,9 +183,34 @@ def read_generation(path: Path) -> Generation:
         value = Generation.model_validate_json(text)
     except ValidationError:
         refuse()
-    if value.probe_sha256 is None or value.text() != text or path.name != f"{FILE_PREFIX}{value.profile}.json":
+    if (
+        None in (value.probe_sha256, value.stop_sha256, value.cert_sha256, value.key_sha256)
+        or value.text() != text
+        or path.name != f"{FILE_PREFIX}{value.profile}-{value.generation}.json"
+    ):
         refuse()
     return value
+
+
+def entries_for(prefix: Path) -> set[Path]:
+    """Observe a bounded private inventory without creating it."""
+    folder = root(prefix)
+    if not os.path.lexists(folder):
+        return set()
+    private_directory(folder, create=False)
+    bounded = tuple(islice(folder.iterdir(), MAX_ENTRIES + 1))
+    entries = {path for path in bounded if path.name.startswith(FILE_PREFIX)}
+    if len(bounded) > MAX_ENTRIES or len(entries) > MAX_DEFINITIONS:
+        refuse()
+    return entries
+
+
+class ClosedOnlyRemoval(HostIntegrationRemoval):
+    """Maintenance may verify absence and remove files, but cannot signal a manager label."""
+
+    def stop(self) -> None:
+        """Require positive absence; any registration that reappeared blocks removal."""
+        self.quiescent()
 
 
 class Maintenance(HostMaintenanceIntegration):
@@ -211,16 +238,7 @@ class Maintenance(HostMaintenanceIntegration):
             return ()
         if prefix != self.prefix:
             refuse()
-        folder = root(prefix)
-        entries: set[Path] = set()
-        if os.path.lexists(folder):
-            private_directory(folder, create=False)
-            bounded = tuple(islice(folder.iterdir(), MAX_ENTRIES + 1))
-            if len(bounded) > MAX_ENTRIES:
-                refuse()
-            entries = {path for path in bounded if path.name.startswith(FILE_PREFIX)}
-        if len(entries) > MAX_DEFINITIONS:
-            refuse()
+        entries = entries_for(prefix)
         generations = tuple(read_generation(path) for path in sorted(entries) if path.suffix == ".json")
         items = tuple(generation.integration(prefix, binary / "hz") for generation in generations)
         if {file.path for item in items for file in item.files} != entries:
@@ -230,7 +248,13 @@ class Maintenance(HostMaintenanceIntegration):
             refuse()
         # Offline recovery has no MCP client. Do not erase a live or uncertain server's SDK: first use the
         # ordinary Stop, which checks both positive manager absence and this generation's endpoint closure.
-        if loaded or any(generation.phase != "stopped" for generation in generations):
-            msg = "Stop the owned managed MCP server before changing its installed SDK."
+        if loaded or any(generation.phase == "prepared" for generation in generations):
+            msg = "Stop the owned managed MCP server and wait for its registration to clear before changing its SDK."
             raise HeinzelError(msg)
         return items
+
+    def guard(
+        self, integration: HostIntegration, manager: HostServiceManager, locks: MaintenanceLocks
+    ) -> ClosedOnlyRemoval:
+        """Use observation-only manager checks even if the inventory becomes stale."""
+        return ClosedOnlyRemoval(integration, manager, locks)

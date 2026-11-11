@@ -17,7 +17,8 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _TOKEN = re.compile(r"hzmcp_[A-Za-z0-9_-]{1,4090}\Z")
 
 
-def _loopback_url(url: str) -> bool:
+def loopback_url(url: str, scheme: str = "http") -> bool:
+    """Accept only the literal local MCP endpoint for the selected transport scheme."""
     if _CONTROL.search(url):
         return False
     try:
@@ -26,7 +27,7 @@ def _loopback_url(url: str) -> bool:
     except ValueError:
         return False
     return (
-        parts.scheme == "http"
+        parts.scheme == scheme
         and parts.hostname == "127.0.0.1"
         and port is not None
         and 0 < port <= _MAX_PORT
@@ -51,7 +52,7 @@ def check_http(url: str, token: str) -> int:
 
 
 def _check_http(url: str, token: str) -> int:
-    if not _loopback_url(url) or not _TOKEN.fullmatch(token):
+    if not loopback_url(url) or not _TOKEN.fullmatch(token):
         msg = "MCP check needs a loopback HTTP /mcp URL and a valid token."
         raise HeinzelError(msg)
 

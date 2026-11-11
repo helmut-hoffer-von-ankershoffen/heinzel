@@ -3730,6 +3730,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 
 * `api`: (expert) Serve every operation as a REST...
 * `daemon`: (expert) Run the daemon&#x27;s tick in the...
+* `managed-mcp-worker`: (expert) Run the private generation worker...
 * `mcp`: (expert) Serve every operation as an MCP...
 * `mcp-check`: (expert) Authenticate and initialize a...
 * `mcp-install-project`: (expert) Create a new project MCP config;...
@@ -3766,6 +3767,23 @@ $ hz system serve daemon [OPTIONS]
 **Options**:
 
 * `--interval DURATION`: Time between ticks, e.g. 30s, 5m or 1h.  [default: 5m]
+* `--help`: Show this message and exit.
+
+#### `hz system serve managed-mcp-worker`
+
+(expert) Run the private generation worker selected by the local lifecycle service.
+
+**Usage**:
+
+```console
+$ hz system serve managed-mcp-worker [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: [required]
+* `--cert-sha256 <str>`: [required]
+* `--stop-sha256 <str>`: [required]
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp`

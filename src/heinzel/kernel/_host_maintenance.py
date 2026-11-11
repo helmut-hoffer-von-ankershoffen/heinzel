@@ -227,7 +227,8 @@ class HostIntegrationRemoval:
 
     def _mac_observe(self) -> tuple[bool, int | None, bool]:
         item = self.integration
-        result = self.manager.command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{item.name}"])
+        target = f"gui/{os.getuid()}/{item.name}"
+        result = self.manager.command(["/bin/launchctl", "print", target])
         if result.returncode:
             if item.name in launchd_labels(self.manager):
                 self._refuse()
@@ -256,7 +257,15 @@ class HostIntegrationRemoval:
         pids = re.findall(r"(?m)^\s*pid = (.*)$", text)
         if len(pids) > 1 or (pids and not re.fullmatch(r"[1-9][0-9]{0,9}", pids[0])):
             self._refuse()
-        return True, int(pids[0]) if pids else None, True
+        inactive = (
+            not pids
+            and text.startswith(f"{target} = {{\n")
+            and text.rstrip().endswith("\n}")
+            and re.findall(r"(?m)^[ \t]*state = ([^\r\n]+)$", text) == ["not running"]
+            and "\n\tstate = not running\n" in text
+            and re.findall(r"(?m)^\tactive count = (\d+)$", text) == ["0"]
+        )
+        return True, int(pids[0]) if pids else None, not inactive
 
     def _linux_observe(self) -> tuple[bool, int | None, bool]:
         item = self.integration
@@ -329,6 +338,12 @@ class HostIntegrationRemoval:
     def observed_pid(self) -> int | None:
         """Bind a private readiness observation to this snapshot, never to a signal target."""
         return self._state[1]
+
+    @property
+    def worker_exited(self) -> bool:
+        """Observe either positive registration absence or an exact inactive registration without a PID."""
+        _, pid, active = self._state
+        return pid is None and not active
 
     def verify_current(self) -> None:
         """Revalidate the exact captured registration and files after an asynchronous probe.

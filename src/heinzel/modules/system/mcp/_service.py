@@ -35,21 +35,36 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, step
 from heinzel.modules.system.mcp._records import (
+    FILE_PREFIX,
+    MAX_DEFINITIONS,
     Generation,
+    entries_for,
+    manager_prefix,
     profile_lock,
     read_generation,
-    record_path,
     refuse,
-    unit_path,
 )
 
 FLAG = "managed_mcp"
 START_WAIT = 5.0
+STOP_WAIT = 5.0
 CHECK_WAIT = 10.0
 RESULT_LIMIT = 8192
 MAX_TOOL_COUNT = 999_999_999
 TOKEN = re.compile(r"hzmcp_[A-Za-z0-9_-]{43,4090}\n\Z")
 STARTED = re.compile(r"(?m)^INFO:\s+Started server process \[([1-9][0-9]{0,9})\]$")
+TLS_CONFIG = """[req]
+distinguished_name = subject
+prompt = no
+x509_extensions = server
+[subject]
+CN = Heinzel managed MCP
+[server]
+subjectAltName = IP:127.0.0.1
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+extendedKeyUsage = serverAuth
+"""
 log = get_logger("mcp.managed")
 
 
@@ -58,13 +73,14 @@ class McpStatus(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     mode: Literal["managed-http"] = "managed-http"
-    state: Literal["unavailable", "not-created", "ready", "stopped", "unverified"]
+    state: Literal["unavailable", "not-created", "ready", "worker-closed", "stopped", "unverified"]
     generation: str | None = None
     endpoint: str | None = None
     tools: int | None = None
     ownership: Literal["verified", "unverified"] = "unverified"
     readiness: Literal["authenticated-initialized", "unverified"] = "unverified"
     owned_server: Literal["closed", "unverified"] = "unverified"
+    manager_cleanup: Literal["cleared", "pending", "unverified"] = "unverified"
     termination: Literal["unverified"] = "unverified"
     descendants: Literal["unverified"] = "unverified"
     can_start: bool = False
@@ -129,6 +145,46 @@ def verify_configuration(directory: Path) -> None:
                 refuse()
 
 
+def create_tls_identity(directory: Path) -> tuple[str, str]:
+    """Create a private generation key and self-signed loopback leaf with the fixed OS OpenSSL."""
+    config, cert, key = (directory / name for name in ("tls.cnf", "tls-cert.pem", "tls-key.pem"))
+    for path, content in ((config, TLS_CONFIG), (cert, ""), (key, "")):
+        exclusive(path, content)
+    result = subprocess.run(  # noqa: S603 - fixed OS executable, fixed algorithm and owned output paths
+        [
+            "/usr/bin/openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:prime256v1",
+            "-nodes",
+            "-sha256",
+            "-days",
+            "365",
+            "-config",
+            str(config),
+            "-out",
+            str(cert),
+            "-keyout",
+            str(key),
+        ],
+        cwd=directory,
+        env={"PATH": os.defpath},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=CHECK_WAIT,
+        check=False,
+    )
+    if result.returncode:
+        refuse()
+    return hashlib.sha256(private_read(cert).encode()).hexdigest(), hashlib.sha256(
+        private_read(key).encode()
+    ).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class Authority:
     """Exact installation and selected profile, captured before a manager action."""
@@ -143,17 +199,23 @@ class Authority:
         """The same physical lock union as provider-free maintenance."""
         return host_maintenance_lock(self.prefix), profile_lock(self.prefix, self.profile)
 
-    @property
-    def record(self) -> Path:
-        """The only current generation for this selected profile."""
-        return record_path(self.prefix, self.profile)
+    def generations(self) -> tuple[Generation, ...]:
+        """Read the profile's ordered, bounded history and reject orphaned or ambiguous definitions."""
+        entries = {path for path in entries_for(self.prefix) if path.name.startswith(f"{FILE_PREFIX}{self.profile}-")}
+        records = tuple(read_generation(path) for path in entries if path.suffix == ".json")
+        if not entries <= {
+            record.path(self.prefix, suffix) for record in records for suffix in (".json", ".plist")
+        } or len({record.sequence for record in records}) != len(records):
+            refuse()
+        ordered = tuple(sorted(records, key=lambda record: record.sequence))
+        if any(record.phase == "prepared" for record in ordered[:-1]):
+            refuse()
+        return ordered
 
     def existing(self) -> Generation | None:
         """Read an existing receipt without creating any file or adopting a manager job."""
-        try:
-            return read_generation(self.record)
-        except FileNotFoundError:
-            return None
+        records = self.generations()
+        return records[-1] if records else None
 
 
 class Service:
@@ -233,24 +295,49 @@ class Service:
             refuse()
         return guard
 
+    def _request(self, authority: Authority, generation: Generation, *, stop: bool = False) -> int:
+        """Use this running SDK's isolated probe, with no configuration boot and pinned TLS on every connection."""
+        directory = generation.directory(authority.prefix)
+        credential, expected = (
+            ("stop-token", generation.stop_sha256) if stop else ("probe-token", generation.probe_sha256)
+        )
+        token = private_read(directory / credential)
+        if (
+            generation.cert_sha256 is None
+            or not TOKEN.fullmatch(token)
+            or hashlib.sha256(token.encode()).hexdigest() != expected
+        ):
+            refuse()
+        result = subprocess.run(  # noqa: S603 - fixed interpreter/module, exact generation URL and nonsecret digest
+            [
+                sys.executable,
+                "-I",
+                "-m",
+                "heinzel.heads.mcp._http_probe",
+                generation.endpoint,
+                generation.cert_sha256,
+                "stop" if stop else "check",
+            ],
+            cwd=directory,
+            env={"PATH": os.defpath},
+            input=token.encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=CHECK_WAIT,
+            check=False,
+        )
+        count = result.stdout
+        if result.returncode or not count.isdigit() or len(count) > len(str(MAX_TOOL_COUNT)):
+            refuse()
+        return int(count)
+
     def _ready(self, authority: Authority, generation: Generation, guard: HostIntegrationRemoval) -> McpStatus:
         if not self._listener_observed(authority, generation, guard) or generation.installation != self._verified(
             authority
         ):
             refuse()
-        token = private_read(generation.directory(authority.prefix) / "probe-token")
-        if not TOKEN.fullmatch(token) or hashlib.sha256(token.encode()).hexdigest() != generation.probe_sha256:
-            refuse()
-        reply = self._call(
-            authority, generation, ("mcp-check", "--url", generation.endpoint, "--token-stdin"), token.encode()
-        )
-        if (
-            reply.get("mcp_readiness") != "initialized"
-            or reply.get("worker_ownership") != "unverified"
-            or type(tools := reply.get("tools")) is not int
-            or not 0 <= tools <= MAX_TOOL_COUNT
-        ):
-            refuse()
+        verify_configuration(generation.directory(authority.prefix))
+        tools = self._request(authority, generation)
         guard.verify_current()
         if generation.installation != self._verified(authority):
             refuse()
@@ -267,21 +354,21 @@ class Service:
     def _listener_observed(self, authority: Authority, generation: Generation, guard: HostIntegrationRemoval) -> bool:
         if not guard.running:
             return False
-        # A foreign listener can occupy the reserved port while the job is starting. Do not send it the probe
-        # credential: first bind the actual retained job's private startup output to the manager's live leader.
+        # Bind startup to the manager's live leader. TLS independently protects each connection after this snapshot.
         stderr = private_read(generation.directory(authority.prefix) / "server.stderr")
         return STARTED.findall(stderr) == [str(guard.observed_pid)] and (
-            f"Uvicorn running on http://127.0.0.1:{generation.port} (" in stderr
+            f"Uvicorn running on https://127.0.0.1:{generation.port} (" in stderr
         )
 
-    def _stopped(self, generation: Generation) -> McpStatus:
-        if not port_closed(generation.port):
+    def _closed(self, generation: Generation, guard: HostIntegrationRemoval) -> McpStatus:
+        if not guard.worker_exited or not port_closed(generation.port):
             refuse()
         return McpStatus(
-            state="stopped",
+            state="worker-closed" if guard.registered else "stopped",
             generation=generation.generation,
             ownership="verified",
             owned_server="closed",
+            manager_cleanup="pending" if guard.registered else "cleared",
             can_start=self.enabled,
             can_stop=True,
         )
@@ -307,9 +394,8 @@ class Service:
                 if authority.existing() != generation:
                     refuse()
                 guard = self._guard(authority, generation, locks)
-                if generation.phase == "stopped":
-                    guard.quiescent()
-                    return self._stopped(generation)
+                if generation.phase != "prepared":
+                    return self._closed(generation, guard)
                 return self._ready(authority, generation, guard)
         except (HeinzelError, OSError, ValueError, subprocess.SubprocessError):
             # A retained receipt permits a recovery attempt; Stop still has to verify it independently.
@@ -327,31 +413,37 @@ class Service:
             authority = self.authority()
             with MaintenanceLocks(authority.locks) as locks:
                 fingerprint = self._verified(authority)
-                existing = authority.existing()
-                if existing is not None:
+                records = authority.generations()
+                if records:
+                    existing = records[-1]
                     guard = self._guard(authority, existing, locks)
                     if existing.phase == "prepared":
                         return self._ready(authority, existing, guard)
-                    guard.quiescent()
-                    self._stopped(existing)
-                    for file in guard.integration.files:
-                        if file.path == guard.integration.unit:
-                            remove_owned_integration_file(file)
-                return self._start_new(authority, fingerprint, locks)
+                    self._closed(existing, guard)
+                return self._start_new(authority, fingerprint, locks, records)
 
-    def _start_new(self, authority: Authority, fingerprint: str, locks: MaintenanceLocks) -> McpStatus:
+    def _start_new(
+        self, authority: Authority, fingerprint: str, locks: MaintenanceLocks, records: tuple[Generation, ...]
+    ) -> McpStatus:
         manager = self.manager()
-        if os.path.lexists(unit_path(authority.prefix, authority.profile)):
+        namespace = manager_prefix(authority.prefix) + authority.profile
+        known = {record.label(authority.prefix) for record in records}
+        loaded = launchd_labels(manager)
+        if any(label.startswith(namespace) and label not in known for label in loaded):
             refuse()
+        self._make_room(authority, records, loaded, locks)
         generation = Generation(
-            profile=authority.profile, generation=secrets.token_hex(16), installation=fingerprint, port=available_port()
+            profile=authority.profile,
+            generation=secrets.token_hex(16),
+            installation=fingerprint,
+            sequence=records[-1].sequence + 1 if records else 1,
+            port=available_port(),
         )
-        if generation.label(authority.prefix) in launchd_labels(manager):
-            refuse()
         directory = generation.directory(authority.prefix)
         private_directory(directory.parent)
         directory.mkdir(mode=0o700)
         exclusive(directory / "hz.toml", "")
+        cert_sha256, key_sha256 = create_tls_identity(directory)
         reply = self._call(
             authority,
             generation,
@@ -362,12 +454,21 @@ class Service:
         token += "\n"
         if not TOKEN.fullmatch(token):
             refuse()
-        generation = generation.model_copy(update={"probe_sha256": hashlib.sha256(token.encode()).hexdigest()})
+        stop_token = "hzmcp_" + secrets.token_urlsafe(32) + "\n"
+        generation = generation.model_copy(
+            update={
+                "probe_sha256": hashlib.sha256(token.encode()).hexdigest(),
+                "stop_sha256": hashlib.sha256(stop_token.encode()).hexdigest(),
+                "cert_sha256": cert_sha256,
+                "key_sha256": key_sha256,
+            }
+        )
         # The recovery record must precede publication and loading of any job.
-        private_write(authority.record, generation.text())
+        exclusive(generation.path(authority.prefix, ".json"), generation.text())
         exclusive(directory / "probe-token", token)
+        exclusive(directory / "stop-token", stop_token)
         exclusive(directory / "server.stderr", "")
-        unit = unit_path(authority.prefix, authority.profile)
+        unit = generation.path(authority.prefix, ".plist")
         exclusive(unit, generation.definition(authority.prefix, authority.executable))
         self._guard(authority, generation, locks).quiescent()
         verify_configuration(directory)
@@ -384,8 +485,25 @@ class Service:
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
         return refuse()
 
+    def _make_room(
+        self, authority: Authority, records: tuple[Generation, ...], loaded: frozenset[str], locks: MaintenanceLocks
+    ) -> None:
+        """At the inventory bound, reclaim only historical files with freshly verified registration absence."""
+        if len(entries_for(authority.prefix)) <= MAX_DEFINITIONS - 2:
+            return
+        for record in records[:-1]:
+            if record.label(authority.prefix) in loaded:
+                continue
+            guard = self._guard(authority, record, locks)
+            guard.quiescent()
+            for file in reversed(guard.integration.files):  # unit first; an interruption retains its receipt
+                remove_owned_integration_file(file)
+            if len(entries_for(authority.prefix)) <= MAX_DEFINITIONS - 2:
+                return
+        refuse()
+
     def stop(self) -> McpStatus:
-        """Stop only the existing captured job, even after the preview is disabled.
+        """Shut down the authenticated worker, even after the preview is disabled.
 
         Raises:
             HeinzelError: If the registered owner or its endpoint closure cannot be verified.
@@ -400,14 +518,43 @@ class Service:
             with MaintenanceLocks(authority.locks) as locks:
                 if authority.existing() != existing:
                     refuse()
-                self._guard(authority, existing, locks).stop()
-                result = self._stopped(existing)
-                secret = existing.directory(authority.prefix) / "probe-token"
-                if os.path.lexists(secret):
-                    captured = capture_owned_integration_file(secret)
-                    if hashlib.sha256(captured.content).hexdigest() != existing.probe_sha256:
+                guard = self._guard(authority, existing, locks)
+                if guard.running:
+                    guard.verify_current()
+                    if existing.phase != "prepared" or self._request(authority, existing, stop=True) != 0:
                         refuse()
-                    remove_owned_integration_file(captured)
-                if existing.phase != "stopped":
-                    private_write(authority.record, existing.model_copy(update={"phase": "stopped"}).text())
+                    guard = self._wait_closed(authority, existing, locks)
+                result = self._closed(existing, guard)
+                self._retire_credentials(authority, existing)
+                phase = "worker-closed" if guard.registered else "stopped"
+                if existing.phase != phase:
+                    private_write(
+                        existing.path(authority.prefix, ".json"), existing.model_copy(update={"phase": phase}).text()
+                    )
                 return result
+
+    def _wait_closed(
+        self, authority: Authority, generation: Generation, locks: MaintenanceLocks
+    ) -> HostIntegrationRemoval:
+        deadline = time.monotonic() + STOP_WAIT
+        while time.monotonic() < deadline:
+            guard = self._guard(authority, generation, locks)
+            if guard.worker_exited and port_closed(generation.port) and time.monotonic() <= deadline:
+                return guard
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        return refuse()
+
+    @staticmethod
+    def _retire_credentials(authority: Authority, generation: Generation) -> None:
+        directory = generation.directory(authority.prefix)
+        for name, expected in (
+            ("probe-token", generation.probe_sha256),
+            ("stop-token", generation.stop_sha256),
+            ("tls-key.pem", generation.key_sha256),
+        ):
+            path = directory / name
+            if os.path.lexists(path):
+                captured = capture_owned_integration_file(path)
+                if hashlib.sha256(captured.content).hexdigest() != expected:
+                    refuse()
+                remove_owned_integration_file(captured)

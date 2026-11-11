@@ -52,8 +52,8 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
     a JSON request body, including validated nested values. Sensitive parameters never fall back to query strings.
 16. **Managed MCP is separate from client configuration.** This computer shows whether the profile's local HTTP
     server was authenticated and initialized. Starting and stopping use the normal operation confirmation. Stopping
-    stays available for an owned server when the preview is disabled. Say when the listener is closed and leave
-    descendant cleanup unverified; a project stdio entry does not connect to this server.
+    stays available for an owned server when the preview is disabled. Report listener closure and pending macOS
+    registration separately, and leave descendant cleanup unverified. A project stdio entry uses its own connection.
 
 ## Navigation acceptance checks
 

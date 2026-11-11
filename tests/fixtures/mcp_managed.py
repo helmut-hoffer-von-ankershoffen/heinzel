@@ -45,12 +45,10 @@ class Manager(HostServiceManager):
 
     def __init__(self, folder):
         self.calls = []
-        self.unit = None
-        self.definition = None
-        self.process = None
+        self.jobs = {}
         self.fail_bootstrap = False
-        self.fail_bootout = False
         self.changed_program = False
+        self.hide_inactive_state = False
         self.extra = []
         self.reported_pid = None
         self.poison = folder / "caller"
@@ -60,8 +58,7 @@ class Manager(HostServiceManager):
         (self.poison / "hz/config.toml").write_text("fictional poisoned site = [")
 
     def close(self):
-        process = self.process
-        if process is not None:
+        for _, _, process in self.jobs.values():
             if process.poll() is None:
                 process.terminate()
             try:
@@ -69,19 +66,23 @@ class Manager(HostServiceManager):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=2)
-        self.process = self.definition = self.unit = None
+        self.jobs.clear()
+
+    @property
+    def process(self):
+        return next(reversed(self.jobs.values()))[2] if self.jobs else None
 
     def bootstrap(self, unit):
-        self.unit = unit
-        assert "LaunchAgents" not in self.unit.parts
-        self.definition = plistlib.loads(self.unit.read_bytes())
-        argv = self.definition["ProgramArguments"]
+        assert "LaunchAgents" not in unit.parts
+        definition = plistlib.loads(unit.read_bytes())
+        assert definition["Label"] not in self.jobs
+        argv = definition["ProgramArguments"]
         assert argv[:2] == ["/usr/bin/env", "-i"]
-        assert self.definition["KeepAlive"] is False
-        with Path(self.definition["StandardErrorPath"]).open("ab") as stderr:
-            self.process = subprocess.Popen(
+        assert definition["KeepAlive"] is False
+        with Path(definition["StandardErrorPath"]).open("ab") as stderr:
+            process = subprocess.Popen(
                 argv,
-                cwd=self.definition["WorkingDirectory"],
+                cwd=definition["WorkingDirectory"],
                 env={
                     "PATH": "/usr/bin:/bin",
                     "HOME": str(self.poison),
@@ -93,49 +94,48 @@ class Manager(HostServiceManager):
                 stdout=subprocess.DEVNULL,
                 stderr=stderr,
             )
+        self.jobs[definition["Label"]] = unit, definition, process
 
-    def describe(self):
-        definition = self.definition
+    def describe(self, job):
+        unit, definition, process = job
         argv = definition["ProgramArguments"]
         program = "/fictional/unowned" if self.changed_program else argv[0]
-        output = f"path = {self.unit}\nprogram = {program}\narguments = {{\n"
-        output += "".join(f"\t{arg}\n" for arg in argv)
-        output += f"}}\nworking directory = {definition['WorkingDirectory']}\n"
-        if self.process.poll() is None:
-            output += f"pid = {self.reported_pid or self.process.pid}\n"
-        return output
+        output = (
+            f"gui/{os.getuid()}/{definition['Label']} = {{\n\tpath = {unit}\n\tprogram = {program}\n\targuments = {{\n"
+        )
+        output += "".join(f"\t\t{arg}\n" for arg in argv)
+        output += f"\t}}\n\tworking directory = {definition['WorkingDirectory']}\n"
+        if process.poll() is None:
+            output += f"\tactive count = 1\n\tstate = running\n\tpid = {self.reported_pid or process.pid}\n"
+        elif not self.hide_inactive_state:
+            output += "\tactive count = 0\n\tstate = not running\n"
+        return output + "}\n"
 
     def command(self, arguments):
         self.calls.append(tuple(arguments))
         assert arguments[0] == "/bin/launchctl"
         verb = arguments[1]
         status, output = 0, ""
-        definition = self.definition
+        label = arguments[2].split("/")[-1] if len(arguments) > 2 else ""
         if verb == "list":
             output = "PID\tStatus\tLabel\n"
-            if definition:
-                pid = self.process.pid if self.process.poll() is None else "-"
-                output += f"{pid}\t0\t{definition['Label']}\n"
+            for name, (_, _, process) in self.jobs.items():
+                pid = process.pid if process.poll() is None else "-"
+                output += f"{pid}\t0\t{name}\n"
             output += "".join(f"-\t0\t{label}\n" for label in self.extra)
         elif verb == "print":
-            if not definition or arguments[2] != f"gui/{os.getuid()}/{definition['Label']}":
+            if label not in self.jobs or arguments[2] != f"gui/{os.getuid()}/{label}":
                 status = 113
             else:
-                output = self.describe()
+                output = self.describe(self.jobs[label])
         elif verb == "bootstrap":
             assert arguments[2] == f"gui/{os.getuid()}"
-            assert definition is None
             if self.fail_bootstrap:
                 status = 1
             else:
                 self.bootstrap(Path(arguments[3]))
         elif verb == "bootout":
-            assert definition
-            assert arguments[2] == f"gui/{os.getuid()}/{definition['Label']}"
-            if self.fail_bootout:
-                status = 1
-            else:
-                self.close()
+            pytest.fail(f"Managed MCP attempted a label-addressed effect: {label}")
         else:
             pytest.fail(f"Unexpected isolated manager verb: {verb}")
         return subprocess.CompletedProcess(arguments, status, output, "")
@@ -148,15 +148,21 @@ def managed(tmp_path, monkeypatch, make_kernel):
     manager = Manager(folder)
     calls = []
     real_call = _service.Service._call
+    real_request = _service.Service._request
 
     def trace(service, authority, generation, args, input_=b""):
         calls.append(args[0])
         return real_call(service, authority, generation, args, input_)
 
+    def trace_request(service, authority, generation, *, stop=False):
+        calls.append("managed-stop" if stop else "mcp-check")
+        return real_request(service, authority, generation, stop=stop)
+
     monkeypatch.setattr(_service, "platform", lambda: "darwin")
     monkeypatch.setattr(_service, "installation", lambda: installed)
     monkeypatch.setattr(_service.Service, "manager", lambda _: manager)
     monkeypatch.setattr(_service.Service, "_call", trace)
+    monkeypatch.setattr(_service.Service, "_request", trace_request)
     monkeypatch.setattr(_service, "installation_mutation_pending", lambda *_: False)
 
     def kernel(*, enabled=True):
