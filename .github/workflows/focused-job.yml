@@ -75,14 +75,15 @@ jobs:
         run: python3 -I tests/e2e/_signin_diagnostic_guard.py
       - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
+          python-version: ${{ github.ref_name == 'ci/706-signin-pair-diagnostic' && '3.14' || '' }}
+          enable-cache: ${{ github.ref_name != 'ci/706-signin-pair-diagnostic' }}
           cache-dependency-glob: uv.lock
           save-cache: false # a dispatched diagnostic never writes the cache main and pull requests read
       - name: Validate the selection before installing anything
         if: github.ref_name != 'ci/706-signin-pair-diagnostic'
         run: uv run --no-build --quiet --script scripts/focused_job.py --check
       - name: Reuse the browsers this lockfile's Playwright installs
-        if: (inputs.kind == 'e2e' && inputs.selector != 'cli') || github.ref_name == 'ci/706-signin-pair-diagnostic'
+        if: github.ref_name != 'ci/706-signin-pair-diagnostic' && inputs.kind == 'e2e' && inputs.selector != 'cli'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -101,8 +102,12 @@ jobs:
           work="$(mktemp -d "$RUNNER_TEMP/signin-706.XXXXXX")"
           trap 'rm -rf -- "$work"' EXIT
           export TMPDIR="$work"
+          safe_env=("PATH=$PATH" "HOME=$HOME" "TMPDIR=$TMPDIR" "UV_FROZEN=1")
+          for key in LANG LC_ALL UV_PYTHON PLAYWRIGHT_BROWSERS_PATH SYSTEMROOT; do
+            if [[ -v "$key" ]]; then safe_env+=("$key=${!key}"); fi
+          done
           set +e
-          env -i PATH="$PATH" HOME="$HOME" TMPDIR="$TMPDIR" LANG="${LANG:-en_US.UTF-8}" \
+          env -i "${safe_env[@]}" \
             uv run --frozen python tests/e2e/_signin_pair_diagnostic.py "$work/evidence" > /dev/null 2>&1
           result=$?
           set -e

@@ -237,9 +237,15 @@ def test_diagnostic_workflow_guards_before_setup_and_never_uploads_raw_output():
     diagnostic = steps[names.index("Run the isolated sign-in diagnostic")]
     assert diagnostic["if"] == "github.ref_name == 'ci/706-signin-pair-diagnostic'"
     assert "env -i " in diagnostic["run"]
+    assert "LANG LC_ALL UV_PYTHON PLAYWRIGHT_BROWSERS_PATH SYSTEMROOT" in diagnostic["run"]
     assert "GITHUB_TOKEN" not in diagnostic.get("env", {})
     assert "> /dev/null 2>&1" in diagnostic["run"]
     generic = steps[names.index("Run the selection")]
     assert generic["if"] == "github.ref_name != 'ci/706-signin-pair-diagnostic'"
     upload = steps[names.index("Keep the report, tally, screenshots and logs")]
     assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in upload["if"]
+    setup = next(step for step in steps if step.get("uses") == "./.github/actions/setup-uv")
+    assert "'3.14'" in setup["with"]["python-version"]
+    assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in setup["with"]["enable-cache"]
+    cache = steps[names.index("Reuse the browsers this lockfile's Playwright installs")]
+    assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in cache["if"]
