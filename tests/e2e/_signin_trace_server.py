@@ -22,19 +22,23 @@ _PHASES = r"(?:handler-enter|handler-pending|handler-return|prepare-enter|prepar
 _BROWSER_PHASES = r"(?:chromium|webkit) (?:route-enter|fetch-start|fetch-return)"
 _STACK_FILES = ("_chatgpt_signin.py", "_chatgpt.py", "rich/console.py", "logging/__init__.py", "h11_impl.py")
 _TRACE_LIMIT = 8192
-_FIXTURE_ENVIRONMENT = {
-    "BROWSER",
-    "CI",
+_CANONICAL_ENVIRONMENT = {
     "HOME",
     "LANG",
     "LC_ALL",
     "PATH",
     "PLAYWRIGHT_BROWSERS_PATH",
-    "PLAYWRIGHT_DOWNLOAD_HOST",
-    "PYTHONDONTWRITEBYTECODE",
-    "PYTHONPATH",
     "TMPDIR",
-    "UV_OFFLINE",
+    "SYSTEMROOT",
+    "UV_PYTHON",
+    "UV_FROZEN",
+    "HZ_SCREENSHOTS",
+    "PYTEST_CURRENT_TEST",
+    "PYTEST_VERSION",
+    "UV",
+    "UV_RUN_RECURSION_DEPTH",
+    "VIRTUAL_ENV",
+    "__CF_USER_TEXT_ENCODING",
 }
 
 
@@ -70,9 +74,9 @@ def report(process, phases, stacks):
                     sys.stderr.write(f"SIGN_IN_STACK {label}:{number}\n")
 
 
-def _drive_browser(command, env, repo, token):
+def _drive_browser(command, repo, token):
     try:
-        driven = subprocess.run(command, cwd=repo, capture_output=True, env=env, text=True, check=False, timeout=180)
+        driven = subprocess.run(command, cwd=repo, capture_output=True, text=True, check=False, timeout=180)
     except subprocess.TimeoutExpired as error:
         stderr = error.stderr.decode("utf-8", errors="replace") if isinstance(error.stderr, bytes) else error.stderr
         for line in browser_trace(stderr or ""):
@@ -87,7 +91,16 @@ def _drive_browser(command, env, repo, token):
 
 def drive_traced_signin(env, tmp_path, run, repo, verify_stream):
     """Keep the original undrained pipe and capture fixed markers from the owned child."""
-    env = {key: value for key, value in env.items() if key.startswith("HZ_") or key in _FIXTURE_ENVIRONMENT}
+    # The canonical lane supplies a restricted parent environment. Refuse extras rather than silently
+    # changing the original asymmetry: Node inherits the parent; the server receives the fixture's env.
+    if set(os.environ) - _CANONICAL_ENVIRONMENT:
+        msg = "Sign-in diagnostic requires the canonical lane environment"
+        raise RuntimeError(msg)
+    if env.get("HZ_SYSTEM_CREDENTIAL__BACKEND") != "environment" or any(
+        key.startswith("HZ_CREDENTIAL_") for key in env
+    ):
+        msg = "Sign-in diagnostic requires the isolated environment backend"
+        raise RuntimeError(msg)
     phases, stacks = tmp_path / "sign-in-phases.txt", tmp_path / "sign-in-stacks.txt"
     command = [sys.executable, "-m", "tests.e2e._signin_trace_server", str(phases), str(stacks)]
     server = subprocess.Popen(command, cwd=repo, env=env, stderr=subprocess.PIPE, text=True)
@@ -100,7 +113,7 @@ def drive_traced_signin(env, tmp_path, run, repo, verify_stream):
         token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
         verify_stream(url)
         shots = os.environ.get("HZ_SCREENSHOTS", str(tmp_path / "screenshots"))
-        return _drive_browser([*run, "exec", "node", "e2e/chatgpt-sign-in.mjs", url, shots], env, repo, token)
+        return _drive_browser([*run, "exec", "node", "e2e/chatgpt-sign-in.mjs", url, shots], repo, token)
     except BaseException:
         with contextlib.suppress(OSError):
             report(server, phases, stacks)
