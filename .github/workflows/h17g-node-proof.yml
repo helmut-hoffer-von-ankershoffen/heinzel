@@ -1,0 +1,64 @@
+# Local proposal only; activation requires separate exact-head review and authorization.
+name: h17g Node browser setup qualification
+on:
+  push:
+    branches: [diag/h17g-node-proof]
+permissions:
+  contents: read
+jobs:
+  probe:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/diag/h17g-node-proof'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Initialize first-attempt evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/h17g-node-output"
+          date +%s > "$RUNNER_TEMP/h17g-node-output/pin-epoch.txt"
+          printf 'RUN=%s ATTEMPT=%s TRANSPORT=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" > "$RUNNER_TEMP/h17g-node-output/initial.log"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+      - name: Checkout diagnostic transport
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Authenticate and preserve diagnostic closure
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sha256sum .github/workflows/h17g-node-proof.yml diagnostics/h17g-node/pins.sha256 > "$RUNNER_TEMP/h17g-node-output/transport.sha256"
+          printf '%s\n' \
+            '63e5297b9e40a635942bec5dd994717422fc76581ac0edce888772135b9c72d3  diagnostics/h17g-node/probe.sh' \
+            '9a0b59c087f9a9acfb227224dd2d0c9ba752fa31fb55a3e3149d9b0ee04d0fbd  diagnostics/h17g-node/smoke.cjs' \
+            'dfe5d67f00f06216b6b507d7a925eb14a153f3c4e4f44276e8659383e53fb206  diagnostics/h17g-node/ubuntu_browser_mirror.py' \
+            'f978e13c4ceb2c0963579d5786c93ce2bc6adbec2941f019a82a3ee19787ae01  diagnostics/h17g-node/python-v5-receipt.json' | sha256sum -c -
+          cp diagnostics/h17g-node/probe.sh "$RUNNER_TEMP/h17g-node-probe.sh"
+          cp diagnostics/h17g-node/smoke.cjs "$RUNNER_TEMP/h17g-node-smoke.cjs"
+          cp diagnostics/h17g-node/ubuntu_browser_mirror.py "$RUNNER_TEMP/h17g-node-mirror.py"
+          cp diagnostics/h17g-node/pins.sha256 "$RUNNER_TEMP/h17g-node-pins.sha256"
+          cp diagnostics/h17g-node/python-v5-receipt.json "$RUNNER_TEMP/h17g-node-receipt.json"
+      - name: Checkout immutable candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 700d2d634062b41c6336ad2774ec53a4b385b25b
+          persist-credentials: false
+      - name: Verify candidate and Node source inputs
+        run: |
+          test "$(git rev-parse HEAD)" = 700d2d634062b41c6336ad2774ec53a4b385b25b
+          sha256sum -c "$RUNNER_TEMP/h17g-node-pins.sha256" | tee "$RUNNER_TEMP/h17g-node-output/source-pins.log"
+          python3 -c 'import json; assert json.load(open("web/package.json"))["devDependencies"]["playwright-core"] == "1.64.1"'
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+          save-cache: false
+      - name: Run candidate Node setup and browser smokes
+        run: |
+          set -o pipefail
+          bash "$RUNNER_TEMP/h17g-node-probe.sh" 2>&1 | tee "$RUNNER_TEMP/h17g-node-output/summary.log"
+      - name: Preserve runner-owned evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: h17g-node-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h17g-node-output/
+          if-no-files-found: error
+          retention-days: 7

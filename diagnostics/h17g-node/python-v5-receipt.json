@@ -1,0 +1,20 @@
+{
+  "repository": "helmut-hoffer-von-ankershoffen/heinzel",
+  "run": 43062060807,
+  "attempt": 1,
+  "job": 130666970191,
+  "transport": "78f47980fbcaef4113ce4cb677f52da01a6919fe",
+  "candidate": "700d2d634062b41c6336ad2774ec53a4b385b25b",
+  "artifact": 13874022763,
+  "artifact_sha256": "b05314053010c7b5416172f1d637688697bc2605daf4ce4ee0aa09185068f14b",
+  "original_source_sha256": "4508181e0dd5578c33d1247db48ab4847910b25da85e0789c8e7b3140d1fb289",
+  "alternate_source_sha256": "c21ec0287be71f3c71d1f9ef6f902f9c2215bb9b5297d2ea1280e69c5c08f967",
+  "keyring_sha256": "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31",
+  "package": "libnss3:amd64",
+  "package_size": 1444912,
+  "package_sha512": "9d55072ef9795fd2204f4910647c22c315fe4ffa9df298f35f44b613ceb7d9e0297729e9df2c804b65899b33724f53f65ea121fd0e2003cab45a23104e76866a",
+  "route": "https://mirrors.edge.kernel.org/ubuntu",
+  "python_install_seconds": 75,
+  "python_chromium": "PASS",
+  "python_webkit": "PASS"
+}

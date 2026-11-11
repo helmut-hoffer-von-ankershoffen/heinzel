@@ -1,0 +1,1 @@
+"""Isolated CI diagnostics."""
