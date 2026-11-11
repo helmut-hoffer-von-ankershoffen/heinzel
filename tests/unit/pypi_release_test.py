@@ -237,7 +237,7 @@ def test_oidc_authority_is_isolated_from_all_build_and_checkout_steps():
     assert spec[True] == {"workflow_dispatch": None}  # YAML1.1 represents GitHub's 'on' as True.
     assert spec["concurrency"]["cancel-in-progress"] is False
     jobs = spec["jobs"]
-    assert set(jobs) == {"verify", "publish"}
+    assert set(jobs) == {"acceptance", "verify", "publish"}
     verifier = jobs["verify"]
     assert verifier["permissions"] == {"contents": "read", "actions": "read", "attestations": "read"}
     checkout = next(step for step in verifier["steps"] if step.get("uses", "").startswith("actions/checkout@"))
@@ -266,7 +266,7 @@ def test_oidc_authority_is_isolated_from_all_build_and_checkout_steps():
 
 def test_upload_requires_acceptance_of_this_tag_once_promotion_is_active():
     jobs = workflow()["jobs"]
-    assert jobs["notifier"]["needs"] == "acceptance"
+    assert jobs["verify"]["needs"] == "acceptance"
     guard = jobs["acceptance"]
     assert guard["permissions"] == {"actions": "read"}
     assert not any(step.get("uses", "").startswith("actions/checkout") for step in guard["steps"])
