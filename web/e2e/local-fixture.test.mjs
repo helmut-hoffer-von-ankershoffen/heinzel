@@ -21,14 +21,14 @@ test("allows only the fixture origin and records blocked requests and page error
       handler = callback;
     },
   };
-  const { blocked, errors } = await guardFixturePage(page, "http://127.0.0.1:12345");
+  const { blocked, errors } = await guardFixturePage(page, "https://fixture.invalid:12345");
   const events = [];
   const route = (url) => ({
     request: () => ({ url: () => url }),
     continue: () => events.push("continued"),
     abort: () => events.push("aborted"),
   });
-  handler(route("http://127.0.0.1:12345/path"));
+  handler(route("https://fixture.invalid:12345/path"));
   handler(route("https://example.invalid/"));
   onError(new Error("fixture error"));
   assert.deepEqual(events, ["continued", "aborted"]);
