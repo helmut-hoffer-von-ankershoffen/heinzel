@@ -75,3 +75,53 @@ def test_a_toggle_cannot_call_another_modules_operation(make_kernel):
     entry = kernel.resolve(UiService).status("example:control")[0]
     assert entry.item is None
     assert entry.problem
+
+
+def _toggle(**fields):
+    return ToggleControl(
+        label="Share this service",
+        checked=False,
+        enable=RunOperation(operation="enable"),
+        disable=RunOperation(operation="disable"),
+        **fields,
+    )
+
+
+def test_a_toggle_carries_one_short_status_line_and_the_long_text_separately():
+    toggle = _toggle(
+        requested=True,
+        status="Turning on…",
+        problem="Sign in to Tailscale, then try again.",
+        explanation="Tailscale is signed out on this computer.\nOpen Tailscale, sign in, then switch sharing on.",
+    )
+    assert toggle.status == "Turning on…"
+    assert toggle.problem == "Sign in to Tailscale, then try again."
+    assert toggle.explanation.splitlines()[1].startswith("Open Tailscale")
+
+
+@pytest.mark.parametrize("field", ["status", "problem"])
+def test_a_pane_status_line_longer_than_sixty_characters_is_refused(field):
+    with pytest.raises(ValueError, match="at most 60"):
+        _toggle(**{field: "x" * 61})
+    assert getattr(_toggle(**{field: "x" * 60}), field) == "x" * 60
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Requested; not ready.",
+        "The request is applied.",
+        "Restart and apply it.",
+        "Not verified yet.",
+        "Verify it from the owning web app.",
+        "The intent is saved.",
+        "This mapping is not ours.",
+        "Add the origin first.",
+        "No handler for this root.",
+        "Readiness unknown.",
+    ],
+)
+@pytest.mark.parametrize("field", ["status", "problem"])
+def test_a_pane_status_line_refuses_internal_state_words(field, line):
+    with pytest.raises(ValueError, match="internal word"):
+        _toggle(**{field: line})

@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { KEY } from "@/updates/autoUpdateApi";
 import { startUpdate } from "@/updates/controller";
@@ -36,6 +37,7 @@ it("opens the update details without installing until the button is chosen", asy
   expect(startUpdate).not.toHaveBeenCalled();
   expect(await screen.findByText(/^Last installed:/)).toBeInTheDocument();
   expect(screen.getByText("Heinzel 0.2.0 is available")).toBeInTheDocument();
+  await expectPane(screen.getByRole("region", { name: "Updates available" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
@@ -305,22 +307,26 @@ it.each([
   ).toBe(true);
 });
 
-it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {} }])(
-  "does not call an empty, disabled or failed plan current",
-  async (answer) => {
-    mockApi({
-      ...shell,
-      "/api/update-status": { ...status, latest: status.current, available: false },
-      "/api/auto-update": answer,
-    });
-    renderAt("/");
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
-    expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manually update…" })).toBeInTheDocument();
-    expect(startUpdate).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  { state: "empty", answer: plan },
+  { state: "disabled", answer: { ...plan, phase: "off", enabled: false } },
+  { state: "failed", answer: { status: 503, body: {} } },
+])("does not label the update plan current when its state is $state", async ({ answer }) => {
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...status, latest: status.current, available: false },
+    "/api/auto-update": answer,
+  });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
+  expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+  const manual = screen.getByRole("button", { name: "Manually update…" });
+  // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
+  expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
+  for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
+  expect(startUpdate).not.toHaveBeenCalled();
+});
 
 it("observes the live plan instead of the indefinitely cached installation facts", async () => {
   mockApi({

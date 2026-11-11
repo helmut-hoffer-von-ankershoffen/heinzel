@@ -15,7 +15,7 @@ from heinzel.modules.ai.access._discovery import ModelCache, fetch, is_local, li
 from heinzel.modules.ai.access._gateway import Finished, GatewayAccess, environment, run_command
 from heinzel.modules.ai.access._models import AccessSettings, Bindings, LastTest
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, endpoint_model, model_hosts
-from heinzel.modules.ai.access._service import ResultStore, state
+from heinzel.modules.ai.access._service import ResultStore, setup_of, state
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
@@ -32,7 +32,7 @@ def status(**fields: object) -> AccessStatus:
 @pytest.mark.parametrize(
     ("fields", "last", "word"),
     [
-        ({"installed": False}, None, "not installed"),
+        ({"installed": False}, None, "needs setup"),
         ({"signed_in": True}, None, "signed in"),
         ({"signed_in": False}, LastTest(at=NOW, ok=True), "not signed in"),
         ({}, None, "not tested"),
@@ -464,3 +464,32 @@ def test_a_listing_too_large_is_refused_not_cut(monkeypatch):
     monkeypatch.setattr(discovery, "LOCAL_OPENER", Opener())
     with pytest.raises(ValueError, match="larger than"):
         discovery.fetch("http://localhost:1/v1/models", {})
+
+
+def test_each_option_names_the_one_thing_it_needs_never_a_plugin(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", raising=False)
+    found = {
+        "no model": setup_of("pydantic-ai", pydantic(None).status()),
+        "no client": setup_of("pydantic-ai", pydantic("anthropic:claude-sonnet-4-5", installed=False).status()),
+        "no key": setup_of("pydantic-ai", pydantic("anthropic:claude-sonnet-4-5").status()),
+        "no gateway": setup_of("gateway", gateway().status()),
+        "signed out": setup_of("chatgpt", status(title="ChatGPT plan", signed_in=False)),
+        "ready": setup_of("claude-code", status(signed_in=True)),
+    }
+    assert found == {
+        "no model": ("model", "Add a model and API key"),
+        "no client": ("client", "Add the Anthropic client"),
+        "no key": ("model", "Add an API key"),
+        "no gateway": ("gateway", "Add your gateway command"),
+        "signed out": ("sign-in", "Sign in to ChatGPT plan"),
+        "ready": (None, ""),
+    }
+    assert all("plugin" not in needs and "install" not in needs.lower() for _, needs in found.values())
+
+
+def test_the_listing_never_asks_for_a_restart_to_apply_a_runner():
+    # A running head takes up a changed runner before its next call (`Kernel.refresh_live_bindings`).
+    source = (Path(__file__).parents[3] / "src/heinzel/modules/ai/access/_service.py").read_text()
+    assert "restart `hz ui serve`" not in source
+    assert "this hz process started with" not in source

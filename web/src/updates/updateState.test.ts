@@ -169,3 +169,10 @@ it("says a newer release waits for its acceptance, and only while it is held", (
     texts({ plan: { ...plan, phase: "off", reason: "Automatic updates are off.", core_held: "0.9.31" } }),
   ).not.toContain("Heinzel 0.9.31 isn't accepted yet, so it won't update itself; you can still update by hand");
 });
+
+it("tells a failed update once, not again as the plan's message", () => {
+  const error = "uv is required to manage Heinzelmännchen's installation; it is not in /usr/bin, /bin.";
+  const shown = texts({ plan: { ...plan, message: error }, problem: error });
+  expect(shown.filter((text) => text === error)).toHaveLength(1);
+  expect(texts({ message: error, problem: error }).filter((text) => text === error)).toHaveLength(1);
+});

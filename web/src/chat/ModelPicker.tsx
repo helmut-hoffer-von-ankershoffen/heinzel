@@ -7,6 +7,7 @@ import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState 
 import type { ModelChoice } from "@/api/chat";
 import { useAiModels } from "@/api/queries";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -120,21 +121,25 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
             ))}
           </fieldset>
           {list.efforts.length > 0 && (
-            <fieldset aria-label={t("chat.effort")} className="mt-1 border-t border-border pt-1">
-              <p className="px-2 py-0.5 text-[0.7rem] text-muted-foreground">{t("chat.effort")}</p>
-              <Option label={t("chat.modelDefault")} chosen={!value.effort} onPick={() => pick({ effort: "" })} />
-              {list.efforts.map((choice) => (
-                <Option
-                  key={choice.name}
-                  label={choice.recommended ? `${choice.title} (${t("chat.recommended")})` : choice.title}
-                  chosen={value.effort === choice.name}
-                  note={choice.warning ?? undefined}
-                  onPick={() => pick({ effort: choice.name })}
-                />
-              ))}
-            </fieldset>
+            <>
+              <hr className="my-1 border-border" />
+              <fieldset aria-label={t("chat.effort")}>
+                <p className="px-2 py-0.5 text-[0.7rem] text-muted-foreground">{t("chat.effort")}</p>
+                <Option label={t("chat.modelDefault")} chosen={!value.effort} onPick={() => pick({ effort: "" })} />
+                {list.efforts.map((choice) => (
+                  <Option
+                    key={choice.name}
+                    label={choice.recommended ? `${choice.title} (${t("chat.recommended")})` : choice.title}
+                    chosen={value.effort === choice.name}
+                    note={choice.warning ?? undefined}
+                    onPick={() => pick({ effort: choice.name })}
+                  />
+                ))}
+              </fieldset>
+            </>
           )}
-          <div className="mt-1 border-t border-border pt-1">
+          <hr className="my-1 border-border" />
+          <div>
             <button
               type="button"
               aria-expanded={more}
@@ -155,13 +160,9 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
                   placeholder={t("chat.modelNamePlaceholder")}
                   className="min-w-0 flex-1 rounded-md border border-border bg-input px-1.5 py-0.5 text-xs"
                 />
-                <button
-                  type="submit"
-                  disabled={!NAME.test(typed.trim())}
-                  className="rounded-md px-1.5 text-xs hover:bg-accent disabled:opacity-50"
-                >
+                <Button type="submit" size="sm" variant="ghost" disabled={!NAME.test(typed.trim())}>
                   {t("chat.use")}
-                </button>
+                </Button>
               </form>
             )}
           </div>

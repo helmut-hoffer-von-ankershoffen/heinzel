@@ -1,10 +1,11 @@
-import { ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
+import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
-import { helpButton, PlayerHelp } from "./PlayerHelp";
+import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
 import { stop } from "./store";
 import {
@@ -31,6 +32,9 @@ export function StreamPlayer(props: Props) {
   const [account, setAccount] = useState(readYouTubeAccount);
   const [attempt, setAttempt] = useState(0);
   const alternative = accountStream(props.stream);
+  const desktop =
+    typeof (window as Window & { heinzelDesktop?: { lifecycle?: unknown } }).heinzelDesktop?.lifecycle === "function";
+  const activeAccount = !desktop && account && alternative !== null;
   const chooseAccount = (next: boolean) => {
     rememberYouTubeAccount(next);
     setAccount(next);
@@ -39,9 +43,11 @@ export function StreamPlayer(props: Props) {
     <Player
       key={`${account}:${attempt}`}
       {...props}
-      stream={account && alternative ? alternative : props.stream}
-      account={account && alternative !== null}
-      chooseAccount={alternative ? chooseAccount : undefined}
+      stream={activeAccount && alternative ? alternative : props.stream}
+      account={activeAccount}
+      desktop={desktop}
+      copyUrl={desktop && alternative ? `https://www.youtube.com/watch?v=${props.stream.video}` : undefined}
+      chooseAccount={!desktop && alternative ? chooseAccount : undefined}
       retry={() => setAttempt((was) => was + 1)}
     />
   );
@@ -54,16 +60,34 @@ function Player({
   account,
   chooseAccount,
   retry,
-}: Props & { account: boolean; chooseAccount?: (next: boolean) => void; retry: () => void }) {
+  desktop,
+  copyUrl,
+}: Props & {
+  account: boolean;
+  desktop: boolean;
+  copyUrl?: string;
+  chooseAccount?: (next: boolean) => void;
+  retry: () => void;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [help, setHelp] = useState(false);
   const [hasPlayed, setHasPlayed] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const volume = useRef(0);
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
   const deviceVolume = isIOS();
+  const copyLink = async () => {
+    try {
+      if (!copyUrl || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(copyUrl);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
 
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
@@ -137,7 +161,7 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+    <PlayerCard title={soundscape.title} watchUrl={desktop ? undefined : stream.watch_url} host="YouTube">
       <div className="group/video relative">
         {blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
@@ -163,29 +187,39 @@ function Player({
           actions={
             <>
               {chooseAccount && (
-                <button type="button" onClick={() => chooseAccount(!account)} className={helpButton}>
-                  {account ? <EyeOff aria-hidden className="size-3.5" /> : <LogIn aria-hidden className="size-3.5" />}
+                <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
                   {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-                </button>
+                </PaneAction>
               )}
-              <button type="button" onClick={retry} className={helpButton}>
-                <RotateCw aria-hidden className="size-3.5" />
+              {copyUrl && (
+                <PaneAction icon={Copy} onClick={() => void copyLink()}>
+                  {t("sound.copyYouTubeLink")}
+                </PaneAction>
+              )}
+              <PaneAction icon={RotateCw} onClick={retry}>
                 {t("sound.retryPlayer")}
-              </button>
-              <a
-                href={stream.watch_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={stop}
-                className={helpButton}
-              >
-                <ExternalLink aria-hidden className="size-3.5" />
-                {t("sound.playOnYouTube")}
-              </a>
+              </PaneAction>
+              {!desktop && (
+                <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
+                  {t("sound.playOnYouTube")}
+                </PaneAction>
+              )}
             </>
           }
         >
-          <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+          <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+          {copyState !== "idle" && (
+            <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
+          )}
+          {copyState === "failed" && copyUrl && (
+            <input
+              aria-label={t("sound.videoLink")}
+              className="w-full rounded border border-border bg-transparent px-1"
+              readOnly
+              value={copyUrl}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
         </PlayerHelp>
       </div>
     </PlayerCard>

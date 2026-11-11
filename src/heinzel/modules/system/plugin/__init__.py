@@ -17,8 +17,10 @@ from heinzel.modules.system.plugin._models import (
     PluginLayer,
     PluginOperation,
     PluginPending,
+    PluginRepair,
     PluginSearch,
     PluginSettings,
+    PluginShowcase,
 )
 from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
 
@@ -28,6 +30,13 @@ def render_change(change: PluginChange) -> RenderableType:
     from heinzel.modules.system.plugin._render import render_change  # noqa: PLC0415 - CLI presentation is loaded only when rendered
 
     return render_change(change)
+
+
+def render_repair(repair: PluginRepair) -> RenderableType:
+    """Each required plugin a repair installed or couldn't install, then what it means."""
+    from heinzel.modules.system.plugin._render import render_repair  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_repair(repair)
 
 
 def render_list(plugins: list[PluginInfo]) -> RenderableType:
@@ -88,6 +97,21 @@ def list_(
     return service.installed(fresh=fresh)
 
 
+@module.operation(heads=CHANGES)
+def showcase(
+    service: PluginService,
+    spec: Annotated[str, Field(description="The selected catalog plugin's install specification.")],
+) -> PluginShowcase:
+    """Preview an owning public plugin's UI and CLI screenshots without installing it.
+
+    Raises:
+        HeinzelError: If the specification or public media is unsafe.
+        OSError: If public source metadata cannot be read.
+        ValueError: If public metadata is malformed.
+    """
+    return service.showcase(spec)
+
+
 @module.operation(read_only=False, heads=CHANGES, render=render_change)
 def add(
     service: PluginService,
@@ -132,6 +156,26 @@ def add(
     if prompter.confirm(f"Install {name} now?", default=False):
         return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(read_only=False, heads=CHANGES, render=render_repair)
+def repair(
+    service: PluginService,
+    automatic: Annotated[
+        bool,
+        Field(
+            description="As the automatic updater asks: try each missing plugin once per version of the plugin that "
+            "requires it, so a failure isn't retried every half hour."
+        ),
+    ] = False,
+) -> PluginRepair:
+    """Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+
+    A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
+    first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+    in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+    """
+    return service.repair(automatic=automatic)
 
 
 @module.operation(heads=CHANGES)
@@ -235,6 +279,9 @@ def search(
             "All plugins if omitted."
         ),
     ] = "",
+    refresh: Annotated[
+        bool, Field(description="Ask GitHub again instead of using the answer kept for the last minute.")
+    ] = False,
 ) -> PluginSearch:
     """Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
@@ -244,7 +291,7 @@ def search(
     PyPI has no keyword search, so it is not queried. Community
     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
     """
-    return service.search(text)
+    return service.search(text, refresh=refresh)
 
 
 __all__ = [

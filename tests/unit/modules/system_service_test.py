@@ -302,7 +302,7 @@ def test_the_release_source_reads_the_repository_from_the_installation(tmp_path)
     assert (
         github_releases(
             Installation(Progress(), prefix=tmp_path, uv="uv"),
-            SimpleNamespace(settings=SimpleNamespace(update_channel="stable")),
+            SimpleNamespace(fresh_settings=lambda: SimpleNamespace(update_channel="stable")),
         ).repository
         == DEFAULT_REPOSITORY
     )

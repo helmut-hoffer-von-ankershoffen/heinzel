@@ -56,6 +56,17 @@ def _no_real_homebrew(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ToolHost, "system", classmethod(lambda cls: ready_everywhere()))
 
 
+@pytest.fixture(autouse=True)
+def no_catalog_feed_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read the published plugin catalog from the network; they inject their own."""
+
+    def refuse(url: str, etag: str | None) -> tuple[int, str | None, bytes]:
+        message = "no network in tests"
+        raise OSError(message)
+
+    monkeypatch.setattr("heinzel.modules.system.plugin._feed._fetch", refuse)
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Config.empty().settings(Settings, "hz")
@@ -315,6 +326,16 @@ def pytest_configure(config: pytest.Config) -> None:
         and config.getoption("markexpr") == "e2e"
     ):
         config.pluginmanager.register(_Diagnostics(), "heinzel-e2e-immediate-diagnostics")
+
+
+@pytest.hookimpl(specname="pytest_configure")
+def pytest_configure_quarantine(config: pytest.Config) -> None:
+    """Known flakes in tests/quarantine.toml leave the required jobs for the Quarantine lane (scripts/quarantine.py)."""
+    try:
+        from tests import _quarantine
+    except ImportError:  # a copy of this file elsewhere (e2e scheduling) has no `tests` package and no registry
+        return
+    _quarantine.configure(config, _ROOT)
 
 
 class _SessionTiming:

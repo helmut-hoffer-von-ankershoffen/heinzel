@@ -38,8 +38,8 @@ it("sets up the profile worker only after explicit confirmation without a termin
   const { calls, container } = panel(true);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Set up reminder worker" }));
-  expect(screen.getByRole("alertdialog")).toHaveTextContent("at every login");
-  expect(screen.getByRole("alertdialog")).toHaveTextContent("separate consent");
+  expect(screen.getByRole("dialog")).toHaveTextContent("at every login");
+  expect(screen.getByRole("dialog")).toHaveTextContent("separate consent");
   expect(container.textContent).not.toContain("hz org");
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   await expectAccessible(container);
@@ -138,4 +138,21 @@ it("opens a meeting row into its detail with provider, a Join icon button, organ
   await user.click(screen.getByRole("button", { name: "Back to the week" }));
   expect(screen.queryByRole("article")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Plain/ })).toBeInTheDocument();
+});
+
+it("puts Close in the title row and every action in one bottom row, Today leading with its words", async () => {
+  panel(true);
+  const close = await screen.findByRole("button", { name: "Close calendar" });
+  expect(close.closest("[data-pane-chrome]")).not.toBeNull();
+  expect(close).toHaveTextContent("");
+  const row = (await screen.findByRole("group", { name: "Actions" })) as HTMLElement;
+  const buttons = [...row.querySelectorAll<HTMLElement>("button, a")];
+  expect(buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+    "Today",
+    "Previous week",
+    "Next week",
+    "Set up reminder worker",
+  ]);
+  expect(buttons[0]).toHaveTextContent("Today");
+  expect(buttons.slice(1).every((button) => button.textContent === "")).toBe(true);
 });

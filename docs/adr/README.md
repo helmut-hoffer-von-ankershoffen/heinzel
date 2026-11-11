@@ -120,6 +120,8 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0120](0120-channels-carry-notices-and-approval-claims.md) Channels carry notices and approval claims | proposed · 4 Nov<br>partial |  |
 | [0121](0121-confirm-each-captured-write-before-one-attempt.md) Confirm each captured write before one attempt | proposed · 4 Nov<br>partial |  |
 | [0122](0122-preserve-authoritative-chat-history.md) Preserve authoritative chat history independently of model context | proposed · 30 Oct<br>partial |  |
+| [0123](0123-plugin-previews-read-public-inert-metadata.md) Plugin previews read public inert metadata | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
+| [0124](0124-native-public-media-links-require-trusted-clicks.md) Native public media links require trusted clicks | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
 | [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
 | [0126](0126-calendar-reminders.md) Calendar reminder scheduling | proposed · 4 Nov<br>partial |  |
 | [0127](0127-publish-a-bounded-standing-draft-append-grant.md) Publish a bounded standing grant for draft append | proposed · 4 Nov<br>partial |  |
@@ -134,7 +136,9 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0136](0136-connectors-run-their-vendors-sign-in-in-the-app.md) Connectors run their vendor's sign-in in the app | accepted · 7 Nov<br>partial |  |
 | [0137](0137-tagged-git-plugins-update-automatically-with-what-they-need.md) Tagged git plugins update automatically, with what they need | proposed · 7 Nov<br>built |  |
 | [0138](0138-log-structured-events-with-stdlib-logging.md) Log structured events with stdlib logging | proposed · 7 Nov<br>partial |  |
+| [0140](0140-isolate-sidebar-browser-content-in-the-desktop.md) Isolate sidebar browsing from the workspace | proposed · 5 Nov<br>partial |  |
 | [0141](0141-task-tracking-is-a-capability-the-tracker-is-a-connector.md) Task tracking is a capability; the tracker behind it is a connector | proposed · 7 Nov<br>partial | [#572](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/572) |
+| [0142](0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md) MCP over HTTP takes per-agent bearer tokens with read and write scopes | proposed · 8 Nov<br>built |  |
 
 </div>
 <!-- adr-index:end -->

@@ -224,7 +224,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         <Conversation chat={chat} empty={location.pathname === "/" ? t("today.empty") : undefined} />
         <div ref={end} />
       </div>
-      <div className="chat-panel-composer border-t border-border p-3">
+      <hr className="shrink-0 border-border" />
+      <div className="chat-panel-composer p-3">
         <Composer
           chat={chat}
           context={`route:${location.pathname}`}

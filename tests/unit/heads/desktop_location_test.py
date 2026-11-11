@@ -344,7 +344,7 @@ def test_a_pending_journal_keeps_the_record_for_recovery(mac):
 
 def _events(caplog) -> list[tuple[str, str, object]]:
     return [
-        (record.event, record.phase, getattr(record, "outcome", None))
+        (record.event, record.phase, getattr(record, "state", None) or getattr(record, "outcome", None))
         for record in caplog.records
         if record.name == "heinzel.desktop"
     ]
@@ -384,11 +384,11 @@ def test_a_failed_step_logs_the_same_two_lines_the_person_reads(mac, caplog):
     with pytest.raises(desktop.LeftoverInstallError) as failure:
         desktop.install_desktop("1.0.0", executable, home=home)
     assert _events(caplog)[-2:] == [
-        ("desktop.install.forget", "end", "failed"),
-        ("desktop.install.run", "end", "failed"),
+        ("desktop.install.forget", "end", "error"),
+        ("desktop.install.run", "end", "error"),
     ]
     failed = [r for r in caplog.records if r.phase == "end"][-1]
     assert failure.value.problem is not None
     assert (failed.happened, failed.action) == (failure.value.problem.happened, failure.value.problem.action)
-    assert failed.error == "LeftoverInstallError"
-    assert failed.levelname == "WARNING"
+    assert failed.error_type == "LeftoverInstallError"
+    assert failed.levelname == "ERROR"

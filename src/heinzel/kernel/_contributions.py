@@ -395,13 +395,42 @@ class DetailLine(_Data):
     icon: Icon | None = Field(default=None, description="Optional semantic state icon.")
 
 
+MAX_PANE_LINE = 60
+"""A pane's status line: one short sentence that says the state first, then the one thing to do."""
+_INTERNAL_WORDS = re.compile(
+    r"\b(?:requested|applied|verified|owning|apply|intent|mapping|origin|handler|readiness)\b", re.IGNORECASE
+)
+
+
+def _plain_words(value: str) -> str:
+    """Refuse the backend's state words in a line the person reads; say what they see instead.
+
+    Raises:
+        ValueError: If the line uses an internal state word such as `requested` or `origin`.
+    """
+    if found := _INTERNAL_WORDS.search(value):
+        msg = f"say what the person sees, not the internal word {found.group(0)!r}"
+        raise ValueError(msg)
+    return value
+
+
+PaneLine = Annotated[
+    str,
+    BeforeValidator(_one_line),
+    Field(min_length=1, max_length=MAX_PANE_LINE),
+    AfterValidator(_plain_words),
+]
+"""One pane status line of at most 60 characters in the person's words (design/README.md, pane microcopy)."""
+
+
 class ToggleControl(_Data):
     """A provider-owned toggle whose deliberate change authorizes exactly one server-resolved operation."""
 
     label: Text = Field(description="The action the person enables or disables.")
     checked: StrictBool = Field(description="Actual verified state, never an optimistic requested value.")
     requested: StrictBool | None = Field(
-        default=None, description="The requested state when it differs from verified readiness; never a success claim."
+        default=None,
+        description="The person's choice, which the switch shows; `checked` alone says whether it is live.",
     )
     enable: RunOperation = Field(description="The declaring module's operation that enables the feature.")
     disable: RunOperation = Field(description="The declaring module's operation that disables the feature.")
@@ -413,6 +442,18 @@ class ToggleControl(_Data):
         max_length=16,
         description="Loaded settings that must match after the existing restart/apply flow, keyed as section.key. "
         "These are verification expectations, never permission to edit arbitrary settings.",
+    )
+    status: PaneLine | None = Field(
+        default=None,
+        description="The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.",
+    )
+    problem: PaneLine | None = Field(
+        default=None,
+        description="One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; "
+        "its presence offers Try again.",
+    )
+    explanation: Body | None = Field(
+        default=None, description="The longer explanation, shown only on demand under Details."
     )
     sign_in_url: Link | None = Field(
         default=None,

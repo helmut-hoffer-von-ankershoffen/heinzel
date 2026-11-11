@@ -23,7 +23,7 @@ export function AutoUpdateToggle() {
   const save = useSetSetting();
   const labelId = useId();
   return (
-    <div className="flex items-start gap-3 border-t border-border/70 pt-2">
+    <div className="flex items-start gap-3 pt-2">
       <div className="min-w-0 flex-1">
         <p id={labelId}>{t("autoUpdate.setting")}</p>
         {development && <p className="text-xs text-muted-foreground">{development}</p>}

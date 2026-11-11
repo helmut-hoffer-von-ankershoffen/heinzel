@@ -79,6 +79,32 @@ def test_ci_browser_dependencies_use_the_verified_primary_archive_before_install
     assert workflow["jobs"]["e2e"]["timeout-minutes"] == 15
 
 
+def test_candidate_ubuntu_browser_lanes_use_the_docs_verified_mirror():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
+    steps = workflow["jobs"]["e2e"]["steps"]
+    [primary] = [step for step in steps if step.get("name") == "Use Ubuntu's primary archive for browser dependencies"]
+    [alternate] = [
+        step
+        for step in steps
+        if step.get("name") == "Select the verified alternate mirror for Ubuntu browser dependencies"
+    ]
+    [installer] = [step for step in steps if step.get("run") == "make test-browser-deps"]
+    [docs_alternate] = [
+        step
+        for step in docs["jobs"]["site"]["steps"]
+        if step.get("name") == "Select the verified alternate mirror for Docs dependencies"
+    ]
+    assert alternate["run"] == docs_alternate["run"] == "make -f scripts/ubuntu_browser_mirror.mk"
+    assert alternate["if"] == (
+        "github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && matrix.os == 'ubuntu-24.04' && "
+        "(matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))"
+    )
+    assert "continue-on-error" not in alternate
+    assert steps.index(primary) < steps.index(alternate) < steps.index(installer)
+    assert workflow["jobs"]["e2e"]["timeout-minutes"] == 15
+
+
 def test_docs_browser_dependencies_use_primary_archive_without_changing_signed_package_sources(tmp_path):
     workflow = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
     site = workflow["jobs"]["site"]

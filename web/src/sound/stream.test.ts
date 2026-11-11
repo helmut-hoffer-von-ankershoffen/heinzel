@@ -43,7 +43,7 @@ describe("the stream's player URL", () => {
     { embed_url: "javascript:alert(1)" },
     { embed_url: "not a url" },
     { video: "tRsQ/../x12", embed_url: `${ORIGIN}/embed/tRsQ/../x12` },
-  ])("is refused when it isn't the embed of its own frame origin: %o", (change) => {
+  ])("is refused when it isn't the embed of its own frame origin: case %# %o", (change) => {
     expect(embedSrc({ ...fm, ...change })).toBeNull();
   });
 });

@@ -427,7 +427,7 @@ def promote(directory: Path, tag: str, root: Path = ROOT) -> None:
         raise ReleaseError(msg)
     try:
         manifest = json.loads(manifest_path.read_bytes())
-    except (ValueError, UnicodeError) as error:
+    except ValueError as error:
         msg = "The signed release manifest is invalid."
         raise ReleaseError(msg) from error
     if (

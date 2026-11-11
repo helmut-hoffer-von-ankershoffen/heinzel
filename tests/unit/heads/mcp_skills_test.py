@@ -6,6 +6,7 @@ from mcp import Client
 
 from heinzel import HeinzelError, Module, Skills
 from heinzel.heads import mcp
+from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit
@@ -45,7 +46,8 @@ def test_http_and_chat_servers_offer_no_skills(make_kernel, tmp_path, transport,
     chat = kernel.resolve(ChatService).open(None).id if chat is not None else None
 
     async def listed() -> tuple[int, int]:
-        async with Client(mcp.build(kernel, transport, chat=chat)) as client:
+        tokens = McpTokens(tmp_path / "mcp") if transport != "stdio" else None
+        async with Client(mcp.build(kernel, transport, chat=chat, tokens=tokens)) as client:
             return len((await client.list_prompts()).prompts), len((await client.list_resources()).resources)
 
     assert anyio.run(listed) == (0, 0)

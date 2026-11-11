@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { shouldRefresh, stopWithReport } from "../src/shutdown.js";
+import { createPublicMediaHandler } from "../src/public-media.js";
 import { installSignalQuit } from "../src/signal-quit.js";
 
 const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
@@ -63,8 +64,9 @@ function quitHarness(result, rejects = false) {
     ipcMain: { handle() {} }, lifecycle: {},
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
+    createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
-    stopWithReport, shouldRefresh,
+    createPublicMediaHandler, stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
   return { proc, app, exits, dialogs, stops: () => stops };

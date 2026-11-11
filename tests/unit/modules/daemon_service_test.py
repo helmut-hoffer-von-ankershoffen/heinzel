@@ -260,6 +260,31 @@ def test_the_plan_is_told_first_so_a_head_can_count_steps(make, bin_dir):
     assert {event["state"] for event in phased.events[:5]} == {"pending"}
 
 
+def test_restart_tells_its_steps_and_logs_them_as_the_restart(make, bin_dir, caplog):
+    service = make(runner=Runner(bin_dir), install_notifier=lambda: None)
+    service.install(timedelta(minutes=5))
+    phased = progress_of(service)
+    caplog.set_level("INFO", logger="heinzel.operation")
+    assert service.restart().restarted is True
+    assert [event["id"] for event in phased.events[:4]] == ["session", "unit", "load", "verify"]
+    assert ("verify", "done") in steps(phased)
+    outcomes = [
+        r
+        for r in caplog.records
+        if r.name == "heinzel.operation"
+        and r.getMessage() == "operation.step.outcome"
+        and r.operation == "system.daemon.restart"
+    ]
+    assert "verify" in [r.step for r in outcomes if r.outcome == "done"]
+
+
+def test_restarting_a_daemon_that_is_not_installed_tells_no_steps(make):
+    service = make(runner=Refuses())
+    phased = progress_of(service)
+    assert service.restart().restarted is False
+    assert phased.events == []
+
+
 def test_install_tells_each_real_step_in_order(make, bin_dir):
     service = make(runner=Runner(bin_dir), install_notifier=lambda: None)
     phased = progress_of(service)

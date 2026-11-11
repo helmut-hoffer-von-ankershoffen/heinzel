@@ -15,9 +15,6 @@ APP_INSTALLED = "Installed  {path}"
 RUNNING_APP = f"{APP} is running: the desktop app is open. Say hello in the chat; hz app open opens it again."
 RUNNING_WEB = f"{APP} is running: it opens in your browser. Say hello in the chat."
 RUNNING_BACKGROUND = f"{APP} is running. Run hz ui open to open it."
-NOT_STARTED = (
-    "Installed hz {version} at {path}. Nothing started.\nNext: uvx heinzel@latest (asks), or uvx heinzel@latest --yes."
-)
 
 APP_DOWNLOAD_FAILED = (
     f"The desktop app could not be installed, so {APP} opens in your browser.\nRun hz app install later to try again."

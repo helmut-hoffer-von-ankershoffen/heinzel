@@ -106,10 +106,14 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
+    "scripts/ubuntu_browser_mirror.mk": "runs the Core browser CI mirror helper; plugin workflows omit that setup",
+    "scripts/ubuntu_browser_mirror.py": "validates Ubuntu sources for Core browser CI; plugins own their browser setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
     "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
+    "scripts/quarantine.py": "reads core's tests/quarantine.toml for its non-blocking lane; plugin CI has no registry",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
     ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
@@ -161,6 +165,13 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/prepare_release_ui.py": "checks the Core app CLI for its acceptance harness; plugins have neither",
     ".github/workflows/focused-job.yml": "dispatched diagnostic of one core test selection on one hosted runner",
     "scripts/focused_job.py": "validates and runs the core focused-job workflow's selection; plugins have none",
+    "scripts/affected.py": "maps affected Core production, test and browser paths for scope review",
+    "scripts/ci_workload.py": "plans Core focused scopes and canonical full release candidates",
+    "scripts/focused_plan.py": "resolves the Core's administrator-reviewed focused workflow selection",
+    "scripts/focused_coverage.py": "produces and validates Core scoped coverage evidence",
+    "scripts/focused_coverage.py.lock": "pins the Core scoped coverage producer environment",
+    "scripts/focused_gate.py": "verifies exact Core focused workflow results from a protected checkout",
+    "scripts/focused_gate.py.lock": "pins the Core scoped coverage judge environment",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
@@ -248,6 +259,10 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
 }
 
 
+# The optional host queue reads these exact variables outside this repository.
+HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
+
+
 def env_names(text: str) -> set[str]:
     """Every HZ_* name in a text."""
     return set(ENV_NAME.findall(text))
@@ -277,6 +292,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for key in type(settings).model_fields
     }
     code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
+    known |= HOST_GATE_ENV_READS
     known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
     used = {
         (name, path)

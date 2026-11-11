@@ -355,6 +355,7 @@ export function Composer({
           size="icon"
           disabled={!message.trim() || chat.live != null || chat.loading || creating || Boolean(initialPersonalMessage)}
           aria-label={t("chat.send")}
+          title={t("chat.send")}
         >
           <Send aria-hidden />
         </Button>
