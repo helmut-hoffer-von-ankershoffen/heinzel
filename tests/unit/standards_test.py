@@ -108,6 +108,8 @@ SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
+    "scripts/ubuntu_browser_mirror.mk": "runs the Core browser CI mirror helper; plugin workflows omit that setup",
+    "scripts/ubuntu_browser_mirror.py": "validates Ubuntu sources for Core browser CI; plugins own their browser setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
     "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
