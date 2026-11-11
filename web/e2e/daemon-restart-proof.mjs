@@ -45,7 +45,7 @@ const handler = (req, res, next) => {
   unexpected.push(`${req.method} ${req.url}`);
   res.writeHead(500).end("unexpected request");
 };
-const { server, origin } = await startFixture(handler);
+const { server, origin, denied } = await startFixture(handler);
 const outcomes = [];
 try {
   for (const [name, engine] of [
@@ -113,7 +113,8 @@ try {
     }
   }
   assert.deepEqual(unexpected, []);
-  console.log(JSON.stringify({ outcomes, unexpected }));
+  assert.deepEqual(denied, []);
+  console.log(JSON.stringify({ outcomes, unexpected, denied }));
 } finally {
   active?.end();
   await server.close();
