@@ -433,3 +433,17 @@ def test_a_refused_proposal_is_a_tool_error(kernel):
     kernel.bind(ActionGate, Refusing())
     with pytest.raises(ToolError, match=r"the most it takes; tell \[email\]"):
         tools(kernel)["notes_publish"](title="Week 43")
+
+
+def test_a_bug_while_proposing_logs_an_event_with_the_tool_and_the_trace(kernel, caplog):
+    class Buggy(ActionGate):
+        def propose(self, call):  # type: ignore[override]
+            msg = "secret mira@example.org"
+            raise RuntimeError(msg)
+
+    kernel.bind(ActionGate, Buggy())
+    with pytest.raises(ToolError, match="RuntimeError"):
+        tools(kernel)["notes_publish"](title="Week 43")
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "mcp.chat_tool.failed"]
+    assert event.tool == "notes_publish"
+    assert event.exc_info is not None

@@ -492,7 +492,7 @@ def chat_tool(kernel: Kernel, item: Exposed, session: str, *, local: bool) -> Ca
         except HeinzelError as exc:
             raise ToolError(redact_emails(str(exc))) from exc
         except Exception as exc:  # a bug's message may hold anything: the agent gets its type only
-            log.exception("Chat tool %s failed", item.name)
+            log_event(log, "mcp.chat_tool.failed", level=logging.ERROR, exc_info=True, tool=item.name)
             msg = f"{item.name} failed with a bug ({type(exc).__name__}); the person can see the log."
             raise ToolError(msg) from exc
         return redact_emails(
@@ -518,7 +518,7 @@ def authorized_chat_confirmation(kernel: Kernel, item: Exposed, session: str) ->
         except HeinzelError as exc:
             raise ToolError(redact_emails(str(exc))) from exc
         except Exception as exc:
-            log.exception("Authorized confirmation failed for chat %s", session)
+            log_event(log, "mcp.chat_confirmation.failed", level=logging.ERROR, exc_info=True, session=session)
             msg = "The authorized confirmation failed; no approval token was returned"
             raise ToolError(msg) from exc
 
