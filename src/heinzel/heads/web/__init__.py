@@ -254,7 +254,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     app.state.lifecycle = endpoints.state.lifecycle
     add_pairing(endpoints, paired)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
-    add_updates(endpoints, kernel, static, restartable=restart is not None, busy=app.state.auto_update.busy)
+    add_updates(endpoints, kernel, static, restartable=restart is not None, busy=_update_busy(app.state.auto_update))
     add_auto_update(endpoints, app.state.auto_update)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
 
@@ -486,6 +486,20 @@ def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
 def session_url(port: int, token: str, base: str | None = None) -> str:
     """The URL that opens the app with its token in the fragment, which browsers never send to a server."""
     return f"{base or f'http://{HOST}:{port}'}/#token={token}"
+
+
+def _update_busy(updater: AutoUpdater) -> Callable[[], bool]:
+    """Work an automatic restart waits for: a chat answer, an install, a daemon job, or the updater's own apply.
+
+    From the install until its verify or roll-back (`applying`, then `restarting_to`), a window that restarted this
+    server would cut the automatic update in half (ADR 0116).
+    """
+
+    def busy() -> bool:
+        plan = updater.plan
+        return plan.applying or plan.restarting_to is not None or updater.busy()
+
+    return busy
 
 
 def serve(  # noqa: PLR0913 - all but the kernel by keyword

@@ -265,3 +265,14 @@ def test_the_status_says_when_server_work_holds_an_automatic_restart(make_kernel
         activity.leave("POST /api/chat")
     assert (held["installed"], held["idle"]) == ("999.0.0", False)
     assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True
+
+
+@pytest.mark.parametrize("step", ["applying", "restarting_to"])
+def test_an_automatic_update_in_progress_holds_an_automatic_restart(make_kernel, tmp_path, step):
+    app = client(make_kernel, tmp_path, installation=Upgraded(tmp_path, "999.0.0"))
+    plan = app.app.state.auto_update.plan
+    setattr(plan, step, True if step == "applying" else "999.0.0")
+    held = app.get("/api/update-status", headers=AUTH).json()
+    assert (held["installed"], held["idle"]) == ("999.0.0", False)
+    setattr(plan, step, False if step == "applying" else None)
+    assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True
