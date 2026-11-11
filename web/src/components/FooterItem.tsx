@@ -83,7 +83,7 @@ export function FooterItem({
   actionRow?: { align?: "start" | "end"; words?: "lead" | "all" };
   /**
    * Why this pane may not follow the pane structure (content, divider, one row of action buttons). Only the
-   * version pane, whose release notes are prose with their own links; allowlisted in pane-actions-standards.test.ts.
+   * version pane, whose release notes are prose with their own links; allowlisted in paneActionsStandards.test.ts.
    */
   freeform?: string;
 }) {

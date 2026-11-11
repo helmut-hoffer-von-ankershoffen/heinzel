@@ -1,7 +1,7 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
 // These are Chromium/WebKit emulations, not physical iPhone Safari.
 // Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
-// scroll, sound and notification flows), or "share-chromium" / "share-webkit"; without it every viewport and phone flow runs.
+// scroll, sound and notification flows), "updates-actions", or "share-chromium" / "share-webkit".
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -37,7 +38,7 @@ const cases = [
 assert.ok(
   section === "all" ||
     section === "phone" ||
-    ["share-chromium", "share-webkit"].includes(section) ||
+    ["updates-actions", "share-chromium", "share-webkit"].includes(section) ||
     cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
 );
@@ -241,6 +242,12 @@ async function footerPane(page, id, label, ready) {
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
     );
   }
+  const pane = await openFooterPane(page, id, label, "tap");
+  await assertOneActionRow(pane, `${id} pane`);
+  return pane.locator("..");
+}
+
+async function openFooterPane(page, id, label, activate) {
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
   // A missing status item is still loading, not necessarily in More. Its hidden measurement host and More's
   // retained button are not actionable. Wait for either the item or its actual overflow path to be visible.
@@ -250,14 +257,12 @@ async function footerPane(page, id, label, ready) {
       `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button[aria-expanded="false"]`,
     )
     .filter({ visible: true });
-  // Resolve the currently actionable path as part of the real touch action. A snapshot of direct visibility
-  // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
-  await direct.or(more).first().tap();
-  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
+  // A snapshot of direct visibility can become obsolete when a provider changes footer capacity before activation.
+  await direct.or(more).first()[activate]();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct[activate]();
   const pane = page.getByRole("region", { name: label, exact: true });
   await pane.waitFor();
-  await assertOneActionRow(pane, `${id} pane`);
-  return pane.locator("..");
+  return pane;
 }
 
 /**
@@ -269,6 +274,11 @@ async function assertOneActionRow(pane, name) {
     const row = element.querySelector("[data-pane-actions]");
     const actions = row ? [...row.querySelectorAll("[data-pane-action]")] : [];
     return {
+      pointer: {
+        coarse: matchMedia("(pointer: coarse)").matches,
+        anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+        touchPoints: navigator.maxTouchPoints,
+      },
       words: row?.getAttribute("data-words") ?? null,
       actions: actions.map((action) => {
         const box = action.getBoundingClientRect();
@@ -292,10 +302,104 @@ async function assertOneActionRow(pane, name) {
     for (const action of rest)
       assert.ok(action.kind === "icon" && action.label, `${name}: ${action.text} is a named icon`);
   for (const action of facts.actions)
-    assert.ok(action.height >= 44 && action.width >= 44, `${name}: ${action.label ?? action.text} is under 44px`);
+    assert.ok(
+      action.height >= 44 && action.width >= 44,
+      `${name}: ${action.label ?? action.text} is ${action.width}×${action.height}px, under 44px (${JSON.stringify(facts.pointer)})`,
+    );
+}
+
+async function updateActionTargets() {
+  const profiles = [
+    { name: "desktop-fine", width: 1280, height: 800, touch: false, compact: false },
+    { name: "portrait-fine", width: 390, height: 667, touch: false, compact: true },
+    { name: "landscape-fine", width: 932, height: 430, touch: false, compact: true },
+    { name: "desktop-coarse", width: 1280, height: 800, touch: true, compact: true },
+  ];
+  const measurements = [];
+  for (const { name, width, height, touch, compact } of profiles) {
+    const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, serviceWorkers: "block" });
+    try {
+      await page.route("**/api/update-status", (route) =>
+        route.fulfill({ json: { current: "0.7.30", available: false, supported: true, check_failed: true } }),
+      );
+      await page.route("**/api/auto-update", (route) => route.fulfill({ json: { enabled: false, phase: "off" } }));
+      await page.goto(url);
+      await page.locator("#splash").waitFor({ state: "hidden" });
+      const pane = await openFooterPane(page, "@updates", "Updates", touch ? "tap" : "click");
+      const row = pane.locator("[data-pane-actions]");
+      const manual = row.getByRole("button", { name: "Manually update…", exact: true });
+      const retry = row.getByRole("button", { name: "Check again", exact: true });
+      await manual.waitFor();
+      await retry.waitFor();
+      if (compact) await row.evaluate((element) => element.style.setProperty("--spacing", "3px"));
+      const facts = await row.evaluate((element) => ({
+        width: innerWidth,
+        height: innerHeight,
+        fine: matchMedia("(pointer: fine)").matches,
+        coarse: matchMedia("(pointer: coarse)").matches,
+        anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+        touchPoints: navigator.maxTouchPoints,
+        spacing: getComputedStyle(element).getPropertyValue("--spacing").trim(),
+        targets: [...element.querySelectorAll("button[data-pane-action]")].map((button) => {
+          const { left, right, top, bottom, width, height } = button.getBoundingClientRect();
+          const middleX = (left + right) / 2;
+          const middleY = (top + bottom) / 2;
+          const edges = [
+            [left + 2, middleY],
+            [right - 2, middleY],
+            [middleX, top + 2],
+            [middleX, bottom - 2],
+          ];
+          return {
+            kind: button.getAttribute("data-pane-action"),
+            width,
+            height,
+            edgesHit: edges.every(([x, y]) => button.contains(document.elementFromPoint(x, y))),
+          };
+        }),
+      }));
+      measurements.push({ name, ...facts });
+      writeFileSync(join(shots, "updates-action-targets.json"), `${JSON.stringify(measurements, null, 2)}\n`);
+      const detail = JSON.stringify(measurements.at(-1));
+      assert.equal(facts.width, width, detail);
+      assert.equal(facts.height, height, detail);
+      assert.equal(facts.fine, !touch, detail);
+      assert.equal(facts.anyCoarse, touch, detail);
+      assert.deepEqual(
+        facts.targets.map((target) => target.kind),
+        ["text", "icon"],
+        detail,
+      );
+      if (compact) {
+        assert.equal(facts.spacing, "3px", detail);
+        assert.ok(
+          facts.targets.every((target) => target.height >= 44 && target.width >= 44),
+          detail,
+        );
+      } else {
+        assert.ok(
+          facts.targets.every((target) => target.height === 32),
+          detail,
+        );
+        assert.equal(facts.targets[1].width, 32, detail);
+      }
+      assert.ok(
+        facts.targets.every((target) => target.edgesHit),
+        detail,
+      );
+      await page.screenshot({ path: join(shots, `updates-actions-${name}.png`) });
+    } finally {
+      await page.close();
+    }
+  }
+  return measurements;
 }
 
 try {
+  if (section === "all" || section === "updates-actions") {
+    stage("updates-actions");
+    result.updateActions = await updateActionTargets();
+  }
   if (section === "share-chromium" || section === "share-webkit") {
     stage("phone-share");
     // A synthetic status exercises the real footer component without a plugin or a private URL.
@@ -424,6 +528,7 @@ try {
     });
     const page = await context.newPage();
     await contributePanel(page);
+    const galleryRequests = await contributeGallery(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
       const response = await fetchOnce(route);
@@ -656,6 +761,7 @@ try {
           .getByRole("button", { name: settingsPage.title, exact: true })
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      if (settingsPage.id === "plugins") await exercisePluginGallery(page, galleryRequests, shots, spec.name);
       if (settingsPage.id === "web-server") {
         const restart = settingsDialog.getByRole("button", { name: "Restart web server", exact: true });
         await assertTouchTarget(restart, "Restart web server", spec.name);
@@ -1478,11 +1584,15 @@ try {
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
+    // The private-player switch remounts Help. Open it, then tap Help again before using the header link.
     await playbackHelp.tap();
-    const [youtubePage] = await Promise.all([
-      soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Open on YouTube" }).tap(),
-    ]);
+    await player.getByRole("region", { name: "Playback or sign-in trouble?" }).waitFor();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: true }).waitFor();
+    await playbackHelp.tap();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();
+    const openYouTube = player.getByRole("link", { name: "Open on YouTube" });
+    await assertTouchTarget(openYouTube, "Open on YouTube", "short-landscape");
+    const [youtubePage] = await Promise.all([soundPage.waitForEvent("popup"), openYouTube.tap()]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
     await player.waitFor({ state: "detached" });

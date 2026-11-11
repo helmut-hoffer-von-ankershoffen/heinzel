@@ -1,7 +1,6 @@
 """The doctor submodule of system: every module's health checks in one report, for people, agents and CI."""
 
 import os
-import shutil
 import sys
 from pathlib import Path
 from socket import gethostname
@@ -13,6 +12,7 @@ from rich.text import Text
 
 from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __version__
 from heinzel.kernel import ReleaseCache
+from heinzel.kernel._uv_locate import find_uv
 
 MINIMUM_PYTHON = (3, 12)
 
@@ -73,14 +73,14 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
         if sys.version_info >= MINIMUM_PYTHON
         else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),
     ]
-    uv = shutil.which("uv")
+    uv = find_uv()
     checks.append(
         Check(name="uv", status=Status.UP, detail=uv)
         if uv
         else Check(
             name="uv",
             status=Status.DEGRADED,
-            detail="uv is not on PATH; plugins and updates can't be managed",
+            detail="uv is not on PATH or in its standard install directories; plugins and updates can't be managed",
             fix="Install uv: https://docs.astral.sh/uv/",
         )
     )

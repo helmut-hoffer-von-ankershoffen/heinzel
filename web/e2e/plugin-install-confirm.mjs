@@ -1,4 +1,5 @@
-// Real browser: Install on a row low in Discover opens its confirmation under that row, inside the viewport and focused.
+// Real browser: Install on a row low in Discover asks once, in the operation dialog: in the viewport, focused on Cancel,
+// with no inline card under the row and no second restart question (owner 2026-11-08).
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 
@@ -73,30 +74,38 @@ try {
     await button.click();
     // Immediate feedback in the row itself, before the answer arrives.
     await row.getByRole("button", { name: "Checking…" }).waitFor();
-    const card = row.getByRole("group", { name: /Install this plugin/ });
-    await card.waitFor();
+    const confirm = page.getByRole("dialog", { name: "Install heinzel-p29", exact: true });
+    await confirm.waitFor();
     await page.waitForTimeout(150);
-    const box = await card.boundingBox();
+    const box = await confirm.boundingBox();
     const view = page.viewportSize();
     assert.ok(box && view, "confirmation has a box");
     assert.ok(
-      box.y >= 0 && box.y + Math.min(box.height, 40) <= view.height,
-      `${name}: confirmation is in the viewport ${JSON.stringify(box)}`,
+      box.x >= 0 && box.y >= 0 && box.x + box.width <= view.width && box.y + box.height <= view.height,
+      `${name}: the whole confirmation is in the viewport ${JSON.stringify(box)}`,
     );
-    const rowBox = await row.boundingBox();
-    assert.ok(box.y >= rowBox.y, `${name}: confirmation is under its own row`);
-    assert.equal(await page.locator("[data-plugin-confirm]").count(), 1);
+    assert.equal(await row.getByRole("group", { name: /Install this plugin/ }).count(), 0, "no inline card");
+    assert.equal(await page.locator("[data-plugin-confirm]").count(), 0, "no inline card");
+    assert.equal(await page.locator("[data-operation]").count(), 1, `${name}: one confirmation`);
+    assert.equal(await page.getByText(/Restart and apply|Restart the server to apply/).count(), 0);
     assert.equal(
-      await page.evaluate(() => document.activeElement?.hasAttribute("data-plugin-confirm")),
+      await confirm
+        .getByRole("button", { name: "Cancel", exact: true })
+        .evaluate((el) => el === document.activeElement),
       true,
-      `${name}: focus moved to the confirmation`,
+      `${name}: focus is on Cancel`,
+    );
+    assert.deepEqual(
+      await confirm.locator("[data-pane-actions] button").allTextContents(),
+      ["Cancel", "Install"],
+      `${name}: one row, Cancel then Install`,
     );
     assert.equal(
-      await card.locator("details").evaluate((element) => element.open),
+      await confirm.locator("details").evaluate((element) => element.open),
       false,
       "provenance starts collapsed",
     );
-    await page.screenshot({ path: `${shots}/plugin-install-inline-${name}.png` });
+    await page.screenshot({ path: `${shots}/plugin-install-confirm-${name}.png` });
     results.push({ name, y: Math.round(box.y), viewportHeight: view.height });
     await context.close();
   }

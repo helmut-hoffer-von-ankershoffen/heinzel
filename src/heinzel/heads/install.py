@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -33,6 +32,7 @@ from heinzel.heads._tool_install import (
     verify_offline_managed_python,
 )
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
+from heinzel.kernel._uv_locate import find_uv
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
 PROFILE_LATEST = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/latest"
@@ -339,9 +339,9 @@ def uv_executable() -> str:
     """Find the uv executable used by both the installer and launcher.
 
     Raises:
-        ValueError: If uv is not installed on PATH.
+        ValueError: If uv is not on PATH or in uv's standard install directories.
     """
-    executable = shutil.which("uv")
+    executable = find_uv()
     if executable is None:
         msg = "Install uv before installing the standard app"
         raise ValueError(msg)

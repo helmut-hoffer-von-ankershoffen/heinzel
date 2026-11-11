@@ -36,6 +36,21 @@ def test_pytest_ids_install_the_test_group_first():
     assert commands[1][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
 
 
+def test_only_explicit_python_ci_plan_accepts_up_to_32_ids():
+    ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(33)]
+    with pytest.raises(focused_job.SelectorError, match="at most 10"):
+        focused_job.plan("pytest", " ".join(ids[:11]), OUT)
+    assert focused_job.plan("pytest", " ".join(ids[:32]), OUT, max_ids=32)[-1][-32:] == ids[:32]
+    with pytest.raises(focused_job.SelectorError, match="at most 32"):
+        focused_job.plan("pytest", " ".join(ids), OUT, max_ids=32)
+    with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
+        focused_job.plan("vitest", "src/ci.test.ts", OUT, max_ids=32)
+    with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
+        focused_job.plan("pytest", ids[0], OUT, max_ids=33)
+    with pytest.raises(focused_job.SelectorError):
+        focused_job.plan("pytest", " ".join([*ids[:31], "--deselect=tests"]), OUT, max_ids=32)
+
+
 def test_vitest_files_run_with_or_without_the_web_prefix():
     files = sorted(p.relative_to(REPO / "web") for p in (REPO / "web" / "src").rglob("*.test.tsx"))
     assert files, "the web app has component tests"
@@ -46,6 +61,12 @@ def test_vitest_files_run_with_or_without_the_web_prefix():
         assert "--maxWorkers=2" in command
 
 
+@pytest.mark.parametrize("path", ["src/test/choices-standards.test.ts", "src/lib/mobile-standards.test.ts"])
+def test_vitest_accepts_hyphenated_owning_test_paths(path):
+    for selector in (path, f"web/{path}"):
+        assert focused_job.plan("vitest", selector, OUT)[0][-1] == path
+
+
 @pytest.mark.parametrize(
     ("kind", "selector"),
     [
@@ -53,11 +74,15 @@ def test_vitest_files_run_with_or_without_the_web_prefix():
         ("e2e", "--deselect=tests"),  # an option, not a test id
         ("e2e", "tests/unit/ci_test.py"),  # outside the end-to-end tests
         ("pytest", "tests/../../etc/passwd"),
+        ("pytest", "tests/unit/../other-test.py"),
+        ("pytest", "tests/unit/-option-test.py"),
         ("pytest", "tests/unit/ci_test.py;rm -rf ~"),
         ("pytest", "tests/unit/ci_test.py $(id)"),
         ("pytest", "tests/unit/does_not_exist_test.py"),
         ("pytest", " ".join(["tests/unit/ci_test.py"] * 11)),
         ("vitest", "src/nope.test.tsx"),
+        ("vitest", "--help"),
+        ("vitest", "web/-option.test.ts"),
         ("shell", "tests/unit/ci_test.py"),
     ],
 )

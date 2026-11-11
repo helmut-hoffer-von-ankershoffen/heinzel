@@ -88,6 +88,15 @@ describe("footer system health", () => {
     expect(screen.getByText("Needs repair now")).toBeInTheDocument();
     expect(screen.queryByText("warning 2")).not.toBeInTheDocument();
   });
+  it("shows a health detail once when the remedy repeats the same text", async () => {
+    const detail = "Apple's /usr/bin/git launcher is not verified yet.";
+    show({
+      status: "degraded",
+      checks: { "system.prerequisite": [{ name: "system: git", status: "degraded", detail, fix: detail }] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "System health, warning" }));
+    expect(screen.getAllByText(detail)).toHaveLength(1);
+  });
   it("limits the summary to three problems and directs remaining detail to Doctor", async () => {
     show({
       status: "degraded",
