@@ -14,6 +14,10 @@ const linkTags = (source: string) => [
 ];
 
 const LINKS: Record<string, { count: number; reason: string }> = {
+  "../components/public-media-link.tsx": {
+    count: 1,
+    reason: "KEEP: owner-declared gallery images and soundscapes, with the native trusted-click media handoff",
+  },
   "../components/PaneActions.tsx": {
     count: 2,
     reason: "KEEP: the link inside PaneAction to= and href=: the one place a link is a button",

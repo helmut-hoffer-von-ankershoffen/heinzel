@@ -536,6 +536,9 @@ jobs:
       - name: Use Ubuntu's primary archive for browser dependencies
         if: matrix.os == 'ubuntu-24.04' && (matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))
         run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+      - name: Select the verified alternate mirror for Ubuntu browser dependencies
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && matrix.os == 'ubuntu-24.04' && (matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))
+        run: make -f scripts/ubuntu_browser_mirror.mk
       - name: Install browser runtimes and host dependencies
         if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')
         run: make test-browser-deps

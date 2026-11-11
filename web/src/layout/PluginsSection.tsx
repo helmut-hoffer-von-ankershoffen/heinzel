@@ -52,6 +52,7 @@ import {
   wasDrivenOperationDismissed,
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
+import { viewportBounds } from "@/lib/viewport";
 import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
 import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 import { PluginsPending } from "./PluginsPending";
@@ -1266,6 +1267,7 @@ export function PluginGallery({
 function GalleryContents({ spec }: { spec: string }) {
   const query = usePluginShowcase(spec);
   const [selected, setSelected] = useState(0);
+  const choiceName = useId();
   return (
     <Loaded query={query}>
       {(gallery) => {
@@ -1275,20 +1277,27 @@ function GalleryContents({ spec }: { spec: string }) {
           <div data-plugin-gallery-content className="min-w-0 space-y-3">
             {shot ? (
               <>
-                <fieldset className="flex min-w-0 flex-wrap gap-2">
-                  <legend className="sr-only">{t("plugins.chooseScreenshot")}</legend>
+                <div
+                  role="radiogroup"
+                  aria-label={t("plugins.chooseScreenshot")}
+                  className="flex min-w-0 flex-wrap gap-2"
+                >
                   {shots.map((image, index) => (
-                    <button
+                    <label
                       key={`${image.url}-${image.caption}-${image.surface}`}
-                      type="button"
-                      aria-pressed={selected === index}
-                      aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
-                      onClick={() => setSelected(index)}
                       className={cn(
-                        "min-h-11 rounded-md border border-border p-1",
+                        "min-h-11 rounded-md border border-border p-1 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
                         selected === index && "ring-2 ring-ring",
                       )}
                     >
+                      <input
+                        type="radio"
+                        name={choiceName}
+                        checked={selected === index}
+                        aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
+                        onChange={() => setSelected(index)}
+                        className="sr-only"
+                      />
                       <img
                         src={image.url}
                         alt=""
@@ -1297,9 +1306,9 @@ function GalleryContents({ spec }: { spec: string }) {
                         className="h-14 w-24 rounded-sm object-contain"
                       />
                       <span className="block text-xs">{image.surface.toUpperCase()}</span>
-                    </button>
+                    </label>
                   ))}
-                </fieldset>
+                </div>
                 <figure className="min-w-0">
                   <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
                     <img
@@ -1313,8 +1322,9 @@ function GalleryContents({ spec }: { spec: string }) {
                         if (pane) {
                           const picture = image.getBoundingClientRect();
                           const viewport = pane.getBoundingClientRect();
-                          const top = Math.max(viewport.top, 0);
-                          const bottom = Math.min(viewport.bottom, window.innerHeight);
+                          const visible = viewportBounds();
+                          const top = Math.max(viewport.top, visible.top);
+                          const bottom = Math.min(viewport.bottom, visible.top + visible.height);
                           if (picture.top < top) pane.scrollTop += picture.top - top - 8;
                           else if (picture.bottom > bottom) pane.scrollTop += picture.bottom - bottom + 8;
                         }

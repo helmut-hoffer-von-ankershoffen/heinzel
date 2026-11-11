@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.38](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.38) - 2026-11-11
 
-Preview plugin screenshots before installing, and recover YouTube playback in your signed-in browser.
+Preview plugin screenshots before installing. If YouTube sign-in stalls in the desktop app, copy the video link into your signed-in browser.
 
 ### ✨ Features
 
@@ -12,8 +12,16 @@ Preview plugin screenshots before installing, and recover YouTube playback in yo
 
 ### 🐛 Bug fixes
 
-- **web:** Recover YouTube playback from Electron ([#724](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/724)) ([610edcf](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/610edcf0212504b2ee9318f6b5a31e07e420a530))
+- **web:** Offer Copy YouTube link when desktop sign-in stalls ([#724](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/724)) ([610edcf](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/610edcf0212504b2ee9318f6b5a31e07e420a530))
 - **ci:** Route scheduled main maintenance explicitly ([#725](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/725)) ([6f8dafd](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6f8dafd9246f011d96a442f0db6ad1dc2df061ee))
+
+- **web:** Keep screenshot choices keyboard accessible and previews within the phone's visible viewport ([#730](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/730)).
+- **ci:** Use the qualified Ubuntu package mirror for browser setup ([#730](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/730)).
+
+### 🧪 Testing
+
+- Repair desktop preload fixtures and cover the plugin-catalog setting in restart documentation ([#728](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/728)).
+- Register gallery route checks with the web test runner and keep Core-only browser setup out of generated plugin workflows ([#730](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/730)).
 
 ### ♻️ Refactoring
 
