@@ -168,6 +168,20 @@ test("the actual navigation handlers block cross-origin main-frame redirects and
   assert.deepEqual(open({ url: "https://www.youtube.com/watch?v=abcdefghijk" }), { action: "deny" });
 });
 
+test("calendar Join and Open in calendar links classify as external; unsafe targets stay denied", () => {
+  // #658's meeting and calendar links, under #686's public-host classification.
+  const meetings = [
+    "https://zoom.us/j/12345678901", "https://acme.zoom.us/j/12345678901", "https://meet.google.com/abc-defg-hij",
+    "https://teams.microsoft.com/l/meetup-join/x", "https://acme.webex.com/meet/a",
+    "https://www.google.com/calendar/event?eid=abc", "https://calendar.google.com/calendar/event?eid=abc",
+  ];
+  const denied = [
+    "https://user:pass@zoom.us/j/1", "zoommtg://zoom.us/join", "javascript:alert(1)", "file:///etc/passwd", "not a URL",
+  ];
+  for (const url of meetings) assert.deepEqual(classifyUiLink(url, connection), { kind: "external", url });
+  for (const url of denied) assert.deepEqual(classifyUiLink(url, connection), { kind: "deny" });
+});
+
 test("quit while lifecycle authentication is pending never constructs a window", async () => {
   let finish;
   let stopping = false;
