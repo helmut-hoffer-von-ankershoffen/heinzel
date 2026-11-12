@@ -407,7 +407,7 @@ describe("personal conversation links", () => {
       const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
       const box = await panel.findByLabelText("Message your Heinzel");
       fireEvent.change(box, { target: { value: "Keep this with the selected agent" } });
-      await waitFor(() => expect(panel.getByRole("button", { name: "Queue message" })).toBeDisabled());
+      await waitFor(() => expect(panel.getByRole("button", { name: "Send" })).toBeDisabled());
       fireEvent.submit(box.closest("form") as HTMLFormElement);
       await waitFor(() => expect(panel.getAllByRole("alert").length).toBeGreaterThan(0));
       expect(panel.queryByText("Another agent's private conversation")).not.toBeInTheDocument();
@@ -435,7 +435,7 @@ describe("personal conversation links", () => {
       </Providers>,
     );
     expect(screen.queryByText("Cached private conversation")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Queue message" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeDisabled());
   });
 
   it("recovers an interrupted proposal without replaying it", async () => {
@@ -552,7 +552,7 @@ describe("personal conversation links", () => {
     fireEvent.change(await panel.findByLabelText("Message your Heinzel"), {
       target: { value: message },
     });
-    fireEvent.click(panel.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(panel.getByRole("button", { name: "Send" }));
     await waitFor(() =>
       expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toBe(true),
     );
@@ -644,7 +644,7 @@ describe("personal conversation links", () => {
     renderAt(`/heinzel?chat=${sessionId}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     fireEvent.change(await panel.findByLabelText("Message your Heinzel"), { target: { value: sentence } });
-    fireEvent.click(panel.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(panel.getByRole("button", { name: "Send" }));
     expect(await panel.findByText("Here are the proposed terms.")).toBeInTheDocument();
     expect(panel.getByText("Subscription usage · cost unknown")).toBeInTheDocument();
     expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
@@ -942,7 +942,7 @@ describe("personal conversation links", () => {
     mockApi(apiAnswers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
     fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Review my notes" } });
-    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText(/Your message was saved/);
     expect(accepted).toHaveLength(1);
     expect(turns).toHaveLength(1);
@@ -989,7 +989,7 @@ describe("personal conversation links", () => {
     mockApi(answers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
     fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Check my notes" } });
-    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry the same message" })).toBeDisabled();
     expect(turns).toHaveLength(1);
@@ -1156,7 +1156,7 @@ describe("personal conversation links", () => {
     renderAt(`/heinzel?chat=${sessionId}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     fireEvent.change(await panel.findByLabelText("Message your Heinzel"), { target: { value: "My private request" } });
-    fireEvent.click(panel.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(panel.getByRole("button", { name: "Send" }));
     expect(await panel.findByText(/Your message was saved/)).toBeInTheDocument();
     expect(panel.queryByText("Foreign answer")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/heinzel/answer-chat")).toHaveLength(1);
@@ -1180,7 +1180,7 @@ describe("personal conversation links", () => {
     renderAt(`/heinzel?chat=${sessionId}`);
     const box = await screen.findByLabelText("Message your Heinzel");
     fireEvent.change(box, { target: { value: "A follow-up" } });
-    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     const retry = await screen.findByRole("button", { name: "Retry the same message" });
     expect(box).toBeDisabled();
     fireEvent.click(retry);
@@ -1201,7 +1201,7 @@ describe("personal conversation links", () => {
     mockApi({ ...shell, "/api/heinzel/session": snapshot });
     renderAt(`/heinzel?chat=${sessionId}`);
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Keep this unsent request");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Queue message" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
   });
 
   it("blocks new work when saved composer state is unreadable until the person resolves it", async () => {
@@ -1232,7 +1232,7 @@ describe("personal conversation links", () => {
     });
     const first = renderAt(`/heinzel?chat=${sessionId}`);
     fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "A follow-up" } });
-    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("button", { name: "Retry the same message" });
     const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${sessionId}`) ?? "null");
     expect(saved.pending).toMatchObject({ message: "A follow-up" });
@@ -1974,6 +1974,97 @@ it("shows recorded activity and stored drafts without exposing tool bodies or in
   expect(screen.getByRole("checkbox", { name: "Scarf" })).toBeChecked();
 });
 
+it("shows the Heinzel's chosen look in the header and before its replies, not before the person's messages", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      appearance: { age: "old", build: "round", beard: "long", hat: "blue", shirt: "purple", accessories: ["scarf"] },
+      profile_revision: 1,
+      messages: [
+        { id: "u1", seq: 1, role: "user", text: "Hello", status: "completed" },
+        { id: "a1", seq: 2, role: "assistant", text: "Good day", status: "completed" },
+      ],
+    },
+  });
+  const { container } = renderAt(`/?chat=${sessionId}`);
+  const header = await screen.findByRole("img", { name: /^Personal helper/ });
+  expect(header).toHaveAttribute("data-view", "bust");
+  expect(header).toHaveAttribute("aria-label", "Personal helper, wearing a scarf");
+  expect(header.querySelector('[fill="#1E88E5"]')).not.toBeNull();
+  expect(header.querySelector('[fill="#8E5BD8"]')).not.toBeNull();
+  const reply = (await screen.findByText("Good day", { exact: false })).closest("p") as HTMLElement;
+  expect(reply.querySelector('svg[data-view="head"]')).not.toBeNull();
+  expect(reply.querySelector("strong")).toHaveTextContent("Personal helper:");
+  expect(reply).not.toHaveTextContent("assistant:");
+  const own = screen.getByText("Hello", { exact: false }).closest("p") as HTMLElement;
+  expect(own.querySelector("svg")).toBeNull();
+  await expectAccessible(container);
+});
+
+it("keeps the conversation first: the admin sections sit behind one Details disclosure and the button says Send", async () => {
+  const scrolled = vi.fn();
+  Element.prototype.scrollIntoView = scrolled;
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      profile_revision: 1,
+      messages: [{ id: "a1", seq: 2, role: "assistant", text: "Good day", status: "completed" }],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const details = (await screen.findByText("Details")).closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  expect(details).toContainElement(await screen.findByText("Customize your Heinzel"));
+  expect(details).not.toContainElement(screen.getByText("Good day", { exact: false }));
+  expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
+  try {
+    await waitFor(() => expect(scrolled).toHaveBeenCalledWith({ block: "end" }));
+  } finally {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  }
+});
+
+it("opens the Details for a review link", async () => {
+  mockApi({ ...shell, "/api/heinzel/session": { ...snapshot, profile_revision: 1 } });
+  renderAt(`/?chat=${sessionId}&schedule-chat=abc`);
+  const details = (await screen.findByText("Details")).closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(true);
+});
+
+it("names the cause of a failed turn, links to the AI settings and keeps the recovery behind one line", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": { ...snapshot, profile_revision: 1 },
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/heinzel/answer-chat": {
+      status: 400,
+      body: { error: "The subscription response could not be safely admitted or verified" },
+    },
+    "/api/heinzel/chat-turn-state": async (request: Request) => ({
+      session_id: sessionId,
+      request_id: new URL(request.url).searchParams.get("request_id"),
+      status: "unresolved",
+    }),
+  });
+  renderAt(`/?chat=${sessionId}`);
+  fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Hello there" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByText("The subscription response could not be safely admitted or verified")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Check AI access in Settings" })).toHaveAttribute(
+    "href",
+    expect.stringContaining("settings=ai"),
+  );
+  const recovery = screen.getByText("What happened to my message?").closest("details") as HTMLDetailsElement;
+  expect(recovery.open).toBe(false);
+  expect(recovery).toContainElement(await screen.findByRole("button", { name: "Check saved turn" }));
+});
+
 it("shows only owner-session associations and recorded review states in the agent chat", async () => {
   const ref = "https://docs.google.com/document/d/abc123_DEF456/edit";
   const { calls } = mockApi({
@@ -2096,7 +2187,7 @@ it.each([false, true])("holds source review while the reply is unsettled (%s)", 
   if (grouped) expect(await screen.findByRole("region", { name: "Review your helper" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
-  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(answerStarted).toBe(true));
   displayed = {
     ...snapshot,

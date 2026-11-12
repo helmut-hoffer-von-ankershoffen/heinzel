@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
+import { openDetails } from "./chat-ready.mjs";
 import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
@@ -1102,6 +1103,8 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
     await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
+    // The suggestion sits with the other reviews behind the Details disclosure.
+    await openDetails(page);
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);

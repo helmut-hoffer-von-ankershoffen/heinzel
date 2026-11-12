@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { chromium, webkit } from "playwright-core";
+import { createHeinzelWithMessage } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
@@ -21,15 +22,10 @@ try {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my notes current";
-  await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  await message.waitFor();
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Queue message" }).click();
+  const message = await createHeinzelWithMessage(page, sentence);
   await page.getByText("Which information and output should I use?").waitFor({ timeout: 30000 });
   await message.fill("Use the example information and prepare a private summary");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Draft ready for review").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByText("Review proposed terms").click();

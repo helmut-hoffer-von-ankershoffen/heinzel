@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import { openChatJourney, openDetails, recurringTurns, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 import { settleRoutes } from "./route-settlement.mjs";
 
@@ -101,14 +101,15 @@ try {
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await openDetails(page);
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
   await page.getByLabel("Message your Heinzel").fill("Suggest an interval for this agent.");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Suggest an interval for this agent.").waitFor();
   await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
   const panel = page.getByRole("region", { name: "Connected read review" });
@@ -160,7 +161,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedule = recurringTurns(page);
   await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns");
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
@@ -268,6 +269,7 @@ try {
   assert.deepEqual(saved, { status: 200, grant: "revoked" });
   await page.reload();
   await revealChat(page);
+  await openDetails(page);
   await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns-after-reload");
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();

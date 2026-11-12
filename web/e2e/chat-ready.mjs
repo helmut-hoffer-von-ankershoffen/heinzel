@@ -19,6 +19,35 @@ export async function openChatJourney() {
   return { axe, browser, context, page, token, url };
 }
 
+/** The conversation comes first: reviews, terms and schedules sit behind the Details disclosure. Open it, once. */
+export async function openDetails(page) {
+  const summary = page.locator("details > summary", { hasText: /^Details$/ }).first();
+  await summary.waitFor({ timeout: 30000 });
+  if (!(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
+}
+
+// One place for the locator the scheduled, template and generic chat journeys each need.
+/** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
+export function recurringTurns(page) {
+  return page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
+    .last();
+}
+
+// One place for the opening steps the workshop and template journeys share.
+/** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
+export async function createHeinzelWithMessage(page, sentence) {
+  await page.getByLabel("Your message").fill(sentence);
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  const message = page.getByLabel("Message your Heinzel");
+  await message.waitFor();
+  await openDetails(page);
+  assert.equal(await message.inputValue(), sentence);
+  await page.getByRole("button", { name: "Send" }).click();
+  return message;
+}
+
 // After a reload, the Chat tab sits below page content that is still loading, so a click can land on what moved under
 // the pointer and do nothing. Wait for startup to end, then press the tab: that needs no position. Require that Chat
 // really is selected and shown.
@@ -94,12 +123,14 @@ export async function createHeinzelWith(page, text) {
 export async function startChatJourney(page, url) {
   await openAppWithSetupClosed(page, url);
   await createHeinzelWith(page, "Read my selected source.");
+  await openDetails(page);
 }
 
 /** A grant survives a reload as approved, then is revoked, and the review panel still fits the phone. */
 export async function revokeAfterReload(page, panel) {
   await page.reload();
   await revealChat(page);
+  await openDetails(page);
   await panel.getByText(/Recorded state: approved/).waitFor();
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
@@ -116,6 +147,7 @@ export async function runDaemonTurn(page, directory, session) {
   assert.equal(finished.deduplicated, true);
   await page.reload();
   await revealChat(page);
+  await openDetails(page);
 }
 
 /** Say what failed and what the page showed, without the session token. */

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createHeinzelWith, openAppWithSetupClosed, openChatJourney, revealChat } from "./chat-ready.mjs";
+import {
+  createHeinzelWith,
+  openAppWithSetupClosed,
+  openChatJourney,
+  openDetails,
+  recurringTurns,
+  revealChat,
+} from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
@@ -67,7 +74,7 @@ try {
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), text);
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
@@ -246,6 +253,10 @@ try {
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
+  // The reply and its tool activity are the conversation, pressed above with Details closed as a person finds it:
+  // open Details only now, for the reviews. Open earlier, its sections change height above the reply when the
+  // turn settles and can move the summary out from under a held press.
+  await openDetails(page);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
   await terms.getByText("Review proposed terms").click();
@@ -253,7 +264,7 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedules = recurringTurns(page);
   await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
@@ -292,7 +303,7 @@ try {
     ],
   );
   await page.getByLabel("Message your Heinzel").fill("Continue after the interruption.");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText(/reported its subscription usage limit/).waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
   await page.reload();
@@ -348,7 +359,7 @@ try {
   } else await continueConversation.click();
   const composer = page.getByLabel("Message your Heinzel");
   await composer.fill("Please continue with the draft.");
-  const submit = page.getByRole("button", { name: "Queue message" });
+  const submit = page.getByRole("button", { name: "Send" });
   trace.push(`before-submit enabled=${await submit.isEnabled()} input=${(await composer.inputValue()).length}`);
   assert.equal(await composer.inputValue(), "Please continue with the draft.");
   const accepted = page.waitForResponse(

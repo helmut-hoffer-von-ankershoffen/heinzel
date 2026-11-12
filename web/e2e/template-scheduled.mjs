@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { createHeinzelWithMessage, openDetails, recurringTurns } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
@@ -24,14 +25,9 @@ try {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my source current";
-  await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  await message.waitFor();
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await createHeinzelWithMessage(page, sentence);
   const assistantReply = page.locator("p").filter({
-    has: page.locator("strong").filter({ hasText: /^assistant:$/ }),
+    has: page.locator('svg[data-view="head"]'),
     hasText: "Done",
   });
   await assistantReply.waitFor({ timeout: 30000 });
@@ -64,7 +60,7 @@ try {
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await panel.getByRole("button", { name: "Confirm", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedule = recurringTurns(page);
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
@@ -112,11 +108,10 @@ try {
   const chatTabAfterReload = page.getByRole("tab", { name: "Chat", exact: true });
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();
+  await openDetails(page);
   assert.equal(new URL(page.url()).searchParams.get("chat"), session);
   assert.match(result.first_turn_id, /^interactive-/);
-  const replies = page
-    .locator("p")
-    .filter({ has: page.locator("strong").filter({ hasText: /^(assistant|Daemon):$/ }) });
+  const replies = page.locator("p").filter({ has: page.locator('svg[data-view="head"], strong:text-is("Daemon:")') });
   const firstWakeReply = replies.nth(result.first_reply_index).locator("..");
   await firstWakeReply
     .locator("summary")
@@ -136,14 +131,14 @@ try {
       .catch(() => false),
     reply: await page
       .locator("p")
-      .filter({ has: page.locator("strong").filter({ hasText: /^assistant:$/ }), hasText: "Done" })
+      .filter({ has: page.locator('svg[data-view="head"]'), hasText: "Done" })
       .isVisible()
       .catch(() => false),
     assistantExcerpt: await page
       .locator("p")
       .evaluateAll((nodes) =>
         nodes
-          .filter((node) => node.querySelector("strong")?.textContent === "assistant:")
+          .filter((node) => node.querySelector('svg[data-view="head"]') !== null)
           .slice(0, 3)
           .map((node) => (node.textContent ?? "").slice(0, 200)),
       )

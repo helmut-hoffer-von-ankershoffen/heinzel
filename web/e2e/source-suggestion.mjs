@@ -9,7 +9,7 @@ page.on("request", (request) => {
 try {
   await startChatJourney(page, url);
   const panel = page.getByRole("region", { name: "Connected read review" });
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Suggestion recorded.").waitFor({ timeout: 30000 });
   await panel.getByText(/has not contacted a provider/).waitFor();
   await panel.getByText("documents.read", { exact: true }).waitFor();
@@ -24,7 +24,7 @@ try {
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
   await page.getByLabel("Message your Heinzel").fill("Read the approved source now.");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Source read finished.").waitFor({ timeout: 30000 });
   await page.getByText("Approved read: first recorded result.").waitFor();
   await revokeAfterReload(page, panel);

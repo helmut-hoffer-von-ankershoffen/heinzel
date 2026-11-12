@@ -247,6 +247,11 @@ function Layout() {
       setActivePanel(requestedId);
     }
   }, [requestedId]);
+  // A link to one conversation (?chat=) on a narrow screen opens its Chat tab instead of leaving the person on the page.
+  const chatParam = params.get("chat");
+  useEffect(() => {
+    if (chatParam && window.innerWidth < 1024) setActivePanel("chat");
+  }, [chatParam]);
   const selectedPanel =
     requestedId ??
     (activePanel === "browser" && browserOpen && browserEnabled
