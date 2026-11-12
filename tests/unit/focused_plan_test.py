@@ -211,3 +211,30 @@ def test_tree_registry_key_does_not_replace_exact_head_for_a_pr(focused_plan, gi
     source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
     with pytest.raises(focused_plan.CandidateError, match="independently reviewed scope manifest"):
         focused_plan.resolve(source, MERGE, json.dumps({f"push-tree:{TREE}": plan}))
+
+
+def test_reviewed_plan_accepts_the_whole_vitest_suite_alone_in_the_web_lane(focused_plan, git_objects, monkeypatch):
+    blobs = []
+    monkeypatch.setattr(focused_plan, "git_blob", lambda *args: blobs.append(args))
+    selection = focused_plan._selections({"selection": {"web": [focused_plan.VITEST_ALL]}}, MERGE)
+    assert selection == {"web": ("web/ALL",)}
+    assert blobs == []  # the sentinel names no file to pin
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"web": ["web/ALL", "web/src/test/choices-standards.test.ts"]},
+        {"web": ["web/src/test/choices-standards.test.ts", "web/ALL"]},
+        {"web": ["web/ALL", "web/ALL"]},
+        {"python": ["web/ALL"]},
+        {"browser": ["web/ALL"]},
+        {"managed": ["web/ALL"]},
+        {"web": ["ALL"]},
+    ],
+)
+def test_reviewed_plan_refuses_the_whole_vitest_suite_mixed_or_outside_the_web_lane(
+    focused_plan, git_objects, selection
+):
+    with pytest.raises(focused_plan.CandidateError):
+        focused_plan._selections({"selection": selection}, MERGE)

@@ -284,3 +284,32 @@ def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, 
     assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
     assert tests[-1] == "tests/unit/focused_coverage_test.py"
     assert {python for _, python in calls} == {"3.15"}
+
+
+def test_web_lane_runs_the_whole_vitest_suite_for_the_sentinel(coverage, scope, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    junit = (
+        b'<testsuites><testsuite><testcase classname="src/a.test.ts" name="a"/>'
+        b'<testcase classname="e2e/b.test.mjs" name="b"/></testsuite></testsuites>'
+    )
+    sentinel = coverage.focused_job.VITEST_ALL
+    scope = replace(scope, selection={"web": (sentinel,)}, case_digests={"web": coverage.cases_digest(junit)})
+    out = tmp_path / "evidence"
+    calls = []
+
+    def execute(args, _env):
+        calls.append(args)
+        (out / coverage.JUNIT).write_bytes(junit)
+
+    monkeypatch.setattr(coverage, "_execute", execute)
+    coverage.run_lane(scope, "web", out, 123, 1)
+    (command,) = calls
+    assert command[-4:] == [
+        "--maxWorkers=2",
+        "--reporter=default",
+        "--reporter=junit",
+        f"--outputFile.junit={out.resolve() / coverage.JUNIT}",
+    ]
+    assert sentinel not in command
+    assert json.loads((out / coverage.REPORT).read_bytes())["cases_sha256"] == coverage.cases_digest(junit)

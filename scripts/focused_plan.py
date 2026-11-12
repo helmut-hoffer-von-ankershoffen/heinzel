@@ -25,7 +25,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ci_workload import CandidatePlan, FocusedPlan, WorkloadSource, plan_workload
-from scripts.focused_job import MAX_IDS, PYTHON_CI_MAX_IDS, TOKEN
+from scripts.focused_job import MAX_IDS, PYTHON_CI_MAX_IDS, TOKEN, VITEST_ALL
 from scripts.release_candidate import (
     DIGEST,
     REPOSITORY,
@@ -360,6 +360,11 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
         limit = PYTHON_CI_MAX_IDS if lane == "python" else MAX_IDS
         require(isinstance(tests, list) and 0 < len(tests) <= limit, f"empty or broad focused lane {lane}")
         require(len(set(tests)) == len(tests), f"duplicate selection in {lane}")
+        if VITEST_ALL in tests:
+            # The whole Vitest suite: only alone, only in the web lane; it names no file, so no blob to pin.
+            require(lane == "web" and tests == [VITEST_ALL], "the whole Vitest suite is only a web lane on its own")
+            selected[lane] = (VITEST_ALL,)
+            continue
         for test in tests:
             path = test.split("::", 1)[0]
             require(
