@@ -402,9 +402,11 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         The app is unsigned and not notarized by Apple. Heinzel checks the download's sha256 and build
         provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
 
+        \f
+
         Raises:
             typer.Exit: If the app cannot be installed now.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         _install_app(kernel, output, error, keep_quarantine=keep_quarantine, replace=replace, yes=yes, details=details)
 
     @app.command("open")
@@ -414,9 +416,11 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
     ) -> None:
         """Open the desktop app, installing it first when it is not there yet.
 
+        \f
+
         Raises:
             typer.Exit: If the app cannot be installed or would not open.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         location = _open_app(kernel, error if as_json else output, error, details=details)
         if as_json:
             output.print_json(data={"opened": str(location)})
@@ -431,18 +435,22 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
     ) -> None:
         """Check whether macOS will open the installed desktop app, without launching it.
 
+        \f
+
         Raises:
             typer.Exit: If the app is missing or macOS would refuse to open it.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         _doctor(output, error, fix=fix, as_json=as_json)
 
     @app.command("uninstall")
     def uninstall(details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False) -> None:
         """Remove the managed desktop app and keep your Heinzel profile.
 
+        \f
+
         Raises:
             typer.Exit: If the app cannot be removed safely.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         _uninstall(output, error, details=details)
 
     @app.command("refresh", hidden=True)

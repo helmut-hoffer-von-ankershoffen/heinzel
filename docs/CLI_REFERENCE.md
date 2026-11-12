@@ -218,9 +218,6 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 
 Check whether macOS will open the installed desktop app, without launching it.
 
-Raises:
-    typer.Exit: If the app is missing or macOS would refuse to open it.
-
 **Usage**:
 
 ```console
@@ -240,9 +237,6 @@ Install the desktop app for this version of Heinzel.
 The app is unsigned and not notarized by Apple. Heinzel checks the download&#x27;s sha256 and build
 provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
 
-Raises:
-    typer.Exit: If the app cannot be installed now.
-
 **Usage**:
 
 ```console
@@ -260,9 +254,6 @@ $ hz app install [OPTIONS]
 ### `hz app open`
 
 Open the desktop app, installing it first when it is not there yet.
-
-Raises:
-    typer.Exit: If the app cannot be installed or would not open.
 
 **Usage**:
 
@@ -293,9 +284,6 @@ $ hz app refresh [OPTIONS]
 ### `hz app uninstall`
 
 Remove the managed desktop app and keep your Heinzel profile.
-
-Raises:
-    typer.Exit: If the app cannot be removed safely.
 
 **Usage**:
 
@@ -3869,9 +3857,6 @@ $ hz system serve daemon [OPTIONS]
 
 (expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
-Raises:
-    typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
-
 **Usage**:
 
 ```console
@@ -3896,9 +3881,6 @@ $ hz system serve mcp [OPTIONS]
 
 Input waits for a line or EOF; the network check then has a ten-second limit.
 
-Raises:
-    typer.Exit: If the token, endpoint or MCP initialization is unavailable.
-
 **Usage**:
 
 ```console
@@ -3916,9 +3898,6 @@ $ hz system serve mcp-check [OPTIONS]
 (expert) Create a new project MCP config; existing configs are never replaced.
 
 The client may require project trust or approval. Connection readiness is not verified.
-
-Raises:
-    typer.Exit: If the project config already exists or its directory is unavailable.
 
 **Usage**:
 
@@ -3956,9 +3935,6 @@ $ hz system serve mcp-token [OPTIONS] COMMAND [ARGS]...
 
 Make a token for one agent and print it once; only its SHA-256 is kept.
 
-Raises:
-    typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
-
 **Usage**:
 
 ```console
@@ -3991,9 +3967,6 @@ $ hz system serve mcp-token list [OPTIONS]
 ##### `hz system serve mcp-token revoke`
 
 Revoke a token (or `all`); the agent&#x27;s next request is refused.
-
-Raises:
-    typer.Exit: With 1 when no token has that id.
 
 **Usage**:
 
