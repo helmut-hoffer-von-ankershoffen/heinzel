@@ -1,6 +1,6 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
@@ -34,6 +34,7 @@ import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
 import { isDurableSession } from "@/chat/useChat";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
@@ -1564,15 +1565,15 @@ function DurableSessionView({
             <p>{t("durable.failed")}</p>
             {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
             {errorDetail && (
-              <p>
-                {t("durable.aiAccessHint")}{" "}
-                <Link
-                  className="underline"
-                  to={{ search: `?${new URLSearchParams([...params.entries(), ["settings", "ai"]])}` }}
+              <>
+                <p>{t("durable.aiAccessHint")}</p>
+                <PaneAction
+                  icon={Settings}
+                  to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
                 >
                   {t("durable.aiAccessLink")}
-                </Link>
-              </p>
+                </PaneAction>
+              </>
             )}
           </div>
         )}
