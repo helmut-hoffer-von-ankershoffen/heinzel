@@ -3866,7 +3866,7 @@
         "type": "object"
       },
       "ClaudeScan": {
-        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.",
+        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is started.",
         "properties": {
           "connectors": {
             "description": "claude.ai connectors you have connected: reachable only through Claude Code, so only counted.",
@@ -3881,8 +3881,19 @@
             "title": "Next",
             "type": "array"
           },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FirstRunNotice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set while switched-on servers were found that you have not been told about; `hz system claude acknowledge` closes it."
+          },
           "servers": {
-            "description": "MCP servers, by source then name.",
+            "description": "MCP servers, by source then name, each switched on or off.",
             "items": {
               "$ref": "#/components/schemas/FoundServer"
             },
@@ -3904,6 +3915,18 @@
             },
             "title": "Skipped",
             "type": "array"
+          },
+          "state_problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the file that remembers switched-off servers cannot be read: every server is off then.",
+            "title": "State Problem"
           }
         },
         "required": [
@@ -3922,6 +3945,12 @@
           "connectors": {
             "description": "claude.ai connectors you have connected.",
             "title": "Connectors",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": 0,
+            "description": "MCP servers that are switched on; none is started by that.",
+            "title": "Enabled",
             "type": "integer"
           },
           "servers": {
@@ -6809,6 +6838,36 @@
         "title": "Filters",
         "type": "object"
       },
+      "FirstRunNotice": {
+        "description": "Servers that are switched on and that you have not been told about yet (ADR 0146).",
+        "properties": {
+          "plugin": {
+            "description": "How many of them come from a Claude Code plugin.",
+            "title": "Plugin",
+            "type": "integer"
+          },
+          "project": {
+            "description": "How many of them come from a project's files.",
+            "title": "Project",
+            "type": "integer"
+          },
+          "servers": {
+            "description": "Ids of the switched-on servers found since you last closed the notice.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "project",
+          "plugin"
+        ],
+        "title": "FirstRunNotice",
+        "type": "object"
+      },
       "FoundServer": {
         "description": "An MCP server entry found in a Claude client's configuration.",
         "properties": {
@@ -6841,6 +6900,11 @@
             ],
             "description": "The program a stdio server starts, without its path or arguments.",
             "title": "Command"
+          },
+          "enabled": {
+            "description": "Whether Heinzels may use it once they can: on by default, off after `hz system claude disable` and for hz itself. Nothing is started or connected to either way (ADR 0146).",
+            "title": "Enabled",
+            "type": "boolean"
           },
           "env_keys": {
             "description": "Names of the environment variables it is given; never their values.",
@@ -6902,6 +6966,16 @@
             "description": "The project directory or plugin it belongs to; none for user-wide ones.",
             "title": "Origin"
           },
+          "scope": {
+            "description": "Who put it there: `user` (you), `project` (a project's files, which a cloned repository can bring) or `plugin` (an enabled Claude Code plugin).",
+            "enum": [
+              "user",
+              "project",
+              "plugin"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
           "source": {
             "description": "Which Claude configuration it was found in.",
             "enum": [
@@ -6941,6 +7015,8 @@
           "name",
           "source",
           "origin",
+          "scope",
+          "enabled",
           "transport",
           "command",
           "arguments",
@@ -10310,6 +10386,21 @@
           "popup"
         ],
         "title": "Notice",
+        "type": "object"
+      },
+      "NoticeClosed": {
+        "description": "`hz system claude acknowledge`: the first-run notice is closed for the servers found now.",
+        "properties": {
+          "servers": {
+            "description": "How many servers the notice was closed for with this call.",
+            "title": "Servers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "servers"
+        ],
+        "title": "NoticeClosed",
         "type": "object"
       },
       "NoticeHelper": {
@@ -14982,6 +15073,57 @@
           "status"
         ],
         "title": "ScheduledNotificationView",
+        "type": "object"
+      },
+      "ServerSwitch": {
+        "description": "`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.",
+        "properties": {
+          "changed": {
+            "description": "Whether this call switched it; false when it already was in that state.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "Whether it is switched on now.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The server's id.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the entry has in its configuration.",
+            "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "project",
+                  "plugin"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who put it there; none when the entry is no longer found.",
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "enabled",
+          "changed"
+        ],
+        "title": "ServerSwitch",
         "type": "object"
       },
       "SessionCosts": {
@@ -22215,6 +22357,58 @@
         "title": "heinzel_start_helper_Input",
         "type": "object"
       },
+      "system_claude_acknowledge_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "servers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ids of the servers the notice showed; every server found now when not given.",
+            "title": "Servers"
+          }
+        },
+        "title": "system_claude_acknowledge_Input",
+        "type": "object"
+      },
+      "system_claude_disable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_disable_Input",
+        "type": "object"
+      },
+      "system_claude_enable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_enable_Input",
+        "type": "object"
+      },
       "system_connector_cancel_Input": {
         "additionalProperties": false,
         "properties": {
@@ -27455,9 +27649,135 @@
         ]
       }
     },
+    "/system/claude/acknowledge": {
+      "post": {
+        "description": "Close the notice about switched-on servers; it comes back when a new server is found.",
+        "operationId": "system_claude_acknowledge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_acknowledge_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeClosed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close the notice about switched-on servers; it comes back when a new server is found.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/disable": {
+      "post": {
+        "description": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
+        "operationId": "system_claude_disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_disable_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSwitch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/enable": {
+      "post": {
+        "description": "Switch a found MCP server back on for Heinzels; nothing is started.",
+        "operationId": "system_claude_enable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_enable_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSwitch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a found MCP server back on for Heinzels; nothing is started.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/claude/list": {
       "get": {
-        "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "description": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "operationId": "system_claude_list",
         "responses": {
           "200": {
@@ -27471,7 +27791,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "summary": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "tags": [
           "system"
         ]
