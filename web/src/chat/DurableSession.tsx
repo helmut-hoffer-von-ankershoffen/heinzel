@@ -160,6 +160,11 @@ function DurableSessionView({
   const historyCursor = historyCursors.at(-1) ?? null;
   const [searchJump, setSearchJump] = useState(false);
   const searchTarget = useRef<HTMLDivElement>(null);
+  const newest = useRef<HTMLDivElement>(null);
+  // Review links (agent, approval, schedule, notification, connected read, contract) land on the sections they name.
+  const [detailsOpen, setDetailsOpen] = useState(() =>
+    [...params.keys()].some((key) => key.endsWith("-chat") && key !== "chat"),
+  );
   useEffect(() => {
     if (!pendingSearchJump) return;
     setSearchJump(true);
@@ -195,6 +200,13 @@ function DurableSessionView({
     if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
       searchTarget.current?.scrollIntoView?.({ block: "center" });
   }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+  const lastMessage = query.data?.messages?.at(-1);
+  const newestKey = lastMessage ? `${lastMessage.seq}-${lastMessage.id}-${lastMessage.status}` : "";
+  // Opening a conversation or getting a new message shows the newest one, unless the person is paging or jumping.
+  useEffect(() => {
+    if (newestKey && !searchJump && historyCursors.length === 1 && !query.isPlaceholderData)
+      newest.current?.scrollIntoView?.({ block: "end" });
+  }, [newestKey, searchJump, historyCursors.length, query.isPlaceholderData]);
   const profileProposal = useQuery({
     queryKey: ["heinzel", "profile-proposal", sessionId],
     queryFn: async () => {
@@ -842,45 +854,6 @@ function DurableSessionView({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
-        {query.data && (
-          <details className="rounded-lg border border-border p-3">
-            <summary className="cursor-pointer text-sm font-medium">
-              {t("personal.customize")}
-              {profileProposal.data?.session_id === sessionId && " · suggested look"}
-            </summary>
-            <ProfileEditor
-              initial={query.data}
-              onLock={setProfileLocked}
-              inChat
-              suggestion={profileProposal.data ?? null}
-            />
-          </details>
-        )}
-        {connectedFrontdoor && hasSession && (
-          <section aria-label="Review your helper" className="space-y-3 rounded-lg border border-border p-3 text-sm">
-            <h3 className="font-medium">Review your helper</h3>
-            <p>Review each part separately. Saved approvals remain separate if another step fails.</p>
-            <p className="font-medium">1. Agent terms</p>
-            {terms}
-            {termsSummary}
-            <p className="font-medium">2. Source access and time window</p>
-            {sourceReview}
-            <p className="font-medium">3. Recurring turns and local notices</p>
-            {schedules}
-            <p>Approval of one part never substitutes for another. Slack posting requires its own approval.</p>
-          </section>
-        )}
-        {!connectedFrontdoor && terms}
-        {query.data?.session_id === sessionId && (
-          <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
-        )}
-        {!connectedFrontdoor && termsSummary}
-        {query.data?.session_id === sessionId && (
-          <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
-        )}
-        {!connectedFrontdoor && sourceReview}
-        {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
-        {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {searchOpen && query.data?.session_id === sessionId && (
           <>
             <ConversationSearch
@@ -979,24 +952,77 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        {!connectedFrontdoor && schedules}
-        {capturedWrites && query.data?.session_id === sessionId && (
-          <CapturedWriteActivity
-            key={sessionId}
-            sessionId={sessionId}
-            conversationBusy={busy || !!pending || !!agentPending}
-            onReview={openAgentReview}
-          />
-        )}
-        {query.data?.session_id === sessionId && (
-          <ReleaseDraftActivity
-            key={`release-draft-${sessionId}`}
-            authority={authority}
-            sessionId={sessionId}
-            conversationBusy={busy || !!pending || !!agentPending}
-            onReview={openAgentReview}
-          />
-        )}
+        <details
+          className="rounded-lg border border-border p-3"
+          open={detailsOpen}
+          onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+        >
+          <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
+          <div className="mt-3 space-y-3">
+            {query.data && (
+              <details className="rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {t("personal.customize")}
+                  {profileProposal.data?.session_id === sessionId && " · suggested look"}
+                </summary>
+                <ProfileEditor
+                  initial={query.data}
+                  onLock={setProfileLocked}
+                  inChat
+                  suggestion={profileProposal.data ?? null}
+                />
+              </details>
+            )}
+            {connectedFrontdoor && hasSession && (
+              <section
+                aria-label="Review your helper"
+                className="space-y-3 rounded-lg border border-border p-3 text-sm"
+              >
+                <h3 className="font-medium">Review your helper</h3>
+                <p>Review each part separately. Saved approvals remain separate if another step fails.</p>
+                <p className="font-medium">1. Agent terms</p>
+                {terms}
+                {termsSummary}
+                <p className="font-medium">2. Source access and time window</p>
+                {sourceReview}
+                <p className="font-medium">3. Recurring turns and local notices</p>
+                {schedules}
+                <p>Approval of one part never substitutes for another. Slack posting requires its own approval.</p>
+              </section>
+            )}
+            {!connectedFrontdoor && terms}
+            {query.data?.session_id === sessionId && (
+              <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
+            )}
+            {!connectedFrontdoor && termsSummary}
+            {query.data?.session_id === sessionId && (
+              <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
+            )}
+            {!connectedFrontdoor && sourceReview}
+            {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
+            {query.data?.session_id === sessionId && (
+              <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />
+            )}
+            {!connectedFrontdoor && schedules}
+            {capturedWrites && query.data?.session_id === sessionId && (
+              <CapturedWriteActivity
+                key={sessionId}
+                sessionId={sessionId}
+                conversationBusy={busy || !!pending || !!agentPending}
+                onReview={openAgentReview}
+              />
+            )}
+            {query.data?.session_id === sessionId && (
+              <ReleaseDraftActivity
+                key={`release-draft-${sessionId}`}
+                authority={authority}
+                sessionId={sessionId}
+                conversationBusy={busy || !!pending || !!agentPending}
+                onReview={openAgentReview}
+              />
+            )}
+          </div>
+        </details>
         {query.data?.messages?.map((message, index) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
@@ -1019,7 +1045,11 @@ function DurableSessionView({
               )}
               <p className="whitespace-pre-wrap break-words">
                 {message.role === "assistant" && message.origin !== "daemon" && (
-                  <HeinzelAvatar view="head" {...look} className="mr-1 inline-block size-5 overflow-hidden align-text-bottom" />
+                  <HeinzelAvatar
+                    view="head"
+                    {...look}
+                    className="mr-1 inline-block size-5 overflow-hidden align-text-bottom"
+                  />
                 )}
                 <strong>
                   {message.role === "tool"
@@ -1062,6 +1092,7 @@ function DurableSessionView({
             </div>
           );
         })}
+        <div ref={newest} aria-hidden="true" />
         {activity.isError && (
           <p role="status" className="text-sm">
             Recorded tool activity is unavailable.

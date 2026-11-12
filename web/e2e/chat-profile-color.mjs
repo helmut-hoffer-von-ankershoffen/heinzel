@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
+import { openDetails } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
@@ -30,11 +31,13 @@ try {
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
   await checkHeader(false);
+  await openDetails(page);
   await message.fill("Make the hat blue, keep my other preferences");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   const editor = page
     .locator("details")
-    .filter({ has: page.locator("summary").filter({ hasText: /^Customize your Heinzel(?: · suggested look)?$/ }) });
+    .filter({ has: page.locator("summary").filter({ hasText: /^Customize your Heinzel(?: · suggested look)?$/ }) })
+    .last(); // the Details disclosure around it matches too
   await editor.locator("summary").click();
   const suggestion = editor.getByRole("region", { name: "Suggested identity" });
   await suggestion.waitFor({ timeout: 30000 });
@@ -49,6 +52,7 @@ try {
   await page.reload();
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
+  await openDetails(page);
   await editor.locator("summary").click();
   assert.equal(await editor.getByLabel("Hat colour").inputValue(), "blue");
   await checkHeader(true);

@@ -43,7 +43,8 @@ const en = {
   "durable.unavailable": "This personal conversation could not be loaded.",
   "durable.queued": "Messages and replies stay in this conversation.",
   "durable.message": "Message your Heinzel",
-  "durable.send": "Queue message",
+  "durable.send": "Send",
+  "durable.details": "Details",
   "durable.retry": "Retry the same message",
   "durable.failed": "The message could not be confirmed. Retry the same message or reopen this conversation.",
   "durable.preservationFailed":

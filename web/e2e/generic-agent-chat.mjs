@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createHeinzelWith, openAppWithSetupClosed, openChatJourney, revealChat } from "./chat-ready.mjs";
+import { createHeinzelWith, openAppWithSetupClosed, openChatJourney, openDetails, revealChat } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
@@ -66,8 +66,9 @@ try {
   trace.push(`+${Date.now() - began}ms create pressed`);
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
+  await openDetails(page);
   assert.equal(await message.inputValue(), text);
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
@@ -253,7 +254,10 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedules = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
+    .last(); // the Details disclosure around it matches too
   await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
@@ -292,7 +296,7 @@ try {
     ],
   );
   await page.getByLabel("Message your Heinzel").fill("Continue after the interruption.");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText(/reported its subscription usage limit/).waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
   await page.reload();
@@ -348,7 +352,7 @@ try {
   } else await continueConversation.click();
   const composer = page.getByLabel("Message your Heinzel");
   await composer.fill("Please continue with the draft.");
-  const submit = page.getByRole("button", { name: "Queue message" });
+  const submit = page.getByRole("button", { name: "Send" });
   trace.push(`before-submit enabled=${await submit.isEnabled()} input=${(await composer.inputValue()).length}`);
   assert.equal(await composer.inputValue(), "Please continue with the draft.");
   const accepted = page.waitForResponse(
