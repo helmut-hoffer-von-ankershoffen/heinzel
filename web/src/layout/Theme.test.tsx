@@ -150,6 +150,10 @@ describe("Themes", () => {
     expect(await within(group).findByRole("radio", { name: "Acme" })).not.toHaveTextContent(/acme$/);
     const second = within(group).getByRole("radio", { name: "Acme Night · acme" });
     expect(within(second).getByText("acme")).toBeInTheDocument();
+    // In a narrow card the plugin's name gives way before the title, and the full name is the tooltip.
+    expect(within(second).getByText("acme")).toHaveClass("shrink-[99]", "min-w-0");
+    expect(within(second).getByText("Acme Night")).not.toHaveClass("shrink-[99]");
+    expect(second).toHaveAttribute("title", "Acme Night · acme");
   });
 
   it("never turns a theme's values into CSS text: only custom properties and the font stack", () => {

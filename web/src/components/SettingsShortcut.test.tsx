@@ -14,5 +14,7 @@ it("keeps the current screen and panel, names the compact icon and clears an old
   expect(link).toHaveAttribute("title", "Open clock settings");
   expect(link).toHaveAttribute("href", "/contracts/me%3Adigest?panel=world-clock&settings=clock#draft");
   expect(link.textContent).toBe("");
+  // The same ghost icon action as every other pane chrome, not a hand-made link.
+  expect(link).toHaveAttribute("data-pane-action", "icon");
   await expectAccessible(container);
 });
