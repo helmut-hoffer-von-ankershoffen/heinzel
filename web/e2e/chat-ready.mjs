@@ -26,6 +26,7 @@ export async function openDetails(page) {
   if (!(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
 }
 
+// One place for the locator the scheduled, template and generic chat journeys each need.
 /** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
 export function recurringTurns(page) {
   return page
@@ -34,6 +35,7 @@ export function recurringTurns(page) {
     .last();
 }
 
+// One place for the opening steps the workshop and template journeys share.
 /** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
 export async function createHeinzelWithMessage(page, sentence) {
   await page.getByLabel("Your message").fill(sentence);
