@@ -400,6 +400,7 @@ KERNEL = [
     "ICONS",
     "INTERRUPT",
     "Icon",
+    "IndexPluginPin",
     "InfoLet",
     "Installation",
     "Issue",
