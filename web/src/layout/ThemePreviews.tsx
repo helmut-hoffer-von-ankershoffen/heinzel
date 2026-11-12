@@ -8,6 +8,7 @@ import { Home, Search } from "lucide-react";
 import { type CSSProperties, useId, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";
 import { useExpert, useSetTheme, useThemeSignals, useThemes } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Branding } from "./Branding";
@@ -153,14 +154,9 @@ function Conditions({
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          disabled={!customized}
-          className="h-9 rounded-lg border border-border px-3 hover:bg-accent disabled:opacity-50"
-          onClick={() => onChange(null)}
-        >
+        <Button type="button" variant="outline" disabled={!customized} onClick={() => onChange(null)}>
           {t("settings.previewNow")}
-        </button>
+        </Button>
       </div>
       <p className="mt-2">{weatherStatus}</p>
     </fieldset>

@@ -221,14 +221,15 @@ export function ModuleHeader({
         <p className="ml-auto flex items-center gap-2 text-ui-sm text-muted-foreground">
           {plugin ? (
             <>
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={onOpen}
-                className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
+                className="h-auto rounded-md bg-transparent px-1.5 py-0 text-[11px] font-normal hover:bg-accent/60"
                 title={t("settings.openPlugin")}
               >
                 {sourceLabel(plugin, plugin.private_repository, plugin.source_url ?? plugin.homepage)}
-              </button>
+              </Button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
           ) : provider ? (

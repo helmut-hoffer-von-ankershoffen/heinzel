@@ -202,14 +202,17 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 </Button>
               )}
               {tabs.length > 1 && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={() => close(tab.id)}
                   aria-label={t("terminal.closeTab", { title: tabName(tab) })}
-                  className="mr-1 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
+                  title={t("terminal.closeTab", { title: tabName(tab) })}
+                  className="mr-1 size-6 opacity-60 hover:opacity-100"
                 >
                   <X aria-hidden className="size-3" />
-                </button>
+                </Button>
               )}
             </div>
           ))}

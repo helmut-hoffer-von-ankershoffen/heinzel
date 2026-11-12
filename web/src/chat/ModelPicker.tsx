@@ -140,14 +140,16 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
           )}
           <hr className="my-1 border-border" />
           <div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-expanded={more}
               onClick={() => setMore((shown) => !shown)}
-              className="flex w-full items-center rounded-md px-2 py-1 text-left text-xs hover:bg-accent focus-visible:bg-accent"
+              className="h-auto w-full justify-start rounded-md py-1 font-normal focus-visible:bg-accent"
             >
               {t("chat.moreModels")}
-            </button>
+            </Button>
             {more && (
               <form onSubmit={submitMore} className="flex gap-1 px-2 pb-1">
                 <label className="sr-only" htmlFor={`${panelId}-name`}>

@@ -176,15 +176,18 @@ function Chips({
           className="flex items-center gap-1 rounded-full border border-border bg-muted py-0.5 pr-1 pl-2.5 text-sm"
         >
           {word}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             disabled={disabled}
             onClick={() => onChange(value.filter((other) => other !== word))}
             aria-label={t("settings.removeItem", { item: word })}
-            className="flex size-5 items-center justify-center rounded-full text-icon hover:bg-accent"
+            title={t("settings.removeItem", { item: word })}
+            className="size-5 rounded-full"
           >
             <X aria-hidden className="size-3.5" />
-          </button>
+          </Button>
         </span>
       ))}
       <input
