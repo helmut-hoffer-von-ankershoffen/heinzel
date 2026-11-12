@@ -2,7 +2,7 @@
 // you connected, the asset types playbooks keep and what discovery found of them, your contracts and the templates
 // playbooks suggest, and the outputs they maintain. Select a node for its details and its hz command.
 import { useQuery } from "@tanstack/react-query";
-import { Radar } from "lucide-react";
+import { ChevronRight, Radar } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, unwrap } from "@/api/client";
@@ -156,17 +156,19 @@ export function Contracts() {
             {contracts.data.heinzelmaennchen.map((contract) => {
               const qualified = `${contract.namespace}:${contract.name}`;
               return (
-                <li key={qualified} className="flex flex-wrap items-center gap-2">
+                <li key={qualified}>
+                  {/* The whole row is the target and says so with a chevron; a title alone never looks like a link. */}
                   <Link
-                    data-prose-link
+                    data-nav-row
                     to={contractPath(qualified)}
-                    className="font-medium text-primary underline-offset-2 hover:underline"
+                    className="flex min-h-11 flex-wrap items-center gap-2 rounded px-1 hover:bg-accent/60"
                   >
-                    {contract.title ?? contract.name}
+                    <span className="font-medium">{contract.title ?? contract.name}</span>
+                    <code className="font-mono text-xs text-muted-foreground">{qualified}</code>
+                    <Badge>{contract.schedule ?? t("contract.byHand")}</Badge>
+                    {contract.errors > 0 && <Badge tone="bad">{contract.errors} ✖</Badge>}
+                    <ChevronRight aria-hidden className="ml-auto size-4 shrink-0 text-muted-foreground" />
                   </Link>
-                  <code className="font-mono text-xs text-muted-foreground">{qualified}</code>
-                  <Badge>{contract.schedule ?? t("contract.byHand")}</Badge>
-                  {contract.errors > 0 && <Badge tone="bad">{contract.errors} ✖</Badge>}
                 </li>
               );
             })}
