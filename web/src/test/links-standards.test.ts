@@ -51,13 +51,9 @@ const LINKS: Record<string, { count: number; reason: string }> = {
     count: 1,
     reason: "CONVERT: hand-made GitHub icon link in the version pane; PaneAction ghost href (brief D)",
   },
-  "../onboarding/OnboardingWizard.tsx": {
-    count: 1,
-    reason: "CONVERT: Open settings link; names one control and lands on it (brief H)",
-  },
   "../pages/Profile.tsx": {
-    count: 2,
-    reason: "CONVERT: Not set button as a value and NotFound Back link; PaneActions (brief E)",
+    count: 1,
+    reason: "CONVERT: NotFound Back link; a button once its three screen tests move with it (brief E)",
   },
 };
 

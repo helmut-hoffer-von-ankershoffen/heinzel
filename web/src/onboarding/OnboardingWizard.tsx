@@ -7,7 +7,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, ChevronsRight, Play, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
 import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useSetting } from "@/api/queries";
 import { runCommand } from "@/components/CommandActions";
@@ -232,16 +232,21 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
   }
 }
 
-/** A link into Settings: it closes the wizard (which remembers the step) and opens that section. */
+/** A button into Settings: it closes the wizard (which remembers the step) and opens that section. */
 function SettingsLink({ section, label, onClose }: { section: string; label: MessageKey; onClose: () => void }) {
+  const navigate = useNavigate();
   return (
-    <Link
-      to={`?settings=${section}`}
-      onClick={onClose}
-      className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
+    <Button
+      type="button"
+      variant="outline"
+      className="self-start"
+      onClick={() => {
+        onClose();
+        navigate(`?settings=${section}`);
+      }}
     >
       {t(label)}
-    </Link>
+    </Button>
   );
 }
 

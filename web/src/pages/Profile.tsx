@@ -1,5 +1,5 @@
 // `hz org show`: your profile, and the command that completes or changes it.
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useProfile, useSetting } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
 import { ErrorScreen } from "@/components/ErrorScreen";
@@ -10,6 +10,7 @@ import { type MessageKey, t } from "@/i18n";
 export function Profile() {
   const profile = useProfile();
   const team = useSetting("team", "name");
+  const navigate = useNavigate();
   return (
     <Page title={t("profile.title")} intro={t("profile.intro")}>
       <Loaded query={profile}>
@@ -33,8 +34,14 @@ export function Profile() {
                     <dt className="text-muted-foreground">{t(label)}</dt>
                     <dd>
                       {value ?? (
-                        <Button asChild variant="ghost" size="sm" className="-ml-2.5 text-muted-foreground">
-                          <Link to={`?settings=&q=${key}`}>{t("settings.notSet")}</Link>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="-ml-2.5 text-muted-foreground"
+                          onClick={() => navigate(`?settings=&q=${key}`)}
+                        >
+                          {t("settings.notSet")}
                         </Button>
                       )}
                     </dd>
