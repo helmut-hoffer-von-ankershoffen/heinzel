@@ -252,7 +252,7 @@ def test_switching_one_of_two_alike_entries_never_flips_the_other(
     assert state(store)["allowed"] == [project]
 
 
-def test_switching_one_on_keeps_another_off_that_only_a_gone_entrys_tombstone_covered(
+def test_switching_one_on_keeps_another_off_that_only_the_tombstone_of_a_gone_entry_covered(
     service: ClaudeService, home: Path, store: SwitchStore
 ):
     old = project_id(service)
