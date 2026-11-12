@@ -167,6 +167,8 @@ class UpdateService:
             self._steps.start(id_)
 
     def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
+        # Taking the lifecycle (it may wait for a running tick or update) is the install's work, not the check's.
+        self._start_step("install")
         if self._lifecycle is not None:
             return self._lifecycle.mutation(
                 self._installation.repaired_startup_state_matches, self._installation.rollback_identity

@@ -137,6 +137,9 @@ MAX_SERVICE_MANAGER_OUTPUT = 1_000_000
 MANAGER_TIMEOUT = 5
 # launchd can defer a respawn for ten seconds (launchd.plist(5)); allow time for its reply as well.
 OWNED_KICKSTART_TIMEOUT = 15
+LIFECYCLE_WAIT_SECONDS = 180.0
+"""How long `hz system update`, `install` and `restart` wait for another lifecycle change (a tick, an update) to end."""
+LIFECYCLE_POLL_SECONDS = 2.0
 MAX_HANDOVER_FILE_BYTES = 256 * 1024
 MAX_HANDOVER_CONTRIBUTIONS = 512
 MAX_HANDOVER_TEXT = 512
@@ -656,6 +659,9 @@ class DaemonService:
         self._which = which
         self._time_limit = time_limit
         self._abandoned: dict[str, threading.Thread] = {}
+        self.lifecycle_wait_seconds = 0.0
+        """How long a lifecycle writer waits for another holder of the lifecycle lock; `for_user` sets the default."""
+        self.lifecycle_poll_seconds = LIFECYCLE_POLL_SECONDS
         self.compile_error: str | None = None
         """Why compiling jobs failed the last time they were listed; None when it worked."""
         self._profile = profile_environment(settings, daemon, profile_config or Config.empty())
@@ -669,7 +675,7 @@ class DaemonService:
         """The service with user-scope settings: a project's `hz.toml` can't move the unit, receipts or logs."""
         config = Config.load(Path.home())  # as if run from the home directory, like the uninstall skill does
         installation = kernel.resolve(Installation)
-        return cls(
+        service = cls(
             kernel,
             config.settings(Settings, KERNEL_SECTION),
             config.settings(DaemonSettings, MODULE_SECTION),
@@ -677,6 +683,8 @@ class DaemonService:
             quiescence_installation=installation,
             profile_config=config,
         )
+        service.lifecycle_wait_seconds = LIFECYCLE_WAIT_SECONDS
+        return service
 
     # Installing ------------------------------------------------------------------------------------------------------
 
@@ -690,6 +698,48 @@ class DaemonService:
                 raise HeinzelError(msg) from exc
             yield
 
+    def _lifecycle_holder(self) -> str:
+        """Plain words for whoever holds the lifecycle lock now, from read-only lock probes."""
+        if held(self.state_dir / "tick.lock"):
+            return "the background service's current run of its jobs"
+        return "an automatic update or another Heinzel change"
+
+    def await_lifecycle(self) -> bool:
+        """Wait, up to `lifecycle_wait_seconds`, until no other process holds the lifecycle lock; never takes it.
+
+        A tick holds the lock while its jobs run (after a laptop wakes these can take minutes), and an update holds it
+        while it installs. Only a held lock is waited for: a pending marker with a free lock is left for recovery.
+        Returns whether the lock is free now; the caller still acquires it without waiting, as before.
+        """
+        path = self.state_dir / "lifecycle.lock"
+        if not held(path):
+            return True
+        if self.lifecycle_wait_seconds <= 0:
+            return False
+        holder = self._lifecycle_holder()
+        log_event(logger, "daemon.lifecycle.wait", phase="start", holder=holder, seconds=self.lifecycle_wait_seconds)
+        deadline = time.monotonic() + self.lifecycle_wait_seconds
+        minutes = max(1, round(self.lifecycle_wait_seconds / 60))
+        with self._kernel.resolve(Progress).task(f"Waiting for {holder} to finish (up to {minutes} min)"):
+            while held(path) and time.monotonic() < deadline:
+                time.sleep(min(self.lifecycle_poll_seconds, max(0.0, deadline - time.monotonic())))
+        free = not held(path)
+        log_event(logger, "daemon.lifecycle.wait", phase="outcome", holder=holder, outcome="free" if free else "busy")
+        return free
+
+    def _lifecycle_refusal(self, action: str, *, busy: bool) -> str:
+        """Why a lifecycle writer can't start, in plain words, with what to do; `busy` when the lock was held."""
+        if busy:
+            return (
+                f"The daemon lifecycle is changing: {self._lifecycle_holder()} is still running"
+                f"{' after waiting' if self.lifecycle_wait_seconds > 0 else ''}. "
+                f"Nothing was changed; try {action} again in a few minutes."
+            )
+        return (
+            "The daemon lifecycle requires recovery: an earlier update or service change did not finish. "
+            "Nothing was changed; `hz system daemon status` and `hz system doctor` show the service."
+        )
+
     def install(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
         """Install under the lifecycle writer lock, or report a concurrent change.
 
@@ -700,6 +750,8 @@ class DaemonService:
         self._unit_paths()
         if dry_run:
             return self._install_locked(interval, dry_run=True, notifier=notifier)
+        if not self.await_lifecycle():
+            raise HeinzelError(self._lifecycle_refusal("`hz system daemon install`", busy=True))
         self._recover_abandoned_mutation()
         if self._handover_pending():
             msg = "The daemon lifecycle requires recovery; inspect it before installing."
@@ -1009,6 +1061,8 @@ class DaemonService:
         Raises:
             HeinzelError: If loading fails.
         """
+        if not self.await_lifecycle():
+            raise HeinzelError(self._lifecycle_refusal("`hz system daemon restart`", busy=True))
         self._recover_abandoned_mutation()
         if self._handover_pending():
             msg = "The daemon lifecycle requires recovery; inspect it before restarting."
@@ -1068,10 +1122,10 @@ class DaemonService:
         Raises:
             HeinzelError: If another mutation or an unresolved transaction exists.
         """
+        self.await_lifecycle()
         with lock(self.state_dir / "lifecycle.lock") as acquired:
             if not acquired or not self._clear_after_recovery_locked():
-                msg = "The daemon lifecycle is changing or requires recovery."
-                raise HeinzelError(msg)
+                raise HeinzelError(self._lifecycle_refusal("the update", busy=not acquired))
             fingerprint = self._continuity_fingerprint
             before = fingerprint() if fingerprint is not None else None
             had_checkpoint = checkpoint()
