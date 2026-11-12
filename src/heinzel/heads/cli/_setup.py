@@ -15,10 +15,10 @@ import sys
 import warnings
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Any, NoReturn, cast
 
 import typer
 from pydantic import ValidationError
@@ -39,9 +39,11 @@ from heinzel.kernel import (
     Kernel,
     ModuleRecord,
     OperationLet,
+    PlaybookLet,
     PrerequisiteCheck,
     PrerequisiteLet,
     PrerequisiteService,
+    Progress,
     Prompter,
     ScriptExhausted,
     SettingsLet,
@@ -50,6 +52,8 @@ from heinzel.kernel import (
 )
 
 DOCTOR = ("system.doctor", "doctor")
+PLAYBOOK_BIND = ("system.plugin", "bind")
+PLAYBOOK_CHECKLIST = ("system.plugin", "checklist")
 EX_INTERRUPTED = 130  # what shells report for a process stopped by Ctrl-C (128 + SIGINT)
 HELP = (
     "Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be "
@@ -619,16 +623,81 @@ class SetupCommands:
         as_json: bool,
     ) -> None:
         prompter = self.prompter(plan, presets, as_json=as_json)
-        [result] = Runner(self.kernel, prompter, state).run(plan, offer_skip=False)
+        name = plan[0][0].qualname
+        kernel = self.kernel
+        bindings = self._bind_first(name, prompter)
+        if bindings is not None:
+            # The wizard sees the bindings just written, so it doesn't ask again what is set now.
+            data = dict(self.kernel.config.data)
+            section = dict(cast("Mapping[str, object]", data.get("capabilities") or {}))
+            for item in bindings:
+                if item["state"] == "written":
+                    section[str(item["capability"]).replace("-", "_")] = item["adapter"]
+            config = replace(self.kernel.config, data={**data, "capabilities": section})
+            kernel = Kernel(records=self.kernel.modules, errors=self.kernel.errors, config=config)
+            kernel.bind(Prompter, prompter)
+            kernel.bind(Progress, self.kernel.resolve(Progress))
+        [result] = Runner(kernel, prompter, state).run(plan, offer_skip=False)
+        checklist = self._checklist(name, kernel)
         if as_json:
-            typer.echo(json.dumps({"steps": [_json(result)], "doctor": None}, indent=2))
+            extra: dict[str, object] = {"bindings": bindings, "checklist": checklist}
+            typer.echo(json.dumps({"steps": [_json(result)], "doctor": None, **extra}, indent=2))
         else:
+            rows = cast("list[dict[str, Any]]", (checklist or {}).get("rows", []))
+            for row in rows:
+                if row["state"] != "connected":
+                    command = f": {row['action']['command']}" if row["action"]["command"] else ""
+                    self.console.print(Text(f"{row['connector']}: {row['line']}{command}"), highlight=False)
             if result.outcome.value == "done" and _playful.allowed(self.kernel.settings, self.console):
                 self.console.print(_playful.glyph(), end=" ")
             self.console.print(Text(f"{result.module}: {result.outcome.value}"), highlight=False)
             self._notice()
         if code := exit_code([result]):
             raise typer.Exit(code=code)
+
+    def _operation(self, key: tuple[str, str], kernel: Kernel | None = None) -> OperationLet | None:
+        return next(
+            (let for owner, let in (kernel or self.kernel).lets(OperationLet) if (owner.qualname, let.name) == key),
+            None,
+        )
+
+    def _bind_first(self, name: str, prompter: Prompter) -> list[dict[str, object]] | None:
+        """Offer the connector bindings `name`'s playbook recommends at once, through `system plugin bind` (ADR 0145).
+
+        The same service an install uses writes them, so the CLI and the web app write through one path; a binding
+        the person set is kept. Declined, the wizard asks about each as before.
+
+        Returns:
+            The bindings it reports when it wrote any, else None.
+        """
+        let = self._operation(PLAYBOOK_BIND)
+        recommends = any(
+            owner.qualname == name and any(key.startswith("capabilities.") for key in playbook.defaults)
+            for owner, playbook in self.kernel.lets(PlaybookLet)
+        )
+        if let is None or not recommends:
+            return None
+        plan = self.kernel.invoke(let, module=name, dry_run=True)
+        todo = [b for b in plan.bindings if b.state == "written"]
+        if not todo:
+            return None
+        listed = ", ".join(f"{b.capability} → {b.adapter}" for b in todo)
+        prompter.say(f"{name} recommends these connectors: {listed}.")
+        if not prompter.confirm("Set them now? A binding you set yourself stays.", default=False):
+            return None
+        done = self.kernel.invoke(let, module=name)
+        prompter.say(done.message)
+        return [b.model_dump(mode="json") for b in done.bindings]
+
+    def _checklist(self, name: str, fresh: Kernel) -> dict[str, object] | None:
+        """What is still to do for `name`'s playbook, with the bindings just written."""
+        let = self._operation(PLAYBOOK_CHECKLIST, fresh)
+        if let is None or not any(owner.qualname == name for owner, _ in fresh.lets(PlaybookLet)):
+            return None
+        try:
+            return cast("dict[str, object]", fresh.invoke(let, module=name).model_dump(mode="json"))
+        except HeinzelError:
+            return None
 
     def _notice(self) -> None:
         """The update notice after human output, like every other command (ADR 0031)."""

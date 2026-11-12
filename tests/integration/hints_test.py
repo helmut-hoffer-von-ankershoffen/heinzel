@@ -1,8 +1,9 @@
 """Hints about capabilities end with a command that works (CODING_STANDARDS.md, Errors).
 
 Every fix that doctor or an error gives for an unmet capability or a misconfigured runner ends with an `hz ...`
-command line. The test parses each against the real command tree, so a renamed command, option or setting fails it,
-and runs the configuration commands to show they leave the capability served.
+command line (a capability check carries it in its action, ADR 0145). The test parses each against the real command
+tree, so a renamed command, option or setting fails it, and runs the configuration commands to show they leave the
+capability served.
 """
 
 import json
@@ -71,10 +72,18 @@ def assert_parses(kernel: Kernel, args: list[str]) -> None:
 
 
 def hints(kernel: Kernel) -> list[str]:
-    """Every fix doctor gives for capabilities and runners."""
+    """Every fix doctor gives for capabilities and runners: its action's command when it has one (ADR 0145).
+
+    A capability check says what to do in words and carries the command in its action, which a terminal prints.
+    """
     result = CliRunner().invoke(build(kernel), ["system", "doctor", "--json"])
     checks = json.loads(result.output)["checks"]
-    return [c["fix"] for section in ("system.capability", "system.runner") for c in checks[section] if c["fix"]]
+    return [
+        (c.get("action") or {}).get("command") or c["fix"]
+        for section in ("system.capability", "system.runner")
+        for c in checks[section]
+        if c["fix"]
+    ]
 
 
 @pytest.fixture
