@@ -2002,6 +2002,69 @@ it("shows the Heinzel's chosen look in the header and before its replies, not be
   await expectAccessible(container);
 });
 
+it("keeps the conversation first: the admin sections sit behind one Details disclosure and the button says Send", async () => {
+  const scrolled = vi.fn();
+  Element.prototype.scrollIntoView = scrolled;
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      profile_revision: 1,
+      messages: [{ id: "a1", seq: 2, role: "assistant", text: "Good day", status: "completed" }],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const details = (await screen.findByText("Details")).closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  expect(details).toContainElement(await screen.findByText("Customize your Heinzel"));
+  expect(details).not.toContainElement(screen.getByText("Good day", { exact: false }));
+  expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
+  try {
+    await waitFor(() => expect(scrolled).toHaveBeenCalledWith({ block: "end" }));
+  } finally {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  }
+});
+
+it("opens the Details for a review link", async () => {
+  mockApi({ ...shell, "/api/heinzel/session": { ...snapshot, profile_revision: 1 } });
+  renderAt(`/?chat=${sessionId}&schedule-chat=abc`);
+  const details = (await screen.findByText("Details")).closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(true);
+});
+
+it("names the cause of a failed turn, links to the AI settings and keeps the recovery behind one line", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": { ...snapshot, profile_revision: 1 },
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/heinzel/answer-chat": {
+      status: 400,
+      body: { error: "The subscription response could not be safely admitted or verified" },
+    },
+    "/api/heinzel/chat-turn-state": async (request: Request) => ({
+      session_id: sessionId,
+      request_id: new URL(request.url).searchParams.get("request_id"),
+      status: "unresolved",
+    }),
+  });
+  renderAt(`/?chat=${sessionId}`);
+  fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Hello there" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByText("The subscription response could not be safely admitted or verified")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Check AI access in Settings" })).toHaveAttribute(
+    "href",
+    expect.stringContaining("settings=ai"),
+  );
+  const recovery = screen.getByText("What happened to my message?").closest("details") as HTMLDetailsElement;
+  expect(recovery.open).toBe(false);
+  expect(recovery).toContainElement(await screen.findByRole("button", { name: "Check saved turn" }));
+});
+
 it("shows only owner-session associations and recorded review states in the agent chat", async () => {
   const ref = "https://docs.google.com/document/d/abc123_DEF456/edit";
   const { calls } = mockApi({

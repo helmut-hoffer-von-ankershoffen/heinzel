@@ -148,6 +148,8 @@ function DurableSessionView({
   } = useDurableDraft(sessionId);
   const { text, pending, agentPending, checkInRequest } = composer;
   const [error, setError] = useState(false);
+  // What the server said about the last failed turn, so the person sees the cause instead of a generic line.
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [profileLocked, setProfileLocked] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -547,6 +549,7 @@ function DurableSessionView({
     }
     setBusy(true);
     setError(false);
+    setErrorDetail(null);
     let acceptedConfirmed = request.accepted === true;
     try {
       if (!request.accepted) {
@@ -590,6 +593,7 @@ function DurableSessionView({
         updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
       }
       setError(true);
+      setErrorDetail(reason instanceof ApiError ? reason.message : null);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } finally {
       running.current = false;
@@ -1555,37 +1559,62 @@ function DurableSessionView({
             onChange={(event) => updateComposer({ text: event.target.value })}
           />
         </label>
-        {error && pending?.outcome !== "subscription_usage_limit" && <p role="alert">{t("durable.failed")}</p>}
-        {pending?.outcome === "subscription_usage_limit" ? (
+        {error && pending?.outcome !== "subscription_usage_limit" && (
+          <div className="space-y-1 text-sm" role="alert">
+            <p>{t("durable.failed")}</p>
+            {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
+            {errorDetail && (
+              <p>
+                {t("durable.aiAccessHint")}{" "}
+                <Link
+                  className="underline"
+                  to={{ search: `?${new URLSearchParams([...params.entries(), ["settings", "ai"]])}` }}
+                >
+                  {t("durable.aiAccessLink")}
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
+        {pending?.outcome === "subscription_usage_limit" && (
           <p role="status" className="text-sm">
             Claude Code reported its subscription usage limit. Your message is saved; the answer is uncertain and this
             turn will not run again. This conversation remains blocked until the uncertain turn is resolved.
           </p>
-        ) : (
-          pending?.accepted && (
-            <p role="status" className="text-sm">
-              Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted turn
-              will not be run again.
-            </p>
-          )
         )}
-        {pending?.accepted && !busy && (
-          <UncertainTurnRecovery
-            key={`${sessionId}:${pending.request_id}`}
-            sessionId={sessionId}
-            requestId={pending.request_id}
-            onResolved={() => {
-              updateComposer({ pending: null, text: "" });
-              void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
-            }}
-          />
+        {pending?.accepted && (
+          <details
+            className="rounded border border-border p-2 text-sm"
+            open={pending.outcome === "subscription_usage_limit" || undefined}
+          >
+            <summary className="cursor-pointer font-medium">{t("durable.recovery")}</summary>
+            <div className="mt-2 space-y-2">
+              {pending.outcome !== "subscription_usage_limit" && (
+                <p role="status">
+                  Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted
+                  turn will not be run again.
+                </p>
+              )}
+              {pending?.accepted && !busy && (
+                <UncertainTurnRecovery
+                  key={`${sessionId}:${pending.request_id}`}
+                  sessionId={sessionId}
+                  requestId={pending.request_id}
+                  onResolved={() => {
+                    updateComposer({ pending: null, text: "" });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
+                  }}
+                />
+              )}
+            </div>
+          </details>
         )}
         <Button
           type="submit"

@@ -45,6 +45,9 @@ const en = {
   "durable.message": "Message your Heinzel",
   "durable.send": "Send",
   "durable.details": "Details",
+  "durable.aiAccessHint": "This can happen when AI access is missing or has expired.",
+  "durable.aiAccessLink": "Check AI access in Settings",
+  "durable.recovery": "What happened to my message?",
   "durable.retry": "Retry the same message",
   "durable.failed": "The message could not be confirmed. Retry the same message or reopen this conversation.",
   "durable.preservationFailed":
