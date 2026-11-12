@@ -965,6 +965,8 @@ const en = {
   "status.noCalendar": "No calendar connected",
   "status.connectCalendar": "Connect a calendar…",
   "status.release": "GitHub release",
+  "status.backend": "Backend v{version}",
+  "status.desktop": "Desktop app v{version}",
   "about.version": "Version",
   "about.installedOn": "Installed {date}",
   "about.pluginInstalled": "Installed",
