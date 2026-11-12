@@ -65,6 +65,18 @@ describe("Shell", () => {
     }
   });
 
+  it("opens the Chat tab on a phone when the link names a conversation", async () => {
+    mockApi({ ...answers });
+    const initialWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      renderAt("/doctor?chat=hz-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+      await waitFor(() => expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true"));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
+    }
+  });
+
   it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {
     mockApi({ ...answers, "/api/system/expert": expert });
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar

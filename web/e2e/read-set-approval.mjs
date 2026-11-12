@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { chromium, webkit } from "playwright-core";
+import { openDetails } from "./chat-ready.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -29,10 +30,11 @@ try {
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   if (!(await page.getByLabel("Message your Heinzel").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await openDetails(page);
   const panel = page.getByRole("region", { name: "Sources for this chat" });
   await panel.getByRole("button", { name: "Ask about sources" }).click();
   await page.getByLabel("Message your Heinzel").fill("Suggest two bounded reads.");
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await panel.getByText(/Suggested sources: no provider was contacted/).waitFor({ timeout: 30000 });
   assert.equal(approvals, 0);
   await panel.getByRole("button", { name: "Use suggested sources" }).click();

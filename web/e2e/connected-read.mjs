@@ -31,7 +31,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   await page.getByText(/Tool activity for this reply/).click();
   await page.getByText("connected_read · completed").waitFor();

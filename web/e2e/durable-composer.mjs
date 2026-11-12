@@ -241,7 +241,7 @@ try {
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "");
   await page.goto(sessionUrlFor(firstSession));
   await page.getByLabel("Message your Heinzel").waitFor();
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "Retry the same message" }).waitFor();
   const savedPending = JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), firstKey));
   assert.equal(savedPending.pending.message, "First session draft survives the update");

@@ -4,7 +4,7 @@ import { openChatJourney, runDaemonTurn, startChatJourney } from "./chat-ready.m
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
   await startChatJourney(page, url);
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
@@ -24,7 +24,10 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedule = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
+    .last(); // the Details disclosure around it matches too
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
