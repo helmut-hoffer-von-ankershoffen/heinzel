@@ -195,6 +195,10 @@ class AccessOption(BaseModel):
         description="What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` "
         "or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.",
     )
+    client: str | None = Field(
+        default=None,
+        description="For `client`: the optional client of hz itself it needs, e.g. `openai` (`heinzel[openai]`).",
+    )
     detail: str = Field(default="", description="What it found, e.g. the CLI's path.")
     fix: str = Field(default="", description="A command that makes it usable; often empty.")
     models: list[str] = Field(default_factory=list[str], description="Models it offers or is configured with.")

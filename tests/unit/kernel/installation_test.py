@@ -485,20 +485,6 @@ def test_failed_plugin_change_never_probes_without_original_generation(tmp_path,
     assert probes == []
 
 
-def test_opt_in_current_installed_receipt_target_read_only():
-    from pathlib import Path
-
-    prefix = os.environ.get("HZ_READONLY_UV_PREFIX")
-    if not prefix:
-        pytest.skip("Set HZ_READONLY_UV_PREFIX to inspect an installed tool receipt without mutations")
-    installation = Installation(Progress(), prefix=Path(prefix), uv="unused")
-    target = installation._tool_target()
-    assert target["UV_TOOL_DIR"] == str(Path(prefix).resolve(strict=True).parent)
-    assert (Path(target["UV_TOOL_BIN_DIR"]) / "hz").resolve(strict=True) == (
-        Path(prefix).resolve(strict=True) / "bin" / "hz"
-    ).resolve(strict=True)
-
-
 def test_dangling_foreign_executable_refuses_before_runner(tmp_path):
     prefix, bin_dir = _target_fixture(tmp_path)
     dangling = bin_dir / "unrelated"

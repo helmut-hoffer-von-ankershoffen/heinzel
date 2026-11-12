@@ -3,7 +3,7 @@
 // sidebar entry and setup button, so a footer that lays itself out again cannot hide a running install.
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
@@ -12,9 +12,11 @@ import { type MessageKey, t } from "@/i18n";
 import { daemonRestartResult } from "@/lib/daemonRestart";
 import {
   dismissOperation,
+  getRun,
   type OperationRun,
   type Phase,
   type PhaseState,
+  recoverOperation,
   startOperation,
   useOperationRun,
   usePrimaryHost,
@@ -154,6 +156,7 @@ export function OperationDialog() {
   const heading = useId();
   const box = useRef<HTMLDivElement>(null);
   const title = useRef<HTMLParagraphElement>(null);
+  const [armedRecovery, setArmedRecovery] = useState<OperationRun | null>(null);
   const stage = run.stage;
   const driven = run.stage !== "idle" && run.driven !== undefined;
   // Focus is never lost when a stage swaps the buttons: a driven run's progress lands on its title, its outcome on
@@ -170,10 +173,17 @@ export function OperationDialog() {
       client.invalidateQueries({ queryKey: daemonStatusKey, refetchType: "all" }),
       client.invalidateQueries({ queryKey: ["org", "calendar-reminders-status"], refetchType: "all" }),
     ]).then(() => undefined);
-  const go = () => void startOperation(() => void settled());
+  const go = () => {
+    if (getRun() === run) void startOperation(() => void settled());
+  };
+  const close = () => {
+    if (getRun() !== run) return;
+    setArmedRecovery(null);
+    dismissOperation();
+  };
   // A quick write needs no confirmation: asking for it starts it.
   useEffect(() => {
-    if (primary && stage === "confirm" && quick) void startOperation(() => void settled());
+    if (primary && stage === "confirm" && quick) go();
   });
   if (!primary || run.stage === "idle" || (quick && run.stage === "confirm")) return null;
   const persistent = PERSISTENT.has(run.call.path);
@@ -193,7 +203,7 @@ export function OperationDialog() {
       onKeyDown={(event) => {
         // A dialog it covers (the setup wizard) must not close, or move the focus away, because of what is typed here.
         event.stopPropagation();
-        if (event.key === "Escape" && run.stage !== "running") dismissOperation();
+        if (event.key === "Escape" && run.stage !== "running") close();
       }}
       className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl outline-none"
     >
@@ -208,7 +218,7 @@ export function OperationDialog() {
         </p>
         {driven && run.stage !== "running" && (
           <div data-pane-chrome="" className="flex shrink-0 items-center gap-1.5">
-            <PaneAction icon={X} ghost onClick={dismissOperation}>
+            <PaneAction icon={X} ghost onClick={close}>
               {t("op.close")}
             </PaneAction>
           </div>
@@ -228,7 +238,7 @@ export function OperationDialog() {
           ))}
           {run.driven.details}
           <PaneActions align="end" words="all">
-            <PaneAction key="cancel" icon={X} autoFocus onClick={dismissOperation}>
+            <PaneAction key="cancel" icon={X} autoFocus onClick={close}>
               {t("contrib.cancel")}
             </PaneAction>
             <PaneAction key="go" icon={Play} primary destructive={run.driven.destructive} onClick={go}>
@@ -248,7 +258,7 @@ export function OperationDialog() {
             </code>
           )}
           <PaneActions align="end" words="all">
-            <PaneAction key="cancel" icon={X} autoFocus onClick={dismissOperation}>
+            <PaneAction key="cancel" icon={X} autoFocus onClick={close}>
               {t("contrib.cancel")}
             </PaneAction>
             <PaneAction key="go" icon={Play} primary onClick={go}>
@@ -313,7 +323,7 @@ export function OperationDialog() {
           </p>
           <Steps phases={run.phases} active={false} />
           <PaneActions align="end" words="all">
-            <PaneAction key="close" icon={Check} primary autoFocus onClick={dismissOperation}>
+            <PaneAction key="close" icon={Check} primary autoFocus onClick={close}>
               {t("op.finish")}
             </PaneAction>
           </PaneActions>
@@ -328,20 +338,43 @@ export function OperationDialog() {
             </span>
           </p>
           <Steps phases={run.phases} active={false} uncertain={run.outcomeUnknown} />
-          {!quick && (
+          {run.recovery ? (
+            <div className="mt-3 text-xs text-muted-foreground">
+              {run.error !== run.recovery.message && <p>{run.recovery.message}</p>}
+              <p>{run.recovery.help}</p>
+            </div>
+          ) : !quick ? (
             <p className="mt-3 text-xs text-muted-foreground">
               {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
             </p>
-          )}
+          ) : null}
           <PaneActions align="end" words="all">
-            <PaneAction key="close" icon={X} onClick={dismissOperation}>
+            <PaneAction key="close" icon={X} onClick={close}>
               {t("op.close")}
             </PaneAction>
             {/* A tracked write is retried where it was asked; a driven one checks what the failed attempt left. */}
-            {(!run.tracked || run.driven) && !run.outcomeUnknown && (
-              <PaneAction key="retry" icon={RotateCw} primary autoFocus={driven} onClick={go}>
-                {t("op.retry")}
+            {run.recovery ? (
+              <PaneAction
+                key="recover"
+                icon={RotateCw}
+                primary
+                autoFocus
+                onClick={() => {
+                  if (armedRecovery === run) {
+                    setArmedRecovery(null);
+                    recoverOperation(run);
+                  } else setArmedRecovery(run);
+                }}
+              >
+                {armedRecovery === run ? run.recovery.confirm : run.recovery.action}
               </PaneAction>
+            ) : (
+              (!run.tracked || run.driven) &&
+              !run.outcomeUnknown && (
+                <PaneAction key="retry" icon={RotateCw} primary autoFocus={driven} onClick={go}>
+                  {t("op.retry")}
+                </PaneAction>
+              )
             )}
           </PaneActions>
         </>
@@ -354,7 +387,7 @@ export function OperationDialog() {
           </p>
           <Steps phases={run.phases} active={false} />
           <PaneActions align="end" words="all">
-            <PaneAction key="close" icon={X} onClick={dismissOperation}>
+            <PaneAction key="close" icon={X} onClick={close}>
               {t("op.close")}
             </PaneAction>
             <PaneAction key="wait" icon={RotateCw} primary autoFocus onClick={go}>

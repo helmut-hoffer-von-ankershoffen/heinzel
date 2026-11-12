@@ -56,6 +56,7 @@ from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
+from heinzel.heads.web._chatgpt_signin import ChatGptSignIn, local_callback_navigation
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
@@ -172,6 +173,8 @@ def api_app(
     )
 
     add_lifecycle(app, kernel, restart)
+    app.state.chatgpt_sign_in = sign_in = ChatGptSignIn(kernel, port)
+    sign_in.add_start(app)
     return app
 
 
@@ -215,12 +218,14 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
-        if problem := api.request_refusal(
-            headers,
-            api.LOOPBACK,
-            port,
-            allowed_origins=runtime.loaded_origins,
-            host_help=api.WEB_HOST_HELP,
+        if not local_callback_navigation(request, port) and (
+            problem := api.request_refusal(
+                headers,
+                api.LOOPBACK,
+                port,
+                allowed_origins=runtime.loaded_origins,
+                host_help=api.WEB_HOST_HELP,
+            )
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
         elif counts_as_work(request.method, request.url.path):
@@ -252,6 +257,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
     app.state.lifecycle = endpoints.state.lifecycle
+    endpoints.state.chatgpt_sign_in.add_callback(app)
     add_pairing(endpoints, paired)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
     add_updates(endpoints, kernel, static, restartable=restart is not None, busy=_update_busy(app.state.auto_update))
@@ -579,6 +585,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     config = uvicorn.Config(
         app,
         log_level="warning",
+        access_log=False,  # a loopback OAuth redirect carries a one-time authorization code
         lifespan="off",
         timeout_graceful_shutdown=GRACE_SECONDS,
         timeout_keep_alive=KEEP_ALIVE_SECONDS,

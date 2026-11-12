@@ -184,13 +184,21 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   plan usage to open-source apps ("ChatGPT plan usage is available to all open-source partners and selected private
   clients", developers.openai.com/siwc/quickstart, read 2026-10-25); each person approves hz by name and can limit it
   in ChatGPT's settings, and a paid or remotely hosted app would need OpenAI's approval first. hz is open source and
-  runs on the person's machine, so `hz ai access login` (CLI only: it opens the browser and waits for the callback on
-  127.0.0.1) signs in through Pydantic AI's `openai-chatgpt` flow under the app name "Heinzelmännchen" and a stable
+  runs on the person's machine, so `hz ai access login` opens the browser and waits for the callback on
+  127.0.0.1. It signs in through Pydantic AI's `openai-chatgpt` flow under the app name "Heinzelmännchen" and a stable
   installation id (`<state_dir>/ai/host-id`). The credentials, a refresh token among them, are one keychain
   credential (`ai.access/chatgpt-login`) that Pydantic AI reads and refreshes through it; `[ai.access]
   chatgpt_model` names the model. hz does not use Pydantic AI's `openai-codex` provider, which signs in as the Codex
   CLI with that CLI's stored credentials; a ChatGPT plan's coding agent is the Codex CLI itself, its own access
   option and agent runner (next slice).
+  **Local web sign-in.** A person using the owning web session on the same computer can start sign-in from AI access
+  settings. The web head opens the system browser for the person's consent and waits for the one-time callback on
+  its existing `127.0.0.1` listener. The callback accepts only the state for that pending request. Closing the dialog
+  cancels an unverified attempt, and the authorization expires after five minutes. The web head checks the OpenAI
+  identity token's signature against OpenAI's public keys with PyJWT before saving the result in the keychain.
+  The app gets an outcome without authorization URLs or tokens. Paired device sessions and reverse-proxy origins use
+  the command in Details. The [OpenAI public-client sign-in guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+  specifies the loopback callback and signed identity checks.
 - First slice: the protocol, `Adapters[P]`, the `claude-code`, `gateway` and `pydantic-ai` options with the
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
   `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section. Second

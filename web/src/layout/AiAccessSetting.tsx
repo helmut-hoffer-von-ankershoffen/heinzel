@@ -3,13 +3,41 @@
 // test button that runs `hz ai access test` only when pressed, since a live check may cost a little. Picking an option
 // applies at once: the running hz takes up the agent runner before its next call, so nothing asks for a restart.
 // Commands are for people who want them: only inside each card's Details.
-import { FlaskConical, Settings2, X } from "lucide-react";
-import { useId, useState } from "react";
-import type { SchemaAccessOption, SchemaAccessTestReport } from "@/api/client";
-import { useAiAccess, useSetAiAccess, useSetSetting, useTestAiAccess } from "@/api/queries";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { FlaskConical, LogIn, RotateCw, Settings2, Trash2, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import type {
+  SchemaAccessOption,
+  SchemaAccessTestReport,
+  SchemaChatGptSignInResult,
+  SchemaOperationCall,
+} from "@/api/client";
+import { api, authorityMiddleware, unwrap } from "@/api/client";
+import {
+  useAiAccess,
+  useAiKey,
+  useRemoveAiKey,
+  useSetAiAccess,
+  useSetAiKey,
+  useSetSetting,
+  useTestAiAccess,
+} from "@/api/queries";
+import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
+import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
+import {
+  acknowledgePluginRestart,
+  acquirePluginChange,
+  completePluginRestart,
+  forgetPluginRestart,
+  retainPluginRestart,
+} from "@/layout/pluginActivation";
+import { PLANS } from "@/lib/operationPlans";
+import { OperationRecoveryRequired, type Phase, requestDrivenOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
+import { ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
+import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 
 type Tone = "ok" | "idle" | "warn" | "bad";
 const tone: Record<SchemaAccessOption["status"], Tone> = {
@@ -35,6 +63,7 @@ const WORD: Record<SchemaAccessOption["status"], MessageKey> = {
 export const SUGGESTED_MODELS = ["anthropic:claude-sonnet-4-5", "anthropic:claude-haiku-4-5", "openai:gpt-5"];
 
 export function AiAccessSetting() {
+  const client = useQueryClient();
   const access = useAiAccess();
   const change = useSetAiAccess();
   const check = useTestAiAccess();
@@ -60,7 +89,10 @@ export function AiAccessSetting() {
             result={tested?.name === option.name ? tested : undefined}
             onSelect={() => !option.in_use && change.mutate(option.name)}
             onTest={() => check.mutate(option.name)}
-            onSetUp={() => setSetting(option)}
+            onSetUp={() => {
+              if (option.setup === "client") requestClientInstall(option, client);
+              else setSetting(option);
+            }}
           />
         ))}
       </div>
@@ -90,7 +122,7 @@ export function statusLine(option: SchemaAccessOption): string {
 function Option({ option, busy, testing, result, onSelect, onTest, onSetUp }: OptionProps) {
   const detailId = useId();
   const usable = option.status !== "needs setup" && option.status !== "error";
-  const settable = option.setup === "model" || option.setup === "gateway";
+  const settable = option.setup != null;
   return (
     <div
       data-option={option.name}
@@ -171,22 +203,9 @@ const FIELDS: Record<"model" | "gateway", { key: string; label: MessageKey; plac
   ],
 };
 
-function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
+/** One small dialog over the settings: a title, a close button and its content. */
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const titleId = useId();
-  const listId = useId();
-  const save = useSetSetting();
-  const check = useTestAiAccess();
-  const kind = option.setup === "gateway" ? "gateway" : "model";
-  const fields = FIELDS[kind];
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState(false);
-  const store = async () => {
-    for (const field of fields) {
-      const value = values[field.key]?.trim();
-      if (value) await save.mutateAsync({ key: field.key, value });
-    }
-    setSaved(true);
-  };
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
     <div
@@ -197,13 +216,18 @@ function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose:
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        onKeyDown={(event) => event.key === "Escape" && onClose()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[min(32rem,100%)] flex-col rounded-xl border border-border bg-popover p-4 shadow-2xl"
       >
         <header className="flex items-center">
           <h2 id={titleId} className="text-ui font-medium">
-            {t("aiAccess.setUpOne", { title: option.title })}
+            {title}
           </h2>
           <div data-pane-chrome="" className="ml-auto">
             <PaneAction ghost icon={X} onClick={onClose}>
@@ -211,55 +235,352 @@ function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose:
             </PaneAction>
           </div>
         </header>
-        <form
-          className="mt-3 flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void store();
-          }}
-        >
-          {fields.map((field, index) => (
-            <label key={field.key} className="flex flex-col gap-1 text-sm">
-              {t(field.label)}
-              <input
-                // biome-ignore lint/a11y/noAutofocus: the dialog opens to type its first field
-                autoFocus={index === 0}
-                list={field.list ? listId : undefined}
-                value={values[field.key] ?? ""}
-                placeholder={field.placeholder}
-                onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
-                className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
-              />
-            </label>
-          ))}
-          {kind === "model" && (
-            <datalist id={listId}>
-              {SUGGESTED_MODELS.map((model) => (
-                <option key={model} value={model} />
-              ))}
-            </datalist>
-          )}
-          {kind === "model" && <p className="text-ui-sm text-muted-foreground">{t("aiAccess.setup.keyNote")}</p>}
-          {save.error && <p className="text-sm text-bad">{save.error.message}</p>}
-          {saved && !save.error && <p className="text-sm text-ok">{t("aiAccess.setup.saved")}</p>}
-          {check.data && <TestResult result={check.data} />}
-          {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
-          <PaneActions align="end" words="all">
-            <PaneAction
-              key="test"
-              icon={FlaskConical}
-              type="button"
-              disabled={!saved || check.isPending}
-              onClick={() => check.mutate(option.name)}
-            >
-              {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
-            </PaneAction>
-            <PaneAction key="save" icon={Settings2} primary type="submit" disabled={save.isPending}>
-              {t("aiAccess.setup.save")}
-            </PaneAction>
-          </PaneActions>
-        </form>
+        <div className="mt-3 flex flex-col gap-3">{children}</div>
       </div>
     </div>
+  );
+}
+
+function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
+  const title = t("aiAccess.setUpOne", { title: option.title });
+  return (
+    <Modal title={title} onClose={onClose}>
+      {option.setup === "sign-in" ? <SignInSetup option={option} /> : <FormSetup option={option} />}
+    </Modal>
+  );
+}
+
+/** Model and gateway settings, and for the Model API its key, which goes only to the credentials store. */
+function FormSetup({ option }: { option: SchemaAccessOption }) {
+  const listId = useId();
+  const save = useSetSetting();
+  const check = useTestAiAccess();
+  const kind = option.setup === "gateway" ? "gateway" : "model";
+  const fields = FIELDS[kind];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const [secret, setSecret] = useState("");
+  const keyState = useAiKey();
+  const storeKey = useSetAiKey();
+  const removeKey = useRemoveAiKey();
+  const store = async () => {
+    for (const field of fields) {
+      const value = values[field.key]?.trim();
+      if (value) await save.mutateAsync({ key: field.key, value });
+    }
+    if (kind === "model" && secret.trim()) {
+      await storeKey.mutateAsync(secret.trim());
+      setSecret(""); // gone from the page as soon as it is kept
+    }
+    setSaved(true);
+  };
+  const error = save.error ?? storeKey.error ?? removeKey.error;
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void store().catch(() => undefined);
+      }}
+    >
+      {fields.map((field, index) => (
+        <label key={field.key} className="flex flex-col gap-1 text-sm">
+          {t(field.label)}
+          <input
+            // biome-ignore lint/a11y/noAutofocus: the dialog opens to type its first field
+            autoFocus={index === 0}
+            list={field.list ? listId : undefined}
+            value={values[field.key] ?? ""}
+            placeholder={field.placeholder}
+            onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+            className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
+          />
+        </label>
+      ))}
+      {kind === "model" && (
+        <>
+          <datalist id={listId}>
+            {SUGGESTED_MODELS.map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
+          <label className="flex flex-col gap-1 text-sm">
+            {t("aiAccess.setup.key")}
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={secret}
+              placeholder={keyState.data?.stored ? t("aiAccess.setup.keyStored") : ""}
+              onChange={(event) => setSecret(event.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
+            />
+          </label>
+          <p className="flex items-center gap-2 text-ui-sm text-muted-foreground">
+            <span data-key-state="">
+              {keyState.data?.stored ? t("aiAccess.setup.keyKept") : t("aiAccess.setup.keyNote")}
+            </span>
+            {keyState.data?.stored && (
+              <span data-pane-chrome="">
+                <PaneAction ghost icon={Trash2} type="button" onClick={() => removeKey.mutate()}>
+                  {t("aiAccess.setup.removeKey")}
+                </PaneAction>
+              </span>
+            )}
+          </p>
+        </>
+      )}
+      {error && <p className="text-sm text-bad">{error.message}</p>}
+      {saved && !error && <p className="text-sm text-ok">{t("aiAccess.setup.saved")}</p>}
+      {check.data && <TestResult result={check.data} />}
+      {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
+      <PaneActions align="end" words="all">
+        <PaneAction
+          key="test"
+          icon={FlaskConical}
+          type="button"
+          disabled={!saved || check.isPending}
+          onClick={() => check.mutate(option.name)}
+        >
+          {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
+        </PaneAction>
+        <PaneAction key="save" icon={Settings2} primary type="submit" disabled={save.isPending || storeKey.isPending}>
+          {t("aiAccess.setup.save")}
+        </PaneAction>
+      </PaneActions>
+    </form>
+  );
+}
+
+const CLIENT_INSTALL_PENDING = "hz.ai-client-install-pending.v1";
+// The receipt survives reloads. Preserve the server's error too while this page is open.
+let clientInstallError: string | null = null;
+
+function clientInstallUncertain(): boolean {
+  try {
+    return window.sessionStorage.getItem(CLIENT_INSTALL_PENDING) !== null;
+  } catch {
+    return true;
+  }
+}
+
+function clientInstallRecovery(message?: string): OperationRecoveryRequired {
+  const unknown = t("plugins.operationUnknown");
+  return new OperationRecoveryRequired(message ?? unknown, {
+    message: unknown,
+    help: t("plugins.operationUnknownHelp"),
+    action: t("plugins.operationResolve"),
+    confirm: t("plugins.operationResolveConfirm"),
+    clear: () => {
+      try {
+        window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
+        clientInstallError = null;
+      } catch {
+        throw new Error(t("plugins.operationUnavailable"));
+      }
+    },
+  });
+}
+
+/** Consent and progress for adding a client of hz itself, even after Settings unmounts. */
+function requestClientInstall(option: SchemaAccessOption, client: QueryClient): void {
+  const extra = option.client;
+  if (extra !== "openai" && extra !== "anthropic") return;
+  const call: SchemaOperationCall = {
+    method: "POST",
+    path: "/system/plugin/add-extra",
+    query: { extra },
+    command: `hz system plugin add-extra ${extra}`,
+    summary: t("aiAccess.setUpOne", { title: option.title }),
+    read_only: false,
+  };
+  let restart: RestartObservation | undefined;
+  let phases: Phase[] = [];
+  requestDrivenOperation(
+    call,
+    {
+      consent: [t("aiAccess.client.confirm", { needs: option.needs }), t("aiAccess.client.why")],
+      action: t("aiAccess.client.add"),
+      runningTitle: t("aiAccess.client.runningTitle", { title: option.title }),
+      doneTitle: t("lifecycle.phase.applied"),
+      running: t("aiAccess.client.running"),
+      run: async (report) => {
+        if (!restart && clientInstallUncertain()) throw clientInstallRecovery(clientInstallError ?? undefined);
+        // Reserve the environment from the first mutation through verification of the restarted server.
+        const release = acquirePluginChange(restart);
+        if (!release) throw new Error(t("pluginsPending.restartRequired"));
+        const steps = new ApplySteps(
+          (next) => {
+            phases = next;
+            report(next);
+          },
+          { write: t("aiAccess.client.write"), check: t("aiAccess.client.check") },
+          restart ? phases : undefined,
+          undefined,
+          [...PLANS["ai.client.install"]],
+        );
+        try {
+          await applyWithSteps(
+            {
+              resume: restart,
+              change: async (signal) => {
+                try {
+                  window.sessionStorage.setItem(CLIENT_INSTALL_PENDING, "pending");
+                } catch {
+                  throw new Error(t("plugins.receiptStorageUnavailable"));
+                }
+                const answer = await unwrap(
+                  api.POST("/system/plugin/add-extra", { params: { query: { extra } }, signal }),
+                );
+                if (
+                  answer?.extra !== extra ||
+                  typeof answer.done !== "boolean" ||
+                  typeof answer.restart_required !== "boolean"
+                )
+                  throw new Error(t("plugins.notCompleted"));
+                // An older server can return a receipt-only no-op before this process has loaded the client.
+                return true;
+              },
+              options: {
+                onObservation: (observation) => {
+                  retainPluginRestart(observation);
+                  restart = observation;
+                },
+                onAcknowledged: acknowledgePluginRestart,
+                preserveTimeout: 10 * 60_000,
+              },
+            },
+            steps,
+          );
+          completePluginRestart();
+          window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
+          steps.mark("reload", "skipped");
+          steps.mark("check", "running");
+          await client.invalidateQueries({ queryKey: ["ai"] });
+          steps.mark("check", "done");
+        } catch (error) {
+          if (restart && error instanceof RestartApplyError && error.kind === "stale") {
+            forgetPluginRestart();
+            restart = undefined;
+          }
+          // Once the install answered, a retry can observe its recorded restart without replaying either POST.
+          if (restart) throw error;
+          if (!clientInstallUncertain()) throw error;
+          clientInstallError = error instanceof Error ? error.message : String(error);
+          throw clientInstallRecovery(clientInstallError);
+        } finally {
+          steps.stop();
+          release();
+        }
+      },
+    },
+    clientInstallUncertain() ? clientInstallRecovery(clientInstallError ?? undefined) : undefined,
+  );
+}
+
+const SIGN_IN_OUTCOME: Record<SchemaChatGptSignInResult["outcome"], MessageKey> = {
+  connected: "aiAccess.signIn.connected",
+  declined: "aiAccess.signIn.declined",
+  failed: "aiAccess.signIn.failed",
+  cancelled: "aiAccess.signIn.cancelled",
+  expired: "aiAccess.signIn.expired",
+  "browser-unavailable": "aiAccess.signIn.browserUnavailable",
+};
+
+/** A local ChatGPT sign-in opens the system browser. Other sign-in methods keep their own setup instructions. */
+function SignInSetup({ option }: { option: SchemaAccessOption }) {
+  const access = useAiAccess();
+  const epoch = useSyncExternalStore(subscribeAuthority, authorityEpoch);
+  const active = useRef<{ controller: AbortController; epoch: number } | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const [outcome, setOutcome] = useState<SchemaChatGptSignInResult["outcome"]>();
+  const current = access.data?.options.find((item) => item.name === option.name) ?? option;
+  const local =
+    option.name === "chatgpt" &&
+    window.location.hostname === "127.0.0.1" &&
+    window.location.protocol === "http:" &&
+    sessionToken() != null;
+  const step = local
+    ? "aiAccess.signIn.localStep"
+    : option.name === "chatgpt"
+      ? "aiAccess.signIn.localRequired"
+      : "aiAccess.signIn.step";
+  useEffect(
+    () => () => {
+      if (active.current?.epoch === epoch) active.current.controller.abort();
+    },
+    [epoch],
+  );
+
+  const start = async () => {
+    if (active.current) return;
+    const controller = new AbortController();
+    active.current = { controller, epoch };
+    setWaiting(true);
+    setOutcome(undefined);
+    try {
+      const result = await unwrap(
+        api.POST("/ai/access/chatgpt-sign-in", { signal: controller.signal, middleware: authorityMiddleware(epoch) }),
+      );
+      if (!controller.signal.aborted) setOutcome(result.outcome);
+    } catch {
+      if (!controller.signal.aborted) setOutcome("failed");
+    } finally {
+      active.current = null;
+      setWaiting(false);
+      if (!controller.signal.aborted) void access.refetch();
+    }
+  };
+
+  return (
+    <>
+      <p className="text-sm">{t(step, { title: option.title })}</p>
+      <p data-status-line="" className="text-ui-sm text-muted-foreground">
+        {statusLine(current)}
+      </p>
+      {(waiting || outcome) && (
+        <p role="status" className="text-ui-sm">
+          {t(waiting || !outcome ? "aiAccess.signIn.waiting" : SIGN_IN_OUTCOME[outcome])}
+        </p>
+      )}
+      {current.fix && (
+        <details className="text-ui-sm text-muted-foreground">
+          <summary className="cursor-pointer select-none">{t("aiAccess.details")}</summary>
+          <p className="mt-1">{t("aiAccess.signIn.details")}</p>
+          <CopyCommand command={current.fix} />
+        </details>
+      )}
+      <PaneActions align="end" words="all" className="flex-wrap">
+        {waiting && (
+          <PaneAction
+            key="cancel"
+            icon={X}
+            type="button"
+            onClick={() => {
+              active.current?.controller.abort();
+              setOutcome("cancelled");
+            }}
+          >
+            {t("lifecycle.cancel")}
+          </PaneAction>
+        )}
+        {!waiting && (
+          <PaneAction
+            key="again"
+            icon={RotateCw}
+            type="button"
+            disabled={access.isFetching}
+            onClick={() => access.refetch()}
+          >
+            {t("lifecycle.checkAgain")}
+          </PaneAction>
+        )}
+        {local && !waiting && current.setup === "sign-in" && (
+          <PaneAction key="sign-in" primary icon={LogIn} type="button" onClick={start}>
+            {t("aiAccess.signIn.continue")}
+          </PaneAction>
+        )}
+      </PaneActions>
+    </>
   );
 }
