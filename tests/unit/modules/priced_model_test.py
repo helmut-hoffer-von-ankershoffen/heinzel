@@ -1,10 +1,23 @@
 """Offline Pydantic requests reserve worst-case bounds before a fake provider can run."""
 
 import asyncio
+import sys
+from contextlib import contextmanager
+from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
-from pydantic_ai.messages import BinaryContent, ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
+from pydantic_ai.messages import (
+    BinaryContent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
@@ -12,7 +25,15 @@ from pydantic_ai.usage import RequestUsage
 from heinzel import CurrentUser, HeinzelError
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
-from heinzel.modules.heinzel._priced_model import CHECKED, CONTEXT, EXPIRES, MODEL, ReservedModel, resolve_pricing
+from heinzel.modules.heinzel._priced_model import (
+    CHECKED,
+    CONTEXT,
+    EXPIRES,
+    MODEL,
+    REVISION,
+    ReservedModel,
+    resolve_pricing,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -39,6 +60,15 @@ def test_policy_refuses_unknown_stale_or_unapproved_modes():
     ]:
         with pytest.raises(HeinzelError, match="pricing policy"):
             resolve_pricing(model, mode, when)
+
+
+def test_reviewed_snapshot_window_stays_short_and_names_its_check_date():
+    assert MODEL == "openai:gpt-4.1-mini-2025-04-14"
+    assert timedelta(hours=72) == EXPIRES - CHECKED
+    assert f"openai-gpt-4.1-mini-standard-{CHECKED:%Y-%m-%d}" == REVISION
+    with pytest.raises(HeinzelError, match="pricing policy"):
+        resolve_pricing(MODEL, "standard", CHECKED - timedelta(microseconds=1))
+    assert resolve_pricing(MODEL, "standard", EXPIRES - timedelta(microseconds=1)) == (Decimal("0.40"), Decimal("1.60"))
 
 
 def test_worst_case_tokens_and_dollars_are_reserved_before_any_provider_work(tmp_path):
@@ -462,4 +492,103 @@ def test_modern_retry_feedback_remains_text_only_and_reserved(tmp_path):
             asyncio.run(
                 wrapped.request([ModelRequest(parts=[structured])], {"max_tokens": 200}, ModelRequestParameters())
             )
+        assert calls == [1]
+
+
+@contextmanager
+def _reserved(tmp_path, **overrides):
+    """A ReservedModel over a fake provider, the repository and its session, with generous budgets."""
+    current = CurrentUser(tmp_path / "identity")
+    calls = []
+    transport = CountedModel(lambda *_: calls.append(1) or ModelResponse([]))
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = (
+            SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("new").session_id
+        )
+        options = {
+            "message_cap": Decimal(2),
+            "max_requests": 3,
+            "max_turn_tokens": 3_200_000,
+            "max_turn_output_tokens": 600,
+            "session_cap": Decimal(3),
+            "owner_cap": Decimal(3),
+            "now": lambda: CHECKED,
+            **overrides,
+        }
+        yield repo, session, calls, ReservedModel(transport, repo, session, "turn", **options)
+
+
+def _ask(model, messages=None, settings=None, parameters=None):
+    messages = messages or [ModelRequest(parts=[UserPromptPart(content="hello")])]
+    settings = {"max_tokens": 200} if settings is None else settings
+    return asyncio.run(model.request(messages, settings, parameters or ModelRequestParameters()))
+
+
+@pytest.mark.parametrize("requests", [0, 101, True])
+def test_the_request_count_must_be_a_bounded_integer(tmp_path, requests):
+    with pytest.raises(HeinzelError, match="bounded request count"), _reserved(tmp_path, max_requests=requests):
+        pass
+
+
+def test_the_openai_provider_must_be_installed_for_the_pinned_model(tmp_path, monkeypatch):
+    with _reserved(tmp_path) as (repo, session, _calls, model):
+        monkeypatch.setitem(sys.modules, "pydantic_ai.models.openai", None)
+        options = {
+            "message_cap": Decimal(1),
+            "max_requests": 3,
+            "max_turn_tokens": 3_200_000,
+            "max_turn_output_tokens": 600,
+            "session_cap": Decimal(2),
+            "owner_cap": Decimal(3),
+            "now": lambda: CHECKED,
+        }
+        with pytest.raises(HeinzelError, match="provider is not installed"):
+            ReservedModel.for_openai(model, repo, session, "turn", **options)
+
+
+def test_a_reservation_belongs_to_the_owner_that_made_it(tmp_path, monkeypatch):
+    with _reserved(tmp_path) as (repo, _session, calls, model):
+        monkeypatch.setattr(type(repo), "principal_id", property(lambda _self: "someone-else"))
+        with pytest.raises(HeinzelError, match="different owner"):
+            _ask(model)
+        assert calls == []
+
+
+def test_authority_is_verified_before_and_after_the_reservation_without_a_fence(tmp_path):
+    verified = []
+    with _reserved(tmp_path, verify_authority=lambda: verified.append(1)) as (_repo, _session, calls, model):
+        _ask(model)
+        assert (verified, calls) == ([1, 1], [1])
+
+
+@pytest.mark.parametrize(
+    ("settings", "parameters", "match"),
+    [
+        ({"max_tokens": 200, "temperature": 1.0}, None, "unsupported provider settings"),
+        ({"max_tokens": 200}, SimpleNamespace(native_tools=[object()]), "unsupported provider settings"),
+        ({}, None, "explicit supported output-token bound"),
+        ({"max_tokens": 0}, None, "explicit supported output-token bound"),
+        ({"max_tokens": 32_769}, None, "explicit supported output-token bound"),
+    ],
+)
+def test_unsupported_settings_and_unbounded_output_are_refused_before_any_provider_work(
+    tmp_path, settings, parameters, match
+):
+    with _reserved(tmp_path) as (_repo, _session, calls, model):
+        with pytest.raises(HeinzelError, match=match):
+            _ask(model, settings=settings, parameters=parameters)
+        assert calls == []
+
+
+def test_only_text_and_tool_calls_may_appear_in_earlier_responses(tmp_path):
+    with _reserved(tmp_path) as (_repo, _session, calls, model):
+        thought = ModelResponse(parts=[ThinkingPart(content="private")])
+        with pytest.raises(HeinzelError, match="text-only"):
+            _ask(model, messages=[thought])
+        with pytest.raises(HeinzelError, match="text-only"):
+            _ask(model, messages=["not a model message"])
+        assert calls == []
+        answered = ModelResponse(parts=[TextPart(content="hi"), ToolCallPart(tool_name="t", args={})])
+        _ask(model, messages=[answered])
         assert calls == [1]

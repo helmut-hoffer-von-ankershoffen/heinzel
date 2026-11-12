@@ -172,7 +172,8 @@ def test_a_held_lifecycle_lock_keeps_the_marker_even_after_reboot(service, host)
     host.reboot(marker)
     with lock(service.state_dir / "lifecycle.lock") as acquired:
         assert acquired
-        with pytest.raises(HeinzelError, match="requires recovery"):
+        # A held lock is a change in progress, not a recovery: restart says so and changes nothing.
+        with pytest.raises(HeinzelError, match="lifecycle is changing"):
             service.restart()
     assert marker.exists()
 

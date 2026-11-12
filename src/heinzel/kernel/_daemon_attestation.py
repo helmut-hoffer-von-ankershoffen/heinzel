@@ -90,6 +90,16 @@ class DaemonMutationScope(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class DaemonLifecycleWait:
+    """How long this head's lifecycle writers wait for a running tick or update to let go; heads bind their own.
+
+    Unbound, nothing waits. The CLI waits minutes; the web head waits well under its request timeout.
+    """
+
+    seconds: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class DaemonInstallationLifecycle:
     """Trusted installer boundary; callers capture before mutation and request handover only after verification."""
 
