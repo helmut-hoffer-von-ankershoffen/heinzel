@@ -113,6 +113,14 @@ function firstSentence(message: string): [string, string] {
 
 type Gesture = "on" | "off" | "restart";
 
+/** One text as a person reads it, so the same sentence in another case or with other punctuation compares equal. */
+function plain(text: string | null | undefined): string {
+  return (text ?? "")
+    .toLowerCase()
+    .replace(/[\s.!…]+/g, " ")
+    .trim();
+}
+
 /** How long "Turning on…" may last before it asks for Try again instead of waiting silently (progress rule). */
 export const PENDING_LIMIT_MS = 60_000;
 
@@ -184,7 +192,11 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
                     ? t("contrib.toggle.turningOn")
                     : null;
   const attention = !pending && (!!failure || !!control.problem || restartNeeded || stalled);
-  const explanation = [control.explanation, failure?.message, errorRest].filter(Boolean).join("\n");
+  // Details only add: a text that repeats the label, the status line or the error line shows no disclosure.
+  const visible = new Set([control.label, note, errorLine].map(plain).filter(Boolean));
+  const explanation = [control.explanation, failure?.message, errorRest]
+    .filter((text): text is string => !!text && !visible.has(plain(text)))
+    .join("\n");
   const hasDetails = !!explanation || !!details;
 
   /** Run one host-built call, reread the provider, then finish any declared restart through the shared flow. */

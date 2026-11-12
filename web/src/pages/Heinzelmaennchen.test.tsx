@@ -33,6 +33,10 @@ describe("Heinzelmännchen", () => {
     renderAt("/heinzel");
     const link = within(await screen.findByRole("table")).getByRole("link", { name: "Weekly digest" });
     expect(link.getAttribute("href")).toBe("/contracts/me%3Aweekly-digest");
+    // A navigation row with a chevron, never the look of a text link.
+    expect(link).toHaveAttribute("data-nav-row");
+    expect(link.className).not.toMatch(/underline/);
+    expect(link.querySelector("svg[aria-hidden]")).not.toBeNull();
   });
 
   it("says how to start one when there is none", async () => {
