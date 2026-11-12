@@ -282,9 +282,10 @@ def test_a_scheduled_tick_never_waits_even_with_the_terminals_budget_bound(servi
     assert not [task for task in tasks.tasks if task.startswith("Waiting")]
 
 
-def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_version(tmp_path):
+def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_version(tmp_path, monkeypatch):
     """The owner saw "[1/9] Finding the newest version: failed": the version was found; taking the lifecycle failed."""
     from heinzel.modules.system._update import UpdateService
+    from tests.unit.modules import system_update_test
     from tests.unit.modules.system_update_test import (
         REPO,
         FakeMutationLifecycle,
@@ -301,6 +302,11 @@ def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_versi
             msg = "The daemon lifecycle is changing: the background service's current run of its jobs is still running."
             raise HeinzelError(msg)
 
+    # The update fixtures link the tool's python to a real file; Linux rejects a link to ''.
+    python = tmp_path / "base-python"
+    python.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n")
+    python.chmod(0o700)
+    monkeypatch.setattr(system_update_test, "PYTHON", str(python))
     uv = FakeUv("0.2.0")
     progress = RecordingProgress()
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
