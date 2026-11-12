@@ -44,7 +44,11 @@ describe("Today's notifications", () => {
         </MemoryRouter>
       </Providers>,
     );
-    expect(await screen.findByRole("link", { name: /hz 0\.9\.28 is available/ })).toBeVisible();
+    const row = await screen.findByRole("link", { name: /hz 0\.9\.28 is available/ });
+    expect(row).toBeVisible();
+    // A navigation row with a chevron, not a prose link.
+    expect(row).toHaveAttribute("data-nav-row");
+    expect(row.querySelector("svg[aria-hidden]")).not.toBeNull();
     expect(screen.getByRole("heading", { name: /notifications/i })).toBeVisible();
 
     resolved = true; // installed >= announced: the list no longer carries it

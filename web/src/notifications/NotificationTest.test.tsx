@@ -97,7 +97,9 @@ describe("The notification test", () => {
     const { container } = renderAt("/doctor?panel=notifications");
     await user.click(await screen.findByRole("button", { name: "Send a test notification" }));
     const result = await screen.findByRole("region", { name: "How the test went" });
-    expect(within(result).getByRole("status")).toHaveTextContent("Nothing pops up outside this app");
+    expect(within(result).getByRole("status")).toHaveTextContent(
+      "Nothing shows outside this app. Fix one, then try again.",
+    );
     expect(result).toHaveTextContent("Blocked: macOS doesn't allow Heinzel Notifier");
     expect(result).toHaveTextContent("This browser can't show notifications.");
     await expectAccessible(container);

@@ -100,8 +100,12 @@ describe("TopBar reload", () => {
     await screen.findByText("first");
     const reload = screen.getByRole("button", { name: "Refresh" });
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"));
+    expect(reload).toHaveAttribute("title", "Refresh");
     fireEvent.click(reload);
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "true"));
+    // While it spins the tooltip says why; the accessible name stays the action.
+    expect(reload).toHaveAttribute("title", "Getting the latest data…");
+    expect(reload).toHaveAccessibleName("Refresh");
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     act(() => pending.shift()?.("second"));
     await screen.findByText("second");

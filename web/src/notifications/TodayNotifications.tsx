@@ -1,6 +1,6 @@
 // Today's tease of the notification center (ADR 0043): how many notices you haven't seen, the latest few, and the way
 // to all of them. Nothing unread, nothing shown: the center itself is a click away on the bell.
-import { Bell, ListChecks } from "lucide-react";
+import { Bell, ChevronRight, ListChecks } from "lucide-react";
 import { Link } from "react-router";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -38,13 +38,14 @@ export function TodayNotifications() {
           <li key={notice.id}>
             <Link
               to={notice.route}
-              data-prose-link
-              className="flex items-baseline gap-2 rounded px-1 hover:bg-accent/60"
+              data-nav-row
+              className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent/60"
             >
               <span className="truncate" title={notice.title}>
                 {notice.title}
               </span>
               <span className="ml-auto shrink-0 text-muted-foreground">{when(notice.at)}</span>
+              <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             </Link>
           </li>
         ))}

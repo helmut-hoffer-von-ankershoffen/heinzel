@@ -1,7 +1,7 @@
 // Contextual Settings links use one compact, labelled target and keep the current screen and panel open.
 import { Settings2 } from "lucide-react";
-import { Link, useLocation, useSearchParams } from "react-router";
-import { cn } from "@/lib/utils";
+import { useLocation, useSearchParams } from "react-router";
+import { PaneAction } from "@/components/PaneActions";
 
 /** The in-app address of a settings section, from wherever the person is (for a `PaneAction to=`). */
 export function useSettingsTarget(section: string): string {
@@ -24,23 +24,10 @@ export function SettingsShortcut({
   onClick?: () => void;
   className?: string;
 }) {
-  const location = useLocation();
-  const [current] = useSearchParams();
-  const params = new URLSearchParams(current);
-  params.set("settings", section);
-  params.delete("q");
+  // A ghost icon action like every other pane chrome: the same size, focus ring and tooltip.
   return (
-    <Link
-      to={{ pathname: location.pathname, search: `?${params}`, hash: location.hash }}
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground",
-        className,
-      )}
-    >
-      <Settings2 aria-hidden className="size-4" />
-    </Link>
+    <PaneAction ghost icon={Settings2} to={useSettingsTarget(section)} onClick={onClick} className={className}>
+      {label}
+    </PaneAction>
   );
 }
