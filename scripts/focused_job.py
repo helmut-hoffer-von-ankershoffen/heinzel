@@ -10,7 +10,8 @@ environment only, are validated here, and become argument lists: nothing is pass
 
     FOCUSED_KIND      e2e | pytest | vitest
     FOCUSED_SELECTOR  e2e: a lane (cli, supervised, web-1, web-2) or test ids under tests/e2e/;
-                      pytest: test ids under tests/; vitest: test files under web/ (with or without the `web/` prefix).
+                      pytest: test ids under tests/; vitest: test files under web/ (with or without the `web/` prefix),
+                      or exactly `web/ALL` for the whole Vitest suite.
                       Up to 10 space-separated ids; an id is a path with an optional `::name[param]`.
     FOCUSED_REPEAT    1-60: run the selection that many times in this one job (default 1). pytest and e2e ids repeat
                       inside ONE pytest process, the whole selection per round in its own order, so a test that only
@@ -39,6 +40,7 @@ KINDS = ("e2e", "pytest", "vitest")
 LANES = ("cli", "supervised", "web-1", "web-2")
 MAX_IDS = 10
 PYTHON_CI_MAX_IDS = 32
+VITEST_ALL = "web/ALL"  # the whole Vitest suite as `make test-web` runs it: no file filter, never mixed with files
 MAX_REPEAT = 60
 DEADLINE = 1020  # seconds into the run: start no new round after this, so the tally and artifacts still upload
 # A path, then optionally `::test_name` and a parametrize id. Internal hyphens are valid, but no path
@@ -117,9 +119,11 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int =
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
         return [sync, [*pytest, junit, *ids]]
     if kind == "vitest":
-        ids = _paths(" ".join(f"web/{token.removeprefix('web/')}" for token in selector.split()), "web/", kind)
         web = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "exec", "vitest", "run", "--maxWorkers=2"]
         report = ["--reporter=default", "--reporter=junit", f"--outputFile.junit={out.resolve() / 'junit.xml'}"]
+        if selector == VITEST_ALL:
+            return [[*web, *report]]
+        ids = _paths(" ".join(f"web/{token.removeprefix('web/')}" for token in selector.split()), "web/", kind)
         return [[*web, *report, *(token.removeprefix("web/") for token in ids)]]
     problem = f"kind must be one of {', '.join(KINDS)}"
     raise SelectorError(kind or "(none)", problem)
