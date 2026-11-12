@@ -135,6 +135,7 @@ from heinzel.kernel._daemon_attestation import (
     DaemonHandoverPlan,
     DaemonHandoverRequest,
     DaemonInstallationLifecycle,
+    DaemonLifecycleWait,
     DaemonMutationScope,
     DaemonStatusAttestation,
 )
@@ -552,6 +553,7 @@ __all__ = [
     "DaemonHandoverRequest",
     "DaemonInstallationLifecycle",
     "DaemonLegacyRecovery",
+    "DaemonLifecycleWait",
     "DaemonMutationScope",
     "DaemonOverview",
     "DaemonPackageHandoverRecovery",

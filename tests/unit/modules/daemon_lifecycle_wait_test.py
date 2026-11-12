@@ -10,13 +10,13 @@ import logging
 import threading
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._runtime import lock
-from heinzel.modules.system.daemon._service import LIFECYCLE_WAIT_SECONDS
 from tests.fixtures.daemon_manager import RecordedManager as Runner
 from tests.fixtures.daemon_manager import record_tool
 
@@ -100,15 +100,19 @@ def _attempt_update(service: DaemonService) -> None:
         scope.abort_unchanged()
 
 
+def _waits(caplog) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.getMessage() == "daemon.lifecycle.wait"]
+
+
 def test_without_a_wait_a_running_tick_refuses_an_update_at_once_and_names_the_tick(service, tasks):
     """The owner's refusal, reproduced: a tick holds the lock; nothing waits; the message now names who holds it."""
     with running_tick(service), pytest.raises(HeinzelError) as refused:
         _attempt_update(service)
     message = str(refused.value)
-    assert "is changing" in message
-    assert "the background service's current run of its jobs" in message
-    assert "Nothing was changed" in message
-    assert "requires recovery" not in message
+    assert message == (
+        "The daemon lifecycle is changing: the background service's current run of its jobs is still running. "
+        "Nothing was changed; try again in a minute or two."
+    )
     assert not tasks.tasks
     assert not (service.state_dir / "mutation-pending.json").exists()
 
@@ -119,22 +123,29 @@ def test_an_update_waits_for_a_running_tick_and_then_proceeds(service, tasks, ca
     with running_tick(service, seconds=0.2):
         started = time.monotonic()
         _attempt_update(service)
-    assert 0.1 < time.monotonic() - started < 5.0
-    assert tasks.tasks == ["Waiting for the background service's current run of its jobs to finish (up to 1 min)"]
-    waits = [record for record in caplog.records if record.getMessage().startswith("daemon.lifecycle.wait")]
-    assert len(waits) == 2  # one start and one outcome event
+    assert time.monotonic() - started < 5.0
+    assert tasks.tasks == ["Waiting for the background service's current run of its jobs to finish (up to 5 s)"]
+    start, outcome = _waits(caplog)
+    assert (start.phase, start.holder, start.budget_seconds) == ("start", "tick", 5.0)
+    assert (outcome.phase, outcome.holder, outcome.outcome) == ("outcome", "tick", "free")
+    assert 0 < outcome.waited_seconds < 5.0
     assert not (service.state_dir / "mutation-pending.json").exists()
 
 
 def test_an_update_gives_up_after_the_bounded_wait_with_a_plain_retry_hint(service, tasks, caplog):
     service.lifecycle_wait_seconds = 0.2
     caplog.set_level(logging.INFO)
-    with running_tick(service), pytest.raises(HeinzelError, match="still running after waiting") as refused:
+    with running_tick(service), pytest.raises(HeinzelError) as refused:
         _attempt_update(service)
-    assert "try the update again in a few minutes" in str(refused.value)
-    assert len(tasks.tasks) == 1
-    outcome = [r for r in caplog.records if r.getMessage().startswith("daemon.lifecycle.wait")][-1]
-    assert getattr(outcome, "outcome", None) == "busy"
+    assert str(refused.value) == (
+        "The daemon lifecycle is changing: the background service's current run of its jobs is still running after "
+        "waiting 0.2 s. Nothing was changed; try again in a minute or two."
+    )
+    assert tasks.tasks == ["Waiting for the background service's current run of its jobs to finish (up to 0.2 s)"]
+    start, outcome = _waits(caplog)
+    assert (start.phase, start.holder) == ("start", "tick")
+    assert (outcome.phase, outcome.holder, outcome.outcome) == ("outcome", "tick", "busy")
+    assert outcome.waited_seconds >= 0.2
 
 
 def test_a_free_lock_with_a_pending_marker_is_not_waited_for_and_says_recovery(service, tasks):
@@ -148,6 +159,21 @@ def test_a_free_lock_with_a_pending_marker_is_not_waited_for_and_says_recovery(s
     assert (service.state_dir / "mutation-pending.json").exists()  # nothing is archived automatically
 
 
+def test_install_waits_for_a_running_tick_and_then_installs(service, tasks):
+    service.lifecycle_wait_seconds = 5.0
+    with running_tick(service, seconds=0.2):
+        service.install(timedelta(minutes=5))
+    assert all(path.exists() for path in service._unit_paths())
+    assert "Waiting for the background service's current run of its jobs to finish (up to 5 s)" in tasks.tasks
+
+
+def test_install_still_busy_after_the_wait_refuses_with_who_holds_it(service):
+    service.lifecycle_wait_seconds = 0.1
+    with running_tick(service), pytest.raises(HeinzelError, match="current run of its jobs is still running after"):
+        service.install(timedelta(minutes=5))
+    assert not service._unit_paths()[0].exists()
+
+
 def test_restart_waits_for_a_running_tick_and_then_restarts(service, tasks):
     service.install(timedelta(minutes=5))
     service.lifecycle_wait_seconds = 5.0
@@ -155,19 +181,20 @@ def test_restart_waits_for_a_running_tick_and_then_restarts(service, tasks):
         result = service.restart()
     assert result.restarted
     assert [task for task in tasks.tasks if task.startswith("Waiting")] == [
-        "Waiting for the background service's current run of its jobs to finish (up to 1 min)"
+        "Waiting for the background service's current run of its jobs to finish (up to 5 s)"
     ]
 
 
-def test_restart_still_busy_after_the_wait_refuses_with_who_holds_it(service, tasks):
+def test_restart_still_busy_after_the_wait_refuses_with_who_holds_it(service):
     service.install(timedelta(minutes=5))
     service.lifecycle_wait_seconds = 0.1
-    with running_tick(service), pytest.raises(HeinzelError, match="background service's current run") as refused:
+    with running_tick(service), pytest.raises(HeinzelError, match="current run of its jobs is still running after"):
         service.restart()
-    assert "`hz system daemon restart` again in a few minutes" in str(refused.value)
 
 
-def test_another_update_holding_only_the_lifecycle_lock_is_named_as_a_change(service):
+def test_another_update_holding_only_the_lifecycle_lock_is_named_as_a_change(service, caplog):
+    service.lifecycle_wait_seconds = 0.1
+    caplog.set_level(logging.INFO)
     holding, release = threading.Event(), threading.Event()
 
     def hold() -> None:
@@ -180,15 +207,51 @@ def test_another_update_holding_only_the_lifecycle_lock_is_named_as_a_change(ser
     thread.start()
     holding.wait(5)
     try:
-        with pytest.raises(HeinzelError, match="an automatic update or another Heinzel change"):
+        with pytest.raises(HeinzelError, match="an update or another Heinzel change is still running"):
             _attempt_update(service)
     finally:
         release.set()
         thread.join(5)
+    assert [record.holder for record in _waits(caplog)] == ["other", "other"]
 
 
-def test_the_user_service_waits_three_minutes_by_default():
-    assert LIFECYCLE_WAIT_SECONDS == 180.0
+@pytest.mark.parametrize(("seconds", "label"), [(15.0, "15 s"), (89.0, "89 s"), (90.0, "2 min"), (180.0, "3 min")])
+def test_the_wait_budget_reads_in_seconds_below_ninety_and_minutes_above(seconds, label):
+    from heinzel.modules.system.daemon._service import _budget
+
+    assert _budget(seconds) == label
+
+
+@pytest.fixture
+def user_kernel(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    return make_kernel(builtins=True)
+
+
+def test_the_user_service_takes_the_heads_budget_and_waits_nothing_unbound(user_kernel):
+    from heinzel.kernel import DaemonLifecycleWait
+
+    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 0.0
+    user_kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(42.0))
+    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 42.0
+
+
+def test_the_terminal_waits_three_minutes(user_kernel):
+    from heinzel.heads import cli
+    from heinzel.kernel import DaemonLifecycleWait
+
+    cli.build(user_kernel)
+    assert user_kernel.resolve(DaemonLifecycleWait).seconds == 180.0
+    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 180.0
+
+
+def test_a_web_request_waits_well_under_the_apps_thirty_second_timeout(user_kernel):
+    from heinzel.heads import web
+    from heinzel.kernel import DaemonLifecycleWait
+
+    web.build(user_kernel, port=8000, token="t" * 32, static=None, restart=lambda: None)
+    assert user_kernel.resolve(DaemonLifecycleWait).seconds == 15.0
+    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 15.0
 
 
 def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_version(tmp_path):
