@@ -2279,7 +2279,7 @@ $ hz system claude acknowledge [OPTIONS]
 
 #### `hz system claude disable`
 
-(expert) Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
+(expert) Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.
 
 **Usage**:
 
@@ -2319,7 +2319,7 @@ $ hz system claude enable [OPTIONS] {server}
 
 #### `hz system claude list`
 
-(expert) List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
+(expert) List the MCP servers and skills Claude has here, and which servers are on; none is run.
 
 **Usage**:
 

@@ -107,6 +107,9 @@ Guardrails the maintainer's decision relies on, for the slices that make servers
   shell.
   The head restriction covers hz's own operations only.
 - Bad: a person who moved hz's state with the `state_dir` setting finds this one file in the default place.
+- Bad: an isolated instance that keeps the real home directory (own `HZ_*` folders, same `HOME`) shares the real
+  switch file, so switching a server there switches it for the person's own hz too, unless `HZ_CLAUDE_SWITCH_DIR`
+  is set for that instance. `heinzel.testing` sets it for every test.
 
 ### Confirmation
 

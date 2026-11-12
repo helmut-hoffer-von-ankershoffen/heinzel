@@ -2289,8 +2289,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
-         * @description Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
+         * Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.
+         * @description Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.
          */
         post: operations["system_claude_disable"];
         delete?: never;
@@ -2327,8 +2327,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
-         * @description List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
+         * List the MCP servers and skills Claude has here, and which servers are on; none is run.
+         * @description List the MCP servers and skills Claude has here, and which servers are on; none is run.
          */
         get: operations["system_claude_list"];
         put?: never;

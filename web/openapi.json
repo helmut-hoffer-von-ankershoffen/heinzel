@@ -27311,7 +27311,7 @@
     },
     "/system/claude/disable": {
       "post": {
-        "description": "Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.",
+        "description": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
         "operationId": "system_claude_disable",
         "requestBody": {
           "content": {
@@ -27345,7 +27345,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.",
+        "summary": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
         "tags": [
           "system"
         ]
@@ -27395,7 +27395,7 @@
     },
     "/system/claude/list": {
       "get": {
-        "description": "List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.",
+        "description": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "operationId": "system_claude_list",
         "responses": {
           "200": {
@@ -27409,7 +27409,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.",
+        "summary": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "tags": [
           "system"
         ]

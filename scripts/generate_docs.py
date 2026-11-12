@@ -67,6 +67,12 @@ Generated from the code by `make docs`; CI fails when it is out of date. Setting
 (`hz system config init` writes one), the nearest `hz.toml`, `$HZ_CONFIG` — and environment variables, which win.
 `hz system config show` prints the values in effect; `hz system config set KEY VALUE` changes them.
 Plugins add their own tables.
+
+One environment variable is not a setting, so no file can set it: `HZ_CLAUDE_SWITCH_DIR` names the folder that
+remembers which found MCP servers are switched off (`claude/servers.json` inside it). Without it the folder is the
+platform's state folder of your home directory, whatever `state_dir` says, so the CLI, the web app and the daemon
+share one file (ADR 0146). Set it for a test or an isolated instance that keeps your real home directory; a daemon
+does not inherit it.
 """
 
 

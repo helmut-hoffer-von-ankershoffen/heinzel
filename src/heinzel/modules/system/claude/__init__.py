@@ -67,7 +67,7 @@ module.service(ClaudeService, ClaudeService.for_user)
 
 @module.operation(name="list", render=render_scan, heads={"cli", "web"})
 def list_(service: ClaudeService) -> ClaudeScan:
-    """List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run."""
+    """List the MCP servers and skills Claude has here, and which servers are on; none is run."""
     return service.scan()
 
 
@@ -82,7 +82,7 @@ def enable(service: ClaudeService, server: ServerId) -> ServerSwitch:
 
 @module.operation(read_only=False, private=True, render=render_switch, heads={"cli", "web"})
 def disable(service: ClaudeService, server: ServerId) -> ServerSwitch:
-    """Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes."""
+    """Switch a found MCP server off for Heinzels; it stays off, also when its entry changes."""
     return service.switch(server, on=False)
 
 

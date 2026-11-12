@@ -25,8 +25,6 @@ from heinzel import HeinzelError, Settings
 from heinzel.modules.system.claude._models import FoundServer
 
 VERSION = 1
-SWITCH_ENV = "HZ_CLAUDE_SWITCH_DIR"
-"""Moves the folder, for tests and isolated instances. No setting feeds it and the daemon's profile never carries it."""
 STATE_FILE = Path("claude") / "servers.json"
 LIMIT = 1024 * 1024
 PRIVATE_DIR = 0o700
@@ -40,7 +38,7 @@ def switch_file() -> Path:
     installed with the first as the second. `HZ_CLAUDE_SWITCH_DIR` moves the folder for a test or an isolated
     instance; a daemon does not inherit it.
     """
-    if explicit := os.environ.get(SWITCH_ENV):
+    if explicit := os.environ.get("HZ_CLAUDE_SWITCH_DIR"):
         return Path(explicit).expanduser() / STATE_FILE
     # The setting's own default, asked of the field: never a loaded configuration, never the environment.
     default: Path = Settings.model_fields["state_dir"].get_default(call_default_factory=True)

@@ -217,9 +217,9 @@ See the MCP servers and skills you already set up for Claude, and switch servers
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
+| List the MCP servers and skills Claude has here, and which servers are on; none is run. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
 | Switch a found MCP server back on for Heinzels; nothing is started. | `hz system claude enable` | — | — | `POST /api/system/claude/enable` | yes | expert |
-| Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes. | `hz system claude disable` | — | — | `POST /api/system/claude/disable` | yes | expert |
+| Switch a found MCP server off for Heinzels; it stays off, also when its entry changes. | `hz system claude disable` | — | — | `POST /api/system/claude/disable` | yes | expert |
 | Close the notice about switched-on servers; it comes back when a new server is found. | `hz system claude acknowledge` | — | — | `POST /api/system/claude/acknowledge` | yes | expert |
 | Count the MCP servers and skills found in Claude's configuration per source, without their names. | `hz system claude summary` | `system_claude_summary` | `GET /system/claude/summary` | `GET /api/system/claude/summary` |  | expert |
 
