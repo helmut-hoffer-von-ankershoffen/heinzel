@@ -65,7 +65,7 @@ test("only the current owning main frame hands off media and opener failures sta
 
 test("the isolated preload exposes no opener and requires trusted activated primary anchor clicks", async () => {
   let click, exposed;
-  const invoked = [], results = [];
+  const invoked = [], results = [], sent = [], listeners = {};
   class Element {}
   class Anchor extends Element {
     href = sound;
@@ -75,8 +75,15 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   const activation = { isActive: true };
   const context = vm.createContext({
     require: () => ({ contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
-      ipcRenderer: { invoke: async (channel, url) => { invoked.push([channel, url]); return false; } } }),
-    document: { addEventListener: (name, handler, capture) => { assert.equal(name, "click"); assert.equal(capture, true); click = handler; } },
+      ipcRenderer: { invoke: async (channel, url) => {
+        if (channel === "hz:user-activation") sent.push([channel]); else invoked.push([channel, url]);
+        return false;
+      } } }),
+    document: { addEventListener: (name, handler, capture) => {
+      assert.equal(capture, true);
+      if (name === "click" && listeners.click) click = handler;
+      (listeners[name] ??= []).push(handler);
+    } },
     navigator: { userActivation: activation }, Element, HTMLAnchorElement: Anchor,
     CustomEvent: class { constructor(name, options) { this.name = name; this.detail = options.detail; } },
   });
@@ -97,4 +104,20 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   assert.deepEqual(invoked, [["hz:public-media", sound]]);
   assert.equal(prevented, 1);
   assert.deepEqual(results, [false]);
+  assert.deepEqual(Object.keys(listeners), ["pointerdown", "keydown", "click"]);
+});
+
+test("the isolated preload reports only trusted input as a user activation", () => {
+  const listeners = {}, sent = [];
+  const context = vm.createContext({
+    require: () => ({ contextBridge: { exposeInMainWorld: () => {} },
+      ipcRenderer: { invoke: async (...args) => { sent.push(args); } } }),
+    document: { addEventListener: (name, handler, capture) => { assert.equal(capture, true); (listeners[name] ??= []).push(handler); } },
+    navigator: { userActivation: { isActive: false } }, Element: class {}, HTMLAnchorElement: class {}, CustomEvent: class {},
+  });
+  vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
+  for (const name of ["pointerdown", "keydown", "click"]) listeners[name][0]({ isTrusted: false, button: 0, target: {} });
+  assert.deepEqual(sent, []);
+  for (const name of ["pointerdown", "keydown", "click"]) listeners[name][0]({ isTrusted: true, button: 0, target: {} });
+  assert.deepEqual(sent, [["hz:user-activation"], ["hz:user-activation"], ["hz:user-activation"]]);
 });

@@ -37,16 +37,16 @@ function loadPreload(platform) {
     removeListener: (channel, listener) => { if (listeners.get(channel) === listener) listeners.delete(channel); },
   };
   const contextBridge = { exposeInMainWorld: (name, value) => { exposed[name] = value; } };
-  let clickListeners = 0;
+  const documentListeners = [];
   const document = { addEventListener: (name, handler, capture) => {
-    assert.equal(name, "click"); assert.equal(typeof handler, "function"); assert.equal(capture, true); clickListeners++;
+    assert.equal(typeof handler, "function"); assert.equal(capture, true); documentListeners.push(name);
   } };
   runInNewContext(preload, {
     require: (name) => { assert.equal(name, "electron"); return { contextBridge, ipcRenderer }; },
     globalThis: { navigator: { platform } },
     document,
   });
-  assert.equal(clickListeners, 1);
+  assert.deepEqual(documentListeners, ["pointerdown", "keydown", "click", "click"]);
   return { bridge: exposed.heinzelDesktop, listeners };
 }
 

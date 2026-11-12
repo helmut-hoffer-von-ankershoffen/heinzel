@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import {
-  authenticatedUiUrl, classifyUiLink, createExternalOpener, guardUiNavigation, isOwnedUiNavigation, openProductUi, openUiLinkExternally,
+  authenticatedUiUrl, classifyUiLink, createExternalOpener, createUserActivation, guardUiNavigation, isOwnedUiNavigation, openProductUi, openUiLinkExternally,
 } from "../src/ui-navigation.js";
 
 const connection = Object.freeze({ origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" });
@@ -119,27 +119,31 @@ test("external opens are rate limited per window: one per 2 s, the rest dropped 
   ]);
 });
 
-test("target=_blank, window.open and middle-click from any frame go to the browser; the window is denied", async () => {
+test("target=_blank, window.open and middle-click go to the browser only after trusted input", async () => {
   const contents = new EventEmitter();
   let open;
   contents.setWindowOpenHandler = (handler) => { open = handler; };
   const opened = [];
   let clock = 0;
-  guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
+  const activation = guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
   for (const disposition of ["foreground-tab", "new-window", "background-tab"]) {
     clock += 5000;
+    activation.grant();
     assert.deepEqual(open({ url: "https://heinzel.team/learn", disposition, frameName: "_blank" }), { action: "deny" });
   }
   for (const url of ["javascript:alert(1)", "file:///etc/passwd", "http://127.0.0.1:30124/", `${connection.origin}/x`]) {
     clock += 5000;
+    activation.grant();
     assert.deepEqual(open({ url, disposition: "foreground-tab" }), { action: "deny" });
   }
   assert.deepEqual(open(undefined), { action: "deny" });
   clock += 5000;
+  activation.grant();
   for (let i = 0; i < 20; i++) assert.deepEqual(open({ url: `https://embed.example.com/${i}` }), { action: "deny" });
   let blocked = 0;
   const event = (url) => ({ url, isMainFrame: true, preventDefault: () => { blocked++; } });
   clock += 5000;
+  activation.grant();
   contents.emit("will-navigate", event(`${connection.origin}/heinzel`));
   contents.emit("will-navigate", event("https://example.com/same-window"));
   contents.emit("will-navigate", event("data:text/html,x"));
@@ -149,6 +153,53 @@ test("target=_blank, window.open and middle-click from any frame go to the brows
     "https://heinzel.team/learn", "https://heinzel.team/learn", "https://heinzel.team/learn",
     "https://embed.example.com/0", "https://example.com/same-window",
   ]);
+});
+
+test("scripted clicks and window.open without trusted input never reach the OS opener", async () => {
+  const contents = new EventEmitter();
+  let open;
+  contents.setWindowOpenHandler = (handler) => { open = handler; };
+  const opened = [], logs = [];
+  let clock = 10_000;
+  const activation = guardUiNavigation(contents, connection, (url) => { opened.push(url); },
+    { now: () => clock, log: (fields) => logs.push(fields) });
+  const sound = "https://www.youtube.com/watch?v=abcdefghijk";
+  // A page script's anchor.click() on target=_blank arrives as a window-open request with no gesture.
+  assert.deepEqual(open({ url: sound, disposition: "foreground-tab", frameName: "_blank" }), { action: "deny" });
+  assert.deepEqual(open({ url: sound, disposition: "new-window" }), { action: "deny" });
+  let blocked = 0;
+  contents.emit("will-navigate", { url: sound, isMainFrame: true, preventDefault: () => { blocked++; } });
+  assert.equal(blocked, 1);
+  // Trusted input allows exactly one open within the activation window, and it expires.
+  activation.grant();
+  open({ url: sound });
+  clock += 5000;
+  open({ url: sound });
+  activation.grant();
+  clock += 1001;
+  open({ url: sound });
+  // App routes never need a gesture.
+  contents.emit("will-navigate", { url: `${connection.origin}/heinzel`, isMainFrame: true, preventDefault: () => { blocked++; } });
+  assert.equal(blocked, 1);
+  activation.grant();
+  clock += 500;
+  open({ url: sound });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, [sound, sound]);
+  assert.deepEqual(logs, [{ event: "desktop.external_link.without_gesture" }, { event: "desktop.external_link.without_gesture" }]);
+});
+
+test("user activation expires after its window and is consumed by one open", () => {
+  let clock = 0;
+  const activation = createUserActivation({ now: () => clock, windowMs: 1000 });
+  assert.equal(activation.consume(), false);
+  activation.grant();
+  clock = 1000;
+  assert.equal(activation.consume(), true);
+  assert.equal(activation.consume(), false);
+  activation.grant();
+  clock = 2001;
+  assert.equal(activation.consume(), false);
 });
 
 test("the actual navigation handlers block cross-origin main-frame redirects and popups", () => {
