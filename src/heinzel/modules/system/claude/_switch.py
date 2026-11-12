@@ -5,10 +5,10 @@ private file; a rescan matches by id first, so a changed argument or token does 
 and fingerprint second, so a moved project does not either. The file holds no command, argument, URL, variable value
 or header value.
 
-The file is state, not configuration, and its place does not follow the `state_dir` setting: a project's `hz.toml`
-or `hz system config set` (offered to agents over MCP) can change that setting, and pointing it at an empty folder
-would switch every server back on. Only the `HZ_STATE_DIR` environment variable or the platform's default decides
-where it is (`switch_file`).
+The file is state, not configuration, and its place follows no setting: a project's `hz.toml` or
+`hz system config set` (offered to agents over MCP) can change `state_dir`, the daemon is started with that setting
+as `HZ_STATE_DIR`, and a file read from an empty folder would switch every server back on. It lives in the platform's
+state folder of your home directory, which the CLI, the web app and the daemon share (`switch_file`).
 """
 
 import fcntl
@@ -25,7 +25,8 @@ from heinzel import HeinzelError, Settings
 from heinzel.modules.system.claude._models import FoundServer
 
 VERSION = 1
-STATE_ENV = "HZ_STATE_DIR"
+SWITCH_ENV = "HZ_CLAUDE_SWITCH_DIR"
+"""Moves the folder, for tests and isolated instances. No setting feeds it and the daemon's profile never carries it."""
 STATE_FILE = Path("claude") / "servers.json"
 LIMIT = 1024 * 1024
 PRIVATE_DIR = 0o700
@@ -33,15 +34,17 @@ PRIVATE_FILE = 0o600
 
 
 def switch_file() -> Path:
-    """Where the switches are kept: under `HZ_STATE_DIR` when the environment sets it, else the platform's default.
+    """Where the switches are kept: the platform's state folder of your home directory.
 
-    Never the `state_dir` setting, which configuration files can change.
+    Not the `state_dir` setting and not `HZ_STATE_DIR`: configuration files can change the first, and the daemon is
+    installed with the first as the second. `HZ_CLAUDE_SWITCH_DIR` moves the folder for a test or an isolated
+    instance; a daemon does not inherit it.
     """
-    explicit = os.environ.get(STATE_ENV)
-    # The setting's own default (the platform's state folder), asked of the field, never of a loaded configuration.
+    if explicit := os.environ.get(SWITCH_ENV):
+        return Path(explicit).expanduser() / STATE_FILE
+    # The setting's own default, asked of the field: never a loaded configuration, never the environment.
     default: Path = Settings.model_fields["state_dir"].get_default(call_default_factory=True)
-    root = Path(explicit).expanduser() if explicit else default
-    return root / STATE_FILE
+    return default / STATE_FILE
 
 
 class Tombstone(BaseModel):
@@ -77,21 +80,34 @@ class SwitchState(BaseModel):
             return True
         return server.id not in self.allowed and any(tombstone.alike(server) for tombstone in self.disabled)
 
-    def switch_off(self, server: FoundServer) -> None:
-        """Give `server` its own tombstone, also when another entry's already covers it."""
-        self.allowed = [i for i in self.allowed if i != server.id]
-        if self.own(server.id) is None:
-            self.disabled.append(Tombstone(id=server.id, name=server.name, fingerprint=server.fingerprint))
+    def switch(self, server_id: str, server: FoundServer | None, others: list[FoundServer], *, on: bool) -> None:
+        """Switch one entry and nothing else: every one of `others`, the other found servers, stays as it was.
 
-    def switch_on(self, server: FoundServer, others: set[str]) -> None:
-        """Remove what keeps `server` off without switching on any of `others`, the ids of the other found servers.
-
-        Its own tombstone goes, and so do tombstones alike whose entries are gone (a moved project). One that belongs
-        to another found server stays, and `server` is allowed past it.
+        Switching on removes the entry's own tombstone and those alike whose entries are gone (a moved project);
+        switching off writes its own tombstone, also when another entry's already covers it. Whatever that would
+        change for another found server is undone for that server: one that was off gets its own tombstone, one that
+        was on is allowed past the tombstone that now covers it. `server` is None for a remembered entry that is no
+        longer found.
         """
-        self.disabled = [t for t in self.disabled if t.id != server.id and not (t.alike(server) and t.id not in others)]
-        if any(t.alike(server) for t in self.disabled) and server.id not in self.allowed:
-            self.allowed.append(server.id)
+        before = {other.id: self.off(other) for other in others}
+        found = {other.id for other in others}
+        if server is None:
+            self.disabled = [t for t in self.disabled if t.id != server_id]
+        elif on:
+            self.disabled = [
+                t for t in self.disabled if t.id != server.id and not (t.alike(server) and t.id not in found)
+            ]
+        else:
+            self.allowed = [i for i in self.allowed if i != server.id]
+            if self.own(server.id) is None:
+                self.disabled.append(Tombstone(id=server.id, name=server.name, fingerprint=server.fingerprint))
+        for other in others:  # first every tombstone, then the exceptions: a new tombstone can cover a server too
+            if before[other.id] and not self.off(other):
+                self.disabled.append(Tombstone(id=other.id, name=other.name, fingerprint=other.fingerprint))
+        for candidate in (*others, *([server] if server is not None and on else [])):
+            stays_on = on if candidate is server else not before[candidate.id]
+            if stays_on and self.off(candidate):
+                self.allowed.append(candidate.id)
 
 
 class SwitchStore:

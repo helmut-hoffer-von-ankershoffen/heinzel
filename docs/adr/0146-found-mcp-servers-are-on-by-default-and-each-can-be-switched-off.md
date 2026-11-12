@@ -51,21 +51,26 @@ ones; the person can switch each one off, and it stays off.** Checkable statemen
    0600, in a folder of mode 0700), and nothing that connects to it: no command, argument, URL, variable or header.
    A rescan matches by id first, so a changed argument, token or transport does not switch it back on, and neither
    does removing and re-adding the entry. It matches by name and fingerprint second, so the same server in a moved
-   project folder or another scope stays off. Switching a server off always stores a tombstone with its own id, also
-   when another entry's tombstone already covers it. Switching one on removes its own tombstone and those of the
-   same name and shape whose entries are gone; a tombstone that belongs to another server still found stays, and
-   the id switched on is recorded as allowed past it, so a switch never changes another server. **Renaming
-   an entry switches it back on** when nothing else about it identifies it: the id and the name both change, and a
-   shape alone is shared by unrelated servers, so matching on it would switch off servers nobody chose. The renamed
-   server is new to the notice (statement 8).
+   project folder or another scope stays off. **A switch changes one server and no other.** Switching a
+   server off always stores a tombstone with its own id, also when another entry's tombstone already covers it.
+   Switching one on removes its own tombstone and those of the same name and shape whose entries are gone. Whatever
+   either would change for another server that is found is undone for that server: one that was off gets its own
+   tombstone, one that was on is recorded as allowed past the tombstone that now covers it. So a tombstone's reach
+   by name and shape is for entries that appear later, such as a second clone of a repository. An allowed id is kept
+   while its entry is missing from a scan (an unmounted project) and dropped only when that id is switched off.
+   **Renaming an entry switches it back on** when nothing else about it identifies it: the id and the name both
+   change, and a shape alone is shared by unrelated servers, so matching on it would switch off servers nobody
+   chose. The renamed server is new to the notice (statement 8).
 5. **State that no setting can move.** The tombstones are not configuration: `hz system config set` is offered over
    MCP and a project's `hz.toml` comes with a repository, so either could remove a tombstone kept as a setting. For
-   the same reason the file does not follow the `state_dir` setting, which both can change: it lives under the
-   `HZ_STATE_DIR` environment variable when that is set and otherwise in the platform's default state folder. None
-   of this module's operations on the MCP and REST heads writes the file, and no setting decides where it is.
-   `hz uninstall` (CLI only) removes it with the rest of hz's state. The file never grows past what hz reads back:
-   a write that would exceed the 1 MiB limit is refused and changes nothing, and ids of servers that are no longer
-   found leave the notice's list when it is next closed.
+   the same reason the file follows neither the `state_dir` setting, which both can change, nor `HZ_STATE_DIR`,
+   which an installed daemon is started with from that setting. It lives in the platform's default state folder of
+   the person's home directory, so the CLI, the web app and the daemon read the same file whatever the settings
+   say. `HZ_CLAUDE_SWITCH_DIR` moves the folder for tests and isolated instances; no setting feeds it and the
+   daemon's profile never carries it. None of this module's operations on the MCP and REST heads writes the file.
+   The file never grows past what hz reads back: a write that would
+   exceed the 1 MiB limit is refused and changes nothing, and ids of servers that are no longer found leave the
+   notice's list when it is next closed.
 6. **Heads.** `hz system claude enable|disable <id>` and `acknowledge` exist on the CLI and the web head (behind its
    token) only. The web head takes the id in the request's body, not its address. The MCP and REST heads get none
    of the three; their summary gains the count of switched-on servers.
@@ -98,7 +103,8 @@ Guardrails the maintainer's decision relies on, for the slices that make servers
   scope, lazy start and confirmed writes are what stands between the repository and the person's data.
 - Bad: the fingerprint hashes shape, not arguments (ADR 0062 §2), so two servers of the same name and shape in two
   projects share a tombstone. It errs towards off.
-- Bad: a person with a shell can edit the state file or set `HZ_STATE_DIR`; so can an agent that was given a shell.
+- Bad: a person with a shell can edit the state file or set `HZ_CLAUDE_SWITCH_DIR`; so can an agent that was given a
+  shell.
   The head restriction covers hz's own operations only.
 - Bad: a person who moved hz's state with the `state_dir` setting finds this one file in the default place.
 
@@ -107,7 +113,9 @@ Guardrails the maintainer's decision relies on, for the slices that make servers
 `tests/unit/modules/claude_switch_test.py` (default-on, scope, tombstones across changed, removed, moved and renamed
 entries, the state file's content, mode, place and size limit, fail-closed, the notice, log events) and
 `tests/integration/claude_test.py` (CLI, web head behind its token, absent from REST and MCP, and a `state_dir`
-set in a project file or with `hz system config set` moving nothing). `web/src/layout/FromClaudeSection.test.tsx` covers the switch
+set in a project file or with `hz system config set` moving nothing, also for a daemon installed afterwards). A
+property test runs sequences of switching, moving, renaming, adding and removing and checks that a switch never
+changes another server. `web/src/layout/FromClaudeSection.test.tsx` covers the switch
 and the notice on the Settings page.
 
 ## More Information

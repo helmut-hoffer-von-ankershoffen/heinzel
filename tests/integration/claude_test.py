@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from heinzel import Config, Settings
 from heinzel.heads import api, mcp, web
 from heinzel.heads.cli import build
+from heinzel.modules.system.claude._switch import switch_file
 
 pytestmark = pytest.mark.integration
 
@@ -118,7 +119,7 @@ def test_the_cli_switches_a_server_off_and_on_and_shows_the_notice_until_acknowl
     assert json.loads(hz(kernel, "system", "claude", "list")[1])["notice"]["servers"] == ["code-user:tickets"]
     assert json.loads(hz(kernel, "system", "claude", "acknowledge")[1]) == {"servers": 1}
     assert json.loads(hz(kernel, "system", "claude", "list")[1])["notice"] is None
-    assert SECRET not in "".join(path.read_text() for path in kernel.settings.state_dir.rglob("servers.json"))
+    assert SECRET not in switch_file().read_text()
 
 
 def test_the_cli_refuses_an_unknown_server(kernel):
@@ -164,7 +165,7 @@ def test_a_redirected_state_dir_does_not_switch_a_server_back_on(
     kernel, make_kernel, tmp_path: Path, monkeypatch, route: str
 ):
     assert hz(kernel, "system", "claude", "disable", "code-user:tickets")[0] == 0
-    kept = kernel.settings.state_dir / "claude" / "servers.json"
+    kept = switch_file()
     assert kept.is_file()
     elsewhere = tmp_path / "elsewhere"
     project = tmp_path / "cloned"
@@ -181,11 +182,11 @@ def test_a_redirected_state_dir_does_not_switch_a_server_back_on(
         import anyio
 
         anyio.run(scenario)
-    monkeypatch.delenv("HZ_STATE_DIR")  # the environment would override either route; the default place stands in
-    monkeypatch.setattr("platformdirs.user_state_path", lambda *_args, **_kwargs: kept.parent.parent)
+    monkeypatch.delenv("HZ_STATE_DIR")  # the environment would override either route
     config = Config.load(project)
     redirected = make_kernel(builtins=True, config=config, settings_=config.settings(Settings, "hz"))
     assert redirected.settings.state_dir == elsewhere  # the setting did move: the route is live
+    monkeypatch.setenv("HZ_STATE_DIR", str(elsewhere))  # what a daemon installed after the change is started with
     listed = json.loads(hz(redirected, "system", "claude", "list")[1])
     assert [(s["name"], s["enabled"]) for s in listed["servers"]] == [("tickets", False)]
     assert not list(elsewhere.rglob("servers.json"))

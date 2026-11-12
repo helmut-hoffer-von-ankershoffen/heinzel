@@ -95,15 +95,9 @@ class ClaudeService:
             if server is not None and server.status == "self":
                 msg = "That is hz's own MCP server; it is never offered back to itself, so there is nothing to switch."
                 raise HeinzelError(msg)
-            found = {s.id for s in scanner.servers}
+            others = [s for s in scanner.servers if s.id != server_id and s.status != "self"]
             was_off = remembered is not None if server is None else state.off(server)
-            if server is None:
-                state.disabled = [t for t in state.disabled if t.id != server_id]
-            elif on:
-                state.switch_on(server, found - {server.id})
-            else:
-                state.switch_off(server)
-            state.allowed = [i for i in state.allowed if i in found]
+            state.switch(server_id, server, others, on=on)
             changed = was_off == on
             running.note(scope=server.scope if server else None, changed=changed)
             return ServerSwitch(

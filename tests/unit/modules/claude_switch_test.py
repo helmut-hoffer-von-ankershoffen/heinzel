@@ -3,12 +3,15 @@ that the state file holds nothing that connects to a server (ADR 0146). Fake hom
 
 import json
 import logging
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
-from heinzel import HeinzelError
+from heinzel import Config, HeinzelError, Settings
 from heinzel.modules.system.claude import ClaudeService, _switch
 from heinzel.modules.system.claude._switch import SwitchStore, switch_file
 
@@ -84,23 +87,23 @@ def test_a_disabled_server_stays_off_after_a_rescan_and_a_new_service(
     result = service.switch("code-user:tickets", on=False)
     assert (result.enabled, result.changed, result.scope) == (False, True, "user")
     assert enabled(ClaudeService(home, store)) == {"tickets": False, "shared": True, "mine": False}
+    assert service.switch("code-user:tickets", on=False).changed is False  # twice changes nothing
+    assert len(state(store)["disabled"]) == 1
+    service.switch("code-user:tickets", on=True)
+    assert service.switch("code-user:tickets", on=True).changed is False
 
 
-def test_a_changed_entry_with_the_same_id_stays_off(service: ClaudeService, home: Path):
+def test_a_changed_or_removed_and_re_added_entry_with_the_same_id_stays_off(service: ClaudeService, home: Path):
     service.switch("code-user:tickets", on=False)
     before = next(s.fingerprint for s in service.scan().servers if s.name == "tickets")
     configure(home, {"tickets": {"type": "http", "url": "https://tickets.example.com/mcp"}})
     after = next(s for s in service.scan().servers if s.name == "tickets")
     assert after.fingerprint != before
     assert after.enabled is False
-
-
-def test_a_removed_and_re_added_entry_stays_off(service: ClaudeService, home: Path):
-    service.switch("code-user:tickets", on=False)
     configure(home, {})
     assert "tickets" not in enabled(service)
     configure(home, {"tickets": {"command": "npx", "args": ["other"]}})
-    assert enabled(service)["tickets"] is False
+    assert enabled(service)["tickets"] is False  # removed and added again: still off
 
 
 def test_the_same_server_found_in_another_place_stays_off_but_another_shape_does_not(
@@ -129,14 +132,6 @@ def test_a_remembered_server_that_is_gone_can_still_be_switched_on(service: Clau
     assert service.switch("code-user:tickets", on=True).changed is True
     configure(home, {"tickets": {"command": "npx"}})
     assert enabled(service)["tickets"] is True
-
-
-def test_switching_twice_changes_nothing_the_second_time(service: ClaudeService, store: SwitchStore):
-    service.switch("code-user:tickets", on=False)
-    assert service.switch("code-user:tickets", on=False).changed is False
-    assert len(json.loads(store.path.read_text())["disabled"]) == 1
-    service.switch("code-user:tickets", on=True)
-    assert service.switch("code-user:tickets", on=True).changed is False
 
 
 def test_an_unknown_id_and_hz_itself_are_refused(service: ClaudeService, store: SwitchStore):
@@ -247,16 +242,76 @@ def test_switching_one_of_two_alike_entries_never_flips_the_other(
     configure(home, SHARED, SHARED)  # the same name and shape twice: yours and the project's
     project = project_id(service)
     service.switch(project, on=False)
-    assert {s.id: s.enabled for s in service.scan().servers} == {project: False, "code-user:shared": False}
-    again = service.switch("code-user:shared", on=False)  # already off by the other's tombstone: it gets its own
-    assert again.changed is False
+    assert {s.id: s.enabled for s in service.scan().servers} == {project: False, "code-user:shared": True}
+    assert state(store)["allowed"] == ["code-user:shared"]
+    service.switch("code-user:shared", on=False)
     assert [t["id"] for t in state(store)["disabled"]] == [project, "code-user:shared"]  # type: ignore[index]
+    assert state(store)["allowed"] == []
     assert service.switch(project, on=True).changed is True
     assert {s.id: s.enabled for s in service.scan().servers} == {project: True, "code-user:shared": False}
     assert state(store)["allowed"] == [project]
-    service.switch(project, on=False)
-    assert state(store)["allowed"] == []
-    assert not any(s.enabled for s in service.scan().servers)
+
+
+def test_switching_one_on_keeps_another_off_that_only_a_gone_entrys_tombstone_covered(
+    service: ClaudeService, home: Path, store: SwitchStore
+):
+    old = project_id(service)
+    service.switch(old, on=False)  # tombstone for the project's entry in its old folder
+    configure(home, SHARED, SHARED, folder="moved")  # the project moved, and you now have one alike
+    moved = project_id(service)
+    assert {s.id: s.enabled for s in service.scan().servers} == {moved: False, "code-user:shared": False}
+    assert service.switch("code-user:shared", on=True).changed is True
+    assert {s.id: s.enabled for s in service.scan().servers} == {moved: False, "code-user:shared": True}
+    assert [t["id"] for t in state(store)["disabled"]] == [moved]  # type: ignore[index]  # its own now
+
+
+NAMES = ("a", "b")
+SHAPES = ({"command": "npx"}, {"command": "bun", "args": ["x"]})
+OPERATIONS = st.lists(
+    st.one_of(
+        st.tuples(st.just("switch"), st.integers(0, 7), st.booleans()),
+        st.tuples(st.just("gone"), st.integers(0, 7), st.booleans()),
+        st.tuples(st.just("move"), st.sampled_from(("demo", "moved", "again")), st.booleans()),
+        st.tuples(st.just("user"), st.sampled_from(NAMES), st.sampled_from((None, *SHAPES))),
+        st.tuples(st.just("project"), st.sampled_from(NAMES), st.sampled_from((None, *SHAPES))),
+        st.tuples(st.just("rename"), st.sampled_from(("user", "project")), st.booleans()),
+    ),
+    max_size=10,
+)
+
+
+@pytest.mark.timeout(60)
+@settings(max_examples=40, deadline=None, derandomize=True, suppress_health_check=list(HealthCheck))
+@given(operations=OPERATIONS)
+def test_a_switch_never_changes_another_server(operations: list[tuple[str, object, object]]):
+    with tempfile.TemporaryDirectory() as directory:
+        home = Path(directory) / "home"
+        store = SwitchStore(Path(directory) / "state" / "servers.json")
+        service = ClaudeService(home, store)
+        world: dict[str, dict[str, object]] = {"user": {"a": SHAPES[0]}, "project": {"a": SHAPES[0], "b": SHAPES[1]}}
+        folder = "demo"
+        configure(home, world["user"], world["project"], folder)
+        for kind, first, second in operations:
+            if kind in {"switch", "gone"}:
+                before = {s.id: s.enabled for s in service.scan().servers}
+                remembered = [t.id for t in store.read().disabled]  # type: ignore[union-attr]
+                ids = [i for i in remembered if i not in before] if kind == "gone" else sorted(before)
+                if not ids:
+                    continue
+                target = ids[first % len(ids)]  # type: ignore[operator]
+                on = True if kind == "gone" else bool(second)
+                service.switch(target, on=on)
+                after = {s.id: s.enabled for s in service.scan().servers}
+                assert after == before | ({target: on} if target in before else {})
+            elif kind == "move":
+                folder = str(first)
+            elif kind == "rename":
+                entries = world[str(first)]
+                if "a" in entries and "b" not in entries:
+                    entries["b"] = entries.pop("a")
+            else:
+                world[kind].pop(str(first), None) if second is None else world[kind].update({str(first): second})
+            configure(home, world["user"], world["project"], folder)
 
 
 def test_a_project_folder_that_moved_keeps_its_server_off_until_switched_on(
@@ -309,11 +364,25 @@ def test_acknowledging_closes_only_what_was_shown_and_forgets_servers_that_are_g
     assert state(store)["acknowledged"] == [project_id(service)]
 
 
-def test_no_setting_decides_where_the_switches_are_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_no_setting_and_no_daemon_profile_decides_where_the_switches_are_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     import platformdirs
 
-    monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "from-env"))
-    assert switch_file() == tmp_path / "from-env" / "claude" / "servers.json"
+    from heinzel.modules.system.daemon._models import DaemonSettings
+    from heinzel.modules.system.daemon._ownership import profile_environment
+
+    monkeypatch.setenv("HZ_CLAUDE_SWITCH_DIR", str(tmp_path / "isolated"))
+    assert switch_file() == tmp_path / "isolated" / "claude" / "servers.json"
     assert ClaudeService.for_user()._store.path == switch_file()  # type: ignore[union-attr]
-    monkeypatch.delenv("HZ_STATE_DIR")
-    assert switch_file() == platformdirs.user_state_path("hz") / "claude" / "servers.json"
+    monkeypatch.delenv("HZ_CLAUDE_SWITCH_DIR")
+    default = platformdirs.user_state_path("hz") / "claude" / "servers.json"
+    assert switch_file() == default
+    # A redirected `state_dir` reaches an installed daemon as HZ_STATE_DIR: the daemon still reads the same file.
+    redirected = Config.empty().settings(Settings, "hz").model_copy(update={"state_dir": tmp_path / "elsewhere"})
+    profile = profile_environment(redirected, Config.empty().settings(DaemonSettings, "system.daemon"), Config.empty())
+    assert profile["HZ_STATE_DIR"] == str(tmp_path / "elsewhere")
+    assert "HZ_CLAUDE_SWITCH_DIR" not in profile
+    for key, value in profile.items():
+        monkeypatch.setenv(key, value)
+    assert switch_file() == default
