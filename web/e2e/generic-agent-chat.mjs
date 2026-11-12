@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createHeinzelWith, openAppWithSetupClosed, openChatJourney, openDetails, revealChat } from "./chat-ready.mjs";
+import {
+  createHeinzelWith,
+  openAppWithSetupClosed,
+  openChatJourney,
+  openDetails,
+  recurringTurns,
+  revealChat,
+} from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
@@ -66,7 +73,6 @@ try {
   trace.push(`+${Date.now() - began}ms create pressed`);
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
-  await openDetails(page);
   assert.equal(await message.inputValue(), text);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
@@ -247,6 +253,10 @@ try {
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
+  // The reply and its tool activity are the conversation, pressed above with Details closed as a person finds it:
+  // open Details only now, for the reviews. Open earlier, its sections change height above the reply when the
+  // turn settles and can move the summary out from under a held press.
+  await openDetails(page);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
   await terms.getByText("Review proposed terms").click();
@@ -254,10 +264,7 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page
-    .locator("details")
-    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
-    .last(); // the Details disclosure around it matches too
+  const schedules = recurringTurns(page);
   await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
