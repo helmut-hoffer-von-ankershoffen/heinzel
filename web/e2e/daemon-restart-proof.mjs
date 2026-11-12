@@ -45,6 +45,19 @@ const handler = (req, res, next) => {
   unexpected.push(`${req.method} ${req.url}`);
   res.writeHead(500).end("unexpected request");
 };
+// Restart shows from the daemon status, the expert command line from a second request that can answer later. So count
+// the command lines only once that answer is in, and when it is expected, once it is shown.
+const expertAnswered = (page) => {
+  const answered = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/system/expert");
+  answered.catch(() => null); // a run that fails before the count reports its own error, not this open wait
+  return answered;
+};
+async function commandLines(page, answered) {
+  const command = page.getByText("hz system daemon restart", { exact: true });
+  await answered;
+  if (expert) await command.waitFor();
+  return command.count();
+}
 const { server, origin, denied } = await startFixture(handler);
 const outcomes = [];
 try {
@@ -62,6 +75,7 @@ try {
           page = await context.newPage();
         const { blocked, errors } = await guardFixturePage(page, origin);
         await page.addInitScript(() => sessionStorage.setItem("hz.token", "fixture-token"));
+        const answered = expertAnswered(page);
         await page.goto(`${origin}/e2e/daemon-restart-proof.html`);
         const restart = page.getByRole("button", { name: "Restart", exact: true });
         try {
@@ -70,7 +84,7 @@ try {
           console.error(JSON.stringify({ text: await page.locator("body").textContent(), errors, unexpected }));
           throw error;
         }
-        assert.equal(await page.getByText("hz system daemon restart", { exact: true }).count(), expert ? 1 : 0);
+        assert.equal(await commandLines(page, answered), expert ? 1 : 0);
         await restart.click();
         try {
           await page.getByText("Checking the service").waitFor({ timeout: 5000 });
