@@ -2259,6 +2259,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/claude/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close the notice about switched-on servers; it comes back when a new server is found.
+         * @description Close the notice about switched-on servers; it comes back when a new server is found.
+         */
+        post: operations["system_claude_acknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/claude/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
+         * @description Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
+         */
+        post: operations["system_claude_disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/claude/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch a found MCP server back on for Heinzels; nothing is started.
+         * @description Switch a found MCP server back on for Heinzels; nothing is started.
+         */
+        post: operations["system_claude_enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/claude/list": {
         parameters: {
             query?: never;
@@ -2267,8 +2327,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
-         * @description List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+         * List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
+         * @description List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
          */
         get: operations["system_claude_list"];
         put?: never;
@@ -6322,7 +6382,7 @@ export interface components {
         };
         /**
          * ClaudeScan
-         * @description `hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.
+         * @description `hz system claude list`: what Claude has configured on this computer. Nothing here is started.
          */
         ClaudeScan: {
             /**
@@ -6335,9 +6395,11 @@ export interface components {
              * @description What to run next.
              */
             next: string[];
+            /** @description Set while switched-on servers were found that you have not been told about; `hz system claude acknowledge` closes it. */
+            notice?: components["schemas"]["FirstRunNotice"] | null;
             /**
              * Servers
-             * @description MCP servers, by source then name.
+             * @description MCP servers, by source then name, each switched on or off.
              */
             servers: components["schemas"]["FoundServer"][];
             /**
@@ -6350,6 +6412,11 @@ export interface components {
              * @description Files and directories left alone, each with its reason.
              */
             skipped: components["schemas"]["Skipped"][];
+            /**
+             * State Problem
+             * @description Set when the file that remembers switched-off servers cannot be read: every server is off then.
+             */
+            state_problem?: string | null;
         };
         /**
          * ClaudeSummary
@@ -6361,6 +6428,12 @@ export interface components {
              * @description claude.ai connectors you have connected.
              */
             connectors: number;
+            /**
+             * Enabled
+             * @description MCP servers that are switched on; none is started by that.
+             * @default 0
+             */
+            enabled: number;
             /**
              * Servers
              * @description MCP servers found per source.
@@ -8028,6 +8101,27 @@ export interface components {
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
         };
         /**
+         * FirstRunNotice
+         * @description Servers that are switched on and that you have not been told about yet (ADR 0146).
+         */
+        FirstRunNotice: {
+            /**
+             * Plugin
+             * @description How many of them come from a Claude Code plugin.
+             */
+            plugin: number;
+            /**
+             * Project
+             * @description How many of them come from a project's files.
+             */
+            project: number;
+            /**
+             * Servers
+             * @description Ids of the switched-on servers found since you last closed the notice.
+             */
+            servers: string[];
+        };
+        /**
          * FoundServer
          * @description An MCP server entry found in a Claude client's configuration.
          */
@@ -8048,6 +8142,11 @@ export interface components {
              * @description The program a stdio server starts, without its path or arguments.
              */
             command: string | null;
+            /**
+             * Enabled
+             * @description Whether Heinzels may use it once they can: on by default, off after `hz system claude disable` and for hz itself. Nothing is started or connected to either way (ADR 0146).
+             */
+            enabled: boolean;
             /**
              * Env Keys
              * @description Names of the environment variables it is given; never their values.
@@ -8088,6 +8187,12 @@ export interface components {
              * @description The project directory or plugin it belongs to; none for user-wide ones.
              */
             origin: string | null;
+            /**
+             * Scope
+             * @description Who put it there: `user` (you), `project` (a project's files, which a cloned repository can bring) or `plugin` (an enabled Claude Code plugin).
+             * @enum {string}
+             */
+            scope: "user" | "project" | "plugin";
             /**
              * Source
              * @description Which Claude configuration it was found in.
@@ -10007,6 +10112,17 @@ export interface components {
              * @default false
              */
             urgent: boolean;
+        };
+        /**
+         * NoticeClosed
+         * @description `hz system claude acknowledge`: the first-run notice is closed for the servers found now.
+         */
+        NoticeClosed: {
+            /**
+             * Servers
+             * @description How many servers the notice was closed for with this call.
+             */
+            servers: number;
         };
         /**
          * NoticeHelper
@@ -12756,6 +12872,37 @@ export interface components {
              * @enum {string}
              */
             status: "recorded" | "unresolved" | "abandoned";
+        };
+        /**
+         * ServerSwitch
+         * @description `hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.
+         */
+        ServerSwitch: {
+            /**
+             * Changed
+             * @description Whether this call changed anything.
+             */
+            changed: boolean;
+            /**
+             * Enabled
+             * @description Whether it is switched on now.
+             */
+            enabled: boolean;
+            /**
+             * Id
+             * @description The server's id.
+             */
+            id: string;
+            /**
+             * Name
+             * @description The name the entry has in its configuration.
+             */
+            name: string;
+            /**
+             * Scope
+             * @description Who put it there; none when the entry is no longer found.
+             */
+            scope: ("user" | "project" | "plugin") | null;
         };
         /**
          * SessionCosts
@@ -16994,6 +17141,7 @@ export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaExtraChange = components['schemas']['ExtraChange'];
 export type SchemaFilters = components['schemas']['Filters'];
+export type SchemaFirstRunNotice = components['schemas']['FirstRunNotice'];
 export type SchemaFoundServer = components['schemas']['FoundServer'];
 export type SchemaFoundSkill = components['schemas']['FoundSkill'];
 export type SchemaGrant = components['schemas']['Grant'];
@@ -17056,6 +17204,7 @@ export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNoticeClosed = components['schemas']['NoticeClosed'];
 export type SchemaNoticeHelper = components['schemas']['NoticeHelper'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
@@ -17135,6 +17284,7 @@ export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgent
 export type SchemaScheduledNotificationPage = components['schemas']['ScheduledNotificationPage'];
 export type SchemaScheduledNotificationPolicy = components['schemas']['ScheduledNotificationPolicy'];
 export type SchemaScheduledNotificationView = components['schemas']['ScheduledNotificationView'];
+export type SchemaServerSwitch = components['schemas']['ServerSwitch'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
 export type SchemaSessionMessage = components['schemas']['SessionMessage'];
@@ -20727,6 +20877,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_claude_acknowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeClosed"];
+                };
+            };
+        };
+    };
+    system_claude_disable: {
+        parameters: {
+            query: {
+                /** @description The server's id, as `hz system claude list --json` shows it. */
+                server: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSwitch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_claude_enable: {
+        parameters: {
+            query: {
+                /** @description The server's id, as `hz system claude list --json` shows it. */
+                server: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSwitch"];
                 };
             };
             /** @description Validation Error */

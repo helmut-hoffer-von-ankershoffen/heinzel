@@ -2240,7 +2240,7 @@ $ hz system channel [OPTIONS]
 
 ### `hz system claude`
 
-(expert) See the MCP servers and skills you already set up for Claude, without using any of them.
+(expert) See the MCP servers and skills you already set up for Claude, and switch servers off or on.
 
 **Usage**:
 
@@ -2254,12 +2254,71 @@ $ hz system claude [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `acknowledge`: (expert) Close the notice about...
+* `disable`: (expert) Switch a found MCP server off for...
+* `enable`: (expert) Switch a found MCP server back on...
 * `list`: (expert) List the MCP servers and skills...
 * `summary`: (expert) Count the MCP servers and skills...
 
+#### `hz system claude acknowledge`
+
+(expert) Close the notice about switched-on servers; it comes back when a new server is found.
+
+**Usage**:
+
+```console
+$ hz system claude acknowledge [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system claude disable`
+
+(expert) Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.
+
+**Usage**:
+
+```console
+$ hz system claude disable [OPTIONS] {server}
+```
+
+**Arguments**:
+
+* `server <str>`: The server&#x27;s id, as `hz system claude list --json` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system claude enable`
+
+(expert) Switch a found MCP server back on for Heinzels; nothing is started.
+
+**Usage**:
+
+```console
+$ hz system claude enable [OPTIONS] {server}
+```
+
+**Arguments**:
+
+* `server <str>`: The server&#x27;s id, as `hz system claude list --json` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system claude list`
 
-(expert) List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+(expert) List the MCP servers and skills Claude Code and Claude Desktop have, and which servers are on; none is run.
 
 **Usage**:
 

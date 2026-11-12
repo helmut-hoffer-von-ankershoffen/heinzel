@@ -1,5 +1,6 @@
 """`hz system claude` end to end: the CLI lists names, the web head lists them behind its token, and the MCP and REST
-heads only count (ADR 0062). The home directory is a fake one; nothing reaches the network."""
+heads only count (ADR 0062). The CLI and the web head switch a server off and on; an agent's heads cannot
+(ADR 0146). The home directory is a fake one; nothing reaches the network."""
 
 import json
 from pathlib import Path
@@ -88,6 +89,66 @@ def test_the_mcp_head_counts_and_names_nothing(kernel):
             assert result.structured_content is not None
             assert result.structured_content["skills"] == {"code-user": 1}
             assert "tickets" not in json.dumps(result.structured_content)
+
+    import anyio
+
+    anyio.run(scenario)
+
+
+def test_the_cli_switches_a_server_off_and_on_and_shows_the_notice_until_acknowledged(kernel):
+    code, text = hz(kernel, "system", "claude", "list", plain=True)
+    assert code == 0, text
+    assert "1 MCP server found in Claude is switched on" in " ".join(text.split())
+    code, output = hz(kernel, "system", "claude", "disable", "code-user:tickets")
+    assert code == 0, output
+    assert json.loads(output) == {
+        "id": "code-user:tickets",
+        "name": "tickets",
+        "scope": "user",
+        "enabled": False,
+        "changed": True,
+    }
+    listed = json.loads(hz(kernel, "system", "claude", "list")[1])
+    assert [(s["name"], s["enabled"], s["scope"]) for s in listed["servers"]] == [("tickets", False, "user")]
+    assert listed["notice"] is None
+    code, text = hz(kernel, "system", "claude", "enable", "code-user:tickets", plain=True)
+    assert code == 0, text
+    assert "tickets is switched on" in text
+    assert json.loads(hz(kernel, "system", "claude", "list")[1])["notice"]["servers"] == ["code-user:tickets"]
+    assert json.loads(hz(kernel, "system", "claude", "acknowledge")[1]) == {"servers": 1}
+    assert json.loads(hz(kernel, "system", "claude", "list")[1])["notice"] is None
+    assert SECRET not in "".join(path.read_text() for path in kernel.settings.state_dir.rglob("servers.json"))
+
+
+def test_the_cli_refuses_an_unknown_server(kernel):
+    code, output = hz(kernel, "system", "claude", "disable", "code-user:nope", plain=True)
+    assert code != 0
+    assert "No MCP server has the id" in " ".join(output.split())
+
+
+def test_the_web_head_switches_behind_its_token(kernel):
+    client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
+    query = {"server": "code-user:tickets"}
+    assert client.post("/api/system/claude/disable", params=query).status_code == 401
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    switched = client.post("/api/system/claude/disable", params=query, headers=auth)
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["enabled"] is False
+    assert client.get("/api/system/claude/list", headers=auth).json()["servers"][0]["enabled"] is False
+    assert client.post("/api/system/claude/enable", params=query, headers=auth).json()["enabled"] is True
+    assert client.post("/api/system/claude/acknowledge", headers=auth).json() == {"servers": 1}
+
+
+def test_an_agent_cannot_switch_a_server_over_rest_or_mcp(kernel):
+    client = TestClient(api.build(kernel, port=8000), base_url="http://localhost:8000")
+    for operation in ("enable", "disable", "acknowledge"):
+        assert client.post(f"/system/claude/{operation}", params={"server": "code-user:tickets"}).status_code == 404
+    assert client.get("/system/claude/summary").json()["enabled"] == 1
+
+    async def scenario() -> None:
+        async with Client(mcp.build(kernel)) as mcp_client:
+            names = {tool.name for tool in (await mcp_client.list_tools()).tools}
+            assert not {"system_claude_enable", "system_claude_disable", "system_claude_acknowledge"} & names
 
     import anyio
 
