@@ -1902,7 +1902,9 @@ def test_user_daemon_factory_uses_the_kernel_installation_fingerprint(settings, 
 
     marker = "a" * 64
     fake_installation = SimpleNamespace(startup_fingerprint=lambda: marker)
-    fake_kernel = SimpleNamespace(resolve=lambda kind: fake_installation if kind is Installation else None)
+    fake_kernel = SimpleNamespace(
+        resolve=lambda kind: fake_installation if kind is Installation else None, provides=lambda _kind: False
+    )
     fake_config = SimpleNamespace(
         files=(),
         settings=lambda kind, section: settings if kind is _service.Settings else DaemonSettings(unit_dir=tmp_path),

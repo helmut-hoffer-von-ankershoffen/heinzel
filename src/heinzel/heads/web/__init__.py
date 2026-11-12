@@ -76,6 +76,7 @@ from heinzel.kernel import (
     SOUND_ROUTE,
     STREAM_PROVIDERS,
     Config,
+    DaemonLifecycleWait,
     HeinzelError,
     Kernel,
     LocalWebRuntime,
@@ -88,6 +89,9 @@ from heinzel.kernel import (
 )
 
 HEAD = "web"
+WEB_LIFECYCLE_WAIT_SECONDS = 10.0
+"""A web request's daemon or plugin change waits this long for a running tick or update; with the manager's own
+timeouts (kickstart 15 s, a query 5 s) it stays within the app's 30 s request timeout."""
 STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
@@ -213,6 +217,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
+    kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(WEB_LIFECYCLE_WAIT_SECONDS))
     activity = Activity()
 
     @app.middleware("http")
