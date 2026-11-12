@@ -2,19 +2,24 @@
 
 import hashlib
 import json
+import logging
 import re
 import stat
+from collections.abc import Callable
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from importlib import metadata
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
-from heinzel.kernel import Installation, Kernel, ReleaseCache
+from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache
+from heinzel.kernel._logging import log_event
 
+_log = logging.getLogger(__name__)
 MAX_FILES = 128
 MAX_ASSET_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 32 * 1024 * 1024
@@ -54,6 +59,16 @@ class UpdateStatus(BaseModel):
         default=False, description="Whether the last time the release source was asked it did not answer."
     )
     reason: str | None = Field(description="Why a manual update is required; contains no private installation source.")
+    installed: str | None = Field(
+        default=None,
+        description="The core version the installation holds when it differs from the one this server loaded, so a "
+        "verified restart of this server loads it; None when they match or the installation can't be verified.",
+    )
+    idle: bool = Field(
+        default=True,
+        description="Whether no chat answer, install or daemon job runs now, the same check automatic updates wait "
+        "for; the app restarts on its own only while idle.",
+    )
 
 
 class _Entrypoints(HTMLParser):
@@ -152,7 +167,31 @@ def _installed_at(installation: Installation) -> datetime | None:
         return None
 
 
-def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartable: bool) -> None:
+def _installed_core(installation: Installation) -> str | None:
+    """The installed core version when it is verified and differs from the loaded one; None otherwise.
+
+    Reading the metadata starts no code. Any doubt (not a uv tool, unreadable or changing metadata) answers None, so
+    the app never restarts on a guess.
+    """
+    if not installation.is_tool:
+        return None
+    try:
+        installed = installation.installed_core_version()
+        differs = Version(installed) != Version(__version__)
+    except (HeinzelError, InvalidVersion, OSError) as exc:
+        log_event(_log, "web.update.installed_core", outcome="unverified", error=type(exc).__name__)
+        return None
+    return installed if differs else None
+
+
+def add_updates(
+    app: FastAPI,
+    kernel: Kernel,
+    static: Path | None,
+    *,
+    restartable: bool,
+    busy: Callable[[], bool] = lambda: False,
+) -> None:
     """Expose only authenticated transport facts; never refresh releases or run the updater during a read."""
     frontend = _frontend(static)
     installation = kernel.resolve(Installation)
@@ -189,6 +228,8 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             last_ok_at=cache.ok_at if enabled else None,
             check_failed=enabled and cache.error is not None,
             reason=reason,
+            installed=_installed_core(installation) if restartable else None,
+            idle=not busy(),
         )
 
     @app.get("/frontend", tags=["web"])

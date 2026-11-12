@@ -51,7 +51,12 @@ def test_wait_is_bounded_and_explains_a_still_running_instance():
     assert len(messages) == 1
 
 
-@pytest.mark.parametrize(("port", "code"), [(0, errno.EADDRINUSE), (8737, errno.EACCES)])
+@pytest.mark.parametrize(
+    ("port", "code"),
+    [(0, errno.EADDRINUSE), (8737, errno.EACCES)],
+    # errno values differ by platform (EADDRINUSE is 48 on macOS, 98 on Linux): keep case ids stable.
+    ids=["any-port-in-use", "fixed-port-denied"],
+)
 def test_other_bind_failures_do_not_wait(port, code):
     clock, messages = Clock(), []
 

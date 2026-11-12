@@ -11,10 +11,13 @@ export function saveOpenWork(): void {
   for (const prepare of owners) prepare();
 }
 
+/** Whether a dialog, alert or terminal is open; the dialog that shows an update's own steps is not open work. */
+export function workOnScreen(): boolean {
+  return document.querySelector('[role="dialog"]:not([data-operation]),[role="alertdialog"],.xterm') !== null;
+}
+
 export function preserveUpdateWork(): void {
-  // The dialog that shows this update's own steps is not open work.
-  if (document.querySelector('[role="dialog"]:not([data-operation]),[role="alertdialog"],.xterm'))
-    throw new Error("Close the terminal or editor before updating; its open work will stay here.");
+  if (workOnScreen()) throw new Error("Close the terminal or editor before updating; its open work will stay here.");
   for (const prepare of owners) prepare();
 }
 

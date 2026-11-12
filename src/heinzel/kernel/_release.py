@@ -93,6 +93,16 @@ class ReleaseSource:
         """
         raise NotImplementedError
 
+    def accepted(self, version: str, timeout: float) -> bool:
+        """Whether release `version` passed its acceptance run, which automatic updates require (ADR 0116).
+
+        The release train publishes the verdict with the release once acceptance has judged the published wheel; a
+        release without one, or with one that says not accepted, is held. This base class can't tell, so none is.
+        `hz system update` never asks: a person may install any published release.
+        """
+        del version, timeout
+        return False
+
     def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
         """The highest version among the published releases in SemVer order, for `hz system update`.
 
