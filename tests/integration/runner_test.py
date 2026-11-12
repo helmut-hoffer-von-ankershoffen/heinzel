@@ -136,6 +136,7 @@ def test_doctor_checks_the_claude_cli_the_core_s_chat_needs(make_kernel, tmp_pat
     [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert check["status"] == "degraded"
     assert check["fix"].endswith("or bind the command runner: hz system config set capabilities.agent_runner command")
+    assert check["fix"].startswith("Run `hz ai access list` to see other ways to reach an AI")
     fake = tmp_path / "claude"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o755)
