@@ -341,6 +341,7 @@ KERNEL = [
     "DaemonHandoverRequest",
     "DaemonInstallationLifecycle",
     "DaemonLegacyRecovery",
+    "DaemonLifecycleWait",
     "DaemonMutationScope",
     "DaemonOverview",
     "DaemonPackageHandoverRecovery",

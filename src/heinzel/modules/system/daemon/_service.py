@@ -670,8 +670,9 @@ class DaemonService:
         self._which = which
         self._time_limit = time_limit
         self._abandoned: dict[str, threading.Thread] = {}
-        self.lifecycle_wait_seconds = 0.0
-        """How long a lifecycle writer waits for another holder of the lifecycle lock; `for_user` sets the default."""
+        self.lifecycle_wait_seconds: float | None = 0.0
+        """How long a lifecycle writer waits for another holder of the lifecycle lock; None reads the head's bound
+        `DaemonLifecycleWait` at each wait (`for_user`), so no cached service keeps another head's budget."""
         self.lifecycle_poll_seconds = LIFECYCLE_POLL_SECONDS
         self.compile_error: str | None = None
         """Why compiling jobs failed the last time they were listed; None when it worked."""
@@ -694,8 +695,7 @@ class DaemonService:
             quiescence_installation=installation,
             profile_config=config,
         )
-        if kernel.provides(DaemonLifecycleWait):  # the head's budget: minutes in a terminal, seconds in a web request
-            service.lifecycle_wait_seconds = kernel.resolve(DaemonLifecycleWait).seconds
+        service.lifecycle_wait_seconds = None  # the head's budget, read at each wait: a later binding counts
         return service
 
     # Installing ------------------------------------------------------------------------------------------------------
@@ -714,6 +714,14 @@ class DaemonService:
         """`tick` while a tick runs its jobs, else `other` (an update or another change); from read-only probes."""
         return "tick" if held(self.state_dir / "tick.lock") else "other"
 
+    def _wait_budget(self) -> float:
+        """Seconds a lifecycle writer waits now: the fixed budget, or the head's bound one, or none."""
+        if self.lifecycle_wait_seconds is not None:
+            return self.lifecycle_wait_seconds
+        if self._kernel.provides(DaemonLifecycleWait):
+            return self._kernel.resolve(DaemonLifecycleWait).seconds
+        return 0.0
+
     def await_lifecycle(self) -> bool:
         """Wait, up to `lifecycle_wait_seconds`, until no other process holds the lifecycle lock; never takes it.
 
@@ -724,17 +732,14 @@ class DaemonService:
         path = self.state_dir / "lifecycle.lock"
         if not held(path):
             return True
-        if self.lifecycle_wait_seconds <= 0:
+        budget = self._wait_budget()
+        if budget <= 0:
             return False
         holder = self._lifecycle_holder()
-        log_event(
-            logger, "daemon.lifecycle.wait", phase="start", holder=holder, budget_seconds=self.lifecycle_wait_seconds
-        )
+        log_event(logger, "daemon.lifecycle.wait", phase="start", holder=holder, budget_seconds=budget)
         started = time.monotonic()
-        deadline = started + self.lifecycle_wait_seconds
-        with self._kernel.resolve(Progress).task(
-            f"Waiting for {_HOLDERS[holder]} to finish (up to {_budget(self.lifecycle_wait_seconds)})"
-        ):
+        deadline = started + budget
+        with self._kernel.resolve(Progress).task(f"Waiting for {_HOLDERS[holder]} to finish (up to {_budget(budget)})"):
             while held(path) and time.monotonic() < deadline:
                 time.sleep(min(self.lifecycle_poll_seconds, max(0.0, deadline - time.monotonic())))
         free = not held(path)
@@ -751,7 +756,8 @@ class DaemonService:
     def _lifecycle_refusal(self, *, busy: bool) -> str:
         """Why a lifecycle writer can't start, in plain words, with what to do; `busy` when the lock was held."""
         if busy:
-            waited = f" after waiting {_budget(self.lifecycle_wait_seconds)}" if self.lifecycle_wait_seconds > 0 else ""
+            budget = self._wait_budget()
+            waited = f" after waiting {_budget(budget)}" if budget > 0 else ""
             return (
                 f"The daemon lifecycle is changing: {_HOLDERS[self._lifecycle_holder()]} is still running{waited}. "
                 "Nothing was changed; try again in a minute or two."

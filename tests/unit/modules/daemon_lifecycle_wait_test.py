@@ -231,27 +231,55 @@ def user_kernel(make_kernel, tmp_path, monkeypatch):
 def test_the_user_service_takes_the_heads_budget_and_waits_nothing_unbound(user_kernel):
     from heinzel.kernel import DaemonLifecycleWait
 
-    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 0.0
+    assert DaemonService.for_user(user_kernel)._wait_budget() == 0.0
     user_kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(42.0))
-    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 42.0
+    assert DaemonService.for_user(user_kernel)._wait_budget() == 42.0
+
+
+def test_a_budget_bound_after_the_service_was_built_counts_at_the_next_wait(user_kernel):
+    """Resolve order or a cached service can't keep another head's budget: it is read at each wait."""
+    from heinzel.kernel import DaemonLifecycleWait
+
+    user_kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(180.0))
+    service = DaemonService.for_user(user_kernel)
+    assert service._wait_budget() == 180.0
+    user_kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(10.0))
+    assert service._wait_budget() == 10.0
 
 
 def test_the_terminal_waits_three_minutes(user_kernel):
     from heinzel.heads import cli
     from heinzel.kernel import DaemonLifecycleWait
 
+    service = DaemonService.for_user(user_kernel)  # built before the head binds its budget
     cli.build(user_kernel)
     assert user_kernel.resolve(DaemonLifecycleWait).seconds == 180.0
-    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 180.0
+    assert service._wait_budget() == 180.0
 
 
 def test_a_web_request_waits_well_under_the_apps_thirty_second_timeout(user_kernel):
     from heinzel.heads import web
     from heinzel.kernel import DaemonLifecycleWait
 
+    service = DaemonService.for_user(user_kernel)
     web.build(user_kernel, port=8000, token="t" * 32, static=None, restart=lambda: None)
-    assert user_kernel.resolve(DaemonLifecycleWait).seconds == 15.0
-    assert DaemonService.for_user(user_kernel).lifecycle_wait_seconds == 15.0
+    assert user_kernel.resolve(DaemonLifecycleWait).seconds == 10.0
+    assert service._wait_budget() == 10.0
+
+
+def test_a_scheduled_tick_never_waits_even_with_the_terminals_budget_bound(service, tasks):
+    """The tick runs in a CLI-built kernel (180 s bound) but must skip at once when the lifecycle is held."""
+    from heinzel.kernel import DaemonLifecycleWait
+
+    service._kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(180.0))
+    service.lifecycle_wait_seconds = None
+    assert service._wait_budget() == 180.0
+    with running_tick(service):
+        started = time.monotonic()
+        report = service.tick()
+    assert report.locked
+    assert time.monotonic() - started < 5.0
+    assert not [task for task in tasks.tasks if task.startswith("Waiting")]
 
 
 def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_version(tmp_path):
