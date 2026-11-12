@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""A fake `gws` for isolated end-to-end runs: `auth login` writes the credentials file gws keeps; nothing networked."""
+
+import os
+import sys
+from pathlib import Path
+
+
+def directory() -> Path:
+    """Where gws keeps its credentials, as the real gws and the google plugin read it."""
+    configured = os.environ.get("GOOGLE_WORKSPACE_CLI_CONFIG_DIR")
+    return Path(configured) if configured else Path.home() / ".config" / "gws"
+
+
+def main(args: list[str]) -> int:
+    """Answer the few commands an isolated run uses; anything else fails, so a test never trusts an unfaked one."""
+    if args[:1] == ["--version"]:
+        sys.stdout.write("gws 0.22.0" + "\n")
+        return 0
+    if args[:2] == ["auth", "login"]:
+        directory().mkdir(parents=True, exist_ok=True)
+        (directory() / "credentials.json").write_text('{"fake": true}\n', encoding="utf-8")
+        sys.stdout.write("Signed in (fake)" + "\n")
+        return 0
+    if args[:2] == ["auth", "status"]:
+        return 0 if (directory() / "credentials.json").is_file() else 1
+    sys.stderr.write(f"fake gws: {' '.join(args)} is not faked" + "\n")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

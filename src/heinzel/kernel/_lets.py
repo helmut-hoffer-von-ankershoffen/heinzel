@@ -228,6 +228,28 @@ class Login(BaseModel):
         return " ".join(clean_text(value).split())[:LOGIN_TEXT]
 
 
+CheckActionKind = Literal["bind", "sign-in", "install", "settings", "check"]
+"""What the one action of a check does: choose which connector serves a capability, sign in to a connector, install
+a plugin, open its settings, or check again."""
+
+
+class CheckAction(BaseModel):
+    """The one thing to do about a check, as data a head turns into its own button (ADR 0145).
+
+    A web head never shows `command`: it is the same action for a terminal, where `hz system doctor` prints it.
+    """
+
+    kind: CheckActionKind = Field(description="What the action does.")
+    capability: str | None = Field(default=None, description="For `bind`: the capability to choose a connector for.")
+    adapter: str | None = Field(
+        default=None, description="For `bind`: the connector recommended or the only one installed, if any."
+    )
+    connector: str | None = Field(
+        default=None, description="For `sign-in`, `install` and `settings`: the connector or plugin it is about."
+    )
+    command: str = Field(default="", description="The same action as a command line, for a terminal only.")
+
+
 class Check(BaseModel):
     """The outcome of one health check. Anything but UP must say what is wrong."""
 
@@ -239,6 +261,17 @@ class Check(BaseModel):
         default=None,
         description="For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none.",
         exclude_if=lambda login: login is None,  # most checks have none: their JSON stays as it was
+    )
+    cause: str | None = Field(
+        default=None,
+        description="The cause in a few words, e.g. `Nobody serves mail`, so heads group checks by cause; left out "
+        "if none.",
+        exclude_if=lambda cause: cause is None,
+    )
+    action: CheckAction | None = Field(
+        default=None,
+        description="The one action that fixes it, as data; left out if none.",
+        exclude_if=lambda action: action is None,
     )
 
     @model_validator(mode="after")

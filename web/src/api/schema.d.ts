@@ -3085,6 +3085,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write the connector bindings installed playbooks recommend; a binding you set is always kept.
+         * @description Write the connector bindings installed playbooks recommend; a binding you set is always kept.
+         *
+         *     `hz system plugin add` runs it after an install. A recommendation for a connector that isn't installed is skipped,
+         *     and layers that disagree bind nothing until you choose.
+         */
+        post: operations["system_plugin_bind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.
+         * @description List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.
+         */
+        get: operations["system_plugin_checklist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/disable": {
         parameters: {
             query?: never;
@@ -3326,6 +3369,26 @@ export interface paths {
         get: operations["system_plugin_showcase"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/unbind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.
+         * @description Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.
+         */
+        post: operations["system_plugin_unbind"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5130,6 +5193,39 @@ export interface components {
             revision: number;
         };
         /**
+         * BindingResult
+         * @description One capability a playbook recommends a connector for, and what setup did about it.
+         */
+        BindingResult: {
+            /**
+             * Adapter
+             * @description The connector recommended; none for a conflict between layers.
+             */
+            adapter: string | null;
+            /**
+             * By
+             * @description The module whose playbook recommends it, e.g. `acme`.
+             */
+            by: string;
+            /**
+             * Capability
+             * @description The capability, e.g. `tracker`.
+             */
+            capability: string;
+            /**
+             * Reason
+             * @description Why, in a few words, e.g. `yours: github` for a kept binding.
+             * @default
+             */
+            reason: string;
+            /**
+             * State
+             * @description What setup did: written, kept, skipped, conflict or removed.
+             * @enum {string}
+             */
+            state: "written" | "kept" | "skipped" | "conflict" | "removed";
+        };
+        /**
          * CalendarReminderStatus
          * @description Whether calendar reads are enabled and what the supervisor reports.
          */
@@ -6277,6 +6373,13 @@ export interface components {
          * @description The outcome of one health check. Anything but UP must say what is wrong.
          */
         Check: {
+            /** @description The one action that fixes it, as data; left out if none. */
+            action?: components["schemas"]["CheckAction"] | null;
+            /**
+             * Cause
+             * @description The cause in a few words, e.g. `Nobody serves mail`, so heads group checks by cause; left out if none.
+             */
+            cause?: string | null;
             /**
              * Detail
              * @description What was found; required unless UP.
@@ -6300,6 +6403,41 @@ export interface components {
             status: components["schemas"]["Status"];
         };
         /**
+         * CheckAction
+         * @description The one thing to do about a check, as data a head turns into its own button (ADR 0145).
+         *
+         *     A web head never shows `command`: it is the same action for a terminal, where `hz system doctor` prints it.
+         */
+        CheckAction: {
+            /**
+             * Adapter
+             * @description For `bind`: the connector recommended or the only one installed, if any.
+             */
+            adapter?: string | null;
+            /**
+             * Capability
+             * @description For `bind`: the capability to choose a connector for.
+             */
+            capability?: string | null;
+            /**
+             * Command
+             * @description The same action as a command line, for a terminal only.
+             * @default
+             */
+            command: string;
+            /**
+             * Connector
+             * @description For `sign-in`, `install` and `settings`: the connector or plugin it is about.
+             */
+            connector?: string | null;
+            /**
+             * Kind
+             * @description What the action does.
+             * @enum {string}
+             */
+            kind: "bind" | "sign-in" | "install" | "settings" | "check";
+        };
+        /**
          * CheckReport
          * @description `hz heinzel check`: every contract checked and every problem found.
          */
@@ -6319,6 +6457,66 @@ export interface components {
              * @description The directories searched, when no path was given.
              */
             searched?: components["schemas"]["Directory"][];
+        };
+        /**
+         * Checklist
+         * @description What is still to do so a company's playbook is fully set up: one row per connector it names.
+         */
+        Checklist: {
+            /**
+             * Done
+             * @description Whether every row is connected.
+             */
+            done: boolean;
+            /**
+             * Module
+             * @description The module whose playbook it is; none for every playbook installed.
+             */
+            module: string | null;
+            /**
+             * Rows
+             * @description One row per connector, in the order the playbook names them.
+             */
+            rows: components["schemas"]["ChecklistRow"][];
+        };
+        /**
+         * ChecklistRow
+         * @description One connector a company's playbook needs, how it stands, and the one next action.
+         */
+        ChecklistRow: {
+            /** @description The one next action. */
+            action: components["schemas"]["RowAction"];
+            /**
+             * Capabilities
+             * @description What the playbook has it serve, e.g. `tracker`, `documents`.
+             */
+            capabilities: string[];
+            /**
+             * Connector
+             * @description The connector (adapter) name, e.g. `atlassian`.
+             */
+            connector: string;
+            /**
+             * Id
+             * @description Stable id of the row, `<module>:<connector>`.
+             */
+            id: string;
+            /**
+             * Line
+             * @description One status line, state first, at most 60 characters.
+             */
+            line: string;
+            /**
+             * Owner Only
+             * @description Whether only the person can do it (a sign-in or a site of their own); setup does everything else.
+             */
+            owner_only: boolean;
+            /**
+             * State
+             * @description not-installed, not-connected, needs-attention or connected.
+             * @enum {string}
+             */
+            state: "not-installed" | "not-connected" | "needs-attention" | "connected";
         };
         /**
          * ClaudeScan
@@ -10535,6 +10733,39 @@ export interface components {
             templates: components["schemas"]["TemplateView"][];
         };
         /**
+         * PluginBinding
+         * @description A connector binding an installed playbook recommends, and what the add did about it (ADR 0145).
+         */
+        PluginBinding: {
+            /**
+             * Adapter
+             * @description The connector recommended; none for a conflict between layers.
+             */
+            adapter: string | null;
+            /**
+             * By
+             * @description The module whose playbook recommends it, e.g. `acme`.
+             */
+            by: string;
+            /**
+             * Capability
+             * @description The capability, e.g. `tracker`.
+             */
+            capability: string;
+            /**
+             * Reason
+             * @description Why, in a few words, e.g. `yours: github`.
+             * @default
+             */
+            reason: string;
+            /**
+             * State
+             * @description written now; kept as you set it; skipped (connector not installed, or `--no-bind`); conflict.
+             * @enum {string}
+             */
+            state: "written" | "kept" | "skipped" | "conflict";
+        };
+        /**
          * PluginCandidate
          * @description What `hz system plugin add` would install: the code, where it comes from and who publishes it.
          */
@@ -10628,6 +10859,11 @@ export interface components {
              * @enum {string}
              */
             action: "add" | "develop" | "remove" | "enable" | "disable";
+            /**
+             * Bindings
+             * @description For a confirmed add: the connector bindings its playbooks recommend, with what the add did; `hz system plugin unbind <module>` undoes those it wrote.
+             */
+            bindings?: components["schemas"]["PluginBinding"][];
             /** @description For `add`: what is installed, to show before confirming. */
             candidate: components["schemas"]["PluginCandidate"] | null;
             /**
@@ -10679,10 +10915,9 @@ export interface components {
         PluginEvent: {
             /**
              * Action
-             * @description `add`, `develop`, `remove`, `enable` or `disable`.
-             * @enum {string}
+             * @description The plugin or update-policy change that was carried out.
              */
-            action: "add" | "develop" | "remove" | "enable" | "disable";
+            action: ("add" | "develop" | "remove" | "enable" | "disable") | "unpin";
             /**
              * At
              * Format: date-time
@@ -10706,7 +10941,7 @@ export interface components {
             publisher: string | null;
             /**
              * Requirement
-             * @description What was installed, exactly, for `add` and `develop`.
+             * @description The selected requirement after `add`, `develop`, or `unpin`.
              */
             requirement: string | null;
             /**
@@ -10880,7 +11115,7 @@ export interface components {
             needed_by: string;
             /**
              * Required
-             * @description Whether it is required (installed first) or only recommended (offered).
+             * @description Whether it is required (installed first) or only recommended: installed too unless the add is asked not to (`with_recommended`), then offered.
              */
             required: boolean;
             /**
@@ -11081,6 +11316,11 @@ export interface components {
          * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
          */
         PluginRepair: {
+            /**
+             * Bindings
+             * @description The connector bindings installed playbooks recommend that the repair wrote, once per version.
+             */
+            bindings?: components["schemas"]["PluginBinding"][];
             /**
              * Message
              * @description One line: what was repaired, or that nothing needed it.
@@ -12214,6 +12454,34 @@ export interface components {
             timezone: string;
         };
         /**
+         * RowAction
+         * @description The one thing to do next about a checklist row, as data a head turns into its own button.
+         */
+        RowAction: {
+            /**
+             * Capability
+             * @description For `bind`: the capability to serve.
+             */
+            capability?: string | null;
+            /**
+             * Command
+             * @description The same action as a command line, for a terminal only.
+             * @default
+             */
+            command: string;
+            /**
+             * Connector
+             * @description The connector it is about, e.g. `github`.
+             */
+            connector: string;
+            /**
+             * Kind
+             * @description What it does: install, sign in, bind, open settings or check again.
+             * @enum {string}
+             */
+            kind: "install" | "sign-in" | "bind" | "settings" | "check";
+        };
+        /**
          * RunCommand
          * @description Open the terminal with an `hz` command.
          */
@@ -13102,6 +13370,22 @@ export interface components {
              * @description Whether this machine has a file manager hz can open.
              */
             supported: boolean;
+        };
+        /**
+         * SetupBind
+         * @description The bindings one setup wrote, kept or skipped; an undo lists those it removed.
+         */
+        SetupBind: {
+            /**
+             * Bindings
+             * @description Each recommended binding with its result, in playbook order.
+             */
+            bindings: components["schemas"]["BindingResult"][];
+            /**
+             * Message
+             * @description One line for a person: how many were set and kept.
+             */
+            message: string;
         };
         /**
          * SetupDoc
@@ -16866,6 +17150,7 @@ export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
+export type SchemaBindingResult = components['schemas']['BindingResult'];
 export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
 export type SchemaCandidate = components['schemas']['Candidate'];
@@ -16898,7 +17183,10 @@ export type SchemaChatMessage = components['schemas']['ChatMessage'];
 export type SchemaChatSession = components['schemas']['ChatSession'];
 export type SchemaChatSummary = components['schemas']['ChatSummary'];
 export type SchemaCheck = components['schemas']['Check'];
+export type SchemaCheckAction = components['schemas']['CheckAction'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
+export type SchemaChecklist = components['schemas']['Checklist'];
+export type SchemaChecklistRow = components['schemas']['ChecklistRow'];
 export type SchemaClaudeScan = components['schemas']['ClaudeScan'];
 export type SchemaClaudeSummary = components['schemas']['ClaudeSummary'];
 export type SchemaColourDoc = components['schemas']['ColourDoc'];
@@ -17026,6 +17314,7 @@ export type SchemaPersonalArtifacts = components['schemas']['PersonalArtifacts']
 export type SchemaPlaybookDoc = components['schemas']['PlaybookDoc'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
+export type SchemaPluginBinding = components['schemas']['PluginBinding'];
 export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
 export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
@@ -17072,6 +17361,7 @@ export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
 export type SchemaRollingWindowPolicy = components['schemas']['RollingWindowPolicy'];
+export type SchemaRowAction = components['schemas']['RowAction'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
@@ -17094,6 +17384,7 @@ export type SchemaSessionSummary = components['schemas']['SessionSummary'];
 export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
+export type SchemaSetupBind = components['schemas']['SetupBind'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
 export type SchemaSignInFlow = components['schemas']['SignInFlow'];
 export type SchemaSignInProgress = components['schemas']['SignInProgress'];
@@ -21728,6 +22019,10 @@ export interface operations {
                 confirm?: boolean;
                 /** @description Opaque receipt returned by a preview; confirms that exact candidate only once. */
                 operation_id?: string | null;
+                /** @description Also install the plugins it recommends (its connectors). Off: they are only offered. Decided by the preview: a receipt installs what its preview showed. */
+                with_recommended?: boolean;
+                /** @description After installing, set the connector bindings its playbooks recommend; a binding you set is always kept, and `hz system plugin unbind <module>` undoes them. */
+                bind?: boolean;
             };
             header?: never;
             path?: never;
@@ -21774,6 +22069,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExtraChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_bind: {
+        parameters: {
+            query?: {
+                /** @description Only the playbooks of this plugin distribution; repeat for each. Every plugin's if omitted. */
+                plugin?: string[] | null;
+                /** @description Only this module's playbook. */
+                module?: string | null;
+                /** @description The plugin operation that installed it, remembered with each binding. */
+                operation_id?: string | null;
+                /** @description Consider each playbook once per version of its plugin, as an automatic repair does. */
+                once?: boolean;
+                /** @description Write nothing; remember the playbooks as considered, so a repair leaves them. */
+                decline?: boolean;
+                /** @description Say what it would write; write nothing. */
+                dry_run?: boolean;
+                /** @description As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid. */
+                automatic?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupBind"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_checklist: {
+        parameters: {
+            query?: {
+                /** @description The module whose playbook it is; every installed playbook's if omitted. */
+                module?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
                 };
             };
             /** @description Validation Error */
@@ -22108,6 +22479,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginShowcase"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_unbind: {
+        parameters: {
+            query: {
+                /** @description The module whose recommended bindings to remove, e.g. `acme`. */
+                by: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupBind"];
                 };
             };
             /** @description Validation Error */
