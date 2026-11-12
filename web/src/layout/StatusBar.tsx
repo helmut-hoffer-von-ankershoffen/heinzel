@@ -2,13 +2,16 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
+import { Info as InfoIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { requestMenuAction } from "@/about/menu";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
-import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { HeinzelSwarm } from "@/components/HeinzelSwarm";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -69,9 +72,29 @@ function installedReleaseNotes(changelog: string, version: string): string | nul
   return changelog.slice(start, end).trim() || null;
 }
 
+type DesktopAbout = { version: string; path?: string };
+type DesktopBridge = { about?: () => Promise<DesktopAbout> };
+
+/**
+ * The desktop app's own version, only inside the desktop app (the bridge `about`); null in a plain browser. The About
+ * dialog shares this query key, so the cache holds the bridge's whole answer and this hook selects the version.
+ */
+function useDesktopVersion() {
+  const about = (window as Window & { heinzelDesktop?: DesktopBridge }).heinzelDesktop?.about;
+  return useQuery({
+    queryKey: ["desktop", "about"],
+    queryFn: async (): Promise<DesktopAbout | null> => (await about?.()) ?? null,
+    select: (answer) => answer?.version ?? null,
+    enabled: Boolean(about),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** The installed version, its mascot, concise tagline and release link. */
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
+  const desktop = useDesktopVersion().data;
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
@@ -79,11 +102,22 @@ function ReleaseNotes({ version }: { version: string }) {
         aria-label={t("status.about")}
         className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2"
       >
-        <HeinzelAvatar label={t("app.name")} className="h-10 w-7 shrink-0" />
-        <p className="min-w-0 flex-1 text-[10px] leading-tight font-medium">
-          <span className="block">{t("status.tagline")}</span>
-          <span className="block">{t("status.origin")}</span>
-        </p>
+        <span role="img" aria-label={t("app.name")} className="shrink-0">
+          <HeinzelSwarm className="size-10" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] leading-tight font-medium">
+            <span className="block">{t("status.tagline")}</span>
+            <span className="block">{t("status.origin")}</span>
+          </p>
+          <div className="mt-1 text-[10px] leading-tight font-medium text-muted-foreground">
+            <span className="block">{t("status.backend", { version })}</span>
+            {desktop && <span className="block">{t("status.desktop", { version: desktop })}</span>}
+          </div>
+        </div>
+        <PaneAction ghost icon={InfoIcon} onClick={() => requestMenuAction("about")}>
+          {t("about.open")}
+        </PaneAction>
         <a
           href={`${RELEASES}/v${version}`}
           target="_blank"
