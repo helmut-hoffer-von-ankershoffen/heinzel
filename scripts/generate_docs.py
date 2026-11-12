@@ -17,6 +17,7 @@ Usage: uv run python scripts/generate_docs.py [--check]
 # imports heinzel and its modules to read their operations, settings and schemas.
 
 import importlib.util
+import inspect
 import json
 import subprocess
 import sys
@@ -24,6 +25,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import quote
 
+import typer
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
@@ -77,8 +79,20 @@ def kernel() -> Kernel:
     return Kernel(config.settings(Settings, "hz"), records, config=config)
 
 
+def end_help_at_form_feed(group: typer.Typer) -> typer.Typer:
+    """Cut each command's help at a form feed, as `--help` does; Typer's `utils docs` prints the whole docstring."""
+    for command in group.registered_commands:
+        text = command.help or getattr(command.callback, "__doc__", None) or ""
+        if "\f" in text:
+            command.help = inspect.cleandoc(text.partition("\f")[0])
+    for child in group.registered_groups:
+        if child.typer_instance is not None:
+            end_help_at_form_feed(child.typer_instance)
+    return group
+
+
 #: The app `typer ... utils docs` documents; built at import, as Typer expects a module-level app.
-app = build(kernel(), plain=True)
+app = end_help_at_form_feed(build(kernel(), plain=True))
 
 
 def cli_reference() -> str:

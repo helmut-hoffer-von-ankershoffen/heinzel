@@ -103,9 +103,11 @@ def serve_group(
     ) -> None:
         """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
+        \f
+
         Raises:
             typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         from heinzel.heads import mcp as head  # noqa: PLC0415 - heavy import, only when serving
 
         if chat is not None and transport is not Transport.STDIO:
@@ -195,9 +197,11 @@ def ui_command(kernel: Kernel, err_console: Console, *, open_existing: bool = Fa
 
         Ctrl-C stops it; that is its normal end, so it exits 0.
 
+        \f
+
         Raises:
             typer.Exit: With 1 when the app isn't built, the port is taken or there is no such device.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         from heinzel.heads import web  # noqa: PLC0415 - heavy import, only when serving
 
         if ctx.invoked_subcommand is not None:
@@ -317,9 +321,11 @@ def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console
 
         The client may require project trust or approval. Connection readiness is not verified.
 
+        \f
+
         Raises:
             typer.Exit: If the project config already exists or its directory is unavailable.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         from heinzel.heads.mcp._standard_project import StandardClient, install_project  # noqa: PLC0415
 
         if (expected_device is None) != (expected_inode is None):
@@ -354,9 +360,11 @@ def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console)
 
         Input waits for a line or EOF; the network check then has a ten-second limit.
 
+        \f
+
         Raises:
             typer.Exit: If the token, endpoint or MCP initialization is unavailable.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         if not token_stdin or sys.stdin.isatty():
             err_console.print(message("Can't check:", "Provide the token on standard input with --token-stdin."))
             raise typer.Exit(2)
@@ -417,9 +425,11 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
     ) -> None:
         """Make a token for one agent and print it once; only its SHA-256 is kept.
 
+        \f
+
         Raises:
             typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         try:
             record, token = _tokens().create(actor, scope.value, parse_duration(expires))
         except HeinzelError as exc:
@@ -448,9 +458,11 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
     ) -> None:
         """Revoke a token (or `all`); the agent's next request is refused.
 
+        \f
+
         Raises:
             typer.Exit: With 1 when no token has that id.
-        """
+        """  # noqa: D301 - Typer ends the help at a real form feed
         gone = _tokens().revoke(which)
         if not gone:
             err_console.print(message("No such token:", f"{which}; `hz system serve mcp-token list` lists them"))
