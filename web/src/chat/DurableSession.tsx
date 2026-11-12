@@ -115,6 +115,13 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
   );
 }
 
+/** Who a conversation row is from: a tool, the daemon, the Heinzel by its name, or the stored role. */
+function speakerLabel(message: { role: string; origin?: string | null }, heinzelName: string): string {
+  if (message.role === "tool") return "Tool activity";
+  if (message.origin === "daemon") return "Daemon";
+  return message.role === "assistant" ? heinzelName : message.role;
+}
+
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
   return <DurableSessionView key={authority} authority={authority} sessionId={sessionId} onClose={onClose} />;
@@ -1056,16 +1063,7 @@ function DurableSessionView({
                     className="mr-1 inline-block size-5 overflow-hidden align-text-bottom"
                   />
                 )}
-                <strong>
-                  {message.role === "tool"
-                    ? "Tool activity"
-                    : message.origin === "daemon"
-                      ? "Daemon"
-                      : message.role === "assistant"
-                        ? heinzelName
-                        : message.role}
-                  :
-                </strong>{" "}
+                <strong>{speakerLabel(message, heinzelName)}:</strong>{" "}
                 {message.role === "tool" ? "A tool event was recorded." : message.text}
                 {message.status && message.status !== "completed" && <span> ({message.status})</span>}
                 {message.billing === "plan" && (

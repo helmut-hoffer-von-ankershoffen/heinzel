@@ -3,10 +3,10 @@ import type { HeinzelLook } from "@/components/heinzel";
 type Appearance = {
   age: NonNullable<HeinzelLook["age"]>;
   build: NonNullable<HeinzelLook["build"]>;
-  beard?: HeinzelLook["beard"] | null;
-  hat?: HeinzelLook["hat"] | null;
-  shirt?: HeinzelLook["shirt"] | null;
-  accessories?: HeinzelLook["accessories"];
+  beard?: NonNullable<HeinzelLook["beard"]> | null;
+  hat?: NonNullable<HeinzelLook["hat"]> | null;
+  shirt?: NonNullable<HeinzelLook["shirt"]> | null;
+  accessories?: NonNullable<HeinzelLook["accessories"]>;
 };
 
 /** The avatar's look for a stored appearance: absent choices (null) fall back to the age and theme defaults. */

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { openChatJourney, runDaemonTurn, startChatJourney } from "./chat-ready.mjs";
+import { openChatJourney, recurringTurns, runDaemonTurn, startChatJourney } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
@@ -24,10 +24,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page
-    .locator("details")
-    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
-    .last(); // the Details disclosure around it matches too
+  const schedule = recurringTurns(page);
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { openDetails } from "./chat-ready.mjs";
+import { createHeinzelWithMessage, openDetails, recurringTurns } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
@@ -25,13 +25,7 @@ try {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my source current";
-  await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  await message.waitFor();
-  await openDetails(page);
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Send" }).click();
+  await createHeinzelWithMessage(page, sentence);
   const assistantReply = page.locator("p").filter({
     has: page.locator('svg[data-view="head"]'),
     hasText: "Done",
@@ -66,10 +60,7 @@ try {
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await panel.getByRole("button", { name: "Confirm", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page
-    .locator("details")
-    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
-    .last(); // the Details disclosure around it matches too
+  const schedule = recurringTurns(page);
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);

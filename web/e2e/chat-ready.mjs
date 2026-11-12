@@ -26,6 +26,26 @@ export async function openDetails(page) {
   if (!(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
 }
 
+/** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
+export function recurringTurns(page) {
+  return page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
+    .last();
+}
+
+/** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
+export async function createHeinzelWithMessage(page, sentence) {
+  await page.getByLabel("Your message").fill(sentence);
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  const message = page.getByLabel("Message your Heinzel");
+  await message.waitFor();
+  await openDetails(page);
+  assert.equal(await message.inputValue(), sentence);
+  await page.getByRole("button", { name: "Send" }).click();
+  return message;
+}
+
 // After a reload, the Chat tab sits below page content that is still loading, so a click can land on what moved under
 // the pointer and do nothing. Wait for startup to end, then press the tab: that needs no position. Require that Chat
 // really is selected and shown.

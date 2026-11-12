@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { openChatJourney, openDetails, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import { openChatJourney, openDetails, recurringTurns, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 import { settleRoutes } from "./route-settlement.mjs";
 
@@ -161,10 +161,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page
-    .locator("details")
-    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
-    .last(); // the Details disclosure around it matches too
+  const schedule = recurringTurns(page);
   await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns");
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
