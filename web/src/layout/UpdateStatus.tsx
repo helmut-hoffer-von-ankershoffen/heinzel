@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { onMenuAction } from "@/about/menu";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
@@ -55,6 +56,39 @@ export function UpdateStatus() {
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
+  const [openRequest, setOpenRequest] = useState(0);
+  // The updater checks both core and plugin news, with its server-side rate limit. Refresh both views afterwards.
+  const check = useMutation({
+    mutationFn: async () => {
+      console.info(JSON.stringify({ event: "web.update.check", outcome: "start" }));
+      return checkNow();
+    },
+    onSuccess: async (result) => {
+      console.info(
+        JSON.stringify({
+          event: "web.update.check",
+          outcome: "done",
+          core_checked: result.core_checked,
+          plugins_checked: result.plugins_checked,
+        }),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["web", "update-status"] }),
+        queryClient.invalidateQueries({ queryKey: KEY }),
+      ]);
+    },
+    onError: () => console.info(JSON.stringify({ event: "web.update.check", outcome: "failed" })),
+  });
+  const { mutate: runCheck } = check;
+  // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
+  useEffect(
+    () =>
+      onMenuAction(["updates"], () => {
+        setOpenRequest((count) => count + 1);
+        runCheck();
+      }),
+    [runCheck],
+  );
   /** `installed`: load that already installed core with a verified restart instead of installing anything. */
   const run = useCallback(async (resume: boolean, installed?: string) => {
     if (active.current) return;
@@ -186,12 +220,6 @@ export function UpdateStatus() {
   const canUpdate = status?.supported && !busy && recovery === "none" && !installedCore;
   const canLoad = installedCore !== null && !busy && recovery === "none";
   const label = view.available ? t("updates.availableLabel") : t("updates.title");
-  const retry = useMutation({
-    mutationFn: async () => {
-      await checkNow();
-      await Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: KEY })]);
-    },
-  });
   return (
     <FooterItem
       label={label}
@@ -199,6 +227,7 @@ export function UpdateStatus() {
       icon={busy ? LoaderCircle : Download}
       className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
       disabled={busy}
+      openRequest={openRequest}
       actions={
         // The lead is what the pane is for: finish a pending update, else install one; checking again is an icon.
         <>
@@ -221,9 +250,9 @@ export function UpdateStatus() {
                   : t("updates.manualAction")}
             </PaneAction>
           )}
-          {view.canRetry && !busy && (
-            <PaneAction icon={RefreshCw} disabled={retry.isPending} onClick={() => retry.mutate()}>
-              {t("updates.retry")}
+          {!busy && (
+            <PaneAction icon={RefreshCw} disabled={check.isPending} onClick={() => runCheck()}>
+              {t("updates.check")}
             </PaneAction>
           )}
         </>
@@ -259,6 +288,11 @@ export function UpdateStatus() {
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
         <AutoUpdateToggle />
+        {check.isError && (
+          <p role="alert" className="text-bad">
+            {t("updates.checkFailed")}
+          </p>
+        )}
       </div>
     </FooterItem>
   );
