@@ -187,13 +187,45 @@ export function openUiLinkExternally(target, connection, openExternal) {
 }
 
 /**
+ * Page scripts can click links and call window.open() without a person, and Electron's window-open and
+ * navigation details carry no user activation. The isolated preload reports trusted pointer, key and
+ * click input from the owned main frame (`grant`); one external open may follow within `windowMs`.
+ */
+export function createUserActivation({ now = Date.now, windowMs = 1000 } = {}) {
+  let until = Number.NEGATIVE_INFINITY;
+  return {
+    grant: () => { until = now() + windowMs; },
+    consume: () => {
+      const active = now() <= until;
+      until = Number.NEGATIVE_INFINITY;
+      return active;
+    },
+  };
+}
+
+/**
  * Only top-level documents use this guard; embedded third-party frames keep the web head's CSP.
  * The window never leaves the owned origin and never opens a child window: target=_blank,
- * window.open() and middle-click on a public link (from any frame) go to the default browser,
- * classified and rate-limited; everything else is denied.
+ * window.open() and middle-click on a public link go to the default browser only right after trusted
+ * user input, classified and rate-limited; scripted opens and everything else are denied.
+ * Returns the window's user activation for the preload's input reports.
  */
 export function guardUiNavigation(contents, connection, openExternal, options = {}) {
-  const open = createExternalOpener({ connection, openExternal, ...options });
+  const { windowMs, ...openerOptions } = options;
+  const log = options.log ?? defaultLog;
+  const activation = createUserActivation({ now: options.now, windowMs });
+  const opener = createExternalOpener({ connection, openExternal, ...openerOptions });
+  let refusedLogged = false;
+  const open = (target) => {
+    if (classifyUiLink(target, connection).kind !== "external") return false;
+    if (!activation.consume()) {
+      if (!refusedLogged) log({ event: "desktop.external_link.without_gesture" });
+      refusedLogged = true;
+      return false;
+    }
+    refusedLogged = false;
+    return opener(target);
+  };
   contents.setWindowOpenHandler((details) => {
     open(details?.url);
     return { action: "deny" };
@@ -206,6 +238,7 @@ export function guardUiNavigation(contents, connection, openExternal, options = 
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });
+  return activation;
 }
 
 /** Do not open or show a product window after shutdown began, including across asynchronous startup. */
