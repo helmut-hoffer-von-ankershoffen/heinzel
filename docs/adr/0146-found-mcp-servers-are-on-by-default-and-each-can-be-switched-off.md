@@ -47,23 +47,37 @@ ones; the person can switch each one off, and it stays off.** Checkable statemen
 3. **Scope is visible.** Each server carries `scope`: `user` (Claude Desktop and Claude Code's user entries),
    `project` (a project's `.mcp.json` or its local entries) or `plugin`. The CLI list and the Settings page show it
    next to the switch.
-4. **Tombstones.** Switching a server off stores its id, name and shape fingerprint in
-   `<state_dir>/claude/servers.json` (mode 0600), and nothing that connects to it: no command, argument, URL, variable
-   or header. A rescan matches by id first, so a changed argument, token or transport does not switch it back on, and
-   neither does removing and re-adding the entry. It matches by name and fingerprint second, so the same server in a
-   moved project or another scope stays off. Switching on removes every tombstone that matches.
-5. **State, not configuration.** `hz system config set` is offered over MCP, so a setting could be changed by an
-   agent. The tombstones live in a state file that no operation offered to agents writes.
+4. **Tombstones.** Switching a server off stores its id, name and shape fingerprint in `claude/servers.json` (mode
+   0600, in a folder of mode 0700), and nothing that connects to it: no command, argument, URL, variable or header.
+   A rescan matches by id first, so a changed argument, token or transport does not switch it back on, and neither
+   does removing and re-adding the entry. It matches by name and fingerprint second, so the same server in a moved
+   project folder or another scope stays off. Switching a server off always stores a tombstone with its own id, also
+   when another entry's tombstone already covers it. Switching one on removes its own tombstone and those of the
+   same name and shape whose entries are gone; a tombstone that belongs to another server still found stays, and
+   the id switched on is recorded as allowed past it, so a switch never changes another server. **Renaming
+   an entry switches it back on** when nothing else about it identifies it: the id and the name both change, and a
+   shape alone is shared by unrelated servers, so matching on it would switch off servers nobody chose. The renamed
+   server is new to the notice (statement 8).
+5. **State that no setting can move.** The tombstones are not configuration: `hz system config set` is offered over
+   MCP and a project's `hz.toml` comes with a repository, so either could remove a tombstone kept as a setting. For
+   the same reason the file does not follow the `state_dir` setting, which both can change: it lives under the
+   `HZ_STATE_DIR` environment variable when that is set and otherwise in the platform's default state folder. None
+   of this module's operations on the MCP and REST heads writes the file, and no setting decides where it is.
+   `hz uninstall` (CLI only) removes it with the rest of hz's state. The file never grows past what hz reads back:
+   a write that would exceed the 1 MiB limit is refused and changes nothing, and ids of servers that are no longer
+   found leave the notice's list when it is next closed.
 6. **Heads.** `hz system claude enable|disable <id>` and `acknowledge` exist on the CLI and the web head (behind its
-   token) only. The MCP and REST heads get neither; their summary gains the count of switched-on servers.
+   token) only. The web head takes the id in the request's body, not its address. The MCP and REST heads get none
+   of the three; their summary gains the count of switched-on servers.
 7. **Fail closed.** A state file that is unreadable, invalid, too large, a link or of an unknown version switches
    every server off, is reported by doctor, and is not overwritten; the person moves it away to start again.
 8. **First-run notice.** While switched-on servers exist that the person has not been told about, the list (CLI and
    Settings page) says how many are on and how many come from projects and plugins, and how to switch one off.
-   `acknowledge` closes it for the servers found then; a server found later, such as one a cloned repository brings,
-   shows it again.
+   `acknowledge` closes it for the servers found then (the Settings page: for the servers it showed); a server found
+   later, such as one a cloned repository brings, shows it again.
 9. **Logging.** Switching and acknowledging each log one start and one outcome event with the new state and the
-   scope, never the id or name (they can name employers and customers).
+   scope, never the id or name (they can name employers, customers and project folders); a refusal's message, which
+   is logged, does not repeat the id either.
 
 Guardrails the maintainer's decision relies on, for the slices that make servers usable (planned, not built here):
 
@@ -84,14 +98,16 @@ Guardrails the maintainer's decision relies on, for the slices that make servers
   scope, lazy start and confirmed writes are what stands between the repository and the person's data.
 - Bad: the fingerprint hashes shape, not arguments (ADR 0062 §2), so two servers of the same name and shape in two
   projects share a tombstone. It errs towards off.
-- Bad: a person with a shell can edit the state file; so can an agent that was given a shell. The head restriction
-  covers hz's own operations only.
+- Bad: a person with a shell can edit the state file or set `HZ_STATE_DIR`; so can an agent that was given a shell.
+  The head restriction covers hz's own operations only.
+- Bad: a person who moved hz's state with the `state_dir` setting finds this one file in the default place.
 
 ### Confirmation
 
-`tests/unit/modules/claude_switch_test.py` (default-on, scope, tombstones across changed, removed and moved entries,
-the state file's content and mode, fail-closed, the notice, log events) and `tests/integration/claude_test.py` (CLI,
-web head behind its token, absent from REST and MCP). `web/src/layout/FromClaudeSection.test.tsx` covers the switch
+`tests/unit/modules/claude_switch_test.py` (default-on, scope, tombstones across changed, removed, moved and renamed
+entries, the state file's content, mode, place and size limit, fail-closed, the notice, log events) and
+`tests/integration/claude_test.py` (CLI, web head behind its token, absent from REST and MCP, and a `state_dir`
+set in a project file or with `hz system config set` moving nothing). `web/src/layout/FromClaudeSection.test.tsx` covers the switch
 and the notice on the Settings page.
 
 ## More Information

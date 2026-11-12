@@ -72,23 +72,30 @@ def list_(service: ClaudeService) -> ClaudeScan:
 
 
 # Switching is for the person: the CLI, or the web app behind its token. Not for an agent over MCP, nor for the
-# unauthenticated REST head, which any local web page can reach (ADR 0146).
-@module.operation(read_only=False, render=render_switch, heads={"cli", "web"})
+# unauthenticated REST head, which any local web page can reach (ADR 0146). Private, so the web head takes the id
+# in the request's body: an id can name a project directory, and a query string ends up in access logs.
+@module.operation(read_only=False, private=True, render=render_switch, heads={"cli", "web"})
 def enable(service: ClaudeService, server: ServerId) -> ServerSwitch:
     """Switch a found MCP server back on for Heinzels; nothing is started."""
     return service.switch(server, on=True)
 
 
-@module.operation(read_only=False, render=render_switch, heads={"cli", "web"})
+@module.operation(read_only=False, private=True, render=render_switch, heads={"cli", "web"})
 def disable(service: ClaudeService, server: ServerId) -> ServerSwitch:
     """Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes."""
     return service.switch(server, on=False)
 
 
-@module.operation(read_only=False, render=render_closed, heads={"cli", "web"})
-def acknowledge(service: ClaudeService) -> NoticeClosed:
+@module.operation(read_only=False, private=True, render=render_closed, heads={"cli", "web"})
+def acknowledge(
+    service: ClaudeService,
+    servers: Annotated[
+        list[str] | None,
+        Field(description="Ids of the servers the notice showed; every server found now when not given."),
+    ] = None,
+) -> NoticeClosed:
     """Close the notice about switched-on servers; it comes back when a new server is found."""
-    return service.acknowledge()
+    return service.acknowledge(servers)
 
 
 @module.operation(render=render_summary)

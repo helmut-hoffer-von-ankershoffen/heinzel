@@ -98,7 +98,7 @@ class ServerSwitch(BaseModel):
     name: str = Field(description="The name the entry has in its configuration.")
     scope: Scope | None = Field(description="Who put it there; none when the entry is no longer found.")
     enabled: bool = Field(description="Whether it is switched on now.")
-    changed: bool = Field(description="Whether this call changed anything.")
+    changed: bool = Field(description="Whether this call switched it; false when it already was in that state.")
 
 
 class NoticeClosed(BaseModel):

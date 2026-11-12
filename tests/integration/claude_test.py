@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from mcp import Client
 from typer.testing import CliRunner
 
+from heinzel import Config, Settings
 from heinzel.heads import api, mcp, web
 from heinzel.heads.cli import build
 
@@ -123,20 +124,23 @@ def test_the_cli_switches_a_server_off_and_on_and_shows_the_notice_until_acknowl
 def test_the_cli_refuses_an_unknown_server(kernel):
     code, output = hz(kernel, "system", "claude", "disable", "code-user:nope", plain=True)
     assert code != 0
-    assert "No MCP server has the id" in " ".join(output.split())
+    assert "No MCP server has that id" in " ".join(output.split())
 
 
 def test_the_web_head_switches_behind_its_token(kernel):
     client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
-    query = {"server": "code-user:tickets"}
-    assert client.post("/api/system/claude/disable", params=query).status_code == 401
+    body = {"server": "code-user:tickets"}
+    assert client.post("/api/system/claude/disable", json=body).status_code == 401
     auth = {"Authorization": f"Bearer {TOKEN}"}
-    switched = client.post("/api/system/claude/disable", params=query, headers=auth)
+    assert client.post("/api/system/claude/disable", params=body, headers=auth).status_code == 422  # body only
+    switched = client.post("/api/system/claude/disable", json=body, headers=auth)
     assert switched.status_code == 200, switched.text
     assert switched.json()["enabled"] is False
     assert client.get("/api/system/claude/list", headers=auth).json()["servers"][0]["enabled"] is False
-    assert client.post("/api/system/claude/enable", params=query, headers=auth).json()["enabled"] is True
-    assert client.post("/api/system/claude/acknowledge", headers=auth).json() == {"servers": 1}
+    assert client.post("/api/system/claude/enable", json=body, headers=auth).json()["enabled"] is True
+    assert client.post("/api/system/claude/acknowledge", json={"servers": []}, headers=auth).json() == {"servers": 0}
+    shown = {"servers": ["code-user:tickets"]}
+    assert client.post("/api/system/claude/acknowledge", json=shown, headers=auth).json() == {"servers": 1}
 
 
 def test_an_agent_cannot_switch_a_server_over_rest_or_mcp(kernel):
@@ -153,3 +157,35 @@ def test_an_agent_cannot_switch_a_server_over_rest_or_mcp(kernel):
     import anyio
 
     anyio.run(scenario)
+
+
+@pytest.mark.parametrize("route", ["project-file", "config-set-over-mcp"])
+def test_a_redirected_state_dir_does_not_switch_a_server_back_on(
+    kernel, make_kernel, tmp_path: Path, monkeypatch, route: str
+):
+    assert hz(kernel, "system", "claude", "disable", "code-user:tickets")[0] == 0
+    kept = kernel.settings.state_dir / "claude" / "servers.json"
+    assert kept.is_file()
+    elsewhere = tmp_path / "elsewhere"
+    project = tmp_path / "cloned"
+    project.mkdir()
+    if route == "project-file":
+        (project / "hz.toml").write_text(f'[hz]\nstate_dir = "{elsewhere}"\n')
+    else:
+
+        async def scenario() -> None:
+            async with Client(mcp.build(kernel)) as client:
+                arguments = {"key": "hz.state_dir", "value": str(elsewhere)}
+                await client.call_tool("system_config_set", arguments)
+
+        import anyio
+
+        anyio.run(scenario)
+    monkeypatch.delenv("HZ_STATE_DIR")  # the environment would override either route; the default place stands in
+    monkeypatch.setattr("platformdirs.user_state_path", lambda *_args, **_kwargs: kept.parent.parent)
+    config = Config.load(project)
+    redirected = make_kernel(builtins=True, config=config, settings_=config.settings(Settings, "hz"))
+    assert redirected.settings.state_dir == elsewhere  # the setting did move: the route is live
+    listed = json.loads(hz(redirected, "system", "claude", "list")[1])
+    assert [(s["name"], s["enabled"]) for s in listed["servers"]] == [("tickets", False)]
+    assert not list(elsewhere.rglob("servers.json"))

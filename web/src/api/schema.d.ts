@@ -12880,7 +12880,7 @@ export interface components {
         ServerSwitch: {
             /**
              * Changed
-             * @description Whether this call changed anything.
+             * @description Whether this call switched it; false when it already was in that state.
              */
             changed: boolean;
             /**
@@ -16973,6 +16973,30 @@ export interface components {
              */
             request_id: string;
         };
+        /** system_claude_acknowledge_Input */
+        system_claude_acknowledge_Input: {
+            /**
+             * Servers
+             * @description Ids of the servers the notice showed; every server found now when not given.
+             */
+            servers?: string[] | null;
+        };
+        /** system_claude_disable_Input */
+        system_claude_disable_Input: {
+            /**
+             * Server
+             * @description The server's id, as `hz system claude list --json` shows it.
+             */
+            server: string;
+        };
+        /** system_claude_enable_Input */
+        system_claude_enable_Input: {
+            /**
+             * Server
+             * @description The server's id, as `hz system claude list --json` shows it.
+             */
+            server: string;
+        };
         /** system_connector_cancel_Input */
         system_connector_cancel_Input: {
             /**
@@ -17414,6 +17438,9 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
 export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
+export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
+export type SchemaSystemClaudeDisableInput = components['schemas']['system_claude_disable_Input'];
+export type SchemaSystemClaudeEnableInput = components['schemas']['system_claude_enable_Input'];
 export type SchemaSystemConnectorCancelInput = components['schemas']['system_connector_cancel_Input'];
 export type SchemaSystemConnectorConnectInput = components['schemas']['system_connector_connect_Input'];
 export type SchemaSystemConnectorDisconnectInput = components['schemas']['system_connector_disconnect_Input'];
@@ -20897,7 +20924,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_claude_acknowledge_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -20908,19 +20939,29 @@ export interface operations {
                     "application/json": components["schemas"]["NoticeClosed"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     system_claude_disable: {
         parameters: {
-            query: {
-                /** @description The server's id, as `hz system claude list --json` shows it. */
-                server: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_claude_disable_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -20944,15 +20985,16 @@ export interface operations {
     };
     system_claude_enable: {
         parameters: {
-            query: {
-                /** @description The server's id, as `hz system claude list --json` shows it. */
-                server: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_claude_enable_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

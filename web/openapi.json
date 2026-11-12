@@ -14721,7 +14721,7 @@
         "description": "`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.",
         "properties": {
           "changed": {
-            "description": "Whether this call changed anything.",
+            "description": "Whether this call switched it; false when it already was in that state.",
             "title": "Changed",
             "type": "boolean"
           },
@@ -21975,6 +21975,58 @@
         "title": "heinzel_start_helper_Input",
         "type": "object"
       },
+      "system_claude_acknowledge_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "servers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ids of the servers the notice showed; every server found now when not given.",
+            "title": "Servers"
+          }
+        },
+        "title": "system_claude_acknowledge_Input",
+        "type": "object"
+      },
+      "system_claude_disable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_disable_Input",
+        "type": "object"
+      },
+      "system_claude_enable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_enable_Input",
+        "type": "object"
+      },
       "system_connector_cancel_Input": {
         "additionalProperties": false,
         "properties": {
@@ -27219,6 +27271,16 @@
       "post": {
         "description": "Close the notice about switched-on servers; it comes back when a new server is found.",
         "operationId": "system_claude_acknowledge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_acknowledge_Input"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -27229,6 +27291,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Close the notice about switched-on servers; it comes back when a new server is found.",
@@ -27241,19 +27313,16 @@
       "post": {
         "description": "Switch a found MCP server off for Heinzels; it stays off after a rescan, also when its entry changes.",
         "operationId": "system_claude_disable",
-        "parameters": [
-          {
-            "description": "The server's id, as `hz system claude list --json` shows it.",
-            "in": "query",
-            "name": "server",
-            "required": true,
-            "schema": {
-              "description": "The server's id, as `hz system claude list --json` shows it.",
-              "title": "Server",
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_disable_Input"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -27286,19 +27355,16 @@
       "post": {
         "description": "Switch a found MCP server back on for Heinzels; nothing is started.",
         "operationId": "system_claude_enable",
-        "parameters": [
-          {
-            "description": "The server's id, as `hz system claude list --json` shows it.",
-            "in": "query",
-            "name": "server",
-            "required": true,
-            "schema": {
-              "description": "The server's id, as `hz system claude list --json` shows it.",
-              "title": "Server",
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_enable_Input"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

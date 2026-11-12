@@ -21,12 +21,13 @@ const KEY = ["system", "claude", "list"];
 
 const useClaude = () => useQuery({ queryKey: KEY, queryFn: () => unwrap(api.GET("/system/claude/list")) });
 
-/** Switch one server on or off; the list is read again so the switch shows what the server says. */
+/** Switch one server on or off; the list is read again so the switch shows what the server says. The id goes in
+ * the body: it can name a project folder, and an address ends up in logs. */
 function useSwitch() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ server, on }: { server: string; on: boolean }) =>
-      unwrap(api.POST(on ? "/system/claude/enable" : "/system/claude/disable", { params: { query: { server } } })),
+      unwrap(api.POST(on ? "/system/claude/enable" : "/system/claude/disable", { body: { server } })),
     onSettled: () => client.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -34,7 +35,7 @@ function useSwitch() {
 function useAcknowledge() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => unwrap(api.POST("/system/claude/acknowledge")),
+    mutationFn: (servers: string[]) => unwrap(api.POST("/system/claude/acknowledge", { body: { servers } })),
     onSettled: () => client.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -138,7 +139,7 @@ function Notice({ notice }: { notice: NonNullable<SchemaClaudeScan["notice"]> })
           </p>
         )}
       </div>
-      <Button type="button" size="sm" onClick={() => close.mutate()} disabled={close.isPending}>
+      <Button type="button" size="sm" onClick={() => close.mutate(notice.servers)} disabled={close.isPending}>
         {t("fromClaude.notice.close")}
       </Button>
     </section>

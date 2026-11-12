@@ -2272,6 +2272,7 @@ $ hz system claude acknowledge [OPTIONS]
 
 **Options**:
 
+* `--servers <list[str]>`: Ids of the servers the notice showed; every server found now when not given.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

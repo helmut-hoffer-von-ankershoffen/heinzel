@@ -71,16 +71,17 @@ function serve(state: Record<string, unknown> & { servers: { id: string; enabled
   const fetch = vi.fn(async (input: Request | string | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
     const operation = url.pathname.split("/").at(-1) as string;
-    if (operation !== "list") calls.push(`${operation} ${url.searchParams.get("server") ?? ""}`.trim());
+    expect(url.search).toBe(""); // an id can name a project folder: it travels in the body, never in the address
+    const body = input instanceof Request && input.method === "POST" ? await input.clone().json() : {};
+    if (operation !== "list") calls.push(`${operation} ${JSON.stringify(body)}`);
     if (operation === "acknowledge") {
       state = { ...state, notice: null };
       return Response.json({ servers: 2 });
     }
     if (operation === "enable" || operation === "disable") {
-      const id = url.searchParams.get("server");
       const on = operation === "enable";
-      state = { ...state, servers: state.servers.map((s) => (s.id === id ? { ...s, enabled: on } : s)) };
-      return Response.json({ id, name: "db", scope: "plugin", enabled: on, changed: true });
+      state = { ...state, servers: state.servers.map((s) => (s.id === body.server ? { ...s, enabled: on } : s)) };
+      return Response.json({ id: body.server, name: "db", scope: "plugin", enabled: on, changed: true });
     }
     return Response.json(state);
   });
@@ -134,7 +135,7 @@ describe("FromClaudeSection", () => {
     expect(screen.getByRole("switch", { name: "tickets" })).toBeChecked();
     await userEvent.click(within(plugin).getByRole("switch", { name: "db" }));
     await waitFor(() => expect(within(plugin).getByRole("switch", { name: "db" })).toBeChecked());
-    expect(calls).toEqual(["disable code-plugin:tools:db", "enable code-plugin:tools:db"]);
+    expect(calls).toEqual(['disable {"server":"code-plugin:tools:db"}', 'enable {"server":"code-plugin:tools:db"}']);
   });
 
   it("gives hz itself no switch", async () => {
@@ -162,7 +163,7 @@ describe("FromClaudeSection", () => {
     await userEvent.click(within(notice).getByRole("button", { name: "Got it" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Servers switched on" })).not.toBeInTheDocument());
     expect(screen.queryByText("New")).not.toBeInTheDocument();
-    expect(calls).toEqual(["acknowledge"]);
+    expect(calls).toEqual(['acknowledge {"servers":["code-plugin:tools:db","code-user:tickets"]}']);
   });
 
   it("shows the server's reason when a switch is refused, and says when every server is off", async () => {

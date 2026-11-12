@@ -9,19 +9,27 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.modules.system.claude import ClaudeService
-from heinzel.modules.system.claude._switch import SwitchStore
+from heinzel.modules.system.claude import ClaudeService, _switch
+from heinzel.modules.system.claude._switch import SwitchStore, switch_file
 
 pytestmark = pytest.mark.unit
 
 SECRET = "sk-live-NEVER-STORED"
 
 
-def configure(home: Path, user: Mapping[str, object], project: Mapping[str, object] | None = None) -> None:
-    demo = home / "Code" / "demo"
-    demo.mkdir(parents=True, exist_ok=True)
-    (home / ".claude.json").write_text(json.dumps({"mcpServers": user, "projects": {str(demo): {}}}))
-    (demo / ".mcp.json").write_text(json.dumps({"mcpServers": project or {}}))
+def configure(
+    home: Path, user: Mapping[str, object], project: Mapping[str, object] | None = None, folder: str = "demo"
+) -> None:
+    """Claude Code's user entries and one project `folder` with its `.mcp.json`; other project folders are removed."""
+    for stale in (home / "Code").glob("*/.mcp.json"):
+        stale.unlink()
+    directory = home / "Code" / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": user, "projects": {str(directory): {}}}))
+    (directory / ".mcp.json").write_text(json.dumps({"mcpServers": project or {}}))
+
+
+SHARED = {"shared": {"command": "bun", "args": ["run", "server"]}}
 
 
 @pytest.fixture
@@ -33,7 +41,7 @@ def home(tmp_path: Path) -> Path:
             "tickets": {"command": "npx", "args": ["tickets-mcp", SECRET], "env": {"API_KEY": SECRET}},
             "mine": {"command": "hz", "args": ["system", "serve", "mcp"]},
         },
-        {"shared": {"command": "bun", "args": ["run", "server"]}},
+        SHARED,
     )
     return root
 
@@ -53,7 +61,11 @@ def enabled(service: ClaudeService) -> dict[str, bool]:
 
 
 def project_id(service: ClaudeService) -> str:
-    return next(s.id for s in service.scan().servers if s.name == "shared")
+    return next(s.id for s in service.scan().servers if s.name == "shared" and s.scope == "project")
+
+
+def state(store: SwitchStore) -> dict[str, list[object]]:
+    return json.loads(store.path.read_text())
 
 
 def test_found_servers_are_on_by_default_with_their_scope_and_hz_itself_is_not(service: ClaudeService):
@@ -128,9 +140,9 @@ def test_switching_twice_changes_nothing_the_second_time(service: ClaudeService,
 
 
 def test_an_unknown_id_and_hz_itself_are_refused(service: ClaudeService, store: SwitchStore):
-    with pytest.raises(HeinzelError, match="No MCP server has the id"):
+    with pytest.raises(HeinzelError, match="No MCP server has that id"):
         service.switch("code-user:nope", on=False)
-    with pytest.raises(HeinzelError, match="No MCP server has the id"):
+    with pytest.raises(HeinzelError, match="No MCP server has that id"):
         service.switch("code-user:nope", on=True)
     with pytest.raises(HeinzelError, match="own MCP server"):
         service.switch("code-user:mine", on=True)
@@ -138,15 +150,17 @@ def test_an_unknown_id_and_hz_itself_are_refused(service: ClaudeService, store: 
 
 
 def test_the_state_file_is_private_and_holds_nothing_that_connects(service: ClaudeService, store: SwitchStore):
+    store.path.parent.mkdir(parents=True, mode=0o755)
     service.switch("code-user:tickets", on=False)
     service.acknowledge()
     text = store.path.read_text()
     assert SECRET not in text
     assert "npx" not in text
     assert "API_KEY" not in text
-    assert set(json.loads(text)) == {"version", "disabled", "acknowledged"}
+    assert set(json.loads(text)) == {"version", "disabled", "allowed", "acknowledged"}
     assert set(json.loads(text)["disabled"][0]) == {"id", "name", "fingerprint"}
     assert store.path.stat().st_mode & 0o777 == 0o600
+    assert store.path.parent.stat().st_mode & 0o777 == 0o700
 
 
 @pytest.mark.parametrize("content", ["{broken", '{"version": 99}', '{"disabled": "all"}', "[]"])
@@ -211,9 +225,13 @@ def test_switching_logs_a_start_and_an_outcome_without_the_id_or_name(
     ]
     done = caplog.records[1].__dict__
     assert (done["on"], done["scope"], done["changed"]) == (False, "project", True)
-    logged = " ".join(str(r.__dict__) for r in caplog.records[:2])
-    assert "shared" not in logged
-    assert "demo" not in logged
+    assert (
+        caplog.records[3].__dict__["error"]
+        == "No MCP server has that id. `hz system claude list --json` shows every id."
+    )
+    logged = " ".join(str(r.__dict__) for r in caplog.records)
+    for private in ("shared", "demo", "nope", "code-user", "code-project"):
+        assert private not in logged
 
 
 def test_a_service_without_a_store_lists_default_on_and_cannot_switch(home: Path):
@@ -221,3 +239,81 @@ def test_a_service_without_a_store_lists_default_on_and_cannot_switch(home: Path
     assert enabled(service)["tickets"] is True
     with pytest.raises(HeinzelError, match="no state file"):
         service.switch("code-user:tickets", on=False)
+
+
+def test_switching_one_of_two_alike_entries_never_flips_the_other(
+    service: ClaudeService, home: Path, store: SwitchStore
+):
+    configure(home, SHARED, SHARED)  # the same name and shape twice: yours and the project's
+    project = project_id(service)
+    service.switch(project, on=False)
+    assert {s.id: s.enabled for s in service.scan().servers} == {project: False, "code-user:shared": False}
+    again = service.switch("code-user:shared", on=False)  # already off by the other's tombstone: it gets its own
+    assert again.changed is False
+    assert [t["id"] for t in state(store)["disabled"]] == [project, "code-user:shared"]  # type: ignore[index]
+    assert service.switch(project, on=True).changed is True
+    assert {s.id: s.enabled for s in service.scan().servers} == {project: True, "code-user:shared": False}
+    assert state(store)["allowed"] == [project]
+    service.switch(project, on=False)
+    assert state(store)["allowed"] == []
+    assert not any(s.enabled for s in service.scan().servers)
+
+
+def test_a_project_folder_that_moved_keeps_its_server_off_until_switched_on(
+    service: ClaudeService, home: Path, store: SwitchStore
+):
+    service.switch(project_id(service), on=False)
+    configure(home, {}, SHARED, folder="moved")
+    moved = project_id(service)
+    assert "moved" in moved
+    assert enabled(service) == {"shared": False}  # only the old folder's tombstone, matched by name and shape
+    assert service.switch(moved, on=False).changed is False
+    assert [t["id"] for t in state(store)["disabled"]][-1] == moved  # type: ignore[index]
+    assert service.switch(moved, on=True).changed is True
+    assert enabled(service) == {"shared": True}
+    assert state(store)["disabled"] == []
+
+
+def test_a_renamed_entry_is_on_again_and_new_to_the_notice(service: ClaudeService, home: Path):
+    service.switch("code-user:tickets", on=False)
+    service.acknowledge()
+    configure(home, {"tix": {"command": "npx", "args": ["tickets-mcp", SECRET], "env": {"API_KEY": SECRET}}}, SHARED)
+    assert enabled(service)["tix"] is True  # documented in ADR 0146: neither the id nor the name is the same
+    notice = service.scan().notice
+    assert notice is not None
+    assert notice.servers == ["code-user:tix"]
+
+
+def test_a_write_that_would_outgrow_the_limit_is_refused_and_switches_nothing_off(
+    service: ClaudeService, store: SwitchStore, monkeypatch: pytest.MonkeyPatch
+):
+    service.switch("code-user:tickets", on=False)
+    before = store.path.read_text()
+    monkeypatch.setattr(_switch, "LIMIT", len(before.encode()) + 10)
+    with pytest.raises(HeinzelError, match="would grow beyond"):
+        service.switch(project_id(service), on=False)
+    assert store.path.read_text() == before
+    assert enabled(service) == {"tickets": False, "shared": True, "mine": False}
+    assert service.scan().state_problem is None
+
+
+def test_acknowledging_closes_only_what_was_shown_and_forgets_servers_that_are_gone(
+    service: ClaudeService, home: Path, store: SwitchStore
+):
+    assert service.acknowledge(["code-user:tickets", "code-user:never-found"]).servers == 1
+    notice = service.scan().notice
+    assert notice is not None
+    assert notice.servers == [project_id(service)]
+    configure(home, {}, SHARED)
+    assert service.acknowledge().servers == 1
+    assert state(store)["acknowledged"] == [project_id(service)]
+
+
+def test_no_setting_decides_where_the_switches_are_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import platformdirs
+
+    monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "from-env"))
+    assert switch_file() == tmp_path / "from-env" / "claude" / "servers.json"
+    assert ClaudeService.for_user()._store.path == switch_file()  # type: ignore[union-attr]
+    monkeypatch.delenv("HZ_STATE_DIR")
+    assert switch_file() == platformdirs.user_state_path("hz") / "claude" / "servers.json"

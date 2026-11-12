@@ -8,7 +8,7 @@ import logging
 from collections import Counter
 from pathlib import Path
 
-from heinzel import Check, HeinzelError, Kernel, Status
+from heinzel import Check, HeinzelError, Status
 from heinzel.kernel._logging import step
 from heinzel.modules.system.claude._models import (
     ClaudeScan,
@@ -19,11 +19,9 @@ from heinzel.modules.system.claude._models import (
     ServerSwitch,
 )
 from heinzel.modules.system.claude._scan import LINK, Scanner
-from heinzel.modules.system.claude._switch import SwitchState, SwitchStore, Tombstone, apply
+from heinzel.modules.system.claude._switch import STATE_FILE, SwitchState, SwitchStore, apply, switch_file
 
 logger = logging.getLogger("heinzel.claude")
-
-STATE_FILE = Path("claude") / "servers.json"
 
 
 class ClaudeService:
@@ -35,9 +33,9 @@ class ClaudeService:
         self._store = store
 
     @classmethod
-    def for_user(cls, kernel: Kernel) -> "ClaudeService":
-        """The service for your own home directory, with its switches in hz's state folder."""
-        return cls(Path.home(), SwitchStore(kernel.settings.state_dir / STATE_FILE))
+    def for_user(cls) -> "ClaudeService":
+        """The service for your own home directory; its switches are kept where no setting can move them."""
+        return cls(Path.home(), SwitchStore(switch_file()))
 
     def _state(self) -> SwitchState | None:
         return SwitchState() if self._store is None else self._store.read()
@@ -84,27 +82,29 @@ class ClaudeService:
             HeinzelError: If no such server is found or remembered, it is hz itself, or the state cannot be written.
         """
         store = self._require_store()
-        # The id can name a project directory, so the log gets the scope and the outcome, never the id or name.
+        # The id can name a project directory, so the log gets the scope and the outcome, never the id or name:
+        # the error messages below are logged too, so they don't repeat the id either.
         with step(logger, "claude.server.switch", on=on) as running, store.change() as state:
             scanner = Scanner(self._home)
             scanner.scan()
             server = next((s for s in scanner.servers if s.id == server_id), None)
-            remembered = next((t for t in state.disabled if t.id == server_id), None)
+            remembered = state.own(server_id)
             if server is None and (on is False or remembered is None):
-                msg = f"No MCP server has the id {server_id!r}. `hz system claude list --json` shows every id."
+                msg = "No MCP server has that id. `hz system claude list --json` shows every id."
                 raise HeinzelError(msg)
             if server is not None and server.status == "self":
                 msg = "That is hz's own MCP server; it is never offered back to itself, so there is nothing to switch."
                 raise HeinzelError(msg)
-            before = len(state.disabled)
-            was_off = remembered is not None or (server is not None and state.off(server))
-            if on:
-                state.disabled = [
-                    t for t in state.disabled if t.id != server_id and not (server is not None and t.matches(server))
-                ]
-            elif server is not None and not was_off:
-                state.disabled.append(Tombstone(id=server.id, name=server.name, fingerprint=server.fingerprint))
-            changed = len(state.disabled) != before
+            found = {s.id for s in scanner.servers}
+            was_off = remembered is not None if server is None else state.off(server)
+            if server is None:
+                state.disabled = [t for t in state.disabled if t.id != server_id]
+            elif on:
+                state.switch_on(server, found - {server.id})
+            else:
+                state.switch_off(server)
+            state.allowed = [i for i in state.allowed if i in found]
+            changed = was_off == on
             running.note(scope=server.scope if server else None, changed=changed)
             return ServerSwitch(
                 id=server_id,
@@ -114,8 +114,11 @@ class ClaudeService:
                 changed=changed,
             )
 
-    def acknowledge(self) -> NoticeClosed:
-        """Close the first-run notice for every server found now; one found later shows it again.
+    def acknowledge(self, shown: list[str] | None = None) -> NoticeClosed:
+        """Close the first-run notice for the servers in `shown`, or for every server found now.
+
+        The web app names the servers its notice showed, so one found a moment later is not closed unseen. Ids of
+        servers that are no longer found are forgotten: one that returns is announced again.
 
         Raises:
             HeinzelError: If the state cannot be written.
@@ -124,9 +127,10 @@ class ClaudeService:
         with step(logger, "claude.notice.acknowledge") as running, store.change() as state:
             scanner = Scanner(self._home)
             scanner.scan()
-            known = set(state.acknowledged)
-            fresh = [s.id for s in scanner.servers if s.status != "self" and s.id not in known]
-            state.acknowledged = sorted(known | set(fresh))
+            found = {s.id for s in scanner.servers if s.status != "self"}
+            known = set(state.acknowledged) & found
+            fresh = (found if shown is None else found & set(shown)) - known
+            state.acknowledged = sorted(known | fresh)
             running.note(servers=len(fresh))
             return NoticeClosed(servers=len(fresh))
 
