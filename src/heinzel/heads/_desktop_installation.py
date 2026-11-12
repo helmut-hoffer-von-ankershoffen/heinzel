@@ -146,7 +146,7 @@ class _Move:
             return False
         if actual == before[::-1]:
             return True
-        raise DesktopInstallationError(_CONFLICT)
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
 
     def apply(self, *, reverse: bool = False) -> None:
         source, target = (self.public, self.private) if self.identity.private is None else (self.private, self.public)
@@ -160,7 +160,7 @@ class _Move:
 def _check_platform() -> None:
     if sys.platform != "darwin" or platform.machine() != "arm64":
         msg = "Managed desktop installation requires an Apple silicon Mac."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.needs_apple_silicon())
 
 
 def system_applications_usable(path: Path | None = None) -> bool:
@@ -188,7 +188,7 @@ def _applications_directory(applications: Path, home: Path) -> None:
         _owned_directory(applications)
     elif applications != SYSTEM_APPLICATIONS or not system_applications_usable(applications):
         msg = f"The desktop installer cannot safely use {applications}."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.unsafe_folder(applications))
 
 
 def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
@@ -222,7 +222,7 @@ def _owned_directory(path: Path) -> None:
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
         msg = f"The desktop installer cannot safely use {path}."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.unsafe_folder(path))
 
 
 @contextmanager
@@ -232,7 +232,7 @@ def _open_lock(path: Path) -> Generator[int]:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             msg = "The desktop installer could not establish a safe installation lock."
-            raise DesktopInstallationError(msg)
+            raise DesktopInstallationError(msg, say.no_safe_start())
         yield fd
     finally:
         os.close(fd)
@@ -281,7 +281,7 @@ def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
         record = _owned_installation(bundle, config)
         if record is None:
             msg = f"The desktop app is not at {bundle} after installation."
-            raise DesktopInstallationError(msg)
+            raise DesktopInstallationError(msg, say.lost())
         _verify_bundle(bundle, record.release)
 
 
@@ -450,26 +450,26 @@ def _verify_bundle(bundle: Path, version: str) -> None:
     try:
         info = metadata.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_PLIST_BYTES:
-            raise DesktopInstallationError(problem)
+            raise DesktopInstallationError(problem, say.bad_archive())
         identity = plistlib.loads(metadata.read_bytes())
         if not isinstance(identity, dict):
-            raise DesktopInstallationError(problem)
+            raise DesktopInstallationError(problem, say.bad_archive())
         values = cast("dict[str, object]", identity)
         if (
             values.get("CFBundleIdentifier"),
             values.get("CFBundleExecutable"),
             values.get("CFBundleShortVersionString"),
         ) != (_BUNDLE_ID, _BUNDLE_EXECUTABLE, version):
-            raise DesktopInstallationError(problem)
+            raise DesktopInstallationError(problem, say.bad_archive())
         mode = executable.lstat().st_mode
         if not stat.S_ISREG(mode) or not mode & stat.S_IXUSR:
-            raise DesktopInstallationError(problem)
+            raise DesktopInstallationError(problem, say.bad_archive())
         with executable.open("rb") as file:
             magic, cpu, _, kind, *_ = _MACH_HEADER.unpack(file.read(_MACH_HEADER.size))
         if (magic, cpu, kind) != (_MACH_64, _CPU_ARM64, _MACH_EXECUTE):
-            raise DesktopInstallationError(problem)
+            raise DesktopInstallationError(problem, say.bad_archive())
     except (OSError, ValueError, ExpatError, struct.error) as exc:
-        raise DesktopInstallationError(problem) from exc
+        raise DesktopInstallationError(problem, say.bad_archive()) from exc
 
 
 def _prepare_for_gatekeeper(bundle: Path, *, keep_quarantine: bool) -> None:
@@ -508,7 +508,7 @@ def _identity(path: Path) -> _Identity | None:
         or info.st_mode & 0o022
         or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)
     ):
-        raise DesktopInstallationError(_CONFLICT)
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
     return (info.st_dev, info.st_ino, getattr(info, "st_birthtime_ns", None))
 
 
@@ -569,7 +569,7 @@ def _journal_bundle(bundle: Path, journal: _Journal) -> Path:
         return bundle
     applications = Path(journal.applications)
     if applications not in {bundle.parent, SYSTEM_APPLICATIONS}:
-        raise DesktopInstallationError(_CONFLICT)
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
     return applications / BUNDLE_NAME
 
 
@@ -580,7 +580,7 @@ def _recover_transaction(bundle: Path, config: Path) -> None:
     try:
         journal = _Journal.model_validate_json(data)
     except ValidationError as exc:
-        raise DesktopInstallationError(_CONFLICT) from exc
+        raise DesktopInstallationError(_CONFLICT, say.not_matching()) from exc
     bundle = _journal_bundle(bundle, journal)
 
     directories = (
@@ -590,7 +590,7 @@ def _recover_transaction(bundle: Path, config: Path) -> None:
     for directory, expected in directories:
         actual = _identity(directory)
         if actual != expected and (journal.state == "pending" or actual is not None):
-            raise DesktopInstallationError(_CONFLICT)
+            raise DesktopInstallationError(_CONFLICT, say.not_matching())
 
     moves = _moves(bundle, config, journal)
     if journal.state == "pending":
@@ -599,7 +599,7 @@ def _recover_transaction(bundle: Path, config: Path) -> None:
     for move in moves:
         expected_public = move.identity.private if journal.state == "committed" else move.identity.public
         if _identity(move.public) != expected_public:
-            raise DesktopInstallationError(_CONFLICT)
+            raise DesktopInstallationError(_CONFLICT, say.not_matching())
 
     _owned_installation(bundle, config)
     for directory, _ in directories:
@@ -614,7 +614,7 @@ def _rollback_pending(config: Path, journal: _Journal, moves: tuple[_Move, ...])
     # Check all entries before touching any. A crash during recovery leaves another valid prefix.
     statuses = tuple(move.status() for move in moves)
     if statuses != tuple(sorted(statuses, reverse=True)):
-        raise DesktopInstallationError(_CONFLICT)
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
     for move, applied in reversed(tuple(zip(moves, statuses, strict=True))):
         if applied:
             move.apply(reverse=True)
@@ -630,7 +630,7 @@ def _commit(bundle: Path, config: Path, staging: Path, files: Path, operation: L
     staging_identity = _identity(staging)
     metadata_identity = _identity(files)
     if staging_identity is None or metadata_identity is None:
-        raise DesktopInstallationError(_CONFLICT)
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
     journal = _Journal(
         operation=operation,
         staging=staging.name,
@@ -845,7 +845,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
         or not os.access(executable, os.X_OK)
     ):
         msg = "Desktop installation requires a stable release and an absolute, executable hz path."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.needs_stable_hz())
     if existing and existing.release == version and existing.executable == str(executable):
         return "current"
     if existing and _in_use(bundle):
@@ -874,7 +874,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
             binding = record.binding()
             if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
                 msg = "The desktop installation metadata exceeds the allowed size."
-                raise DesktopInstallationError(msg)
+                raise DesktopInstallationError(msg, say.untrusted_record(files / _RECEIPT))
             _write_private(files / _RECEIPT, metadata)
             _write_private(files / _BINDING, binding)
             _sync_tree(staging / BUNDLE_NAME)
@@ -883,7 +883,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
             if not locked or (existing and _in_use(bundle)):
                 return "deferred"
             if _owned_installation(bundle, config) != existing:
-                raise DesktopInstallationError(_CONFLICT)
+                raise DesktopInstallationError(_CONFLICT, say.not_matching())
             _commit(bundle, config, staging, files, "install")
     return "updated" if existing else "installed"
 
@@ -929,7 +929,7 @@ def _uninstall_steps(home: Path, config: Path, notes: list[str], reporter: Repor
         if not locked or _in_use(bundle):
             raise DesktopInstallationError(running, say.app_running(applications, command="uninstall"))
         if _owned_installation(bundle, config) != existing:
-            raise DesktopInstallationError(_CONFLICT)
+            raise DesktopInstallationError(_CONFLICT, say.not_matching())
         with _staging(applications, config) as (staging, files), reporter.phase(say.remove(bundle)):
             _commit(bundle, config, staging, files, "uninstall")
     return bundle
@@ -953,7 +953,7 @@ def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[Seal
     with _locked_config(home) as config:
         if not _recover_before_use(home, config):
             msg = "Quit Heinzelmännchen before checking the desktop app."
-            raise DesktopInstallationError(msg)
+            raise DesktopInstallationError(msg, say.app_running(home / "Applications", command="doctor"))
         bundle, record = _locate(home, config)
         if record is None:
             return None, []
@@ -962,7 +962,7 @@ def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[Seal
             with _desktop_use(config) as locked:
                 if not locked or _in_use(bundle):
                     msg = "Quit Heinzelmännchen before repairing the desktop app."
-                    raise DesktopInstallationError(msg)
+                    raise DesktopInstallationError(msg, say.app_running(bundle.parent, command="doctor --fix"))
                 if ensure_sealed(bundle):
                     repairs.append("Sealed the installed app with a local ad-hoc signature.")
                 if clear_our_quarantine(bundle):

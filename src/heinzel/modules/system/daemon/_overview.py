@@ -18,11 +18,12 @@ MAX_HISTORY_BYTES = 4096
 MAX_INTERVAL = 60
 
 
-def _loaded(platform: str, deadline: float) -> bool | None:
+def loaded(platform: str, deadline: float, label: str = LABEL, unit: str = f"{SYSTEMD_NAME}.timer") -> bool | None:
+    """Whether the user service manager has `label` (macOS) or `unit` (Linux) loaded; None when it can't tell."""
     if platform == "darwin":
         command = ["/bin/launchctl", "list"]
     else:
-        command = ["/usr/bin/systemctl", "--user", "is-active", "--quiet", f"{SYSTEMD_NAME}.timer"]
+        command = ["/usr/bin/systemctl", "--user", "is-active", "--quiet", unit]
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         return None
@@ -39,7 +40,7 @@ def _loaded(platform: str, deadline: float) -> bool | None:
         lines = result.stdout.splitlines()
         if result.returncode != 0 or not lines or lines[0].split() != ["PID", "Status", "Label"]:
             return None
-        return any(line.split()[-1:] == [LABEL] for line in lines[1:])
+        return any(line.split()[-1:] == [label] for line in lines[1:])
     return result.returncode == 0 if result.returncode in (0, 3) else None
 
 
@@ -129,10 +130,10 @@ def observe(
     paths = (plist_path(unit_dir),) if platform == "darwin" else systemd_paths(unit_dir)
     if issue := _unit_state(paths):
         return issue
-    loaded = _loaded(platform, deadline if deadline is not None else time.monotonic() + 0.2)
-    if loaded is None:
+    is_loaded = loaded(platform, deadline if deadline is not None else time.monotonic() + 0.2)
+    if is_loaded is None:
         return LocalObservation("unknown", "service manager unavailable")
-    if not loaded:
+    if not is_loaded:
         return LocalObservation("stopped", "scheduler not loaded")
     if (state_dir / "paused").exists():
         return LocalObservation("stopped", "scheduler loaded; jobs paused")

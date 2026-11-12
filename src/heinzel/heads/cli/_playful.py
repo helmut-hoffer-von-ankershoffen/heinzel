@@ -63,12 +63,31 @@ def _cell(upper: str, lower: str) -> tuple[str, Style | None]:
     return "▀", Style(color=rgb(upper), bgcolor=rgb(lower))
 
 
-def banner(lines: Sequence[str], *, body_style: str = "dim") -> Text:
-    """The shared crew with the banner text underneath."""
-    out = swarm()
+GAP = 3
+
+
+def banner(lines: Sequence[str], *, body_style: str = "dim", width: int | None = None) -> Text:
+    """The shared crew with the banner text underneath, or beside it, bottom-aligned, when `width` has room."""
+    styled = [(line, "bold magenta" if index == 0 else body_style) for index, line in enumerate(lines)]
+    art = swarm()
+    rows = art.split("\n")
+    art_width = max(row.cell_len for row in rows)
+    if width is not None and width >= art_width + GAP + max(len(line) for line in lines) and len(rows) >= len(lines):
+        out = Text()
+        offset = len(rows) - len(styled)
+        for number, row in enumerate(rows):
+            out.append_text(row)
+            if number >= offset:
+                text, style = styled[number - offset]
+                out.append(" " * (art_width - row.cell_len + GAP))
+                out.append(text, style=style)
+            out.append("\n")
+        out.append("\n")
+        return out
+    out = art
     out.append("\n\n")
-    for index, line in enumerate(lines):
-        out.append(line, style="bold magenta" if index == 0 else body_style)
+    for text, style in styled:
+        out.append(text, style=style)
         out.append("\n")
     return out
 
