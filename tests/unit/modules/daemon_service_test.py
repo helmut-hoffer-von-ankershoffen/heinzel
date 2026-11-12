@@ -525,6 +525,54 @@ def test_a_job_whose_first_run_fails_degrades_the_doctor(make):
     assert (check.status, check.detail) == (Status.DEGRADED, "failing: broken:never")
 
 
+def test_a_failed_run_is_reported_when_its_chain_cannot_be_read(make, monkeypatch):
+    """If the ledger can't show the run before the failure, the doctor reports the job rather than hiding it."""
+    feed = Module("feed", "A feed that is sometimes unreachable.")
+    reachable = [True, False]
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+        if not reachable.pop(0):
+            msg = "feed unreachable"
+            raise HeinzelError(msg)
+
+    clock = Clock()
+    service = make(feed, clock=clock)
+    for hour in (11, 12):
+        clock.set(hour, 1)
+        service.tick()
+    assert [c.name for c in service.health() if c.name == "jobs"] == []
+
+    def damaged(self, job):
+        msg = "ledger chain is damaged"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(Ledger, "chain", damaged)
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: feed:watch")
+
+
+def test_a_job_with_a_damaged_ledger_is_a_problem_for_the_doctor(make, monkeypatch):
+    feed = Module("feed", "A feed.")
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+
+    service = make(feed)
+
+    def damaged(self, job):
+        msg = "ledger is damaged"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(Ledger, "last", damaged)
+    [job] = service.jobs()
+    assert job.problem == "ledger is damaged"
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: feed:watch")
+
+
 def test_status_on_an_unsupported_platform(make):
     assert make(platform="win32", runner=Refuses()).status().installed is False
 
