@@ -171,3 +171,24 @@ def test_doctor_is_quiet_about_runners_from_plugins(make_kernel):
     config = Config(files=(), data={"capabilities": {"agent_runner": "acme"}})
     [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert (check["status"], check["detail"]) == ("up", "agent-runner is bound to acme")
+
+
+def test_doctor_reports_codex_when_it_is_the_bound_runner_but_not_installed(make_kernel, tmp_path):
+    config = Config(
+        files=(),
+        data={
+            "capabilities": {"agent_runner": "codex"},
+            "system": {"runner": {"codex_executable": str(tmp_path / "no-codex")}},
+        },
+    )
+    [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
+    assert (check["name"], check["status"]) == ("codex", "degraded")
+    assert "is not on PATH" in check["detail"]
+    assert check["fix"].startswith("Install Codex")
+
+
+def test_ask_refuses_a_blank_prompt_before_any_runner_work(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True, config=command_config(tmp_path))
+    result = CliRunner().invoke(build(kernel), ["system", "runner", "ask", "   ", "--json"])
+    assert result.exit_code != 0
+    assert "the prompt is empty" in result.output
