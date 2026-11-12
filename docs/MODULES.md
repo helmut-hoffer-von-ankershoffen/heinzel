@@ -351,6 +351,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
 | Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it. | `hz system plugin add-extra` | `system_plugin_add_extra` | — | `POST /api/system/plugin/add-extra` | yes | expert |
 | Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
+| Remove an exact index version pin while keeping the installed plugin. | `hz system plugin unpin` | — | — | — | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
@@ -361,6 +362,10 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
 | Export the versioned plugin view SDK from this installation, without a core checkout. | `hz system plugin sdk` | — | — | — | yes | expert |
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | — | `GET /api/system/plugin/search` |  | expert |
+| Set up a module's playbook without questions: its connectors, its settings, then the checklist. | `hz system plugin setup` | — | — | — | yes | expert |
+| List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins. | `hz system plugin checklist` | `system_plugin_checklist` | — | `GET /api/system/plugin/checklist` |  | expert |
+| Write the connector bindings installed playbooks recommend; a binding you set is always kept. | `hz system plugin bind` | `system_plugin_bind` | — | `POST /api/system/plugin/bind` | yes | expert |
+| Undo the connector bindings setup wrote for a module; one you changed since stays as you set it. | `hz system plugin unbind` | `system_plugin_unbind` | — | `POST /api/system/plugin/unbind` | yes | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 

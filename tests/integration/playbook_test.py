@@ -250,10 +250,8 @@ def test_discover_names_an_unknown_playbook(make):
 def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_template(kernel, monkeypatch, tmp_path):
     monkeypatch.setattr(_setup, "has_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
+    # The bindings it recommends are configured as it recommends: neither offered at once nor asked one by one.
     answers = [
-        "",  # Set capabilities.code_host = "host"? [y/N]: no
-        "",  # capabilities.tracker: no
-        "",  # capabilities.documents: no
         "1",  # which is your weekly-report: the only candidate
         "1",  # which is your team-tracker
         "",  # write the contract? yes
@@ -269,14 +267,28 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
     assert "{{asset:team-repository}}" in contract  # no hint: the person fills it in
     left = [(d["code"], d["field"]) for d in hz(kernel, "heinzel", "check")[1]["diagnostics"]]
     assert left == [("HZC025", "hz.inputs.merged.args.repository"), ("HZC025", "hz.inputs.issues.args.project")]
-    code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="y\ny\ny\n2\n2\n\n\n")
+    assert "Already set as teamwork recommends: code-host → host" in " ".join(str(text).split())
+    code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="2\n2\n\n\n")
     assert code == 0, text
-    assert tomllib.loads(config.read_text())["capabilities"] == {
+    assert "weekly-report exists; left as it is." in str(text)
+
+
+def test_setup_offers_the_recommended_connectors_at_once_through_the_install_path(make, monkeypatch, tmp_path):
+    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    monkeypatch.chdir(tmp_path)
+    kernel = make({"agent_runner": "fake", "tracker": "none"})  # the person turned tracker off: theirs
+    code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="y\nn\n2\n2\nn\n")
+    assert code == 0, text
+    said = " ".join(str(text).split())
+    assert "teamwork recommends these connectors: code-host → host, documents → docs." in said
+    assert "Set 2 connector bindings; kept 1." in said
+    assert tomllib.loads((user_config_dir() / "config.toml").read_text())["capabilities"] == {
         "code_host": "host",
-        "tracker": "host",
         "documents": "docs",
     }
-    assert "weekly-report exists; left as it is." in str(text)
+    later = make({"agent_runner": "fake", "tracker": "none", "code_host": "host", "documents": "docs"})  # as on disk
+    _, undone = hz(later, "system", "plugin", "unbind", "teamwork")
+    assert {b["capability"]: b["state"] for b in undone["bindings"]} == {"code-host": "removed", "documents": "removed"}
 
 
 def test_new_from_a_template_fills_assets_and_says_what_is_left(kernel):
