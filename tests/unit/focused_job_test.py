@@ -67,6 +67,32 @@ def test_vitest_accepts_hyphenated_owning_test_paths(path):
         assert focused_job.plan("vitest", selector, OUT)[0][-1] == path
 
 
+def test_the_whole_vitest_suite_runs_with_no_file_filter():
+    (command,) = focused_job.plan("vitest", focused_job.VITEST_ALL, OUT)
+    (one_file,) = focused_job.plan("vitest", "src/test/choices-standards.test.ts", OUT)
+    assert command == one_file[:-1]  # the same run, the file filter dropped
+    assert command[:8] == ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "exec", "vitest", "run"]
+    assert command[-1] == f"--outputFile.junit={OUT.resolve() / 'junit.xml'}"
+    assert not any("ALL" in part for part in command)
+
+
+@pytest.mark.parametrize(
+    ("kind", "selector"),
+    [
+        (
+            "vitest",
+            "web/ALL src/pages/PersonalArtifacts.test.tsx",
+        ),  # the whole suite never mixes with files
+        ("vitest", "ALL"),  # only the exact sentinel, not a prefix-less spelling
+        ("pytest", "web/ALL"),
+        ("e2e", "web/ALL"),
+    ],
+)
+def test_the_whole_vitest_sentinel_is_exact_and_vitest_only(kind, selector):
+    with pytest.raises(focused_job.SelectorError):
+        focused_job.plan(kind, selector, OUT)
+
+
 @pytest.mark.parametrize(
     ("kind", "selector"),
     [
