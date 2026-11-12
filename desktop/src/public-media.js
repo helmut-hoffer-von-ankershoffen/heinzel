@@ -25,17 +25,22 @@ export function publicMediaUrl(target) {
   }
 }
 
+/** True only for IPC from the current owned main frame of a live product window. */
+export function isOwnedMainFrame(event, { windows, fromWebContents, connection }) {
+  const window = fromWebContents(event.sender);
+  const frame = event.senderFrame;
+  const main = event.sender.isDestroyed() ? null : event.sender.mainFrame;
+  return Boolean(window && windows.has(window) && !window.isDestroyed() && frame && main &&
+    !frame.isDestroyed() && !main.isDestroyed() && !frame.detached &&
+    frame.processId === main.processId && frame.frameToken === main.frameToken &&
+    isOwnedUiNavigation(frame.url, connection()));
+}
+
 /** The page has no opening API; the isolated preload sends only trusted, activated link clicks here. */
 export function createPublicMediaHandler({ windows, fromWebContents, connection, openExternal }) {
   return async (event, target) => {
     try {
-      const window = fromWebContents(event.sender);
-      const frame = event.senderFrame;
-      const main = event.sender.isDestroyed() ? null : event.sender.mainFrame;
-      if (!window || !windows.has(window) || window.isDestroyed() || !frame || !main ||
-          frame.isDestroyed() || main.isDestroyed() || frame.detached ||
-          frame.processId !== main.processId || frame.frameToken !== main.frameToken ||
-          !isOwnedUiNavigation(frame.url, connection())) return false;
+      if (!isOwnedMainFrame(event, { windows, fromWebContents, connection })) return false;
       const checked = publicMediaUrl(target);
       if (!checked) return false;
       await openExternal(checked);

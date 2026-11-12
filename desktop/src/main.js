@@ -7,7 +7,7 @@ import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
-import { createPublicMediaHandler } from "./public-media.js";
+import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
@@ -17,6 +17,7 @@ import { windowOptions } from "./window-options.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
+const activations = new WeakMap();
 let quitting = false;
 let stopping = false;
 let permissions;
@@ -81,7 +82,7 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
+      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url)));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
@@ -116,6 +117,18 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => (stopping || quitting ? null : instance.currentConnection()),
     openExternal: (url) => shell.openExternal(url, { activate: true }),
   }));
+  // Trusted input reported by the isolated preload is the only gesture that lets one external link open.
+  ipcMain.handle("hz:user-activation", (event) => {
+    try {
+      if (isOwnedMainFrame(event, {
+        windows,
+        fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+        connection: () => (stopping || quitting ? null : instance.currentConnection()),
+      })) activations.get(event.sender)?.grant();
+    } catch {
+      // A destroyed sender grants nothing.
+    }
+  });
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),

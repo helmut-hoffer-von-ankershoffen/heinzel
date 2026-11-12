@@ -4,12 +4,13 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.39](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.39) - 2026-11-12
 
-Clearer installer error messages, the real web state in the hz banner, and the day-grouped calendar with working Join links.
+Clearer installer error messages, the real web state in the hz banner, the day-grouped calendar with working Join links, and external links that only open after a real click.
 
 ### 🐛 Bug fixes
 
 - **web:** Name who skips plugin updates in the manual-update line ([#772](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/772)) ([d966b6c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d966b6c112012688c2983638d3060cc9ca42eb18))
 - **web:** Fit the held-core update string to the copy standard ([#773](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/773)) ([c217fcf](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/c217fcf47cb016d284dd5d75228e9a48dc71c288))
+- **heads:** Ignore scripted clicks before opening external links ([#775](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/775)) ([8b98ca8](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8b98ca8508a4d3346b88c711f971238c025e579d))
 
 ### 🧪 Testing
 

@@ -16,7 +16,8 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
-  assert.match(main, /guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\)\)/);
+  assert.match(main, /activations\.set\(window\.webContents, guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\)\)\)/);
+  assert.match(main, /ipcMain\.handle\("hz:user-activation", \(event\) => \{\n    try \{\n      if \(isOwnedMainFrame\(event, \{/);
   assert.match(main, /openProductUi\(/);
   assert.match(main, /cancelled: \(\) => stopping \|\| quitting/);
   assert.doesNotMatch(main, /data:text\/html/);
