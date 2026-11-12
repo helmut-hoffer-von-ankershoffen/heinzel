@@ -19,11 +19,29 @@ export async function openChatJourney() {
   return { axe, browser, context, page, token, url };
 }
 
+// Runs in the page, so it stands alone: is this summary's disclosure open once the page has painted?
+const openAfterPaint = (node) =>
+  new Promise((resolve) => {
+    const settled = () => resolve(node.parentElement.open);
+    requestAnimationFrame(() => requestAnimationFrame(settled));
+  });
+
+async function pressUntilOpen(summary, presses) {
+  if (await summary.evaluate(openAfterPaint)) return;
+  assert.ok(presses > 0, "Details did not stay open");
+  await summary.click();
+  await pressUntilOpen(summary, presses - 1);
+}
+
 /** The conversation comes first: reviews, terms and schedules sit behind the Details disclosure. Open it, once. */
+// One click is not proof: while the conversation loads the summary moves, and a press that lands beside it opens
+// nothing; every later step then waits 30 s on a section that is not shown. So wait for the loaded conversation, click,
+// and require that Details is open once the page has painted; click again if it is not, three presses at most.
 export async function openDetails(page) {
   const summary = page.locator("details > summary", { hasText: /^Details$/ }).first();
   await summary.waitFor({ timeout: 30000 });
-  if (!(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
+  await page.getByLabel("Message your Heinzel").waitFor({ timeout: 30000 });
+  await pressUntilOpen(summary, 3);
 }
 
 // One place for the locator the scheduled, template and generic chat journeys each need.
