@@ -488,6 +488,43 @@ def test_health_flags_pause_and_failing_jobs(make, calls):
     assert service.status().failing == ["broken:invalid"]
 
 
+def test_one_failed_run_after_a_good_one_does_not_degrade_the_doctor(make):
+    """A feed that is unreachable once is a hiccup; the doctor waits for the second failed run in a row."""
+    feed = Module("feed", "A feed that is sometimes unreachable.")
+    reachable = [True, False, False, True]
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+        if not reachable.pop(0):
+            msg = "feed unreachable"
+            raise HeinzelError(msg)
+
+    clock = Clock()
+    service = make(feed, clock=clock)
+    seen = []
+    for hour in (11, 12, 13, 14):
+        clock.set(hour, 1)
+        assert [run.job for run in service.tick().runs] == ["feed:watch"]
+        seen.append((service.status().failing, [c.name for c in service.health() if c.name == "jobs"]))
+    assert seen == [([], []), (["feed:watch"], []), (["feed:watch"], ["jobs"]), ([], [])]
+
+
+def test_a_job_whose_first_run_fails_degrades_the_doctor(make):
+    broken = Module("broken", "Broken jobs.")
+
+    @broken.job(schedule="0 * * * *")
+    def never() -> None:
+        """Always fail."""
+        msg = "no key"
+        raise HeinzelError(msg)
+
+    service = make(broken)
+    service.tick()
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: broken:never")
+
+
 def test_status_on_an_unsupported_platform(make):
     assert make(platform="win32", runner=Refuses()).status().installed is False
 
