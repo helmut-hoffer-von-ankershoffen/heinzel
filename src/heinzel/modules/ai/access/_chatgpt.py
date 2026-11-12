@@ -8,6 +8,8 @@ later sign-in reuse the registration. `status` reads the keychain only; `test` s
 `openai-chatgpt` provider does the protocol; hz never uses the Codex CLI's stored credentials.
 """
 
+from __future__ import annotations
+
 import asyncio
 import concurrent.futures
 import dataclasses
@@ -18,12 +20,16 @@ import urllib.parse
 import uuid
 import webbrowser
 from collections.abc import Callable, Coroutine
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from heinzel import AccessStatus, AccessTest, CredentialLet, Credentials, HeinzelError, Progress, Settings
-from heinzel.kernel import clean_text
-from heinzel.modules.ai.access._models import AccessSettings
+from heinzel.kernel import AiAccessWebAttempt, AiAccessWebSignIn, clean_text
+from heinzel.modules.ai.access._models import AccessSettings  # noqa: TC001 - kernel resolves service annotations
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentials
 
 NAME = "chatgpt"
 TITLE = "ChatGPT plan"
@@ -38,6 +44,8 @@ TEST_INSTRUCTIONS = "Reply with the single word OK."
 TEST_TIMEOUT = 60.0
 DETAIL_LIMIT = 300
 HOST_ID_FILE = "host-id"
+PLAN_SCOPE = "chatgpt.tokens.use.direct"
+ISSUER = "https://auth.openai.com"
 
 CHATGPT_LOGIN = CredentialLet(
     name="chatgpt-login",
@@ -72,6 +80,10 @@ def _load(credentials: Credentials) -> dict[str, Any] | None:
         text = credentials.get(CHATGPT_LOGIN)
     except HeinzelError:
         return None
+    return _stored_fields(text)
+
+
+def _stored_fields(text: str | None) -> dict[str, Any] | None:
     if not text:
         return None
     try:
@@ -151,7 +163,31 @@ def host_id(root: Path) -> str:
     return made
 
 
-class ChatGptAccess:
+def _verify_web_identity(credentials: OpenAIChatGPTCredentials, nonce: str) -> None:
+    # Pydantic AI validates the claims and returning account, but trusts the direct TLS exchange for the signature.
+    # OpenAI's public-client guide calls for checking the signature against its published JWKS as well.
+    import jwt  # noqa: PLC0415 - only needed after an interactive sign-in
+
+    token = credentials.id_token
+    if token is None:
+        msg = "OpenAI did not return a ChatGPT identity."
+        raise HeinzelError(msg)
+    keys = jwt.PyJWKClient(f"{ISSUER}/.well-known/jwks.json", timeout=5)
+    key = keys.get_signing_key_from_jwt(token)
+    claims = jwt.decode(
+        token,
+        key,
+        algorithms=["RS256"],
+        audience=credentials.client_id,
+        issuer=ISSUER,
+        options={"require": ["iss", "aud", "exp", "sub", "nonce"]},
+    )
+    if claims["nonce"] != nonce:
+        msg = "OpenAI returned an identity for another sign-in attempt."
+        raise HeinzelError(msg)
+
+
+class ChatGptAccess(AiAccessWebSignIn):
     """The `chatgpt` option of `ai-access`."""
 
     def __init__(  # noqa: PLR0913 - the seams tests replace, by keyword
@@ -184,7 +220,7 @@ class ChatGptAccess:
         fields = _load(self._credentials)
         if fields is None:
             return status.model_copy(update={"signed_in": False, "detail": "not signed in", "fix": LOGIN})
-        if "chatgpt.tokens.use.direct" not in str(fields.get("scope", "")).split():
+        if PLAN_SCOPE not in str(fields.get("scope", "")).split():
             detail = "signed in, but plan usage wasn't granted to hz"
             return status.model_copy(update={"signed_in": False, "detail": detail, "fix": LOGIN})
         if model is None:
@@ -242,6 +278,46 @@ class ChatGptAccess:
             detail = "signed in, but plan usage wasn't granted: sign in again and allow hz to use your plan"
             return status.model_copy(update={"signed_in": False, "detail": detail, "fix": LOGIN})
         return status
+
+    def prepare_web_login(self, redirect_uri: str) -> AiAccessWebAttempt:
+        """Prepare the local web owner's one-time sign-in without exposing earlier credentials to the browser.
+
+        Raises:
+            HeinzelError: If sign-in is unavailable or a usable plan is already connected.
+        """
+        if not self._installed("openai") or not writable(self._credentials):
+            msg = "Signing in to ChatGPT needs OpenAI's client and a writable keychain."
+            raise HeinzelError(msg)
+        from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow  # noqa: PLC0415 - optional vendor extra
+
+        stored = self._credentials.get(CHATGPT_LOGIN)
+        previous = _stored_fields(stored) or {}
+        if PLAN_SCOPE in str(previous.get("scope", "")).split():
+            msg = "A ChatGPT plan is already connected."
+            raise HeinzelError(msg)
+        flow = OpenAIChatGPTOAuthFlow(
+            app_name=APP_NAME,
+            host_id=host_id(self._root),
+            client_id=previous.get("client_id"),
+            id_token_hint=previous.get("id_token"),
+            redirect_uri=redirect_uri,
+        )
+        consent = {"prompt": "consent"} if flow.client_id else None
+
+        async def exchange(code: str, client_id: str | None) -> Callable[[], bool]:
+            credentials = await flow.exchange_code(code, client_id=client_id)
+            await asyncio.to_thread(_verify_web_identity, credentials, flow.nonce)
+
+            def keep() -> bool:
+                if self._credentials.get(CHATGPT_LOGIN) != stored:
+                    msg = "The stored ChatGPT sign-in changed while this attempt was open."
+                    raise HeinzelError(msg)
+                self._credentials.set(CHATGPT_LOGIN, json.dumps(dataclasses.asdict(credentials)))
+                return credentials.plan_usage_granted
+
+            return keep
+
+        return AiAccessWebAttempt(_without_hint(flow.authorization_url(extra_params=consent)), flow.state, exchange)
 
     def test(self) -> AccessTest:
         """One request with a few output tokens through the plan; a failure is a result."""

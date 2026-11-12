@@ -8,7 +8,8 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError, Module
 from heinzel.kernel._exposure import exposed
-from heinzel.modules.heinzel._core_metadata_policy import core_metadata_catalog
+from heinzel.modules.heinzel._core_metadata_policy import _modules_result, core_metadata_catalog
+from heinzel.modules.heinzel._host_tools import _MAX_RESULT
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
@@ -127,10 +128,18 @@ def test_real_core_review_and_locked_invocation_deny_other_tools(make_kernel, tm
         grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
         with repo.main_writer(session) as writer:
             result = catalog.invoke(grant, "system:modules", {}, turn_writer=writer)
-            assert json.loads(result) == [
+            rows = [
                 row.model_dump(mode="json") for row in kernel.resolve_builtin_service(SystemService, "system").modules()
             ]
-            assert any(item["qualname"] == "system" for item in json.loads(result))
+            full = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+            # The real core catalog may outgrow the chat limit; then the bounded projection is the exact result.
+            expected = full if len(full.encode()) <= _MAX_RESULT else _modules_result(full, _MAX_RESULT)
+            assert result == expected
+            assert len(result.encode()) <= _MAX_RESULT
+            listed = json.loads(result)
+            assert any(
+                item["qualname"] == "system" for item in (listed if isinstance(listed, list) else listed["modules"])
+            )
             with pytest.raises(HeinzelError):
                 catalog.invoke(grant, "system:modules", {"account": "x"}, turn_writer=writer)
             with pytest.raises(HeinzelError):

@@ -14,7 +14,17 @@ from heinzel.kernel._agents import (
     TokenUsage,
     ToolProfile,
 )
-from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
+from heinzel.kernel._ai import (
+    AccessStatus,
+    AccessTest,
+    AiAccess,
+    AiAccessWebAttempt,
+    AiAccessWebSignIn,
+    UsageCause,
+    UsageEntry,
+    UsageLog,
+    record_usage,
+)
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
@@ -467,6 +477,8 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "AiAccessWebAttempt",
+    "AiAccessWebSignIn",
     "ApprovalChannel",
     "AssetType",
     "Attachment",
