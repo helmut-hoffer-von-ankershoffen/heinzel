@@ -19,11 +19,9 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from pathlib import Path
 
-import platformdirs
 from pydantic import BaseModel, Field, ValidationError
 
-from heinzel import HeinzelError
-from heinzel.kernel._config import APP_NAME
+from heinzel import HeinzelError, Settings
 from heinzel.modules.system.claude._models import FoundServer
 
 VERSION = 1
@@ -40,7 +38,9 @@ def switch_file() -> Path:
     Never the `state_dir` setting, which configuration files can change.
     """
     explicit = os.environ.get(STATE_ENV)
-    root = Path(explicit).expanduser() if explicit else platformdirs.user_state_path(APP_NAME)
+    # The setting's own default (the platform's state folder), asked of the field, never of a loaded configuration.
+    default: Path = Settings.model_fields["state_dir"].get_default(call_default_factory=True)
+    root = Path(explicit).expanduser() if explicit else default
     return root / STATE_FILE
 
 
