@@ -183,6 +183,7 @@ function ThemeCard({ theme, dark, signals, selected, disabled, onSelect }: CardP
       role="radio"
       aria-checked={selected}
       aria-label={plugin ? `${theme.title} · ${plugin}` : theme.title}
+      title={plugin ? `${theme.title} · ${plugin}` : theme.title}
       disabled={disabled}
       onClick={onSelect}
       className={cn(
@@ -192,8 +193,13 @@ function ThemeCard({ theme, dark, signals, selected, disabled, onSelect }: CardP
     >
       <Miniature theme={theme} dark={dark} signals={signals} />
       <span className="flex items-baseline gap-2 border-t border-border px-3 py-2">
+        {/* The title keeps its width: in a narrow card the plugin's name gives way first, never both at once. */}
         <span className="truncate text-ui font-medium">{theme.title}</span>
-        {plugin && <span className="truncate text-ui-sm text-muted-foreground">{plugin}</span>}
+        {plugin && (
+          <span data-theme-plugin="" className="min-w-0 shrink-[99] truncate text-ui-sm text-muted-foreground">
+            {plugin}
+          </span>
+        )}
         {selected && <span className="ml-auto shrink-0 text-ui-sm text-primary">{t("settings.themeInUse")}</span>}
       </span>
     </button>
