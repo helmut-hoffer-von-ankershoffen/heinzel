@@ -30,9 +30,13 @@ from heinzel.modules.heinzel._session_protocol import SessionRepository
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 
 MODEL = "openai:gpt-4.1-mini-2025-04-14"
-REVISION = "openai-gpt-4.1-mini-standard-2026-10-29"
-CHECKED = datetime(2026, 10, 29, tzinfo=UTC)
-EXPIRES = datetime(2026, 11, 1, tzinfo=UTC)
+# Verify the pinned snapshot and standard text rates before refreshing this 72-hour window.
+# https://developers.openai.com/api/docs/models/gpt-4.1-mini
+# https://developers.openai.com/api/docs/deprecations
+# The provider retires this snapshot on 2027-01-14; replace the model before then.
+REVISION = "openai-gpt-4.1-mini-standard-2026-11-12"
+CHECKED = datetime(2026, 11, 12, 7, 47, tzinfo=UTC)
+EXPIRES = datetime(2026, 11, 15, 7, 47, tzinfo=UTC)
 CONTEXT = 1_047_576
 MAX_OUTPUT = 32_768
 MAX_REQUESTS = 100

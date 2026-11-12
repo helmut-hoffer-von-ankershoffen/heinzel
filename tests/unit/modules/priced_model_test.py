@@ -1,6 +1,7 @@
 """Offline Pydantic requests reserve worst-case bounds before a fake provider can run."""
 
 import asyncio
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,7 +13,15 @@ from pydantic_ai.usage import RequestUsage
 from heinzel import CurrentUser, HeinzelError
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
-from heinzel.modules.heinzel._priced_model import CHECKED, CONTEXT, EXPIRES, MODEL, ReservedModel, resolve_pricing
+from heinzel.modules.heinzel._priced_model import (
+    CHECKED,
+    CONTEXT,
+    EXPIRES,
+    MODEL,
+    REVISION,
+    ReservedModel,
+    resolve_pricing,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -39,6 +48,15 @@ def test_policy_refuses_unknown_stale_or_unapproved_modes():
     ]:
         with pytest.raises(HeinzelError, match="pricing policy"):
             resolve_pricing(model, mode, when)
+
+
+def test_reviewed_snapshot_window_stays_short_and_names_its_check_date():
+    assert MODEL == "openai:gpt-4.1-mini-2025-04-14"
+    assert timedelta(hours=72) == EXPIRES - CHECKED
+    assert f"openai-gpt-4.1-mini-standard-{CHECKED:%Y-%m-%d}" == REVISION
+    with pytest.raises(HeinzelError, match="pricing policy"):
+        resolve_pricing(MODEL, "standard", CHECKED - timedelta(microseconds=1))
+    assert resolve_pricing(MODEL, "standard", EXPIRES - timedelta(microseconds=1)) == (Decimal("0.40"), Decimal("1.60"))
 
 
 def test_worst_case_tokens_and_dollars_are_reserved_before_any_provider_work(tmp_path):
