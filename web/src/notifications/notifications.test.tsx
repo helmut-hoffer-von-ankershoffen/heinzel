@@ -153,9 +153,7 @@ describe("desktop notifications", () => {
     const { container } = renderSettings();
     const sound = await screen.findByRole("switch", { name: "Play a sound for new notifications" });
     expect(sound).not.toBeChecked();
-    expect(
-      screen.getByText("A short ding plays while this app is open. This setting is separate from your music."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("A short ding while this app is open, apart from your music.")).toBeInTheDocument();
     await user.click(sound);
     await waitFor(() => expect(sound).toBeChecked());
     expect(localStorage.getItem("hz.notification-sound")).toBe("on");
@@ -167,7 +165,7 @@ describe("desktop notifications", () => {
     mockApi(shell);
     renderSettings();
     expect(await screen.findByRole("switch", { name: "Notify me in this browser" })).toBeDisabled();
-    expect(screen.getByText(/blocks notifications from this page/)).toBeInTheDocument();
+    expect(screen.getByText("Blocked by your browser. Allow this page in site settings.")).toBeInTheDocument();
   });
 
   it("are unsupported without the Notification API", async () => {

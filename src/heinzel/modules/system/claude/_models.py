@@ -12,6 +12,17 @@ ServerSource = Literal["desktop", "desktop-extension", "code-user", "code-local"
 SkillSource = Literal["code-user", "code-project", "code-plugin"]
 Transport = Literal["stdio", "http", "sse", "unknown"]
 Auth = Literal["none", "env", "header", "url", "keychain", "none-or-oauth"]
+Scope = Literal["user", "project", "plugin"]
+
+SCOPES: dict[ServerSource, Scope] = {
+    "desktop": "user",
+    "desktop-extension": "user",
+    "code-user": "user",
+    "code-local": "project",
+    "code-project": "project",
+    "code-plugin": "plugin",
+}
+"""Who put a server there: you, a project's files (a cloned repository can bring one) or an enabled plugin."""
 
 
 class FoundServer(BaseModel):
@@ -21,6 +32,14 @@ class FoundServer(BaseModel):
     name: str = Field(description="The name the entry has in its configuration.")
     source: ServerSource = Field(description="Which Claude configuration it was found in.")
     origin: str | None = Field(description="The project directory or plugin it belongs to; none for user-wide ones.")
+    scope: Scope = Field(
+        description="Who put it there: `user` (you), `project` (a project's files, which a cloned repository can "
+        "bring) or `plugin` (an enabled Claude Code plugin)."
+    )
+    enabled: bool = Field(
+        description="Whether Heinzels may use it once they can: on by default, off after `hz system claude disable` "
+        "and for hz itself. Nothing is started or connected to either way (ADR 0146)."
+    )
     transport: Transport = Field(description="How it is reached: a local process (stdio) or a URL (http, sse).")
     command: str | None = Field(description="The program a stdio server starts, without its path or arguments.")
     arguments: int = Field(description="How many arguments the command takes; their text may hold secrets, so unshown.")
@@ -64,10 +83,43 @@ class Skipped(BaseModel):
     reason: str = Field(description="Why: unreadable, not valid JSON, too large, or a link leaving its directory.")
 
 
-class ClaudeScan(BaseModel):
-    """`hz system claude list`: what Claude has configured on this computer. Nothing here is switched on."""
+class FirstRunNotice(BaseModel):
+    """Servers that are switched on and that you have not been told about yet (ADR 0146)."""
 
-    servers: list[FoundServer] = Field(description="MCP servers, by source then name.")
+    servers: list[str] = Field(description="Ids of the switched-on servers found since you last closed the notice.")
+    project: int = Field(description="How many of them come from a project's files.")
+    plugin: int = Field(description="How many of them come from a Claude Code plugin.")
+
+
+class ServerSwitch(BaseModel):
+    """`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped."""
+
+    id: str = Field(description="The server's id.")
+    name: str = Field(description="The name the entry has in its configuration.")
+    scope: Scope | None = Field(description="Who put it there; none when the entry is no longer found.")
+    enabled: bool = Field(description="Whether it is switched on now.")
+    changed: bool = Field(description="Whether this call switched it; false when it already was in that state.")
+
+
+class NoticeClosed(BaseModel):
+    """`hz system claude acknowledge`: the first-run notice is closed for the servers found now."""
+
+    servers: int = Field(description="How many servers the notice was closed for with this call.")
+
+
+class ClaudeScan(BaseModel):
+    """`hz system claude list`: what Claude has configured on this computer. Nothing here is started."""
+
+    servers: list[FoundServer] = Field(description="MCP servers, by source then name, each switched on or off.")
+    notice: FirstRunNotice | None = Field(
+        default=None,
+        description="Set while switched-on servers were found that you have not been told about; "
+        "`hz system claude acknowledge` closes it.",
+    )
+    state_problem: str | None = Field(
+        default=None,
+        description="Set when the file that remembers switched-off servers cannot be read: every server is off then.",
+    )
     skills: list[FoundSkill] = Field(description="Skills, by source then name.")
     connectors: int = Field(
         description="claude.ai connectors you have connected: reachable only through Claude Code, so only counted."
@@ -83,3 +135,4 @@ class ClaudeSummary(BaseModel):
     skills: dict[str, int] = Field(description="Skills found per source.")
     connectors: int = Field(description="claude.ai connectors you have connected.")
     skipped: int = Field(description="Files and directories left alone.")
+    enabled: int = Field(default=0, description="MCP servers that are switched on; none is started by that.")

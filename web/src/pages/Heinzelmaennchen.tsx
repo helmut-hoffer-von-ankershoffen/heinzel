@@ -1,4 +1,5 @@
 // `hz heinzel list`: your Heinzelmännchen, one per contract you have, with their state and their last and next run.
+import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 import type { SchemaHeinzelSummary } from "@/api/client";
 import { useHeinzelmaennchen } from "@/api/queries";
@@ -78,10 +79,11 @@ export function Heinzelmaennchen() {
                         <td className="p-2">
                           <Link
                             to={contractPath(qualified)}
-                            data-prose-link
-                            className="font-medium underline-offset-2 hover:underline"
+                            data-nav-row
+                            className="flex min-h-11 items-center gap-1 rounded px-1 font-medium hover:bg-accent/60"
                           >
-                            {heinzel.title ?? heinzel.name}
+                            <span>{heinzel.title ?? heinzel.name}</span>
+                            <ChevronRight aria-hidden className="ml-auto size-4 shrink-0 text-muted-foreground" />
                           </Link>
                         </td>
                         <td className="p-2">
