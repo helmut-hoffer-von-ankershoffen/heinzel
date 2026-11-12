@@ -53,10 +53,9 @@ def test_wait_is_bounded_and_explains_a_still_running_instance():
 
 @pytest.mark.parametrize(
     ("port", "code"),
-    [
-        pytest.param(0, errno.EADDRINUSE, id="ephemeral-address-in-use"),
-        pytest.param(8737, errno.EACCES, id="fixed-port-permission-denied"),
-    ],
+    [(0, errno.EADDRINUSE), (8737, errno.EACCES)],
+    # errno values differ by platform (EADDRINUSE is 48 on macOS, 98 on Linux): keep case ids stable.
+    ids=["any-port-in-use", "fixed-port-denied"],
 )
 def test_other_bind_failures_do_not_wait(port, code):
     clock, messages = Clock(), []

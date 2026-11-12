@@ -88,14 +88,11 @@ try {
           active.end(
             `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "done" })}\n\nevent: result\ndata: ${JSON.stringify({ data: { restarted: result } })}\n\n`,
           );
-        if (result === true)
-          await page
-            .getByText("Restart requested. If the service is active, its next tick will confirm the version.")
-            .waitFor();
+        if (result === true) await page.getByText("Restart sent. Waiting for the daemon's next check-in.").waitFor();
         else if (result === false)
           await page.getByText("The daemon was not restarted. Install it and try again.").waitFor();
         else {
-          await page.getByText(/restart is still unconfirmed/i).waitFor();
+          await page.getByText(/Restart unconfirmed/i).waitFor();
           assert.equal(await restart.isDisabled(), true);
           assert.equal(await page.getByRole("button", { name: "Try again" }).count(), 0);
           await page.getByText("Last reported: in progress").waitFor();

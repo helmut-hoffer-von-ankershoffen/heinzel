@@ -20,9 +20,10 @@ from pathlib import Path
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import CapabilityState, Notice, ResolveWhen
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify._models import Archived, Recovered
 
-logger = logging.getLogger(__name__)
+_EVENTS = get_logger("system.notify")
 MAX_NOTICES = 200
 """The most notices kept; the oldest go first."""
 MAX_EXPIRING_KEYS = 1024
@@ -243,7 +244,13 @@ class Store:
             )
             raise OSError(msg) from exc
         if not isinstance(exc, FileNotFoundError):
-            logger.warning("%s cannot be read (%s); showing no notices", self.path, exc)
+            log_event(
+                _EVENTS,
+                "notify.store.read_failed",
+                level=logging.WARNING,
+                path=str(self.path),
+                error=str(exc),
+            )
         return _State()
 
     def integrity_problem(self) -> str | None:
@@ -393,7 +400,14 @@ class Store:
         try:
             _write_private(self._viewer, json.dumps({"at": now.isoformat()}) + "\n")
         except OSError:
-            logger.warning("can't write %s", self._viewer, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.write_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                marker="viewer",
+                path=str(self._viewer),
+            )
 
     def watched_at(self) -> datetime | None:
         """When a head last said it shows notices; None if never or unreadable."""
@@ -408,7 +422,14 @@ class Store:
         try:
             _write_private(self._looked, json.dumps({"at": now.isoformat()}) + "\n")
         except OSError:
-            logger.warning("can't write %s", self._looked, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.write_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                marker="looked",
+                path=str(self._looked),
+            )
 
     def looked_at(self) -> datetime | None:
         """When the daemon last looked for doctor's findings; None if never or unreadable."""
@@ -423,7 +444,14 @@ class Store:
         try:
             _write_private(self._native, json.dumps({"at": now.isoformat(), "problem": problem}) + "\n")
         except OSError:
-            logger.warning("can't write %s", self._native, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.write_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                marker="native",
+                path=str(self._native),
+            )
 
     def native_problem(self) -> str | None:
         """Why the last native pop-up failed; None if it was shown or none was tried."""

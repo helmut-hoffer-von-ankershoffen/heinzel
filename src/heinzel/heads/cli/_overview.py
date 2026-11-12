@@ -31,19 +31,17 @@ def show(kernel: Kernel, console: Console) -> None:
         ("Web server", WebOverview, "ui"),
     )
     for label, contract, owner in contracts:
-        observation = LocalObservation("unknown", "local observer unavailable")
+        observation = LocalObservation("unknown", "run `hz system daemon status` or `hz ui status`")
         if time.monotonic() < deadline:
             with suppress(HeinzelError, OSError, ValueError):
                 observation = kernel.resolve_builtin_service(contract, owner).observe(deadline)
         observations.append((label, observation))
     sharing = list(islice(kernel.lets(CachedOverviewLet), MAX_RECORDS))
-    if sharing:
+    if sharing:  # with no declared sharing state there is nothing to report, so no row
         state_dir = kernel.resolve(Settings).state_dir
         for record, let in sharing:
             filename = f"{record.qualname}.{let.name}.json"
             observations.append((f"Sharing ({record.qualname})", cached_observation(state_dir, filename, deadline)))
-    else:
-        observations.append(("Sharing", LocalObservation("unknown", "no local observations declared")))
     for label, observation in observations:
         line = f"{label}: {observation.state}"
         if observation.detail:

@@ -72,6 +72,8 @@ def _github_link(url: object) -> str | None:
 
 EDGE_POINTER = f"https://github.com/{DEFAULT_REPOSITORY}/releases/download/edge-channel/edge.json"
 MAX_POINTER = 4096
+ACCEPTANCE_ASSET = "acceptance.json"
+"""The release asset the release train uploads once acceptance has judged the published release."""
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -138,6 +140,36 @@ class GitHubReleases(ReleaseSource):
             published_at=datetime.fromisoformat(published) if isinstance(published, str) else None,
             commit=str(ref["sha"]) if ref.get("type") == "commit" else None,
             prerelease=bool(release.get("prerelease")) or bool(release.get("draft")),
+        )
+
+    @override
+    def accepted(self, version: str, timeout: float) -> bool:
+        """Whether release `version` carries an acceptance marker that says accepted: one asset GET, no API quota.
+
+        A release without the marker (404) is not accepted yet. The marker must name this project and version.
+
+        Raises:
+            HTTPError: If GitHub answers with any error but not found (an `OSError`).
+            OSError: If GitHub can't be reached.
+            ValueError: If the marker is too large or not JSON.
+        """
+        url = f"https://github.com/{self.repository}/releases/download/v{version}/{ACCEPTANCE_ASSET}"
+        try:
+            body = _github.read_asset(url, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:  # noqa: PLR2004 - not found: no verdict published yet
+                exc.close()  # an HTTPError holds the open response
+                return False
+            raise
+        if len(body) > MAX_POINTER:
+            msg = "the acceptance marker is too large"
+            raise ValueError(msg)
+        marker: object = json.loads(body)
+        if not isinstance(marker, dict):
+            return False
+        fields = cast("dict[str, object]", marker)
+        return (
+            fields.get("project") == "heinzel" and fields.get("version") == version and fields.get("accepted") is True
         )
 
     @override

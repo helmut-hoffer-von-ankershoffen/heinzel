@@ -281,9 +281,7 @@ describe("Daemon Settings", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
-    expect(
-      screen.getByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Restart sent. Waiting for the daemon's next check-in.")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -318,9 +316,7 @@ describe("Daemon Settings", () => {
       );
       stream.close();
     });
-    expect(
-      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Restart sent. Waiting for the daemon's next check-in.")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
@@ -335,7 +331,7 @@ describe("Daemon Settings", () => {
     const calls = await startStreamingRestart(body);
     expect(timer).toHaveBeenCalledWith(30_000);
     await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
-    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Restart unconfirmed");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     const restart = screen.getByRole("button", { name: "Restart" });
     expect(restart).toBeDisabled();
@@ -363,7 +359,7 @@ describe("Daemon Settings", () => {
     });
     expect(await screen.findByText("Checking the service")).toBeInTheDocument();
     await act(async () => controller.close());
-    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Restart unconfirmed");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     const restart = screen.getByRole("button", { name: "Restart" });
     expect(restart).toBeDisabled();
@@ -410,9 +406,7 @@ describe("Daemon Settings", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(
-      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Restart sent. Waiting for the daemon's next check-in.")).toBeInTheDocument();
   });
 
   it.each([false, true])("shows the restart command only in expert mode=%s", async (expert) => {
@@ -433,9 +427,7 @@ describe("Daemon Settings", () => {
     );
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
-    expect(
-      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart sent. Waiting for the daemon's next check-in.")).not.toBeInTheDocument();
   });
 
   it.each([null, false, 0, "unexpected"])("reports an unknown restart result for %s", async (response) => {
@@ -448,9 +440,7 @@ describe("Daemon Settings", () => {
       await user.click(restart);
     }
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
-    expect(
-      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart sent. Waiting for the daemon's next check-in.")).not.toBeInTheDocument();
   });
 
   it("shows the failed step and its detail alongside the plain failure message", async () => {

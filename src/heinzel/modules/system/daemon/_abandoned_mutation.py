@@ -40,6 +40,8 @@ from heinzel.modules.system.daemon._recovery_files import RecoveryFile, path_abs
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
+from heinzel.kernel._logging import log_event
+
 logger = logging.getLogger(__name__)
 
 MUTATION = "mutation-pending.json"
@@ -275,5 +277,5 @@ def recover_abandoned_mutation(
     write_private(receipt, json.dumps(facts | {"status": "archiving"}, indent=2, sort_keys=True) + "\n")
     rename_exclusive(path, archive, expected_source=marker)
     write_private(receipt, json.dumps(facts | {"status": "archived"}, indent=2, sort_keys=True) + "\n")
-    logger.warning("Archived an abandoned installation mutation (%s); receipt: %s", found.reason, receipt.name)
+    log_event(logger, "daemon.mutation.archived", level=logging.WARNING, reason=found.reason, receipt=receipt.name)
     return receipt

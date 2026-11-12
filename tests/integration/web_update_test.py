@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from heinzel import Settings, __version__
+from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import web
 from heinzel.heads.web import _updates
 from heinzel.kernel import CorePin, Installation, ReleaseCache
@@ -24,6 +24,10 @@ class Receipt(Installation):
 
     def core_pin(self):
         return self.pin
+
+    def installed_core_version(self):
+        msg = "This fixture has no installed core metadata."
+        raise HeinzelError(msg)
 
 
 def client(make_kernel, tmp_path, **options):
@@ -50,7 +54,9 @@ def client(make_kernel, tmp_path, **options):
     settings = Settings(cache_dir=tmp_path / "cache", update_check=checking)
     kernel = make_kernel(builtins=True, settings_=settings)
     kernel.bind(
-        Installation, Receipt(CorePin(kind, "heinzel", ref=ref) if kind else None, options.get("prefix", tmp_path))
+        Installation,
+        options.get("installation")
+        or Receipt(CorePin(kind, "heinzel", ref=ref) if kind else None, options.get("prefix", tmp_path)),
     )
     ReleaseCache(settings.cache_dir).remember("99.0.0", checked_at=ANSWERED)
     return TestClient(
@@ -75,6 +81,8 @@ def test_update_facts_are_authenticated_cache_only_and_keep_source_intent(make_k
         "last_ok_at": "2026-01-02T12:00:00Z",
         "check_failed": False,
         "reason": None,
+        "installed": None,
+        "idle": True,
     }
 
 
@@ -206,3 +214,65 @@ def test_update_status_follows_a_saved_setting_without_a_restart(make_kernel, tm
     assert (off["latest"], off["available"], off["checked_at"]) == (None, False, None)
     path.write_text("[hz]\nupdate_check = true\n")
     assert app.get("/api/update-status", headers=AUTH).json()["latest"] == "99.0.0"
+
+
+class Upgraded(Receipt):
+    """A uv tool whose installed core metadata answers `installed` (or raises it) without starting any code."""
+
+    def __init__(self, prefix, installed):
+        super().__init__(CorePin("release", "heinzel", ref="v0.1.0"), prefix)
+        self.installed = installed
+
+    @property
+    def is_tool(self):
+        return True
+
+    def installed_core_version(self):
+        if isinstance(self.installed, Exception):
+            raise self.installed
+        return self.installed
+
+
+def _installed(make_kernel, tmp_path, installed, *, restart=True):
+    app = client(make_kernel, tmp_path, restart=restart, installation=Upgraded(tmp_path, installed))
+    return app.get("/api/update-status", headers=AUTH).json()["installed"]
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected"),
+    [
+        ("999.0.0", "999.0.0"),
+        (__version__, None),
+        (HeinzelError("The installed tool changed during version inspection"), None),
+        ("not a version", None),
+    ],
+)
+def test_a_newer_installed_core_is_reported_only_when_verified(make_kernel, tmp_path, installed, expected):
+    assert _installed(make_kernel, tmp_path, installed) == expected
+
+
+def test_a_server_that_cannot_restart_reports_no_installed_core(make_kernel, tmp_path):
+    assert _installed(make_kernel, tmp_path, "999.0.0", restart=False) is None
+
+
+def test_the_status_says_when_server_work_holds_an_automatic_restart(make_kernel, tmp_path):
+    app = client(make_kernel, tmp_path, installation=Upgraded(tmp_path, "999.0.0"))
+    activity = app.app.state.auto_update._activity
+    activity.enter("POST /api/chat")
+    try:
+        held = app.get("/api/update-status", headers=AUTH).json()
+    finally:
+        activity.leave("POST /api/chat")
+    assert (held["installed"], held["idle"]) == ("999.0.0", False)
+    assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True
+
+
+@pytest.mark.parametrize("step", ["applying", "restarting_to"])
+def test_an_automatic_update_in_progress_holds_an_automatic_restart(make_kernel, tmp_path, step):
+    app = client(make_kernel, tmp_path, installation=Upgraded(tmp_path, "999.0.0"))
+    plan = app.app.state.auto_update.plan
+    setattr(plan, step, True if step == "applying" else "999.0.0")
+    held = app.get("/api/update-status", headers=AUTH).json()
+    assert (held["installed"], held["idle"]) == ("999.0.0", False)
+    setattr(plan, step, False if step == "applying" else None)
+    assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True

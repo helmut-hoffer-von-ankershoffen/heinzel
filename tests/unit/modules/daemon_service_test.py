@@ -1,6 +1,7 @@
 """DaemonService with a fake clock, a fake runner and temporary directories: never the real launchd, systemd or home."""
 
 import json
+import logging
 import os
 import select
 import shutil
@@ -2924,7 +2925,7 @@ def test_tick_self_heals_an_old_marker_without_any_request(make, jobs, bin_dir, 
     assert not service.status().version_mismatch
 
 
-def test_tick_rearms_once_per_version_and_boot_and_never_without_the_manager(make, jobs, bin_dir, monkeypatch):
+def test_tick_rearms_once_per_version_and_boot_and_never_without_the_manager(make, jobs, bin_dir, monkeypatch, caplog):
     service = make(jobs, runner=Runner(bin_dir))
     service.install(FIVE_MINUTES)
     marker = service._read_state("install.json")
@@ -2938,7 +2939,11 @@ def test_tick_rearms_once_per_version_and_boot_and_never_without_the_manager(mak
     service.tick()  # a manual tick is not the service: it never writes a request
     assert not (service.state_dir / "handover-request.json").exists()
     monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
-    service.tick()
+    with caplog.at_level(logging.INFO):
+        service.tick()
+    assert [r.message for r in caplog.records if r.message == "daemon.registration.rearmed"] == [
+        "daemon.registration.rearmed"
+    ]
     first = service._read_state("handover-request.json")
     assert first
     service._write_state("handover-request.json", {**first, "boot": "boot-zero"})  # unfinishable again
@@ -2963,3 +2968,12 @@ def test_tick_waits_for_a_completable_request_instead_of_rearming(make, jobs, bi
     service.tick()
     assert service._read_state("handover-request.json")["request_id"] == result.request_id
     assert not (service.state_dir / "handover-rearm.json").exists()
+
+
+def test_a_job_named_by_its_old_module_id_is_resolved_and_logged(make, jobs, monkeypatch, caplog):
+    service = make(jobs)
+    monkeypatch.setattr(service._kernel, "renamed", lambda module: "new" if module == "old" else None)
+    with caplog.at_level(logging.WARNING):
+        assert service._current_id("old:tick", []) == "new:tick"
+    (record,) = [r for r in caplog.records if r.message == "daemon.job.renamed"]
+    assert (record.old, record.current) == ("old:tick", "new:tick")

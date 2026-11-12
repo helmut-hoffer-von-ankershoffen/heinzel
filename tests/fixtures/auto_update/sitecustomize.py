@@ -80,6 +80,7 @@ if FOLDER:
     _plugin_releases.PyPIPluginReleases.newer = newer  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.newer_releases = newer_releases  # type: ignore[method-assign]
     _service.GitHubReleases.release_facts = release_facts  # type: ignore[method-assign]
+    _service.GitHubReleases.accepted = lambda self, version, timeout: True  # type: ignore[method-assign]
     _update.UpdateService.apply_announced = apply_announced  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.release = release  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.announceable = announceable  # type: ignore[method-assign]
