@@ -33,7 +33,9 @@ import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
 import { isDurableSession } from "@/chat/useChat";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
+import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
@@ -802,12 +804,23 @@ function DurableSessionView({
       />
     </>
   );
+  const heinzelName = query.data?.name ?? t("durable.title");
+  const look = appearanceLook(query.data?.appearance);
   const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <h2 className="min-w-0 truncate font-medium">{query.data?.name ?? t("durable.title")}</h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <HeinzelAvatar
+            view="bust"
+            label={heinzelName}
+            {...look}
+            state={busy ? "thinking" : undefined}
+            className="size-8 overflow-hidden"
+          />
+          <h2 className="min-w-0 truncate font-medium">{heinzelName}</h2>
+        </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
             type="button"
@@ -1005,8 +1018,18 @@ function DurableSessionView({
                 <span className="text-xs font-medium">Search result</span>
               )}
               <p className="whitespace-pre-wrap break-words">
+                {message.role === "assistant" && message.origin !== "daemon" && (
+                  <HeinzelAvatar view="head" {...look} className="mr-1 inline-block size-5 overflow-hidden align-text-bottom" />
+                )}
                 <strong>
-                  {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
+                  {message.role === "tool"
+                    ? "Tool activity"
+                    : message.origin === "daemon"
+                      ? "Daemon"
+                      : message.role === "assistant"
+                        ? heinzelName
+                        : message.role}
+                  :
                 </strong>{" "}
                 {message.role === "tool" ? "A tool event was recorded." : message.text}
                 {message.status && message.status !== "completed" && <span> ({message.status})</span>}

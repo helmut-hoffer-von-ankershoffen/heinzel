@@ -1974,6 +1974,34 @@ it("shows recorded activity and stored drafts without exposing tool bodies or in
   expect(screen.getByRole("checkbox", { name: "Scarf" })).toBeChecked();
 });
 
+it("shows the Heinzel's chosen look in the header and before its replies, not before the person's messages", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      appearance: { age: "old", build: "round", beard: "long", hat: "blue", shirt: "purple", accessories: ["scarf"] },
+      profile_revision: 1,
+      messages: [
+        { id: "u1", seq: 1, role: "user", text: "Hello", status: "completed" },
+        { id: "a1", seq: 2, role: "assistant", text: "Good day", status: "completed" },
+      ],
+    },
+  });
+  const { container } = renderAt(`/?chat=${sessionId}`);
+  const header = await screen.findByRole("img", { name: /^Personal helper/ });
+  expect(header).toHaveAttribute("data-view", "bust");
+  expect(header).toHaveAttribute("aria-label", "Personal helper, wearing a scarf");
+  expect(header.querySelector('[fill="#1E88E5"]')).not.toBeNull();
+  expect(header.querySelector('[fill="#8E5BD8"]')).not.toBeNull();
+  const reply = (await screen.findByText("Good day", { exact: false })).closest("p") as HTMLElement;
+  expect(reply.querySelector('svg[data-view="head"]')).not.toBeNull();
+  expect(reply.querySelector("strong")).toHaveTextContent("Personal helper:");
+  expect(reply).not.toHaveTextContent("assistant:");
+  const own = screen.getByText("Hello", { exact: false }).closest("p") as HTMLElement;
+  expect(own.querySelector("svg")).toBeNull();
+  await expectAccessible(container);
+});
+
 it("shows only owner-session associations and recorded review states in the agent chat", async () => {
   const ref = "https://docs.google.com/document/d/abc123_DEF456/edit";
   const { calls } = mockApi({
