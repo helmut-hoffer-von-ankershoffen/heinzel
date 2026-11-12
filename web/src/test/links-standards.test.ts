@@ -28,15 +28,15 @@ const LINKS: Record<string, { count: number; reason: string }> = {
   "../pages/graph/TeamNodes.tsx": { count: 3, reason: "KEEP: the whole graph card is the hit target, no underline" },
   "../notifications/TodayNotifications.tsx": {
     count: 1,
-    reason: "CONVERT: a notice row; mark data-nav-row instead of data-prose-link (brief C)",
+    reason: "KEEP: a notice row marked data-nav-row; the whole row is the target, with a chevron",
   },
   "../pages/Contracts.tsx": {
     count: 1,
-    reason: "CONVERT: contract title is a text link; make the row the target with a chevron (brief C)",
+    reason: "KEEP: a contract row marked data-nav-row; the whole row is the target, with a chevron",
   },
   "../pages/Heinzelmaennchen.tsx": {
     count: 1,
-    reason: "CONVERT: name cell is a text link; row navigates with a chevron (brief C)",
+    reason: "KEEP: the name cell marked data-nav-row; the whole cell is the target, with a chevron",
   },
   "../chat/DurableSession.tsx": {
     count: 2,
@@ -93,13 +93,14 @@ it("gives no control the look of a link", () => {
 });
 
 // Navigation rows inside lists and cards mark themselves `data-nav-row`; a per-file allowlist with a reason.
-const NAV_ROWS: Record<string, string> = {};
+const NAV_ROWS: Record<string, string> = {
+  "../notifications/TodayNotifications.tsx": "KEEP: notice row with a chevron",
+  "../pages/Contracts.tsx": "KEEP: contract row with a chevron",
+  "../pages/Heinzelmaennchen.tsx": "KEEP: Heinzel name cell with a chevron",
+};
 // Files that still mark a row or fact `data-prose-link`; each leaves with its conversion. Only shrinks.
 const PROSE_MARKERS: Record<string, string> = {
   "../layout/PluginsSection.tsx": "CONVERT: source address (brief D)",
-  "../notifications/TodayNotifications.tsx": "CONVERT: notice row (brief C)",
-  "../pages/Contracts.tsx": "CONVERT: contract title (brief C)",
-  "../pages/Heinzelmaennchen.tsx": "CONVERT: Heinzel name (brief C)",
 };
 
 it("marks prose links only in prose, and navigation rows only where listed", () => {

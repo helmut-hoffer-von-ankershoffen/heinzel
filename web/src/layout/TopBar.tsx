@@ -166,13 +166,14 @@ export function TopBar({
         >
           <Calendar aria-hidden />
         </Button>
-        {/* Reload stays the last action before the mascot; it spins while the refetch runs, so a click shows it worked. */}
+        {/* Reload stays the last action before the mascot. It spins while any refetch runs, also one in the background,
+            and its tooltip then says what the spinning means. */}
         <Button
           variant="ghost"
           size="icon"
           onClick={refresh}
           aria-label={t("top.refresh")}
-          title={t("top.refresh")}
+          title={t(fetching ? "top.refreshing" : "top.refresh")}
           aria-busy={fetching}
         >
           <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />

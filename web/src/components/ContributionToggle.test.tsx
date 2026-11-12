@@ -277,6 +277,21 @@ describe("generic provider toggle", () => {
     expect(new URL(sentRequest().url).pathname).toBe("/api/example/enable");
   });
 
+  it("shows no Details when the explanation only repeats the status line or the label", () => {
+    const { unmount } = show(control({ status: "Sharing is off.", explanation: "Sharing is off" }));
+    expect(screen.getByRole("status")).toHaveTextContent(/^Sharing is off\.$/);
+    expect(screen.queryByText("Details")).toBeNull();
+    unmount();
+    const value = control({});
+    show({ ...value, explanation: ` ${value.label.toUpperCase()}. ` });
+    expect(screen.queryByText("Details")).toBeNull();
+  });
+
+  it("keeps Details when the explanation says more than the status line", () => {
+    show(control({ status: "Sharing is off.", explanation: "Sharing is off. Switch it on to get a private URL." }));
+    expect(screen.getByText("Details")).toBeInTheDocument();
+  });
+
   it("offers Restart hz when the provider declares settings only a restart loads", async () => {
     const user = userEvent.setup();
     const expected = { "clock.zone": "Europe/Berlin" };

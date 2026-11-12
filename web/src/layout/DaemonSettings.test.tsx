@@ -399,11 +399,7 @@ describe("Daemon Settings", () => {
 
   it("explains a daemon version mismatch and restarts without a confirmation", async () => {
     const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true });
-    expect(
-      await screen.findByText(
-        "The background service is still running an older version. Restart it to use the installed one.",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("An older version is still running. Restart to switch.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("Restart sent. Waiting for the daemon's next check-in.")).toBeInTheDocument();
