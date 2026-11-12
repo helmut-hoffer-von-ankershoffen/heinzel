@@ -218,9 +218,6 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 
 Check whether macOS will open the installed desktop app, without launching it.
 
-Raises:
-    typer.Exit: If the app is missing or macOS would refuse to open it.
-
 **Usage**:
 
 ```console
@@ -240,9 +237,6 @@ Install the desktop app for this version of Heinzel.
 The app is unsigned and not notarized by Apple. Heinzel checks the download&#x27;s sha256 and build
 provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
 
-Raises:
-    typer.Exit: If the app cannot be installed now.
-
 **Usage**:
 
 ```console
@@ -260,9 +254,6 @@ $ hz app install [OPTIONS]
 ### `hz app open`
 
 Open the desktop app, installing it first when it is not there yet.
-
-Raises:
-    typer.Exit: If the app cannot be installed or would not open.
 
 **Usage**:
 
@@ -293,9 +284,6 @@ $ hz app refresh [OPTIONS]
 ### `hz app uninstall`
 
 Remove the managed desktop app and keep your Heinzel profile.
-
-Raises:
-    typer.Exit: If the app cannot be removed safely.
 
 **Usage**:
 
@@ -3204,6 +3192,8 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 
 * `add`: (expert) Show what a plugin would install,...
 * `add-extra`: (expert) Add an optional client of hz...
+* `bind`: (expert) Write the connector bindings...
+* `checklist`: (expert) List each connector a playbook...
 * `develop`: (expert) Add the plugin in a directory on...
 * `disable`: (expert) Switch a plugin off without...
 * `docs`: (expert) Document installed plugins: what...
@@ -3217,7 +3207,10 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `repair`: (expert) Install every plugin an installed...
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
+* `setup`: (expert) Set up a module&#x27;s playbook...
 * `showcase`: (expert) Preview an owning public plugin&#x27;s...
+* `unbind`: (expert) Undo the connector bindings setup...
+* `unpin`: (expert) Remove an exact index version pin...
 
 #### `hz system plugin add`
 
@@ -3237,6 +3230,8 @@ $ hz system plugin add [OPTIONS] {spec}
 
 * `--confirm / --no-confirm`: Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.  [default: no-confirm]
 * `--operation-id <str>`: Opaque receipt returned by a preview; confirms that exact candidate only once.
+* `--with-recommended / --no-with-recommended`: Also install the plugins it recommends (its connectors). Off: they are only offered. Decided by the preview: a receipt installs what its preview showed.  [default: with-recommended]
+* `--bind / --no-bind`: After installing, set the connector bindings its playbooks recommend; a binding you set is always kept, and `hz system plugin unbind &lt;module&gt;` undoes them.  [default: bind]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3257,6 +3252,46 @@ $ hz system plugin add-extra [OPTIONS] {extra}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin bind`
+
+(expert) Write the connector bindings installed playbooks recommend; a binding you set is always kept.
+
+**Usage**:
+
+```console
+$ hz system plugin bind [OPTIONS]
+```
+
+**Options**:
+
+* `--plugin <list[str]>`: Only the playbooks of this plugin distribution; repeat for each. Every plugin&#x27;s if omitted.
+* `--module <str>`: Only this module&#x27;s playbook.
+* `--operation-id <str>`: The plugin operation that installed it, remembered with each binding.
+* `--once / --no-once`: Consider each playbook once per version of its plugin, as an automatic repair does.  [default: no-once]
+* `--decline / --no-decline`: Write nothing; remember the playbooks as considered, so a repair leaves them.  [default: no-decline]
+* `--dry-run / --no-dry-run`: Say what it would write; write nothing.  [default: no-dry-run]
+* `--automatic / --no-automatic`: As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid.  [default: no-automatic]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin checklist`
+
+(expert) List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.
+
+**Usage**:
+
+```console
+$ hz system plugin checklist [OPTIONS]
+```
+
+**Options**:
+
+* `--module <str>`: The module whose playbook it is; every installed playbook&#x27;s if omitted.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3551,6 +3586,27 @@ $ hz system plugin search [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system plugin setup`
+
+(expert) Set up a module&#x27;s playbook without questions: its connectors, its settings, then the checklist.
+
+**Usage**:
+
+```console
+$ hz system plugin setup [OPTIONS] {module}
+```
+
+**Arguments**:
+
+* `module <str>`: The module whose playbook to set up, e.g. `acme`.  [required]
+
+**Options**:
+
+* `--answer <list[str]>`: A playbook setting to accept, as `key=value` (the value as JSON, else text), e.g. `acme.region=lisbon`; repeat for each.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system plugin showcase`
 
 (expert) Preview an owning public plugin&#x27;s UI and CLI screenshots without installing it.
@@ -3567,6 +3623,47 @@ $ hz system plugin showcase [OPTIONS] {spec}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin unbind`
+
+(expert) Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.
+
+**Usage**:
+
+```console
+$ hz system plugin unbind [OPTIONS] {by}
+```
+
+**Arguments**:
+
+* `by <str>`: The module whose recommended bindings to remove, e.g. `acme`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin unpin`
+
+(expert) Remove an exact index version pin while keeping the installed plugin.
+
+**Usage**:
+
+```console
+$ hz system plugin unpin [OPTIONS] {distribution}
+```
+
+**Arguments**:
+
+* `distribution <str>`: Distribution name, as `hz system plugin list` shows it.  [required]
+
+**Options**:
+
+* `--confirm <str>`: Confirm the exact installation generation and version shown by the unpin preview.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3760,9 +3857,6 @@ $ hz system serve daemon [OPTIONS]
 
 (expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
-Raises:
-    typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
-
 **Usage**:
 
 ```console
@@ -3787,9 +3881,6 @@ $ hz system serve mcp [OPTIONS]
 
 Input waits for a line or EOF; the network check then has a ten-second limit.
 
-Raises:
-    typer.Exit: If the token, endpoint or MCP initialization is unavailable.
-
 **Usage**:
 
 ```console
@@ -3807,9 +3898,6 @@ $ hz system serve mcp-check [OPTIONS]
 (expert) Create a new project MCP config; existing configs are never replaced.
 
 The client may require project trust or approval. Connection readiness is not verified.
-
-Raises:
-    typer.Exit: If the project config already exists or its directory is unavailable.
 
 **Usage**:
 
@@ -3847,9 +3935,6 @@ $ hz system serve mcp-token [OPTIONS] COMMAND [ARGS]...
 
 Make a token for one agent and print it once; only its SHA-256 is kept.
 
-Raises:
-    typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
-
 **Usage**:
 
 ```console
@@ -3882,9 +3967,6 @@ $ hz system serve mcp-token list [OPTIONS]
 ##### `hz system serve mcp-token revoke`
 
 Revoke a token (or `all`); the agent&#x27;s next request is refused.
-
-Raises:
-    typer.Exit: With 1 when no token has that id.
 
 **Usage**:
 

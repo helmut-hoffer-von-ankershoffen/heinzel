@@ -41,8 +41,16 @@ def _render(report: HealthReport) -> RenderableType:
     for qualname, checks in report.checks.items():
         for check in checks:
             # Text, not markup: details and fixes quote configuration, e.g. `[capabilities] code_host = ...`.
-            table.add_row(Text(qualname), Text(check.name), marks[check.status], Text(check.detail), Text(check.fix))
+            table.add_row(Text(qualname), Text(check.name), marks[check.status], Text(check.detail), Text(_fix(check)))
     return table
+
+
+def _fix(check: Check) -> str:
+    """The fix in words and, at a terminal, the command of its one action (a web head shows a button instead)."""
+    command = check.action.command if check.action is not None else ""
+    if not command or command in check.fix:
+        return check.fix
+    return f"{check.fix}: {command}" if check.fix else command
 
 
 def _exit_code(report: HealthReport) -> int:

@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""A fake `gh` for isolated end-to-end runs: `auth login` writes the hosts file a real login would; no network."""
+
+import os
+import sys
+from pathlib import Path
+
+
+def hosts() -> Path:
+    """Where gh keeps its logins, as the real gh and the github plugin read it."""
+    if directory := os.environ.get("GH_CONFIG_DIR"):
+        return Path(directory) / "hosts.yml"
+    if config := os.environ.get("XDG_CONFIG_HOME"):
+        return Path(config) / "gh" / "hosts.yml"
+    return Path.home() / ".config" / "gh" / "hosts.yml"
+
+
+def main(args: list[str]) -> int:
+    """Answer the few commands an isolated run uses; anything else fails, so a test never trusts an unfaked one."""
+    if args[:1] == ["--version"]:
+        sys.stdout.write("gh version 2.103.2 (2026-10-23)" + "\n")
+        return 0
+    if args[:2] == ["auth", "login"]:
+        hosts().parent.mkdir(parents=True, exist_ok=True)
+        hosts().write_text("github.com:\n    user: fake-user\n    git_protocol: https\n", encoding="utf-8")
+        sys.stdout.write("Logged in to github.com as fake-user (fake)" + "\n")
+        return 0
+    if args[:2] == ["auth", "status"]:
+        return 0 if hosts().is_file() else 1
+    sys.stderr.write(f"fake gh: {' '.join(args)} is not faked" + "\n")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
