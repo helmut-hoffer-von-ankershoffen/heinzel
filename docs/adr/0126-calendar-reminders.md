@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-04
 implementation: partial
+amended-by: 0147
 ---
 
 # 0126: Calendar reminder scheduling
