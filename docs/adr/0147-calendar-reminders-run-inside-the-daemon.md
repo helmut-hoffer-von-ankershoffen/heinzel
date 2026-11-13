@@ -3,107 +3,188 @@ status: proposed
 date: 2026-11-13
 implementation: planned
 decision-makers: owner
-amends: 0126, 0020
-amends-0126: reminders run in the daemon's tick, under the daemon's consent; no separate reminder job
-amends-0020: a tick may stay for a bounded reminder lane until just before the next slot
-related: 0078, 0133
+amends: 0126, 0020, 0133
+amends-0126: reminders run in a lane of the scheduled daemon tick, under the daemon's consent; no separate install
+amends-0020: a scheduled tick may keep a bounded reminder lane until a slot window; Linux timer settings
+amends-0133: the calendar-worker inventory becomes migration and doctor only
+related: 0078
 ---
 
 # 0147: Calendar reminders run inside the daemon, under the daemon's consent
 
 ## Context and Problem Statement
 
-[ADR 0126](0126-calendar-reminders.md) gives calendar reminders their own user job. That job is a separate
-per-profile launchd or systemd unit that the person installs through its own confirmation, besides turning on
-Calendar reminders. In use this produced two background things on one computer. The daemon pane said "Daemon
-running", while Calendar said "Reminders need a background worker on this computer." People read that as a broken
-daemon, not as a second job they had never installed. Nothing set the job up on first run or after an update.
+[ADR 0126](0126-calendar-reminders.md) gives calendar reminders their own job: a per-profile launchd or systemd unit
+with `KeepAlive`. The person installs it with a confirmation of its own, in addition to turning on Calendar
+reminders. In use, one computer then had two background things. The daemon pane said "Daemon running" while Calendar
+said "Reminders need a background worker on this computer". Nothing set up the second job on first run or after an
+update.
 
-0126 kept reminders out of the daemon for one reason: "A five-minute tick is not a five-minute warning". An event may
-start between ticks, and a tick that exits right away cannot wake at a deadline in between. How can reminders run
-inside the daemon, under the daemon's existing consent, and still meet that deadline?
+0126 kept reminders out of the daemon for one reason: "A five-minute tick is not a five-minute warning". The question
+here is how reminders can run inside the daemon, under its existing consent, and still meet that deadline. That
+includes long jobs, sleep, clock steps, timer jitter and updates.
 
 ## Decision Drivers
 
-- One background thing per computer. The person agrees to it once
-  ([ADR 0078](0078-native-desktop-uses-the-shared-lifecycle-and-daemon.md) point 3: "Keep my Heinzelmännchen working
-  while the app is closed").
-- Reminders keep 0126's deadline: a provider refresh at least every 30 seconds, then a wake at the next boundary.
-- Updates still reach every process. Nothing long-lived keeps running replaced code
-  ([ADR 0020](0020-daemon-head.md)).
-- Calendar reads keep their own consent: the Calendar reminders notification setting.
+- One background job and one consent per computer
+  ([ADR 0078](0078-native-desktop-uses-the-shared-lifecycle-and-daemon.md) point 3).
+- 0126's deadline holds. The provider is refreshed at least every 30 seconds, and a reminder is delivered at its due
+  instant, not only somewhere within the refresh period.
+- Coverage survives jobs longer than an interval, sleep and wake, clock steps and updates.
+- New code is picked up at slots. Nothing runs replaced code for longer than an interval ([ADR 0020](0020-daemon-head.md)).
+- Calendar reads keep their own consent, the user-scoped Calendar reminders setting, and the person is told what it
+  starts.
 - Ownership, maintenance and removal stay exact ([ADR 0133](0133-owned-host-integrations-join-maintenance.md)).
 
 ## Considered Options
 
-- **A bounded reminder lane inside each tick, until just before the next slot** (chosen).
-- **The daemon installs and owns the existing reminder unit.** This is still a second job to show, repair and
-  migrate, with one more launchd label per profile. The owner asked for no separate reminder job.
-- **The daemon rewrites its own unit to a one-shot wake at the next reminder.** Every meeting would cause a launchd
-  or systemd reload. A failed rewrite silently loses reminders, and it races updates and pauses.
-- **Resident daemon mode (`KeepAlive`) for everyone with reminders.** ADR 0020 rejects resident mode as the default:
-  the process keeps running replaced code, and it must handle sleep itself.
-- **Shorter ticks (every minute).** Still not a deadline, and every tick boots the whole kernel.
+- **A reminder lane, as a child process of the scheduled tick, that ends only inside a slot window** (chosen).
+- **The same lane in the tick's own process.** This has one process fewer, but a hung job thread, a native crash or a
+  memory spike in a plugin job takes reminders down with it. The job's memory also stays resident for the rest of
+  the interval.
+- **A self-restarting resident daemon.** The daemon unit gets `KeepAlive` (or `Restart=always`), runs due slots from
+  the ledger and exits at every slot boundary, so the manager restarts it with current code.
+  - For: it answers 0020's two objections to resident mode. Replaced code lives at most one slot, and missed slots
+    come from the ledger (0020 decision 4), not from process memory. It needs no margin, does not depend on the
+    manager dropping overlapping firings, and has no gap after wake.
+  - Against: it changes the daemon unit for everyone. One process stays resident even with reminders off, unless the
+    unit switches form with the setting, which means a reload on every toggle. It also replaces the catch-up by the
+    manager, which 0020 chose deliberately.
+  - This option is kept as the fallback if the lifecycle tests below show that dropped overlapping firings are not
+    reliable on a supported manager.
+- **The daemon installs and owns the existing 0126 unit.** That is still a second label to show, repair and migrate,
+  and the owner asked for no separate reminder job.
+- **A one-shot job per upcoming reminder.** On macOS this needs a second label, plus a plist rewrite and bootstrap for
+  every meeting. `systemd-run --on-calendar` would be easy on Linux but has no macOS counterpart.
+- **Shorter ticks, or a resident daemon by default.** Shorter ticks are still no deadline, and every one boots the
+  whole kernel. Resident by default was rejected by 0020.
 
 ## Decision Outcome
 
-Chosen option: **a bounded reminder lane inside each tick**, because it keeps one supervised job, 0126's deadline and
-ADR 0020's exit-on-every-slot property.
+Chosen option: **a child-process reminder lane of the scheduled tick that ends only inside a slot window**. It keeps
+0020's unit, the catch-up by the manager and the exit at slots, adds isolation from jobs, and meets 0126's deadline.
 
-1. **The lane.** When Calendar reminders are on for the profile, `hz system daemon tick` starts the reminder lane
-   first. Its jobs then run beside the lane. The lane is 0126's existing cycle: refresh at least every 30 seconds,
-   wake at the next boundary, revalidate before delivery. It ends at the next daemon slot minus a margin (10 seconds
-   by default). The tick exits after both its jobs and the lane have ended. With reminders off, a tick exits as it
-   does today.
-2. **Locks.** The lane holds no tick lock. A manual tick, `pause`, `hz system update` and uninstall do not wait for
-   it. Each lane cycle enters 0126's lifecycle fence (SDK-wide maintenance gate plus the profile lock) and ends the
-   lane when maintenance is pending.
-3. **Why the slot matters.** launchd's `StartCalendarInterval` and systemd's timer do not start a second instance
-   while the first one runs. A lane that ran past its slot would therefore drop the next tick. The margin keeps the
-   lane ending before the slot. A tick that still overruns is a daemon health finding, never a silent skip.
-4. **Coverage and sleep.** Between the lane's end and the next tick's lane there is a gap of the margin plus process
-   start (seconds), well inside the 30-second refresh. After sleep, the slot that launchd or systemd catches up
-   starts a fresh lane. 0126's rules still hold: expiry is exclusive at the meeting boundary, and a resumed machine
-   never alerts after its boundary.
-5. **Consent.** Running the lane needs the daemon (its existing consent, ADR 0078 point 3) and Calendar reminders
-   on in Notification settings (calendar-read consent, still user-scoped and off by default). There is no third
-   step and no separate install. A paused daemon pauses reminders, and Calendar says so.
-6. **Status.** `org.calendar-reminders-status` reports the daemon's installed, loaded and paused state, plus the
-   lane's last heartbeat (written under the profile's state directory). Calendar shows a line only when reminders
-   are on but cannot run (no daemon, daemon paused, lane overdue). That line comes with one action: the daemon's own
-   setup or resume. The daemon pane lists "Calendar reminders" with the lane state.
-7. **Migration.** The first tick that runs a lane looks for 0126's per-profile unit through the 0133 inventory. If
-   that unit byte-matches the definition for this profile, the tick boots it out and removes it. Duplicate alerts
-   are impossible anyway, because delivery is deduplicated by replay key. A modified, linked or foreign unit stays
-   untouched and becomes a doctor finding with its removal action. The `calendar-reminders-install` and `-uninstall`
-   operations and the separate confirmation are withdrawn. `calendar-reminder-worker` is kept for one release, so a
-   unit that is still loaded exits cleanly.
-8. **Interval settings.** A daemon interval longer than five minutes changes nothing for reminders: each lane covers
-   its whole interval. The cost is one Python process alive while reminders are on, as with 0126's worker. It now
-   restarts at every slot instead of every 300 seconds.
+1. **Who runs a lane.** A lane runs only in a manager-bound tick (`_service_manager_pid() == os.getpid()`), when
+   Calendar reminders are on for the daemon's profile.
+   - A person's `hz system daemon tick`, an MCP `system.daemon.tick` and `hz system serve daemon` never start a lane.
+     They return as they do today.
+   - At most one lane exists per profile. A lane marker in the daemon state directory, holding the parent PID, the
+     child PID, the start time and the window, prevents a second lane.
+2. **The lane process.** At its start the tick runs the migration (point 9), then starts
+   `hz org calendar-reminder-lane`. That child boots built-ins plus the calendar capability, not plugin jobs. After
+   that the tick runs its jobs as today.
+   - The lane runs 0126's cycle: refresh at least every 30 seconds, wake at the next due instant, revalidate before
+     delivery.
+   - The tick exits only after its jobs are done and the lane has ended. The manager counts one job, one label and
+     one consent.
+3. **The window rule.** The lane may end only when its tick's jobs have finished and the wall clock is inside the end
+   window `[s − m, s − m/2)` of the next local slot `s` (margin `m`, point 6).
+   - If the lane is still running jobs at the window, or finds itself past the window, it targets the window of the
+     following slot. That happens after sleep, a forward clock step or a slow cycle.
+   - The lane checks the wall clock on every cycle and caps every sleep at 30 seconds, so a wake or a clock step is
+     noticed within one cycle.
+   - If a tick crosses a slot, the manager drops that firing. Jobs catch up from the ledger, the overrun is a health
+     finding, and reminders stay covered.
+4. **Slots in local time.** The lane computes `s` in the local wall time of the manager (launchd `Minute`, systemd
+   `OnCalendar`), once per cycle and after `time.tzset()`. Zones with :30 and :45 offsets and time-zone changes while
+   travelling are therefore correct. A backward step ends the lane at the new next slot. Whole-hour DST shifts do not
+   move minute-aligned slots.
+5. **The boundary gap.** Most reminders are due at :25 and :55, which are slot boundaries.
+   - In its last cycle the lane delivers every reminder due before the next lane can be running: up to
+     `end + m + H`, where `H` is the measured start-up time of a lane, capped at 90 seconds.
+   - Such a reminder therefore comes up to `m + H` seconds early, never late. The next lane will not repeat it,
+     because 0126's replay keys deduplicate delivery.
+6. **The margin.**
+   - `m` covers the last cycle, teardown and timer leeway. It is fixed from measurements on macOS and Linux, starting
+     at 15 seconds.
+   - Agenda reads in the lane have a hard timeout of 8 seconds. A read starts only when `end − now` is more than that
+     timeout.
+   - Because of point 3 a missed margin costs one dropped tick, not a gap, so the margin only has to be usually
+     enough.
+7. **Timer settings (amends 0020 decision 1).**
+   - systemd: the timer gets `AccuracySec=1s` and `FixedRandomDelay=true`, so the per-machine delay stays constant
+     and the lane adds it to `s`. The service gets `TimeoutStartSec` of the interval plus the job timeout. Heinzel
+     starts the oneshot only with `--no-block`, because it stays `activating` for the whole lane.
+   - launchd: `StartCalendarInterval` has no jitter and needs no change.
+8. **Lifecycle code that assumes a short tick.** Package handover (`idle_package_handover_matches`), install recovery
+   (`_recover_install`), `_service_manager_pid` and the update kickstart all read a live manager PID as "a tick is
+   running". With reminders on, that is almost always true.
+   - These paths read the lane marker and treat a lane with no running jobs as interruptible. They set the
+     maintenance gate, the lane exits within one cycle, the tick exits, and the updater then kickstarts the daemon
+     once.
+   - Reminders therefore come back within seconds after an update, as with 0126's worker, not at the next slot.
+   - With jobs running, they wait as today.
+9. **Migration from 0126 units.** Reminders now run for one profile per daemon: the profile the daemon is bound to.
+   - The retained `calendar-reminder-worker` first checks whether a daemon lane owns its profile. If so, it boots out
+     and removes its own byte-matching unit, then exits. Otherwise it keeps working as under 0126.
+   - `hz system update`, `system.daemon.install` and the tick before its lane also remove a byte-matching unit of the
+     daemon's profile. They hold the SDK maintenance lock, then the daemon lifecycle lock, then the calendar profile
+     lock, in that order. Migration runs before the lane starts.
+   - Units of other profiles keep working until they are removed.
+   - Modified, linked, foreign or shim-changed units are never touched. Doctor lists each leftover unit with its exact
+     removal action.
+   - The worker and its uninstall operation remain as long as any 0126 unit can exist. The install operation and its
+     separate confirmation are withdrawn.
+10. **0133 inventory.** The calendar namespace stays registered for SDK uninstall. It gains a per-unit classifier for
+    migration and doctor: owned and matching, owned but changed, or foreign. Uninstall keeps refusing anything it
+    cannot classify, as today.
+11. **Consent and disclosure.** A lane needs the daemon (0078 point 3) and the Calendar reminders setting, which is
+    user-scoped and off by default. Project configuration cannot grant it, and there is no third step. The copy
+    changes:
+    - Next to the Calendar reminders toggle: "the background helper reads your calendar about every 30 seconds, also
+      while the app is closed".
+    - Pause: "also pauses calendar reminders".
+    - The daemon pane lists Calendar reminders as keeping it running, with the lane's memory.
+12. **Setup from Calendar.** Calendar's single action calls the existing `system.daemon.install` or
+    `system.daemon.resume` operation through 0078 point 3's trusted confirmation. 0078 already moved install to the
+    web head; this ADR adds no operation and no REST or MCP path.
+13. **Heartbeat and status.**
+    - The lane writes a heartbeat when its state changes, and otherwise at most once a minute. It records the PID,
+      version, profile identity, window, the last cycle result (`ok`, `provider-unavailable`, `disabled`, `gate`),
+      and the last slot overrun.
+    - The lane is *overdue* when its heartbeat is older than two minutes and the last slot and the last wake (wall
+      time minus monotonic time) are each more than two minutes ago.
+    - `org.calendar-reminders-status` reads the daemon and lane state through the `DaemonAttestation` port, which
+      gains a lane field. It does not import `system.daemon`.
+    - Calendar shows one line, with one action, only when reminders are on and the daemon is missing (install), the
+      daemon is paused (resume), the lane is overdue (open the daemon pane), or the provider is unavailable (connect).
 
 ### Consequences
 
-- Good: one background job, one consent, one status. Reminders start whenever the daemon runs and Calendar reminders
-  are on, after first run and after every update, with no Calendar setup step.
-- Good: a tick still exits at every slot, so new code runs from the next slot on.
-- Bad: with reminders on, the daemon is effectively always present. Its memory is visible in the daemon pane, as the
-  separate worker's was before.
-- Bad: correctness now depends on the slot margin and on launchd and systemd skipping overlapping runs. Both must be
-  observed on real OS managers, not only in fakes.
+- Good: one job, one consent, one status. Reminders run whenever the daemon runs and the setting is on, after first
+  run and after every update.
+- Good: long jobs, sleep, clock steps and updates leave no gap. Reminders due at slot boundaries come slightly early
+  rather than late.
+- Bad: with reminders on, the daemon effectively stays present, and its lane memory is shown.
+- Bad: correctness relies on the manager dropping a firing while the job is still running, which must be observed,
+  not assumed. The lifecycle code gains a lane-aware state.
+- Bad: other profiles keep their 0126 units until they are removed.
 
 ### Confirmation
 
-- Unit tests with fake clocks and supervisors: the lane ends before the next slot, holds no tick lock, stops at a
-  maintenance gate, never alerts after a boundary across simulated sleep, and the migration removes only a
-  byte-matching unit.
-- An isolated-HOME lifecycle test on macOS (launchd) and Linux (systemd user): a reminder is delivered within the
-  deadline across three consecutive slots, and an update in the middle of a lane switches the code at the next slot.
-- Web tests: no Calendar notice while the daemon runs with reminders on, and one action when the daemon is missing or
-  paused.
+- Unit tests with fake clocks, managers and supervisors cover every rule of points 1 to 13.
+- In isolated HOMEs, on launchd and on a systemd user manager:
+  - a firing during a running lane is dropped, not queued;
+  - the lane survives sleeping for an hour in the middle of a lane and waking three minutes before a meeting, and
+    the reminder is delivered;
+  - a seven-minute job on a five-minute interval leaves no gap;
+  - for a meeting at :00 at the default interval, the delivery offset is measured on a loaded machine;
+  - on Linux, a 60-minute interval does not kill the lane through `TimeoutStartSec`;
+  - with interval 10 and `TZ=Asia/Kathmandu`, the lane ends at local slots;
+  - migration with a second profile's unit, a modified unit and a shim-changed unit causes no respawn loop, and
+    doctor names each leftover unit;
+  - handover after an update, and install recovery, both work with a lane running.
 
 ## More Information
 
-This ADR replaces three parts of 0126: "separately installs a user service", "no long-lived process is installed
-automatically" (the daemon is the installed process), and the desktop head's separate setup confirmation. 0126's
-deadline, consent, expiry, replay and profile-binding rules are unchanged.
+This ADR replaces these parts of 0126: "separately installs a user service", "no long-lived process is installed
+automatically", and the separate setup confirmation. 0126's deadline, consent, expiry, replay and profile-binding
+rules stay unchanged.
+
+In 0020 it amends:
+- "each firing runs a short-lived process", for manager-bound ticks with a lane;
+- the rejection of in-process timers, since the lane is a bounded child process;
+- the timer settings of decision 1;
+- which ticks run a lane.
+
+0020's statement that `install` and `uninstall` are CLI-only was already superseded by 0078.
