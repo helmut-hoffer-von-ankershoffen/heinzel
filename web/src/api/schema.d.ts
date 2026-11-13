@@ -1593,8 +1593,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
-         * @description Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+         * Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
+         * @description Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
          */
         post: operations["heinzel_retire"];
         delete?: never;

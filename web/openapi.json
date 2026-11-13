@@ -26390,7 +26390,7 @@
     },
     "/heinzel/retire": {
       "post": {
-        "description": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
+        "description": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
         "operationId": "heinzel_retire",
         "requestBody": {
           "content": {
@@ -26424,7 +26424,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
+        "summary": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
         "tags": [
           "heinzel"
         ]

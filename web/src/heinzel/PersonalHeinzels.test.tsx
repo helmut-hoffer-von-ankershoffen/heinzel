@@ -162,7 +162,7 @@ describe("personal identities", () => {
     const section = await page();
     fireEvent.click(await section.findByRole("radio", { name: /^Alpha/ }));
     // One editor: the page has no name field and no save, only the Heinzel and where to edit it.
-    expect(await section.findByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(await section.findByTestId("heinzel-view-name")).toHaveTextContent("Alpha");
     expect(section.queryByLabelText("Name")).toBeNull();
     expect(section.queryByRole("button", { name: "Save name and look" })).toBeNull();
     expect(section.getByText("Change the name and look in its chat.")).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe("personal identities", () => {
     held(chat);
     fireEvent.click(chat.getByRole("button", { name: "Save name and look" }));
     expect(await chat.findByText("Saved.")).toBeInTheDocument();
-    expect(await section.findByRole("heading", { name: "Moss" })).toBeInTheDocument();
+    await waitFor(() => expect(section.getByTestId("heinzel-view-name")).toHaveTextContent("Moss"));
   });
 
   it("retires a Heinzel, keeps it under Retired and restores it", async () => {

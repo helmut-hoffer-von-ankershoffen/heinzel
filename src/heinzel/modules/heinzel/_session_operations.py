@@ -1025,7 +1025,7 @@ def _register_lifecycle_operations(module: Module) -> None:
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def retire(service: SessionCrud, session_id: Identity, request_id: Request) -> SessionSnapshot:
-        """Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back."""
+        """Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it."""
         return service.retire(session_id, request_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")

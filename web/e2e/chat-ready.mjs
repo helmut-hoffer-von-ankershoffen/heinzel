@@ -193,6 +193,7 @@ export async function createHeinzelWith(page, text) {
   await composer.fill(text);
   assert.equal(await composer.inputValue(), text, "The composer did not take the first message");
   await appTakesInput(page);
+  const start = new URL(page.url());
   const sent = page.waitForRequest(
     (request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/heinzel/new-chat",
     { timeout: 15000 },
@@ -211,6 +212,26 @@ export async function createHeinzelWith(page, text) {
     }));
     throw new Error(`Create a Heinzel sent no creation request: ${JSON.stringify(state)}`);
   });
+  await returnWithChat(page, start);
+}
+
+/**
+ * The draft lives on the Heinzels page; once saved, reopen the screen the journey started on with the new Heinzel's
+ * chat linked (its composer keeps the message in this tab), so the rest of the journey sees the page it was written for.
+ */
+export async function returnWithChat(page, start) {
+  await page.getByLabel("Message your Heinzel").waitFor({ timeout: 15000 });
+  const now = new URL(page.url());
+  const chat = now.searchParams.get("chat");
+  if (!chat || now.pathname === start.pathname) return;
+  const back = new URL(start.href);
+  back.searchParams.set("chat", chat);
+  await page.goto(back.href);
+  const field = page.getByLabel("Message your Heinzel");
+  const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
+  await field.or(chatTab).first().waitFor({ timeout: 30000 });
+  if (!(await field.isVisible())) await revealChat(page);
+  await field.waitFor({ timeout: 15000 });
 }
 
 /** From the app's first load to the first message of a new Heinzel, with setup closed and Chat shown. */

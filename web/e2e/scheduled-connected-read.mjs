@@ -4,6 +4,7 @@ import {
   openChatJourney,
   openDetails,
   recurringTurns,
+  returnWithChat,
   revealChat,
   runDaemonTurn,
   saveHeinzelDraft,
@@ -107,8 +108,10 @@ try {
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
+  const start = new URL(page.url());
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   await saveHeinzelDraft(page);
+  await returnWithChat(page, start);
   await openDetails(page);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });

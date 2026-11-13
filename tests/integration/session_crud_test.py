@@ -588,3 +588,28 @@ def test_private_skill_draft_http_is_owner_scoped_and_never_publishes(kernel):
         other.get("/heinzel/skill-sharing-proposals", headers=other_auth, params={"session_id": session_id}).status_code
         != 200
     )
+
+
+def test_retire_and_restore_are_one_operation_each_on_private_http_cli_and_stdio_mcp(kernel):
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "retire-create"}).json()["session_id"]
+    retired = client.post("/heinzel/retire", headers=auth, json={"session_id": session, "request_id": "http-retire"})
+    assert retired.status_code == 200, retired.text
+    assert retired.json()["state"] == "retired"
+    refused = client.post(
+        "/heinzel/chat", headers=auth, json={"session_id": session, "request_id": "late", "message": "Still there?"}
+    )
+    assert refused.status_code != 200
+    restored = CliRunner().invoke(cli.build(kernel), ["heinzel", "restore", session, "cli-restore", "--json"])
+    assert restored.exit_code == 0, restored.output
+    assert json.loads(restored.output)["state"] == "proposed"
+
+    async def scenario():
+        async with Client(mcp.build(kernel)) as connected:
+            response = await connected.call_tool("heinzel_retire", {"session_id": session, "request_id": "mcp-retire"})
+            assert not response.is_error
+            assert response.structured_content["state"] == "retired"
+
+    anyio.run(scenario)
+    listed = client.get("/heinzel/sessions", headers=auth).json()["sessions"]
+    assert [(item["session_id"], item["state"]) for item in listed] == [(session, "retired")]

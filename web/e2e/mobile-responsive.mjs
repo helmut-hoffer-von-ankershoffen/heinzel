@@ -1102,10 +1102,10 @@ try {
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
     await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-    // The draft opens on the Page tab of a phone and must fit it, its first message included.
+    // The draft opens on the Page tab of a phone; the message it carries fits the phone's width and height.
     await assertContained(
       page,
-      page.getByRole("form", { name: "Your new Heinzel" }),
+      page.getByRole("form", { name: "Your new Heinzel" }).locator("figure"),
       `${spec.name}: new Heinzel draft with a message`,
     );
     await saveHeinzelDraft(page);

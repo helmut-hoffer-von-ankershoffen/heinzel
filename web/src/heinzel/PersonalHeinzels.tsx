@@ -340,7 +340,6 @@ function HeinzelView({
   const [params] = useSearchParams();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const heading = useId();
   const retire = async () => {
     setBusy(true);
     setError(false);
@@ -370,7 +369,8 @@ function HeinzelView({
     }
   };
   return (
-    <section aria-labelledby={heading} className="space-y-3 pt-2">
+    // Not a heading: the chat beside it carries the Heinzel's name as its heading.
+    <div className="space-y-3 pt-2">
       <div className="flex min-w-0 items-center gap-3">
         <HeinzelAvatar
           label={t("personal.preview")}
@@ -378,16 +378,24 @@ function HeinzelView({
           className="h-24 w-16 shrink-0"
         />
         <div className="min-w-0">
-          <h3 id={heading} className="truncate text-sm font-semibold">
+          <p className="truncate text-sm font-semibold" data-testid="heinzel-view-name">
             {initial.name}
-          </h3>
+          </p>
           <p className="text-xs text-muted-foreground">{stateLabel(initial.state ?? "proposed")}</p>
           <p className="text-sm text-muted-foreground">{t("personal.readOnlyHelp")}</p>
         </div>
       </div>
       {error && <p role="alert">{t("personal.retireError")}</p>}
       <PaneActions>
-        <PaneAction key="edit" icon={Pencil} onClick={() => navigate(editInChatPath(initial.session_id))}>
+        <PaneAction
+          key="edit"
+          icon={Pencil}
+          onClick={() => {
+            navigate(editInChatPath(initial.session_id));
+            // Its chat may be linked already: the address changes only by the editor, so show the Chat tab too.
+            window.dispatchEvent(new Event(OPEN_CHAT));
+          }}
+        >
           {t("personal.editInChat")}
         </PaneAction>
         <PaneAction
@@ -405,7 +413,7 @@ function HeinzelView({
           {t("personal.retire")}
         </PaneAction>
       </PaneActions>
-    </section>
+    </div>
   );
 }
 
