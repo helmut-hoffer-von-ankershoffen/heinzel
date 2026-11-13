@@ -12,6 +12,7 @@ import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
+import { closeRouted } from "./route-settlement.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -398,7 +399,7 @@ async function updateActionTargets() {
       );
       await page.screenshot({ path: join(shots, `updates-actions-${name}.png`) });
     } finally {
-      await page.close();
+      await closeRouted(page);
     }
   }
   return measurements;
@@ -518,7 +519,7 @@ try {
         true,
         "Share controls and URL must wrap within the pane",
       );
-      await page.close();
+      await closeRouted(page);
     }
     result.share = { cancellation: true, failure: true, copy: true, unsupported: true, wraps: true };
   }

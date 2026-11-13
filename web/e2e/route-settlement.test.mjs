@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { settleRoutes } from "./route-settlement.mjs";
+import { closeRouted, settleRoutes } from "./route-settlement.mjs";
 
 function fixture() {
   const fetched = Promise.withResolvers();
@@ -89,4 +89,35 @@ test("settlement propagates unrouteAll errors", async () => {
     }),
     (error) => error === failure,
   );
+});
+
+function routed(name, events, extra = {}) {
+  return {
+    ...extra,
+    unrouteAll: async (options) => {
+      assert.deepEqual(options, { behavior: "ignoreErrors" });
+      events.push(`unroute ${name}`);
+    },
+    close: async () => {
+      events.push(`close ${name}`);
+    },
+  };
+}
+
+test("closing a routed page unroutes it, ignoring only later handler errors, before it closes", async () => {
+  const events = [];
+  await closeRouted(routed("page", events));
+  assert.deepEqual(events, ["unroute page", "close page"]);
+});
+
+test("closing a routed context or browser unroutes every page and context first", async () => {
+  const events = [];
+  const pages = [routed("a", events), routed("b", events)];
+  const context = routed("context", events, { pages: () => pages });
+  await closeRouted(context);
+  assert.deepEqual(events, ["unroute a", "unroute b", "unroute context", "close context"]);
+  events.length = 0;
+  const browser = { contexts: () => [context], close: async () => events.push("close browser") };
+  await closeRouted(browser);
+  assert.deepEqual(events, ["unroute a", "unroute b", "unroute context", "close browser"]);
 });

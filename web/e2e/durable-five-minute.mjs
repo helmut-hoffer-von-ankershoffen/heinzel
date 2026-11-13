@@ -1,5 +1,6 @@
 import { chromium, webkit } from "playwright-core";
 import { fetchOnce } from "./fetch-once.mjs";
+import { closeRouted } from "./route-settlement.mjs";
 
 const supplied = process.argv[2];
 if (!supplied) throw new Error("Missing isolated web URL");
@@ -138,6 +139,6 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  await context.close();
+  await closeRouted(context);
   await browser.close();
 }

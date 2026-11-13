@@ -10,6 +10,7 @@ import {
   revealChat,
 } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
+import { closeRouted } from "./route-settlement.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
 const latePage = process.argv[4] === "late-page";
@@ -397,6 +398,6 @@ try {
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {
-  await context.close();
+  await closeRouted(context);
   await browser.close();
 }

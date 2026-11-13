@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { fetchOnce } from "./fetch-once.mjs";
 import { verifyLayers } from "./layers.mjs";
+import { closeRouted } from "./route-settlement.mjs";
 
 export function navigationFolded() {
   const sidebar = document.querySelector("aside");
@@ -419,6 +420,6 @@ if (process.argv[1]?.endsWith("/footer.mjs")) {
     const layers = await verifyLayers(page, shots, !!shots);
     console.log(JSON.stringify({ native, layers, browser: browser.version() }));
   } finally {
-    await browser.close();
+    await closeRouted(browser);
   }
 }

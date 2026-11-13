@@ -9,6 +9,7 @@ import { chromium } from "playwright-core";
 import { addFooterProofItems, verifyFooter } from "./footer.mjs";
 import { verifyLayers } from "./layers.mjs";
 import { verifyNavigation } from "./navigation.mjs";
+import { closeRouted } from "./route-settlement.mjs";
 
 const [url, shots] = process.argv.slice(2);
 const base = new URL(url).origin;
@@ -274,6 +275,6 @@ try {
   result.footer = await verifyFooter(page, shots, true);
   await splash();
 } finally {
-  await browser.close();
+  await closeRouted(browser);
 }
 console.log(JSON.stringify(result));
