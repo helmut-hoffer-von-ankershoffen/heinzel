@@ -387,7 +387,10 @@ class ChannelDelivery(ChannelReplyConsumer):
         for head in self.crud.repository.heads():
             if head.problem:
                 continue
-            proposals = self.crud.repository.control_read(head.session).events
+            try:
+                proposals = self.crud.repository.control_read(head.session).events
+            except HeinzelError:
+                continue  # deleted since the list was read (ADR 0148); the others still run
             if is_retired(proposals):
                 continue
             for event in proposals:

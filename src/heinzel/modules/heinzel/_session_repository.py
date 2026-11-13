@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from pydantic import JsonValue, TypeAdapter
 
-from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
+from heinzel import CurrentUser, HeinzelError, SessionEvent, SessionHead, SessionRead, SessionStore, SessionWriter
 from heinzel.kernel import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
@@ -18,12 +18,22 @@ _PRIVATE_DIRECTORY_MODE = 0o700
 _REQUEST = TypeAdapter(RequestId)
 _DIGEST = TypeAdapter(Digest)
 _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+_DELETING = "creation.deleting"
+_DELETED = "creation.deleted"
+_FORGOTTEN = "creation.forgotten"
+DELETION_KINDS = frozenset({_DELETING, _FORGOTTEN, _DELETED})
+"""Catalog records of a deletion (ADR 0148); every catalog reader skips them."""
 
 
 def _identifier(now: datetime) -> str:
     # ULID is a 48-bit UTC millisecond timestamp followed by 80 cryptographically random bits.
     value = (int(now.timestamp() * 1000) << 80) | secrets.randbits(80)
     return "hz-" + "".join(_ALPHABET[(value >> (5 * shift)) & 31] for shift in reversed(range(26)))
+
+
+def _sessions_of(events: list[SessionEvent], kinds: set[str]) -> set[str]:
+    """The session ids named by catalog records of these kinds."""
+    return {str(event.data.get("session_id")) for event in events if event.kind in kinds}
 
 
 def _verified(read: SessionRead) -> SessionRead:
@@ -68,12 +78,40 @@ class PersonalSessionRepository:
 
     def _owned(self, session_id: str) -> None:
         _SESSION.validate_python(session_id)
-        if not any(
-            event.kind == "creation.reserved" and event.data.get("session_id") == session_id
-            for event in self._catalog().events
-        ):
+        if session_id not in self.reserved_session_ids():
             msg = "No such personal Heinzel for the authenticated owner"
             raise HeinzelError(msg)
+
+    def _gone(self, session_id: str) -> bool:
+        return session_id in _sessions_of(self._catalog().events, {_DELETING, _DELETED})
+
+    def _still_owned(self, session_id: str) -> None:
+        """Re-check after a shared ledger lock is won, so no record lands after a deletion started (ADR 0148).
+
+        Raises:
+            HeinzelError: If the session was deleted while this writer waited.
+        """
+        if self._gone(session_id):
+            msg = "No such personal Heinzel for the authenticated owner"
+            raise HeinzelError(msg)
+
+    @contextmanager
+    def _writer(self, namespace: str, session_id: str, *, wait: bool) -> Generator[SessionWriter]:
+        """Open an owned session writer; one that waited past a deletion removes what it recreated and refuses.
+
+        Yields:
+            The active writer of a session that is still owned.
+
+        Raises:
+            HeinzelError: If the session is not owned, or was deleted while this writer waited.
+        """
+        self._owned(session_id)
+        with self._store(namespace).writer(session_id, wait=wait) as writer:
+            if self._gone(session_id):
+                writer.remove()
+                msg = "No such personal Heinzel for the authenticated owner"
+                raise HeinzelError(msg)
+            yield writer
 
     def reserve(self, request_id: str, payload_hash: str) -> str:
         """Reserve a stable identity before initialization; replay repairs an interrupted creation.
@@ -91,7 +129,11 @@ class PersonalSessionRepository:
                 if prior.kind != "creation.reserved" or prior.data.get("payload_hash") != payload_hash:
                     msg = "This creation request already identifies different Heinzel details"
                     raise HeinzelError(msg)
-                return _SESSION.validate_python(prior.data["session_id"])
+                session_id = _SESSION.validate_python(prior.data["session_id"])
+                if session_id in _sessions_of(records, {_DELETING, _DELETED}):
+                    msg = "This creation request made a Heinzel that was deleted; use a new request to create one"
+                    raise HeinzelError(msg)
+                return session_id
             session_id = _identifier(self.clock())
             writer.append(
                 "creation.reserved", key=request_id, data={"session_id": session_id, "payload_hash": payload_hash}
@@ -99,17 +141,18 @@ class PersonalSessionRepository:
             return session_id
 
     def reserved_session_ids(self) -> tuple[str, ...]:
-        """List every owner-reserved session, including incomplete creations.
+        """List every owner-reserved session, including incomplete creations, but none deleted or being deleted.
 
         Raises:
             HeinzelError: If the owner catalog is damaged or contains invalid identities.
         """
         events = self._catalog().events
+        gone = _sessions_of(events, {_DELETING, _DELETED})
         return tuple(
             dict.fromkeys(
                 _SESSION.validate_python(event.data.get("session_id"))
                 for event in events
-                if event.kind == "creation.reserved"
+                if event.kind == "creation.reserved" and event.data.get("session_id") not in gone
             )
         )
 
@@ -120,6 +163,9 @@ class PersonalSessionRepository:
             HeinzelError: If owned journals are missing, unsafe or absent from the owner catalog.
         """
         expected = set(sessions)
+        events = self._catalog().events
+        # A deletion in progress may still have folders, under their names or renamed hidden (ADR 0148).
+        tolerated = _sessions_of(events, {_DELETING, _DELETED}) - expected
         base = os.open(self.current.directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             try:
@@ -131,7 +177,7 @@ class PersonalSessionRepository:
                             msg = "The owner session stores need repair"
                             raise HeinzelError(msg)
                         for namespace in ("main", "control"):
-                            self._verify_reserved_namespace(owner, namespace, expected)
+                            self._verify_reserved_namespace(owner, namespace, expected, tolerated)
                     finally:
                         os.close(owner)
                 finally:
@@ -144,12 +190,14 @@ class PersonalSessionRepository:
             os.close(base)
 
     @staticmethod
-    def _verify_reserved_namespace(owner: int, namespace: str, expected: set[str]) -> None:
+    def _verify_reserved_namespace(owner: int, namespace: str, expected: set[str], tolerated: set[str]) -> None:
         try:
             with PersonalSessionRepository._private_store(owner, namespace) as root:
                 found: set[str] = set()
                 with os.scandir(root) as entries:
                     for entry in entries:
+                        if entry.name.removeprefix(".removed-") in tolerated:
+                            continue
                         if entry.is_symlink() or (
                             entry.name.startswith("hz-") and not entry.is_dir(follow_symlinks=False)
                         ):
@@ -193,11 +241,7 @@ class PersonalSessionRepository:
 
     def heads(self) -> list[SessionHead]:
         """Only owned agent spines; the separate catalog and inbox roots are never extra sessions."""
-        owned = {
-            _SESSION.validate_python(event.data.get("session_id"))
-            for event in self._catalog().events
-            if event.kind == "creation.reserved"
-        }
+        owned = set(self.reserved_session_ids())
         return [head for head in self._store("main").heads() if head.session in owned]
 
     def budget_read(self, session_id: str) -> SessionRead:
@@ -231,6 +275,7 @@ class PersonalSessionRepository:
         self._owned(session_id)
         _DIGEST.validate_python(target)
         with self._store("draft-targets").writer("target-" + target, wait=wait) as writer:
+            self._still_owned(session_id)
             yield writer
 
     def is_draft_target_writer(self, session_id: str, target: str, writer: SessionWriter) -> bool:
@@ -252,6 +297,7 @@ class PersonalSessionRepository:
         """
         self._owned(session_id)
         with self._store("budget").writer("reservations", wait=True) as writer:
+            self._still_owned(session_id)
             yield writer
 
     def subscription_read(self, session_id: str) -> SessionRead:
@@ -271,6 +317,7 @@ class PersonalSessionRepository:
         """
         self._owned(session_id)
         with self._store("subscription").writer("slots", wait=True) as writer:
+            self._still_owned(session_id)
             yield writer
 
     def main_read(self, session_id: str) -> SessionRead:
@@ -333,8 +380,7 @@ class PersonalSessionRepository:
         Yields:
             The owner's active main writer.
         """
-        self._owned(session_id)
-        with self._store("main").writer(session_id, wait=wait) as writer:
+        with self._writer("main", session_id, wait=wait) as writer:
             yield writer
 
     def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
@@ -349,8 +395,7 @@ class PersonalSessionRepository:
         Yields:
             An owner-private lock held across one reply's claim, action and settlement.
         """
-        self._owned(session_id)
-        with self._store("channel-processing").writer(session_id) as writer:
+        with self._writer("channel-processing", session_id, wait=False) as writer:
             yield writer
 
     @contextmanager
@@ -360,8 +405,7 @@ class PersonalSessionRepository:
         Yields:
             The owner's short control writer.
         """
-        self._owned(session_id)
-        with self._store("control").writer(session_id, wait=True) as writer:
+        with self._writer("control", session_id, wait=True) as writer:
             yield writer
 
     def body(self, session_id: str, body_id: str, *, expected_hash: str, control: bool = False) -> list[JsonValue]:

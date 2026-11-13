@@ -105,3 +105,7 @@ class SessionRepository(Protocol):
     def reserve(self, request_id: str, payload_hash: str) -> str:
         """Reserve one stable id per canonical creation request; release the catalog before initialization."""
         ...
+
+    def reserved_session_ids(self) -> tuple[str, ...]:
+        """Every reserved session of this owner that is not deleted or being deleted."""
+        ...

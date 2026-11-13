@@ -11,6 +11,7 @@ from heinzel.modules.heinzel._history_fts import indexed_search_step
 from heinzel.modules.heinzel._history_search import HistorySearchRequest, validate_history_terms
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId, SessionMessage
+from heinzel.modules.heinzel._session_repository import DELETION_KINDS
 
 _SESSION = TypeAdapter(SessionId)
 
@@ -114,6 +115,19 @@ def search_owner_history(service: SessionCrud, request: CrossHistoryRequest) -> 
     if not page.events:
         return CrossHistoryPage(status="done", session_id=None, items=[], next_cursor=None)
     event = page.events[0]
+    if event.kind in DELETION_KINDS or (
+        event.kind == "creation.reserved"
+        and event.data.get("session_id") not in service.repository.reserved_session_ids()
+    ):
+        # A deleted Heinzel has nothing left to search (ADR 0148): step past its catalog records.
+        skipped = state.model_copy(update={"after": event.seq, "previous": page.hashes[0], "session_cursor": None})
+        done = event.seq == high
+        return CrossHistoryPage(
+            status="done" if done else "next-agent",
+            session_id=None,
+            items=[],
+            next_cursor=None if done else _encode(skipped),
+        )
     if event.kind != "creation.reserved":
         msg = "The owner session catalog contains an unexpected record"
         raise HeinzelError(msg)
