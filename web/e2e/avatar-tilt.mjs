@@ -4,11 +4,11 @@ import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { createServer } from "vite";
+import { createJourneyServer } from "./vite-server.mjs";
 
 const [shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const server = await createServer({ server: { host: "127.0.0.1", port: 0, strictPort: false } });
+const server = await createJourneyServer("avatar-tilt", { server: { host: "127.0.0.1", port: 0, strictPort: false } });
 await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");

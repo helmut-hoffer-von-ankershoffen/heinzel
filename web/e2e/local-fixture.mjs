@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { createServer } from "vite";
+import { createJourneyServer } from "./vite-server.mjs";
 
 // This is only a base for parsing origin-form request targets; it is never contacted.
 export const requestUrl = (target) => new URL(target, "https://fixture.invalid");
 
 export async function startFixture(handler) {
   const denied = [];
-  const server = await createServer({
+  const server = await createJourneyServer("fixture", {
     // Do not load the development config: its HZ_API_PORT proxy can reach a real backend.
     configFile: false,
     envFile: false,

@@ -1,21 +1,18 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { createServer } from "vite";
+import { createJourneyServer } from "./vite-server.mjs";
 
 const [shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
-// Its own dependency cache, and the harness page scanned before the first request: other journeys start Vite servers
-// in parallel on CI, and a shared cold cache re-optimized by one of them answers this page "504 Outdated Optimize Dep".
-const server = await createServer({
-  cacheDir: mkdtempSync(join(tmpdir(), "vite-audio-")),
+// Its own dependency cache (createJourneyServer), and the harness page scanned before the first request.
+const server = await createJourneyServer("audio", {
   optimizeDeps: { entries: ["e2e/audio-visualizer.html"] },
   server: { host: "127.0.0.1", port: 0, strictPort: false },
 });

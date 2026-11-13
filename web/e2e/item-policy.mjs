@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { chromium, webkit } from "playwright-core";
-import { createServer } from "vite";
+import { createJourneyServer } from "./vite-server.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -25,7 +25,7 @@ const grant = {
     item_identity: { collection: ["events"], identity_field: "id", revision_field: "version" },
   },
 };
-const server = await createServer({ server: { host: "127.0.0.1", port: 0 } });
+const server = await createJourneyServer("item-policy", { server: { host: "127.0.0.1", port: 0 } });
 await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");
