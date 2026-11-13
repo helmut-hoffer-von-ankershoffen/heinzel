@@ -13,7 +13,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function panel(local: boolean) {
+function panel(local: boolean, service = "not installed") {
   vi.spyOn(browser, "isLocalServer").mockReturnValue(local);
   const requests = mockApi({
     "/api/org/calendar": {
@@ -24,7 +24,7 @@ function panel(local: boolean) {
       problem: null,
       fix: null,
     },
-    "/api/org/calendar-reminders-status": { enabled: true, service: "not installed" },
+    "/api/org/calendar-reminders-status": { enabled: true, service },
     "/api/stream/org/calendar-reminders-install": () => eventStream([], { message: "installed" }),
   });
   const rendered = render(
@@ -40,7 +40,7 @@ function panel(local: boolean) {
 it("sets up the profile worker only after explicit confirmation without a terminal command", async () => {
   const { calls, container } = panel(true);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Set up reminder worker" }));
+  await user.click(await screen.findByRole("button", { name: "Turn on reminders" }));
   expect(screen.getByRole("dialog")).toHaveTextContent("at every login");
   expect(screen.getByRole("dialog")).toHaveTextContent("separate consent");
   expect(container.textContent).not.toContain("hz org");
@@ -48,8 +48,8 @@ it("sets up the profile worker only after explicit confirmation without a termin
   await expectAccessible(container);
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
-  await user.click(screen.getByRole("button", { name: "Set up reminder worker" }));
-  await user.click(screen.getByRole("button", { name: "Run it" }));
+  await user.click(screen.getByRole("button", { name: "Turn on reminders" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Turn on reminders" }));
   await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
   const request = calls.find((call) => call.method === "POST");
   expect(new URL(request?.url ?? "").pathname).toBe("/api/stream/org/calendar-reminders-install");
@@ -59,7 +59,7 @@ it("sets up the profile worker only after explicit confirmation without a termin
 it("does not offer server persistence setup from a remote browser", async () => {
   const { calls } = panel(false);
   expect(await screen.findByText(/Open Calendar on this computer/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Set up reminder worker" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Turn on reminders" })).not.toBeInTheDocument();
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
 });
 
@@ -143,8 +143,17 @@ it("opens a meeting row into its detail with provider, a Join icon button, organ
   expect(screen.getByRole("button", { name: /Plain/ })).toBeInTheDocument();
 });
 
-it("puts Close in the title row and every action in one bottom row, Today leading with its words", async () => {
+it("leads the bottom row with Turn on reminders, in words, while this computer has no reminders", async () => {
   panel(true);
+  const row = (await screen.findByRole("group", { name: "Actions" })) as HTMLElement;
+  const turnOn = await within(row).findByRole("button", { name: "Turn on reminders" });
+  expect(row.querySelector("button, a")).toBe(turnOn);
+  expect(turnOn).toHaveTextContent("Turn on reminders");
+  expect(screen.queryByText(/background worker/)).not.toBeInTheDocument();
+});
+
+it("puts Close in the title row and every action in one bottom row, Today leading with its words", async () => {
+  panel(true, "running");
   const close = await screen.findByRole("button", { name: "Close calendar" });
   expect(close.closest("[data-pane-chrome]")).not.toBeNull();
   expect(close).toHaveTextContent("");
@@ -154,7 +163,7 @@ it("puts Close in the title row and every action in one bottom row, Today leadin
     "Today",
     "Previous week",
     "Next week",
-    "Set up reminder worker",
+    "Turn off reminders on this computer",
   ]);
   expect(buttons[0]).toHaveTextContent("Today");
   expect(buttons.slice(1).every((button) => button.textContent === "")).toBe(true);
@@ -335,7 +344,7 @@ it("mutes past days and finished rows, and the header says the day so colour is 
 });
 
 it("keeps Today dimmed on this week, enables it after Next week, and scrolls Today to the top when pressed", async () => {
-  const { scroll } = agenda();
+  const { scroll } = agenda(agendaEvents, { service: "running" });
   await screen.findByText("Standup");
   expect(scroll).toHaveBeenCalledTimes(1);
   expect(scroll.mock.contexts[0]).toHaveAttribute("aria-current", "date");
@@ -362,30 +371,51 @@ it("keeps Today dimmed on this week, enables it after Next week, and scrolls Tod
 
 it("says the reminder state in one line with an icon and nothing to press", async () => {
   const { container } = agenda();
-  const band = await screen.findByText("Reminders need a background worker on this computer.");
+  const band = await screen.findByText("Meeting reminders are not on for this computer yet.");
   expect(band.querySelector("svg")).not.toBeNull();
   expect(band.querySelector("a, button")).toBeNull();
   expect(band.closest("a, button")).toBeNull();
   expect(container.querySelectorAll("a")).toHaveLength(1); // only the Join link of the review meeting
-  expect(screen.getByRole("button", { name: "Set up reminder worker" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Turn on reminders" })).toBeInTheDocument();
 });
 
 it("hides the band while the worker runs, and shows the remote sentence without a worker button", async () => {
   agenda(agendaEvents, { service: "running" });
-  await screen.findByRole("button", { name: "Remove reminder worker" });
-  expect(screen.queryByText(/Reminders need|Calendar reminders|worker's state/)).not.toBeInTheDocument();
+  await screen.findByRole("button", { name: "Turn off reminders on this computer" });
+  expect(screen.queryByText(/Meeting reminders|Calendar reminders|state is unavailable/)).not.toBeInTheDocument();
 });
 
 it("tells a remote browser to use the computer itself", async () => {
   agenda(agendaEvents, { local: false });
-  expect(await screen.findByText("Open Calendar on this computer to set up its reminder worker.")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /reminder worker/ })).not.toBeInTheDocument();
+  expect(await screen.findByText("Open Calendar on this computer to turn on reminders.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /reminders/ })).not.toBeInTheDocument();
 });
 
-it("says reminders are off, with the settings button in the bottom row", async () => {
+it("points to the Calendar reminders setting first while it is off, never offering Turn on reminders", async () => {
   agenda(agendaEvents, { enabled: false });
+  expect(await screen.findByText("Turn on Calendar reminders in Notification settings first.")).toBeInTheDocument();
+  const row = screen.getByRole("group", { name: "Actions" });
+  const settings = within(row).getByRole("link", { name: "Notification settings" });
+  expect(row.querySelector("button, a")).toBe(settings);
+  expect(settings).toHaveTextContent("Notification settings");
+  expect(screen.queryByRole("button", { name: "Turn on reminders" })).not.toBeInTheDocument();
+});
+
+it("says a remote browser that reminders are off, without the local first step", async () => {
+  agenda(agendaEvents, { enabled: false, local: false });
   expect(await screen.findByText("Calendar reminders are off or unavailable.")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Notification settings" })).toBeInTheDocument();
+});
+
+it("offers Turn on reminders as the repair when the state is unknown, without saying they run", async () => {
+  agenda(agendaEvents, { service: "unknown" });
+  expect(
+    await screen.findByText(
+      "Reminders are on, but they could not be confirmed running here. Turn them on again to repair.",
+    ),
+  ).toBeInTheDocument();
+  const row = screen.getByRole("group", { name: "Actions" });
+  expect(row.querySelector("button, a")).toBe(within(row).getByRole("button", { name: "Turn on reminders" }));
+  expect(within(row).getByRole("button", { name: "Turn off reminders on this computer" })).toBeInTheDocument();
 });
 
 it("announces Now and Next in one polite status line and nowhere else", async () => {
