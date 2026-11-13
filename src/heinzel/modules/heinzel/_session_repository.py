@@ -6,6 +6,7 @@ import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -23,6 +24,8 @@ _DELETED = "creation.deleted"
 _FORGOTTEN = "creation.forgotten"
 DELETION_KINDS = frozenset({_DELETING, _FORGOTTEN, _DELETED})
 """Catalog records of a deletion (ADR 0148); every catalog reader skips them."""
+# Per-Heinzel folders, removed in this order; the main journal goes last so a partial deletion is never a live turn.
+SESSION_NAMESPACES = ("channel-processing", "control", "main")
 
 
 def _identifier(now: datetime) -> str:
@@ -95,6 +98,28 @@ class PersonalSessionRepository:
             msg = "No such personal Heinzel for the authenticated owner"
             raise HeinzelError(msg)
 
+    def unsettled_target_intents(self, session_id: str) -> int:
+        """How many document appends this Heinzel started without a recorded outcome, across every target fence."""
+        store = self._store("draft-targets")
+        try:
+            targets = [head.session for head in store.heads()]
+        except FileNotFoundError:
+            return 0
+        count = 0
+        for target in targets:
+            events = _verified(store.read(target)).events
+            settled = {
+                event.key for event in events if event.kind in {"draft.target-settled", "draft.target-set-aside"}
+            }
+            count += sum(
+                1
+                for event in events
+                if event.kind == "draft.target-intent"
+                and event.data.get("session") == session_id
+                and event.key not in settled
+            )
+        return count
+
     @contextmanager
     def _writer(self, namespace: str, session_id: str, *, wait: bool) -> Generator[SessionWriter]:
         """Open an owned session writer; one that waited past a deletion removes what it recreated and refuses.
@@ -112,6 +137,113 @@ class PersonalSessionRepository:
                 msg = "No such personal Heinzel for the authenticated owner"
                 raise HeinzelError(msg)
             yield writer
+
+    def deletion_state(self, session_id: str) -> Literal["live", "deleting", "deleted"]:
+        """Where a reserved session stands in deletion (ADR 0148).
+
+        Raises:
+            HeinzelError: If the session was never reserved by this owner.
+        """
+        _SESSION.validate_python(session_id)
+        events = self._catalog().events
+        mine = [event for event in events if event.data.get("session_id") == session_id]
+        if not any(event.kind == "creation.reserved" for event in mine):
+            msg = "No such personal Heinzel for the authenticated owner"
+            raise HeinzelError(msg)
+        kinds = {event.kind for event in mine}
+        return "deleted" if _DELETED in kinds else "deleting" if _DELETING in kinds else "live"
+
+    def deleted_at(self, session_id: str) -> datetime | None:
+        """When this owner's session was deleted for good, from its tombstone."""
+        return next(
+            (
+                event.ts
+                for event in self._catalog().events
+                if event.kind == _DELETED and event.data.get("session_id") == session_id
+            ),
+            None,
+        )
+
+    def pending_deletions(self) -> tuple[str, ...]:
+        """Sessions whose deletion started and has not finished, oldest first."""
+        events = self._catalog().events
+        done = _sessions_of(events, {_DELETED})
+        return tuple(
+            dict.fromkeys(
+                _SESSION.validate_python(event.data.get("session_id"))
+                for event in events
+                if event.kind == _DELETING and event.data.get("session_id") not in done
+            )
+        )
+
+    def mark_deleting(self, session_id: str, posts: list[dict[str, str]]) -> None:
+        """Record the intent to delete before anything is removed; from now on the session is refused everywhere.
+
+        The caller holds this session's main, channel-processing and control writers. `posts` are the content-free
+        channel names and references of approval requests it posted, closed and forgotten while finishing.
+        """
+        self._owned(session_id)
+        catalog = self._store("catalog")
+        data: dict[str, JsonValue] = {"session_id": session_id}
+        if posts:
+            data["posts"] = [dict(post) for post in posts]
+        with catalog.writer("creations", wait=True) as writer:
+            writer.append(_DELETING, key=f"delete:{session_id}", data=data)
+
+    def deletion_posts(self, session_id: str) -> list[dict[str, str]]:
+        """The channel references recorded with this session's deletion intent that no plugin has forgotten yet."""
+        events = self._catalog().events
+        intent = next(
+            (event for event in events if event.kind == _DELETING and event.data.get("session_id") == session_id),
+            None,
+        )
+        posts = intent.data.get("posts") if intent is not None else None
+        done = {
+            (event.data.get("channel"), event.data.get("reference"))
+            for event in events
+            if event.kind == _FORGOTTEN and event.data.get("session_id") == session_id
+        }
+        found = [
+            {"channel": str(post.get("channel")), "reference": str(post.get("reference"))}
+            for post in (posts if isinstance(posts, list) else [])
+            if isinstance(post, dict)
+        ]
+        return [post for post in found if (post["channel"], post["reference"]) not in done]
+
+    def mark_forgotten(self, session_id: str, channel: str, reference: str) -> None:
+        """Record that a channel plugin forgot one posted request of a session being deleted."""
+        catalog = self._store("catalog")
+        with catalog.writer("creations", wait=True) as writer:
+            writer.append(
+                _FORGOTTEN,
+                key=f"forgot:{session_id}:{channel}:{reference}",
+                data={"session_id": session_id, "channel": channel, "reference": reference},
+            )
+
+    def remove_session_store(self, namespace: str, session_id: str) -> None:
+        """Remove one per-Heinzel folder of a session marked for deletion; an absent folder is already done.
+
+        Raises:
+            HeinzelError: If the session is not being deleted or the namespace is not a per-Heinzel one.
+        """
+        if namespace not in SESSION_NAMESPACES or self.deletion_state(session_id) == "live":
+            msg = "Only a Heinzel marked for deletion can lose its stores"
+            raise HeinzelError(msg)
+        with self._store(namespace).writer(session_id, wait=True) as writer:
+            writer.remove()
+
+    def mark_deleted(self, session_id: str) -> None:
+        """Record the content-free tombstone once every per-Heinzel store is gone.
+
+        Raises:
+            HeinzelError: If the deletion was never started.
+        """
+        if self.deletion_state(session_id) == "live":
+            msg = "Only a Heinzel marked for deletion can be recorded as deleted"
+            raise HeinzelError(msg)
+        catalog = self._store("catalog")
+        with catalog.writer("creations", wait=True) as writer:
+            writer.append(_DELETED, key=f"deleted:{session_id}", data={"session_id": session_id})
 
     def reserve(self, request_id: str, payload_hash: str) -> str:
         """Reserve a stable identity before initialization; replay repairs an interrupted creation.

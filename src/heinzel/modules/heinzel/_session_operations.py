@@ -19,6 +19,7 @@ from heinzel.kernel import (
     DaemonAttestation,
     DaemonInstallationLifecycle,
     Kernel,
+    PersonalChatRemoval,
     RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
@@ -53,6 +54,7 @@ from heinzel.modules.heinzel._draft_workflow_journal import grant_payload
 from heinzel.modules.heinzel._draft_workflow_operations import register_draft_workflow_operations
 from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
 from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, share_payload
+from heinzel.modules.heinzel._heinzel_delete import HeinzelDeleted, HeinzelDeletion, PostedApprovals, typed_name
 from heinzel.modules.heinzel._history_fts import IndexedHistoryPage, indexed_search
 from heinzel.modules.heinzel._history_search import HistorySearchPage, HistorySearchRequest, search_history
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
@@ -1020,8 +1022,15 @@ def _register_frontdoor_operations(module: Module) -> None:
         return asyncio.run(chat.answer(created.session_id, request_id))
 
 
+def _heinzel_deletion(service: SessionCrud, kernel: Kernel) -> HeinzelDeletion:
+    chats = kernel.resolve(PersonalChatRemoval) if kernel.provides(PersonalChatRemoval) else None
+    notices = kernel.resolve(Notifications) if kernel.provides(Notifications) else None
+    return HeinzelDeletion(service, chats, notices, PostedApprovals(kernel))
+
+
 def _register_lifecycle_operations(module: Module) -> None:
-    """Retire and restore: reversible, history kept (ADR 0049 §7); deleting for good is separate work."""
+    """Retire and restore: reversible, history kept (ADR 0049 §7); delete for good after retiring (ADR 0148)."""
+    module.service(HeinzelDeletion, _heinzel_deletion)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def retire(service: SessionCrud, session_id: Identity, request_id: Request) -> SessionSnapshot:
@@ -1032,6 +1041,37 @@ def _register_lifecycle_operations(module: Module) -> None:
     def restore(service: SessionCrud, session_id: Identity, request_id: Request) -> SessionSnapshot:
         """Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved."""
         return service.retire(session_id, request_id, retired=False)
+
+    # Never an MCP tool, and on the CLI only a person at a terminal: an agent must not delete a Heinzel (ADR 0148 §1).
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def delete(
+        service: HeinzelDeletion,
+        current: CurrentUser,
+        session_id: Identity,
+        name: Annotated[
+            str | None,
+            Field(
+                description="Its current name, typed exactly to confirm; in the app's dialog. On the command line "
+                "you type it when asked.",
+                min_length=1,
+                max_length=100,
+            ),
+        ] = None,
+    ) -> HeinzelDeleted:
+        """Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.
+
+        Raises:
+            HeinzelError: Without the typed name, or with a name passed as an argument on the command line.
+        """
+        if current.context().authentication == "cli":
+            if name is not None:
+                msg = "On the command line, type the name when asked; it cannot be passed as an argument"
+                raise HeinzelError(msg)
+            name = typed_name("This cannot be undone. Type the Heinzel's name to delete it for good: ")
+        if name is None:
+            msg = "Type the Heinzel's name to confirm deleting it for good"
+            raise HeinzelError(msg)
+        return service.delete(session_id, name)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
@@ -1061,7 +1101,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         return service.new_chat(request_id, name, appearance)
 
     @module.operation(private=True, audience="everyday")
-    def sessions(service: SessionCrud) -> SessionList:
+    def sessions(service: HeinzelDeletion) -> SessionList:
         """List your durable personal Heinzels, including new conversations without an approved contract."""
         return service.listing()
 

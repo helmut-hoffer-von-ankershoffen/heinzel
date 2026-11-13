@@ -189,6 +189,16 @@ hz heinzel restore <session-id> restore-1 --json
 
 On the page, retired Heinzels sit under **Retired**, each with a Restore button.
 
+To remove a retired Heinzel for good, press **Delete for good** next to Restore and type its name. Its chats,
+schedules, drafts, notices and memory are removed from this computer; this cannot be undone. Messages it already
+posted on a channel, notifications your system already showed and drafts it placed in documents stay where they
+went. Agents cannot delete a Heinzel: there is no MCP tool for it, and on the command line it asks you to type the
+name at an interactive terminal (a script or a pipe is refused):
+
+```bash
+hz heinzel delete <session-id>
+```
+
 ### 12. Chat with it
 
 ```bash

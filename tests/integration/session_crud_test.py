@@ -655,3 +655,52 @@ def test_private_http_refuses_the_cli_only_approval_input(kernel):
     )
     assert response.status_code >= 400
     assert "only available on the CLI" in response.text
+
+
+def test_delete_for_good_runs_on_private_http_and_an_interactive_cli_and_never_on_stdio_mcp(kernel, monkeypatch):
+    client, auth = protected(kernel)
+    names = {"http": "By web", "cli": "By terminal"}
+    sessions = {}
+    for way, name in names.items():
+        created = client.post("/heinzel/new-chat", headers=auth, json={"request_id": f"delete-{way}", "name": name})
+        sessions[way] = created.json()["session_id"]
+    early = client.post("/heinzel/delete", headers=auth, json={"session_id": sessions["http"], "name": "By web"})
+    assert early.status_code != 200
+    assert "retire it first" in early.text
+    for way, session in sessions.items():
+        retired = client.post("/heinzel/retire", headers=auth, json={"session_id": session, "request_id": f"r-{way}"})
+        assert retired.status_code == 200, retired.text
+
+    unnamed = client.post("/heinzel/delete", headers=auth, json={"session_id": sessions["http"]})
+    assert unnamed.status_code != 200
+    deleted = client.post("/heinzel/delete", headers=auth, json={"session_id": sessions["http"], "name": "By web"})
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["state"] == "deleted"
+
+    app = cli.build(kernel)
+    # A script, a pipe or an agent's shell has no terminal: refused, and the name cannot be passed instead.
+    piped = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--json"], input="By terminal\n")
+    assert piped.exit_code != 0
+    assert "interactive terminal" in piped.output
+    named = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--name", "By terminal", "--json"])
+    assert named.exit_code != 0
+    assert "type the name when asked" in named.output
+    assert "--yes" not in CliRunner().invoke(app, ["heinzel", "delete", "--help"]).output
+
+    from heinzel.modules.heinzel import _session_operations
+
+    monkeypatch.setattr(_session_operations, "typed_name", lambda _prompt: "By terminal")
+    removed = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--json"])
+    assert removed.exit_code == 0, removed.output
+    assert json.loads(removed.output)["state"] == "deleted"
+
+    async def scenario():
+        async with Client(mcp.build(kernel)) as connected:
+            tools = {tool.name for tool in (await connected.list_tools()).tools}
+            assert "heinzel_retire" in tools
+            assert "heinzel_delete" not in tools
+
+    anyio.run(scenario)
+    assert client.get("/heinzel/sessions", headers=auth).json()["sessions"] == []
+    gone = client.get("/heinzel/session", headers=auth, params={"session_id": sessions["http"]})
+    assert gone.status_code != 200

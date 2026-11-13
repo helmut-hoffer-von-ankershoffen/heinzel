@@ -682,6 +682,18 @@ class SessionCrud(ApprovalIssuer):
                 writer.append(kind, key=key, data={})
         return self.snapshot(session_id)
 
+    def retired_name(self, session_id: str) -> str:
+        """The current name of a retired Heinzel, for the typed delete confirmation (ADR 0148).
+
+        Raises:
+            HeinzelError: If this Heinzel is not retired or its profile is incomplete.
+        """
+        events = self.repository.control_read(session_id).events
+        if not is_retired(events):
+            msg = "Only a retired Heinzel can be deleted for good; retire it first"
+            raise HeinzelError(msg)
+        return self._profile(session_id, events)[0].name
+
     def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
         """Record the exact inbox request before model work, preserving request identity across lost replies.
 

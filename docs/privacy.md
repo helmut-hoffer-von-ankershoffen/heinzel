@@ -156,6 +156,11 @@ to. Having reviewed the source code (the Python package, the web interface and t
   telemetry logs and caches are files in your user folders; credentials are in the operating system's keychain. The app
   transfers data only if you set a destination (for example `[system.state] personal`) or use team features, and then
   by Git to your own repository.
+- **Deleting a personal Heinzel.** Retire it first, then **Delete for good** (or `hz heinzel delete`). Its chats,
+  schedules, drafts, notices and what it remembered are removed from your computer, including the app's search
+  indexes; a record that it existed, without its name or content, stays. Messages it already sent to other apps,
+  notifications your system already showed and drafts it placed in your documents stay there
+  ([ADR 0148](adr/0148-delete-a-retired-heinzel-for-good.md)).
 
 We have not examined the behaviour of third-party plugins, of programs the app calls (Claude Code, Codex, `gh`, `uv`,
 `git`) or of services you connect; their own privacy notices apply. If you use the app for other people, you are

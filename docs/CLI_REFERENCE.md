@@ -778,6 +778,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `chat`: Durably queue a message for this Heinzel;...
 * `chat-turn-state`: Read the recorded turn state; unresolved...
 * `check`: (expert) Check contracts and list every...
+* `delete`: Delete a retired Heinzel for good after...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
@@ -982,6 +983,27 @@ $ hz heinzel check [OPTIONS]
 **Options**:
 
 * `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel delete`
+
+Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.
+
+**Usage**:
+
+```console
+$ hz heinzel delete [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+
+**Options**:
+
+* `--name <str>`: Its current name, typed exactly to confirm; in the app&#x27;s dialog. On the command line you type it when asked.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

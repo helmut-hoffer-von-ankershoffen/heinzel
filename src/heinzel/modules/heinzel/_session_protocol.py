@@ -1,7 +1,8 @@
 """The narrow persistence seam shared by personal chat and contract execution."""
 
 from contextlib import AbstractContextManager
-from typing import Protocol
+from datetime import datetime
+from typing import Literal, Protocol
 
 from pydantic import JsonValue
 
@@ -106,6 +107,42 @@ class SessionRepository(Protocol):
         """Reserve one stable id per canonical creation request; release the catalog before initialization."""
         ...
 
+    def deletion_state(self, session_id: str) -> Literal["live", "deleting", "deleted"]:
+        """Where one of this owner's reserved sessions stands in deletion for good (ADR 0148)."""
+        ...
+
+    def deleted_at(self, session_id: str) -> datetime | None:
+        """The time of this owner's content-free deletion tombstone, if the session was deleted."""
+        ...
+
+    def pending_deletions(self) -> tuple[str, ...]:
+        """Sessions whose deletion started and has not finished."""
+        ...
+
+    def mark_deleting(self, session_id: str, posts: list[dict[str, str]]) -> None:
+        """Record the intent to delete, with content-free channel references; the caller holds the writers."""
+        ...
+
+    def deletion_posts(self, session_id: str) -> list[dict[str, str]]:
+        """The channel references recorded with this session's deletion intent, not yet forgotten."""
+        ...
+
+    def mark_forgotten(self, session_id: str, channel: str, reference: str) -> None:
+        """Record that a channel plugin forgot one posted request of a session being deleted."""
+        ...
+
+    def remove_session_store(self, namespace: str, session_id: str) -> None:
+        """Remove one per-Heinzel folder of a session marked for deletion; idempotent."""
+        ...
+
+    def mark_deleted(self, session_id: str) -> None:
+        """Record the content-free tombstone once every per-Heinzel folder is gone."""
+        ...
+
     def reserved_session_ids(self) -> tuple[str, ...]:
         """Every reserved session of this owner that is not deleted or being deleted."""
+        ...
+
+    def unsettled_target_intents(self, session_id: str) -> int:
+        """How many document appends this session started without a recorded outcome."""
         ...

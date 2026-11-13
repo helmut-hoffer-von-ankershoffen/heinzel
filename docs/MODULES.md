@@ -96,6 +96,7 @@ Your Heinzelmännchen: durable Heinzels that draft your team's recurring work fo
 | Create a Heinzel, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
 | Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it. | `hz heinzel retire` | `heinzel_retire` | — | `POST /api/heinzel/retire` | yes |  |
 | Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved. | `hz heinzel restore` | `heinzel_restore` | — | `POST /api/heinzel/restore` | yes |  |
+| Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo. | `hz heinzel delete` | — | — | `POST /api/heinzel/delete` | yes |  |
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
