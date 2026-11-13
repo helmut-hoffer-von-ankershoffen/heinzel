@@ -60,6 +60,7 @@ OWN_DIRECTORIES = (
     "HZ_STATE_DIR",
     "HZ_LOG_DIR",
     "HZ_SYSTEM_DAEMON__UNIT_DIR",  # `hz system doctor` asks launchd or systemd only when a unit file is here
+    "HZ_CLAUDE_SWITCH_DIR",  # which found MCP servers are switched off: otherwise your home's state folder (ADR 0146)
 )
 """Each test gets its own empty directory for each of these."""
 

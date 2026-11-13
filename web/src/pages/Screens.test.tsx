@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { config, noTeam, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -56,5 +56,9 @@ describe("Profile", () => {
     renderAt("/profile");
     await screen.findByText("engineering-manager");
     expect(screen.getByText("Team").closest("div")).toHaveTextContent("not set");
+    // A value that is missing is a button into its setting, not a text link.
+    expect(within(screen.getByText("Team").closest("div") as HTMLElement).getByRole("button")).toHaveTextContent(
+      "not set",
+    );
   });
 });

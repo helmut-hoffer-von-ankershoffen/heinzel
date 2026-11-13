@@ -19,6 +19,7 @@ import yaml
 
 from heinzel.kernel import clean_text
 from heinzel.modules.system.claude._models import (
+    SCOPES,
     Auth,
     FoundServer,
     FoundSkill,
@@ -209,6 +210,8 @@ class Scanner:
                 name=name,
                 source=source,
                 origin=origin,
+                scope=SCOPES[source],
+                enabled=not own,
                 transport=transport,
                 command=_name(executable) if executable else None,
                 arguments=len(arguments),

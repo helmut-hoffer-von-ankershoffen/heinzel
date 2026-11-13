@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { openChatJourney, reportJourneyFailure, revokeAfterReload, startChatJourney } from "./chat-ready.mjs";
+import {
+  openChatJourney,
+  reportJourneyFailure,
+  requireShown,
+  revokeAfterReload,
+  startChatJourney,
+} from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 const isCreation = (request) =>
@@ -18,6 +24,7 @@ page.on("response", (response) => {
 try {
   await startChatJourney(page, url);
   const panel = page.getByRole("region", { name: "Connected read review" });
+  await requireShown(panel.getByLabel("Read operation"), "Read operation");
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   await panel
     .getByLabel("Fixed arguments (JSON)")
@@ -31,7 +38,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   await page.getByText(/Tool activity for this reply/).click();
   await page.getByText("connected_read · completed").waitFor();

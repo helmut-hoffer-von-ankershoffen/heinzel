@@ -147,6 +147,8 @@ def environment(tmp_path):
         "HZ_STATE_DIR": str(tmp_path / "state"),
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
+        # HOME stays the real one here, so the MCP server switches must not be read from or written to it (ADR 0146).
+        "HZ_CLAUDE_SWITCH_DIR": str(tmp_path / "switch"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "HZ_SYSTEM_PLUGIN__CATALOG_FEED": "",
         "HZ_PLUGINS_ENABLED": "true",

@@ -34,10 +34,13 @@ describe("ChatPanel", () => {
     await user.click(await screen.findByRole("button", { name: "Back to chat" }));
     await user.click(await screen.findByRole("button", { name: /switch chats/ }));
     await user.click(await screen.findByRole("button", { name: /^Create a personal Heinzel$/ }));
+    // The page's draft asks for the name first; saving it creates the Heinzel and opens its conversation.
+    await user.type(await screen.findByLabelText("Name"), "New personal Heinzel");
+    await user.click(screen.getByRole("button", { name: "Save and chat" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByRole("heading", { name: "New personal Heinzel" })).toBeInTheDocument();
     await user.type(await panel.findByLabelText("Message your Heinzel"), "Keep this in the new conversation");
-    expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
+    expect(panel.getByRole("button", { name: "Send" })).toBeEnabled();
     const created = calls.findIndex((request) => new URL(request.url).pathname.endsWith("/heinzel/new-chat"));
     expect(
       calls.slice(created + 1).some((request) => new URL(request.url).pathname.endsWith("/runner/chat/show")),
@@ -58,7 +61,7 @@ describe("ChatPanel", () => {
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
-    expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
+    expect(panel.getByRole("button", { name: "Send" })).toBeEnabled();
     expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toBe(false);
     expect(JSON.parse(sessionStorage.getItem(`hz.durable.composer.${id}`) ?? "null").text).toBe(
       "Keep my notes current",
@@ -111,7 +114,7 @@ describe("ChatPanel", () => {
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
-    await user.click(panel.getByRole("button", { name: "Queue message" }));
+    await user.click(panel.getByRole("button", { name: "Send" }));
     expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
     const review = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(review.getByText("Revision 1 · proposed terms")).toBeInTheDocument();

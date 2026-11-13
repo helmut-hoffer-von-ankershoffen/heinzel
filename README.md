@@ -200,7 +200,7 @@ hz system changelog --newer    # what the releases newer than yours bring, befor
 hz system config show          # configuration files, settings in effect, their environment variables
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
-hz system update               # update, keeping plugins
+hz system update               # show the plan and ask, then update hz, every plugin and the desktop app
 hz system config set hz.auto_update false  # stop the running web app updating hz and plugins by itself
 hz system agent install               # install the skills for coding agents
 ```
@@ -289,7 +289,7 @@ Built in today:
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
-- [`system.claude`](docs/MODULES.md#systemclaude) — See the MCP servers and skills you already set up for Claude, without using any of them.
+- [`system.claude`](docs/MODULES.md#systemclaude) — See the MCP servers and skills you already set up for Claude, and switch servers off or on.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.connector`](docs/MODULES.md#systemconnector) — Show whether each connector is signed in and serves something, and test one live.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.

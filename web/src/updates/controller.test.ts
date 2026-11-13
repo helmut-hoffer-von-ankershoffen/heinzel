@@ -19,6 +19,7 @@ const result = {
   message: "Core and plugins updated.",
   next: [],
   plugins: [],
+  previewed: false,
 };
 
 function setup() {

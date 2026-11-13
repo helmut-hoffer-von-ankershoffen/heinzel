@@ -323,6 +323,23 @@ function Layout() {
       requestScroll(requestedId ?? "page");
     }
   }, [beside, viewOpen, location, requestScroll, requestedId]);
+  // A link to one conversation (?chat=) on a narrow screen opens its Chat tab instead of leaving the person on the page.
+  // Declared after the navigation effect above, which drops any scroll request when the address changes.
+  const chatParam = params.get("chat");
+  useEffect(() => {
+    if (!chatParam || window.innerWidth >= 1024) return;
+    setActivePanel("chat");
+    // The workspace sits below the page there: bring the conversation into view, as choosing its tab does.
+    requestScroll("chat");
+  }, [chatParam, requestScroll]);
+  // The new Heinzel's draft (`?create=1`) is on the page: below the workspace it opens the Page tab, also when only the
+  // query changed (the switcher on /heinzel). Declared after the conversation link above, which it overrides.
+  const createDraft = params.has("create");
+  useEffect(() => {
+    if (!createDraft || beside) return;
+    setActivePanel("page");
+    requestScroll("page");
+  }, [createDraft, beside, requestScroll]);
 
   useLayoutEffect(() => {
     if (!scrollTarget) return;

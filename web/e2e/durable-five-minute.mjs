@@ -21,12 +21,37 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
+  // Style first: the draft has a preview and a name field, and nothing is created until it is saved.
   await page.getByRole("button", { name: "Create a personal Heinzel" }).click();
-  const selector = page.getByRole("combobox", { name: /Personal Heinzel/ });
-  await selector.locator('option[value^="hz-"]').waitFor({ state: "attached" });
-  await page.getByLabel("Name", { exact: true }).waitFor();
-  const selected = await selector.inputValue();
+  await page.getByRole("heading", { name: "Your new Heinzel" }).waitFor();
+  const draftSave = page.getByRole("button", { name: "Save and chat" });
+  if (!(await draftSave.isDisabled())) throw new Error("A nameless draft could be saved");
+  const listed = await page.evaluate(async () => {
+    const response = await fetch("/api/heinzel/sessions", {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("hz.token")}` },
+    });
+    return (await response.json()).sessions.length;
+  });
+  if (listed !== 0) throw new Error("Opening the draft created a Heinzel");
+  await page.getByLabel("Name", { exact: true }).fill("Draft helper");
+  await page.getByRole("radiogroup", { name: "Hat colour" }).getByRole("radio", { name: "Teal" }).click();
+  const creation = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/heinzel/new-chat");
+  await draftSave.click();
+  const selected = (await (await creation).json()).session_id;
   if (!selected) throw new Error("The created profile was not selected");
+  // Saving lands in the new Heinzel's conversation, which shows the chosen look.
+  await page.waitForURL((url) => url.searchParams.get("chat") === selected);
+  await page.getByLabel("Message your Heinzel").waitFor();
+  const header = page.getByRole("img", { name: /^Draft helper/ });
+  await header.waitFor();
+  if ((await header.locator('[fill="#1F9488"]').count()) === 0)
+    throw new Error("The chat does not show the chosen hat");
+  // Back on the page, the saved Heinzel is the selected card and can still be renamed.
+  await page.getByRole("tab", { name: "Page", exact: true }).click();
+  const own = page.getByRole("region", { name: "Personal Heinzels" });
+  const picker = own.getByRole("radiogroup", { name: "Personal Heinzel" });
+  await picker.getByRole("radio", { name: /^Draft helper/, checked: true }).waitFor();
+  await own.getByLabel("Name", { exact: true }).waitFor();
   let saves = 0;
   await page.route("**/api/heinzel/profile", async (route) => {
     saves += 1;
@@ -38,20 +63,21 @@ try {
       body: JSON.stringify({ detail: "lost acknowledgement" }),
     });
   });
-  await page.getByLabel("Name", { exact: true }).fill("Mobile helper");
-  await page.getByRole("button", { name: "Save name and look" }).click();
-  await page.getByRole("button", { name: "Retry save" }).waitFor();
+  await own.getByLabel("Name", { exact: true }).fill("Mobile helper");
+  await own.getByRole("button", { name: "Save name and look" }).click();
+  await own.getByRole("button", { name: "Retry save" }).waitFor();
   await page.reload();
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  await selector.selectOption(selected);
-  await page.getByRole("button", { name: "Check saved profile" }).click();
-  await page.getByLabel("Name", { exact: true }).waitFor();
-  if ((await page.getByLabel("Name", { exact: true }).inputValue()) !== "Mobile helper" || saves !== 1)
+  await page.getByRole("tab", { name: "Page", exact: true }).click();
+  await picker.getByRole("radio", { name: /^Mobile helper/ }).click();
+  await own.getByRole("button", { name: "Check saved profile" }).click();
+  await own.getByLabel("Name", { exact: true }).waitFor();
+  if ((await own.getByLabel("Name", { exact: true }).inputValue()) !== "Mobile helper" || saves !== 1)
     throw new Error("Reload did not recover the committed profile without another save");
   await page.unroute("**/api/heinzel/profile");
-  await page.getByRole("button", { name: "Continue to schedule setup" }).click();
+  // The conversation is already linked; the button still brings its tab forward on a phone.
+  await own.getByRole("button", { name: "Chat with Mobile helper" }).click();
   await page.waitForURL((url) => url.searchParams.get("chat") === selected);
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page.getByLabel("Message your Heinzel").waitFor();
   const readSchedule = async () =>
     await page.evaluate(async (expected) => {

@@ -133,7 +133,7 @@ it("keeps a suggested set inert until a person reviews and confirms the exact se
   expect(composer).toHaveFocus();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/answer-chat"))).toBe(false);
   await user.type(composer, "Please suggest sources for my task.");
-  await user.click(screen.getByRole("button", { name: "Queue message" }));
+  await user.click(screen.getByRole("button", { name: "Send" }));
   await user.click(await screen.findByRole("button", { name: "Use suggested sources" }));
   expect(screen.getAllByText(/Window: Since: Monday · Until: Tuesday/).length).toBeGreaterThan(0);
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/propose-connected-read-set"))).toBe(false);

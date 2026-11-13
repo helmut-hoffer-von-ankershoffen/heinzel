@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { createHeinzelWithMessage, openDetails, recurringTurns } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
@@ -24,27 +25,12 @@ try {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my source current";
-  await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  await message.waitFor();
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Queue message" }).click();
-  const assistantReply = page.locator("p").filter({
-    has: page.locator("strong").filter({ hasText: /^assistant:$/ }),
-    hasText: "Done",
-  });
+  await createHeinzelWithMessage(page, sentence);
+  const assistantReply = page.locator('[data-message-speaker="heinzel"]').filter({ hasText: "Done" });
   await assistantReply.waitFor({ timeout: 30000 });
-  assert.equal(
-    await assistantReply.evaluate((node) =>
-      [...node.childNodes]
-        .filter((child) => child.nodeType === Node.TEXT_NODE)
-        .map((child) => child.textContent)
-        .join("")
-        .trim(),
-    ),
-    "Done",
-  );
+  // The reply is exactly the model's word, rendered as prose beside the Heinzel's face.
+  await assistantReply.getByText("Done", { exact: true }).waitFor();
+  assert.equal(await assistantReply.locator('svg[data-view="bust"]').count(), 1);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByText("Review proposed terms").click();
   await terms.getByText(/Inspect the approved source/).waitFor();
@@ -64,7 +50,7 @@ try {
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await panel.getByRole("button", { name: "Confirm", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  const schedule = recurringTurns(page);
   await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
@@ -112,12 +98,11 @@ try {
   const chatTabAfterReload = page.getByRole("tab", { name: "Chat", exact: true });
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();
+  await openDetails(page);
   assert.equal(new URL(page.url()).searchParams.get("chat"), session);
   assert.match(result.first_turn_id, /^interactive-/);
-  const replies = page
-    .locator("p")
-    .filter({ has: page.locator("strong").filter({ hasText: /^(assistant|Daemon):$/ }) });
-  const firstWakeReply = replies.nth(result.first_reply_index).locator("..");
+  const replies = page.locator('[data-message-speaker="heinzel"], [data-message-speaker="daemon"]');
+  const firstWakeReply = replies.nth(result.first_reply_index);
   await firstWakeReply
     .locator("summary")
     .filter({ hasText: /^Tool activity for this reply · \d+ events$/ })
@@ -135,18 +120,13 @@ try {
       .isVisible()
       .catch(() => false),
     reply: await page
-      .locator("p")
-      .filter({ has: page.locator("strong").filter({ hasText: /^assistant:$/ }), hasText: "Done" })
+      .locator('[data-message-speaker="heinzel"]')
+      .filter({ hasText: "Done" })
       .isVisible()
       .catch(() => false),
     assistantExcerpt: await page
-      .locator("p")
-      .evaluateAll((nodes) =>
-        nodes
-          .filter((node) => node.querySelector("strong")?.textContent === "assistant:")
-          .slice(0, 3)
-          .map((node) => (node.textContent ?? "").slice(0, 200)),
-      )
+      .locator('[data-message-speaker="heinzel"]')
+      .evaluateAll((nodes) => nodes.slice(0, 3).map((node) => (node.textContent ?? "").slice(0, 200)))
       .catch(() => []),
     proposal: await page
       .getByRole("region", { name: "Proposed Heinzel terms" })

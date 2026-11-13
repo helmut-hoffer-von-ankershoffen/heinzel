@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
+import type { SchemaUpdatePlan } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
-import { type Phase, trackOperation } from "@/lib/operationRun";
+import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { autoLoadInstalledCore } from "@/updates/autoLoad";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
@@ -15,21 +16,27 @@ import {
   finishUpdate,
   loadInstalledCore,
   pendingUpdate,
+  readUpdatePlan,
   readUpdateStatus,
   startUpdate,
+  type UpdateAnswers,
 } from "@/updates/controller";
+import { UpdatePlanDetails } from "@/updates/UpdatePlanDetails";
 import { describe, partSegments } from "@/updates/updateState";
 import { reloadHeld, workOnScreen } from "@/updates/work";
 
-/** The update as the operation dialog shows it: the call the person confirmed with the update button. */
+/** The update as the operation dialog asks for it: the call the person confirms there, after seeing its plan. */
 const updateCall = () => ({
   path: "/system/update",
   method: "POST" as const,
-  query: {},
-  command: "hz system update",
+  query: { yes: true },
+  command: "hz system update --yes",
   summary: t("updates.dialogTitle"),
   read_only: false,
 });
+
+/** What the operation dialog hears of an update it asked for: each step, and the answers given there. */
+type Agreed = { report: (phases: Phase[]) => void; answers: UpdateAnswers };
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -89,8 +96,12 @@ export function UpdateStatus() {
       }),
     [runCheck],
   );
-  /** `installed`: load that already installed core with a verified restart instead of installing anything. */
-  const run = useCallback(async (resume: boolean, installed?: string) => {
+  const [planning, setPlanning] = useState(false);
+  /**
+   * `installed`: load that already installed core with a verified restart instead of installing anything.
+   * `agreed`: the update the person confirmed in the operation dialog, which hears every step and how it ended.
+   */
+  const run = useCallback(async (resume: boolean, installed?: string, agreed?: Agreed) => {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
@@ -107,24 +118,22 @@ export function UpdateStatus() {
           ? await loadInstalledCore(installed, controller.signal, onPhase, undefined, (phases) => {
               if (mounted.current) setSteps(phases);
             })
-          : await trackOperation<string>(updateCall(), (report) =>
-              startUpdate(
-                controller.signal,
-                (phase) => {
-                  if (mounted.current) setPhase(phase);
-                },
-                undefined,
-                (phases) => {
-                  if (mounted.current) setSteps(phases);
-                  report(phases);
-                },
-              ),
+          : await startUpdate(
+              controller.signal,
+              onPhase,
+              undefined,
+              (phases) => {
+                if (mounted.current) setSteps(phases);
+                agreed?.report(phases);
+              },
+              agreed?.answers,
             );
       if (mounted.current) {
         setSteps([]);
         setMessage(answer);
         setRecovery(updateRecoveryState());
       }
+      return answer;
     } catch (error) {
       if (mounted.current) {
         setProblem(error instanceof Error ? error.message : t("updates.failed"));
@@ -134,6 +143,7 @@ export function UpdateStatus() {
           setRecovery("inspect");
         }
       }
+      if (agreed) throw error; // the dialog that asked shows why, with the steps so far
     } finally {
       active.current = null;
       if (mounted.current) {
@@ -142,6 +152,42 @@ export function UpdateStatus() {
       }
     }
   }, []);
+  /** The update gesture: read what would change, then ask once in the operation dialog; nothing runs before. */
+  const ask = useCallback(async () => {
+    if (active.current || planning) return;
+    setPlanning(true);
+    setProblem(null);
+    let plan: SchemaUpdatePlan;
+    try {
+      plan = await readUpdatePlan(AbortSignal.timeout(30_000));
+    } catch (error) {
+      // Nobody can agree to a plan they did not see: say why it couldn't be read and offer nothing to confirm.
+      if (mounted.current) {
+        setPlanning(false);
+        setProblem(`${t("updates.plan.unread")} ${error instanceof Error ? error.message : ""}`.trim());
+      }
+      return;
+    }
+    if (!mounted.current) return;
+    setPlanning(false);
+    const answers: UpdateAnswers = { plan: plan.token ?? "", desktop: plan.desktop === true };
+    requestDrivenOperation(updateCall(), {
+      consent: [t("updates.confirm.consent"), t("updates.confirm.pins")],
+      details: (
+        <UpdatePlanDetails
+          plan={plan}
+          onDesktop={(on) => {
+            answers.desktop = on;
+          }}
+        />
+      ),
+      action: t("updates.confirm.action"),
+      runningTitle: t("updates.dialogTitle"),
+      doneTitle: t("updates.confirm.done"),
+      running: t("updates.confirm.running"),
+      run: (report) => run(false, undefined, { report, answers }),
+    });
+  }, [run, planning]);
   useEffect(() => {
     mounted.current = true;
     const first = new AbortController();
@@ -217,7 +263,7 @@ export function UpdateStatus() {
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
-  const canUpdate = status?.supported && !busy && recovery === "none" && !installedCore;
+  const canUpdate = status?.supported && !busy && !planning && recovery === "none" && !installedCore;
   const canLoad = installedCore !== null && !busy && recovery === "none";
   const label = view.available ? t("updates.availableLabel") : t("updates.title");
   return (
@@ -242,7 +288,7 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {canUpdate && (
-            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void run(false)}>
+            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void ask()}>
               {view.count > 1
                 ? t("updates.allAction")
                 : view.count === 1
@@ -280,6 +326,7 @@ export function UpdateStatus() {
             </div>
           </div>
         ))}
+        {planning && <p role="status">{t("updates.planning")}</p>}
         <Progress label={t("updates.progress")} segments={segments} />
         {status && (
           <p className="text-xs text-muted-foreground">

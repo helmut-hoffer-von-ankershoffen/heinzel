@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { SchemaNotice } from "@/api/client";
@@ -57,6 +57,50 @@ describe("The notification center", () => {
 
     await user.click(screen.getByRole("tab", { name: "Drafts" }));
     expect(screen.queryByText("My helper checked in")).not.toBeInTheDocument();
+  });
+
+  it("shows the personal Heinzel behind a notice with its full, current look", async () => {
+    const session = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const helper = { name: "Mira", hat: "green", reason: "scheduled check-in" } as const;
+    mockApi({
+      ...shell,
+      "/api/system/doctor": doctor,
+      "/api/system/daemon/jobs": [],
+      "/api/system/notify/list": {
+        notices: [
+          { ...checkIn, route: `/heinzel?chat=${session}`, helper },
+          // Its Heinzel is not in this person's list: the hat recorded with the notice is what remains.
+          { ...checkIn, id: "20261027T0901-cd34", title: "Another check-in", route: "/heinzel?chat=hz-gone", helper },
+          { ...checkIn, id: "20261027T0902-ef56", kind: "doctor", title: "Something is down", route: "/doctor" },
+        ],
+        waiting: 0,
+        native: "through Heinzel Notifier",
+      },
+      "/api/heinzel/sessions": {
+        sessions: [
+          {
+            session_id: session,
+            name: "Mira",
+            state: "awake",
+            last_seq: 3,
+            updated_at: "2026-10-27T09:00:00Z",
+            // The look was changed after the notice was recorded: blue hat, rose shirt, a scarf.
+            appearance: { age: "old", build: "round", hat: "blue", shirt: "rose", accessories: ["scarf"] },
+          },
+        ],
+      },
+    });
+    renderAt("/doctor?panel=notifications");
+    const row = (await screen.findByText("My helper checked in")).closest("button") as HTMLElement;
+    expect(row).toHaveTextContent("Mira · scheduled check-in");
+    await waitFor(() => expect(row.querySelector('svg[data-view="bust"] [fill="#1E88E5"]')).not.toBeNull());
+    expect(row.querySelector('svg[data-view="bust"] [fill="#D9567C"]')).not.toBeNull();
+    expect(row.querySelector('svg[data-view="bust"] [fill="#43A047"]')).toBeNull();
+    const other = screen.getByText("Another check-in").closest("button") as HTMLElement;
+    expect(other.querySelector('svg[data-view="bust"] [fill="#43A047"]')).not.toBeNull();
+    // A notice without a Heinzel keeps its kind's icon.
+    const plain = screen.getByText("Something is down").closest("button") as HTMLElement;
+    expect(plain.querySelector('svg[data-view="bust"]')).toBeNull();
   });
 
   it("keeps the delivery line at full muted contrast (axe: no opacity modifier)", async () => {

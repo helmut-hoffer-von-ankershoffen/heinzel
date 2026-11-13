@@ -1,7 +1,7 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Search, Settings } from "lucide-react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import {
@@ -33,9 +33,14 @@ import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
 import { isDurableSession } from "@/chat/useChat";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { PaneAction } from "@/components/PaneActions";
+import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
+import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
+import { cn } from "@/lib/utils";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
@@ -112,6 +117,40 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
   );
 }
 
+/** What a row says: a tool event by a fixed line, a reply as prose, anything else as it was written. */
+function MessageText({ role, text }: { role: string; text: string }) {
+  if (role === "tool") return <p>{t("durable.toolEvent")}</p>;
+  if (role === "assistant") return <Prose>{text}</Prose>;
+  return <p className="whitespace-pre-wrap">{text}</p>;
+}
+
+type Speaker = "tool" | "daemon" | "heinzel" | "you" | "system";
+
+/** Who a conversation row is from: a tool, the daemon, the Heinzel, the person, or the system. */
+function speakerOf(message: { role: string; origin?: string | null }): Speaker {
+  if (message.role === "tool") return "tool";
+  if (message.origin === "daemon") return "daemon";
+  if (message.role === "assistant") return "heinzel";
+  return message.role === "user" ? "you" : "system";
+}
+
+/** The words above a row: the Heinzel by its name, the others by what they are. */
+function speakerLabel(speaker: Speaker, heinzelName: string, role: string): string {
+  if (speaker === "tool") return t("durable.speaker.tool");
+  if (speaker === "daemon") return t("durable.speaker.daemon");
+  if (speaker === "heinzel") return heinzelName;
+  return speaker === "you" ? t("chat.you") : role;
+}
+
+/**
+ * Bring the newest message to the bottom of the conversation's own scroll area. Not `scrollIntoView`: on a phone that
+ * also scrolls the page under the pane, which pushes the composer below the screen.
+ */
+function revealNewest(box: HTMLElement | null, marker: HTMLElement | null) {
+  if (!box || !marker) return;
+  box.scrollTop += marker.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom + 12;
+}
+
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
   return <DurableSessionView key={authority} authority={authority} sessionId={sessionId} onClose={onClose} />;
@@ -146,6 +185,8 @@ function DurableSessionView({
   } = useDurableDraft(sessionId);
   const { text, pending, agentPending, checkInRequest } = composer;
   const [error, setError] = useState(false);
+  // What the server said about the last failed turn, so the person sees the cause instead of a generic line.
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [profileLocked, setProfileLocked] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -158,6 +199,14 @@ function DurableSessionView({
   const historyCursor = historyCursors.at(-1) ?? null;
   const [searchJump, setSearchJump] = useState(false);
   const searchTarget = useRef<HTMLDivElement>(null);
+  const newest = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  // Review links (agent, approval, schedule, notification, connected read, contract) land on the sections they name.
+  // Only the first render sets Details open; afterwards the browser owns it, so React never writes the attribute back
+  // inside the toggle event of a press.
+  const [detailsInitiallyOpen] = useState(() =>
+    [...params.keys()].some((key) => key.endsWith("-chat") && key !== "chat"),
+  );
   useEffect(() => {
     if (!pendingSearchJump) return;
     setSearchJump(true);
@@ -174,6 +223,7 @@ function DurableSessionView({
   };
   const controlRequest = useRef<string | null>(params.get("approval-request"));
   const composerInput = useRef<HTMLTextAreaElement>(null);
+  const composerId = useId();
   const running = useRef(false);
   const query = useQuery({
     queryKey: ["heinzel", "session", sessionId, ...(historyCursor ? [historyCursor] : [])],
@@ -193,6 +243,15 @@ function DurableSessionView({
     if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
       searchTarget.current?.scrollIntoView?.({ block: "center" });
   }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+  const lastMessage = query.data?.messages?.at(-1);
+  const newestKey = lastMessage ? `${lastMessage.seq}-${lastMessage.id}-${lastMessage.status}` : "";
+  // Opening a conversation or getting a new message shows the newest one, unless the person is paging or jumping.
+  // A turn of this conversation is on its way: the message was handed over and the reply is awaited.
+  const sending = busy && pending !== null;
+  useEffect(() => {
+    if ((newestKey || sending) && !searchJump && historyCursors.length === 1 && !query.isPlaceholderData)
+      revealNewest(list.current, newest.current);
+  }, [newestKey, sending, searchJump, historyCursors.length, query.isPlaceholderData]);
   const profileProposal = useQuery({
     queryKey: ["heinzel", "profile-proposal", sessionId],
     queryFn: async () => {
@@ -533,6 +592,7 @@ function DurableSessionView({
     }
     setBusy(true);
     setError(false);
+    setErrorDetail(null);
     let acceptedConfirmed = request.accepted === true;
     try {
       if (!request.accepted) {
@@ -576,6 +636,7 @@ function DurableSessionView({
         updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
       }
       setError(true);
+      setErrorDetail(reason instanceof ApiError ? reason.message : null);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } finally {
       running.current = false;
@@ -802,12 +863,23 @@ function DurableSessionView({
       />
     </>
   );
+  const heinzelName = query.data?.name ?? t("durable.title");
+  const look = appearanceLook(query.data?.appearance);
   const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <h2 className="min-w-0 truncate font-medium">{query.data?.name ?? t("durable.title")}</h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <HeinzelAvatar
+            view="bust"
+            label={heinzelName}
+            {...look}
+            state={busy ? "thinking" : undefined}
+            className="size-8 overflow-hidden"
+          />
+          <h2 className="min-w-0 truncate font-medium">{heinzelName}</h2>
+        </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
             type="button"
@@ -826,48 +898,9 @@ function DurableSessionView({
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
-        {query.data && (
-          <details className="rounded-lg border border-border p-3">
-            <summary className="cursor-pointer text-sm font-medium">
-              {t("personal.customize")}
-              {profileProposal.data?.session_id === sessionId && " · suggested look"}
-            </summary>
-            <ProfileEditor
-              initial={query.data}
-              onLock={setProfileLocked}
-              inChat
-              suggestion={profileProposal.data ?? null}
-            />
-          </details>
-        )}
-        {connectedFrontdoor && hasSession && (
-          <section aria-label="Review your helper" className="space-y-3 rounded-lg border border-border p-3 text-sm">
-            <h3 className="font-medium">Review your helper</h3>
-            <p>Review each part separately. Saved approvals remain separate if another step fails.</p>
-            <p className="font-medium">1. Agent terms</p>
-            {terms}
-            {termsSummary}
-            <p className="font-medium">2. Source access and time window</p>
-            {sourceReview}
-            <p className="font-medium">3. Recurring turns and local notices</p>
-            {schedules}
-            <p>Approval of one part never substitutes for another. Slack posting requires its own approval.</p>
-          </section>
-        )}
-        {!connectedFrontdoor && terms}
-        {query.data?.session_id === sessionId && (
-          <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
-        )}
-        {!connectedFrontdoor && termsSummary}
-        {query.data?.session_id === sessionId && (
-          <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
-        )}
-        {!connectedFrontdoor && sourceReview}
-        {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
-        {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {searchOpen && query.data?.session_id === sessionId && (
           <>
             <ConversationSearch
@@ -966,79 +999,160 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        {!connectedFrontdoor && schedules}
-        {capturedWrites && query.data?.session_id === sessionId && (
-          <CapturedWriteActivity
-            key={sessionId}
-            sessionId={sessionId}
-            conversationBusy={busy || !!pending || !!agentPending}
-            onReview={openAgentReview}
-          />
-        )}
-        {query.data?.session_id === sessionId && (
-          <ReleaseDraftActivity
-            key={`release-draft-${sessionId}`}
-            authority={authority}
-            sessionId={sessionId}
-            conversationBusy={busy || !!pending || !!agentPending}
-            onReview={openAgentReview}
-          />
+        <details className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
+          <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
+          <div className="mt-3 space-y-3">
+            {query.data && (
+              <details className="rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {t("personal.customize")}
+                  {profileProposal.data?.session_id === sessionId && " · suggested look"}
+                </summary>
+                <ProfileEditor
+                  initial={query.data}
+                  onLock={setProfileLocked}
+                  inChat
+                  suggestion={profileProposal.data ?? null}
+                />
+              </details>
+            )}
+            {connectedFrontdoor && hasSession && (
+              <section
+                aria-label="Review your helper"
+                className="space-y-3 rounded-lg border border-border p-3 text-sm"
+              >
+                <h3 className="font-medium">Review your helper</h3>
+                <p>Review each part separately. Saved approvals remain separate if another step fails.</p>
+                <p className="font-medium">1. Agent terms</p>
+                {terms}
+                {termsSummary}
+                <p className="font-medium">2. Source access and time window</p>
+                {sourceReview}
+                <p className="font-medium">3. Recurring turns and local notices</p>
+                {schedules}
+                <p>Approval of one part never substitutes for another. Slack posting requires its own approval.</p>
+              </section>
+            )}
+            {!connectedFrontdoor && terms}
+            {query.data?.session_id === sessionId && (
+              <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
+            )}
+            {!connectedFrontdoor && termsSummary}
+            {query.data?.session_id === sessionId && (
+              <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
+            )}
+            {!connectedFrontdoor && sourceReview}
+            {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
+            {query.data?.session_id === sessionId && (
+              <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />
+            )}
+            {!connectedFrontdoor && schedules}
+            {capturedWrites && query.data?.session_id === sessionId && (
+              <CapturedWriteActivity
+                key={sessionId}
+                sessionId={sessionId}
+                conversationBusy={busy || !!pending || !!agentPending}
+                onReview={openAgentReview}
+              />
+            )}
+            {query.data?.session_id === sessionId && (
+              <ReleaseDraftActivity
+                key={`release-draft-${sessionId}`}
+                authority={authority}
+                sessionId={sessionId}
+                conversationBusy={busy || !!pending || !!agentPending}
+                onReview={openAgentReview}
+              />
+            )}
+          </div>
+        </details>
+        {query.data && !query.data.messages?.length && !busy && historyCursors.length === 1 && (
+          <div className="flex flex-col items-center gap-2 py-6 text-center text-sm text-muted-foreground">
+            <HeinzelAvatar {...look} className="h-24 w-16" />
+            <p>{t("durable.empty", { name: heinzelName })}</p>
+          </div>
         )}
         {query.data?.messages?.map((message, index) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
               ? (activity.data?.items ?? []).filter((item) => item.turn_id === message.turn_id)
               : [];
+          const found = searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData;
+          // Who speaks decides the side and the label: the person on the right, everyone else on the left.
+          const speaker = speakerOf(message);
+          const own = speaker === "you";
           return (
             <div
               key={`${message.seq}-${message.id}`}
-              ref={
-                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData ? searchTarget : undefined
-              }
-              className={
-                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData
-                  ? "space-y-1 rounded border border-primary p-2 text-sm"
-                  : "space-y-1 text-sm"
-              }
+              ref={found ? searchTarget : undefined}
+              data-message-speaker={speaker}
+              className={cn("flex min-w-0 gap-2 text-sm", found && "rounded border border-primary p-2")}
             >
-              {searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData && (
-                <span className="text-xs font-medium">Search result</span>
+              {speaker === "heinzel" && (
+                <HeinzelAvatar view="bust" {...look} className="mt-1 size-6 shrink-0 overflow-hidden" />
               )}
-              <p className="whitespace-pre-wrap break-words">
-                <strong>
-                  {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
-                </strong>{" "}
-                {message.role === "tool" ? "A tool event was recorded." : message.text}
-                {message.status && message.status !== "completed" && <span> ({message.status})</span>}
-                {message.billing === "plan" && (
-                  <span className="block text-xs text-muted-foreground">Subscription usage · cost unknown</span>
+              {/* The person's own row sits on the right: its bubble takes the free space on its left. */}
+              <div className={cn("min-w-0 space-y-1", own ? "ml-auto max-w-[85%]" : "flex-1")}>
+                {found && <span className="block text-xs font-medium">Search result</span>}
+                <div
+                  className={cn(
+                    "min-w-0 break-words rounded-lg px-3 py-2",
+                    own ? "bg-accent text-accent-foreground" : "border border-border",
+                  )}
+                >
+                  <p className={cn("text-xs font-medium", own && "sr-only")}>
+                    {speakerLabel(speaker, heinzelName, message.role)}
+                  </p>
+                  <MessageText role={message.role} text={message.text} />
+                  {message.status && message.status !== "completed" && (
+                    <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
+                  )}
+                  {message.billing === "plan" && (
+                    <p className="text-xs text-muted-foreground">Subscription usage · cost unknown</p>
+                  )}
+                  {message.billing === "api" && message.cost_usd != null && (
+                    <p className="text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</p>
+                  )}
+                </div>
+                {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
+                {message.role === "assistant" &&
+                  message.turn_id &&
+                  inputSnapshots.data?.items
+                    .filter((item) => item.turn_id === message.turn_id)
+                    .map((item) => (
+                      <p key={item.seq} className="text-xs text-muted-foreground">
+                        Approved read: {inputComparison(item.status)}.
+                      </p>
+                    ))}
+                {message.role === "user" && message.origin === "daemon" && (
+                  <DaemonTurnInspection
+                    sessionId={sessionId}
+                    requestId={message.id}
+                    onResolved={() => {
+                      void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                    }}
+                  />
                 )}
-                {message.billing === "api" && message.cost_usd != null && (
-                  <span className="block text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</span>
-                )}
-              </p>
-              {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
-              {message.role === "assistant" &&
-                message.turn_id &&
-                inputSnapshots.data?.items
-                  .filter((item) => item.turn_id === message.turn_id)
-                  .map((item) => (
-                    <p key={item.seq} className="text-xs text-muted-foreground">
-                      Approved read: {inputComparison(item.status)}.
-                    </p>
-                  ))}
-              {message.role === "user" && message.origin === "daemon" && (
-                <DaemonTurnInspection
-                  sessionId={sessionId}
-                  requestId={message.id}
-                  onResolved={() => {
-                    void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-                  }}
-                />
-              )}
+              </div>
             </div>
           );
         })}
+        {sending && !query.data?.messages?.some((message) => message.id === pending?.request_id) && (
+          <div data-message-speaker="you" className="flex min-w-0 text-sm">
+            <div className="ml-auto min-w-0 max-w-[85%] break-words rounded-lg bg-accent px-3 py-2 text-accent-foreground">
+              <p className="sr-only">{t("chat.you")}</p>
+              <p className="whitespace-pre-wrap">{pending?.message}</p>
+              <p className="text-xs text-muted-foreground">{t("durable.status.sending")}</p>
+            </div>
+          </div>
+        )}
+        {sending && (
+          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+            <HeinzelAvatar view="bust" {...look} state="thinking" className="size-6 shrink-0 overflow-hidden" />
+            <p role="status">{t("durable.thinking", { name: heinzelName })}</p>
+          </div>
+        )}
+        <div ref={newest} data-newest="" aria-hidden="true" />
         {activity.isError && (
           <p role="status" className="text-sm">
             Recorded tool activity is unavailable.
@@ -1464,13 +1578,12 @@ function DurableSessionView({
         )}
       </div>
       <form
-        className="space-y-2 border-t border-border p-3"
+        className="max-h-[60%] shrink-0 space-y-2 overflow-y-auto border-t border-border p-3"
         onSubmit={(event) => {
           event.preventDefault();
           void send();
         }}
       >
-        <p className="text-xs text-muted-foreground">{t("durable.queued")}</p>
         {recoveryBlocked ? (
           <div className="space-y-2 text-sm" role="alert">
             <p>{t("durable.draftUnreadable")}</p>
@@ -1490,63 +1603,101 @@ function DurableSessionView({
             {t("durable.preservationFailed")}
           </p>
         ) : null}
-        <label className="block space-y-1 text-sm">
-          <span>{t("durable.message")}</span>
-          <textarea
-            ref={composerInput}
-            className="w-full rounded border border-border bg-background p-2"
-            value={text}
-            maxLength={4000}
-            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
-            onChange={(event) => updateComposer({ text: event.target.value })}
-          />
-        </label>
-        {error && pending?.outcome !== "subscription_usage_limit" && <p role="alert">{t("durable.failed")}</p>}
-        {pending?.outcome === "subscription_usage_limit" ? (
+        {error && pending?.outcome !== "subscription_usage_limit" && (
+          <div className="space-y-1 text-sm" role="alert">
+            <p>{t("durable.failed")}</p>
+            {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
+            {errorDetail && (
+              <>
+                <p>{t("durable.aiAccessHint")}</p>
+                <PaneAction
+                  icon={Settings}
+                  to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
+                >
+                  {t("durable.aiAccessLink")}
+                </PaneAction>
+              </>
+            )}
+          </div>
+        )}
+        {pending?.outcome === "subscription_usage_limit" && (
           <p role="status" className="text-sm">
             Claude Code reported its subscription usage limit. Your message is saved; the answer is uncertain and this
             turn will not run again. This conversation remains blocked until the uncertain turn is resolved.
           </p>
-        ) : (
-          pending?.accepted && (
-            <p role="status" className="text-sm">
-              Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted turn
-              will not be run again.
-            </p>
-          )
         )}
-        {pending?.accepted && !busy && (
-          <UncertainTurnRecovery
-            key={`${sessionId}:${pending.request_id}`}
-            sessionId={sessionId}
-            requestId={pending.request_id}
-            onResolved={() => {
-              updateComposer({ pending: null, text: "" });
-              void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
-              void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
+        {pending?.accepted && (
+          <details
+            className="rounded border border-border p-2 text-sm"
+            open={pending.outcome === "subscription_usage_limit" || undefined}
+          >
+            <summary className="cursor-pointer font-medium">{t("durable.recovery")}</summary>
+            <div className="mt-2 space-y-2">
+              {pending.outcome !== "subscription_usage_limit" && (
+                <p role="status">
+                  Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted
+                  turn will not be run again.
+                </p>
+              )}
+              {pending?.accepted && !busy && (
+                <UncertainTurnRecovery
+                  key={`${sessionId}:${pending.request_id}`}
+                  sessionId={sessionId}
+                  requestId={pending.request_id}
+                  onResolved={() => {
+                    updateComposer({ pending: null, text: "" });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
+                    void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
+                  }}
+                />
+              )}
+            </div>
+          </details>
+        )}
+        <div className="flex items-end gap-2">
+          <label htmlFor={composerId} className="sr-only">
+            {t("durable.message")}
+          </label>
+          <textarea
+            id={composerId}
+            ref={composerInput}
+            rows={2}
+            className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
+            // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.
+            value={sending ? "" : text}
+            maxLength={4000}
+            placeholder={t("durable.placeholder", { name: heinzelName })}
+            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
+            onChange={(event) => updateComposer({ text: event.target.value })}
+            onKeyDown={(event) => {
+              // Enter sends, as in every chat of the app; Shift+Enter starts a new line.
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (text.trim()) void send();
+              }
             }}
           />
-        )}
-        <Button
-          type="submit"
-          disabled={
-            busy ||
-            storageError ||
-            recoveryBlocked ||
-            agentChatUnavailable ||
-            !query.data ||
-            pending?.outcome === "subscription_usage_limit" ||
-            (!pending && !agentPending && !text.trim())
-          }
-        >
-          {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
-        </Button>
+          <Button
+            type="submit"
+            disabled={
+              busy ||
+              storageError ||
+              recoveryBlocked ||
+              agentChatUnavailable ||
+              !query.data ||
+              pending?.outcome === "subscription_usage_limit" ||
+              (!pending && !agentPending && !text.trim())
+            }
+          >
+            {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
+          </Button>
+        </div>
       </form>
     </div>
   );

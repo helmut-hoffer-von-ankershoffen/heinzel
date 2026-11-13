@@ -3866,7 +3866,7 @@
         "type": "object"
       },
       "ClaudeScan": {
-        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.",
+        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is started.",
         "properties": {
           "connectors": {
             "description": "claude.ai connectors you have connected: reachable only through Claude Code, so only counted.",
@@ -3881,8 +3881,19 @@
             "title": "Next",
             "type": "array"
           },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FirstRunNotice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set while switched-on servers were found that you have not been told about; `hz system claude acknowledge` closes it."
+          },
           "servers": {
-            "description": "MCP servers, by source then name.",
+            "description": "MCP servers, by source then name, each switched on or off.",
             "items": {
               "$ref": "#/components/schemas/FoundServer"
             },
@@ -3904,6 +3915,18 @@
             },
             "title": "Skipped",
             "type": "array"
+          },
+          "state_problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the file that remembers switched-off servers cannot be read: every server is off then.",
+            "title": "State Problem"
           }
         },
         "required": [
@@ -3922,6 +3945,12 @@
           "connectors": {
             "description": "claude.ai connectors you have connected.",
             "title": "Connectors",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": 0,
+            "description": "MCP servers that are switched on; none is started by that.",
+            "title": "Enabled",
             "type": "integer"
           },
           "servers": {
@@ -6809,6 +6838,36 @@
         "title": "Filters",
         "type": "object"
       },
+      "FirstRunNotice": {
+        "description": "Servers that are switched on and that you have not been told about yet (ADR 0146).",
+        "properties": {
+          "plugin": {
+            "description": "How many of them come from a Claude Code plugin.",
+            "title": "Plugin",
+            "type": "integer"
+          },
+          "project": {
+            "description": "How many of them come from a project's files.",
+            "title": "Project",
+            "type": "integer"
+          },
+          "servers": {
+            "description": "Ids of the switched-on servers found since you last closed the notice.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "project",
+          "plugin"
+        ],
+        "title": "FirstRunNotice",
+        "type": "object"
+      },
       "FoundServer": {
         "description": "An MCP server entry found in a Claude client's configuration.",
         "properties": {
@@ -6841,6 +6900,11 @@
             ],
             "description": "The program a stdio server starts, without its path or arguments.",
             "title": "Command"
+          },
+          "enabled": {
+            "description": "Whether Heinzels may use it once they can: on by default, off after `hz system claude disable` and for hz itself. Nothing is started or connected to either way (ADR 0146).",
+            "title": "Enabled",
+            "type": "boolean"
           },
           "env_keys": {
             "description": "Names of the environment variables it is given; never their values.",
@@ -6902,6 +6966,16 @@
             "description": "The project directory or plugin it belongs to; none for user-wide ones.",
             "title": "Origin"
           },
+          "scope": {
+            "description": "Who put it there: `user` (you), `project` (a project's files, which a cloned repository can bring) or `plugin` (an enabled Claude Code plugin).",
+            "enum": [
+              "user",
+              "project",
+              "plugin"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
           "source": {
             "description": "Which Claude configuration it was found in.",
             "enum": [
@@ -6941,6 +7015,8 @@
           "name",
           "source",
           "origin",
+          "scope",
+          "enabled",
           "transport",
           "command",
           "arguments",
@@ -10312,6 +10388,21 @@
         "title": "Notice",
         "type": "object"
       },
+      "NoticeClosed": {
+        "description": "`hz system claude acknowledge`: the first-run notice is closed for the servers found now.",
+        "properties": {
+          "servers": {
+            "description": "How many servers the notice was closed for with this call.",
+            "title": "Servers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "servers"
+        ],
+        "title": "NoticeClosed",
+        "type": "object"
+      },
       "NoticeHelper": {
         "additionalProperties": false,
         "description": "The personal Heinzel behind a notice, using the bundled face and a closed hat palette.",
@@ -12250,6 +12341,76 @@
           "change"
         ],
         "title": "PluginPendingChange",
+        "type": "object"
+      },
+      "PluginPlan": {
+        "description": "What a confirmed `hz system update` would do to one installed plugin.",
+        "properties": {
+          "action": {
+            "description": "`update` (a newer release was found; a pin to the installed version or commit moves with it), `current` (asked, nothing newer), `refresh` (it follows a branch or a range, which the update asks again) or `kept` (its source is a tag, a branch commit without release tags, a folder or a URL, it is installed newer than its newest stable release, or it couldn't be asked: an update leaves it as it is).",
+            "enum": [
+              "update",
+              "current",
+              "refresh",
+              "kept"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "description": "Why, in one plain line: what it is pinned to or why it was not asked.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "Distribution name, e.g. heinzel-clock.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version installed now; none if it couldn't be told.",
+            "title": "Installed"
+          },
+          "moves_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requirement an update a person agreed to installs it from, when its pin moves: a version floor on the package index, or the commit of its release tag. None if its install spec stays as it is.",
+            "title": "Moves To"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newer release it would move to; none if it stays.",
+            "title": "Target"
+          }
+        },
+        "required": [
+          "distribution",
+          "installed",
+          "action"
+        ],
+        "title": "PluginPlan",
         "type": "object"
       },
       "PluginRepair": {
@@ -14982,6 +15143,57 @@
           "status"
         ],
         "title": "ScheduledNotificationView",
+        "type": "object"
+      },
+      "ServerSwitch": {
+        "description": "`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.",
+        "properties": {
+          "changed": {
+            "description": "Whether this call switched it; false when it already was in that state.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "Whether it is switched on now.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The server's id.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the entry has in its configuration.",
+            "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "project",
+                  "plugin"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who put it there; none when the entry is no longer found.",
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "enabled",
+          "changed"
+        ],
+        "title": "ServerSwitch",
         "type": "object"
       },
       "SessionCosts": {
@@ -19635,6 +19847,60 @@
         "title": "Unmaintained",
         "type": "object"
       },
+      "UpdatePlan": {
+        "description": "What `hz system update` would change, shown before a person agrees.",
+        "properties": {
+          "core": {
+            "description": "What happens to Heinzelmännchen itself, in one line.",
+            "title": "Core",
+            "type": "string"
+          },
+          "current": {
+            "description": "Heinzelmännchen version installed now.",
+            "title": "Current",
+            "type": "string"
+          },
+          "desktop": {
+            "default": false,
+            "description": "Whether a desktop app is installed that the update can bring along afterwards.",
+            "title": "Desktop",
+            "type": "boolean"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest stable release, when it could be asked.",
+            "title": "Latest"
+          },
+          "plugins": {
+            "description": "Each installed plugin.",
+            "items": {
+              "$ref": "#/components/schemas/PluginPlan"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "token": {
+            "default": "",
+            "description": "Names exactly this plan. Pass it back as `plan` with `yes`: the update then installs what was shown, or changes nothing and answers with the new plan if a release appeared in between.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current",
+          "latest",
+          "core"
+        ],
+        "title": "UpdatePlan",
+        "type": "object"
+      },
       "UpdateResult": {
         "description": "What `hz system update` did, or why it left the installation as it was.",
         "properties": {
@@ -19704,6 +19970,17 @@
             "description": "The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.",
             "title": "Pinned To"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdatePlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the update would change, when this answer is a preview or the person was asked first."
+          },
           "plugins": {
             "description": "What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.",
             "items": {
@@ -19711,6 +19988,12 @@
             },
             "title": "Plugins",
             "type": "array"
+          },
+          "previewed": {
+            "default": false,
+            "description": "Whether this was only a preview (`--preview`, or the question was answered with no): nothing was changed.",
+            "title": "Previewed",
+            "type": "boolean"
           },
           "updated": {
             "description": "Whether Heinzelmännchen was reinstalled.",
@@ -22213,6 +22496,58 @@
           "prompt"
         ],
         "title": "heinzel_start_helper_Input",
+        "type": "object"
+      },
+      "system_claude_acknowledge_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "servers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ids of the servers the notice showed; every server found now when not given.",
+            "title": "Servers"
+          }
+        },
+        "title": "system_claude_acknowledge_Input",
+        "type": "object"
+      },
+      "system_claude_disable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_disable_Input",
+        "type": "object"
+      },
+      "system_claude_enable_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server's id, as `hz system claude list --json` shows it.",
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "system_claude_enable_Input",
         "type": "object"
       },
       "system_connector_cancel_Input": {
@@ -27455,9 +27790,135 @@
         ]
       }
     },
+    "/system/claude/acknowledge": {
+      "post": {
+        "description": "Close the notice about switched-on servers; it comes back when a new server is found.",
+        "operationId": "system_claude_acknowledge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_acknowledge_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeClosed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close the notice about switched-on servers; it comes back when a new server is found.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/disable": {
+      "post": {
+        "description": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
+        "operationId": "system_claude_disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_disable_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSwitch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a found MCP server off for Heinzels; it stays off, also when its entry changes.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/enable": {
+      "post": {
+        "description": "Switch a found MCP server back on for Heinzels; nothing is started.",
+        "operationId": "system_claude_enable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_claude_enable_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSwitch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a found MCP server back on for Heinzels; nothing is started.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/claude/list": {
       "get": {
-        "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "description": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "operationId": "system_claude_list",
         "responses": {
           "200": {
@@ -27471,7 +27932,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "summary": "List the MCP servers and skills Claude has here, and which servers are on; none is run.",
         "tags": [
           "system"
         ]
@@ -31934,7 +32395,7 @@
     },
     "/system/update": {
       "post": {
-        "description": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nWhy it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)\nrun in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or\nprerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:\n`auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop\napp is not part of the tool: it updates itself at the web server's next automatic update check, or now with\n`hz app install`. The output says which applies.\n\nEach step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds\nonly the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so\nthe output still parses.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "description": "Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.\n\nSee what the releases bring with `hz system changelog --newer`. One command for everything: on a terminal it\nfirst shows the plan (hz, each plugin, the desktop app) and asks `Update now? [Y/n]`; `--yes` agrees in advance\nand `--preview` only shows the plan. Once you agree, a plugin that `hz system plugin add` pinned to the exact\nversion or GitHub commit it installed moves too: to the newest release on the package index, which it follows\nfrom then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a\nfolder, a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with\n`--keep-pins`. Where nobody can answer (a script, `--json`, the REST API) and `--yes` is not given, nothing is\nasked and pins stay.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nWhy it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)\nrun in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or\nprerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:\n`auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop\napp is not part of the tool: after a change, a terminal asks `Update the desktop app now? [Y/n]`, and `--desktop`,\n`--no-desktop` or `--yes` answer in advance. Left alone, it updates itself at the web server's next automatic\nupdate check, or with `hz app install`. The output says which applies.\n\nEach step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds\nonly the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so\nthe output still parses.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
         "operationId": "system_update",
         "parameters": [
           {
@@ -31978,6 +32439,78 @@
               "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
               "title": "Channel"
             }
+          },
+          {
+            "description": "Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question.",
+            "in": "query",
+            "name": "yes",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question.",
+              "title": "Yes",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.",
+            "in": "query",
+            "name": "plan",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.",
+              "title": "Plan"
+            }
+          },
+          {
+            "description": "Only show what the update would change (`plan`); nothing is installed.",
+            "in": "query",
+            "name": "preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only show what the update would change (`plan`); nothing is installed.",
+              "title": "Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Leave plugins pinned to an exact version or a commit where they are.",
+            "in": "query",
+            "name": "keep_pins",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Leave plugins pinned to an exact version or a commit where they are.",
+              "title": "Keep Pins",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update.",
+            "in": "query",
+            "name": "desktop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update.",
+              "title": "Desktop"
+            }
           }
         ],
         "responses": {
@@ -32002,7 +32535,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.",
+        "summary": "Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.",
         "tags": [
           "system"
         ]

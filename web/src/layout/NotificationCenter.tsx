@@ -18,7 +18,9 @@ import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
 import { useNotices } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneTitle } from "@/components/PaneActions";
+import { useNoticeLook } from "@/heinzel/useNoticeLook";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { cn } from "@/lib/utils";
@@ -122,6 +124,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
   const [kind, setKind] = useState<SchemaNotice["kind"] | "all">("all");
   const navigate = useNavigate();
   const list = (notices.data?.notices ?? []).filter((notice) => kind === "all" || notice.kind === kind);
+  const lookOf = useNoticeLook(notices.data?.notices ?? []);
   // Ids are strings that sort by time; the last one sorted is the newest.
   const newest =
     (notices.data?.notices ?? [])
@@ -201,6 +204,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
               {group.items.map((notice) => {
                 const Icon = icons[notice.kind] ?? Bell;
                 const unread = notice.id > seen;
+                const look = lookOf(notice);
                 return (
                   <li key={notice.id}>
                     <button
@@ -211,19 +215,29 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
                       }}
                       className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent/70"
                     >
-                      <span
-                        className={cn(
-                          "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
-                          notice.kind === "failed" ? "bg-bad/15 text-bad" : "bg-accent text-foreground/80",
-                        )}
-                      >
-                        <Icon aria-hidden className="size-4" />
-                      </span>
+                      {look ? (
+                        // A personal Heinzel speaks: its own figure stands where the kind's icon would.
+                        <HeinzelAvatar view="bust" {...look} className="mt-0.5 size-7 shrink-0 overflow-hidden" />
+                      ) : (
+                        <span
+                          className={cn(
+                            "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                            notice.kind === "failed" ? "bg-bad/15 text-bad" : "bg-accent text-foreground/80",
+                          )}
+                        >
+                          <Icon aria-hidden className="size-4" />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span className={cn("truncate text-ui", unread && "font-medium")}>{notice.title}</span>
                           <span className="ml-auto shrink-0 text-xs text-muted-foreground">{when(notice.at)}</span>
                         </span>
+                        {notice.helper && (
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {[notice.helper.name, notice.helper.reason].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
                         {notice.body && (
                           <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{notice.body}</span>
                         )}

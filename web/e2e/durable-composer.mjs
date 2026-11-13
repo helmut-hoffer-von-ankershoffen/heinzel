@@ -13,7 +13,8 @@ const page = await context.newPage();
 const updateVersion = "0.7.31";
 let restarted = false;
 let updated = false;
-const updateRequests = { install: 0, restart: 0, lifecycle: 0, frontend: 0, verified: 0 };
+const planToken = "durable-fixture-plan";
+const updateRequests = { preview: 0, install: 0, restart: 0, lifecycle: 0, frontend: 0, verified: 0 };
 const submissions = [];
 const answerRequested = Promise.withResolvers();
 const finishAnswer = Promise.withResolvers();
@@ -76,6 +77,28 @@ await page.route("**/api/heinzel/answer-chat", async (route) => {
 // The app streams the update (`POST /api/stream/system/update`) to show its steps; either route counts as an install.
 const isUpdate = (url) => ["/api/system/update", "/api/stream/system/update"].includes(url.pathname);
 await page.route(isUpdate, async (route) => {
+  const event = (kind, data) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`;
+  // The update button first reads the plan (`preview`), which installs nothing; only the agreed call installs.
+  if (new URL(route.request().url()).searchParams.get("preview") === "true") {
+    updateRequests.preview++;
+    const plan = { current: "0.7.30", latest: updateVersion, core: "", plugins: [], desktop: false, token: planToken };
+    const preview = {
+      before: "0.7.30",
+      after: "0.7.30",
+      latest: updateVersion,
+      updated: false,
+      previewed: true,
+      message: "This was a preview; nothing was changed.",
+      next: ["hz system update --yes"],
+      pinned_to: null,
+      plugins: [],
+      plan,
+    };
+    return route.fulfill({ contentType: "text/event-stream", body: event("result", { data: preview }) });
+  }
+  const agreed = new URL(route.request().url()).searchParams;
+  assert.equal(agreed.get("yes"), "true", "An agreed update says so");
+  assert.equal(agreed.get("plan"), planToken, "An agreed update names the plan that was shown");
   updateRequests.install++;
   updated = true;
   const result = {
@@ -87,8 +110,8 @@ await page.route(isUpdate, async (route) => {
     next: [],
     pinned_to: null,
     plugins: [],
+    previewed: false,
   };
-  const event = (kind, data) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`;
   return route.fulfill({
     contentType: "text/event-stream",
     body:
@@ -202,7 +225,14 @@ try {
           `Late automatic-update facts must not move the pressed action during ${phase}`,
         );
     };
-    await Promise.all([reloaded, press()]);
+    // The press opens the confirmation with the plan; nothing is installed until the person agrees there.
+    const agree = async () => {
+      const confirm = page.getByRole("button", { name: "Agree and update", exact: true });
+      await confirm.waitFor();
+      assert.equal(updateRequests.install, 0, "Nothing may be installed before the person agrees");
+      await confirm.click();
+    };
+    await Promise.all([reloaded, press().then(agree)]);
   } catch (error) {
     // Fixed facts only: never emit composer text, session storage contents, tokens or arbitrary server errors.
     const state = await page.evaluate(() => {
@@ -232,7 +262,7 @@ try {
   }
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   await page.waitForFunction(() => sessionStorage.getItem("hz.update.receipt") === null, null, { timeout: 15_000 });
-  assert.equal(updateRequests.install, 1, "One physical gesture must install exactly once");
+  assert.equal(updateRequests.install, 1, "One agreed update must install exactly once");
   assert.equal(updateRequests.restart, 1, "One physical gesture must restart exactly once");
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
 
@@ -241,7 +271,7 @@ try {
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "");
   await page.goto(sessionUrlFor(firstSession));
   await page.getByLabel("Message your Heinzel").waitFor();
-  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "Retry the same message" }).waitFor();
   const savedPending = JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), firstKey));
   assert.equal(savedPending.pending.message, "First session draft survives the update");

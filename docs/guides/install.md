@@ -58,6 +58,31 @@ the installed service and otherwise serve in the foreground. `hz ui install` is 
 
 [Continue to your first session →](first-steps.md)
 
+## One update for everything
+
+```sh
+hz system update            # shows the plan, asks "Update now? [Y/n]", then updates hz and every plugin
+hz system update --preview  # only the plan; nothing is installed
+hz system update --yes      # agrees in advance: for scripts, and where nobody can answer
+```
+
+In the app, **Update all** in the footer's update pane shows the same plan and asks once before anything is installed.
+
+The plan lists hz, each plugin and the desktop app. A plugin you added in the app or with `hz system plugin add` is
+recorded at exactly the version or commit it was installed from. Once you agree, such a plugin moves too: to the newest
+release on the package index, which it follows from then on, or to the commit of its newest release tag. A plugin from
+a branch, a folder, a URL or a repository that tags no releases stays as it is, and the plan says so;
+`--keep-pins` keeps every pin.
+
+A plugin installed newer than its newest stable release (a pre-release, a yanked release) stays too: an update never
+lowers a version. What is installed is the plan you saw: if a release appears while you read it, you are shown the
+new plan and asked again. Where nobody can answer (a script, `--json`) and `--yes` is not given, nothing is asked and
+pins stay, as before.
+
+After a change, a terminal asks `Update the desktop app now? [Y/n]` when the app is installed. `--desktop`,
+`--no-desktop` or `--yes` answer in advance; the app's **Update all** has a switch for it. The app is updated by
+`hz app install`; if that can't finish (the app is open), hz itself stays updated and the result says how to finish.
+
 ## Stable by default, edge if you ask
 
 Every command above, the app's update prompt and `hz system update` follow **stable**: releases that passed acceptance

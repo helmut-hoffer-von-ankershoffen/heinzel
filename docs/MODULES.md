@@ -18,7 +18,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
-| [`system.claude`](#systemclaude) | See the MCP servers and skills you already set up for Claude, without using any of them. |
+| [`system.claude`](#systemclaude) | See the MCP servers and skills you already set up for Claude, and switch servers off or on. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.connector`](#systemconnector) | Show whether each connector is signed in and serves something, and test one live. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
@@ -175,7 +175,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | Show versions, interpreter, settings, modules and what modules report. | `hz system info` | `system_info` | `GET /system/info` | `GET /api/system/info` |  | expert |
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
-| Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
 | Uninstall the verified Heinzel tool offline, keeping your data and configuration. | `hz system uninstall` | — | — | — | yes |  |
 | Show the update channel, or say what switching changes and, with `--yes`, switch. | `hz system channel` | `system_channel` | `POST /system/channel` | `POST /api/system/channel` | yes |  |
 
@@ -213,11 +213,14 @@ Settings: [`[system.changelog]`](CONFIGURATION.md#systemchangelog).
 
 ## `system.claude`
 
-See the MCP servers and skills you already set up for Claude, without using any of them.
+See the MCP servers and skills you already set up for Claude, and switch servers off or on.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
+| List the MCP servers and skills Claude has here, and which servers are on; none is run. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
+| Switch a found MCP server back on for Heinzels; nothing is started. | `hz system claude enable` | — | — | `POST /api/system/claude/enable` | yes | expert |
+| Switch a found MCP server off for Heinzels; it stays off, also when its entry changes. | `hz system claude disable` | — | — | `POST /api/system/claude/disable` | yes | expert |
+| Close the notice about switched-on servers; it comes back when a new server is found. | `hz system claude acknowledge` | — | — | `POST /api/system/claude/acknowledge` | yes | expert |
 | Count the MCP servers and skills found in Claude's configuration per source, without their names. | `hz system claude summary` | `system_claude_summary` | `GET /system/claude/summary` | `GET /api/system/claude/summary` |  | expert |
 
 Health checks: reported by `hz system doctor`.

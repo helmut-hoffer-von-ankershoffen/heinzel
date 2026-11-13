@@ -1,4 +1,4 @@
-import type { SchemaUpdateResult } from "@/api/client";
+import type { SchemaUpdatePlan, SchemaUpdateResult } from "@/api/client";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { mergePhase, type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
@@ -44,10 +44,17 @@ const KEY = "hz.update.receipt";
 const HASH = /^[a-f0-9]{64}$/;
 const ASSET = /^\/assets\/[A-Za-z0-9_.-]+$/;
 
+/** What the person agreed to in the confirmation: the plan as shown, and whether the desktop app comes along. */
+export type UpdateAnswers = {
+  /** The token of the plan the person saw; the server installs exactly that plan or changes nothing. */
+  plan: string;
+  desktop?: boolean;
+};
+
 export interface UpdateTransport {
   lifecycle: LifecycleTransport;
-  /** Install hz and its plugins, telling each step the server reports as it happens. */
-  install(signal: AbortSignal, onPhase?: (phase: Phase) => void): Promise<SchemaUpdateResult>;
+  /** Install hz and its plugins as the person agreed, telling each step the server reports as it happens. */
+  install(signal: AbortSignal, onPhase?: (phase: Phase) => void, answers?: UpdateAnswers): Promise<SchemaUpdateResult>;
   frontend(signal: AbortSignal): Promise<Frontend>;
   assets(build: Frontend, signal: AbortSignal, loaded: boolean): Promise<void>;
   clean(): Promise<void>;
@@ -67,6 +74,15 @@ async function read<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export const readUpdateStatus = (signal: AbortSignal) => read<UpdateStatus>("/update-status", signal);
+
+/** What an update would change (hz, each plugin, the desktop app); it only asks, nothing is installed. */
+export async function readUpdatePlan(signal: AbortSignal): Promise<SchemaUpdatePlan> {
+  const result = await stream<SchemaUpdateResult>("/system/update", { preview: true }, () => {}, signal);
+  const plan = result?.previewed === true ? result.plan : null;
+  // Without a plan that can be named there is nothing a person could agree to.
+  if (!plan?.token) throw new Error("The server sent no update plan.");
+  return plan;
+}
 
 function validFrontend(value: Frontend): Frontend {
   if (
@@ -118,10 +134,11 @@ async function verifyAssets(build: Frontend, signal: AbortSignal, loaded: boolea
 
 export const updateTransport: UpdateTransport = {
   lifecycle: lifecycleTransport,
-  install: (signal, onPhase) =>
+  install: (signal, onPhase, answers) =>
     stream<SchemaUpdateResult>(
       "/system/update",
-      {},
+      // The person confirmed this very plan in the dialog: its pinned plugins move, and the desktop app as they chose.
+      answers ? { yes: true, plan: answers.plan, desktop: answers.desktop === true } : {},
       ({ event, data }) => {
         const phase = event === "phase" ? parsePhase(data) : null;
         if (phase) onPhase?.(phase);
@@ -241,6 +258,7 @@ export async function startUpdate(
   onPhase: (phase: string) => void,
   transport = updateTransport,
   onSteps: (phases: Phase[]) => void = () => {},
+  answers?: UpdateAnswers,
 ): Promise<string> {
   if (pendingUpdate()) throw new Error("An update needs verification; installation will not be repeated.");
   const before = await bounded((signal) => transport.lifecycle.read(signal), signal, 4_000);
@@ -249,9 +267,16 @@ export async function startUpdate(
   save({ stage: "uncertain" });
   onPhase("Updating core and plugins…");
   const steps = new UpdateSteps(onSteps);
-  const result = await bounded((signal) => transport.install(signal, steps.heard), signal, 900_000);
+  // The desktop app's own download can take as long again as the install it follows.
+  const limit = answers?.desktop ? 1_800_000 : 900_000;
+  const result = await bounded((signal) => transport.install(signal, steps.heard, answers), signal, limit);
   if (!result || typeof result.after !== "string" || !result.after.trim() || !Array.isArray(result.plugins))
     throw new Error("The updater returned no verifiable result; inspect the installation.");
+  if (result.previewed) {
+    // A release appeared after the plan was shown: nothing was installed, and the person must see the new plan.
+    sessionStorage.removeItem(KEY);
+    throw new Error(result.message);
+  }
   if (!result.updated) {
     sessionStorage.removeItem(KEY);
     return result.message;
@@ -300,6 +325,7 @@ export async function loadInstalledCore(
     after: installed,
     latest: null,
     pinned_to: null,
+    previewed: false,
     next: [],
     plugins: [],
     message: `Heinzel ${installed} is running.`,

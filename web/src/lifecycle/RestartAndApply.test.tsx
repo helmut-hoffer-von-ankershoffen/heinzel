@@ -143,7 +143,7 @@ it("offers Apply again, not a futile Check again, when the server never restarte
   fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
   await act(async () => vi.advanceTimersByTimeAsync(1_100));
-  expect(screen.getByRole("alert")).toHaveTextContent("hz did not restart");
+  expect(screen.getByRole("alert")).toHaveTextContent("No restart happened");
   expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop checking" })).toBeNull();
   expect(onNotRestarted).toHaveBeenCalledOnce();

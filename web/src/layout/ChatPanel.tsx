@@ -5,7 +5,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { api, problem } from "@/api/client";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation } from "@/chat/Conversation";
@@ -14,7 +14,7 @@ import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { clearChatLink } from "@/lib/chatIntent";
+import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
 
 const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
 type PersonalHandoff = { request_id: string; message: string };
@@ -44,6 +44,7 @@ function readPersonalHandoff(): PersonalHandoff | null {
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const client = useQueryClient();
   const creating = useRef(false);
   const [createError, setCreateError] = useState(false);
@@ -71,7 +72,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
   const empty = !chat.loading && !chat.session?.messages?.length && !chat.live;
-  const createPersonal = async (initialMessage?: string) => {
+  // A message handed over creates its Heinzel at once; without one, the page's draft asks for a name and look first.
+  const createPersonal = async (initialMessage: string) => {
     if (creating.current) return false;
     creating.current = true;
     setCreateError(false);
@@ -167,7 +169,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
-        <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => void createPersonal()} />
+        <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate(createDraftPath(params))} />
         <Button
           variant="ghost"
           size="icon"

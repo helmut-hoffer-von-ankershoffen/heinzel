@@ -38,10 +38,21 @@ from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
-from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
+from heinzel.kernel import (
+    DaemonLifecycleWait,
+    HeinzelError,
+    Kernel,
+    ModuleRecord,
+    OperationLet,
+    Origin,
+    Progress,
+    boot,
+)
 
 console = Console()
 err_console = Console(stderr=True)
+CLI_LIFECYCLE_WAIT_SECONDS = 180.0
+"""A terminal update, daemon or plugin change waits this long for a running tick or update to let go."""
 
 HELP = (
     "Discover every command and its schemas with [bold]hz --command-tree[/bold] (JSON). "
@@ -188,6 +199,7 @@ def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
 
     progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
+    kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(CLI_LIFECYCLE_WAIT_SECONDS))
     mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
     return app, mount
 

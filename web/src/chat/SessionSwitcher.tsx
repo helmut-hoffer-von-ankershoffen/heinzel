@@ -9,8 +9,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useChatSessions } from "@/api/chat";
 import { api, problem, type SchemaChatSummary, type SchemaSessionSummary } from "@/api/client";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import type { HeinzelLook } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
+import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Chat } from "./useChat";
@@ -19,7 +22,15 @@ import type { Chat } from "./useChat";
 export type SwitcherItem =
   | { kind: "workshop"; id: "workshop"; title: string }
   | { kind: "session"; id: string; title: string; updated: string; spent: number; pending: number; messages: number }
-  | { kind: "heinzel"; id: string; title: string; artifact?: string; state?: string; unread?: number };
+  | {
+      kind: "heinzel";
+      id: string;
+      title: string;
+      artifact?: string;
+      state?: string;
+      unread?: number;
+      look?: HeinzelLook;
+    };
 
 export type SwitcherGroup = { label: string; items: SwitcherItem[] };
 
@@ -45,7 +56,15 @@ export function switcherGroups(
     {
       label: t("chat.personalSessions"),
       items: personal
-        .map((item): SwitcherItem => ({ kind: "heinzel", id: item.session_id, title: item.name, state: item.state }))
+        .map(
+          (item): SwitcherItem => ({
+            kind: "heinzel",
+            id: item.session_id,
+            title: item.name,
+            state: item.state,
+            look: appearanceLook(item.appearance),
+          }),
+        )
         .filter((item) => match(item.title)),
     },
     { label: t("chat.recent"), items: recent.filter((item) => match(item.title)) },
@@ -190,7 +209,7 @@ export function SessionSwitcher({
           <div id={listId} className="mt-1 max-h-80 overflow-y-auto">
             {personal.isError && (
               <p role="status" className="px-2.5 text-ui-sm">
-                Could not load personal Heinzels.
+                {t("personal.loadError")}
               </p>
             )}
             {sessions.isLoading && (
@@ -240,6 +259,8 @@ function Row({
     >
       {item.kind === "workshop" ? (
         <Hammer aria-hidden className="mt-0.5 size-4 shrink-0 text-icon" />
+      ) : item.kind === "heinzel" ? (
+        <HeinzelAvatar view="bust" {...item.look} className="size-6 shrink-0 overflow-hidden" />
       ) : (
         <span aria-hidden className="size-4 shrink-0" />
       )}
@@ -258,7 +279,7 @@ function Row({
           </span>
         )}
         {item.kind === "heinzel" && item.state && (
-          <span className="block text-ui-sm text-muted-foreground">{item.state}</span>
+          <span className="block text-ui-sm text-muted-foreground">{stateLabel(item.state)}</span>
         )}
         {item.kind === "workshop" && (
           <span className="block truncate text-ui-sm text-muted-foreground">{t("chat.workshopHelp")}</span>

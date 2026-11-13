@@ -19,6 +19,112 @@ export async function openChatJourney() {
   return { axe, browser, context, page, token, url };
 }
 
+// Runs in the page, so it stands alone: is this summary's disclosure open once the page has painted?
+const openAfterPaint = (node) =>
+  new Promise((resolve) => {
+    const settled = () => resolve(node.parentElement.open);
+    requestAnimationFrame(() => requestAnimationFrame(settled));
+  });
+
+async function pressUntilOpen(summary, presses) {
+  if (await summary.evaluate(openAfterPaint)) return;
+  assert.ok(presses > 0, "Details did not stay open");
+  await summary.click();
+  await pressUntilOpen(summary, presses - 1);
+}
+
+/** The conversation comes first: reviews, terms and schedules sit behind the Details disclosure. Open it, once. */
+// One click is not proof: while the conversation loads the summary moves, and a press that lands beside it opens
+// nothing; every later step then waits 30 s on a section that is not shown. So wait for the loaded conversation, click,
+// and require that Details is open once the page has painted; click again if it is not, three presses at most.
+export async function openDetails(page) {
+  const summary = page.locator("details > summary", { hasText: /^Details$/ }).first();
+  await summary.waitFor({ timeout: 30000 });
+  await page.getByLabel("Message your Heinzel").waitFor({ timeout: 30000 });
+  await pressUntilOpen(summary, 3);
+  const selects = await summary.locator("xpath=..").locator("select").all();
+  const restyled = (await Promise.all(selects.map((select) => select.evaluate(quirkRestyled)))).filter(Boolean).length;
+  if (restyled) process.stderr.write(`openDetails: restyled ${restyled} select(s) after the WebKit visibility quirk\n`);
+}
+
+// Runs in the page, so it stands alone. WebKit sometimes leaves a <select> in an open disclosure with
+// checkVisibility() false although it and every ancestor are displayed and painted; Playwright's visibility wait then
+// never ends (0.9.40 candidate, bead rbl3). Users see the field. One restyle of the field clears it: do that only in
+// exactly this state, and say whether it was done.
+const quirkRestyled = (node) => {
+  if (node.checkVisibility()) return false;
+  for (let element = node; element; element = element.parentElement) {
+    const style = getComputedStyle(element);
+    if (element.nodeName === "DETAILS" && !element.open) return false;
+    if (element.hidden || style.display === "none" || style.visibility !== "visible") return false;
+  }
+  const rect = node.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+  const color = node.style.color;
+  node.style.color = "rgb(1, 2, 3)";
+  getComputedStyle(node).color;
+  node.style.color = color;
+  getComputedStyle(node).color;
+  return true;
+};
+
+// Runs in the page: why is this element not visible? The first ancestor that hides it, or none.
+const hiddenBy = (node) => {
+  for (let element = node; element; element = element.parentElement) {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    const name = `${element.nodeName.toLowerCase()}${element.getAttribute("aria-label") ? `[${element.getAttribute("aria-label")}]` : ""}`;
+    if (element.nodeName === "DETAILS" && !element.open && element !== node) return `${name} is closed`;
+    if (element.hidden) return `${name} is hidden`;
+    if (style.display === "none") return `${name} has display none`;
+    if (style.visibility !== "visible") return `${name} has visibility ${style.visibility}`;
+    if (element === node && (rect.width === 0 || rect.height === 0)) return `${name} has no size`;
+  }
+  return node.checkVisibility() ? null : "every ancestor is shown, yet checkVisibility() is false";
+};
+
+/** A section behind Details must be visible within 10 s; if not, fail with what hides it, not 30 s later in an action. */
+export async function requireShown(locator, label) {
+  try {
+    await locator.waitFor({ state: "visible", timeout: 10000 });
+  } catch (error) {
+    if (await locator.evaluate(quirkRestyled).catch(() => false)) {
+      process.stderr.write(`requireShown: restyled ${label} after the WebKit visibility quirk\n`);
+      if (
+        await locator.waitFor({ state: "visible", timeout: 5000 }).then(
+          () => true,
+          () => false,
+        )
+      )
+        return;
+    }
+    const cause = await locator.evaluate(hiddenBy).catch(() => "not on the page");
+    throw new Error(`${label} is not visible: ${cause ?? "shown now, after the wait"}`, { cause: error });
+  }
+}
+
+// One place for the locator the scheduled, template and generic chat journeys each need.
+/** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
+export function recurringTurns(page) {
+  return page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) })
+    .last();
+}
+
+// One place for the opening steps the workshop and template journeys share.
+/** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
+export async function createHeinzelWithMessage(page, sentence) {
+  await page.getByLabel("Your message").fill(sentence);
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  const message = page.getByLabel("Message your Heinzel");
+  await message.waitFor();
+  await openDetails(page);
+  assert.equal(await message.inputValue(), sentence);
+  await page.getByRole("button", { name: "Send" }).click();
+  return message;
+}
+
 // After a reload, the Chat tab sits below page content that is still loading, so a click can land on what moved under
 // the pointer and do nothing. Wait for startup to end, then press the tab: that needs no position. Require that Chat
 // really is selected and shown.
@@ -94,12 +200,14 @@ export async function createHeinzelWith(page, text) {
 export async function startChatJourney(page, url) {
   await openAppWithSetupClosed(page, url);
   await createHeinzelWith(page, "Read my selected source.");
+  await openDetails(page);
 }
 
 /** A grant survives a reload as approved, then is revoked, and the review panel still fits the phone. */
 export async function revokeAfterReload(page, panel) {
   await page.reload();
   await revealChat(page);
+  await openDetails(page);
   await panel.getByText(/Recorded state: approved/).waitFor();
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
@@ -116,6 +224,7 @@ export async function runDaemonTurn(page, directory, session) {
   assert.equal(finished.deduplicated, true);
   await page.reload();
   await revealChat(page);
+  await openDetails(page);
 }
 
 /** Say what failed and what the page showed, without the session token. */
