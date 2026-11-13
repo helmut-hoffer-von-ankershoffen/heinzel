@@ -113,8 +113,8 @@ it("gives Heinzel and each plugin its own line when they differ", () => {
   expect(view.rows.map((row) => row.text)).toEqual([
     "Heinzel 0.9.28 is available",
     "heinzel-weather 0.9.3 is available",
-    "heinzel-google is pinned to 0.9.1; hz doesn't update it",
-    "heinzel-acme is installed from the Heinzel catalog source and isn't followed for updates yet",
+    "heinzel-google is pinned to 0.9.1; Heinzel skips it",
+    "heinzel-acme is installed from git and isn't followed for updates yet",
   ]);
   expect(view.count).toBe(2);
   expect(view.tone).toBe("warn");
@@ -127,7 +127,7 @@ it("keeps core current and a held plugin from showing green", () => {
   });
   expect(view.tone).toBe("off");
   expect(view.rows[0]?.tone).toBe("ok");
-  expect(view.rows.map((row) => row.text)).toContain("heinzel-google is pinned to 0.9.1; hz doesn't update it");
+  expect(view.rows.map((row) => row.text)).toContain("heinzel-google is pinned to 0.9.1; Heinzel skips it");
 });
 
 it("describes folders and links, progress, and a failed update with its reason", () => {
