@@ -63,21 +63,33 @@ follows from it:
 - **Heinzels screen icon (2026-11-07).** The navigation item for the Heinzels screen is the team glyph (one face
   with two caps behind it, `HeinzelTeam`), in the line style of its neighbours; the single face (`HeinzelFace`)
   stays for one Heinzel: a graph node, a plugin's contribution.
-- **Choices (2026-11-07).** A choice among two to four exclusive options is a segmented control
-  (`components/ui/segmented.tsx`): a `radiogroup` of `radio` segments on a `color-muted` track; the chosen segment is
-  filled `color-primary` with `color-primary-foreground`, never the `color-accent` hover fill alone, and the fill is the
-  one accent in that container. A longer exclusive set (filter chips) is still radios. `aria-pressed` is for one
-  independent on/off toggle (the top bar's panel buttons), never for a member of a set; `choices-standards.test.ts`
-  fails an `aria-pressed` set. A choice the app cannot offer stays in the group, dimmed and `aria-disabled`, with its
-  reason in the tooltip and the status line. Choosing while another option is live switches in one step: the new one
-  is asked for first, the old one stopped only once the new one runs. Segmented controls and switches are content, so
-  a pane made of them has no action row. Example: the Audio pane is Show (Spectrum | Aurora | Both) and Listen to
-  (Off | Microphone | Shared audio) segmented controls, a live status line, one privacy line and the master switch.
-- **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail and the Aurora take every hue from the live
+- **Choices (2026-11-07).** Exclusive sets of two to four are a segmented control (`components/ui/segmented.tsx`): a
+  `radiogroup` of `radio` segments on one `color-muted` track, one `color-primary` fill with
+  `color-primary-foreground`, never the `color-accent` hover fill alone. A longer exclusive set (filter chips) is
+  still radios. Independent sets are checkboxes: compact, a chip group (a native checkbox in a label, 2-up grid, gap,
+  hairline when off, `color-primary` fill plus check mark when on); with room for a help sentence, a `role="switch"`
+  row (Settings). `aria-pressed` is for a lone toolbar toggle (a top-bar panel button), never a member of a labelled
+  set, never in a loop or a `fieldset`; `choices-standards.test.ts` fails it. A choice this device or browser cannot take is
+  not shown at all, never greyed out (Shared audio without `getDisplayMedia`, Microphone without `getUserMedia` or a
+  secure context, a style without a canvas, the Halo and Swarm without the sidebar stage); a group left with nothing to
+  choose is not shown, and one line says what the browser can do. `choices-standards.test.ts` fails a disabled or
+  `aria-disabled` unavailable choice in the audio pane and the segmented control. During a pending request, choices
+  temporarily blocked by that request expose `aria-disabled`, while the cancellation choice remains actionable.
+  Choosing while another option is live switches in one step: the new one
+  is asked for first, the old one stopped only once the new one runs. Segmented controls, chips and switches are
+  content. The Audio pane uses Show chips (Spectrum, Aurora, Halo, Swarm), source segments where available, a status
+  and privacy line, and a master switch. Workspace audio stays the default source. On a desktop with system audio
+  (owner decision 2026-11-12), one extra outlined action opts into system audio or stops it, each time with its own
+  consent; after an unsupported system request that action leaves and one line says why.
+- **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail, the Aurora, the Halo and the Heinzel swarm take every hue from the live
   theme tokens (`color-primary`, `color-ok`, `color-warn`) in any CSS colour notation, re-read the moment the mode,
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
   Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
-  transparent; a painted `<body>` hides it.
+  transparent; a painted `<body>` hides it. The Halo (a ring of rays around one Heinzel) and the Swarm (three
+  Heinzels jumping, swaying and nodding to bass, mids and treble) stand in the sidebar's gap above the player and,
+  like every Gnome, only while "playful" is on. They fill that gap (2026-11-12): the stage takes the room the
+  navigation leaves, between 5 and 20 rem; a long navigation keeps its links and the stage stays a strip with both
+  side by side, and from 12 rem the Halo takes the upper part and the Swarm the floor, drawn and moving to scale.
 - **Switches show the person's choice (2026-11-08).** A provider switch (`ContributionToggle`) reads On as soon as the
   person turns it on; whether it is live is its one status line: *Turning on…*, the URL, or one short cause with
   **Try again** (or **Restart hz** when only a restart loads the change). The line is at most 60 characters in the
@@ -151,7 +163,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
-| Audio visualizer pane | Segmented Show and Listen to, status, master switch; no action row (all content) |
+| Audio visualizer pane | Show checkbox chips, available source segments, status and master switch; desktop system audio: divider and the opt-in [Use system audio] |
 | Today card | title row with [x] Dismiss; body; divider; [↗ Open] [💬] |
 | Operation dialog | title row with [x]; question; divider; right: [Cancel] [Install] |
 | Plugins list row | ghost [⏻] [🗑] (red); Remove opens a confirming dialog |

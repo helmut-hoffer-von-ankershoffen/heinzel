@@ -35,3 +35,8 @@ test("shows Heinzelmännchen as the display name", () => {
   assert.equal(EXTEND_INFO.CFBundleDisplayName, "Heinzelmännchen");
   assert.equal(EXTEND_INFO.CFBundleName, "Heinzelmännchen");
 });
+
+test("names the visualizer when macOS asks to allow system audio", () => {
+  assert.match(EXTEND_INFO.NSAudioCaptureUsageDescription, /audio visualizer/);
+  assert.match(EXTEND_INFO.NSAudioCaptureUsageDescription, /Nothing is recorded or uploaded/);
+});
