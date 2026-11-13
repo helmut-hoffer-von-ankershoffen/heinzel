@@ -9,8 +9,9 @@ import {
   ChevronRight,
   ExternalLink,
   type LucideIcon,
+  Play,
   Plug,
-  Trash2,
+  Settings,
   TriangleAlert,
   Video,
   X,
@@ -19,7 +20,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
-import { t } from "@/i18n";
+import { type MessageKey, t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { conferenceLink, conferenceProvider } from "@/lib/conferenceLink";
 import { requestOperation } from "@/lib/operationRun";
@@ -60,7 +61,9 @@ type Week = {
   problem: string | null;
   fix: string | null;
 };
-type ReminderStatus = { enabled: boolean; service: string };
+/** One state per reason reminders do not run here (ADR 0147); `on` and `starting` need nothing from the person. */
+type ReminderState = "off" | "on" | "starting" | "install" | "elsewhere" | "resume" | "provider" | "overdue";
+type ReminderStatus = { enabled: boolean; state: ReminderState };
 
 /** The client clock at `interval` resolution; the agenda re-derives Now from it. */
 function useNow(interval: number): number {
@@ -122,18 +125,19 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     ? groupWeek({ events: data.events, since: data.since, until: data.until, now, tz: data.timezone })
     : [];
   const today = days.find((day) => day.relation === "today");
-  // Missing reminders on this computer are the one thing to do here, so turning them on leads the row in words.
-  // Only while the Calendar reminders setting is on: otherwise the setting is the first step, and the band says so.
-  const setUp = !!reminders.data && reminders.data.enabled && isLocalServer() && reminders.data.service !== "running";
-  const workerAction = (installing: boolean) =>
+  // Reminders run in the daemon (ADR 0147): the one thing to do here is what keeps the daemon from running them, and
+  // that leads the row in words. Only on this computer: a remote browser never sets up the server's login items.
+  const state = reminders.data?.state;
+  const local = isLocalServer();
+  const daemonCall = (action: "install" | "resume") =>
     requestOperation({
       method: "POST",
-      path: `/org/calendar-reminders-${installing ? "install" : "uninstall"}`,
-      query: { confirm: true },
+      path: `/system/daemon/${action}`,
+      query: {},
       body: null,
       read_only: false,
       command: "",
-      summary: t(installing ? "calendar.installSummary" : "calendar.removeSummary"),
+      summary: t(action === "install" ? "calendar.daemonNeeded" : "calendar.daemonPaused"),
     });
   return (
     <section aria-label={t("calendar.title")} className="flex h-full min-h-0 flex-col">
@@ -197,9 +201,19 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             {t("calendar.notificationSettings")}
           </PaneAction>
         )}
-        {setUp && (
-          <PaneAction key="worker-setup" icon={BellRing} primary onClick={() => workerAction(true)}>
-            {t("calendar.setUpWorker")}
+        {local && state === "install" && (
+          <PaneAction key="daemon-install" icon={BellRing} primary onClick={() => daemonCall("install")}>
+            {t("calendar.turnOnReminders")}
+          </PaneAction>
+        )}
+        {local && state === "resume" && (
+          <PaneAction key="daemon-resume" icon={Play} primary onClick={() => daemonCall("resume")}>
+            {t("calendar.resume")}
+          </PaneAction>
+        )}
+        {state === "overdue" && (
+          <PaneAction key="daemon-settings" icon={Settings} primary to="?settings=daemon">
+            {t("calendar.daemonSettings")}
           </PaneAction>
         )}
         <PaneAction key="today" icon={CalendarDays} disabled={offset === 0} onClick={() => setOffset(0)}>
@@ -211,14 +225,9 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         <PaneAction key="next" icon={ChevronRight} disabled={offset >= 52} onClick={() => setOffset(offset + 1)}>
           {t("calendar.nextWeek")}
         </PaneAction>
-        {week.data?.problem && week.data.fix && (
+        {((week.data?.problem && week.data.fix) || state === "provider") && (
           <PaneAction key="connect" icon={Plug} to={`?settings=${CONNECTORS}`}>
             {t("calendar.connect")}
-          </PaneAction>
-        )}
-        {reminders.data && isLocalServer() && reminders.data.service !== "not installed" && (
-          <PaneAction key="remove" icon={Trash2} destructive onClick={() => workerAction(false)}>
-            {t("calendar.removeWorker")}
           </PaneAction>
         )}
       </PaneActions>
@@ -226,20 +235,24 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** One line, icon plus sentence, nothing to click: the fix is Turn on reminders, leading the bottom row. */
+const BAND: Record<ReminderState, { icon: LucideIcon; local: MessageKey; remote: MessageKey } | null> = {
+  off: { icon: Bell, local: "calendar.turnOnInSettings", remote: "calendar.remindersOff" },
+  on: null,
+  starting: null,
+  install: { icon: BellOff, local: "calendar.daemonNeeded", remote: "calendar.daemonRemote" },
+  elsewhere: { icon: BellOff, local: "calendar.daemonElsewhere", remote: "calendar.daemonElsewhere" },
+  resume: { icon: BellOff, local: "calendar.daemonPaused", remote: "calendar.daemonPaused" },
+  provider: { icon: TriangleAlert, local: "calendar.providerUnavailable", remote: "calendar.providerUnavailable" },
+  overdue: { icon: TriangleAlert, local: "calendar.laneOverdue", remote: "calendar.laneOverdue" },
+};
+
+/** One line, icon plus sentence, nothing to click: the fix leads the bottom row. Nothing while reminders run. */
 function ReminderBand({ reminders }: { reminders: { data?: ReminderStatus; isPending: boolean; isError: boolean } }) {
   let line: { icon: LucideIcon; text: string } | null = null;
   if (reminders.isError) line = { icon: TriangleAlert, text: t("calendar.statusUnavailable") };
   else if (reminders.data) {
-    const { enabled, service } = reminders.data;
-    if (!enabled)
-      line = { icon: Bell, text: t(isLocalServer() ? "calendar.turnOnInSettings" : "calendar.remindersOff") };
-    else if (service === "not installed") {
-      line = isLocalServer()
-        ? { icon: BellOff, text: t("calendar.workerNeeded") }
-        : { icon: BellOff, text: t("calendar.workerRemote") };
-    } else if (service !== "running")
-      line = { icon: TriangleAlert, text: t(isLocalServer() ? "calendar.workerRepair" : "calendar.workerUnknown") };
+    const band = BAND[reminders.data.state];
+    if (band) line = { icon: band.icon, text: t(isLocalServer() ? band.local : band.remote) };
   }
   if (!line) return null;
   const Icon = line.icon;

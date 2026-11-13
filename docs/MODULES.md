@@ -137,10 +137,10 @@ Your profile, and the team, org and company you work with.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | — | `GET /api/org/show` |  |  |
 | Show the meeting you are in now and your next one, from your calendar, or how to connect one. | `hz org agenda` | `org_agenda` | — | `GET /api/org/agenda` |  | expert |
-| Install a supervised worker; separately enable calendar reminders to consent to background reads. | `hz org calendar-reminders-install` | — | — | `POST /api/org/calendar-reminders-install` | yes | expert |
-| Stop and remove the supervised calendar reminder worker. | `hz org calendar-reminders-uninstall` | — | — | `POST /api/org/calendar-reminders-uninstall` | yes | expert |
-| Show calendar reminder consent and the supervised worker's state. | `hz org calendar-reminders-status` | — | — | `GET /api/org/calendar-reminders-status` |  | expert |
-| Run the supervised calendar reminder worker until its periodic restart. | `hz org calendar-reminder-worker` | — | — | — | yes | expert |
+| Remove this profile's leftover calendar reminder worker; the daemon runs reminders now. | `hz org calendar-reminders-uninstall` | — | — | `POST /api/org/calendar-reminders-uninstall` | yes | expert |
+| Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147). | `hz org calendar-reminders-status` | — | — | `GET /api/org/calendar-reminders-status` |  | expert |
+| Run a leftover reminder worker, or remove it once the daemon's lane owns its profile. | `hz org calendar-reminder-worker` | — | — | — | yes | expert |
+| Run the daemon's calendar reminder lane until its slot window; only a daemon tick starts it. | `hz org calendar-reminder-lane` | — | — | — | yes | expert |
 | Show a week from your connected calendar. | `hz org calendar` | `org_calendar` | — | `GET /api/org/calendar` |  | expert |
 | Show what your team recommends beside what you have; apply only what you accept, to your user file. | `hz org sync` | `org_sync` | — | — | yes |  |
 

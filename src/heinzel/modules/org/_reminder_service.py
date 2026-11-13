@@ -327,3 +327,54 @@ def _absent(platform: str, profile: Profile) -> bool:
     if platform == "darwin":
         return result.returncode == LAUNCHCTL_NO_SERVICE and "Could not find service" in result.stderr
     return result.returncode == 0 and result.stdout.strip() == "not-found"
+
+
+def retire_for_lane(profile: Profile) -> str:
+    """Remove this worker's own unit because a daemon lane owns its profile (ADR 0147, point 9).
+
+    The file goes first and the manager registration after it: a worker that left launchd first would be killed
+    before unlinking, and launchd would load it again at the next login.
+
+    Raises:
+        HeinzelError: If the unit is not this profile's unchanged unit; it is left alone then.
+    """
+    platform = sys.platform
+    path = path_for(platform, Path.home(), profile)
+    _owned(path, definition(platform, _shim(), profile))
+    if platform == "linux":
+        _run(["/usr/bin/systemctl", "--user", "disable", profile.unit])
+    path.unlink()
+    if platform == "darwin":
+        _run(["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{profile.label}"])
+        return "The daemon's reminder lane owns this profile; the worker left."
+    _run(["/usr/bin/systemctl", "--user", "daemon-reload"])
+    _run(["/usr/bin/systemctl", "--user", "stop", "--no-block", profile.unit])
+    return "The daemon's reminder lane owns this profile; the worker left."
+
+
+def migrate() -> str:
+    """Remove the selected profile's byte-matching 0126 unit before a lane starts; never wait for its locks.
+
+    Returns `absent`, `removed` or `left` (busy, changed, linked or foreign: doctor names it).
+    """
+    profile = Profile.selected()
+    try:
+        path = path_for(sys.platform, Path.home(), profile)
+    except HeinzelError:
+        return "absent"
+    if not os.path.lexists(path):
+        return "absent"
+    try:
+        uninstall()
+    except (HeinzelError, OSError):
+        return "left"
+    return "removed"
+
+
+def leftover() -> Path | None:
+    """The selected profile's 0126 unit file if it still exists, for doctor."""
+    try:
+        path = path_for(sys.platform, Path.home(), Profile.selected())
+    except HeinzelError:
+        return None
+    return path if os.path.lexists(path) else None

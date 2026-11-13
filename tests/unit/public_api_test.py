@@ -520,6 +520,7 @@ KERNEL = [
     "ReleasePage",
     "ReleaseRecord",
     "ReleaseSource",
+    "ReminderLaneState",
     "ReportingDraft",
     "Requester",
     "Requirement",

@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -17,12 +18,32 @@ class DaemonStatusAttestation(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ReminderLaneState:
+    """The daemon's calendar reminder lane as the last scheduled tick and its heartbeat recorded it (ADR 0147)."""
+
+    started: bool = False
+    """Whether the last scheduled tick started a lane."""
+    last_tick: datetime | None = None
+    """When the last scheduled tick began."""
+    beat_at: datetime | None = None
+    """When the lane last wrote its heartbeat."""
+    result: str | None = None
+    """The lane's last cycle result: ok, provider-unavailable, disabled, gate, window or stopped."""
+    profile: str | None = None
+    """The calendar profile identity the lane runs for."""
+    crashes: int = 0
+    """How often the lane crashed during the last tick."""
+
+
+@dataclass(frozen=True, slots=True)
 class DaemonAttestation:
     """Read-only daemon status accessor shared across module boundaries."""
 
     status: Callable[[], DaemonStatusAttestation]
     job_running: Callable[[], bool] = lambda: False
     """Whether a daemon tick is running jobs right now; automatic updates wait for it (ADR 0116)."""
+    lane: Callable[[], ReminderLaneState] = ReminderLaneState
+    """The reminder lane's last recorded state; a lane alone never counts as a running job (ADR 0147)."""
 
 
 @dataclass(frozen=True, slots=True)

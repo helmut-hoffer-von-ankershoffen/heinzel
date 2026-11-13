@@ -336,6 +336,11 @@ if os.environ.get("HZ_OFFLINE_INTERRUPT_FIXTURE") == "1":
         raise KeyboardInterrupt("immutable fixture interruption before uv removal")
 
     Installation.uninstall_offline = interrupted
+if sys.argv[1:3] == ["fixture", "legacy-reminder-worker"]:
+    from heinzel.modules.org import _reminder_service
+
+    print(_reminder_service.install())  # an install from before ADR 0147, which withdrew the operation
+    raise SystemExit(0)
 if sys.argv[1:3] == ["fixture", "retention"]:
     from datetime import UTC, datetime, timedelta
     from heinzel import Config, NoticeKind, Settings
@@ -732,9 +737,8 @@ def prepare_calendar_workers(selected, environment):
                 "-I",
                 "-m",
                 "offline_uninstall_fixture",
-                "org",
-                "calendar-reminders-install",
-                "--confirm",
+                "fixture",
+                "legacy-reminder-worker",
             ],
             env=environment | profile,
             cwd=selected.home,

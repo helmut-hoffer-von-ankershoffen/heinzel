@@ -85,10 +85,13 @@ def agenda_plan(agenda: "Agenda", now: datetime) -> list[Reminder]:
     return plan(events, now, provider=agenda.calendar)
 
 
-def reconcile(agenda: "Agenda", notifications: "Notifications", now: datetime) -> list[Reminder]:
+def reconcile(
+    agenda: "Agenda", notifications: "Notifications", now: datetime, lookahead: timedelta = timedelta(0)
+) -> list[Reminder]:
     """Withdraw obsolete pending reminders and atomically record due ones.
 
     Call only after the user has enabled calendar reminders. An unavailable provider suppresses pending reminders.
+    `lookahead` counts a reminder as due that early; only a reminder lane's last cycle passes one (ADR 0147).
     """
     reminders = agenda_plan(agenda, now)
     active = {reminder.key for reminder in reminders}
@@ -97,7 +100,7 @@ def reconcile(agenda: "Agenda", notifications: "Notifications", now: datetime) -
             notifications.withdraw(notice.key)
     instant = now.astimezone(UTC)
     for reminder in reminders:
-        if reminder.due <= instant < reminder.expires:
+        if reminder.due <= instant + lookahead and instant < reminder.expires:
             notifications.emit_once(
                 NoticeKind.CALENDAR,
                 "Meeting starts soon" if reminder.kind == "start" else "Meeting ends soon",
@@ -117,15 +120,19 @@ def withdraw_pending(notifications: Notifications) -> None:
             notifications.withdraw(notice.key)
 
 
-def cycle(
+def cycle(  # noqa: PLR0913 - the cycle's inputs, all but two by keyword
     read: Callable[[], Agenda],
     notifications: Notifications,
     now: datetime,
     *,
     enabled: bool,
     clock: Callable[[], datetime] | None = None,
+    lookahead: timedelta = timedelta(0),
 ) -> timedelta:
-    """Refresh, reconcile and attempt delivery; return the delay until the next refresh or deadline."""
+    """Refresh, reconcile and attempt delivery; return the delay until the next refresh or deadline.
+
+    A positive `lookahead` delivers reminders due within it now, early rather than late (ADR 0147, point 5).
+    """
     if not enabled:
         withdraw_pending(notifications)
         return MAX_POLL
@@ -139,8 +146,12 @@ def cycle(
     if not notifications.enabled(NoticeKind.CALENDAR):
         withdraw_pending(notifications)
         return MAX_POLL
-    reminders = reconcile(agenda, notifications, now)
+    reminders = reconcile(agenda, notifications, now, lookahead)
     if agenda.problem is None:
-        notifications.post_native()
+        notifications.calendar_lookahead = lookahead
+        try:
+            notifications.post_native()
+        finally:
+            notifications.calendar_lookahead = timedelta(0)
     upcoming = [reminder.due - now.astimezone(UTC) for reminder in reminders if reminder.due > now.astimezone(UTC)]
     return min([MAX_POLL, *upcoming])

@@ -81,15 +81,22 @@ STALE = timedelta(hours=12)
 MAX_LOG_PROBLEM = 280
 
 
-def _calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
-    """Read the generic agenda operation afresh; absence and provider errors validate no reminders."""
+def _calendar_keys(kernel: Kernel, now: datetime, lookahead: timedelta = timedelta(0)) -> set[str]:
+    """Read the generic agenda operation afresh; absence and provider errors validate no reminders.
+
+    `lookahead` validates a reminder that early: a reminder lane's last cycle delivers before a slot (ADR 0147).
+    """
     operation = next(
         (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("org", "agenda")), None
     )
     if operation is None or not kernel.available(operation.func):
         return set()
     agenda = kernel.call(operation.func)
-    return {reminder.key for reminder in agenda_plan(agenda, now) if reminder.due <= now < reminder.expires}
+    return {
+        reminder.key
+        for reminder in agenda_plan(agenda, now)
+        if reminder.due <= now + lookahead and now < reminder.expires
+    }
 
 
 class NotifyService(Notifications):
@@ -151,7 +158,7 @@ class NotifyService(Notifications):
             ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui serve`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
-        service.calendar_valid = lambda now: _calendar_keys(kernel, now)
+        service.calendar_valid = lambda now: _calendar_keys(kernel, now, service.calendar_lookahead)
 
         def refresh_settings() -> NotifySettings:
             current = Config.load(Path.home())

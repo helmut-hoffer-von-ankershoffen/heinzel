@@ -201,15 +201,16 @@ def test_fresh_profile_hours_and_timezone_govern_existing_notice(settings):
     assert policy.next_start(service.hours, now[0]) == datetime(2026, 11, 4, 12, tzinfo=ZoneInfo("Europe/Berlin"))
 
 
-def test_setup_requires_explicit_confirmation_before_supervisor_mutation(monkeypatch):
+def test_leftover_removal_requires_explicit_confirmation_and_setup_is_withdrawn(monkeypatch):
     from heinzel.modules import org
 
-    install = Mock(return_value="installed")
-    monkeypatch.setattr(org, "install_reminders", install)
+    uninstall = Mock(return_value="removed")
+    monkeypatch.setattr(org, "uninstall_reminders", uninstall)
     with pytest.raises(HeinzelError, match="Confirm"):
-        org.calendar_reminders_install()
-    install.assert_not_called()
-    assert org.calendar_reminders_install(confirm=True) == "installed"
+        org.calendar_reminders_uninstall()
+    uninstall.assert_not_called()
+    assert org.calendar_reminders_uninstall(confirm=True) == "removed"
+    assert not hasattr(org, "calendar_reminders_install")  # ADR 0147: the daemon runs reminders, no second consent
 
 
 def test_user_policy_is_reloaded_from_selected_file_after_validation(tmp_path, settings, monkeypatch):

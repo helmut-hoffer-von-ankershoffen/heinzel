@@ -5,6 +5,8 @@ in your user configuration, `[org]`; nothing about you is written to a repositor
 for `ProfileService` by type to learn who is acting.
 """
 
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, Field
@@ -22,15 +24,15 @@ from heinzel import (
     Prompter,
     Status,
 )
-from heinzel.kernel import CapabilityView
+from heinzel.kernel import CapabilityView, DaemonAttestation
 from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
+from heinzel.modules.org._reminder_lane import ReminderState, fresh_lane, reminder_state
+from heinzel.modules.org._reminder_lane import main as run_lane_process
 from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
 from heinzel.modules.org._reminder_service import Profile as ReminderProfile
-from heinzel.modules.org._reminder_service import install as install_reminders
-from heinzel.modules.org._reminder_service import lifecycle, verify_binding
-from heinzel.modules.org._reminder_service import status as reminder_service_status
+from heinzel.modules.org._reminder_service import leftover, lifecycle, retire_for_lane, verify_binding
 from heinzel.modules.org._reminder_service import uninstall as uninstall_reminders
 from heinzel.modules.org._reminder_worker import WorkerReads
 from heinzel.modules.org._reminder_worker import run as run_reminders
@@ -75,28 +77,11 @@ def agenda(calendar: Calendar, view: CapabilityView, settings: OrgSettings) -> A
     return read_agenda(calendar, view, local_now(settings.timezone))
 
 
-@module.operation(name="calendar-reminders-install", read_only=False, heads={"cli", "web"})
-def calendar_reminders_install(
-    confirm: Annotated[
-        bool, Field(description="Confirm installing a persistent login worker for this profile.")
-    ] = False,
-) -> str:
-    """Install a supervised worker; separately enable calendar reminders to consent to background reads.
-
-    Raises:
-        HeinzelError: If persistent setup has not been explicitly confirmed.
-    """
-    if not confirm:
-        msg = "Confirm reminder setup to install a login worker. Calendar read consent remains a separate setting."
-        raise HeinzelError(msg)
-    return install_reminders()
-
-
 @module.operation(name="calendar-reminders-uninstall", read_only=False, heads={"cli", "web"})
 def calendar_reminders_uninstall(
     confirm: Annotated[bool, Field(description="Confirm removing this profile's reminder login worker.")] = False,
 ) -> str:
-    """Stop and remove the supervised calendar reminder worker.
+    """Remove this profile's leftover calendar reminder worker; the daemon runs reminders now.
 
     Raises:
         HeinzelError: If removal has not been explicitly confirmed.
@@ -108,26 +93,42 @@ def calendar_reminders_uninstall(
 
 
 class CalendarReminderStatus(BaseModel):
-    """Whether calendar reads are enabled and what the supervisor reports."""
+    """Whether calendar reminders are on, and what keeps them from running on this computer."""
 
     enabled: bool = Field(description="Whether this profile permits background calendar reads and reminders.")
-    service: str = Field(description="The local supervisor state for the selected calendar reminder profile.")
+    state: ReminderState = Field(
+        description="off: the setting is off; on: the daemon's reminder lane runs; starting: it starts at the next "
+        "daemon tick; install: the daemon is not installed; elsewhere: the daemon runs for another profile; resume: "
+        "the daemon is paused; provider: the calendar can't be read; overdue: the lane stopped checking in."
+    )
 
 
 @module.operation(name="calendar-reminders-status", heads={"cli", "web"})
-def calendar_reminders_status(notifications: Notifications) -> CalendarReminderStatus:
-    """Show calendar reminder consent and the supervised worker's state."""
-    return CalendarReminderStatus(enabled=notifications.enabled(NoticeKind.CALENDAR), service=reminder_service_status())
+def calendar_reminders_status(notifications: Notifications, kernel: Kernel) -> CalendarReminderStatus:
+    """Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147)."""
+    enabled = notifications.enabled(NoticeKind.CALENDAR)
+    daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
+    return CalendarReminderStatus(enabled=enabled, state=reminder_state(enabled, daemon, datetime.now(UTC)))
 
 
 @module.operation(name="calendar-reminder-worker", read_only=False, heads={"cli"})
-def calendar_reminder_worker(kernel: Kernel) -> None:
-    """Run the supervised calendar reminder worker until its periodic restart."""
+def calendar_reminder_worker(kernel: Kernel) -> str:
+    """Run a leftover reminder worker, or remove it once the daemon's lane owns its profile."""
     selected = ReminderProfile.selected()
     with lifecycle(selected):
         verify_binding()
+        lanes = Path(selected.environment["HZ_STATE_DIR"]) / "daemon"
+        if fresh_lane(lanes, selected.identity, datetime.now(UTC)):
+            return retire_for_lane(selected)
         notifications = kernel.resolve(Notifications)
     run_reminders(WorkerReads(lambda: kernel.call(agenda), lambda: lifecycle(selected)), notifications)
+    return "The reminder worker restarts."
+
+
+@module.operation(name="calendar-reminder-lane", read_only=False, heads={"cli"})
+def calendar_reminder_lane(kernel: Kernel) -> str:
+    """Run the daemon's calendar reminder lane until its slot window; only a daemon tick starts it."""
+    return run_lane_process(kernel, lambda: kernel.call(agenda))
 
 
 @module.operation(heads={"cli", "mcp", "web"}, requires=["calendar:read"], optional=True)
@@ -147,9 +148,9 @@ module.status(source="agenda", name="meeting", order=800)(status_item)
 
 @module.health
 def profile(service: ProfileService, recommendations: SyncService) -> list[Check]:
-    """Your profile names your handle, role and time zone; and drift from what your team recommends."""
+    """Your profile names your handle, role and time zone; drift from what your team recommends; leftover workers."""
     found = service.profile()
-    drift = recommendations.health()
+    drift = [*recommendations.health(), *_reminder_worker()]
     if not found.complete:
         return [
             Check(
@@ -162,6 +163,21 @@ def profile(service: ProfileService, recommendations: SyncService) -> list[Check
         ]
     detail = f"{found.handle}, {found.role}, {found.timezone} {found.working_hours}"
     return [Check(name="profile", status=Status.UP, detail=detail), *drift]
+
+
+def _reminder_worker() -> list[Check]:
+    """A leftover 0126 reminder worker of this profile; the daemon's reminder lane replaces it (ADR 0147)."""
+    path = leftover()
+    if path is None:
+        return []
+    return [
+        Check(
+            name="reminder worker",
+            status=Status.DEGRADED,
+            detail=f"a separate reminder worker is still installed at {path}; the daemon runs reminders now",
+            fix="Run `hz org calendar-reminders-uninstall --confirm`",
+        )
+    ]
 
 
 # It writes your configuration on your say-so; a web page can reach a local REST server, so the CLI and MCP get it.

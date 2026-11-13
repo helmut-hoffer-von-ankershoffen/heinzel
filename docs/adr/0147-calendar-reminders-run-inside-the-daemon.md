@@ -1,7 +1,7 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-13
-implementation: planned
+implementation: partial
 decision-makers: owner
 amends: 0126, 0020, 0133
 amends-0126: reminders run in a lane of the scheduled daemon tick, under the daemon's consent; no separate install

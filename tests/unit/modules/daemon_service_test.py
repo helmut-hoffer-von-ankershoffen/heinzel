@@ -1377,7 +1377,7 @@ def test_attestation_boundary_exposes_scoped_handover_and_rejects_forged_snapsho
 
     service = make()
     # Read-only facts only: the status, and whether a tick runs jobs now (automatic updates wait, ADR 0116).
-    assert [field.name for field in fields(DaemonAttestation)] == ["status", "job_running"]
+    assert [field.name for field in fields(DaemonAttestation)] == ["status", "job_running", "lane"]
     assert _attestation(service).status().installed is False
     assert _attestation(service).job_running() is False
     boundary = _installation_lifecycle(service)
@@ -3120,3 +3120,136 @@ def test_a_boot_identity_must_be_a_bounded_string(make, bin_dir):
     assert service._host_boot_evidence() == (None, None)
     service._host_boot = lambda: ("boot", 7)
     assert service._host_boot_evidence() == ("boot", 7)
+
+
+# The calendar reminder lane (ADR 0147)
+
+
+class Reminders(Notifications):
+    """Calendar reminders on or off, with nothing to post."""
+
+    def __init__(self, on: bool) -> None:
+        self.on = on
+
+    def enabled(self, kind) -> bool:
+        return self.on
+
+    def post_native(self) -> int:
+        return 0
+
+
+class FakeLane:
+    """Records how the tick drives its lane and what the daemon looks like while only the lane runs."""
+
+    def __init__(self, service: DaemonService, directory: Path, command: list[str], interval: int) -> None:
+        self.service, self.directory, self.command, self.interval = service, directory, command, interval
+        self.events: list[str] = []
+        self.seen: dict[str, bool] = {}
+
+    def start(self) -> None:
+        self.events.append("start")
+        self.seen["jobs running at start"] = self.service.job_running()
+
+    def jobs_done(self) -> None:
+        self.events.append("jobs done")
+
+    def stop(self) -> None:
+        self.events.append("stop")
+
+    def finish(self) -> str:
+        self.events.append("finish")
+        self.seen["jobs running at finish"] = self.service.job_running()
+        with lock(self.directory / "lifecycle.lock") as acquired:
+            self.seen["lifecycle free at finish"] = acquired
+        return "window"
+
+
+def with_lane(service: DaemonService, *, reminders: bool = True) -> list[FakeLane]:
+    lanes: list[FakeLane] = []
+
+    def build(directory, command, interval):
+        lanes.append(FakeLane(service, directory, command, interval))
+        return lanes[-1]
+
+    service._lane_supervisor = build
+    service._kernel.bind(Notifications, Reminders(reminders))
+    return lanes
+
+
+def test_a_scheduled_tick_starts_the_lane_before_its_jobs_and_waits_for_it_holding_no_daemon_lock(
+    make, jobs, calls, monkeypatch, bin_dir
+):
+    service = make(jobs)
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    lanes = with_lane(service)
+    report = service.tick()
+    [lane] = lanes
+    assert lane.events == ["start", "finish"]
+    assert lane.seen == {
+        "jobs running at start": True,
+        "jobs running at finish": False,
+        "lifecycle free at finish": True,
+    }
+    assert lane.command == [str(bin_dir / "hz"), "org", "calendar-reminder-lane"]
+    assert (lane.directory, lane.interval) == (service.state_dir, 5)
+    assert report.runs
+    assert service.lane_state().started is True
+    assert "calendar reminder lane started" in service.log_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("case", ["manual", "job", "reminders off", "not installed"])
+def test_only_a_scheduled_tick_with_reminders_on_starts_a_lane(make, jobs, monkeypatch, case):
+    service = make(jobs)
+    if case != "not installed":
+        service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", (lambda: None) if case == "manual" else os.getpid)
+    lanes = with_lane(service, reminders=case != "reminders off")
+    service.tick(job="example:hourly" if case == "job" else None)
+    assert lanes == []
+    assert service.lane_state().started is False
+
+
+def test_a_lane_that_cannot_start_never_keeps_the_jobs_from_running(make, jobs, calls, monkeypatch):
+    service = make(jobs)
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    with_lane(service)
+
+    def broken(*_args):
+        msg = "no pipe"
+        raise OSError(msg)
+
+    service._lane_supervisor = broken
+    report = service.tick()
+    assert report.runs
+    assert "calendar reminder lane not started: OSError: no pipe" in service.log_path.read_text(encoding="utf-8")
+
+
+def test_a_tick_whose_jobs_crash_stops_its_lane(make, jobs, monkeypatch):
+    service = make(jobs)
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    lanes = with_lane(service)
+
+    def crash(*_args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(service, "_run", crash)
+    with pytest.raises(KeyboardInterrupt):
+        service.tick()
+    assert lanes[0].events == ["start", "stop"]
+
+
+def test_the_lane_state_reads_its_heartbeat_and_tolerates_garbage(make):
+    service = make()
+    assert service.lane_state().started is False
+    service.state_dir.mkdir(parents=True, exist_ok=True)
+    (service.state_dir / "lane.json").write_text(
+        json.dumps({"at": "2026-11-13T10:00:00+00:00", "result": "ok", "profile": "p", "crashes": 2})
+    )
+    state = service.lane_state()
+    assert (state.result, state.profile, state.crashes) == ("ok", "p", 2)
+    (service.state_dir / "lane.json").write_text(json.dumps({"crashes": True, "result": 3}))
+    state = service.lane_state()
+    assert (state.result, state.profile, state.crashes, state.beat_at) == (None, None, 0, None)

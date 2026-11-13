@@ -203,3 +203,25 @@ def test_worker_hands_one_valid_reminder_to_the_native_notifier(settings, monkey
     cycle(lambda: agenda, service, now, enabled=True)
     assert native.post.call_count == 1
     assert native.post.call_args.args[0] == "Meeting starts soon"
+
+
+def test_a_naive_instant_is_refused_and_a_failing_provider_withdraws_pending_reminders(settings):
+    from heinzel import NoticeKind
+    from heinzel.kernel._calendar_reminders import cycle
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+
+    with pytest.raises(ValueError, match="timezone"):
+        plan([], datetime(2026, 11, 13, 10))  # noqa: DTZ001 - the naive instant under test
+    now = datetime(2026, 11, 13, 10, tzinfo=UTC)
+    service = NotifyService(settings, NotifySettings(calendar=True, native=False, working_hours=False), {})
+    service._clock = lambda: now
+    service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "", route="/", command="", key="m", expires=now + timedelta(minutes=5)
+    )
+
+    def broken():
+        msg = "provider down"
+        raise OSError(msg)
+
+    assert cycle(broken, service, now, enabled=True) == timedelta(seconds=30)
+    assert service.recent()[0].held == "withdrawn"

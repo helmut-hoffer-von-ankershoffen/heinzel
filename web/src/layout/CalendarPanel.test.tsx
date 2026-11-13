@@ -13,7 +13,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function panel(local: boolean, service = "not installed") {
+function panel(local: boolean, state = "install") {
   vi.spyOn(browser, "isLocalServer").mockReturnValue(local);
   const requests = mockApi({
     "/api/org/calendar": {
@@ -24,8 +24,9 @@ function panel(local: boolean, service = "not installed") {
       problem: null,
       fix: null,
     },
-    "/api/org/calendar-reminders-status": { enabled: true, service },
-    "/api/stream/org/calendar-reminders-install": () => eventStream([], { message: "installed" }),
+    "/api/org/calendar-reminders-status": { enabled: true, state },
+    "/api/stream/system/daemon/install": () => eventStream([], { message: "installed" }),
+    "/api/stream/system/daemon/resume": () => eventStream([], { paused: false }),
   });
   const rendered = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -37,23 +38,50 @@ function panel(local: boolean, service = "not installed") {
   return { ...requests, ...rendered };
 }
 
-it("sets up the profile worker only after explicit confirmation without a terminal command", async () => {
+it("turns reminders on by installing the daemon after its own confirmation, without a terminal command", async () => {
   const { calls, container } = panel(true);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Turn on reminders" }));
-  expect(screen.getByRole("dialog")).toHaveTextContent("at every login");
-  expect(screen.getByRole("dialog")).toHaveTextContent("separate consent");
+  expect(screen.getByRole("dialog")).toHaveTextContent("Keep my Heinzelmännchen working while the app is closed.");
   expect(container.textContent).not.toContain("hz org");
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   await expectAccessible(container);
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Turn on reminders" }));
-  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Turn on reminders" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Install background service" }));
   await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
   const request = calls.find((call) => call.method === "POST");
-  expect(new URL(request?.url ?? "").pathname).toBe("/api/stream/org/calendar-reminders-install");
-  expect(new URL(request?.url ?? "").searchParams.get("confirm")).toBe("true");
+  expect(new URL(request?.url ?? "").pathname).toBe("/api/stream/system/daemon/install");
+});
+
+it("resumes a paused daemon from the calendar, naming the action", async () => {
+  const { calls } = panel(true, "resume");
+  expect(await screen.findByText("Background work is paused, so reminders are paused too.")).toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Resume" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Resume" }));
+  await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
+  const request = calls.find((call) => call.method === "POST");
+  expect(new URL(request?.url ?? "").pathname).toBe("/api/stream/system/daemon/resume");
+});
+
+it.each([
+  ["overdue", "Reminders have not checked your calendar for a few minutes.", "Background service"],
+  ["provider", "Reminders can't read your calendar right now.", "Connect a calendar…"],
+])("points an %s lane to its one fix", async (state, line, action) => {
+  panel(true, state);
+  expect(await screen.findByText(line)).toBeInTheDocument();
+  const row = screen.getByRole("group", { name: "Actions" });
+  expect(within(row).getByRole("link", { name: action })).toBeInTheDocument();
+});
+
+it("never offers the daemon in another profile", async () => {
+  const { calls } = panel(true, "elsewhere");
+  const line = "Reminders run for the profile this computer's Heinzel daemon uses.";
+  expect(await screen.findByText(line)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Turn on reminders" })).not.toBeInTheDocument();
+  expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
 });
 
 it("does not offer server persistence setup from a remote browser", async () => {
@@ -111,7 +139,7 @@ it("opens a meeting row into its detail with provider, a Join icon button, organ
       },
       { ...baseEvent, id: "two", title: "Plain" },
     ]),
-    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+    "/api/org/calendar-reminders-status": { enabled: false, state: "off" },
   });
   const user = userEvent.setup();
   const { container } = render(
@@ -149,11 +177,11 @@ it("leads the bottom row with Turn on reminders, in words, while this computer h
   const turnOn = await within(row).findByRole("button", { name: "Turn on reminders" });
   expect(row.querySelector("button, a")).toBe(turnOn);
   expect(turnOn).toHaveTextContent("Turn on reminders");
-  expect(screen.queryByText(/background worker/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/background worker|helper/)).not.toBeInTheDocument();
 });
 
 it("puts Close in the title row and every action in one bottom row, Today leading with its words", async () => {
-  panel(true, "running");
+  panel(true, "on");
   const close = await screen.findByRole("button", { name: "Close calendar" });
   expect(close.closest("[data-pane-chrome]")).not.toBeNull();
   expect(close).toHaveTextContent("");
@@ -163,7 +191,6 @@ it("puts Close in the title row and every action in one bottom row, Today leadin
     "Today",
     "Previous week",
     "Next week",
-    "Turn off reminders on this computer",
   ]);
   expect(buttons[0]).toHaveTextContent("Today");
   expect(buttons.slice(1).every((button) => button.textContent === "")).toBe(true);
@@ -206,7 +233,7 @@ const thisWeek = (events: object[], timezone = "Europe/Berlin") => ({
   fix: null,
 });
 
-function agenda(events: object[] = agendaEvents, { local = true, service = "not installed", enabled = true } = {}) {
+function agenda(events: object[] = agendaEvents, { local = true, state = "install", enabled = true } = {}) {
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime(new Date(NOW));
   vi.spyOn(browser, "isLocalServer").mockReturnValue(local);
@@ -215,7 +242,7 @@ function agenda(events: object[] = agendaEvents, { local = true, service = "not 
   mockApi({
     "/api/org/calendar": (request: Request) =>
       new URL(request.url).searchParams.get("offset") === "1" ? nextWeek : thisWeek(events),
-    "/api/org/calendar-reminders-status": { enabled, service },
+    "/api/org/calendar-reminders-status": { enabled, state: enabled ? state : "off" },
   });
   const view = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -344,7 +371,7 @@ it("mutes past days and finished rows, and the header says the day so colour is 
 });
 
 it("keeps Today dimmed on this week, enables it after Next week, and scrolls Today to the top when pressed", async () => {
-  const { scroll } = agenda(agendaEvents, { service: "running" });
+  const { scroll } = agenda(agendaEvents, { state: "on" });
   await screen.findByText("Standup");
   expect(scroll).toHaveBeenCalledTimes(1);
   expect(scroll.mock.contexts[0]).toHaveAttribute("aria-current", "date");
@@ -371,7 +398,7 @@ it("keeps Today dimmed on this week, enables it after Next week, and scrolls Tod
 
 it("says the reminder state in one line with an icon and nothing to press", async () => {
   const { container } = agenda();
-  const band = await screen.findByText("Meeting reminders are not on for this computer yet.");
+  const band = await screen.findByText("Reminders need Heinzel's background service on this computer.");
   expect(band.querySelector("svg")).not.toBeNull();
   expect(band.querySelector("a, button")).toBeNull();
   expect(band.closest("a, button")).toBeNull();
@@ -379,10 +406,11 @@ it("says the reminder state in one line with an icon and nothing to press", asyn
   expect(screen.getByRole("button", { name: "Turn on reminders" })).toBeInTheDocument();
 });
 
-it("hides the band while the worker runs, and shows the remote sentence without a worker button", async () => {
-  agenda(agendaEvents, { service: "running" });
-  await screen.findByRole("button", { name: "Turn off reminders on this computer" });
-  expect(screen.queryByText(/Meeting reminders|Calendar reminders|state is unavailable/)).not.toBeInTheDocument();
+it.each(["on", "starting"])("hides the band and offers no reminder action while the lane is %s", async (state) => {
+  agenda(agendaEvents, { state });
+  await screen.findByText("Standup");
+  expect(screen.queryByText(/Reminders|reminders|background/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /reminders|Resume/ })).not.toBeInTheDocument();
 });
 
 it("tells a remote browser to use the computer itself", async () => {
@@ -404,18 +432,6 @@ it("points to the Calendar reminders setting first while it is off, never offeri
 it("says a remote browser that reminders are off, without the local first step", async () => {
   agenda(agendaEvents, { enabled: false, local: false });
   expect(await screen.findByText("Calendar reminders are off or unavailable.")).toBeInTheDocument();
-});
-
-it("offers Turn on reminders as the repair when the state is unknown, without saying they run", async () => {
-  agenda(agendaEvents, { service: "unknown" });
-  expect(
-    await screen.findByText(
-      "Reminders are on, but they could not be confirmed running here. Turn them on again to repair.",
-    ),
-  ).toBeInTheDocument();
-  const row = screen.getByRole("group", { name: "Actions" });
-  expect(row.querySelector("button, a")).toBe(within(row).getByRole("button", { name: "Turn on reminders" }));
-  expect(within(row).getByRole("button", { name: "Turn off reminders on this computer" })).toBeInTheDocument();
 });
 
 it("announces Now and Next in one polite status line and nowhere else", async () => {
@@ -454,7 +470,7 @@ it("opens the join and calendar links outside the app and draws no button for a 
       },
       { ...baseEvent, id: "two", title: "Plain" },
     ]),
-    "/api/org/calendar-reminders-status": { enabled: true, service: "running" },
+    "/api/org/calendar-reminders-status": { enabled: true, state: "on" },
   });
   const user = userEvent.setup();
   render(

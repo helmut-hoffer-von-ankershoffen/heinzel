@@ -138,6 +138,7 @@ from heinzel.kernel._daemon_attestation import (
     DaemonLifecycleWait,
     DaemonMutationScope,
     DaemonStatusAttestation,
+    ReminderLaneState,
 )
 from heinzel.kernel._daemon_recovery import (
     DaemonLegacyRecovery,
@@ -707,6 +708,7 @@ __all__ = [
     "ReleasePage",
     "ReleaseRecord",
     "ReleaseSource",
+    "ReminderLaneState",
     "ReportingDraft",
     "Requester",
     "Requirement",

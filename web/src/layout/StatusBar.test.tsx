@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -298,7 +298,7 @@ describe("Footer items are icons with a state and a pane", () => {
         problem: "No calendar connected.",
         fix: "hz setup",
       },
-      "/api/org/calendar-reminders-status": { enabled: true, service: "not installed" },
+      "/api/org/calendar-reminders-status": { enabled: true, state: "install" },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
@@ -315,12 +315,20 @@ describe("Footer items are icons with a state and a pane", () => {
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
     expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
-    expect(await within(panel).findByText(/Meeting reminders are not on for this computer yet/)).toBeInTheDocument();
+    expect(
+      await within(panel).findByText(/Reminders need Heinzel.s background service on this computer/),
+    ).toBeInTheDocument();
     await user.click(within(panel).getByRole("link", { name: "Connect a calendar…" }));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
   it("shows current and next meeting together and opens the week", async () => {
+    // A fixed midday: near midnight the next meeting would cross into tomorrow and show on two days.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T11:00:00Z"));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const now = Date.now();
     const current = {
       title: "Standup",

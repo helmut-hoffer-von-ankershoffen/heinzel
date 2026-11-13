@@ -1691,10 +1691,10 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 
 * `agenda`: (expert) Show the meeting you are in now...
 * `calendar`: (expert) Show a week from your connected...
-* `calendar-reminder-worker`: (expert) Run the supervised calendar...
-* `calendar-reminders-install`: (expert) Install a supervised worker;...
-* `calendar-reminders-status`: (expert) Show calendar reminder consent...
-* `calendar-reminders-uninstall`: (expert) Stop and remove the supervised...
+* `calendar-reminder-lane`: (expert) Run the daemon&#x27;s calendar...
+* `calendar-reminder-worker`: (expert) Run a leftover reminder worker,...
+* `calendar-reminders-status`: (expert) Show whether calendar reminders...
+* `calendar-reminders-uninstall`: (expert) Remove this profile&#x27;s leftover...
 * `show`: Show your profile: who you are, your role,...
 * `sync`: Show what your team recommends beside what...
 
@@ -1731,9 +1731,25 @@ $ hz org calendar [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz org calendar-reminder-lane`
+
+(expert) Run the daemon&#x27;s calendar reminder lane until its slot window; only a daemon tick starts it.
+
+**Usage**:
+
+```console
+$ hz org calendar-reminder-lane [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz org calendar-reminder-worker`
 
-(expert) Run the supervised calendar reminder worker until its periodic restart.
+(expert) Run a leftover reminder worker, or remove it once the daemon&#x27;s lane owns its profile.
 
 **Usage**:
 
@@ -1747,26 +1763,9 @@ $ hz org calendar-reminder-worker [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz org calendar-reminders-install`
-
-(expert) Install a supervised worker; separately enable calendar reminders to consent to background reads.
-
-**Usage**:
-
-```console
-$ hz org calendar-reminders-install [OPTIONS]
-```
-
-**Options**:
-
-* `--confirm / --no-confirm`: Confirm installing a persistent login worker for this profile.  [default: no-confirm]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ### `hz org calendar-reminders-status`
 
-(expert) Show calendar reminder consent and the supervised worker&#x27;s state.
+(expert) Show whether calendar reminders are on and whether the daemon&#x27;s reminder lane runs them (ADR 0147).
 
 **Usage**:
 
@@ -1782,7 +1781,7 @@ $ hz org calendar-reminders-status [OPTIONS]
 
 ### `hz org calendar-reminders-uninstall`
 
-(expert) Stop and remove the supervised calendar reminder worker.
+(expert) Remove this profile&#x27;s leftover calendar reminder worker; the daemon runs reminders now.
 
 **Usage**:
 

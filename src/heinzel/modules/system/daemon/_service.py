@@ -39,6 +39,7 @@ from heinzel import (
     JobInactive,
     JobLet,
     Kernel,
+    NoticeKind,
     Notifications,
     Progress,
     Settings,
@@ -56,6 +57,7 @@ from heinzel.kernel import (
     Installation,
     MaintenanceLocks,
     ProcessOutcome,
+    ReminderLaneState,
     host_maintenance_gate,
     private_directory,
     private_lock,
@@ -69,6 +71,8 @@ from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
+from heinzel.modules.system.daemon._lane import COMMAND as LANE_COMMAND
+from heinzel.modules.system.daemon._lane import LANE_FILE, LaneSupervisor
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
@@ -108,6 +112,7 @@ from heinzel.modules.system.daemon._runtime import (
     write_private,
 )
 from heinzel.modules.system.daemon._units import (
+    INTERVALS,
     LABEL,
     LOGIN_ITEM_HINT,
     NOTIFIER_APP,
@@ -627,6 +632,7 @@ class DaemonService:
         desktop_session: Callable[[], str | None] | None = None,
         install_notifier: Callable[[], str | None] | None = None,
         profile_config: Config | None = None,
+        lane_supervisor: Callable[[Path, list[str], int], LaneSupervisor] | None = None,
     ) -> None:
         """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
@@ -656,7 +662,10 @@ class DaemonService:
             profile_config: Selected user/explicit configuration routing, without project settings or credentials.
             install_notifier: Installs the native notifier as a step of `install` on macOS and returns what went wrong
                 in plain words, or None when it worked; None (the default) leaves that step out.
+            lane_supervisor: Builds the calendar reminder lane of a scheduled tick from its state directory, command
+                and interval (ADR 0147); tests replace it.
         """
+        self._lane_supervisor = lane_supervisor or LaneSupervisor
         self._desktop_session = desktop_session or self._launchd_session
         self._install_notifier = install_notifier
         self._notifier_installed = notifier_installed
@@ -2347,35 +2356,84 @@ class DaemonService:
                     return TickReport(at=now, dry_run=False, paused=False, locked=True, runs=[])
                 if self.paused:  # checked under the lock, so a `pause` that waited for a tick is honoured by the next
                     return TickReport(at=now, dry_run=False, paused=True, locked=False, runs=[])
-                handover = self._begin_handover_observation()
-                log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
-                try:
-                    runs = self._run(jobs, job, now, log)
-                    manager_pid = self._service_manager_pid()
-                    manager_bound = manager_pid == os.getpid()
-                    heartbeat: dict[str, str | int] = {
-                        "last_tick": now.isoformat(),
-                        "completed_at": self._clock().isoformat(),
-                        "source": (
-                            "scheduled" if manager_bound and job is None else "manual" if manager_pid else "unknown"
-                        ),
-                        "outcome": (
-                            "failed" if any(run.disposition is Disposition.FAILED for run in runs) else "completed"
-                        ),
-                    }
-                    recorded = self._read_state("install.json")
-                    interval = recorded.get("interval_minutes")
-                    if manager_bound and isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
-                        heartbeat["interval_minutes"] = interval
-                    if manager_bound:
-                        heartbeat["version"] = __version__
-                        self._settle_handover_locked(handover, now)
-                    self._write_state("heartbeat.json", heartbeat)
-                    self._post_notices(log)
-                    log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
-                finally:
-                    log.close()
-            return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
+                runs, lane = self._tick_locked(jobs, job, now)
+        # Both daemon locks are released: `job_running()`, updates, pause and install see the daemon idle while only
+        # the lane runs (ADR 0147, point 2). The tick ends only after its lane.
+        if lane is not None:
+            lane.finish()
+        return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
+
+    def _tick_locked(
+        self, jobs: list[Job], job: str | None, now: datetime
+    ) -> tuple[list[JobRun], LaneSupervisor | None]:
+        """Under both daemon locks: start the lane, run the jobs, write the heartbeat."""
+        handover = self._begin_handover_observation()
+        log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
+        try:
+            lane = self._start_lane(log) if job is None else None
+            try:
+                runs = self._run(jobs, job, now, log)
+            except BaseException:
+                if lane is not None:
+                    lane.stop()
+                raise
+            manager_pid = self._service_manager_pid()
+            manager_bound = manager_pid == os.getpid()
+            heartbeat: dict[str, str | int] = {
+                "last_tick": now.isoformat(),
+                "completed_at": self._clock().isoformat(),
+                "source": "scheduled" if manager_bound and job is None else "manual" if manager_pid else "unknown",
+                "outcome": "failed" if any(run.disposition is Disposition.FAILED for run in runs) else "completed",
+            }
+            recorded = self._read_state("install.json")
+            interval = recorded.get("interval_minutes")
+            if manager_bound and isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
+                heartbeat["interval_minutes"] = interval
+            if manager_bound:
+                heartbeat["version"] = __version__
+                heartbeat["lane"] = "started" if lane is not None else "off"
+                self._settle_handover_locked(handover, now)
+            self._write_state("heartbeat.json", heartbeat)
+            self._post_notices(log)
+            log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
+        finally:
+            log.close()
+        return runs, lane
+
+    def _start_lane(self, log: TickLog) -> LaneSupervisor | None:
+        """Start the calendar reminder lane of a manager-bound tick when Calendar reminders are on (ADR 0147)."""
+        recorded = self._read_state("install.json").get("interval_minutes")
+        if not isinstance(recorded, int) or isinstance(recorded, bool) or recorded not in INTERVALS:
+            return None
+        try:
+            if not self._kernel.provides(Notifications) or not self._kernel.resolve(Notifications).enabled(
+                NoticeKind.CALENDAR
+            ):
+                return None
+            if self._service_manager_pid() != os.getpid():
+                return None
+            executable = self._shim(dry_run=False)
+            lane = self._lane_supervisor(self.state_dir, [str(executable), *LANE_COMMAND], recorded)
+            lane.start()
+        except Exception as exc:  # noqa: BLE001 - reminders must never keep the daemon's jobs from running
+            log.write(logging.WARNING, f"calendar reminder lane not started: {describe(exc)}")
+            return None
+        log.write(logging.INFO, "calendar reminder lane started")
+        return lane
+
+    def lane_state(self) -> ReminderLaneState:
+        """The reminder lane as the last scheduled tick and the lane's heartbeat recorded it."""
+        heartbeat = self._read_state("heartbeat.json")
+        beat = self._read_state(LANE_FILE)
+        crashes = beat.get("crashes")
+        return ReminderLaneState(
+            started=heartbeat.get("lane") == "started",
+            last_tick=self._timestamp("heartbeat.json", "last_tick"),
+            beat_at=self._timestamp(LANE_FILE, "at"),
+            result=str(beat["result"]) if isinstance(beat.get("result"), str) else None,
+            profile=str(beat["profile"]) if isinstance(beat.get("profile"), str) else None,
+            crashes=crashes if isinstance(crashes, int) and not isinstance(crashes, bool) else 0,
+        )
 
     def _begin_handover_observation(self) -> tuple[str, str, dict[str, int]] | None:
         """Bind a request and local fingerprint at tick start only under the running service manager."""

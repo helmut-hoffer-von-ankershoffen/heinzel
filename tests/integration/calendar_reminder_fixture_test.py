@@ -143,39 +143,37 @@ def test_bound_provider_restarts_and_cancellation_suppresses_delivery(make_kerne
     assert restarted.recent()[0].held == "withdrawn"
 
 
-def test_web_status_is_authenticated_and_reports_worker_state(make_kernel, settings, monkeypatch):
-    from heinzel.modules import org
-
+def test_web_status_is_authenticated_and_asks_for_the_daemon_not_a_worker(make_kernel, settings):
     kernel = make_kernel(builtins=True)
     kernel.bind(Notifications, NotifyService(settings, NotifySettings(calendar=True), {}, notifier=None))
-    monkeypatch.setattr(org, "reminder_service_status", lambda: "not installed")
     client = TestClient(
         web.build(kernel, port=8000, token="fixture-token", static=None), base_url="http://127.0.0.1:8000"
     )
     assert client.get("/api/org/calendar-reminders-status").status_code == 401
     response = client.get("/api/org/calendar-reminders-status", headers={"Authorization": "Bearer fixture-token"})
     assert response.status_code == 200
-    assert response.json() == {"enabled": True, "service": "not installed"}
+    assert response.json() == {"enabled": True, "state": "install"}
 
 
-def test_web_setup_requires_authentication_and_confirmation_and_is_not_public(make_kernel, monkeypatch):
+def test_web_has_no_separate_reminder_setup_and_leftover_removal_is_confirmed_and_private(make_kernel, monkeypatch):
     from unittest.mock import Mock
 
     from heinzel.heads import api
     from heinzel.modules import org
 
     kernel = make_kernel(builtins=True)
-    install = Mock(return_value="installed")
-    monkeypatch.setattr(org, "install_reminders", install)
+    uninstall = Mock(return_value="removed")
+    monkeypatch.setattr(org, "uninstall_reminders", uninstall)
     client = TestClient(
         web.build(kernel, port=8000, token="fixture-token", static=None), base_url="http://127.0.0.1:8000"
     )
-    path = "/api/org/calendar-reminders-install"
-    assert client.post(path + "?confirm=true").status_code == 401
     headers = {"Authorization": "Bearer fixture-token"}
+    assert client.post("/api/org/calendar-reminders-install?confirm=true", headers=headers).status_code in {404, 405}
+    path = "/api/org/calendar-reminders-uninstall"
+    assert client.post(path + "?confirm=true").status_code == 401
     assert client.post(path, headers=headers).status_code == 400
-    install.assert_not_called()
+    uninstall.assert_not_called()
     assert client.post(path + "?confirm=true", headers=headers).status_code == 200
-    install.assert_called_once()
+    uninstall.assert_called_once()
     public = TestClient(api.build(kernel), base_url="http://127.0.0.1")
-    assert public.post("/org/calendar-reminders-install?confirm=true").status_code == 404
+    assert public.post("/org/calendar-reminders-uninstall?confirm=true").status_code == 404

@@ -1539,22 +1539,32 @@
         "type": "object"
       },
       "CalendarReminderStatus": {
-        "description": "Whether calendar reads are enabled and what the supervisor reports.",
+        "description": "Whether calendar reminders are on, and what keeps them from running on this computer.",
         "properties": {
           "enabled": {
             "description": "Whether this profile permits background calendar reads and reminders.",
             "title": "Enabled",
             "type": "boolean"
           },
-          "service": {
-            "description": "The local supervisor state for the selected calendar reminder profile.",
-            "title": "Service",
+          "state": {
+            "description": "off: the setting is off; on: the daemon's reminder lane runs; starting: it starts at the next daemon tick; install: the daemon is not installed; elsewhere: the daemon runs for another profile; resume: the daemon is paused; provider: the calendar can't be read; overdue: the lane stopped checking in.",
+            "enum": [
+              "off",
+              "on",
+              "starting",
+              "install",
+              "elsewhere",
+              "resume",
+              "provider",
+              "overdue"
+            ],
+            "title": "State",
             "type": "string"
           }
         },
         "required": [
           "enabled",
-          "service"
+          "state"
         ],
         "title": "CalendarReminderStatus",
         "type": "object"
@@ -27404,56 +27414,9 @@
         ]
       }
     },
-    "/org/calendar-reminders-install": {
-      "post": {
-        "description": "Install a supervised worker; separately enable calendar reminders to consent to background reads.\n\nRaises:\n    HeinzelError: If persistent setup has not been explicitly confirmed.",
-        "operationId": "org_calendar_reminders_install",
-        "parameters": [
-          {
-            "description": "Confirm installing a persistent login worker for this profile.",
-            "in": "query",
-            "name": "confirm",
-            "required": false,
-            "schema": {
-              "default": false,
-              "description": "Confirm installing a persistent login worker for this profile.",
-              "title": "Confirm",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Org Calendar Reminders Install",
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Install a supervised worker; separately enable calendar reminders to consent to background reads.",
-        "tags": [
-          "org"
-        ]
-      }
-    },
     "/org/calendar-reminders-status": {
       "get": {
-        "description": "Show calendar reminder consent and the supervised worker's state.",
+        "description": "Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147).",
         "operationId": "org_calendar_reminders_status",
         "responses": {
           "200": {
@@ -27467,7 +27430,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Show calendar reminder consent and the supervised worker's state.",
+        "summary": "Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147).",
         "tags": [
           "org"
         ]
@@ -27475,7 +27438,7 @@
     },
     "/org/calendar-reminders-uninstall": {
       "post": {
-        "description": "Stop and remove the supervised calendar reminder worker.\n\nRaises:\n    HeinzelError: If removal has not been explicitly confirmed.",
+        "description": "Remove this profile's leftover calendar reminder worker; the daemon runs reminders now.\n\nRaises:\n    HeinzelError: If removal has not been explicitly confirmed.",
         "operationId": "org_calendar_reminders_uninstall",
         "parameters": [
           {
@@ -27514,7 +27477,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Stop and remove the supervised calendar reminder worker.",
+        "summary": "Remove this profile's leftover calendar reminder worker; the daemon runs reminders now.",
         "tags": [
           "org"
         ]

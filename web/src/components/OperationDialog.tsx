@@ -29,8 +29,7 @@ const QUICK = new Set(["/system/daemon/restart"]);
 const copyOf = (path: string) => (path.endsWith("/uninstall") ? "uninstall" : "install");
 /** Writes whose committing button names the action instead of "Run it". */
 const ACTION: Record<string, MessageKey> = {
-  "/org/calendar-reminders-install": "calendar.setUpWorker",
-  "/org/calendar-reminders-uninstall": "calendar.turnOff",
+  "/system/daemon/resume": "daemon.resume",
 };
 
 const ICON: Record<PhaseState, typeof Check | null> = {

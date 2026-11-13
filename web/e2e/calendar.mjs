@@ -25,14 +25,14 @@ for (const [name, engine] of [
       });
       let installs = 0;
       await page.route("**/api/org/calendar-reminders-status", (route) =>
-        route.fulfill({ json: { enabled: true, service: "not installed" } }),
+        route.fulfill({ json: { enabled: true, state: "install" } }),
       );
-      await page.route("**/api/stream/org/calendar-reminders-install*", (route) => {
+      // Reminders run in the daemon (ADR 0147): turning them on installs the daemon through its own confirmation.
+      await page.route("**/api/stream/system/daemon/install*", (route) => {
         installs += 1;
-        assert.equal(new URL(route.request().url()).searchParams.get("confirm"), "true");
         return route.fulfill({
           contentType: "text/event-stream",
-          body: 'event: result\ndata: {"data":"Calendar reminder service installed."}\n\n',
+          body: 'event: result\ndata: {"data":{"files":{},"commands":[],"interval_minutes":5,"dry_run":false}}\n\n',
         });
       });
       const now = Date.now();
@@ -175,7 +175,7 @@ for (const [name, engine] of [
       await scroller.evaluate((element) => {
         element.scrollTop = 0;
       });
-      const band = panel.getByText("Meeting reminders are not on for this computer yet.", { exact: true });
+      const band = panel.getByText("Reminders need Heinzel's background service on this computer.", { exact: true });
       await band.waitFor();
       assert.equal(await band.locator("a, button").count(), 0, "the reminder band holds a control");
       await page.evaluate(axe.source);
@@ -244,15 +244,15 @@ for (const [name, engine] of [
       await turnOn.click();
       const confirmation = page.locator("[data-operation]");
       await confirmation.waitFor({ state: "visible" });
-      assert.match(await confirmation.textContent(), /at every login/);
-      assert.match(await confirmation.textContent(), /separate consent/);
+      assert.match(await confirmation.textContent(), /Keep my Heinzelmännchen working while the app is closed/);
+      assert.doesNotMatch(await confirmation.textContent(), /separate consent|worker/);
       assert.equal(installs, 0);
       await page.screenshot({ path: join(shots, `${name}-${size}-setup.png`) });
       await confirmation.getByRole("button", { name: "Cancel" }).click();
       assert.equal(installs, 0);
       await panel.getByRole("button", { name: "Turn on reminders" }).click();
-      await confirmation.getByRole("button", { name: "Turn on reminders" }).click();
-      await confirmation.getByText("Done.", { exact: true }).waitFor();
+      await confirmation.getByRole("button", { name: "Install background service" }).click();
+      await confirmation.getByText("Installed. Its first check comes within 5 minutes.", { exact: true }).waitFor();
       assert.equal(installs, 1);
       await context.close();
     }

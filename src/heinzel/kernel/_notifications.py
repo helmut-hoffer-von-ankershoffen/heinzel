@@ -12,7 +12,7 @@ history. Resolution never marks anything read: only the person does that (ADR 00
 """
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -170,6 +170,10 @@ class Notifications:
     A base class rather than a protocol, so that the kernel can inject it by type like any other service. Every
     method raises `NotImplementedError` here.
     """
+
+    calendar_lookahead: timedelta = timedelta(0)
+    """How long before its due instant a calendar reminder counts as valid; only a reminder lane's last cycle widens
+    it (ADR 0147)."""
 
     def enabled(self, kind: NoticeKind) -> bool:
         """Whether a user has enabled recording this kind of notice."""

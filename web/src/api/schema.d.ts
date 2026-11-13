@@ -2023,29 +2023,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/org/calendar-reminders-install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Install a supervised worker; separately enable calendar reminders to consent to background reads.
-         * @description Install a supervised worker; separately enable calendar reminders to consent to background reads.
-         *
-         *     Raises:
-         *         HeinzelError: If persistent setup has not been explicitly confirmed.
-         */
-        post: operations["org_calendar_reminders_install"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/org/calendar-reminders-status": {
         parameters: {
             query?: never;
@@ -2054,8 +2031,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show calendar reminder consent and the supervised worker's state.
-         * @description Show calendar reminder consent and the supervised worker's state.
+         * Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147).
+         * @description Show whether calendar reminders are on and whether the daemon's reminder lane runs them (ADR 0147).
          */
         get: operations["org_calendar_reminders_status"];
         put?: never;
@@ -2076,8 +2053,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stop and remove the supervised calendar reminder worker.
-         * @description Stop and remove the supervised calendar reminder worker.
+         * Remove this profile's leftover calendar reminder worker; the daemon runs reminders now.
+         * @description Remove this profile's leftover calendar reminder worker; the daemon runs reminders now.
          *
          *     Raises:
          *         HeinzelError: If removal has not been explicitly confirmed.
@@ -5297,7 +5274,7 @@ export interface components {
         };
         /**
          * CalendarReminderStatus
-         * @description Whether calendar reads are enabled and what the supervisor reports.
+         * @description Whether calendar reminders are on, and what keeps them from running on this computer.
          */
         CalendarReminderStatus: {
             /**
@@ -5306,10 +5283,11 @@ export interface components {
              */
             enabled: boolean;
             /**
-             * Service
-             * @description The local supervisor state for the selected calendar reminder profile.
+             * State
+             * @description off: the setting is off; on: the daemon's reminder lane runs; starting: it starts at the next daemon tick; install: the daemon is not installed; elsewhere: the daemon runs for another profile; resume: the daemon is paused; provider: the calendar can't be read; overdue: the lane stopped checking in.
+             * @enum {string}
              */
-            service: string;
+            state: "off" | "on" | "starting" | "install" | "elsewhere" | "resume" | "provider" | "overdue";
         };
         /**
          * CalendarWeek
@@ -21021,38 +20999,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalendarWeek"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    org_calendar_reminders_install: {
-        parameters: {
-            query?: {
-                /** @description Confirm installing a persistent login worker for this profile. */
-                confirm?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
                 };
             };
             /** @description Validation Error */

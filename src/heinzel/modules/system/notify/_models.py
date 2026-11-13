@@ -46,8 +46,8 @@ class NotifySettings(ModuleSettings):
     calendar: bool = Field(
         default=False,
         title="Calendar reminders",
-        description="Allow background calendar reads and reminders before meetings start and end; "
-        "set up the worker in Calendar.",
+        description="Remind you before meetings start and end. The background helper reads your calendar about "
+        "every 30 seconds, also while the app is closed.",
     )
     sound: bool = Field(
         default=False,
