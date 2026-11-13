@@ -20,7 +20,7 @@ from pathlib import Path
 from pydantic import JsonValue, ValidationError
 
 from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
-from heinzel.kernel import McpChatSessions
+from heinzel.kernel import McpChatSessions, PersonalChatRemoval
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -76,7 +76,7 @@ def _write_private(path: Path, text: str) -> None:
             temporary.unlink()
 
 
-class ChatStore(McpChatSessions):
+class ChatStore(McpChatSessions, PersonalChatRemoval):
     """Reads, writes and prunes chat sessions."""
 
     def __init__(
@@ -538,6 +538,35 @@ class ChatStore(McpChatSessions):
                 msg = "A personal agent's continuous chat cannot be removed separately"
                 raise HeinzelError(msg)
             shutil.rmtree(self.directory(session))
+
+    def remove_personal(self, session_id: str) -> int:
+        """Remove the owner's chats bound to a personal Heinzel being deleted for good (ADR 0148).
+
+        Returns:
+            How many chats were removed; 0 when none is left, so a resumed deletion finishes.
+
+        Raises:
+            HeinzelError: If a bound chat is busy; the deletion is retried later.
+        """
+        owner = self.personal_owner()
+        removed = 0
+        with self.proposal_request_lock():
+            for path in sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []:
+                try:
+                    raw = ChatSession.model_validate_json(path.read_text(encoding="utf-8"))
+                except (OSError, ValidationError):
+                    continue
+                bound = raw.personal_session_id == session_id and raw.personal_owner_id == owner
+                # Unbound legacy chats name the Heinzel only as their context; session ids are owner-unique.
+                legacy = raw.personal_session_id is None and raw.context is not None and raw.context.ref == session_id
+                if bound or legacy:
+                    with self.held(path.parent) as holding:
+                        if not holding:
+                            msg = "A chat with this Heinzel is busy right now; try again when it is done"
+                            raise HeinzelError(msg)
+                        shutil.rmtree(path.parent)
+                    removed += 1
+        return removed
 
     def prune(self) -> list[str]:  # noqa: C901 - retention and owner isolation share the cleanup boundary
         """Remove sessions unchanged for longer than `keep_days`, and the oldest beyond `keep_sessions`.

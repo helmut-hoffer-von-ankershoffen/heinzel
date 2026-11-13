@@ -137,6 +137,13 @@ class ApprovalChannel(ABC):
     def settle(self, reference: str, outcome: Literal["approved", "declined", "expired", "superseded"]) -> None:
         """Mark a posted request as no longer open, best effort, so nobody answers it again."""
 
+    def forget(self, reference: str) -> None:  # noqa: B027 - optional hook with an intentional no-op default
+        """Delete every copy this channel keeps of a posted request: preview, detail and audit (ADR 0148).
+
+        Called after `settle(reference, "superseded")` when the Heinzel that posted it is deleted for good. It must
+        be idempotent, and must not raise for a reference it no longer knows. The default keeps nothing.
+        """
+
 
 class VerifiedChannelReply(_Message):
     """A reply the host verified against the owner's channel identity and the exact pending request."""

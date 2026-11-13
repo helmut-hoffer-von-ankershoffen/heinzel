@@ -60,7 +60,7 @@ from heinzel.modules.system.notify._models import (
     Tested,
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
-from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
+from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, forget_in_archives, recover
 from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
@@ -315,6 +315,27 @@ class NotifyService(Notifications):
                 directory=str(self.store.directory),
             )
             return False
+
+    def forget_heinzel(self, session_id: str) -> int:
+        """Remove the notices that point at this personal Heinzel's chat, shown or not.
+
+        Raises:
+            OSError: If the store cannot be safely changed; the deletion that asked retries later.
+        """
+        route = f"/heinzel?chat={session_id}"
+
+        def about(value: str) -> bool:
+            return value == route or value.startswith(route + "&")
+
+        def remove(notices: list[Notice]) -> int:
+            kept = [notice for notice in notices if not about(notice.route)]
+            removed = len(notices) - len(kept)
+            notices[:] = kept
+            return removed
+
+        removed = self.store.change(self._clock(), remove)
+        # A recovery archive is in this state directory too: its copies go, and its receipt is rebound.
+        return removed + forget_in_archives(self.store, self._clock(), about)
 
     def withdraw(self, key: str) -> bool:
         """Suppress pending matching notices atomically while retaining their replay keys."""

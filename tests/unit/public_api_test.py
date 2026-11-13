@@ -483,6 +483,7 @@ KERNEL = [
     "Participant",
     "PersistentWeb",
     "Person",
+    "PersonalChatRemoval",
     "PlaybookLet",
     "PlaybookSetup",
     "PluginNews",

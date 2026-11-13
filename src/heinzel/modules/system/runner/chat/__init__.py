@@ -19,7 +19,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module, Settings
-from heinzel.kernel import CheckInChatContextSource, Effort, McpChatSessions
+from heinzel.kernel import CheckInChatContextSource, Effort, McpChatSessions, PersonalChatRemoval
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -45,8 +45,13 @@ def _mcp_chats(store: ChatStore) -> McpChatSessions:
     return store
 
 
+def _personal_chat_removal(store: ChatStore) -> PersonalChatRemoval:
+    return store
+
+
 module.service(ChatStore, _chat_store)
 module.service(McpChatSessions, _mcp_chats)
+module.service(PersonalChatRemoval, _personal_chat_removal)
 module.service(ChatService)
 module.service(ActionGate, StoreGate)
 

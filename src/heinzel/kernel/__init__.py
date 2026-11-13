@@ -59,6 +59,7 @@ from heinzel.kernel._chat_services import (
     CheckInChatContextSource,
     CheckInHistoryMessage,
     McpChatSessions,
+    PersonalChatRemoval,
 )
 from heinzel.kernel._config import (
     FILENAME,
@@ -671,6 +672,7 @@ __all__ = [
     "Participant",
     "PersistentWeb",
     "Person",
+    "PersonalChatRemoval",
     "PlaybookLet",
     "PlaybookSetup",
     "PluginNews",

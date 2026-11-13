@@ -16,6 +16,7 @@ from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -746,3 +747,69 @@ def _apply(store: Store, now: datetime) -> Recovered:
         keys=len(keys),
         receipt=str(target),
     )
+
+
+def _archived_notices(value: object) -> list[object] | None:
+    """The notice list of an archived `notices.json`, a legacy list or a state object, or None."""
+    if isinstance(value, dict):
+        value = cast("dict[str, object]", value).get("notices")
+    return cast("list[object]", value) if isinstance(value, list) else None
+
+
+def forget_in_archives(store: Store, now: datetime, matches: Callable[[str], bool]) -> int:
+    """Remove the notices whose route `matches` from every recovery archive and rebind each receipt (ADR 0148).
+
+    The archived `notices.json` is rewritten without them; its receipt entry gets the new digest and size, and a
+    `redactions` line records when and how many were removed, never what. Returns how many notices were removed.
+
+    Raises:
+        OSError: If an archive cannot be rewritten; the deletion that asked retries later.
+    """
+    root = store.directory.parent / "notify-recovery"
+    if not root.is_dir():
+        return 0
+    removed = 0
+    with store.locked():
+        for target in sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink()):
+            archived = target / "notices.json"
+            if not archived.is_file() or archived.is_symlink():
+                continue
+            value: object = json.loads(archived.read_bytes())
+            notices = _archived_notices(value)
+            holder = cast("dict[str, object]", value) if isinstance(value, dict) else None
+            if notices is None:
+                continue
+            kept: list[object] = [
+                item
+                for item in notices
+                if not (isinstance(item, dict) and matches(str(cast("dict[str, object]", item).get("route", ""))))
+            ]
+            if len(kept) == len(notices):
+                continue
+            if holder is not None:
+                holder["notices"] = kept
+                value = holder
+            else:
+                value = kept
+            text = json.dumps(value, indent=1, ensure_ascii=False) + "\n"
+            _write_private(archived, text)
+            receipt_path = target / "receipt.json"
+            loaded: object = json.loads(receipt_path.read_bytes()) if receipt_path.is_file() else {}
+            receipt = cast("dict[str, object]", loaded) if isinstance(loaded, dict) else {}
+            originals = receipt.get("originals")
+            for entry in cast("list[object]", originals) if isinstance(originals, list) else []:
+                if isinstance(entry, dict) and cast("dict[str, object]", entry).get("name") == "notices.json":
+                    cast("dict[str, object]", entry).update(
+                        sha256=hashlib.sha256(text.encode()).hexdigest(), size=len(text.encode())
+                    )
+            redactions = receipt.setdefault("redactions", list[object]())
+            cast("list[object]", redactions).append(
+                {
+                    "at": now.astimezone(UTC).isoformat(),
+                    "file": "notices.json",
+                    "notices_removed": len(notices) - len(kept),
+                }
+            )
+            _write_private(receipt_path, json.dumps(receipt, indent=1) + "\n")
+            removed += len(notices) - len(kept)
+    return removed

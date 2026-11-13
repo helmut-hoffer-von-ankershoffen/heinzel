@@ -227,6 +227,10 @@ class Notifications:
         """Check a durable key; None means the store could not answer safely."""
         raise NotImplementedError
 
+    def forget_heinzel(self, session_id: str) -> int:
+        """Remove every kept notice about this personal Heinzel (its `/heinzel?chat=` route); how many (ADR 0148)."""
+        raise NotImplementedError
+
     def resolve(self) -> int:
         """Resolve the shown notices whose condition now holds, so they disappear; how many were resolved."""
         raise NotImplementedError

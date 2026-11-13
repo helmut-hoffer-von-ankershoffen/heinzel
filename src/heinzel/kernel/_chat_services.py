@@ -41,3 +41,11 @@ class McpChatSessions:
     def is_check_in(self, session_id: str) -> bool:
         """Whether the existing session is scoped to a personal check-in."""
         raise NotImplementedError
+
+
+class PersonalChatRemoval:
+    """Removes the runner chats bound to a personal Heinzel that is being deleted for good (ADR 0148)."""
+
+    def remove_personal(self, session_id: str) -> int:
+        """Remove every chat of the current owner bound to `session_id`, with its proposals; return how many."""
+        raise NotImplementedError
