@@ -281,3 +281,16 @@ def test_the_check_guards_commits_lint_ci_and_publishing():
     assert 'check_confidentiality.py --text "$$BRANCH"' in makefile
     publish = (REPO / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     assert "check_confidentiality.py" in publish
+
+
+def test_git_output_keeps_carriage_returns_so_binary_diff_hunks_stay_aligned(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for command in (["init", "-q"], ["config", "user.email", "a@b.c"], ["config", "user.name", "n"]):
+        subprocess.run(["git", *command], check=True)
+    (tmp_path / "blob.bin").write_bytes(b"one\rtwo\r\nthree\n" * 3)
+    subprocess.run(["git", "add", "."], check=True)
+    subprocess.run(["git", "commit", "-qm", "x"], check=True)
+    diff = confidentiality._git("diff-tree", "-p", "--text", "-U0", "--no-color", "--root", "HEAD")
+    assert "\r" in diff
+    [(_, lines)] = list(confidentiality.added_lines(diff))
+    assert [number for number, _ in lines] == [1, 2, 3, 4, 5, 6, 7, 8, 9][: len(lines)]

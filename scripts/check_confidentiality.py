@@ -116,9 +116,10 @@ def _git(*args: str) -> str:
         msg = "Git is required to inspect repository content"
         raise RuntimeError(msg)
     # Fixed Git operations with operand boundaries
-    return subprocess.run(  # noqa: S603
-        [executable, *args], check=True, capture_output=True, text=True, errors="replace", timeout=60
-    ).stdout
+    # Bytes, decoded here: text mode would turn a CR in a binary file's diff into a line break, and the hunk line
+    # counts that added_lines reads would no longer match the text.
+    done = subprocess.run([executable, *args], check=True, capture_output=True, timeout=60)  # noqa: S603
+    return done.stdout.decode("utf-8", errors="replace")
 
 
 def _revision(name: str) -> str:
