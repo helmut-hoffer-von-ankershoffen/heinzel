@@ -68,7 +68,7 @@ JOBS_ALWAYS = ["commits", "dependency-review", "secrets"]  # cheap, every pull r
 FULL = re.compile(
     r"^(?:\.github/|Makefile$|pyproject\.toml$|uv\.lock$|hatch_build\.py$|copier\.yml$|template/|starter/"
     r"|scripts/(?!site_[a-z_]+\.py$|check_docs\.py$)"
-    r"|src/heinzel/__init__\.py$|src/heinzel/__main__\.py$|src/_heinzel_launcher\.py$"
+    r"|src/heinzel/__init__\.py$|src/heinzel/__main__\.py$|src/heinzel/_lifecycle_control\.py$|src/_heinzel_launcher\.py$"
     r"|src/heinzel/kernel/|src/heinzel/testing\.py$"
     r"|src/heinzel/heads/(?:install|bootstrap|daemon_recovery|_desktop_[a-z]+|_tool_install|_prerequisites|_presence|_exposure)\.py$"
     r"|src/heinzel/heads/daemon/|src/heinzel/heads/web/_(?:auto_update|supervision|lifecycle|service)\.py$"

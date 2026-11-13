@@ -60,5 +60,8 @@ an Electron application or establish signing, Linux application installation or 
 Amended 2026-11-13: deprecated. No shipped caller used this library: the Electron shell starts `hz ui serve` and
 never loaded `desktop/managed`. Main no longer has `desktop/managed`, the Python lifecycle authority of ADR 0078
 (`heinzel.modules.system.lifecycle`, `heinzel._lifecycle_control`), their tests, the `managed` focused lane or the
-`managed-backend-*` make targets. The last revision that had them is kept on the branch `archive/managed-desktop`.
+`managed-backend-*` make targets. The last revision that had them is kept on the branch `archive/managed-desktop`
+and the tag `archive/managed-desktop-2026-11-13`.
 A managed desktop needs a new ADR, built on the daemon's current lifecycle and not as a second authority.
+
+Implementation stays `built`: it records what PR #221 built; an ADR built by a PR cannot be `planned`.

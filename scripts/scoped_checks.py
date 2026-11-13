@@ -8,10 +8,10 @@
 templates, assets and `mkdocs.yml`, and the site's own tooling (`scripts/site_*.py`, `check_docs.py`,
 `sync_template.py` and their unit tests) run the documentation checks and the tests that read documents and the site;
 only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/` nor the root build files run
-`make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
-tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
-`conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for release candidates.
+`make check-fast` without the web app's tests, with the type checks added and the unit tests narrowed to the ones
+related to the change (`scripts/related_tests.py`; configuration, the lockfile and `conftest.py` cannot be mapped and
+run all of them); anything else runs `make check-fast` in full. `make check-fast` by hand stays the full run. CI runs
+reviewed focused workloads and reserves the full suite for release candidates.
 
 For a scoped web push, set WEB_TEST_FILES to a space-separated list of existing repo-relative Vitest files,
 for example `WEB_TEST_FILES=web/src/sound/StreamPlayer.test.tsx git push`. Leave it unset to run all web tests.
@@ -219,7 +219,7 @@ WEB_ROOT_FILES = {"pyproject.toml", "uv.lock", "Makefile", "mkdocs.yml"}
 
 
 def touches_web(changed: list[str]) -> bool:
-    """Whether a change can break the web app's tests or the managed backend check: files they read."""
+    """Whether a change can break the web app's tests: files they read."""
     return any(path.startswith(WEB_INPUTS) or path in WEB_ROOT_FILES for path in changed)
 
 
@@ -542,8 +542,8 @@ def main() -> None:
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
-            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
-            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
+            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests, which read
+            # nothing of it (the generated client is still checked by web-lint).
             command = ["make", "check-fast", *python_overrides(changed, selected)]
             sys.exit(run_check(command, check=False, timeout=1800).returncode)
         args.mode = "fast"  # everything else is the full fast gate
