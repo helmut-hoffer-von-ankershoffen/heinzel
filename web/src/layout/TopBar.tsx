@@ -100,17 +100,18 @@ export function TopBar({
   };
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
-    <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3">
+    // On a phone the five actions leave the title little room: tighter spacing and no chevron keep "Today" whole.
+    <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3 max-sm:px-2">
       <div ref={menuRef} className="relative min-w-0">
         <button
           type="button"
           onClick={() => setMenu((open) => !open)}
           aria-haspopup="menu"
           aria-expanded={menu}
-          className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70"
+          className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70 max-sm:px-1"
         >
           <span className="truncate">{title}</span>
-          <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
+          <ChevronDown aria-hidden className="size-4 shrink-0 text-icon max-sm:hidden" />
         </button>
         {menu && (
           <AnchoredPopover anchor={menuRef} role="menu" className="w-64">
@@ -130,7 +131,7 @@ export function TopBar({
           </AnchoredPopover>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-0.5 text-icon">
+      <div className="ml-auto flex items-center gap-0.5 text-icon max-sm:gap-0">
         <HeaderActions />
         <Button
           variant="ghost"
