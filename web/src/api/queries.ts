@@ -65,7 +65,9 @@ export const useNavigation = () =>
   });
 
 /** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
-export const useExpert = () => useQuery({ queryKey: keys.expert, queryFn: () => unwrap(api.GET("/system/expert")) });
+/** Expert mode as the server has it; `enabled: false` reads only what another view already loaded. */
+export const useExpert = (enabled = true) =>
+  useQuery({ queryKey: keys.expert, queryFn: () => unwrap(api.GET("/system/expert")), enabled });
 /** `hz system expert on` or `off`, the operations the CLI runs; the answer is the mode in effect. */
 export const useSetExpert = () => {
   const client = useQueryClient();

@@ -313,7 +313,7 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
     });
     await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
     const confirm = await screen.findByRole("dialog", { name: /Keep my Heinzelmännchen working/ });
-    expect(confirm).toHaveTextContent("hz system daemon install");
+    expect(confirm).not.toHaveTextContent("hz system daemon install"); // Expert mode only
     await user.click(within(confirm).getByRole("button", { name: "Install background service" }));
     expect(await screen.findByText(/Installed\. Its first check comes within 5 minutes/)).toBeInTheDocument();
     expect(sent).toEqual([]);

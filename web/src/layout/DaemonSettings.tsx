@@ -143,8 +143,9 @@ export function DaemonSettings() {
           }}
         >
           <p>{t("daemon.confirm", { action: label(pending) })}</p>
-          <code className="block break-all">hz system daemon {pending}</code>
           {(pending === "install" || pending === "uninstall") && <p>{t("daemon.persistenceHint")}</p>}
+          {(pending === "pause" || pending === "resume") && <p>{t(`op.daemon.${pending}.consent`)}</p>}
+          {expert.data?.expert && <code className="block break-all">hz system daemon {pending}</code>}
           <PaneActions align="end" words="all">
             <PaneAction key="cancel" icon={X} autoFocus onClick={() => setPending(null)}>
               {t("contrib.cancel")}

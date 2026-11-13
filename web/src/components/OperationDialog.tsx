@@ -6,6 +6,7 @@ import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "l
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
+import { useExpert } from "@/api/queries";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
 import { type MessageKey, t } from "@/i18n";
@@ -27,10 +28,18 @@ const PERSISTENT = new Set(["/system/daemon/install", "/system/daemon/uninstall"
 /** Safe, easily repeated writes the app runs at once, with plain words instead of the exact call. */
 const QUICK = new Set(["/system/daemon/restart"]);
 const copyOf = (path: string) => (path.endsWith("/uninstall") ? "uninstall" : "install");
+/** Daemon writes the footer asks about in plain words (title, what changes, the verb); the exact call is Expert's. */
+const DAEMON = "/system/daemon/";
+const PLAIN: Record<string, "pause" | "resume"> = {
+  "/system/daemon/pause": "pause",
+  "/system/daemon/resume": "resume",
+};
 /** Writes whose committing button names the action instead of "Run it". */
 const ACTION: Record<string, MessageKey> = {
   "/org/calendar-reminders-install": "calendar.setUpWorker",
   "/org/calendar-reminders-uninstall": "calendar.turnOff",
+  "/system/daemon/pause": "daemon.pause",
+  "/system/daemon/resume": "daemon.resume",
 };
 
 const ICON: Record<PhaseState, typeof Check | null> = {
@@ -142,6 +151,8 @@ function Steps({
 function titleOf(run: Exclude<OperationRun, { stage: "idle" }>): string {
   if (run.driven && run.stage === "done") return run.driven.doneTitle;
   if (run.driven && run.stage !== "confirm") return run.driven.runningTitle;
+  const plain = PLAIN[run.call.path];
+  if (plain) return t(`op.daemon.${plain}.title`);
   return PERSISTENT.has(run.call.path) ? t(`op.daemon.${copyOf(run.call.path)}.title` as MessageKey) : run.call.summary;
 }
 
@@ -163,6 +174,9 @@ export function OperationDialog() {
   const title = useRef<HTMLParagraphElement>(null);
   const [armedRecovery, setArmedRecovery] = useState<OperationRun | null>(null);
   const stage = run.stage;
+  // The exact daemon call is for experts alone. Expert mode as the app already loaded it (the sidebar reads it); the
+  // dialog never asks the server itself, so an unknown mode keeps the plain words.
+  const expert = useExpert(false).data?.expert === true;
   const driven = run.stage !== "idle" && run.driven !== undefined;
   // Focus is never lost when a stage swaps the buttons: a driven run's progress lands on its title, its outcome on
   // the primary button (autoFocus); any other write's outcome on the dialog, the confirmation on Cancel.
@@ -255,9 +269,13 @@ export function OperationDialog() {
       {run.stage === "confirm" && !run.driven && (
         <>
           <p className="mt-1 text-muted-foreground">
-            {persistent ? t(`op.daemon.${copy}.consent` as MessageKey) : t("contrib.confirm")}
+            {persistent
+              ? t(`op.daemon.${copy}.consent` as MessageKey)
+              : PLAIN[run.call.path]
+                ? t(`op.daemon.${PLAIN[run.call.path]}.consent` as MessageKey)
+                : t("contrib.confirm")}
           </p>
-          {run.call.command && (
+          {run.call.command && (expert || !run.call.path.startsWith(DAEMON)) && (
             <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">
               {run.call.command}
             </code>
