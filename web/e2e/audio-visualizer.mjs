@@ -25,7 +25,15 @@ assert(address && typeof address !== "string");
 let browser;
 // Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
 const RAIL_MARGIN = 0.2;
-const result = { viewports: [], tones: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
+const result = {
+  viewports: [],
+  tones: [],
+  realSignal: false,
+  gpuReset: false,
+  realSilence: false,
+  cleanup: false,
+  errors: [],
+};
 // For a failure: the page in use, its console errors and failed requests, written out before the error is rethrown.
 let open = null;
 const consoleErrors = [];
@@ -123,6 +131,8 @@ try {
           canvas: {
             ...window.canvasEvents,
             skyLost: sky.getContext("2d").isContextLost?.() ?? null,
+            generation: Number(sky.dataset.vizGeneration ?? "0"),
+            render: sky.dataset.vizRender,
             visibility: document.visibilityState,
           },
           clock: {
@@ -213,6 +223,24 @@ try {
       `Changing a real tone must move the drawn spectrum up the rail: ${JSON.stringify({ low, high })}`,
     );
     result.realSignal = true;
+    // A GPU reset while the aurora plays (once, at the wide viewport): every canvas loses its 2D context. The aurora
+    // must paint again, whether the browser restores the contexts or the visualizer replaces lost canvases; hosted
+    // macOS runners kept them lost, and the page showed the broken-canvas icon (runs 43510033780, 43518050865).
+    if (viewport.width === 1440) {
+      const gpu = await browser.newBrowserCDPSession();
+      await gpu.send("Browser.crashGpuProcess");
+      await gpu.detach();
+      await until("the GPU reset did not reach the canvases", () => window.canvasEvents.lost > 0);
+      const reset = await until("the aurora did not paint again after a GPU reset", () => {
+        const now = window.vizSnapshot();
+        return now.count > 0 && !now.canvas.skyLost ? now : null;
+      });
+      assert(
+        reset.visible > 0.03,
+        `${viewport.width}px: after a GPU reset the aurora must be visible again: ${JSON.stringify(reset)}`,
+      );
+      result.gpuReset = true;
+    }
     // What the person sees: a region of the page away from the controls must change while the aurora paints and
     // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
     const away = { x: 260, y: Math.round(viewport.height / 3), width: Math.min(80, viewport.width - 260), height: 200 };

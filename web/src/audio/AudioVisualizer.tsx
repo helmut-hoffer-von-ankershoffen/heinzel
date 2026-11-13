@@ -37,6 +37,7 @@ import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
 import { drawHalo } from "./viz/halo";
+import { SOFTWARE_AFTER, watchLost } from "./viz/lost";
 import { drawRail } from "./viz/rail";
 import { STYLES, setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
 import { useVizStage } from "./viz/stage";
@@ -194,6 +195,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const [drawable] = useState(canDraw);
   const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
+  /**
+   * Bumped when a lost canvas context does not come back: every canvas is keyed by it, so React mounts new elements
+   * with new contexts. After `SOFTWARE_AFTER` replacements they draw in memory, off the GPU that keeps failing.
+   */
+  const [canvasGeneration, setCanvasGeneration] = useState(0);
+  const software = canvasGeneration >= SOFTWARE_AFTER;
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -383,17 +390,18 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const haloOn = styleOn(settings, "halo") && stageElement !== null;
   const swarmOn = styleOn(settings, "swarm") && stageElement !== null;
   const drawing = Boolean(analyser) && (railOn || auroraOn);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new sidebar stage remounts the Heinzel canvases
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new stage or canvas generation remounts the canvases
   useEffect(() => {
     if (!analyser || (!railOn && !auroraOn && !haloOn && !swarmOn)) return;
     const rail = railOn ? railCanvas.current : null;
     const sky = auroraOn ? auroraCanvas.current : null;
     const ring = haloOn ? haloCanvas.current : null;
     const crowd = swarmOn ? swarmCanvas.current : null;
-    const railContext = rail?.getContext("2d") ?? null;
-    const skyContext = sky?.getContext("2d") ?? null;
-    const ringContext = ring?.getContext("2d") ?? null;
-    const crowdContext = crowd?.getContext("2d") ?? null;
+    const options: CanvasRenderingContext2DSettings | undefined = software ? { willReadFrequently: true } : undefined;
+    const railContext = rail?.getContext("2d", options) ?? null;
+    const skyContext = sky?.getContext("2d", options) ?? null;
+    const ringContext = ring?.getContext("2d", options) ?? null;
+    const crowdContext = crowd?.getContext("2d", options) ?? null;
     if (!railContext && !skyContext && !ringContext && !crowdContext) return;
     const swarm = createSwarm(Date.now() | 0);
     const figures = () => swarmFigures.current.filter((figure): figure is HTMLDivElement => figure !== null);
@@ -553,6 +561,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         drawAurora(skyContext, aurora, palette, skySize.width, skySize.height);
       }
       drawHeinzels(dt, slow);
+      lost.check();
       const settled = (!sky || isSettled(aurora)) && (!crowd || swarmSettled(swarm));
       if (settled && analysis.quiet && now - lastSound > 1500) sleep();
       else frame = requestAnimationFrame(paint);
@@ -589,17 +598,20 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         frame = requestAnimationFrame(paint);
       }
     };
-    for (const element of canvases) element.addEventListener("contextrestored", restored);
+    // Not back after the grace time (a GPU process that did not recover): replace every canvas.
+    const lost = watchLost(canvases, [railContext, skyContext, ringContext, crowdContext], restored, () =>
+      setCanvasGeneration((generation) => generation + 1),
+    );
     document.addEventListener("visibilitychange", visibility);
     visibility();
     return () => {
-      for (const element of canvases) element.removeEventListener("contextrestored", restored);
+      lost.stop();
       unwatch();
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement]);
+  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement, canvasGeneration, software]);
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
@@ -797,6 +809,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       </FooterItem>
       {railOn && analyser ? (
         <canvas
+          key={canvasGeneration}
           ref={railCanvas}
           role="img"
           aria-label="Shared audio spectrum"
@@ -809,9 +822,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         auroraOn &&
         createPortal(
           <canvas
+            key={canvasGeneration}
             ref={auroraCanvas}
             aria-hidden
             data-testid="audio-aurora"
+            data-viz-generation={canvasGeneration}
+            data-viz-render={software ? "memory" : "default"}
             className="pointer-events-none fixed inset-0 -z-10 size-full"
           />,
           document.body,
@@ -835,7 +851,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
                     : "flex-1",
                 )}
               >
-                <canvas ref={haloCanvas} data-testid="audio-halo" className="absolute inset-0 size-full" />
+                <canvas
+                  key={canvasGeneration}
+                  ref={haloCanvas}
+                  data-testid="audio-halo"
+                  className="absolute inset-0 size-full"
+                />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div ref={haloBust} className="size-9 overflow-hidden rounded-full will-change-transform">
                     <HeinzelAvatar view="bust" {...LISTENER} className="size-full" />
@@ -845,7 +866,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             )}
             {swarmOn && (
               <div className="relative h-full min-h-0 min-w-0 flex-1 [@container(min-height:12rem)]:h-auto [@container(min-height:12rem)]:flex-[2]">
-                <canvas ref={swarmCanvas} data-testid="audio-swarm" className="absolute inset-0 size-full" />
+                <canvas
+                  key={canvasGeneration}
+                  ref={swarmCanvas}
+                  data-testid="audio-swarm"
+                  className="absolute inset-0 size-full"
+                />
                 <div className="absolute inset-0 flex items-end justify-around">
                   {CREW.map((look, index) => (
                     <div

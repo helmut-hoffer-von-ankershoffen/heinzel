@@ -321,6 +321,57 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("replaces every canvas when a lost context does not come back, then draws them in memory", async () => {
+    vi.mocked(captureAudio).mockResolvedValue({
+      ...captured,
+      analyser: { frequencyBinCount: 64, getByteFrequencyData: (data: Uint8Array) => data.fill(220) },
+    } as unknown as Awaited<ReturnType<typeof captureAudio>>);
+    const { draw, frames, restore } = paintable();
+    let lost = false;
+    Object.assign(draw, { isContextLost: () => lost });
+    const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(source("Shared audio"));
+      const first = await screen.findByTestId("audio-aurora");
+      const rail = screen.getByRole("img", { name: "Shared audio spectrum" });
+      await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+      act(() => frames.at(-1)?.(1000));
+      // Lost and restored within the grace time: the browser recovered, the same canvases stay.
+      lost = true;
+      act(() => first.dispatchEvent(new Event("contextlost")));
+      lost = false;
+      act(() => first.dispatchEvent(new Event("contextrestored")));
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(screen.getByTestId("audio-aurora")).toBe(first);
+      // Lost for good, announced by no event: the frame notices, and after the grace time new canvases replace them.
+      lost = true;
+      act(() => frames.at(-1)?.(1100));
+      await waitFor(() => expect(screen.getByTestId("audio-aurora")).not.toBe(first), { timeout: 3000 });
+      lost = false;
+      const second = screen.getByTestId("audio-aurora");
+      expect(second.dataset.vizGeneration).toBe("1");
+      expect(second.dataset.vizRender).toBe("default");
+      expect(screen.getByRole("img", { name: "Shared audio spectrum" })).not.toBe(rail);
+      // Lost again: the GPU keeps failing, so the next canvases draw in memory and say so.
+      lost = true;
+      act(() => second.dispatchEvent(new Event("contextlost")));
+      await waitFor(() => expect(screen.getByTestId("audio-aurora")).not.toBe(second), { timeout: 3000 });
+      lost = false;
+      const third = screen.getByTestId("audio-aurora");
+      expect(third.dataset.vizRender).toBe("memory");
+      expect(getContext).toHaveBeenLastCalledWith("2d", { willReadFrequently: true });
+      // The new canvases are drawn: the loop runs again on them.
+      await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+      const filled = draw.fill.mock.calls.length;
+      act(() => frames.at(-1)?.(5000));
+      expect(draw.fill.mock.calls.length).toBeGreaterThan(filled);
+    } finally {
+      restore();
+    }
+  });
+
   it("analyses Heinzel's own sound with no prompt, and honours the master and style switches", () => {
     const analyser = {
       frequencyBinCount: 16,

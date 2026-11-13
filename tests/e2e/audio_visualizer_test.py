@@ -60,6 +60,7 @@ def test_generated_audio_drives_visible_spectrum_and_capture_controls(tmp_path):
     assert result == {
         "viewports": [1440, 390],
         "realSignal": True,
+        "gpuReset": True,
         "realSilence": True,
         "cleanup": True,
         "errors": [],
