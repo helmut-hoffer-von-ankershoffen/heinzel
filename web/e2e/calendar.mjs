@@ -210,6 +210,37 @@ for (const [name, engine] of [
         `${name}/${size}: Turn on reminders lost its words and became an icon`,
       );
       assert.match(await turnOn.textContent(), /Turn on reminders/);
+      if (size === "phone") {
+        // The row re-measures on resize: on the phone the lead wraps above the icons, widened it rejoins their line.
+        const actions = panel.getByRole("group", { name: "Actions" });
+        const layout = () =>
+          actions.evaluate((row) => {
+            const [lead, ...icons] = [...row.querySelectorAll("[data-pane-action]")].map((action) => ({
+              top: Math.round(action.getBoundingClientRect().top),
+              kind: action.getAttribute("data-pane-action"),
+            }));
+            return { words: row.getAttribute("data-words"), same: row.dataset.resized === "", lead, icons };
+          });
+        const phone = await layout();
+        assert.equal(phone.words, "wrap", `${name}/phone: the row has no room for the lead beside the icons`);
+        assert.ok(
+          phone.icons.length && phone.icons.every((icon) => icon.top > phone.lead.top && icon.kind === "icon"),
+          `${name}/phone: the lead sits on its own line above the icons ${JSON.stringify(phone)}`,
+        );
+        // Marked, so the widened row is provably the same element re-measured, not a fresh mount.
+        await actions.evaluate((row) => {
+          row.dataset.resized = "";
+        });
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await actions.and(page.locator('[data-words="lead"]')).waitFor({ timeout: 10000 });
+        const wide = await layout();
+        assert.ok(
+          wide.same && wide.lead.kind === "text" && wide.icons.every((icon) => icon.top === wide.lead.top),
+          `${name}/phone widened: the row is back on one line with the lead's words ${JSON.stringify(wide)}`,
+        );
+        await page.setViewportSize(viewport);
+        await actions.and(page.locator('[data-words="wrap"]')).waitFor({ timeout: 10000 });
+      }
       await turnOn.click();
       const confirmation = page.locator("[data-operation]");
       await confirmation.waitFor({ state: "visible" });

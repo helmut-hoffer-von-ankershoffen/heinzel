@@ -66,16 +66,25 @@ export function PaneActions({
   const [fit, setFit] = useState<Fit>("line");
   // The row width each roomier fit needs, learnt when it overflowed: one line, and the lead on a line of its own.
   const needs = useRef({ line: 0, lead: 0 });
-  const lead = isValidElement(items[0]) ? items[0].key : null;
-  useLayoutEffect(() => {
-    // A different lead gets its own measurement.
-    void lead;
-    needs.current = { line: 0, lead: 0 };
-    setFit("line");
-  }, [lead]);
+  // The row's shape: every action's key and the lead's words. Any change makes the learnt widths stale.
+  const shape = items
+    .map((item, index) => (isValidElement<{ children?: unknown }>(item) ? `${item.key}` : `${index}`))
+    .concat(isValidElement<{ children?: unknown }>(items[0]) ? String(items[0].props.children) : "")
+    .join("\n");
+  const measured = useRef(shape);
   useLayoutEffect(() => {
     const element = row.current;
     if (words !== "lead" || !element) return;
+    if (measured.current !== shape) {
+      // A new shape forgets what it learnt and measures from one line; drawn in another fit, it first returns to
+      // one line, and the next layout effect measures that.
+      measured.current = shape;
+      needs.current = { line: 0, lead: 0 };
+      if (fit !== "line") {
+        setFit("line");
+        return;
+      }
+    }
     const measure = () => setFit(nextFit(element, fit, needs.current));
     measure();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
@@ -177,7 +186,8 @@ export function PaneAction({
     };
   }
   const words = slot.words === "all" || ((slot.words === "lead" || slot.words === "wrap") && slot.index === 0);
-  // The lead of a wrapped row fills its own line; its words stay on one line so an overflow is measurable.
+  // The lead of a wrapped row fills its own line. `whitespace-nowrap` keeps its words on one line, so a lead too
+  // wide even alone overflows measurably and steps to its icon instead of breaking its words onto a second line.
   const alone = slot.words === "wrap" && slot.index === 0;
   const look = {
     size: "sm" as const,
@@ -311,8 +321,8 @@ export function actionStructureProblems(container: Element): string[] {
   const tops = new Set(line.map(top));
   if (tops.size > 1) problems.push(`the actions wrap onto ${tops.size} lines`);
   const [first] = actions;
-  if (mode === "wrap" && first && line.some((action) => top(action) < top(first)))
-    problems.push("the wrapped lead sits below the other actions");
+  if (mode === "wrap" && first && line.some((action) => top(action) <= top(first)))
+    problems.push("the wrapped lead is not on a line of its own above the other actions");
   return problems;
 }
 

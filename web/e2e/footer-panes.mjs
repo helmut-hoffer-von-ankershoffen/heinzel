@@ -144,7 +144,12 @@ try {
             underlined,
             names: buttons.map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
             lead: buttons[0]?.getAttribute("data-pane-action") === "text" || row?.getAttribute("data-words") === "none",
-            // A wrapped row's lead sits alone above the line of icons.
+            // A wrapped row's lead sits alone on a line above every icon.
+            above:
+              row?.getAttribute("data-words") !== "wrap" ||
+              buttons
+                .slice(1)
+                .every((element) => element.getBoundingClientRect().top > buttons[0].getBoundingClientRect().top),
             tops: new Set(
               (row?.getAttribute("data-words") === "wrap" ? buttons.slice(1) : buttons).map((element) =>
                 Math.round(element.getBoundingClientRect().top),
@@ -168,6 +173,7 @@ try {
         assert.deepEqual(facts.names, expected, `${where}: the same actions`);
         assert.ok(facts.lead, `${where}: the lead shows its words`);
         assert.equal(facts.tops, 1, `${where}: one line`);
+        assert.ok(facts.above, `${where}: the wrapped lead sits on its own line above the icons`);
         assert.equal(facts.small, 0, `${where}: every target at least 44px`);
         assert.ok(facts.inside, `${where}: inside the viewport`);
         await page.evaluate(axe);

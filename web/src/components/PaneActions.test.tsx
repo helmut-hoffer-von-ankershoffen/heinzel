@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Plug,
   RefreshCw,
   Trash2,
   X,
@@ -112,6 +113,75 @@ describe("PaneActions", () => {
     }
   });
 
+  it("measures afresh from one line when the lead changes while wrapped", () => {
+    const layout = paneLayout({ width: 250, line: 400, lead: 150 });
+    try {
+      const { rerender } = render(<CalendarLikeRow />);
+      const row = screen.getByRole("group", { name: "Actions" });
+      expect(row).toHaveAttribute("data-words", "wrap");
+      // Reminders on: Today leads, and Today with two icons fits the same row.
+      layout.change({ line: 200, lead: 60 });
+      rerender(<CalendarLikeRow reminders={false} />);
+      expect(row).toHaveAttribute("data-words", "lead");
+      layout.resize(600);
+      expect(row).toHaveAttribute("data-words", "lead");
+    } finally {
+      layout.restore();
+    }
+  });
+
+  it("gives a new lead its words when the lead changes while drawn as an icon", () => {
+    const layout = paneLayout({ width: 100, line: 400, lead: 150 });
+    try {
+      const { rerender } = render(<CalendarLikeRow />);
+      const row = screen.getByRole("group", { name: "Actions" });
+      expect(row).toHaveAttribute("data-words", "none");
+      layout.change({ line: 200, lead: 60 });
+      rerender(<CalendarLikeRow reminders={false} />);
+      expect(row).toHaveAttribute("data-words", "wrap");
+      expect(screen.getByRole("button", { name: "Today" })).toHaveTextContent("Today");
+      layout.resize(300);
+      expect(row).toHaveAttribute("data-words", "lead");
+    } finally {
+      layout.restore();
+    }
+  });
+
+  it("forgets what it learnt when an icon leaves under the same lead", () => {
+    const layout = paneLayout({ width: 250, line: 400, lead: 150 });
+    try {
+      const { rerender } = render(<CalendarLikeRow connect />);
+      const row = screen.getByRole("group", { name: "Actions" });
+      expect(row).toHaveAttribute("data-words", "wrap");
+      // Connect leaves: the lead and three icons now fit the row's 250 px.
+      layout.change({ line: 240 });
+      rerender(<CalendarLikeRow />);
+      expect(row).toHaveAttribute("data-words", "lead");
+      layout.resize(250);
+      expect(row).toHaveAttribute("data-words", "lead");
+    } finally {
+      layout.restore();
+    }
+  });
+
+  it("flags a wrapped row whose lead shares the icons' line", () => {
+    const { container } = render(
+      <fieldset data-pane-actions="" data-words="wrap">
+        <button type="button" data-pane-action="text">
+          <svg aria-hidden />
+          Turn on reminders
+        </button>
+        <button type="button" data-pane-action="icon" aria-label="Today" title="Today">
+          <svg aria-hidden />
+        </button>
+      </fieldset>,
+    );
+    // jsdom draws everything at the top: the lead is not on a line of its own above the icon.
+    expect(actionStructureProblems(container)).toContain(
+      "the wrapped lead is not on a line of its own above the other actions",
+    );
+  });
+
   it("answers like a dialog with words on every action, right-aligned, committing last", () => {
     render(
       <PaneActions align="end" words="all">
@@ -185,32 +255,40 @@ describe("PaneActions", () => {
   });
 });
 
-/** The calendar pane's row on a phone: a primary lead and three navigation icons. */
-function CalendarLikeRow() {
+/** The calendar pane's row: a primary lead while reminders are off, three navigation icons, and Connect when needed. */
+function CalendarLikeRow({ reminders = true, connect = false }: { reminders?: boolean; connect?: boolean }) {
   return (
     <PaneActions>
-      <PaneAction icon={BellRing} primary onClick={() => {}}>
-        Turn on reminders
-      </PaneAction>
-      <PaneAction icon={CalendarDays} onClick={() => {}}>
+      {reminders && (
+        <PaneAction key="worker" icon={BellRing} primary onClick={() => {}}>
+          Turn on reminders
+        </PaneAction>
+      )}
+      <PaneAction key="today" icon={CalendarDays} onClick={() => {}}>
         Today
       </PaneAction>
-      <PaneAction icon={ChevronLeft} onClick={() => {}}>
+      <PaneAction key="previous" icon={ChevronLeft} onClick={() => {}}>
         Previous week
       </PaneAction>
-      <PaneAction icon={ChevronRight} onClick={() => {}}>
+      <PaneAction key="next" icon={ChevronRight} onClick={() => {}}>
         Next week
       </PaneAction>
+      {connect && (
+        <PaneAction key="connect" icon={Plug} onClick={() => {}}>
+          Connect
+        </PaneAction>
+      )}
     </PaneActions>
   );
 }
 
 /**
  * A layout jsdom lacks: the row is `width` wide, needs `line` for one line, and the lead's words need `lead`. The row
- * overflows only on one line; a wrapped lead fills the row and overflows only when its words are wider.
+ * overflows only on one line; a wrapped lead fills the row and overflows only when its words are wider. A wrapped
+ * lead sits a line above the icons. `change` sets what the next render's actions need.
  */
 function paneLayout(initial: { width: number; line: number; lead: number }) {
-  let width = initial.width;
+  const state = { ...initial };
   // Only connected observers hear a resize, as in a browser: each layout effect replaces the row's observer.
   const observers = new Set<{ callback: () => void }>();
   vi.stubGlobal(
@@ -231,18 +309,26 @@ function paneLayout(initial: { width: number; line: number; lead: number }) {
   const mode = (element: Element) => element.closest("[data-pane-actions]")?.getAttribute("data-words");
   const isLead = (element: Element) => element.matches("[data-pane-action]:first-child");
   const client = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
-    if (this.hasAttribute("data-pane-actions")) return width;
-    if (isLead(this) && mode(this) === "wrap") return width - 12;
+    if (this.hasAttribute("data-pane-actions")) return state.width;
+    if (isLead(this) && mode(this) === "wrap") return state.width - 12;
     return 44;
   });
   const scroll = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
-    if (this.hasAttribute("data-pane-actions")) return mode(this) === "lead" ? Math.max(width, initial.line) : width;
-    if (isLead(this) && mode(this) === "wrap") return Math.max(width - 12, initial.lead);
+    if (this.hasAttribute("data-pane-actions"))
+      return mode(this) === "lead" ? Math.max(state.width, state.line) : state.width;
+    if (isLead(this) && mode(this) === "wrap") return Math.max(state.width - 12, state.lead);
     return 44;
   });
+  const box = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const below = this.matches("[data-pane-action]") && !isLead(this) && mode(this) === "wrap";
+    return DOMRect.fromRect({ x: 0, y: below ? 52 : 0, width: 44, height: 44 });
+  });
   return {
+    change(next: { line?: number; lead?: number }) {
+      Object.assign(state, next);
+    },
     resize(next: number) {
-      width = next;
+      state.width = next;
       act(() => {
         for (const observer of [...observers]) observer.callback();
       });
@@ -250,6 +336,7 @@ function paneLayout(initial: { width: number; line: number; lead: number }) {
     restore() {
       client.mockRestore();
       scroll.mockRestore();
+      box.mockRestore();
     },
   };
 }
