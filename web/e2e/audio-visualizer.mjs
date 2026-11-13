@@ -75,8 +75,9 @@ try {
     // What the visualizer measured and drew, read in the page: the shared analysis' spectrum position (0 = 40 Hz,
     // 1 = 12 kHz, -1 = silent), where the Spectrum rail's painted mass sits (0 = bottom/bass, 1 = top/treble), and
     // the aurora's painted pixel count and mean green share (logged for diagnosis, not asserted: its animation drifts).
-    const measure = () =>
-      page.evaluate(() => {
+    // Installed in the page once, so a wait can return the very frame it accepted (see `until`).
+    await page.evaluate(() => {
+      window.vizSnapshot = () => {
         const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
         const sky = document.querySelector("canvas[data-testid=audio-aurora]");
         let mass = 0,
@@ -105,8 +106,16 @@ try {
           // The share of the window painted at an alpha a person can see (1/8 or more), not just nonzero.
           visible: strong / (data.length / 4),
           share: share / Math.max(1, count),
+          // The generator's audio clock against the page clock (seconds): when the generated stream stalls, the
+          // audio clock falls behind and the failure log names a starved signal instead of a drawing problem.
+          clock: {
+            audio: Number((window.audioFixture.contexts.at(-1)?.currentTime ?? -1).toFixed(2)),
+            page: Number((performance.now() / 1000).toFixed(2)),
+          },
         };
-      });
+      };
+    });
+    const measure = () => page.evaluate(() => window.vizSnapshot());
     const allStopped = () =>
       page.evaluate(() =>
         window.audioFixture.streams.every((stream) =>
@@ -125,9 +134,10 @@ try {
         })),
       );
     // Fails with what was measured, so a CI log tells a dead analyser from a drawing or timing problem.
+    // Returns the predicate's truthy value: a snapshot it accepted is the frame the assertions then read.
     const until = async (what, predicate, arg) => {
       try {
-        await page.waitForFunction(predicate, arg, { timeout: 30_000, polling: 100 });
+        return await (await page.waitForFunction(predicate, arg, { timeout: 30_000, polling: 100 })).jsonValue();
       } catch (error) {
         throw new Error(`${viewport.width}px: ${what}; measured ${JSON.stringify(await measure())}`, { cause: error });
       }
@@ -153,17 +163,24 @@ try {
     await page.evaluate(() => {
       window.audioFixture.oscillator.frequency.value = 12000;
     });
-    await until(
-      `the 12 kHz tone did not move the measured spectrum up from ${JSON.stringify(low)}`,
-      (lowCentroid) =>
-        Number(document.querySelector('canvas[aria-label="Shared audio spectrum"]').dataset.vizCentroid ?? "-1") >
-        lowCentroid + 0.25,
-      low.centroid,
+    // Wait until the capture has heard the moved tone, not for page time: the centroid stands at least half the
+    // spectrum above the 440 Hz reading (it settles 0.6 above it), so the 12 kHz tone dominates what was analysed.
+    // Then the assertions read that very frame. A centroid that had just crossed a quarter, then 500 ms of page time,
+    // read a frame with no aurora at all and the centroid at 0.705 on a loaded macOS runner (run 43510033780): the
+    // capture had stopped hearing the generated tone for a while, and the aurora fades with silence by design.
+    const high = await until(
+      `the 12 kHz tone did not reach the capture and move the measured spectrum up from ${JSON.stringify(low)}`,
+      (from) => {
+        const now = window.vizSnapshot();
+        return now.centroid > from.centroid + 0.5 ? now : null;
+      },
+      low,
     );
-    await page.waitForTimeout(500);
-    const high = await measure();
     result.tones.push({ width: viewport.width, low, high });
-    assert(high.count > 0, "The moved tone must still paint the aurora");
+    assert(
+      high.count > 0,
+      `${viewport.width}px: the moved tone must still paint the aurora: ${JSON.stringify({ low, high })}`,
+    );
     // Measured 0.002 (1440) and 0.011 (390) while loudness was the mean over all bands, 0.09 and 0.12 since: the
     // threshold sits a factor of three from both, for other renderers.
     assert(
