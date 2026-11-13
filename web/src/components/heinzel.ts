@@ -633,6 +633,29 @@ export function heinzelSwarmSvg(): string {
   return svg("0 0 512 512", body);
 }
 
+/** The desktop app's icon: three of them, the grown one in front. `small` is the 16 and 32 pixel version: heads only. */
+export const TRIO: { look: HeinzelLook; x: number; y: number; scale: number; small: [number, number, number] }[] = [
+  { look: { age: "old", hat: "purple", shirt: "slate", build: "slim" }, x: -27, y: 50, scale: 0.52, small: [-59, 55, 0.62] },
+  { look: { age: "young", hat: "teal", shirt: "rose", build: "slim" }, x: 273, y: 50, scale: 0.52, small: [253, 55, 0.62] },
+  { look: { age: "grown", hat: "red", shirt: "green" }, x: 102, y: -8, scale: 0.6, small: [51, -10, 0.8] },
+];
+
+/** The trio as an SVG file (heinzel-trio.svg, or heinzel-trio-small.svg: the heads, big, for the smallest sizes). */
+export function heinzelTrioSvg(small = false): string {
+  const body = TRIO.flatMap(({ look, x, y, scale, small: head }) => {
+    const [hx, hy, hs] = head;
+    const place = small ? `translate(${hx} ${hy}) scale(${hs})` : `translate(${x} ${y}) scale(${scale})`;
+    return [
+      `  <g transform="${place}">`,
+      ...heinzelShapes(look)
+        .filter((shape) => shape.part !== "badge")
+        .map((shape) => svgShape(shape, "    ")),
+      "  </g>",
+    ];
+  });
+  return svg("0 0 512 512", body);
+}
+
 /** Four of them dancing in a ring while hz starts (loading-dance.svg): each bobs and sways a beat after the last. */
 export const DANCERS: { look: HeinzelLook; angle: number }[] = [
   { look: { age: "grown", hat: "red", shirt: "green" }, angle: 270 },

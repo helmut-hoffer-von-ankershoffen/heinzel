@@ -61,6 +61,18 @@ def test_packager_uses_the_committed_icon():
     assert (ASSETS / "heinzel.icns").is_file()
 
 
-def test_icons_script_draws_the_desktop_icons_from_the_swarm():
+def test_icons_script_draws_the_desktop_icons_from_the_trio():
     script = (ROOT / "scripts" / "notifier.py").read_text(encoding="utf-8")
-    assert "_icns(icon, work, DESKTOP_ICON, SWARM)" in script
+    assert "_icns(icon, work, DESKTOP_ICON, trio_for)" in script
+    assert "return TRIO_SMALL if pixels <= SMALL_PIXELS else TRIO" in script
+    assert "SMALL_PIXELS = 32" in script
+
+
+def test_trio_sources_are_three_heinzels_made_of_shapes_only():
+    sources = ROOT / "src" / "heinzel" / "modules" / "system" / "notify" / "macos"
+    for name in ("heinzel-trio.svg", "heinzel-trio-small.svg"):
+        text = (sources / name).read_text(encoding="utf-8")
+        assert text.count('<g transform="translate(') == 3, name  # three of them, no more
+        for embedded in ("<image", "<text", "<use", "<font", "<style", "data:", "href"):
+            assert embedded not in text, (name, embedded)
+    assert (sources / "heinzel-trio.svg").read_bytes() != (sources / "heinzel-trio-small.svg").read_bytes()

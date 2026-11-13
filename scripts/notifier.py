@@ -30,6 +30,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,10 +57,14 @@ ARTWORK = SOURCES / "heinzel.svg"
 DANCE = ROOT / "web" / "public" / "loading-dance.svg"
 """The four dancing in a ring while hz starts."""
 DESKTOP_ICON = ROOT / "desktop" / "assets" / "heinzel.icns"
+TRIO = SOURCES / "heinzel-trio.svg"
+TRIO_SMALL = SOURCES / "heinzel-trio-small.svg"
+SMALL_PIXELS = 32
+"""The desktop app's icon: three Heinzelmännchen, and their heads alone up to this many pixels."""
 DESKTOP_PNG = ROOT / "desktop" / "assets" / "heinzel.png"
 DESKTOP_ICO = ROOT / "desktop" / "assets" / "heinzel.ico"
 DESKTOP_ICO_SIZES = (16, 32, 48, 64, 128, 256)
-"""The desktop app's icons beside the .icns: Linux's PNG (512) and Windows' .ico; all show the swarm."""
+"""The desktop app's icons beside the .icns: Linux's PNG (512) and Windows' .ico; all show the trio."""
 """The desktop app's icon, packaged by desktop/ci/package.mjs."""
 SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: the logo, not an app icon."""
@@ -156,6 +161,8 @@ DRAW = (
     " fs.writeFileSync(process.argv[2], m.heinzelSvg({}, 'bust', true));"
     " fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
     " fs.writeFileSync(process.argv[4], m.heinzelDanceSvg());"
+    " fs.writeFileSync(process.argv[5], m.heinzelTrioSvg());"
+    " fs.writeFileSync(process.argv[6], m.heinzelTrioSvg(true));"
 )
 """Writes heinzel.svg, heinzel-swarm.svg and loading-dance.svg from the drawing (node runs TypeScript as it is)."""
 
@@ -170,16 +177,32 @@ def draw() -> None:
     if node is None:
         msg = "node not found: make setup installs what the web app needs"
         raise SystemExit(msg)
-    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
+    _run(
+        node,
+        "--input-type=module",
+        "-e",
+        DRAW,
+        DRAWING.as_uri(),
+        str(ARTWORK),
+        str(SWARM),
+        str(DANCE),
+        str(TRIO),
+        str(TRIO_SMALL),
+    )
 
 
-def _icns(icon: Path, work: Path, target: Path, artwork: Path = ARTWORK) -> None:
-    """Write an .icns of the artwork on its tile to ``target``: the notifier's icon, or the desktop app's swarm."""
+def trio_for(pixels: int) -> Path:
+    """The desktop icon's drawing for this many pixels: the heads alone where the whole figures would blur."""
+    return TRIO_SMALL if pixels <= SMALL_PIXELS else TRIO
+
+
+def _icns(icon: Path, work: Path, target: Path, artwork: Callable[[int], Path] = artwork_for) -> None:
+    """Write an .icns of the artwork on its tile to ``target``: the notifier's icon, or the desktop app's trio."""
     iconset = work / "heinzel.iconset"
     iconset.mkdir(exist_ok=True)
     for size in ICON_SIZES:
         for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
-            _run(str(icon), str(artwork), str(iconset / name), str(pixels), "tile")
+            _run(str(icon), str(artwork(pixels)), str(iconset / name), str(pixels), "tile")
     target.parent.mkdir(parents=True, exist_ok=True)
     _run("iconutil", "-c", "icns", "-o", str(target), str(iconset))
 
@@ -208,12 +231,12 @@ def icons() -> None:
             _run(str(icon), str(artwork_for(size)), str(out), str(size))
             favicons.append((size, out.read_bytes()))
         (PUBLIC / "favicon.ico").write_bytes(_ico(favicons))
-        _icns(icon, work, DESKTOP_ICON, SWARM)
-        _run(str(icon), str(SWARM), str(DESKTOP_PNG), "512", "tile")
+        _icns(icon, work, DESKTOP_ICON, trio_for)
+        _run(str(icon), str(trio_for(512)), str(DESKTOP_PNG), "512", "tile")
         frames = []
         for size in DESKTOP_ICO_SIZES:
             out = work / f"desktop-{size}.png"
-            _run(str(icon), str(SWARM), str(out), str(size), "tile")
+            _run(str(icon), str(trio_for(size)), str(out), str(size), "tile")
             frames.append((size, out.read_bytes()))
         DESKTOP_ICO.write_bytes(_ico(frames))
     for copy, source in COPIES.items():
