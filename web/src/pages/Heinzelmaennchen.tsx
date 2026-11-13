@@ -35,8 +35,9 @@ const fileName = (file: string) => file.split("/").pop() ?? file;
 
 export function Heinzelmaennchen() {
   const list = useHeinzelmaennchen();
-  // "None yet" would contradict the personal Heinzels listed above it.
-  const hasPersonal = (usePersonalSessions().data?.sessions ?? []).length > 0;
+  // "None yet" would contradict the personal Heinzels listed above it, so it waits until they are known.
+  const personal = usePersonalSessions();
+  const hasPersonal = personal.isPending || (personal.data?.sessions ?? []).length > 0;
   return (
     <Page title={t("heinzel.title")} intro={t("heinzel.intro")}>
       <PersonalHeinzels />
