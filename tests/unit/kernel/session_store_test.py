@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import pathlib
 import sqlite3
 from datetime import UTC, datetime
 
@@ -528,3 +529,79 @@ def test_directory_permission_failure_fallback_does_not_hide_private_or_replaced
         if replacement != "private-directory":
             path.unlink()
             (sessions.root / "saved").rename(path)
+
+
+def test_remove_deletes_the_folder_and_its_index_rows_and_a_later_writer_starts_empty(tmp_path):
+    sessions = store(tmp_path)
+    append(sessions, "gone", data={"text": "Remember the blue door"})
+    append(sessions, "kept")
+    with sessions.writer("gone") as writer:
+        writer.append_body("t1", {"text": "Remember the blue door"})
+        writer.remove()
+        assert not writer.active
+        with pytest.raises(HeinzelError, match="inside its writer context"):
+            writer.append("late")
+    root = tmp_path / "sessions"
+    assert not (root / "gone").exists()
+    assert not any(path.name.startswith(".removed-") for path in root.iterdir())
+    assert [head.session for head in sessions.heads()] == ["kept"]
+    assert b"blue door" not in (root / "index.sqlite").read_bytes()
+    with sessions.writer("gone") as writer:
+        assert writer.append("fresh").seq == 1
+
+
+def test_remove_resumes_after_a_crash_between_rename_and_index(tmp_path, monkeypatch):
+    sessions = store(tmp_path)
+    append(sessions, "gone")
+    root = tmp_path / "sessions"
+
+    def crash(*_args, **_kwargs):
+        msg = "power cut"
+        raise OSError(msg)
+
+    with sessions.writer("gone") as writer:
+        monkeypatch.setattr(sessions, "_index", crash)
+        with pytest.raises(OSError, match="power cut"):
+            writer.remove()
+    monkeypatch.undo()
+    assert (root / ".removed-gone").is_dir()
+    assert not (root / "gone").exists()
+    # The index flags the vanished spine until the removal is finished.
+    assert [(head.session, head.problem) for head in sessions.heads()] == [("gone", "Session spine is missing")]
+    with sessions.writer("gone") as writer:
+        writer.remove()
+    assert not (root / ".removed-gone").exists()
+    assert sessions.heads() == []
+
+
+def test_a_writer_that_won_the_lock_of_a_removed_folder_refuses(tmp_path):
+    sessions = store(tmp_path)
+    append(sessions, "gone")
+    root = tmp_path / "sessions"
+    with _session_store.directory(root) as descriptor, _session_store.child(descriptor, "gone") as folder:
+        pathlib.Path(root / "gone").rename(root / "elsewhere")
+        with pytest.raises(HeinzelError, match="removed while waiting"):
+            _session_store._still_linked(descriptor, folder, "gone")
+        pathlib.Path(root / "gone").mkdir(mode=0o700)
+        with pytest.raises(HeinzelError, match="removed while waiting"):
+            _session_store._still_linked(descriptor, folder, "gone")
+
+
+def test_remove_drops_quarantined_indexes_and_uses_secure_delete(tmp_path):
+    sessions = store(tmp_path)
+    append(sessions, "gone")
+    root = tmp_path / "sessions"
+    quarantined = root / ".index-0123456789abcdef01234567.sqlite"
+    quarantined.write_bytes(b"old")
+    other = root / ".index-notours.sqlite"
+    other.write_bytes(b"left alone")
+    with sessions.writer("gone") as writer:
+        writer.remove()
+    assert not quarantined.exists()
+    assert other.exists()
+    with _session_store.directory(root) as descriptor:
+        index = sessions._connect(descriptor)
+        try:
+            assert index.execute("PRAGMA secure_delete").fetchone()[0] == 1
+        finally:
+            index.close()

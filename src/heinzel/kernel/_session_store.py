@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import stat
 from collections.abc import Callable, Generator
@@ -221,6 +222,45 @@ def _lock(parent: int, name: str, *, wait: bool) -> Generator[None]:
         os.close(descriptor)
 
 
+def _still_linked(root: int, folder: int, session: str) -> None:
+    """Refuse a lock won on a folder that `SessionWriter.remove` renamed away while this writer waited.
+
+    Raises:
+        HeinzelError: If the folder under the session's name is no longer the one this lock belongs to.
+    """
+    try:
+        current = os.stat(session, dir_fd=root, follow_symlinks=False)
+    except FileNotFoundError:
+        current = None
+    held = os.fstat(folder)
+    if current is None or (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        msg = "This session was removed while waiting for its writer"
+        raise HeinzelError(msg)
+
+
+def _removed_name(session: str) -> str:
+    """The hidden name a removed session folder has until it is gone; the index never lists a dot name."""
+    return f".removed-{session}"
+
+
+def _purge(root: int, name: str) -> None:
+    """Delete a hidden removed folder without following links; an absent one is already done."""
+    with contextlib.suppress(FileNotFoundError):
+        shutil.rmtree(name, dir_fd=root)
+    os.fsync(root)
+
+
+def _purge_quarantined_indexes(root: int) -> None:
+    """Delete indexes set aside as damaged: derived copies of every session's lines, rebuilt from the spines."""
+    with os.scandir(root) as entries:
+        names = [entry.name for entry in entries if re.fullmatch(r"\.index-[0-9a-f]{24}\.sqlite", entry.name)]
+    for name in names:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(name, dir_fd=root)
+    if names:
+        os.fsync(root)
+
+
 class SessionStore:
     """Private append-only sessions, independent of a model provider and of module vocabularies."""
 
@@ -258,6 +298,7 @@ class SessionStore:
             child(root, session, create=True) as folder,
             _lock(folder, "lock", wait=wait),
         ):
+            _still_linked(root, folder, session)
             writer = SessionWriter(self, root, folder, session)
             try:
                 yield writer
@@ -428,6 +469,8 @@ class SessionStore:
             try:
                 index.row_factory = sqlite3.Row
                 index.execute("PRAGMA synchronous = FULL")
+                # Deleted index rows hold raw journal lines: overwrite their pages, never leave them free (ADR 0148).
+                index.execute("PRAGMA secure_delete = ON")
                 had_lines = (
                     index.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event_lines'"
@@ -713,3 +756,29 @@ class SessionWriter:
         """
         self._require_active()
         return _read_body(self.folder, turn, expected_hash)
+
+    def remove(self) -> None:
+        """Remove this whole session for good: spine, bodies, checkpoints and index rows; the writer ends here.
+
+        The folder is first renamed to a hidden name the index ignores, then its index rows go, then the folder.
+        Each step is a no-op when already done, so after a crash the caller resumes by opening a writer again
+        (which recreates an empty folder) and removing it once more. A writer that waited for this lock refuses.
+
+        Raises:
+            HeinzelError: If the writer is no longer active.
+            OSError: If the private storage cannot be changed.
+        """
+        self._require_active()
+        hidden = _removed_name(self.session)
+        _purge(self.root, hidden)
+        os.rename(self.session, hidden, src_dir_fd=self.root, dst_dir_fd=self.root)
+        os.fsync(self.root)
+        with self.store._index(self.root) as index:  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 - scoped writer
+            for table in ("sessions", "events", "event_lines"):
+                index.execute(f"DELETE FROM {table} WHERE session = ?", (self.session,))  # noqa: S608 - fixed names
+            index.commit()
+            # Rewrite the file so no page written before secure deletion still holds this session's lines.
+            index.execute("VACUUM")
+        _purge_quarantined_indexes(self.root)
+        _purge(self.root, hidden)
+        self.active = False
