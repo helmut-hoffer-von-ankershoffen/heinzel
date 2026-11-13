@@ -221,6 +221,61 @@ describe("Contributions", () => {
     expect(screen.getByText("A longer explanation that belongs on demand only.")).toBeVisible();
   });
 
+  it("draws a switch's Share, Copy and Open with the provider's actions in the pane's one frame row", async () => {
+    const call = (operation: string) => ({
+      method: "POST",
+      path: `/acme/${operation}`,
+      query: {},
+      body: {},
+      command: `hz acme ${operation}`,
+      summary: `${operation} sharing`,
+      read_only: false,
+    });
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "acme:share",
+          slots: { footer: true },
+          item: {
+            text: "Sharing",
+            icon: "link",
+            tone: "ok",
+            actions: [{ label: "Open settings", icon: "list-checks", effect: { kind: "navigate", path: "/doctor" } }],
+            toggle: {
+              label: "Share over Acme",
+              checked: true,
+              requested: true,
+              url: "https://workstation.example.test/",
+              enable: { operation: "enable", arguments: {}, call: call("enable") },
+              disable: { operation: "disable", arguments: {}, call: call("disable") },
+              apply_settings: {},
+              status: null,
+              problem: null,
+            },
+          },
+        },
+      ],
+    });
+    renderAt("/doctor");
+    await userEvent.hover(await screen.findByRole("button", { name: /^Sharing/ }));
+    const pane = await screen.findByRole("region", { name: "Sharing" });
+    const rows = pane.querySelectorAll("[data-pane-actions]");
+    expect(rows).toHaveLength(1);
+    // The frame's row, a direct child of the pane after its content, holds the switch's actions and the provider's.
+    expect(rows[0]).toHaveAttribute("data-pane-frame");
+    expect(rows[0]?.parentElement).toBe(pane);
+    const row = rows[0] as HTMLElement;
+    expect(within(row).getByRole("link", { name: "Open" })).toHaveAttribute(
+      "href",
+      "https://workstation.example.test/",
+    );
+    expect(within(row).getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+    expect(within(pane).getByRole("switch", { name: "Share over Acme" }).closest("[data-pane-actions]")).toBeNull();
+    await expectPane(pane);
+  });
+
   it("names a footer clock's pane by its zone, without a heading that repeats the time", async () => {
     mockApi({
       ...answers,

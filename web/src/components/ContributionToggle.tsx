@@ -33,6 +33,11 @@ type Props = {
   actions?: ReactNode;
   refresh: (signal: AbortSignal) => Promise<ContributionToggleControl | null>;
   applySettings: (expected: ApplySettings, signal: AbortSignal) => Promise<void>;
+  /**
+   * The pane that frames the toggle (a footer pane): it gets the switch and its lines as `body` and every action as
+   * `actions`, and draws them in its own one bottom row. Without it the toggle draws that row itself (Settings).
+   */
+  frame?: (parts: { body: ReactNode; actions: ReactNode }) => ReactNode;
 };
 
 /** Bound a callback even when it ignores cancellation; propagate cancellation to cooperative transports too. */
@@ -125,7 +130,7 @@ function plain(text: string | null | undefined): string {
 export const PENDING_LIMIT_MS = 60_000;
 
 /** One control shared by provider Settings and status popovers; no plugin name or alternate restart path. */
-export function ContributionToggle({ control, refresh, applySettings, actions, details }: Props) {
+export function ContributionToggle({ control, refresh, applySettings, actions, details, frame }: Props) {
   const labelId = useId();
   const noteId = useId();
   const active = useRef<AbortController | null>(null);
@@ -303,8 +308,8 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
     }
   };
 
-  return (
-    <div className="min-w-0 space-y-2 text-sm">
+  const lines = (
+    <>
       <div className="flex items-center justify-between gap-3">
         <span id={labelId} className="min-w-0">
           {control.label}
@@ -362,34 +367,43 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
           </div>
         </details>
       )}
-      <PaneActions className="px-0">
-        {url && typeof navigator.share === "function" && (
-          <PaneAction icon={Share2} onClick={() => void share()}>
-            {t("contrib.toggle.shareUrl")}
-          </PaneAction>
-        )}
-        {url && (typeof navigator.share !== "function" || shareFailed) && (
-          <PaneAction icon={copied ? Check : Copy} onClick={() => void copy()}>
-            {t("contrib.toggle.copyUrl")}
-          </PaneAction>
-        )}
-        {url && (
-          <PaneAction icon={ExternalLink} href={displayUrl ?? url}>
-            {t("status.open")}
-          </PaneAction>
-        )}
-        {retryable && (
-          <PaneAction icon={RefreshCw} onClick={retry}>
-            {t("contrib.toggle.retry")}
-          </PaneAction>
-        )}
-        {restartNeeded && !pending && !retryable && (
-          <PaneAction icon={RotateCw} onClick={restart}>
-            {t("contrib.toggle.restart")}
-          </PaneAction>
-        )}
-        {actions}
-      </PaneActions>
+    </>
+  );
+  const row = (
+    <>
+      {url && typeof navigator.share === "function" && (
+        <PaneAction icon={Share2} onClick={() => void share()}>
+          {t("contrib.toggle.shareUrl")}
+        </PaneAction>
+      )}
+      {url && (typeof navigator.share !== "function" || shareFailed) && (
+        <PaneAction icon={copied ? Check : Copy} onClick={() => void copy()}>
+          {t("contrib.toggle.copyUrl")}
+        </PaneAction>
+      )}
+      {url && (
+        <PaneAction icon={ExternalLink} href={displayUrl ?? url}>
+          {t("status.open")}
+        </PaneAction>
+      )}
+      {retryable && (
+        <PaneAction icon={RefreshCw} onClick={retry}>
+          {t("contrib.toggle.retry")}
+        </PaneAction>
+      )}
+      {restartNeeded && !pending && !retryable && (
+        <PaneAction icon={RotateCw} onClick={restart}>
+          {t("contrib.toggle.restart")}
+        </PaneAction>
+      )}
+      {actions}
+    </>
+  );
+  if (frame) return frame({ body: <div className="min-w-0 space-y-2 text-sm">{lines}</div>, actions: row });
+  return (
+    <div className="min-w-0 space-y-2 text-sm">
+      {lines}
+      <PaneActions className="px-0">{row}</PaneActions>
     </div>
   );
 }
