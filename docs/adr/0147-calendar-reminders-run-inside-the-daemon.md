@@ -163,7 +163,7 @@ Chosen option: **a child-process reminder lane of the scheduled tick that ends o
 ### Confirmation
 
 - Unit tests with fake clocks, managers and supervisors cover every rule of points 1 to 13.
-- In isolated HOMEs, on launchd and on a systemd user manager:
+- In isolated home directories, on launchd and on a systemd user manager:
   - a firing during a running lane is dropped, not queued;
   - the lane survives sleeping for an hour in the middle of a lane and waking three minutes before a meeting, and
     the reminder is delivered;
