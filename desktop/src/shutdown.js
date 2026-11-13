@@ -1,4 +1,4 @@
-/** Stop the owned service and report an observed unclean exit before the shell exits. */
+/** Stop the owned service and tell the caller about an observed unclean exit before the shell exits. */
 export async function stopWithReport(ownedCli, report) {
   const result = await ownedCli.stop();
   const unclean = result.outcome === "forced" || result.outcome === "abnormal" || (
@@ -34,4 +34,35 @@ export async function refreshAfterQuit({ eligible, gate, executable, spawn, time
     child.unref();
     return true;
   } catch { return false; }
+}
+
+/** Hide the shell's windows while a quit stops the service; returns the ones it hid, to show again if the quit fails. */
+export function hideWindows(windows) {
+  const hidden = [];
+  for (const window of windows) {
+    try {
+      if (window.isDestroyed() || !window.isVisible()) continue;
+      window.hide();
+      hidden.push(window);
+    } catch {
+      // A window that went away while quitting needs no hiding.
+    }
+  }
+  return hidden;
+}
+
+/** Show the windows a failed quit hid, so Quit can be tried again. */
+export function showWindows(windows) {
+  for (const window of windows) {
+    try {
+      if (!window.isDestroyed()) window.show();
+    } catch {
+      // A window that went away stays gone.
+    }
+  }
+}
+
+/** One log line for a service stop during a deliberate quit that did not end with a clean exit. */
+export function quitLogLine({ outcome, code = null, signal = null } = {}) {
+  return JSON.stringify({ event: "desktop.quit.service_stop", outcome, code, signal });
 }

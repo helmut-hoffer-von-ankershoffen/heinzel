@@ -74,7 +74,7 @@ test("the CI workflow pins the same Node.js as the packager", async () => {
 
 test("only an unclean signal shutdown forces a non-zero exit", () => {
   const { proc, calls, installed } = harness();
-  assert.equal(installed.exitIfUnclean(true), false, "Manual quit retains its existing report/retry policy");
+  assert.equal(installed.exitIfUnclean(true), false, "A manual quit exits normally; it never forces a failure code");
   assert.deepEqual(calls.exit, []);
   proc.emit("SIGTERM", "SIGTERM");
   assert.equal(installed.exitIfUnclean(false), false, "A graceful owned-child exit stays successful");

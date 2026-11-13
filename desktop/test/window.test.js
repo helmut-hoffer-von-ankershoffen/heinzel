@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { shouldRefresh, stopWithReport } from "../src/shutdown.js";
+import { hideWindows, quitLogLine, shouldRefresh, showWindows, stopWithReport } from "../src/shutdown.js";
 import { createPublicMediaHandler } from "../src/public-media.js";
 import { installSignalQuit } from "../src/signal-quit.js";
 
@@ -52,15 +52,29 @@ function quitHarness(result, rejects = false) {
     },
     exit: (code) => exits.push(code),
   });
-  const exits = [], dialogs = [];
+  const exits = [], dialogs = [], events = [], warnings = [];
   let stops = 0;
+  const window = {
+    visible: true,
+    isDestroyed: () => false,
+    isVisible: () => window.visible,
+    hide: () => { window.visible = false; events.push("hide"); },
+    show: () => { window.visible = true; events.push("show"); },
+  };
   const owned = {
     exited: () => new Promise(() => {}),
-    stop: async () => { stops += 1; if (rejects) throw new Error("fixture stop failure"); return result; },
+    stop: async () => {
+      stops += 1;
+      events.push(window.visible ? "stop while visible" : "stop");
+      if (rejects) throw new Error("fixture stop failure");
+      return result;
+    },
   };
   runInNewContext(main.replace(/^import .*;\n/gm, "").replaceAll("import.meta.url", "moduleUrl"), {
     moduleUrl: new URL("../src/main.js", import.meta.url).href,
     process: proc, app,
+    console: { ...console, warn: (line) => warnings.push(line) },
+    BrowserWindow: { getAllWindows: () => [window] },
     dialog: { showErrorBox: (...args) => dialogs.push(args) },
     ipcMain: { handle() {} }, lifecycle: {}, path: {},
     Menu: {}, shell: {}, isAllowedHelpUrl: () => false, appMenuTemplate: () => [], menuScript: () => "", createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
@@ -68,10 +82,10 @@ function quitHarness(result, rejects = false) {
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
-    createPublicMediaHandler, stopWithReport, shouldRefresh,
+    createPublicMediaHandler, stopWithReport, shouldRefresh, hideWindows, showWindows, quitLogLine,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
-  return { proc, app, exits, dialogs, stops: () => stops };
+  return { proc, app, exits, dialogs, events, warnings, stops: () => stops };
 }
 
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
@@ -87,14 +101,23 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
   }
 }
 
-test("manual Quit retains its visible report for an unclean stopped child", async () => {
-  const fixture = quitHarness({ outcome: "forced" });
-  fixture.app.quit();
-  await new Promise(setImmediate);
-  assert.equal(fixture.stops(), 1);
-  assert.deepEqual(fixture.exits, [0]);
-  assert.equal(fixture.dialogs.length, 1);
-});
+for (const result of [
+  { outcome: "graceful", code: 0, signal: null },
+  { outcome: "abnormal", code: 2, signal: null },
+  { outcome: "forced", code: null, signal: "SIGKILL" },
+  { outcome: "already-exited", code: 1, signal: null },
+]) {
+  test(`manual Quit hides the window first and shows no crash alert for the ${result.outcome} stop`, async () => {
+    const fixture = quitHarness(result);
+    fixture.app.quit();
+    await new Promise(setImmediate);
+    assert.equal(fixture.stops(), 1);
+    assert.deepEqual(fixture.events, ["hide", "stop"], "No window may repaint the disconnected page while the service stops");
+    assert.deepEqual(fixture.exits, [0]);
+    assert.deepEqual(fixture.dialogs, [], "A deliberate quit is never reported as a crash");
+    assert.deepEqual(fixture.warnings.map((line) => JSON.parse(line).outcome), result.outcome === "graceful" ? [] : [result.outcome]);
+  });
+}
 
 
 test("manual Quit keeps the shell open when the owned child cannot be confirmed stopped", async () => {
@@ -104,6 +127,8 @@ test("manual Quit keeps the shell open when the owned child cannot be confirmed 
   assert.equal(fixture.stops(), 1);
   assert.deepEqual(fixture.exits, []);
   assert.equal(fixture.dialogs.length, 1);
+  assert.equal(fixture.dialogs[0][0], "Heinzelmännchen is still running");
+  assert.deepEqual(fixture.events, ["hide", "stop", "show"], "The window comes back so Quit can be tried again");
   fixture.app.quit();
   await new Promise(setImmediate);
   assert.equal(fixture.stops(), 2, "A manual retry is still available");

@@ -11,6 +11,12 @@ Ctrl-C is how a session of `hz ui serve` ends, so the server doesn't raise it ag
 `serve`
 returns and the CLI says so in one line. A second Ctrl-C while it stops ends the wait at once, as in uvicorn, and one
 after that, while the process exits, ends it at once without a traceback.
+
+A request uvicorn can't cancel still holds the stop: a plain `def` endpoint runs in a worker thread, and the event loop
+and then Python wait for that thread to return, however long its work takes. So Ctrl-C also sets a deadline
+(`STOP_SECONDS`): a process still there when it passes ends at once, with exit 0 as any Ctrl-C. Whoever stopped it,
+a person in a terminal or the desktop app quitting, can rely on it being gone within seconds, so the app never has to
+kill it as if it hung.
 """
 
 import asyncio
@@ -18,8 +24,9 @@ import contextlib
 import logging
 import os
 import signal
+import sys
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from types import FrameType
 from typing import TYPE_CHECKING, cast
 
@@ -35,6 +42,9 @@ KEEP_ALIVE_SECONDS = 75
 request, and WebKit fails a POST caught by that close with "Load failed" instead of retrying it."""
 SETTLE_SECONDS = 0.1
 """How long the app gets to close its terminals itself before uvicorn closes what is left with its own code."""
+STOP_SECONDS = GRACE_SECONDS + 2
+"""How long after Ctrl-C the process may take in all; the desktop app waits 8 seconds before it kills the service."""
+OVERDUE = "Heinzel stopped without waiting for work that was still running."
 UVICORN_LOGGER = "uvicorn.error"
 
 
@@ -116,6 +126,32 @@ def _exit_quietly(sig: int, frame: FrameType | None) -> None:  # noqa: ARG001 - 
     os._exit(0)
 
 
+def stop_deadline(
+    seconds: float = STOP_SECONDS,
+    *,
+    timer: Callable[[float, Callable[[], None]], threading.Timer] = threading.Timer,
+    end: Callable[[int], object] = os._exit,
+) -> threading.Timer:
+    """Start the deadline after which a stopping process ends at once, with exit 0 and one line on stderr.
+
+    The timer's thread is a daemon: a stop that finishes in time exits as usual and the deadline goes with it.
+
+    Returns:
+        The started timer.
+    """
+
+    def overdue() -> None:
+        with contextlib.suppress(OSError, ValueError):  # stderr may be closed already
+            sys.stderr.write(OVERDUE + "\n")
+            sys.stderr.flush()
+        end(0)
+
+    deadline = timer(seconds, overdue)
+    deadline.daemon = True
+    deadline.start()
+    return deadline
+
+
 def server(config: "uvicorn.Config", stopping: Stopping) -> "uvicorn.Server":
     """A uvicorn server that tells the app through `stopping` that it stops, before it waits for open responses.
 
@@ -144,6 +180,8 @@ def server(config: "uvicorn.Config", stopping: Stopping) -> "uvicorn.Server":
             if sig != signal.SIGINT:
                 super().handle_exit(sig, frame)  # SIGTERM: uvicorn raises it again once stopped, so the process ends
                 return
+            if not stopping.interrupted:
+                stop_deadline()  # a worker thread that's still running can't hold the stop past it
             stopping.interrupted = True
             self.force_exit = self.should_exit  # the second Ctrl-C stops waiting
             self.should_exit = True

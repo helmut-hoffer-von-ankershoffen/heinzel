@@ -12,7 +12,7 @@ import { createNativePermissions } from "./native-permissions.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
-import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
+import { hideWindows, quitLogLine, refreshAfterQuit, shouldRefresh, showWindows, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 import { windowOptions } from "./window-options.js";
@@ -170,19 +170,19 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     if (quitting) return;
     event.preventDefault();
     if (stopping) return;
+    // Every quit that reaches here is deliberate (the menu, the last window, a signal, the installer, or the shell after
+    // it already reported a crash). Hide the windows before the service stops so none repaints the disconnected page.
     stopping = true;
     permissions?.revoke();
     miniBrowser.closeAll();
     workspaceAudio?.revoke();
+    const hidden = hideWindows(BrowserWindow.getAllWindows());
     let unclean = false;
     void stopWithReport(ownedCli, () => {
+      // A service stop that this quit asked for is never reported as a crash; the log keeps what happened.
       unclean = true;
-      if (signalQuit.received() || unexpectedExitReported) return;
-      dialog.showErrorBox(
-        "Heinzelmännchen stopped unexpectedly",
-        "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
-      );
     }).then(async (result) => {
+      if (unclean) console.warn(quitLogLine(result));
       const eligible = shouldRefresh({
         packaged: app.isPackaged, platform: process.platform, fixture: Boolean(process.env.HZ_NATIVE_TEST_ROOT),
         serviceStarted, unexpectedExit: unexpectedExitReported, signal: signalQuit.received(), outcome: result.outcome,
@@ -199,6 +199,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         app.exit(1);
         return;
       }
+      showWindows(hidden);
       dialog.showErrorBox(
         "Heinzelmännchen is still running",
         "The local service did not stop. The app will stay open so you can try Quit again.",

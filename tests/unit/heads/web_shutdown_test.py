@@ -2,11 +2,14 @@
 
 import asyncio
 import logging
+import signal
 import threading
 
 import pytest
+import uvicorn
 
-from heinzel.heads.web._shutdown import QuietCancellation, Stopping
+from heinzel.heads.web import _shutdown
+from heinzel.heads.web._shutdown import OVERDUE, STOP_SECONDS, QuietCancellation, Stopping, stop_deadline
 
 pytestmark = pytest.mark.unit
 
@@ -46,3 +49,31 @@ def test_stopping_reaches_watchers_in_any_event_loop():
     asyncio.run(watch())
     asyncio.run(watch())  # a second loop, as a test's client uses per request
     assert woke == [True, True]
+
+
+def test_the_stop_deadline_ends_the_process_with_exit_0_and_one_line(capsys):
+    started: list[tuple[float, bool]] = []
+    ended: list[int] = []
+
+    class Timer(threading.Timer):
+        def start(self) -> None:
+            started.append((self.interval, self.daemon))
+            self.function()  # the deadline passes at once
+
+    deadline = stop_deadline(timer=Timer, end=ended.append)
+    assert isinstance(deadline, Timer)
+    assert started == [(STOP_SECONDS, True)]  # a daemon: a stop that ends in time isn't held up by it
+    assert ended == [0]
+    assert capsys.readouterr().err == OVERDUE + "\n"
+
+
+def test_the_first_ctrl_c_alone_sets_the_stop_deadline(monkeypatch):
+    armed: list[bool] = []
+    monkeypatch.setattr(_shutdown, "stop_deadline", lambda: armed.append(True))
+    stopping = Stopping()
+    server = _shutdown.server(uvicorn.Config(lambda *_: None, lifespan="off"), stopping)
+    server.handle_exit(signal.SIGINT, None)
+    server.handle_exit(signal.SIGINT, None)
+    assert armed == [True]
+    assert stopping.interrupted
+    assert server.force_exit

@@ -5,7 +5,8 @@ import { isAbsolute, join } from "node:path";
 import { parseConnection } from "./connection.js";
 
 const STARTUP_TIMEOUT_MS = 30_000;
-const STOP_TIMEOUT_MS = 5_000;
+// `hz ui serve` ends within 5 seconds of SIGINT, even with a request still running; kill it only after that.
+const STOP_TIMEOUT_MS = 8_000;
 const FORCE_STOP_TIMEOUT_MS = 2_000;
 const OUTPUT_LIMIT = 4096;
 
