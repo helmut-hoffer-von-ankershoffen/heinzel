@@ -42,7 +42,31 @@ export async function openDetails(page) {
   await summary.waitFor({ timeout: 30000 });
   await page.getByLabel("Message your Heinzel").waitFor({ timeout: 30000 });
   await pressUntilOpen(summary, 3);
+  const selects = await summary.locator("xpath=..").locator("select").all();
+  const restyled = (await Promise.all(selects.map((select) => select.evaluate(quirkRestyled)))).filter(Boolean).length;
+  if (restyled) process.stderr.write(`openDetails: restyled ${restyled} select(s) after the WebKit visibility quirk\n`);
 }
+
+// Runs in the page, so it stands alone. WebKit sometimes leaves a <select> in an open disclosure with
+// checkVisibility() false although it and every ancestor are displayed and painted; Playwright's visibility wait then
+// never ends (0.9.40 candidate, bead rbl3). Users see the field. One restyle of the field clears it: do that only in
+// exactly this state, and say whether it was done.
+const quirkRestyled = (node) => {
+  if (node.checkVisibility()) return false;
+  for (let element = node; element; element = element.parentElement) {
+    const style = getComputedStyle(element);
+    if (element.nodeName === "DETAILS" && !element.open) return false;
+    if (element.hidden || style.display === "none" || style.visibility !== "visible") return false;
+  }
+  const rect = node.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+  const color = node.style.color;
+  node.style.color = "rgb(1, 2, 3)";
+  getComputedStyle(node).color;
+  node.style.color = color;
+  getComputedStyle(node).color;
+  return true;
+};
 
 // Runs in the page: why is this element not visible? The first ancestor that hides it, or none.
 const hiddenBy = (node) => {
@@ -64,6 +88,16 @@ export async function requireShown(locator, label) {
   try {
     await locator.waitFor({ state: "visible", timeout: 10000 });
   } catch (error) {
+    if (await locator.evaluate(quirkRestyled).catch(() => false)) {
+      process.stderr.write(`requireShown: restyled ${label} after the WebKit visibility quirk\n`);
+      if (
+        await locator.waitFor({ state: "visible", timeout: 5000 }).then(
+          () => true,
+          () => false,
+        )
+      )
+        return;
+    }
     const cause = await locator.evaluate(hiddenBy).catch(() => "not on the page");
     throw new Error(`${label} is not visible: ${cause ?? "shown now, after the wait"}`, { cause: error });
   }
