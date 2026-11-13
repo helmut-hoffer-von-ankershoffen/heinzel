@@ -203,7 +203,14 @@ for (const [name, engine] of [
         0,
         `${name}/${size}: the footer pane is still open; focus=${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160))}`,
       );
-      await panel.getByRole("button", { name: "Turn on reminders" }).click();
+      const turnOn = panel.getByRole("group", { name: "Actions" }).getByRole("button", { name: "Turn on reminders" });
+      assert.equal(
+        await turnOn.getAttribute("data-pane-action"),
+        "text",
+        `${name}/${size}: Turn on reminders lost its words and became an icon`,
+      );
+      assert.match(await turnOn.textContent(), /Turn on reminders/);
+      await turnOn.click();
       const confirmation = page.locator("[data-operation]");
       await confirmation.waitFor({ state: "visible" });
       assert.match(await confirmation.textContent(), /at every login/);
@@ -213,7 +220,7 @@ for (const [name, engine] of [
       await confirmation.getByRole("button", { name: "Cancel" }).click();
       assert.equal(installs, 0);
       await panel.getByRole("button", { name: "Turn on reminders" }).click();
-      await confirmation.getByRole("button", { name: "Run it" }).click();
+      await confirmation.getByRole("button", { name: "Turn on reminders" }).click();
       await confirmation.getByText("Done.", { exact: true }).waitFor();
       assert.equal(installs, 1);
       await context.close();

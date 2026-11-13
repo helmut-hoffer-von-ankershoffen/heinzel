@@ -49,7 +49,7 @@ it("sets up the profile worker only after explicit confirmation without a termin
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Turn on reminders" }));
-  await user.click(screen.getByRole("button", { name: "Run it" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Turn on reminders" }));
   await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
   const request = calls.find((call) => call.method === "POST");
   expect(new URL(request?.url ?? "").pathname).toBe("/api/stream/org/calendar-reminders-install");
@@ -391,10 +391,31 @@ it("tells a remote browser to use the computer itself", async () => {
   expect(screen.queryByRole("button", { name: /reminders/ })).not.toBeInTheDocument();
 });
 
-it("says reminders are off, with the settings button in the bottom row", async () => {
+it("points to the Calendar reminders setting first while it is off, never offering Turn on reminders", async () => {
   agenda(agendaEvents, { enabled: false });
+  expect(await screen.findByText("Turn on Calendar reminders in Notification settings first.")).toBeInTheDocument();
+  const row = screen.getByRole("group", { name: "Actions" });
+  const settings = within(row).getByRole("link", { name: "Notification settings" });
+  expect(row.querySelector("button, a")).toBe(settings);
+  expect(settings).toHaveTextContent("Notification settings");
+  expect(screen.queryByRole("button", { name: "Turn on reminders" })).not.toBeInTheDocument();
+});
+
+it("says a remote browser that reminders are off, without the local first step", async () => {
+  agenda(agendaEvents, { enabled: false, local: false });
   expect(await screen.findByText("Calendar reminders are off or unavailable.")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Notification settings" })).toBeInTheDocument();
+});
+
+it("offers Turn on reminders as the repair when the state is unknown, without saying they run", async () => {
+  agenda(agendaEvents, { service: "unknown" });
+  expect(
+    await screen.findByText(
+      "Reminders are on, but they could not be confirmed running here. Turn them on again to repair.",
+    ),
+  ).toBeInTheDocument();
+  const row = screen.getByRole("group", { name: "Actions" });
+  expect(row.querySelector("button, a")).toBe(within(row).getByRole("button", { name: "Turn on reminders" }));
+  expect(within(row).getByRole("button", { name: "Turn off reminders on this computer" })).toBeInTheDocument();
 });
 
 it("announces Now and Next in one polite status line and nowhere else", async () => {

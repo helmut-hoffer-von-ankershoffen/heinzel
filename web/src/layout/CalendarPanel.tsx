@@ -123,7 +123,8 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     : [];
   const today = days.find((day) => day.relation === "today");
   // Missing reminders on this computer are the one thing to do here, so turning them on leads the row in words.
-  const setUp = !!reminders.data && isLocalServer() && reminders.data.service !== "running";
+  // Only while the Calendar reminders setting is on: otherwise the setting is the first step, and the band says so.
+  const setUp = !!reminders.data && reminders.data.enabled && isLocalServer() && reminders.data.service !== "running";
   const workerAction = (installing: boolean) =>
     requestOperation({
       method: "POST",
@@ -190,6 +191,12 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
       <PaneActions className="mx-3 mb-2">
+        {/* Reminders off: the setting is the first step, so it leads in words. */}
+        {reminders.data && !reminders.data.enabled && (
+          <PaneAction key="notifications" icon={Bell} to="?settings=notifications">
+            {t("calendar.notificationSettings")}
+          </PaneAction>
+        )}
         {setUp && (
           <PaneAction key="worker-setup" icon={BellRing} primary onClick={() => workerAction(true)}>
             {t("calendar.setUpWorker")}
@@ -204,11 +211,6 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         <PaneAction key="next" icon={ChevronRight} disabled={offset >= 52} onClick={() => setOffset(offset + 1)}>
           {t("calendar.nextWeek")}
         </PaneAction>
-        {reminders.data && !reminders.data.enabled && (
-          <PaneAction key="notifications" icon={Bell} to="?settings=notifications">
-            {t("calendar.notificationSettings")}
-          </PaneAction>
-        )}
         {week.data?.problem && week.data.fix && (
           <PaneAction key="connect" icon={Plug} to={`?settings=${CONNECTORS}`}>
             {t("calendar.connect")}
@@ -230,12 +232,14 @@ function ReminderBand({ reminders }: { reminders: { data?: ReminderStatus; isPen
   if (reminders.isError) line = { icon: TriangleAlert, text: t("calendar.statusUnavailable") };
   else if (reminders.data) {
     const { enabled, service } = reminders.data;
-    if (!enabled) line = { icon: Bell, text: t("calendar.remindersOff") };
+    if (!enabled)
+      line = { icon: Bell, text: t(isLocalServer() ? "calendar.turnOnInSettings" : "calendar.remindersOff") };
     else if (service === "not installed") {
       line = isLocalServer()
         ? { icon: BellOff, text: t("calendar.workerNeeded") }
         : { icon: BellOff, text: t("calendar.workerRemote") };
-    } else if (service !== "running") line = { icon: TriangleAlert, text: t("calendar.workerUnknown") };
+    } else if (service !== "running")
+      line = { icon: TriangleAlert, text: t(isLocalServer() ? "calendar.workerRepair" : "calendar.workerUnknown") };
   }
   if (!line) return null;
   const Icon = line.icon;

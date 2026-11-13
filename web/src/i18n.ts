@@ -1429,6 +1429,10 @@ const en = {
   "calendar.statusUnavailable": "Reminder status unavailable.",
   "calendar.setUpWorker": "Turn on reminders",
   "calendar.removeWorker": "Turn off reminders on this computer",
+  "calendar.turnOff": "Turn off reminders",
+  "calendar.turnOnInSettings": "Turn on Calendar reminders in Notification settings first.",
+  "calendar.workerRepair":
+    "Reminders are on, but they could not be confirmed running here. Turn them on again to repair.",
   "calendar.loading": "Loading calendar\u2026",
   "calendar.unavailable": "Calendar unavailable. Try again later.",
   "calendar.reminderStatusFailed": "Reminder status unavailable",
