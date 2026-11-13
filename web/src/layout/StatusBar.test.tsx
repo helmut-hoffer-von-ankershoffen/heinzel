@@ -368,7 +368,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
   });
 
-  it("shows Decline, Extend and running late instead of Allow once the calendar is writable", async () => {
+  it("draws no dead Decline, Extend or running-late button once the calendar is writable", async () => {
     const now = Date.now();
     const current = {
       title: "Standup",
@@ -384,9 +384,11 @@ describe("Footer items are icons with a state and a pane", () => {
     const footer = await screen.findByRole("contentinfo");
     await user.hover(await within(footer).findByRole("button", { name: /^Calendar: In Standup/ }));
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    // No calendar write operation exists, so no button may promise one.
     for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
-      expect(within(summary).getByRole("button", { name })).toBeEnabled();
+      expect(within(summary).queryByRole("button", { name })).not.toBeInTheDocument();
     expect(within(summary).queryByRole("link", { name: /Allow your Heinzels/ })).not.toBeInTheDocument();
+    expect(within(summary).getByRole("button", { name: "Open calendar" })).toBeEnabled();
   });
 
   it("only renders safe conference links in the calendar", async () => {
