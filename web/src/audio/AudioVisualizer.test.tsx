@@ -66,6 +66,44 @@ afterEach(() => {
   act(() => publishOwnAudio({ mode: "none" }));
 });
 
+/** A recording 2D context on every canvas, a visible document and captured animation frames; `restore` undoes it. */
+function paintable() {
+  const gradient = { addColorStop: vi.fn() };
+  const draw = {
+    clearRect: vi.fn(),
+    setTransform: vi.fn(),
+    fillRect: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    closePath: vi.fn(),
+    fill: vi.fn(),
+    arc: vi.fn(),
+    roundRect: vi.fn(),
+    rect: vi.fn(),
+    stroke: vi.fn(),
+    createLinearGradient: vi.fn(() => gradient),
+    createRadialGradient: vi.fn(() => gradient),
+  };
+  const getContext = vi
+    .spyOn(HTMLCanvasElement.prototype, "getContext")
+    .mockReturnValue(draw as unknown as CanvasRenderingContext2D);
+  const oldVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  const frames: FrameRequestCallback[] = [];
+  const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const restore = () => {
+    raf.mockRestore();
+    getContext.mockRestore();
+    if (oldVisibility) Object.defineProperty(document, "visibilityState", oldVisibility);
+    else delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState;
+  };
+  return { draw, frames, restore };
+}
+
 describe("AudioVisualizer", () => {
   it.each([
     ["Microphone", "the microphone"],
@@ -193,33 +231,7 @@ describe("AudioVisualizer", () => {
         getByteFrequencyData: (data: Uint8Array) => data.fill(loud ? 220 : 0),
       },
     } as unknown as Awaited<ReturnType<typeof captureAudio>>);
-    const gradient = { addColorStop: vi.fn() };
-    const draw = {
-      clearRect: vi.fn(),
-      setTransform: vi.fn(),
-      fillRect: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      closePath: vi.fn(),
-      fill: vi.fn(),
-      arc: vi.fn(),
-      roundRect: vi.fn(),
-      rect: vi.fn(),
-      stroke: vi.fn(),
-      createLinearGradient: vi.fn(() => gradient),
-      createRadialGradient: vi.fn(() => gradient),
-    };
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, "getContext")
-      .mockReturnValue(draw as unknown as CanvasRenderingContext2D);
-    const oldVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
-    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-    const frames: FrameRequestCallback[] = [];
-    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
+    const { draw, frames, restore } = paintable();
     try {
       render(<AudioVisualizer />);
       expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
@@ -254,10 +266,58 @@ describe("AudioVisualizer", () => {
       // The status follows the sleeping loop: it never keeps claiming a signal over a cleared canvas.
       expect(screen.getByText("Listening to shared audio. Waiting for sound.")).toBeInTheDocument();
     } finally {
-      raf.mockRestore();
-      getContext.mockRestore();
-      if (oldVisibility) Object.defineProperty(document, "visibilityState", oldVisibility);
-      else delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState;
+      restore();
+    }
+  });
+
+  it("fits and paints the aurora again after the browser restores a lost canvas, playing or resting", async () => {
+    let loud = true;
+    vi.mocked(captureAudio).mockResolvedValue({
+      ...captured,
+      analyser: {
+        frequencyBinCount: 64,
+        getByteFrequencyData: (data: Uint8Array) => data.fill(loud ? 220 : 0),
+      },
+    } as unknown as Awaited<ReturnType<typeof captureAudio>>);
+    const { draw, frames, restore } = paintable();
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(source("Shared audio"));
+      const aurora = await screen.findByTestId("audio-aurora");
+      await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+      let time = 1000;
+      const step = () => {
+        time += 40;
+        act(() => frames.at(-1)?.(time));
+      };
+      for (let index = 0; index < 5; index += 1) step();
+      // Playing: a lost and restored canvas is fitted again (its transform was reset) and painted on the next frame.
+      act(() => {
+        aurora.dispatchEvent(new Event("contextlost"));
+        aurora.dispatchEvent(new Event("contextrestored"));
+      });
+      const fitted = draw.setTransform.mock.calls.length;
+      const filled = draw.fill.mock.calls.length;
+      step();
+      expect(draw.setTransform.mock.calls.length).toBeGreaterThan(fitted);
+      expect(draw.fill.mock.calls.length).toBeGreaterThan(filled);
+      // Resting: the loop sleeps, so a restore must redraw the resting rail itself instead of leaving it blank.
+      loud = false;
+      for (let index = 0; index < 400; index += 1) {
+        const before = frames.length;
+        step();
+        if (frames.length === before) break;
+      }
+      const sleeping = frames.length;
+      const rested = draw.roundRect.mock.calls.length + draw.rect.mock.calls.length + draw.fillRect.mock.calls.length;
+      act(() => screen.getByRole("img", { name: "Shared audio spectrum" }).dispatchEvent(new Event("contextrestored")));
+      expect(
+        draw.roundRect.mock.calls.length + draw.rect.mock.calls.length + draw.fillRect.mock.calls.length,
+      ).toBeGreaterThan(rested);
+      expect(frames.length).toBe(sleeping);
+    } finally {
+      restore();
     }
   });
 

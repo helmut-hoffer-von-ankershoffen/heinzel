@@ -573,9 +573,27 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
       if (resting) drawHeinzels(0, true);
     });
+    // A canvas whose context the browser lost (a GPU reset, memory pressure) comes back blank with its transform
+    // reset: fit every canvas again and draw at once, so a style never stays empty while the sound plays or rests.
+    const canvases = [rail, sky, ring, crowd].filter((element): element is HTMLCanvasElement => element !== null);
+    const restored = () => {
+      railSize = skySize = ringSize = crowdSize = { width: 0, height: 0 };
+      if (resting) {
+        if (rail && railContext) {
+          railSize = sizeOf(rail, railContext);
+          drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+        }
+        drawHeinzels(0, true);
+      } else if (!frame && document.visibilityState !== "hidden") {
+        last = 0;
+        frame = requestAnimationFrame(paint);
+      }
+    };
+    for (const element of canvases) element.addEventListener("contextrestored", restored);
     document.addEventListener("visibilitychange", visibility);
     visibility();
     return () => {
+      for (const element of canvases) element.removeEventListener("contextrestored", restored);
       unwatch();
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);

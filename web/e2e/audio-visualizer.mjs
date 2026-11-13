@@ -55,6 +55,18 @@ try {
       result.errors.push("Unexpected non-fixture browser request");
       return route.abort();
     });
+    // Diagnosis only: lost and restored canvas contexts, and whether the page still renders frames at all.
+    await page.addInitScript(() => {
+      const seen = { lost: 0, restored: 0, frames: 0 };
+      window.canvasEvents = seen;
+      document.addEventListener("contextlost", () => (seen.lost += 1), true);
+      document.addEventListener("contextrestored", () => (seen.restored += 1), true);
+      const tick = () => {
+        seen.frames += 1;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await page.goto(`http://127.0.0.1:${address.port}/e2e/audio-visualizer.html`);
     const trigger = page
       .getByRole("region", { name: "Audio visualizer", exact: true })
@@ -108,6 +120,11 @@ try {
           share: share / Math.max(1, count),
           // The generator's audio clock against the page clock (seconds): when the generated stream stalls, the
           // audio clock falls behind and the failure log names a starved signal instead of a drawing problem.
+          canvas: {
+            ...window.canvasEvents,
+            skyLost: sky.getContext("2d").isContextLost?.() ?? null,
+            visibility: document.visibilityState,
+          },
           clock: {
             audio: Number((window.audioFixture.contexts.at(-1)?.currentTime ?? -1).toFixed(2)),
             page: Number((performance.now() / 1000).toFixed(2)),
@@ -154,7 +171,7 @@ try {
     // painted mass must move up with it.
     await page.waitForTimeout(1500);
     const low = await measure();
-    assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
+    assert(low.count > 0, `${viewport.width}px: real generated audio must paint the aurora: ${JSON.stringify(low)}`);
     // One plain tone fills a single band: it must still light the window visibly, not paint a trace nobody sees.
     assert(
       low.visible > 0.03,
