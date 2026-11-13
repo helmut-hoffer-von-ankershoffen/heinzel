@@ -71,3 +71,16 @@ and checked again, exactly like hz's own release tag.
 Unit tests fake GitHub's answers: tag listing, a moved tag refused, a release too new, pre-releases ignored, a
 dependency closure announced together, a dependent held when its dependency can't move, and hz and unrelated plugins
 unaffected; the apply tests check the commit installed and verified.
+
+**Amendment, 12 Nov: an update run by hand follows the same releases, once the person agrees.**
+`hz system update` and the app's **Update all** used to keep every plugin at the exact version or commit
+`hz system plugin add` recorded ("pinned; newer releases not checked"), although automatic updates already moved the
+same plugins. A pin made by an add records what was installed; it is not a decision to stay there. So an update a
+person agreed to (the question on a terminal, `--yes`, or the app's confirmation) asks the same sources: a plugin
+pinned to a commit of a GitHub repository goes to the commit of its newest stable release tag, and one pinned to an
+exact index version follows the index from then on. It never moves back, and never guesses: a plugin whose repository
+tags no releases, or whose releases can't be asked, stays and the plan says why.
+
+Without agreement (a script,
+`--json`, the REST API without `yes`) pins stay as before, and `--keep-pins` keeps them on purpose. The update shows
+its plan first (`--preview` shows only that) and can bring an installed desktop app along with `hz app install`.

@@ -97,7 +97,7 @@ hz system doctor                              # everything healthy? each problem
 hz heinzel drafts                            # every draft, newest first
 hz team show                                  # the team, its checkout and members
 hz ui                                         # the same in a browser, on localhost, for this session only
-hz system update                              # update in place, keeping plugins
+hz system update                              # update hz and every plugin in place, after showing the plan
 ```
 
 A team contract runs on **your** machine only when you say so: `hz org sync --accept contract:weekly-report`, and the

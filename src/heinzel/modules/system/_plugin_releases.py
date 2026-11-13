@@ -15,7 +15,7 @@ import re
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
@@ -38,6 +38,25 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 type Fetch = Callable[[str, float], Any]
 type Requires = Callable[[str], list[str]]
+
+
+@dataclass(frozen=True)
+class PinnedPlugins:
+    """What an update a person confirmed may do about the plugins an install spec pins.
+
+    `hz system plugin add` records exactly what its preview showed: an exact version from the package index, or the
+    commit of a GitHub repository. Those pins record what was installed; they are not a decision to stay there.
+    """
+
+    newer: dict[str, PluginRelease] = field(default_factory=dict[str, PluginRelease])
+    """Each pinned plugin with a newer stable release: on the index, or tagged `<distribution>/vX.Y.Z` (its commit)."""
+    current: list[str] = field(default_factory=list[str])
+    """Pinned plugins installed at exactly their newest stable release."""
+    ahead: dict[str, str] = field(default_factory=dict[str, str])
+    """Pinned plugins installed NEWER than their newest stable release (a pre-release, a yanked or an untagged
+    version), mapped to that release: an update never lowers a version, so their pin stays."""
+    unasked: dict[str, str] = field(default_factory=dict[str, str])
+    """Pinned plugins whose releases couldn't be asked, each with why; they stay as they are."""
 
 
 def _fetch(url: str, timeout: float) -> Any:  # noqa: ANN401 - free-form JSON
@@ -130,6 +149,70 @@ class PyPIPluginReleases(PluginReleases):
                 if (release := self._newest_tag(_base(repository), tags, installed.get(plugin))) is not None:
                     newer[plugin] = release
         return newer, sorted(followed)
+
+    def pinned(self, timeout: float) -> PinnedPlugins:
+        """Ask the releases of every plugin pinned to an exact index version or to a commit of a GitHub repository.
+
+        A plugin from the index is asked on PyPI; one from GitHub through its release tags, and is left out when its
+        repository tags no release of it: nothing says where it should go. A plugin from a branch, a folder or a URL
+        is never asked. One that can't be asked (offline, rate limit) is reported, never guessed.
+
+        Raises:
+            HeinzelError: If the installed versions can't be read safely (from `Installation`).
+        """
+        exact: list[str] = []
+        tagged: dict[str, tuple[str, str]] = {}
+        for pin in self._installation.plugin_pins():
+            try:
+                requirement = Requirement(pin.requirement)
+            except InvalidRequirement:
+                continue
+            name = str(canonicalize_name(requirement.name))
+            if pin.kind == "index" and exact_version(requirement) is not None:
+                exact.append(name)
+            elif (repository := _github(pin)) is not None:
+                tagged[name] = repository
+        if not exact and not tagged:
+            return PinnedPlugins()
+        installed = self._installation.installed_versions([*exact, *tagged])
+        found = PinnedPlugins()
+        for plugin in exact:
+            try:
+                latest = self._latest(plugin, timeout)
+            except (OSError, ValueError) as exc:
+                found.unasked[plugin] = f"PyPI couldn't be asked ({exc})"
+                continue
+            self._sort(found, plugin, installed.get(plugin), latest, "PyPI names no stable release of it")
+        for plugin, repository in tagged.items():
+            self._ask_tags(found, plugin, _base(repository), installed.get(plugin))
+        return found
+
+    def _ask_tags(self, found: PinnedPlugins, name: str, base: str, current: str | None) -> None:
+        """Sort a plugin pinned to a GitHub commit by its newest release tag; one without tags is left out."""
+        try:
+            tags = self._tags(base, name)
+            if not tags:
+                return
+            version = max(tags)
+            release = self._tagged(base, str(version), tags[version])
+        except (OSError, ValueError, LookupError) as exc:
+            found.unasked[name] = f"GitHub couldn't be asked ({exc})"
+            return
+        self._sort(found, name, current, release, "its newest release tag names no commit")
+
+    @staticmethod
+    def _sort(found: PinnedPlugins, name: str, current: str | None, latest: PluginRelease | None, missing: str) -> None:
+        """File one pinned plugin: newer release, exactly the newest, ahead of it, or not asked."""
+        if current is None:
+            found.unasked[name] = "its installed version couldn't be read"
+        elif latest is None:
+            found.unasked[name] = missing
+        elif _newer(latest.version, current):
+            found.newer[name] = latest
+        elif _same(latest.version, current):
+            found.current.append(name)
+        else:  # a pre-release, a yanked release or an untagged commit: newer than anything an update could install
+            found.ahead[name] = latest.version
 
     def _indexed(
         self, indexed: dict[str, Requirement], installed: dict[str, str], timeout: float
@@ -434,6 +517,22 @@ def _github(pin: CorePin) -> tuple[str, str] | None:
     if pin.kind != "commit" or pin.git is None or not COMMIT.match(pin.ref or ""):
         return None
     return PluginSource(kind="git", name=None, url=pin.git).github
+
+
+def exact_version(requirement: Requirement) -> str | None:
+    """The version of a requirement that is one exact pin (`name==1.2.3`); None for a range, a wildcard or a URL."""
+    specifiers = list(requirement.specifier)
+    if requirement.url is not None or len(specifiers) != 1:
+        return None
+    only = specifiers[0]
+    return only.version if only.operator == "==" and not only.version.endswith(".*") else None
+
+
+def _same(version: str, current: str) -> bool:
+    try:
+        return Version(version) == Version(current)
+    except InvalidVersion:
+        return False
 
 
 def _newer(version: str, current: str) -> bool:

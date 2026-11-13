@@ -4355,8 +4355,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
-         * @description Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
+         * Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+         * @description Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+         *
+         *     See what the releases bring with `hz system changelog --newer`. One command for everything: on a terminal it
+         *     first shows the plan (hz, each plugin, the desktop app) and asks `Update now? [Y/n]`; `--yes` agrees in advance
+         *     and `--preview` only shows the plan. Once you agree, a plugin that `hz system plugin add` pinned to the exact
+         *     version or GitHub commit it installed moves too: to the newest release on the package index, which it follows
+         *     from then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a
+         *     folder, a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with
+         *     `--keep-pins`. Where nobody can answer (a script, `--json`, the REST API) and `--yes` is not given, nothing is
+         *     asked and pins stay.
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -4375,8 +4384,9 @@ export interface paths {
          *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
          *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
          *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-         *     app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
-         *     `hz app install`. The output says which applies.
+         *     app is not part of the tool: after a change, a terminal asks `Update the desktop app now? [Y/n]`, and `--desktop`,
+         *     `--no-desktop` or `--yes` answer in advance. Left alone, it updates itself at the web server's next automatic
+         *     update check, or with `hz app install`. The output says which applies.
          *
          *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
          *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
@@ -11460,6 +11470,44 @@ export interface components {
             version?: string | null;
         };
         /**
+         * PluginPlan
+         * @description What a confirmed `hz system update` would do to one installed plugin.
+         */
+        PluginPlan: {
+            /**
+             * Action
+             * @description `update` (a newer release was found; a pin to the installed version or commit moves with it), `current` (asked, nothing newer), `refresh` (it follows a branch or a range, which the update asks again) or `kept` (its source is a tag, a branch commit without release tags, a folder or a URL, it is installed newer than its newest stable release, or it couldn't be asked: an update leaves it as it is).
+             * @enum {string}
+             */
+            action: "update" | "current" | "refresh" | "kept";
+            /**
+             * Detail
+             * @description Why, in one plain line: what it is pinned to or why it was not asked.
+             * @default
+             */
+            detail: string;
+            /**
+             * Distribution
+             * @description Distribution name, e.g. heinzel-clock.
+             */
+            distribution: string;
+            /**
+             * Installed
+             * @description Version installed now; none if it couldn't be told.
+             */
+            installed: string | null;
+            /**
+             * Moves To
+             * @description The requirement an update a person agreed to installs it from, when its pin moves: a version floor on the package index, or the commit of its release tag. None if its install spec stays as it is.
+             */
+            moves_to?: string | null;
+            /**
+             * Target
+             * @description The newer release it would move to; none if it stays.
+             */
+            target?: string | null;
+        };
+        /**
          * PluginRepair
          * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
          */
@@ -15889,6 +15937,44 @@ export interface components {
             why: string;
         };
         /**
+         * UpdatePlan
+         * @description What `hz system update` would change, shown before a person agrees.
+         */
+        UpdatePlan: {
+            /**
+             * Core
+             * @description What happens to Heinzelmännchen itself, in one line.
+             */
+            core: string;
+            /**
+             * Current
+             * @description Heinzelmännchen version installed now.
+             */
+            current: string;
+            /**
+             * Desktop
+             * @description Whether a desktop app is installed that the update can bring along afterwards.
+             * @default false
+             */
+            desktop: boolean;
+            /**
+             * Latest
+             * @description The newest stable release, when it could be asked.
+             */
+            latest: string | null;
+            /**
+             * Plugins
+             * @description Each installed plugin.
+             */
+            plugins?: components["schemas"]["PluginPlan"][];
+            /**
+             * Token
+             * @description Names exactly this plan. Pass it back as `plan` with `yes`: the update then installs what was shown, or changes nothing and answers with the new plan if a release appeared in between.
+             * @default
+             */
+            token: string;
+        };
+        /**
          * UpdateResult
          * @description What `hz system update` did, or why it left the installation as it was.
          */
@@ -15930,11 +16016,19 @@ export interface components {
              * @description The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.
              */
             pinned_to: string | null;
+            /** @description What the update would change, when this answer is a preview or the person was asked first. */
+            plan?: components["schemas"]["UpdatePlan"] | null;
             /**
              * Plugins
              * @description What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.
              */
             plugins?: components["schemas"]["PluginUpdate"][];
+            /**
+             * Previewed
+             * @description Whether this was only a preview (`--preview`, or the question was answered with no): nothing was changed.
+             * @default false
+             */
+            previewed: boolean;
             /**
              * Updated
              * @description Whether Heinzelmännchen was reinstalled.
@@ -17547,6 +17641,7 @@ export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
+export type SchemaPluginPlan = components['schemas']['PluginPlan'];
 export type SchemaPluginRepair = components['schemas']['PluginRepair'];
 export type SchemaPluginScreenshot = components['schemas']['PluginScreenshot'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
@@ -17669,6 +17764,7 @@ export type SchemaTool = components['schemas']['Tool'];
 export type SchemaToolActivity = components['schemas']['ToolActivity'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
+export type SchemaUpdatePlan = components['schemas']['UpdatePlan'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
 export type SchemaUsageRow = components['schemas']['UsageRow'];
@@ -24150,6 +24246,16 @@ export interface operations {
                 source?: string | null;
                 /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
+                /** @description Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question. */
+                yes?: boolean;
+                /** @description The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan. */
+                plan?: string | null;
+                /** @description Only show what the update would change (`plan`); nothing is installed. */
+                preview?: boolean;
+                /** @description Leave plugins pinned to an exact version or a commit where they are. */
+                keep_pins?: boolean;
+                /** @description Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update. */
+                desktop?: boolean | null;
             };
             header?: never;
             path?: never;

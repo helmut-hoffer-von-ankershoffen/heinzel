@@ -1,6 +1,7 @@
 """How the CLI head presents system results."""
 
 import json
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Group, RenderableType
@@ -13,7 +14,7 @@ from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseChe
 from heinzel.modules.system._plugin_standing import standing
 
 if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
-    from heinzel.modules.system._models import AutomaticUpdates
+    from heinzel.modules.system._models import AutomaticUpdates, UpdatePlan
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -86,15 +87,57 @@ def render_update(result: UpdateResult) -> RenderableType:
     still holds its own `_models` in memory. So it names no model that is new, and reads a field that is new with a
     default: an older hz updating itself must still print its result.
     """
+    plan = getattr(result, "plan", None)
+    if getattr(result, "previewed", False):
+        shown = [plan_text(plan)] if plan is not None else []
+        return Text("\n".join([*shown, result.message, *(f"To update: {command}" for command in result.next)]))
     lines = [result.message]
     unchanged = [p for p in result.plugins if p.status == "unchanged"]
     if unchanged:
         lines.append("Plugins:")
         lines += [f"  {p.distribution}: {standing(p)}" for p in unchanged]
+    # After an agreed update (`plan`) what is still pinned stays on purpose; only an update nobody agreed to hints.
+    if plan is None and any(getattr(p, "checked", True) and _movable(getattr(p, "pinned", None)) for p in unchanged):
+        lines.append(PINNED_HINT)
     automatic = getattr(result, "automatic", None)
     if result.updated and automatic is not None:
         lines.append(_automatic(automatic))
     return Text("\n".join(lines))
+
+
+PINNED_HINT = (
+    "Pinned plugins stay where they are unless you agree to the plan: `hz system update --preview` shows what would "
+    "move, `hz system update --yes` moves them to their newest release."
+)
+
+
+def _movable(pinned: object) -> bool:
+    """Whether a pin is one `hz system plugin add` made: an exact version or a full commit, which an update can move."""
+    return isinstance(pinned, str) and (pinned.startswith("==") or re.fullmatch(r"[0-9a-f]{40}", pinned) is not None)
+
+
+def plan_text(plan: "UpdatePlan") -> str:
+    """The plan in plain lines: hz, each plugin with where it goes or why it stays, the desktop app."""
+    lines = [plan.core]
+    if plan.plugins:
+        lines.append("Plugins:")
+    for plugin in plan.plugins:
+        version = plugin.installed or "version unknown"
+        head = {
+            "update": f"{version} → {plugin.target}",
+            "current": f"already newest ({version})",
+            "refresh": f"asked again ({version})",
+            "kept": f"kept at {version}",
+        }[plugin.action]
+        lines.append(f"  {plugin.distribution}: {head}{f'. {plugin.detail}' if plugin.detail else ''}")
+    if plan.desktop:
+        lines.append("Desktop app: updated afterwards with `hz app install`, if you agree.")
+    return "\n".join(lines)
+
+
+def render_plan(plan: "UpdatePlan") -> RenderableType:
+    """What the update would change, before the person is asked."""
+    return Text(plan_text(plan))
 
 
 def _automatic(automatic: "AutomaticUpdates") -> str:
