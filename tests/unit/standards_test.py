@@ -637,7 +637,7 @@ def test_finds_the_old_name():
     assert OLD_NAME.findall(text) == ["j" + "oy", "J" + "OY"]
 
 
-BINARY = (".gif", ".webp", ".mp4", ".png", ".woff2", ".jpg", ".ico")
+BINARY = (".gif", ".webp", ".mp4", ".png", ".woff2", ".jpg", ".ico", ".icns")
 """Recordings and images: their bytes aren't words, and a GIF holds any three letters somewhere."""
 
 
