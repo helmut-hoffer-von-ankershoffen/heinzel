@@ -635,8 +635,20 @@ export function heinzelSwarmSvg(): string {
 
 /** The desktop app's icon: three of them, the grown one in front. `small` is the 16 and 32 pixel version: heads only. */
 export const TRIO: { look: HeinzelLook; x: number; y: number; scale: number; small: [number, number, number] }[] = [
-  { look: { age: "old", hat: "purple", shirt: "slate", build: "slim" }, x: -27, y: 50, scale: 0.52, small: [-59, 55, 0.62] },
-  { look: { age: "young", hat: "teal", shirt: "rose", build: "slim" }, x: 273, y: 50, scale: 0.52, small: [253, 55, 0.62] },
+  {
+    look: { age: "old", hat: "purple", shirt: "slate", build: "slim" },
+    x: -27,
+    y: 50,
+    scale: 0.52,
+    small: [-59, 55, 0.62],
+  },
+  {
+    look: { age: "young", hat: "teal", shirt: "rose", build: "slim" },
+    x: 273,
+    y: 50,
+    scale: 0.52,
+    small: [253, 55, 0.62],
+  },
   { look: { age: "grown", hat: "red", shirt: "green" }, x: 102, y: -8, scale: 0.6, small: [51, -10, 0.8] },
 ];
 
