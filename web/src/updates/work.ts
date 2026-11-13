@@ -34,3 +34,17 @@ export function reloadHeld(): boolean {
   for (const holding of holds) if (holding()) return true;
   return false;
 }
+
+// The part of a hold that is work on its way: a chat turn running, or a message not yet accepted. Unsent text alone
+// can be saved and restored across a reload; this cannot (staleBuild.ts).
+const running = new Set<() => boolean>();
+
+export function registerRunningWork(isRunning: () => boolean): () => void {
+  running.add(isRunning);
+  return () => running.delete(isRunning);
+}
+
+export function workRunning(): boolean {
+  for (const isRunning of running) if (isRunning()) return true;
+  return false;
+}

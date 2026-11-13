@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { registerReloadHold, registerUpdatePreparation } from "@/updates/work";
+import { registerReloadHold, registerRunningWork, registerUpdatePreparation } from "@/updates/work";
 
 const PREFIX = "hz.durable.composer.";
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -141,6 +141,15 @@ export function useDurableDraft(sessionId: string) {
       registerReloadHold(() => {
         const current = stateRef.current;
         return current.text.trim() !== "" || current.pending !== null || current.agentPending !== null;
+      }),
+    [],
+  );
+  // A message on its way is work running: a reload waits for it even when the window is in the background.
+  useEffect(
+    () =>
+      registerRunningWork(() => {
+        const current = stateRef.current;
+        return current.pending !== null || current.agentPending !== null;
       }),
     [],
   );

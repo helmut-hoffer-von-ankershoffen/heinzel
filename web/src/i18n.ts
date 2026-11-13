@@ -1398,6 +1398,11 @@ const en = {
   "autoUpdate.applying": "Updating hz\u2026",
   "autoUpdate.reloadLater":
     "Reload to finish the update. This window reloads by itself once your message is sent and the answer is done.",
+  "autoUpdate.reloadAfterWork": "Reloads to update once the dialog or terminal is closed.",
+  "autoUpdate.reloadStuck": "This window runs an older Heinzel. Reload to update.",
+  "autoUpdate.reload": "Reload",
+  "autoUpdate.reloaded": "Heinzel was updated, so this window reloaded.",
+  "autoUpdate.draftKept": "Your unsent message is still here.",
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
   "autoUpdate.setting": "Automatic updates",
