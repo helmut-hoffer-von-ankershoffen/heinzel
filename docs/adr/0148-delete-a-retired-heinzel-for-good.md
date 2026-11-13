@@ -18,16 +18,21 @@ whether a retired Heinzel's history may ever be deleted, and [ADR 0122](0122-pre
 keeps chat history unless the owner expressly chooses deletion. People now want to remove a Heinzel they will never
 need again, with everything it saw and wrote.
 
-A personal Heinzel's private state lives in several places. Under `heinzel-sessions/<owner>/` are its main journal
-with turn bodies, its control journal (profile, contracts, schedules, drafts, channel requests, lifecycle) and its
-channel-processing lock folder, each a directory named by the session id, plus each store's SQLite index, which
-copies every raw journal line. Owner-wide stores reference it by id: the creation catalog, the model budget ledger,
-the subscription slot ledger and the draft-target fences. The runner keeps its continuous chat (bound by
-`personal_session_id`). The notification store keeps its notices (route `/heinzel?chat=<id>`, ADR 0043). A channel
-plugin can keep its own copy of an approval request it posted; heinzel-slack keeps the preview, detail and audit rows
-in `approvals.sqlite3`. Search keeps a disposable in-memory index. The session store reports a vanished folder as
-"Session spine is missing", and the owner check refuses a folder the catalog does not explain, so removing a folder
-by hand reads as tampering.
+A personal Heinzel's private state lives in several places:
+
+- Under `heinzel-sessions/<owner>/`: its main journal with turn bodies, its control journal (profile, contracts,
+  schedules, drafts, channel requests, lifecycle) and its channel-processing lock folder, each a directory named by
+  the session id, plus each store's SQLite index, which copies every raw journal line.
+- Owner-wide stores that reference it by id: the creation catalog, the model budget ledger, the subscription slot
+  ledger and the draft-target fences.
+- The runner's continuous chat (bound by `personal_session_id`) and the notification store's notices (route
+  `/heinzel?chat=<id>`, ADR 0043).
+- A channel plugin's own copy of an approval request it posted; heinzel-slack keeps the preview, detail and audit
+  rows in `approvals.sqlite3`.
+- Search's disposable in-memory index.
+
+The session store reports a vanished folder as "Session spine is missing", and the owner check refuses a folder the
+catalog does not explain, so removing a folder by hand reads as tampering.
 
 ## Decision Drivers
 
@@ -72,6 +77,7 @@ scope.
 
    The operation refuses unless the Heinzel's latest lifecycle event is `heinzel.retired` and the typed name equals
    its current name after Unicode NFC normalisation, so no head can skip a check.
+
 2. **What is removed.** The main journal with every turn body (messages, replies, tool activity, drafts, lessons and
    what it remembered, which lives in its outputs); the control journal (profile, contract versions, schedules and
    their proposals, draft workflows and approvals, channel requests, retire and restore); the channel-processing
@@ -81,6 +87,7 @@ scope.
    in every `notify-recovery` archive (each archive's receipt is rebound to the new digest and records how many
    notices were removed, never which); the plugin's copy of each approval request it posted (statement 4); and the
    in-memory search index.
+
 3. **What is kept.** In the owner catalog: the original `creation.reserved` record (request id, session id, a digest
    of the creation payload); the `creation.deleting` intent (session id, and the channel name, request id and, when
    known, reference of each approval request); one `creation.settled` and one `creation.forgotten` record per
@@ -89,6 +96,7 @@ scope.
    session id with amounts, token envelopes and digests, and no text. Not recalled, because they left hz: messages
    already posted on a channel, notices already shown by macOS Notification Center, and drafts already placed in a
    document. The user guide, the privacy page and the CLI help say so.
+
 4. **Channel plugins forget.** `ApprovalChannel.forget(request_id, reference)` is an optional hook with a no-op
    default: it deletes every copy the plugin keeps of one approval request, locally and offline, is idempotent and
    treats an unknown request as forgotten. `request_id` is what hz passed to `post`; `reference` is the receipt's
@@ -105,12 +113,14 @@ scope.
    `PRAGMA wal_checkpoint(TRUNCATE)` (its store uses WAL, and older row versions sit in free pages and WAL frames),
    and the plugin carries its own canary test with a positive control. That is the acceptance condition for the
    heinzel-plugins head.
+
 5. **Locks and checks.** Delete takes the main writer and the channel-processing writer without waiting (a running
    turn or a channel reply in flight refuses: "it is finishing; try again in a moment"), then the control writer,
    then the catalog writer for the intent; this is the order turns use. Under these locks it checks retired, the
    name, and that no `draft.target-intent` of this Heinzel lacks an outcome (an unsettled document append refuses;
    it would fence that document for every Heinzel). Runner chats are removed under the runner's proposal lock and
    each chat's own lock, without waiting.
+
 6. **Order, crash safety and resume.** After `creation.deleting`, every read and write of the session is refused and
    it leaves every list. Finishing removes hz's own content first: the runner chats, the notices and archived
    notices, then the channel-processing, control and main folders, and the search index. Each removal survives a
@@ -131,19 +141,23 @@ scope.
    forgotten. A module or plugin that cannot forget yet never holds hz's own removal back: delete answers
    `forgetting` with what is still waiting, the app says so, `hz system doctor` reports each unfinished deletion
    by id with what it waits for and the fix until it is done, and a list retries with backoff from a minute to an
-   hour. Last comes `creation.deleted`; it is never written while anything waits. A crash after the intent leaves a
-   pending deletion that the next delete or list finishes; a crash before it leaves the retired Heinzel untouched.
-   Deleting again returns the same result without asking for the name.
+   hour. Last comes `creation.deleted`; it is never written while anything waits.
+
+   A crash after the intent leaves a pending deletion that the next delete or list finishes; a crash before it
+   leaves the retired Heinzel untouched. Deleting again returns the same result without asking for the name.
+
 7. **Late writers and the running daemon.** Every session writer, and every shared ledger writer, re-checks the
    catalog after taking its lock; a writer that waited past the intent refuses before writing and removes a folder
    it recreated. A store writer also refuses a lock won on a folder that was renamed away. Daemon loops read the
    live catalog each tick and skip a Heinzel deleted mid-tick instead of aborting; no restart is needed. A search
    index held by another process cannot be read (the ownership check refuses first) and is dropped when that
    process evicts it or restarts.
+
 8. **One catalog projection.** Every reader takes live, deleting and deleted from one projection of the catalog
    (`reserved_session_ids`, `deletion_state`): ownership, the list of Heinzels, input receipts, cross-Heinzel search,
    and the store check, which expects the folders of live sessions and tolerates those of deleted or deleting ones
    under their own or hidden names. Replaying a deleted Heinzel's creation request is refused.
+
 9. **Downgrade.** A release before this one reads the new catalog records as unknown and reports the owner stores as
    needing repair. The blast radius is the whole owner: on the older release every one of their Heinzels shows
    "needs repair", not only the deleted one. It fails closed and never deletes or rewrites anything, and upgrading
@@ -151,10 +165,12 @@ scope.
    release does, so it cannot meet these records; only a manual downgrade can, and the release notes say so. The
    tolerant readers are a separate commit from the writer, so a release train that can ship them one release
    earlier removes this case.
+
 10. **The web flow.** The Retired list shows **Delete for good** next to Restore in the design system's destructive
     style. It opens a type-to-confirm dialog, a new shared component, which says what is removed and that it
     cannot be undone, and enables its destructive button only after the typed name matches (NFC). After success the
     tab clears that Heinzel's session-storage drafts. Phone and desktop use the same dialog.
+
 11. **No undo, no content in logs.** There is no restore after delete, no trash and no grace period. Log lines
     about a deletion carry the session id at most.
 
