@@ -43,10 +43,51 @@ def test_rewrites_both_uris_only_and_is_idempotent(tmp_path):
 
 
 @pytest.mark.parametrize(
+    ("main_uri", "security_uri"),
+    [
+        ("http://archive.ubuntu.com/ubuntu", "http://security.ubuntu.com/ubuntu"),
+        ("http://archive.ubuntu.com/ubuntu/", "http://security.ubuntu.com/ubuntu/"),
+        ("https://archive.ubuntu.com/ubuntu/", "https://archive.ubuntu.com/ubuntu/"),
+        ("https://archive.ubuntu.com/ubuntu", "http://security.ubuntu.com/ubuntu"),
+        ("http://azure.archive.ubuntu.com/ubuntu/", "http://azure.archive.ubuntu.com/ubuntu/"),
+    ],
+)
+def test_rewrites_official_cloud_init_uris_only(tmp_path, main_uri, security_uri):
+    head, tail = SOURCE.split("## Security")
+    path = tmp_path / "ubuntu.sources"
+    path.write_text(
+        head.replace(mirror.ORIGINAL, main_uri) + "## Security" + tail.replace(mirror.ORIGINAL, security_uri)
+    )
+    mirror.main(path)
+    assert path.read_text() == SOURCE.replace(mirror.ORIGINAL, mirror.MIRROR)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://security.ubuntu.com/ubuntu",
+        "http://archive.ubuntu.com/ubuntu//",
+        "http://archive.ubuntu.com.example/ubuntu",
+        "http://de.archive.ubuntu.com/ubuntu",
+        "mirror+file:/tmp/apt-mirrors.txt",
+    ],
+)
+def test_unreviewed_uri_refuses_and_names_it(tmp_path, uri):
+    path = tmp_path / "ubuntu.sources"
+    source = SOURCE.replace(mirror.ORIGINAL, uri)
+    path.write_text(source)
+    with pytest.raises(ValueError, match="differs from reviewed runner: ") as refused:
+        mirror.main(path)
+    assert repr(uri) in str(refused.value)
+    assert path.read_text() == source
+
+
+@pytest.mark.parametrize(
     "source",
     [
         SOURCE.replace(mirror.ORIGINAL, "https://unexpected.example/ubuntu"),
         SOURCE.replace(mirror.ORIGINAL, mirror.MIRROR, 1),
+        SOURCE.replace(mirror.ORIGINAL, mirror.MIRROR, 1).replace(mirror.ORIGINAL, "http://archive.ubuntu.com/ubuntu"),
         SOURCE.replace("noble-security", "noble-security other"),
         SOURCE.replace("main universe restricted multiverse", "main universe", 1),
         SOURCE.replace("/usr/share/keyrings/ubuntu-archive-keyring.gpg", "/untrusted/key", 1),
