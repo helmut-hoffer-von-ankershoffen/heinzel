@@ -12,7 +12,7 @@ amends-0038: lessons; hz drafts and hz approve
 amends-0045: the sidebar chat with a Heinzelmännchen is its session
 amends-0028: in the durable-turns amendment, fingerprints per facet
 amends-0052: in the durable-turns amendment, downstream wakes only when the approved output moved
-amended-by: 0052, 0081
+amended-by: 0052, 0081, 0148
 related: 0012, 0022, 0024, 0027, 0030, 0035, 0037, 0040, 0043, 0046, 0050, 0051
 implemented-by: 165, 167, 263
 ---
@@ -482,3 +482,6 @@ Not yet: proposed. When implemented:
   that aren't shared (statement 21; recommendation: the machine running the daemon holds the session, others submit
   through the web head paired to it, ADR 0046); when ADR 0054 counts a `nothing-moved` skip as a kept promise, so
   team contracts may use `if-moved` (statement 15).
+
+Amended 2026-11-13: [ADR 0148](0148-delete-a-retired-heinzel-for-good.md) answers the open question on deleting a
+retired Heinzel's spine.
