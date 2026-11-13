@@ -56,6 +56,10 @@ ARTWORK = SOURCES / "heinzel.svg"
 DANCE = ROOT / "web" / "public" / "loading-dance.svg"
 """The four dancing in a ring while hz starts."""
 DESKTOP_ICON = ROOT / "desktop" / "assets" / "heinzel.icns"
+DESKTOP_PNG = ROOT / "desktop" / "assets" / "heinzel.png"
+DESKTOP_ICO = ROOT / "desktop" / "assets" / "heinzel.ico"
+DESKTOP_ICO_SIZES = (16, 32, 48, 64, 128, 256)
+"""The desktop app's icons beside the .icns: Linux's PNG (512) and Windows' .ico; all show the swarm."""
 """The desktop app's icon, packaged by desktop/ci/package.mjs."""
 SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: the logo, not an app icon."""
@@ -124,7 +128,7 @@ def _ico(images: list[tuple[int, bytes]]) -> bytes:
     header = struct.pack("<HHH", 0, 1, len(images))
     offset, entries, data = 6 + 16 * len(images), b"", b""
     for size, png in images:
-        entries += struct.pack("<BBBBHHII", size, size, 0, 0, 1, 32, len(png), offset + len(data))
+        entries += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(png), offset + len(data))
         data += png
     return header + entries + data
 
@@ -169,13 +173,13 @@ def draw() -> None:
     _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
 
 
-def _icns(icon: Path, work: Path, target: Path) -> None:
-    """Write the app icon, an .icns of the Heinzelmännchen tile, to ``target``."""
+def _icns(icon: Path, work: Path, target: Path, artwork: Path = ARTWORK) -> None:
+    """Write an .icns of the artwork on its tile to ``target``: the notifier's icon, or the desktop app's swarm."""
     iconset = work / "heinzel.iconset"
     iconset.mkdir(exist_ok=True)
     for size in ICON_SIZES:
         for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
-            _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
+            _run(str(icon), str(artwork), str(iconset / name), str(pixels), "tile")
     target.parent.mkdir(parents=True, exist_ok=True)
     _run("iconutil", "-c", "icns", "-o", str(target), str(iconset))
 
@@ -204,7 +208,14 @@ def icons() -> None:
             _run(str(icon), str(artwork_for(size)), str(out), str(size))
             favicons.append((size, out.read_bytes()))
         (PUBLIC / "favicon.ico").write_bytes(_ico(favicons))
-        _icns(icon, work, DESKTOP_ICON)
+        _icns(icon, work, DESKTOP_ICON, SWARM)
+        _run(str(icon), str(SWARM), str(DESKTOP_PNG), "512", "tile")
+        frames = []
+        for size in DESKTOP_ICO_SIZES:
+            out = work / f"desktop-{size}.png"
+            _run(str(icon), str(SWARM), str(out), str(size), "tile")
+            frames.append((size, out.read_bytes()))
+        DESKTOP_ICO.write_bytes(_ico(frames))
     for copy, source in COPIES.items():
         copy.write_bytes(source.read_bytes())
     for name, (background, fill) in WORDMARKS.items():
