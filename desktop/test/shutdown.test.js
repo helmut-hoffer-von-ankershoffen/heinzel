@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { createOwnedCli } from "../src/owned-cli.js";
-import { stopWithReport } from "../src/shutdown.js";
+import { hideWindows, quitLogLine, showWindows, stopWithReport } from "../src/shutdown.js";
 
 async function ownedProcess(exitOn) {
   const child = new EventEmitter();
@@ -114,4 +114,24 @@ test("refresh eligibility excludes fixtures, signals and unclean or incomplete s
     { outcome: "already-exited" }, { outcome: "not-started" }]) {
     assert.equal(shouldRefresh({ ...healthy, ...change }), false);
   }
+});
+
+test("quitting hides only visible live windows and shows exactly those again", () => {
+  const calls = [];
+  const fake = (name, { visible = true, destroyed = false, throws = false } = {}) => ({
+    isDestroyed: () => destroyed,
+    isVisible: () => { if (throws) throw new Error("gone"); return visible; },
+    hide: () => calls.push(`hide ${name}`),
+    show: () => calls.push(`show ${name}`),
+  });
+  const hidden = hideWindows([fake("a"), fake("b", { visible: false }), fake("c", { destroyed: true }), fake("d", { throws: true })]);
+  assert.equal(hidden.length, 1);
+  showWindows([...hidden, { isDestroyed: () => true, show: () => calls.push("show gone") }, { isDestroyed: () => { throw new Error("gone"); } }]);
+  assert.deepEqual(calls, ["hide a", "show a"]);
+});
+
+test("an unclean stop during quit becomes one log line, not a dialog", () => {
+  assert.deepEqual(JSON.parse(quitLogLine({ outcome: "forced", code: null, signal: "SIGKILL" })),
+    { event: "desktop.quit.service_stop", outcome: "forced", code: null, signal: "SIGKILL" });
+  assert.deepEqual(JSON.parse(quitLogLine()), { event: "desktop.quit.service_stop", code: null, signal: null });
 });
