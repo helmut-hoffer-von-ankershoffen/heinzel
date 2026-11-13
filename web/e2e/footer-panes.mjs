@@ -144,7 +144,12 @@ try {
             underlined,
             names: buttons.map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
             lead: buttons[0]?.getAttribute("data-pane-action") === "text" || row?.getAttribute("data-words") === "none",
-            tops: new Set(buttons.map((element) => Math.round(element.getBoundingClientRect().top))).size,
+            // A wrapped row's lead sits alone above the line of icons.
+            tops: new Set(
+              (row?.getAttribute("data-words") === "wrap" ? buttons.slice(1) : buttons).map((element) =>
+                Math.round(element.getBoundingClientRect().top),
+              ),
+            ).size,
             small: buttons
               .map((element) => element.getBoundingClientRect())
               .filter((rect) => rect.width < 44 || rect.height < 44).length,

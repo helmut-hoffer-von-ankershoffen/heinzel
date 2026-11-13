@@ -130,8 +130,10 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
    title text. Switches and checkboxes are content and stay beside the text they change.
 2. **The first action leads.** It shows icon and words. Every other action is icon-only; its words are the tooltip and
    the accessible name. Authors order actions: lead first, then navigation, then commands, destructive last.
-3. **One row, never wrapped**, at every width on desktop and phone. When the lead's words would overflow the row, the
-   row draws the lead as an icon too (measured once before paint); nothing else moves. Words never truncate.
+3. **One line of icons, the lead never an icon when it fits alone.** When the row has no room for the lead's words
+   beside the icons, the lead takes a full-width line of its own above them; the icons keep their line and their 44px
+   targets. Only a lead too wide even alone draws as an icon. Measured before paint and again on every resize, so a
+   row that grows gets its one line back. Words never truncate.
 4. **Dialogs answer a question**, so their row is right-aligned and every action keeps its words: Cancel (outline)
    first, the committing action (filled) last, red when it destroys something. Inline confirmations follow the same
    order. A destructive action anywhere else is a red icon that opens such a dialog.

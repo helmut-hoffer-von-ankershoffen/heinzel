@@ -267,8 +267,9 @@ async function openFooterPane(page, id, label, activate) {
 }
 
 /**
- * A pane's actions (design/README.md, "Actions"): one row that never wraps, the first with its words (or the row's
- * declared `data-words="none"` fallback), the rest named icons, and every target at least 44px on this touch screen.
+ * A pane's actions (design/README.md, "Actions"): one line of actions, the first with its words (on a line of its own
+ * above the rest when the row declares `data-words="wrap"`, or the row's declared `data-words="none"` fallback), the
+ * rest named icons, and every target at least 44px on this touch screen.
  */
 async function assertOneActionRow(pane, name) {
   const facts = await pane.evaluate((element) => {
@@ -295,9 +296,16 @@ async function assertOneActionRow(pane, name) {
     };
   });
   if (!facts.actions.length) return;
-  assert.equal(new Set(facts.actions.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
   const [lead, ...rest] = facts.actions;
-  if (facts.words === "lead") assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
+  const line = facts.words === "wrap" ? rest : facts.actions;
+  assert.equal(new Set(line.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
+  if (facts.words === "wrap")
+    assert.ok(
+      rest.every((action) => action.top > lead.top),
+      `${name}: the wrapped lead sits above the icons`,
+    );
+  if (facts.words === "lead" || facts.words === "wrap")
+    assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
   else if (facts.words === "none") assert.ok(lead.kind === "icon" && lead.label, `${name}: the lead's fallback icon`);
   if (facts.words !== "all")
     for (const action of rest)
