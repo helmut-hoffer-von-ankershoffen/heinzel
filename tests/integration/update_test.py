@@ -322,3 +322,118 @@ def test_wrong_installed_source_never_starts_the_changed_interpreter(app, env, m
     assert result.exit_code != 0
     assert uv_log(env)
     assert not (env.parent.parent / "post-uv-probes").exists()
+
+
+# One update for everything: the plan, the question on a terminal, and the answers in advance.
+
+
+@pytest.fixture
+def no_desktop_app(tmp_path, monkeypatch):
+    """A home without a desktop app, so no machine's own app adds a question or a step to these runs."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+
+PLAN = (
+    f"hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: kept at 1.0.0. Pinned to v1.0.0, which names no release "
+    "to follow; an update leaves it as it is."
+)
+
+
+def test_a_preview_shows_the_plan_and_changes_nothing(app, env, monkeypatch, no_desktop_app):
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    result = runner.invoke(app, ["system", "update", "--preview"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == (
+        f"{PLAN}\nThis was a preview; nothing was changed.\nTo update: hz system update --yes"
+    )
+    assert uv_log(env) == []
+
+
+def test_a_preview_as_json_carries_the_plan_for_scripts_and_the_app(app, env, monkeypatch, no_desktop_app):
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    result = runner.invoke(app, ["system", "update", "--preview", "--json"])
+    assert result.exit_code == 0, result.output
+    answer = json.loads(result.stdout)
+    assert (answer["previewed"], answer["updated"], answer["next"]) == (True, False, ["hz system update --yes"])
+    assert answer["plan"]["latest"] == "99.0.0"
+    assert [(p["distribution"], p["action"]) for p in answer["plan"]["plugins"]] == [("heinzel-acme", "kept")]
+    assert answer["plan"]["desktop"] is False
+    assert uv_log(env) == []
+
+
+def test_on_a_terminal_the_plan_is_shown_and_no_changes_nothing(app, env, monkeypatch, no_desktop_app):
+    from heinzel.heads.cli import _command
+
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    result = runner.invoke(app, ["system", "update"], input="n\n", env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert PLAN in result.stdout
+    assert "Update now? [Y/n]" in result.stdout
+    assert result.stdout.strip().endswith("Nothing was changed.\nTo update: hz system update --yes")
+    assert uv_log(env) == []
+
+
+def test_on_a_terminal_enter_agrees_and_the_update_runs(app, env, monkeypatch, no_desktop_app):
+    from heinzel.heads.cli import _command
+
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    result = runner.invoke(app, ["system", "update"], input="\n", env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert "Update now? [Y/n]" in result.stdout
+    assert f"Updated hz {__version__} → 99.0.0." in result.stdout
+    assert len(uv_log(env)) == 1
+
+
+def test_yes_updates_without_a_question_where_nobody_can_answer(app, env, monkeypatch, no_desktop_app):
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    result = runner.invoke(app, ["system", "update", "--yes"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert "[Y/n]" not in result.stdout
+    assert result.stdout.startswith(f"Updated hz {__version__} → 99.0.0.")
+    assert len(uv_log(env)) == 1
+
+
+def test_json_on_a_terminal_asks_nothing(app, env, monkeypatch, no_desktop_app):
+    from heinzel.heads.cli import _command
+
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    result = runner.invoke(app, ["system", "update", "--json"])
+    assert result.exit_code == 0, result.output
+    answer = json.loads(result.stdout)
+    assert (answer["updated"], answer["after"], answer["plan"]) == (True, "99.0.0", None)
+
+
+def test_yes_with_the_token_of_the_previewed_plan_installs_and_a_stale_token_changes_nothing(
+    app, env, monkeypatch, no_desktop_app
+):
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    shown = json.loads(runner.invoke(app, ["system", "update", "--preview", "--json"]).stdout)["plan"]["token"]
+    assert len(shown) == 32
+    stale = runner.invoke(app, ["system", "update", "--yes", "--plan", "0" * 32, "--json"])
+    assert stale.exit_code == 0, stale.output
+    answer = json.loads(stale.stdout)
+    assert (answer["updated"], answer["previewed"], answer["plan"]["token"]) == (False, True, shown)
+    assert answer["message"] == "The plan changed since it was shown, so nothing was changed. This is the plan now."
+    assert uv_log(env) == []
+    agreed = runner.invoke(app, ["system", "update", "--yes", "--plan", shown, "--json"])
+    assert agreed.exit_code == 0, agreed.output
+    assert json.loads(agreed.stdout)["after"] == "99.0.0"
+    assert len(uv_log(env)) == 1
+
+
+def test_a_release_that_appears_between_the_plan_and_the_agreement_is_never_installed_unseen(
+    app, env, monkeypatch, no_desktop_app
+):
+    github_releases(monkeypatch, "v99.0.0", f"v{__version__}")
+    shown = json.loads(runner.invoke(app, ["system", "update", "--preview", "--json"]).stdout)["plan"]["token"]
+    github_releases(monkeypatch, "v99.1.0", "v99.0.0", f"v{__version__}")  # uploaded while the person read the plan
+    result = runner.invoke(app, ["system", "update", "--yes", "--plan", shown, "--json"])
+    assert result.exit_code == 0, result.output
+    answer = json.loads(result.stdout)
+    assert (answer["updated"], answer["previewed"], answer["plan"]["latest"]) == (False, True, "99.1.0")
+    assert uv_log(env) == []

@@ -111,6 +111,43 @@ class PluginUpdate(BaseModel):
     )
 
 
+class PluginPlan(BaseModel):
+    """What a confirmed `hz system update` would do to one installed plugin."""
+
+    distribution: str = Field(description="Distribution name, e.g. heinzel-clock.")
+    installed: str | None = Field(description="Version installed now; none if it couldn't be told.")
+    target: str | None = Field(default=None, description="The newer release it would move to; none if it stays.")
+    action: Literal["update", "current", "refresh", "kept"] = Field(
+        description="`update` (a newer release was found; a pin to the installed version or commit moves with it), "
+        "`current` (asked, nothing newer), `refresh` (it follows a branch or a range, which the update asks again) or "
+        "`kept` (its source is a tag, a branch commit without release tags, a folder or a URL, it is installed newer "
+        "than its newest stable release, or it couldn't be asked: an update leaves it as it is)."
+    )
+    detail: str = Field(default="", description="Why, in one plain line: what it is pinned to or why it was not asked.")
+    moves_to: str | None = Field(
+        default=None,
+        description="The requirement an update a person agreed to installs it from, when its pin moves: a version "
+        "floor on the package index, or the commit of its release tag. None if its install spec stays as it is.",
+    )
+
+
+class UpdatePlan(BaseModel):
+    """What `hz system update` would change, shown before a person agrees."""
+
+    current: str = Field(description="Heinzelmännchen version installed now.")
+    latest: str | None = Field(description="The newest stable release, when it could be asked.")
+    core: str = Field(description="What happens to Heinzelmännchen itself, in one line.")
+    plugins: list[PluginPlan] = Field(default_factory=list[PluginPlan], description="Each installed plugin.")
+    desktop: bool = Field(
+        default=False, description="Whether a desktop app is installed that the update can bring along afterwards."
+    )
+    token: str = Field(
+        default="",
+        description="Names exactly this plan. Pass it back as `plan` with `yes`: the update then installs what was "
+        "shown, or changes nothing and answers with the new plan if a release appeared in between.",
+    )
+
+
 class ChannelReport(BaseModel):
     """The update channel, and what a switch changes."""
 
@@ -156,6 +193,15 @@ class UpdateResult(BaseModel):
     heads: list[HeadRefresh] = Field(
         default_factory=list[HeadRefresh],
         description="What each installed long-running head runs after the update, as its live process reported it.",
+    )
+    plan: UpdatePlan | None = Field(
+        default=None,
+        description="What the update would change, when this answer is a preview or the person was asked first.",
+    )
+    previewed: bool = Field(
+        default=False,
+        description="Whether this was only a preview (`--preview`, or the question was answered with no): nothing "
+        "was changed.",
     )
 
 

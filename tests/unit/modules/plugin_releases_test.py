@@ -333,3 +333,117 @@ def test_what_is_announced_comes_through_the_release_and_requirement_seams_alone
 
     news = Faked(Receipt([], {}), fetch=fetch, requires=lambda name: []).announceable(1.0, lambda release: True)
     assert {name: release.version for name, release in news.releases.items()} == {"heinzel-example": "9.0.0"}
+
+
+# Pinned plugins, for an update a person agreed to.
+
+
+def test_pinned_sorts_exact_index_pins_and_tagged_commits_into_newer_current_and_unasked():
+    pins = [
+        CorePin("index", "heinzel-old==1.0.0", ref="==1.0.0", name="heinzel-old"),
+        CorePin("index", "heinzel-top==1.2.0", ref="==1.2.0", name="heinzel-top"),
+        CorePin("index", "heinzel-range>=1", ref=">=1", name="heinzel-range"),  # follows the index already
+        CorePin("index", "heinzel-star==1.*", ref="==1.*", name="heinzel-star"),  # a range, not a record of an add
+        tagged_pin("heinzel-weather"),
+        tagged_pin("heinzel-clock"),
+        tagged_pin("heinzel-untagged"),
+        CorePin("ref", "heinzel-git @ git+https://example.test/x@main", ref="main", name="heinzel-git"),
+    ]
+    versions = dict.fromkeys(("heinzel-old", "heinzel-range", "heinzel-star", "heinzel-untagged"), "1.0.0")
+    versions |= {"heinzel-top": "1.2.0", "heinzel-weather": "0.4.0", "heinzel-clock": "0.9.7"}
+    asked = []
+
+    def fetch(url, timeout):
+        asked.append(url.split("/")[-2])
+        return {"releases": {"1.0.0": [UPLOAD], "1.2.0": [UPLOAD], "1.3.0rc1": [UPLOAD]}}
+
+    github = GitHub(
+        {
+            "heinzel-weather": [("0.4.0", OLD), ("0.4.1", NEW["heinzel-weather"])],
+            "heinzel-clock": [("0.9.7", OLD)],
+        }
+    )
+    github.answers[f"{API}/git/matching-refs/tags/heinzel-untagged/v"] = []
+    found = PyPIPluginReleases(Receipt(pins, versions), fetch, github=github).pinned(5.0)
+    assert asked == ["heinzel-old", "heinzel-top"]
+    assert found.newer == {
+        "heinzel-old": PluginRelease("1.2.0", datetime(2026, 10, 1, 8, tzinfo=UTC)),
+        "heinzel-weather": PluginRelease("0.4.1", TAGGED, commit=NEW["heinzel-weather"]),
+    }
+    assert found.current == ["heinzel-top", "heinzel-clock"]
+    assert found.unasked == {}  # a repository that tags no release of it is left out: nothing says where it goes
+
+
+def test_pinned_never_moves_back_from_a_version_newer_than_the_newest_release():
+    github = GitHub({"heinzel-weather": [("0.4.1", NEW["heinzel-weather"])]})
+    receipt = Receipt([tagged_pin("heinzel-weather")], {"heinzel-weather": "0.4.2"})  # added from an unreleased commit
+    found = PyPIPluginReleases(receipt, github=github).pinned(5.0)
+    assert (found.newer, found.current, found.ahead) == ({}, [], {"heinzel-weather": "0.4.1"})
+
+
+def test_pinned_says_why_a_plugin_could_not_be_asked_and_still_answers_the_others():
+    def fetch(url, timeout):
+        if "heinzel-down" in url:
+            msg = "network down"
+            raise OSError(msg)
+        return {"releases": {"1.1.0": [UPLOAD]}}
+
+    pins = [
+        CorePin("index", "heinzel-down==1.0.0", ref="==1.0.0", name="heinzel-down"),
+        CorePin("index", "heinzel-up==1.0.0", ref="==1.0.0", name="heinzel-up"),
+        CorePin("index", "heinzel-gone==1.0.0", ref="==1.0.0", name="heinzel-gone"),
+        tagged_pin("heinzel-weather"),
+    ]
+    versions = {"heinzel-down": "1.0.0", "heinzel-up": "1.0.0", "heinzel-weather": "0.4.0"}
+    found = PyPIPluginReleases(Receipt(pins, versions), fetch, github=GitHub({})).pinned(5.0)
+    assert list(found.newer) == ["heinzel-up"]
+    assert found.unasked == {
+        "heinzel-down": "PyPI couldn't be asked (network down)",
+        "heinzel-gone": "its installed version couldn't be read",
+        "heinzel-weather": f"GitHub couldn't be asked ({API}/git/matching-refs/tags/heinzel-weather/v)",
+    }
+
+
+def test_pinned_asks_nothing_when_nothing_is_pinned():
+    def fetch(url, timeout):
+        raise AssertionError(url)
+
+    receipt = Receipt([CorePin("index", "heinzel-x", name="heinzel-x")], {"heinzel-x": "1.0.0"})
+    found = PyPIPluginReleases(receipt, fetch).pinned(5.0)
+    assert (found.newer, found.current, found.unasked) == ({}, [], {})
+
+
+def test_pinned_skips_a_requirement_it_cannot_read_and_reports_a_project_without_a_stable_release():
+    pins = [
+        CorePin("local", "./not a requirement", name="heinzel-odd"),
+        CorePin("index", "heinzel-pre==1.0.0", ref="==1.0.0", name="heinzel-pre"),
+    ]
+
+    def fetch(url, timeout):
+        return {"releases": {"2.0.0rc1": [UPLOAD]}}
+
+    found = PyPIPluginReleases(Receipt(pins, {"heinzel-pre": "1.0.0"}), fetch).pinned(5.0)
+    assert (found.newer, found.current) == ({}, [])
+    assert found.unasked == {"heinzel-pre": "PyPI names no stable release of it"}
+
+
+@pytest.mark.parametrize(
+    ("installed", "releases"),
+    [
+        ("1.3.0rc1", {"1.2.0": [UPLOAD], "1.3.0rc1": [UPLOAD]}),
+        ("1.3.0", {"1.2.0": [UPLOAD], "1.3.0": [UPLOAD | {"yanked": True}]}),
+        ("1.2.0.post1", {"1.2.0": [UPLOAD]}),
+    ],
+)
+def test_pinned_files_an_exact_pin_newer_than_the_newest_stable_release_as_ahead_not_current(installed, releases):
+    pins = [CorePin("index", f"heinzel-acme=={installed}", ref=f"=={installed}", name="heinzel-acme")]
+    receipt = Receipt(pins, {"heinzel-acme": installed})
+    found = PyPIPluginReleases(receipt, lambda url, timeout: {"releases": releases}).pinned(5.0)
+    assert (found.newer, found.current, found.ahead) == ({}, [], {"heinzel-acme": "1.2.0"})
+
+
+def test_pinned_files_an_installed_version_it_cannot_compare_as_ahead_so_it_stays():
+    pins = [CorePin("index", "heinzel-acme==1.2.0", ref="==1.2.0", name="heinzel-acme")]
+    receipt = Receipt(pins, {"heinzel-acme": "not-a-version"})
+    found = PyPIPluginReleases(receipt, lambda url, timeout: {"releases": {"1.2.0": [UPLOAD]}}).pinned(5.0)
+    assert (found.newer, found.current, found.ahead) == ({}, [], {"heinzel-acme": "1.2.0"})

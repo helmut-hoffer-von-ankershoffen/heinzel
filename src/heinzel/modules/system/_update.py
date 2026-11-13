@@ -15,16 +15,21 @@ asked again, so `@main` moves to the newest commit. A plugin that blocks the ins
 version it has if that still resolves, and otherwise taken out of the installation with the command that brings it back.
 """
 
+import hashlib
 import importlib.metadata
 import json
 import platform
 import re
 import shlex
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -48,6 +53,7 @@ from heinzel.kernel import (
     WebHeadRefresh,
     subprocess_environment,
 )
+from heinzel.kernel._logging import get_logger, step
 from heinzel.modules.system._announced import (
     Announcement,
     ToolSnapshot,
@@ -57,12 +63,14 @@ from heinzel.modules.system._announced import (
     installed_identity,
     plugin_commit,
 )
-from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
+from heinzel.modules.system._models import AnnouncedUpdate, PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._phases import Phases, State
+from heinzel.modules.system._plugin_releases import PinnedPlugins
 from heinzel.modules.system._plugin_standing import standing
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 
+log = get_logger("update")
 DEFAULT_BRANCH = "main"
 """The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
 
@@ -73,6 +81,8 @@ DAEMON_SECONDS = 90.0
 """How long an update waits for the handed-over daemon's first tick to report the version it loaded."""
 DAEMON_POLL_SECONDS = 1.0
 DESKTOP_RECEIPT = Path(".config/heinzel/desktop-installation.json")
+DESKTOP_SECONDS = 900
+"""How long the new hz's `hz app install` may take: one verified download and a replace, as the installer allows."""
 """Under the home folder: the managed Mac app's receipt (`heinzel.heads._desktop_installation`)."""
 SETTLED = frozenset({"verified", "not-installed", "self"})
 """Head outcomes that leave nothing running older code; `pending` and `failed` do not."""
@@ -144,11 +154,21 @@ class UpdateService:
         sleep: Callable[[float], None] = time.sleep,
         home: Path | None = None,
         progress: Progress | None = None,
+        pinned: Callable[[float], PinnedPlugins] | None = None,
+        newer: Callable[[float], dict[str, str]] | None = None,
+        desktop: Callable[[], tuple[int, str]] | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
         `progress` hears the steps of `update` as they happen (`phase` events), so the app can show each one.
+        `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
+        plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
+        `hz app install` and returns its exit code and output. Tests replace all three.
         """
+        self._pinned_plugins = pinned
+        self._newer_plugins = newer
+        self._desktop = desktop or self._app_install
+
         self._progress = progress or Progress()
         self._steps: _Steps | None = None
         self._installation = installation
@@ -160,6 +180,12 @@ class UpdateService:
         self._home = home
         self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
         """What the daemon was before the last completed mutation and the handover it requested, for the heads."""
+
+    @property
+    def _updating(self) -> threading.Lock:
+        """Held while `update` runs: one update at a time in this process (the lifecycle guards other processes)."""
+        lock: threading.Lock = self.__dict__.setdefault("_updating_lock", threading.Lock())
+        return lock
 
     def _start_step(self, id_: str) -> None:
         """Tell the running `update` that its step `id_` started; nothing outside one."""
@@ -571,7 +597,13 @@ class UpdateService:
         return AnnouncedUpdate(updated=False, after=current, restored=True, refused=bool(refused), message=message)
 
     def update(
-        self, source: str | None = None, current: str = __version__, channel: UpdateChannel = "stable"
+        self,
+        source: str | None = None,
+        current: str = __version__,
+        channel: UpdateChannel = "stable",
+        *,
+        agreed: UpdatePlan | None = None,
+        desktop: bool = False,
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
@@ -584,13 +616,37 @@ class UpdateService:
         update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
         `main` (its newest commit).
 
+        With `agreed` (the plan a person saw and agreed to) each plugin goes in as that plan says (`moves_to`): one
+        pinned to an exact index version follows the index from that version up, and one pinned to a commit of a
+        GitHub repository that tags its releases goes to the commit of its newest release tag, as automatic updates
+        install it (ADR 0137). Nothing is asked again for them, and never with `source`, which installs exactly
+        what it names. The agreement belongs to this call alone. With `desktop` an installed desktop app is updated
+        afterwards by the new hz's own `hz app install`; a failure there never undoes the update.
+
         Raises:
-            HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, the latest release can't be
-                asked for, or the install fails, naming the plugins that block it; Heinzelmännchen still works.
+            HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, another update runs in this
+                process, the latest release can't be asked for, or the install fails, naming the plugins that
+                block it; Heinzelmännchen still works.
         """
+        if not self._updating.acquire(blocking=False):
+            msg = "An update is already running here; wait for it to finish, then look at the result."
+            raise HeinzelError(msg)
+        moves = _Agreed.of(agreed if source is None else None)
+        held = _AGREED.set(moves)
+        try:
+            return self._update_with_steps(source, current, channel, desktop=desktop)
+        finally:
+            _AGREED.reset(held)
+            self._updating.release()
+
+    def _update_with_steps(
+        self, source: str | None, current: str, channel: UpdateChannel, *, desktop: bool
+    ) -> UpdateResult:
         self._handover = None
         pins = self._installation.plugin_pins()
-        steps = self._steps = _Steps(self._progress, [canonicalize_name(p.name) for p in pins])
+        steps = self._steps = _Steps(
+            self._progress, [canonicalize_name(p.name) for p in pins], desktop=desktop and self._desktop_installed()
+        )
         try:
             steps.start("check")
             try:
@@ -601,13 +657,116 @@ class UpdateService:
             steps.installed(result)
             if not result.updated:  # nothing changed, so every head already runs what is installed
                 steps.skip("heads", "Nothing changed, so nothing restarts.")
+                steps.skip("desktop", "Nothing changed, so the desktop app stays as it is.")
                 return result
             steps.start("heads")
             heads = self._refresh_heads(result.after)
             steps.restarted(heads)
+            if desktop and any(head.head == "desktop" for head in heads):
+                steps.start("desktop")
+                app = self._desktop_head(result.after)
+                heads = [app if head.head == "desktop" else head for head in heads]
+                steps.desktop(app)
             return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
         finally:
             self._steps = None
+
+    def plan(self, current: str = __version__, channel: UpdateChannel = "stable") -> UpdatePlan:
+        """What a confirmed update would change: hz itself, each plugin, and whether a desktop app comes along.
+
+        Only asks (the release source, PyPI, GitHub tags); nothing is installed. What can't be asked says so, and
+        moves nothing. Its `token` names exactly this plan, so an update can tell whether it still holds.
+        """
+        pins = self._installation.plugin_pins()
+        with step(log, "update.plan", operation="system.update") as outcome:
+            latest = self._asked_latest(current)
+            found, newer = self._asked_plugins(pins)
+            try:
+                installed = self._installation.installed_versions([canonicalize_name(p.name) for p in pins])
+            except HeinzelError:
+                installed = {}
+            plans = [_plugin_plan(pin, installed, found, newer) for pin in pins]
+            outcome.note(
+                moved=sorted(p.distribution for p in plans if p.moves_to),
+                ahead=sorted(found.ahead),
+                unasked=sorted(found.unasked),
+            )
+            if latest is None or found.unasked:
+                outcome.skip("a release source couldn't be asked")
+        return UpdatePlan(
+            current=current,
+            latest=latest,
+            core=_core_line(current, latest, channel),
+            plugins=plans,
+            desktop=self._desktop_installed(),
+            token=_plan_token(latest, plans),
+        )
+
+    def _asked_latest(self, current: str) -> str | None:
+        try:
+            return self._latest(current)
+        # Isolation boundary: whatever the package source raises, the plan says it couldn't be asked.
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _asked_plugins(self, pins: Sequence[CorePin]) -> tuple[PinnedPlugins, Mapping[str, str]]:
+        """The releases of pinned plugins and of those that follow the index; a source that fails moves nothing."""
+        try:
+            found = self._pinned_plugins(RELEASE_TIMEOUT) if self._pinned_plugins is not None else PinnedPlugins()
+        # Isolation boundary: whatever PyPI or GitHub raises, every plugin stays and the plan says why.
+        except Exception as exc:  # noqa: BLE001
+            reason = f"its releases couldn't be asked ({exc})"
+            found = PinnedPlugins(unasked={canonicalize_name(p.name): reason for p in pins})
+        try:
+            newer = self._newer_plugins(RELEASE_TIMEOUT) if self._newer_plugins is not None else {}
+        # Isolation boundary: the plan then names no target for the followers; the update asks again anyway.
+        except Exception:  # noqa: BLE001
+            newer = {}
+        return found, newer
+
+    def update_desktop(self, result: UpdateResult) -> UpdateResult:
+        """`result` of an update that left the desktop app pending, after updating the app as the person agreed."""
+        if not any(head.head == "desktop" and head.status == "pending" for head in result.heads):
+            return result
+        app = self._desktop_head(result.after)
+        old = _with_heads("", result.heads)
+        heads = [app if head.head == "desktop" else head for head in result.heads]
+        base = result.message.removesuffix(old) if old else result.message
+        return result.model_copy(update={"heads": heads, "message": _with_heads(base, heads)})
+
+    def _desktop_head(self, target: str) -> HeadRefresh:
+        """Update the installed desktop app with the new hz's own `hz app install`; never raises."""
+        with step(log, "update.desktop", operation="system.update", version=target) as outcome:
+            try:
+                code, output = self._desktop()
+            except (OSError, subprocess.SubprocessError) as exc:
+                code, output = 1, str(exc)
+            outcome.note(exit_code=code)
+            if code != 0:
+                outcome.outcome = "error"
+        if code == 0:
+            return HeadRefresh(head="desktop", status="verified", version=target, detail="Updated by `hz app install`.")
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        said = " ".join(lines[-2:])[:REASON_LENGTH] if lines else "It gave no reason."
+        return HeadRefresh(
+            head="desktop",
+            status="failed",
+            detail=f"`hz app install` didn't update it: {said} hz itself is updated. Run `hz app install` again.",
+        )
+
+    def _app_install(self) -> tuple[int, str]:
+        """Run `hz app install` in a fresh interpreter, which is the new hz; its exit code and what it printed."""
+        flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
+        result = subprocess.run(  # noqa: S603 - our own interpreter and module
+            [sys.executable, *flags, "-m", "heinzel", "app", "install"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DESKTOP_SECONDS,
+            stdin=subprocess.DEVNULL,
+            env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
+        )
+        return result.returncode, result.stderr.strip() or result.stdout.strip()
 
     def _update(self, source: str | None, current: str, channel: UpdateChannel) -> UpdateResult:
         pin, requirements = self._installation.core_pin(), self._installation.requirements()
@@ -1029,8 +1188,8 @@ class UpdateService:
         can't move is kept, never dropped.
         """
         # A core that follows a branch would move with the reinstall, which is `--source`'s job, not this one's.
-        if pin.kind not in ("release", "commit", "local", "url") or not any(
-            p.kind in ("index", "default", "ref") for p in plugins
+        if pin.kind not in ("release", "commit", "local", "url") or not (
+            _AGREED.get().moves or any(p.kind in ("index", "default", "ref") for p in plugins)
         ):
             return result
         with self._mutation() as scope:
@@ -1276,9 +1435,10 @@ class UpdateService:
         paths = [str(path) for path in self._installation.prefix.glob("lib/python*/site-packages")]
         return required_by(importlib.metadata.distributions(path=paths)) if paths else {}
 
-    @staticmethod
-    def _spec(plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
-        """The requirement `plugin` goes in with."""
+    def _spec(self, plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
+        """The requirement `plugin` goes in with: where a confirmed update moves its pin, else as the receipt has it."""
+        if mode != "keep" and (moved := _AGREED.get().moves.get(canonicalize_name(plugin.name))) is not None:
+            return moved
         if mode == "keep" and plugin.kind == "index" and installed is not None:
             return f"{plugin.name}=={installed.version}"
         if mode == "keep":
@@ -1347,13 +1507,13 @@ class UpdateService:
                             status="upgraded" if changed else "unchanged",
                             before=old_version,
                             after=new_version,
-                            pinned=_pinned(plugin),
+                            pinned=None if name in _AGREED.get().asked else _pinned(plugin),
                         )
                     )
         return updates
 
     @staticmethod
-    def _unchanged(plugin: CorePin, before: dict[str, Installed], failure: str | None) -> PluginUpdate:
+    def _unchanged(plugin: CorePin, before: Mapping[str, Installed], failure: str | None) -> PluginUpdate:
         name = canonicalize_name(plugin.name)
         version = before[name].version if name in before else None
         return PluginUpdate(
@@ -1563,12 +1723,13 @@ class _Steps:
     Every step is real work or a real outcome: each plugin is reported once the install says what became of it.
     """
 
-    def __init__(self, progress: Progress, plugins: Sequence[str]) -> None:
+    def __init__(self, progress: Progress, plugins: Sequence[str], *, desktop: bool = False) -> None:
         self._labels = {
             "check": "Finding the newest version",
             "install": "Installing the update",
             **{f"plugin:{name}": f"Plugin {name}" for name in plugins},
             "heads": "Moving the background services onto it",
+            **({"desktop": "Updating the desktop app"} if desktop else {}),
         }
         self._phases = Phases(progress, list(self._labels.items()), operation="system.update")
         self._running: str | None = None
@@ -1586,8 +1747,15 @@ class _Steps:
         self._note(id_, "running")
 
     def skip(self, id_: str, detail: str) -> None:
-        """Say that `id_` had nothing to do, and why."""
-        self._note(id_, "skipped", detail)
+        """Say that `id_` had nothing to do, and why; a step this update doesn't have is not told."""
+        if id_ in self._labels:
+            self._note(id_, "skipped", detail)
+
+    def desktop(self, head: HeadRefresh) -> None:
+        """Finish the desktop app's step: done, or a warning with what finishes it."""
+        self._running = None
+        if "desktop" in self._labels:
+            self._note("desktop", "done" if head.status == "verified" else "warn", head.detail)
 
     def fail(self, detail: str) -> None:
         """The running step failed with `detail`; the ones after it never ran."""
@@ -1632,6 +1800,110 @@ def _pinned(plugin: CorePin) -> str | None:
     if plugin.kind in {"release", "commit", "url", "local"} or (plugin.kind == "index" and ref.startswith("==")):
         return ref or plugin.requirement
     return None
+
+
+@dataclass(frozen=True)
+class _Agreed:
+    """What one `update` call was allowed to move: nothing, unless a person agreed to a plan."""
+
+    moves: Mapping[str, str] = field(default_factory=dict[str, str])
+    """Each pinned plugin that moves, by canonical name, mapped to the requirement it goes in with."""
+    asked: frozenset[str] = frozenset()
+    """The pinned plugins whose releases the plan asked and found nothing newer or moved: none is "not checked"."""
+
+    @classmethod
+    def of(cls, plan: UpdatePlan | None) -> "_Agreed":
+        """The moves of `plan`; nothing without one."""
+        if plan is None:
+            return cls()
+        return cls(
+            moves={p.distribution: p.moves_to for p in plan.plugins if p.moves_to},
+            asked=frozenset(p.distribution for p in plan.plugins if p.action in {"update", "current"}),
+        )
+
+
+_AGREED: ContextVar[_Agreed] = ContextVar("heinzel_update_agreed", default=_Agreed())  # noqa: B039 - frozen, never changed
+"""The agreement of the `update` call running in this thread or task; never shared between requests."""
+
+
+def _core_line(current: str, latest: str | None, channel: str) -> str:
+    """What happens to hz itself, in one line of the plan."""
+    if channel in {"edge", "main"}:
+        return f"hz {current} follows {channel}: its newest build is installed."
+    if latest is None:
+        return f"hz {current}: the newest release couldn't be asked; the update asks again."
+    if _version(latest) > _version(current):
+        return f"hz {current} → {latest}."
+    return f"hz {current} is the newest release."
+
+
+def _plan_token(latest: str | None, plans: Sequence[PluginPlan]) -> str:
+    """A digest of what the plan would install: hz's newest release and each plugin's target and requirement."""
+    facts = [latest, *([p.distribution, p.action, p.target, p.moves_to] for p in plans)]
+    return hashlib.sha256(json.dumps(facts, separators=(",", ":")).encode()).hexdigest()[:32]
+
+
+def _pinned_plan(pin: CorePin, name: str, version: str | None, found: PinnedPlugins) -> PluginPlan | None:
+    """The plan of a plugin whose pinned releases were asked; None if it wasn't among them."""
+    pinned = _pinned(pin)
+    short = pinned[:12] if pinned and pin.kind == "commit" else pinned
+    index = pin.kind == "index"
+    if (release := found.newer.get(name)) is not None:
+        moves_to = f"{pin.name}>={release.version}" if index else _at_commit(pin, release.commit)
+        how = "then it follows the package index" if index else "to the commit of its release tag"
+        detail = f"Pinned to {short}; moves to release {release.version}, {how}."
+        return PluginPlan(
+            distribution=name,
+            installed=version,
+            target=release.version if moves_to else None,
+            action="update" if moves_to else "kept",
+            detail=detail if moves_to else f"Pinned to {short}; its release tag names no commit, so it stays.",
+            moves_to=moves_to,
+        )
+    if name in found.unasked:
+        detail = f"Pinned to {short}; stays there: {found.unasked[name]}."
+        return PluginPlan(distribution=name, installed=version, action="kept", detail=detail)
+    if name in found.ahead:
+        detail = (
+            f"Pinned to {short}, newer than its newest stable release {found.ahead[name]}; an update never moves "
+            "back, so it stays."
+        )
+        return PluginPlan(distribution=name, installed=version, action="kept", detail=detail)
+    if name in found.current:
+        follows = index and version is not None
+        return PluginPlan(
+            distribution=name,
+            installed=version,
+            action="current",
+            detail="It follows the package index from now on." if follows else "",
+            moves_to=f"{pin.name}>={version}" if follows else None,  # a floor: nothing can resolve below it
+        )
+    return None
+
+
+def _at_commit(pin: CorePin, commit: str | None) -> str | None:
+    return pin.at(commit) if commit is not None and pin.git is not None else None
+
+
+def _plugin_plan(
+    pin: CorePin, installed: Mapping[str, str], found: PinnedPlugins, newer: Mapping[str, str]
+) -> PluginPlan:
+    """What a confirmed update would do to one plugin."""
+    name = str(canonicalize_name(Requirement(pin.requirement).name))
+    version = installed.get(name)
+    if (asked := _pinned_plan(pin, name, version, found)) is not None:
+        return asked
+    pinned = _pinned(pin)
+    if pinned is not None:
+        short = pinned[:12] if pin.kind == "commit" else pinned
+        detail = f"Pinned to {short}, which names no release to follow; an update leaves it as it is."
+        return PluginPlan(distribution=name, installed=version, action="kept", detail=detail)
+    if name in newer:
+        return PluginPlan(distribution=name, installed=version, target=newer[name], action="update")
+    if pin.kind == "index":
+        return PluginPlan(distribution=name, installed=version, action="current")
+    detail = "Follows its branch; the update asks for its newest commit."
+    return PluginPlan(distribution=name, installed=version, action="refresh", detail=detail)
 
 
 def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
