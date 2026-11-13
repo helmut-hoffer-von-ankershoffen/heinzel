@@ -322,6 +322,20 @@ def test_a_notifier_problem_is_a_warning_and_the_daemon_stays_installed(make, bi
     assert (tmp_path / "units" / f"{LABEL}.plist").exists()
 
 
+@pytest.mark.macos_specific
+def test_a_notifier_that_raises_is_a_warning_and_the_daemon_stays_installed(make, bin_dir, tmp_path):
+    def refuses() -> str | None:
+        msg = "The notifier build was refused"
+        raise HeinzelError(msg)
+
+    service = make(runner=Runner(bin_dir), install_notifier=refuses)
+    phased = progress_of(service)
+    service.install(timedelta(minutes=5))
+    assert steps(phased)[-1] == ("notifier", "warn")
+    assert phased.events[-1]["detail"] == "The notifier build was refused"
+    assert (tmp_path / "units" / f"{LABEL}.plist").exists()
+
+
 def test_install_outside_the_desktop_session_changes_nothing_and_says_why(make, bin_dir, tmp_path):
     runner = Runner(bin_dir)
     service = make(runner=runner, session="Background")
@@ -486,6 +500,91 @@ def test_health_flags_pause_and_failing_jobs(make, calls):
     checks = {c.name: c.status for c in service.health()}
     assert checks == {"daemon": Status.UP, "paused": Status.DEGRADED, "jobs": Status.DEGRADED}
     assert service.status().failing == ["broken:invalid"]
+
+
+def test_one_failed_run_after_a_good_one_does_not_degrade_the_doctor(make):
+    """A feed that is unreachable once is a hiccup; the doctor waits for the second failed run in a row."""
+    feed = Module("feed", "A feed that is sometimes unreachable.")
+    reachable = [True, False, False, True]
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+        if not reachable.pop(0):
+            msg = "feed unreachable"
+            raise HeinzelError(msg)
+
+    clock = Clock()
+    service = make(feed, clock=clock)
+    seen = []
+    for hour in (11, 12, 13, 14):
+        clock.set(hour, 1)
+        assert [run.job for run in service.tick().runs] == ["feed:watch"]
+        seen.append((service.status().failing, [c.name for c in service.health() if c.name == "jobs"]))
+    assert seen == [([], []), (["feed:watch"], []), (["feed:watch"], ["jobs"]), ([], [])]
+
+
+def test_a_job_whose_first_run_fails_degrades_the_doctor(make):
+    broken = Module("broken", "Broken jobs.")
+
+    @broken.job(schedule="0 * * * *")
+    def never() -> None:
+        """Always fail."""
+        msg = "no key"
+        raise HeinzelError(msg)
+
+    service = make(broken)
+    service.tick()
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: broken:never")
+
+
+def test_a_failed_run_is_reported_when_its_chain_cannot_be_read(make, monkeypatch):
+    """If the ledger can't show the run before the failure, the doctor reports the job rather than hiding it."""
+    feed = Module("feed", "A feed that is sometimes unreachable.")
+    reachable = [True, False]
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+        if not reachable.pop(0):
+            msg = "feed unreachable"
+            raise HeinzelError(msg)
+
+    clock = Clock()
+    service = make(feed, clock=clock)
+    for hour in (11, 12):
+        clock.set(hour, 1)
+        service.tick()
+    assert [c.name for c in service.health() if c.name == "jobs"] == []
+
+    def damaged(self, job):
+        msg = "ledger chain is damaged"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(Ledger, "chain", damaged)
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: feed:watch")
+
+
+def test_a_job_with_a_damaged_ledger_is_a_problem_for_the_doctor(make, monkeypatch):
+    feed = Module("feed", "A feed.")
+
+    @feed.job(schedule="0 * * * *")
+    def watch() -> None:
+        """Read the feed."""
+
+    service = make(feed)
+
+    def damaged(self, job):
+        msg = "ledger is damaged"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(Ledger, "last", damaged)
+    [job] = service.jobs()
+    assert job.problem == "ledger is damaged"
+    [check] = [c for c in service.health() if c.name == "jobs"]
+    assert (check.status, check.detail) == (Status.DEGRADED, "failing: feed:watch")
 
 
 def test_status_on_an_unsupported_platform(make):
@@ -2979,3 +3078,45 @@ def test_a_job_named_by_its_old_module_id_is_resolved_and_logged(make, jobs, mon
         assert service._current_id("old:tick", []) == "new:tick"
     (record,) = [r for r in caplog.records if r.message == "daemon.job.renamed"]
     assert (record.old, record.current) == ("old:tick", "new:tick")
+
+
+def _unavailable():
+    msg = "evidence is unavailable"
+    raise OSError(msg)
+
+
+def test_unavailable_boot_and_birth_evidence_proves_nothing(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._boot_identity = _unavailable
+    service._host_boot = _unavailable
+    service._birth_fence = _unavailable
+    assert service._current_boot_identity() is None
+    assert service._host_boot_evidence() == (None, None)
+    assert service._current_birth_fence() is None
+
+
+@pytest.mark.parametrize(
+    "fence",
+    [
+        None,
+        {"ticks": 1},
+        {"ticks": 1, "hz": 100, "ns_dev": 2, "ns_ino": -3},
+        {"ticks": 1, "hz": 100, "ns_dev": "2", "ns_ino": 3},
+    ],
+)
+def test_a_birth_fence_must_carry_four_non_negative_integers(make, bin_dir, fence):
+    service = make(runner=Runner(bin_dir))
+    service._birth_fence = lambda: fence
+    assert service._current_birth_fence() is None
+    service._birth_fence = lambda: {"ticks": 1, "hz": 100, "ns_dev": 2, "ns_ino": 3}
+    assert service._current_birth_fence() == {"ticks": 1, "hz": 100, "ns_dev": 2, "ns_ino": 3}
+
+
+def test_a_boot_identity_must_be_a_bounded_string(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._boot_identity = lambda: 5
+    assert service._current_boot_identity() is None
+    service._host_boot = lambda: (5, "x")
+    assert service._host_boot_evidence() == (None, None)
+    service._host_boot = lambda: ("boot", 7)
+    assert service._host_boot_evidence() == ("boot", 7)

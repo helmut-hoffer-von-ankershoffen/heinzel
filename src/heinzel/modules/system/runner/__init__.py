@@ -142,7 +142,8 @@ def claude_code_checks(settings: RunnerSettings) -> list[Check]:
                 name="claude-code",
                 status=Status.DEGRADED,
                 detail=f"{settings.claude_executable} is not on PATH",
-                fix=f"Install Claude Code ({CLAUDE_CODE_DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}",
+                fix=f"Run `hz ai access list` to see other ways to reach an AI and `hz ai access use` to pick one. "
+                f"Or install Claude Code ({CLAUDE_CODE_DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}",
             )
         ]
     installed = Check(
