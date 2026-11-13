@@ -65,6 +65,50 @@ export async function requireShown(locator, label) {
     await locator.waitFor({ state: "visible", timeout: 10000 });
   } catch (error) {
     const cause = await locator.evaluate(hiddenBy).catch(() => "not on the page");
+    const probe = await locator
+      .evaluate(async (node) => {
+        const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const chain = [];
+        for (let el = node; el && el !== document.body; el = el.parentElement)
+          chain.push(`${el.nodeName}${el.nodeName === "DETAILS" ? (el.open ? "+" : "-") : ""}:${el.checkVisibility()}`);
+        const others = Object.fromEntries(
+          [...document.querySelectorAll("details summary, section button, section textarea, select")]
+            .slice(0, 25)
+            .map((el, i) => [`${i}:${el.nodeName}:${(el.textContent || el.getAttribute("aria-label") || "").slice(0, 18)}`, el.checkVisibility()]),
+        );
+        const steps = {};
+        node.style.color = "rgb(1, 2, 3)";
+        getComputedStyle(node).color;
+        steps.ownStyle = node.checkVisibility();
+        node.style.color = "";
+        const content = node.closest("details > div");
+        content?.classList.add("hz-probe");
+        getComputedStyle(node).color;
+        steps.contentClass = node.checkVisibility();
+        content?.classList.remove("hz-probe");
+        await frame();
+        steps.afterFrames = node.checkVisibility();
+        const details = node.closest("details");
+        const host = details?.parentElement?.closest("details") ?? details;
+        let outer = node.parentElement;
+        while (outer && !(outer.nodeName === "DETAILS" && outer.querySelector(":scope > summary")?.textContent === "Details")) outer = outer.parentElement;
+        if (outer) {
+          outer.open = false;
+          outer.offsetHeight;
+          outer.open = true;
+          outer.offsetHeight;
+          steps.reToggle = node.checkVisibility();
+          await frame();
+          steps.reToggleFrames = node.checkVisibility();
+        }
+        const clone = node.cloneNode(true);
+        node.after(clone);
+        steps.freshNode = clone.checkVisibility();
+        clone.remove();
+        return { chain, others, steps, host: host?.nodeName };
+      })
+      .catch((e) => String(e));
+    console.error("DIAG2", JSON.stringify(probe));
     throw new Error(`${label} is not visible: ${cause ?? "shown now, after the wait"}`, { cause: error });
   }
 }
