@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from heinzel import CurrentUser, HeinzelError, SessionStore, Settings
-from heinzel.kernel import PersonalChatRemoval
+from heinzel.kernel import HeinzelNoticeRemoval, PersonalChatRemoval
 from heinzel.modules.heinzel._cross_history import CrossHistoryRequest, search_owner_history
 from heinzel.modules.heinzel._heinzel_delete import HeinzelDeletion
 from heinzel.modules.heinzel._history_fts import _CACHES, indexed_search  # pyright: ignore[reportPrivateUsage]
@@ -14,6 +14,7 @@ from heinzel.modules.heinzel._history_search import HistorySearchRequest
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import SESSION_NAMESPACES, PersonalSessionRepository
+from heinzel.modules.system.notify._store import forget_heinzel
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import ChatContext, ChatMessage, ChatSettings
 from heinzel.modules.system.runner.chat._store import ChatStore
@@ -26,6 +27,23 @@ AT = datetime(2026, 11, 13, tzinfo=UTC)
 class _PowerCutError(OSError):
     def __init__(self) -> None:
         super().__init__("power cut")
+
+
+class _Notices(HeinzelNoticeRemoval):
+    def __init__(self) -> None:
+        self.forgotten: list[str] = []
+
+    def forget_heinzel(self, session_id: str) -> int:
+        self.forgotten.append(session_id)
+        return 0
+
+
+class _StoreNotices(HeinzelNoticeRemoval):
+    def __init__(self, store) -> None:
+        self.store = store
+
+    def forget_heinzel(self, session_id: str) -> int:
+        return forget_heinzel(self.store, AT, session_id)
 
 
 class _Chats(PersonalChatRemoval):
@@ -59,8 +77,13 @@ def chats():
 
 
 @pytest.fixture
-def deletion(crud, chats):
-    return HeinzelDeletion(crud, chats)
+def notices():
+    return _Notices()
+
+
+@pytest.fixture
+def deletion(crud, chats, notices):
+    return HeinzelDeletion(crud, chats, notices)
 
 
 def _owner_root(crud: SessionCrud):
@@ -183,11 +206,13 @@ def test_a_failing_resume_is_logged_and_retried(crud, deletion, monkeypatch, cap
     monkeypatch.setattr(repository, "mark_deleted", lambda _session: (_ for _ in ()).throw(OSError("disk full")))
     with pytest.raises(OSError, match="disk full"):
         deletion.delete(session, "Gu")
-    deletion.finish_pending()
+    deletion.finish_pending(now=0.0)
     assert "finishing the deletion" in caplog.text
     assert "Gu" not in caplog.text.replace(session, "")  # the session id at most, never its name
     monkeypatch.undo()
-    deletion.finish_pending()
+    deletion.finish_pending(now=59.0)  # backing off: a list polled again soon does not retry yet
+    assert repository.deletion_state(session) == "deleting"
+    deletion.finish_pending(now=60.0)
     assert repository.deletion_state(session) == "deleted"
 
 
@@ -300,7 +325,8 @@ def test_delete_is_never_an_mcp_tool_but_the_cli_and_web_have_it(make_kernel):
     kernel = make_kernel(builtins=True)
     on_mcp = {item.name for item in exposed(kernel, mcp.HEAD)}
     assert "heinzel_retire" in on_mcp
-    assert "heinzel_delete" not in on_mcp
+    for head in (mcp.HEAD, "mcp-stdio", "mcp-http", "mcp-check-in"):
+        assert "heinzel_delete" not in {item.name for item in exposed(kernel, head)}
     for head in ("cli", "web", "api-private"):
         assert "heinzel_delete" in {item.name for item in exposed(kernel, head)}
 
@@ -308,51 +334,248 @@ def test_delete_is_never_an_mcp_tool_but_the_cli_and_web_have_it(make_kernel):
 class _Posted:
     def __init__(self, *, available: bool = True) -> None:
         self.available = available
-        self.forgotten: list[tuple[str, str]] = []
+        self.settled: list[tuple[str, str]] = []
+        self.forgotten: list[tuple[str, str, str | None]] = []
 
     def check(self, channel: str) -> None:
         if not self.available:
             msg = f"The {channel} channel is unavailable"
             raise HeinzelError(msg)
 
-    def forget(self, channel: str, reference: str) -> None:
-        self.forgotten.append((channel, reference))
+    def settle(self, channel: str, reference: str) -> None:
+        self.settled.append((channel, reference))
+
+    def forget(self, channel: str, request_id: str, reference: str | None) -> None:
+        self.forgotten.append((channel, request_id, reference))
 
 
 def _post_approval(  # noqa: PLR0913 - one seeded channel request
-    crud: SessionCrud, session: str, request: str, reference: str, *, kind: str = "approval", preview: str = "secret"
+    crud: SessionCrud,
+    session: str,
+    request: str,
+    reference: str | None,
+    *,
+    kind: str = "approval",
+    preview: str = "secret",
 ) -> None:
     from heinzel.modules.heinzel._session_bodies import immutable_body
 
     with crud.repository.control_writer(session) as writer:
-        body = immutable_body(writer, "channel-proposal", {"kind": kind, "preview": preview}, control=True)
+        terms = {"channel": "chatops", "kind": kind, "preview": preview}
+        body = immutable_body(writer, "channel-proposal", terms, control=True)
         writer.append("channel.proposed", key=request, data=body.model_dump(mode="json"))
-        receipt = {"channel": "chatops", "status": "queued", "reference": reference}
-        writer.append("channel.receipt", key=request, data={"attempt_seq": 1, "receipt": receipt})
+        if reference is not None:
+            receipt = {"channel": "chatops", "status": "queued", "reference": reference}
+            writer.append("channel.receipt", key=request, data={"attempt_seq": 1, "receipt": receipt})
 
 
-def test_delete_closes_and_forgets_every_posted_approval(crud, chats):
+def test_delete_closes_once_and_forgets_every_approval_posted_or_not(crud, chats, notices):
     session = _retired(crud, "create-pa", "Pa")
     _post_approval(crud, session, "ask-1", "ref-1")
+    _post_approval(crud, session, "ask-2", None)  # the plugin may keep a copy before the post returns
     _post_approval(crud, session, "note-1", "ref-2", kind="notice")
     posted = _Posted()
 
-    HeinzelDeletion(crud, chats, None, posted).delete(session, "Pa")  # type: ignore[arg-type]
+    HeinzelDeletion(crud, chats, notices, posted).delete(session, "Pa")  # type: ignore[arg-type]
 
-    assert posted.forgotten == [("chatops", "ref-1")]
+    assert posted.settled == [("chatops", "ref-1")]
+    assert posted.forgotten == [("chatops", "ask-1", "ref-1"), ("chatops", "ask-2", None)]
     catalog = SessionStore(_owner_root(crud) / "catalog").read("creations").events
     intent = next(event for event in catalog if event.kind == "creation.deleting")
-    assert intent.data == {"session_id": session, "posts": [{"channel": "chatops", "reference": "ref-1"}]}
+    assert intent.data == {
+        "session_id": session,
+        "posts": [
+            {"channel": "chatops", "request_id": "ask-1", "reference": "ref-1"},
+            {"channel": "chatops", "request_id": "ask-2"},
+        ],
+    }
 
 
-def test_delete_refuses_before_anything_when_a_channel_holding_posts_is_unavailable(crud, chats):
+def test_a_proposal_whose_body_is_gone_still_counts_by_its_receipt(crud, chats, notices, monkeypatch):
+    session = _retired(crud, "create-po", "Po")
+    _post_approval(crud, session, "ask-1", "ref-1")
+    _post_approval(crud, session, "ask-2", None)
+
+    kept = crud.read_body
+
+    def pruned(session_id, event):
+        if event.kind == "channel.proposed":
+            raise FileNotFoundError
+        return kept(session_id, event)
+
+    monkeypatch.setattr(crud, "read_body", pruned)
+    posted = _Posted()
+    HeinzelDeletion(crud, chats, notices, posted).delete(session, "Po")  # type: ignore[arg-type]
+    # Without its body, a proposal without a receipt names no channel: nothing to forget, and no crash.
+    assert posted.forgotten == [("chatops", "ask-1", "ref-1")]
+
+
+def test_delete_refuses_before_anything_when_a_channel_holding_posts_is_unavailable(crud, chats, notices):
     session = _retired(crud, "create-pe", "Pe")
     _post_approval(crud, session, "ask-1", "ref-1")
     with pytest.raises(HeinzelError, match="unavailable"):
-        HeinzelDeletion(crud, chats, None, _Posted(available=False)).delete(session, "Pe")  # type: ignore[arg-type]
+        HeinzelDeletion(crud, chats, notices, _Posted(available=False)).delete(session, "Pe")  # type: ignore[arg-type]
     with pytest.raises(HeinzelError, match="cannot be closed"):
-        HeinzelDeletion(crud, chats).delete(session, "Pe")
+        HeinzelDeletion(crud, chats, notices).delete(session, "Pe")
     assert crud.repository.deletion_state(session) == "live"
+
+
+@pytest.mark.parametrize("missing", ["system.runner", "system.notify"])
+def test_a_turned_off_module_refuses_up_front_and_keeps_a_started_deletion_waiting(crud, chats, notices, missing):
+    session = _retired(crud, "create-mi", "Mi")
+    partial = HeinzelDeletion(
+        crud, None if missing == "system.runner" else chats, None if missing == "system.notify" else notices
+    )
+    with pytest.raises(HeinzelError, match=f"Turn on {missing}"):
+        partial.delete(session, "Mi")
+    assert crud.repository.deletion_state(session) == "live"
+
+    crud.repository.mark_deleting(session, [])
+    waiting = partial.finish(session)
+    assert (waiting.state, waiting.waiting_for) == ("forgetting", [missing])
+    assert crud.repository.deletion_state(session) == "deleting"  # no tombstone over content left behind
+    assert HeinzelDeletion(crud, chats, notices).finish(session).state == "deleted"
+
+
+class _FlakyPosted(_Posted):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail = True
+
+    def forget(self, channel: str, request_id: str, reference: str | None) -> None:
+        if self.fail:
+            msg = "plugin busy"
+            raise HeinzelError(msg)
+        super().forget(channel, request_id, reference)
+
+
+def test_a_plugin_that_cannot_forget_yet_never_holds_back_hz_removal(crud, chats, notices):
+    session = _retired(crud, "create-ve", "Ve")
+    _post_approval(crud, session, "ask-1", "ref-1")
+    posted = _FlakyPosted()
+    deletion = HeinzelDeletion(crud, chats, notices, posted)  # type: ignore[arg-type]
+
+    waiting = deletion.delete(session, "Ve")
+
+    assert (waiting.state, waiting.deleted_at, waiting.waiting_for) == ("forgetting", None, ["chatops"])
+    root = _owner_root(crud)
+    assert not any((root / namespace / session).exists() for namespace in SESSION_NAMESPACES)
+    pending = [{"channel": "chatops", "request_id": "ask-1", "reference": "ref-1"}]
+    assert crud.repository.deletion_posts(session) == pending
+    # Lists poll; the network settle ran once and retries back off.
+    deletion.finish_pending(now=0.0)
+    deletion.finish_pending(now=30.0)
+    assert posted.settled == [("chatops", "ref-1")]
+    posted.fail = False
+    deletion.finish_pending(now=59.0)
+    assert crud.repository.deletion_state(session) == "deleting"
+    deletion.finish_pending(now=60.0)
+    assert crud.repository.deletion_state(session) == "deleted"
+    assert crud.repository.deletion_posts(session) == []
+    assert posted.settled == [("chatops", "ref-1")]
+    assert posted.forgotten == [("chatops", "ask-1", "ref-1")]
+    assert HeinzelDeletion(crud, chats, notices).finish(session).state == "deleted"
+
+
+def test_without_a_channel_service_the_posts_wait(crud, chats, notices):
+    session = _retired(crud, "create-vi", "Vi")
+    _post_approval(crud, session, "ask-1", "ref-1")
+    crud.repository.mark_deleting(session, [{"channel": "chatops", "request_id": "ask-1", "reference": "ref-1"}])
+    assert HeinzelDeletion(crud, chats, notices).finish(session).waiting_for == ["chatops"]
+
+
+class _Service:
+    def __init__(self, *, offline: bool) -> None:
+        self.offline = offline
+        self.calls: list[str] = []
+
+    def settle(self, reference: str, outcome: str) -> None:
+        self.calls.append(f"settle:{reference}:{outcome}")
+        if self.offline:
+            msg = "no network"
+            raise OSError(msg)
+
+    def forget(self, request_id: str, reference: str | None) -> None:
+        self.calls.append(f"forget:{request_id}:{reference}")
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_settling_is_best_effort_and_forgetting_is_local(monkeypatch, offline):
+    from heinzel.modules.heinzel import _heinzel_delete
+
+    service = _Service(offline=offline)
+
+    class _Binding:
+        def __init__(self, _kernel, name, kind) -> None:
+            assert (name, kind) == ("chatops", "approval")
+
+        def call(self, action):
+            return action(service)
+
+    monkeypatch.setattr(_heinzel_delete, "ChannelBinding", _Binding)
+    posted = _heinzel_delete.PostedApprovals(None)  # type: ignore[arg-type]
+    posted.check("chatops")
+    posted.settle("chatops", "ref-1")
+    posted.forget("chatops", "ask-1", None)
+    assert service.calls == ["settle:ref-1:superseded", "forget:ask-1:None"]
+
+
+def test_a_plugin_that_is_not_loaded_is_named_in_the_refusal(monkeypatch):
+    from heinzel.modules.heinzel import _heinzel_delete
+
+    def unavailable(*_args):
+        msg = "Choose one available source-bound channel"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(_heinzel_delete, "ChannelBinding", unavailable)
+    with pytest.raises(HeinzelError, match=r"chatops plugin .* not loaded or is turned off"):
+        _heinzel_delete.PostedApprovals(None).check("chatops")  # type: ignore[arg-type]
+
+
+def test_the_cli_reads_the_name_only_from_an_interactive_terminal(monkeypatch):
+    from heinzel.modules.heinzel import _heinzel_delete
+
+    monkeypatch.setattr(_heinzel_delete.sys.stdin, "isatty", lambda: False, raising=False)
+    with pytest.raises(HeinzelError, match="interactive terminal"):
+        _heinzel_delete.typed_name("Name: ")
+    monkeypatch.setattr(_heinzel_delete.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda prompt: f"typed after {prompt}")
+    assert _heinzel_delete.typed_name("Name: ") == "typed after Name: "
+
+
+def test_notify_removes_the_heinzel_from_recovery_archives_and_rebinds_the_receipt(settings):
+    import hashlib
+    import json
+
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+
+    notify = NotifyService(settings, NotifySettings(), {"working_hours": "09-18", "timezone": "UTC"}, clock=lambda: AT)
+    gone, kept = "hz-01JC0000000000000000000001", "hz-01JC0000000000000000000002"
+    archive = notify.store.directory.parent / "notify-recovery" / "20261101T000000000000Z-abcd"
+    archive.mkdir(parents=True)
+    notices = [{"route": f"/heinzel?chat={gone}", "title": "secret"}, {"route": f"/heinzel?chat={kept}", "title": "ok"}]
+    (archive / "notices.json").write_text(json.dumps(notices))
+    (archive / "receipt.json").write_text(
+        json.dumps({"originals": [{"name": "notices.json", "sha256": "x", "size": 1}]})
+    )
+    (archive / "looked.json").write_text("{}")
+    (archive.parent / "stray-file").write_text("not an archive")
+    other = archive.parent / "20261102T000000000000Z-ef01"
+    other.mkdir()
+    (other / "notices.json").write_text(json.dumps({"notices": [{"route": f"/heinzel?chat={gone}&x=1"}]}))
+    nothing = archive.parent / "20261103T000000000000Z-ef02"
+    nothing.mkdir()
+    (nothing / "notices.json").write_text(json.dumps({"other": 1}))
+
+    assert forget_heinzel(notify.store, AT, gone) == 2
+
+    text = (archive / "notices.json").read_text()
+    assert "secret" not in text
+    receipt = json.loads((archive / "receipt.json").read_text())
+    assert receipt["originals"][0]["sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert receipt["redactions"][0]["notices_removed"] == 1
+    assert json.loads((other / "notices.json").read_text()) == {"notices": []}
+    assert forget_heinzel(notify.store, AT, gone) == 0
 
 
 def test_delete_refuses_while_a_document_change_has_no_outcome(crud, deletion):
@@ -410,9 +633,9 @@ def test_notify_forgets_the_notices_of_one_heinzel(settings):
             command="hz",
             key=f"k{index}",
         )
-    assert notify.forget_heinzel(gone) == 2
+    assert forget_heinzel(notify.store, AT, gone) == 2
     assert [notice.route for notice in notify.recent()] == [f"/heinzel?chat={kept}"]
-    assert notify.forget_heinzel(gone) == 0
+    assert forget_heinzel(notify.store, AT, gone) == 0
 
 
 def test_canary_no_byte_of_a_deleted_heinzel_remains_anywhere(tmp_path, settings, current, crud):
@@ -478,139 +701,114 @@ def test_canary_no_byte_of_a_deleted_heinzel_remains_anywhere(tmp_path, settings
         assert any(part in path for path in before), f"the canary was not planted in the {what}"
     assert any(wide_canary.encode() in hits for hits in before.values())
 
-    HeinzelDeletion(crud, store, notify, _Posted()).delete(session, name)  # type: ignore[arg-type]
+    HeinzelDeletion(crud, store, _StoreNotices(notify.store), _Posted()).delete(session, name)  # type: ignore[arg-type]
 
     assert leaks() == {}
     assert [item.session_id for item in crud.listing().sessions] == [kept]
 
 
-class _FlakyPosted(_Posted):
-    def __init__(self) -> None:
-        super().__init__()
-        self.fail = True
+def test_a_crash_inside_chat_removal_is_swept_by_the_next_attempt(tmp_path, current, crud, monkeypatch):
+    import shutil
 
-    def forget(self, channel: str, reference: str) -> None:
-        if self.fail:
-            msg = "plugin busy"
-            raise HeinzelError(msg)
-        super().forget(channel, reference)
+    from heinzel.modules.system.runner.chat import _store
 
+    session = crud.new_chat("create-ru", "Ru").session_id
+    store = ChatStore(Settings(state_dir=tmp_path / "runner"), ChatSettings(), RunnerSettings(), current)
+    chat = store.create(ChatContext(kind="text", ref=session), personal_session_id=session)
+    (store.root / chat.id / "proposals.jsonl").write_text('{"preview": "secret"}\n')
+    real = shutil.rmtree
 
-def test_a_plugin_that_cannot_forget_yet_never_holds_back_hz_removal(crud, chats):
-    session = _retired(crud, "create-ve", "Ve")
-    _post_approval(crud, session, "ask-1", "ref-1")
-    posted = _FlakyPosted()
-    deletion = HeinzelDeletion(crud, chats, None, posted)  # type: ignore[arg-type]
+    def crash(*_args, **_kwargs):
+        msg = "power cut"
+        raise OSError(msg)
 
-    waiting = deletion.delete(session, "Ve")
-
-    assert (waiting.state, waiting.deleted_at, waiting.waiting_for) == ("forgetting", None, ["chatops"])
-    root = _owner_root(crud)
-    assert not any((root / namespace / session).exists() for namespace in SESSION_NAMESPACES)
-    assert crud.repository.deletion_posts(session) == [{"channel": "chatops", "reference": "ref-1"}]
-    posted.fail = False
-    assert deletion.listing().sessions == []
-    assert crud.repository.deletion_state(session) == "deleted"
-    assert crud.repository.deletion_posts(session) == []
-    assert posted.forgotten == [("chatops", "ref-1")]
-    assert HeinzelDeletion(crud, chats).finish(session).state == "deleted"
+    monkeypatch.setattr(_store.shutil, "rmtree", crash)
+    with pytest.raises(OSError, match="power cut"):
+        store.remove_personal(session)
+    trash = store.root.parent / "chat-removed"
+    # Moved out of the chat root whole, proposals included: no reader finds it, nothing is orphaned.
+    assert not (store.root / chat.id).exists()
+    assert (trash / chat.id / "proposals.jsonl").is_file()
+    assert store.find_personal_chat(session) is None
+    monkeypatch.setattr(_store.shutil, "rmtree", real)
+    assert store.remove_personal(session) == 0
+    assert not any(trash.iterdir())
 
 
-def test_without_a_channel_service_the_posts_wait(crud, chats):
-    session = _retired(crud, "create-vi", "Vi")
-    _post_approval(crud, session, "ask-1", "ref-1")
-    crud.repository.mark_deleting(session, [{"channel": "chatops", "reference": "ref-1"}])
-    assert HeinzelDeletion(crud, chats).finish(session).waiting_for == ["chatops"]
+def test_an_unreadable_chat_that_names_the_heinzel_keeps_the_deletion_pending(tmp_path, current, crud):
+    session = crud.new_chat("create-rv", "Rv").session_id
+    store = ChatStore(Settings(state_dir=tmp_path / "runner"), ChatSettings(), RunnerSettings(), current)
+    broken = store.root / "0123456789abcdef"
+    broken.mkdir(parents=True)
+    (broken / "session.json").write_text(f'{{"personal_session_id": "{session}", "broken": ')
+    with pytest.raises(HeinzelError, match="cannot be read"):
+        store.remove_personal(session)
+    assert broken.is_dir()
 
 
-class _Service:
-    def __init__(self, *, offline: bool) -> None:
-        self.offline = offline
-        self.calls: list[str] = []
-
-    def settle(self, reference: str, outcome: str) -> None:
-        self.calls.append(f"settle:{reference}:{outcome}")
-        if self.offline:
-            msg = "no network"
-            raise OSError(msg)
-
-    def forget(self, reference: str) -> None:
-        self.calls.append(f"forget:{reference}")
-
-
-@pytest.mark.parametrize("offline", [False, True])
-def test_settling_is_best_effort_and_forgetting_is_local(monkeypatch, offline):
-    from heinzel.modules.heinzel import _heinzel_delete
-
-    service = _Service(offline=offline)
-
-    class _Binding:
-        def __init__(self, _kernel, name, kind) -> None:
-            assert (name, kind) == ("chatops", "approval")
-
-        def call(self, action):
-            return action(service)
-
-    monkeypatch.setattr(_heinzel_delete, "ChannelBinding", _Binding)
-    posted = _heinzel_delete.PostedApprovals(None)  # type: ignore[arg-type]
-    posted.check("chatops")
-    posted.forget("chatops", "ref-1")
-    assert service.calls == ["settle:ref-1:superseded", "forget:ref-1"]
-
-
-def test_a_plugin_that_is_not_loaded_is_named_in_the_refusal(monkeypatch):
-    from heinzel.modules.heinzel import _heinzel_delete
-
-    def unavailable(*_args):
-        msg = "Choose one available source-bound channel"
-        raise HeinzelError(msg)
-
-    monkeypatch.setattr(_heinzel_delete, "ChannelBinding", unavailable)
-    with pytest.raises(HeinzelError, match=r"chatops plugin .* not loaded or is turned off"):
-        _heinzel_delete.PostedApprovals(None).check("chatops")  # type: ignore[arg-type]
-
-
-def test_the_cli_reads_the_name_only_from_an_interactive_terminal(monkeypatch):
-    from heinzel.modules.heinzel import _heinzel_delete
-
-    monkeypatch.setattr(_heinzel_delete.sys.stdin, "isatty", lambda: False, raising=False)
-    with pytest.raises(HeinzelError, match="interactive terminal"):
-        _heinzel_delete.typed_name("Name: ")
-    monkeypatch.setattr(_heinzel_delete.sys.stdin, "isatty", lambda: True, raising=False)
-    monkeypatch.setattr("builtins.input", lambda prompt: f"typed after {prompt}")
-    assert _heinzel_delete.typed_name("Name: ") == "typed after Name: "
-
-
-def test_notify_removes_the_heinzel_from_recovery_archives_and_rebinds_the_receipt(settings):
+@pytest.mark.parametrize("crash_at", ["archive", "receipt"])
+def test_a_crash_inside_the_archive_redaction_is_repaired_by_a_retry(settings, monkeypatch, crash_at):
     import hashlib
     import json
 
     from heinzel.modules.system.notify import NotifyService, NotifySettings
+    from heinzel.modules.system.notify import _store as notify_store
 
     notify = NotifyService(settings, NotifySettings(), {"working_hours": "09-18", "timezone": "UTC"}, clock=lambda: AT)
-    gone, kept = "hz-01JC0000000000000000000001", "hz-01JC0000000000000000000002"
+    gone = "hz-01JC0000000000000000000001"
     archive = notify.store.directory.parent / "notify-recovery" / "20261101T000000000000Z-abcd"
     archive.mkdir(parents=True)
-    notices = [{"route": f"/heinzel?chat={gone}", "title": "secret"}, {"route": f"/heinzel?chat={kept}", "title": "ok"}]
-    (archive / "notices.json").write_text(json.dumps(notices))
-    (archive / "receipt.json").write_text(
-        json.dumps({"originals": [{"name": "notices.json", "sha256": "x", "size": 1}]})
-    )
-    (archive / "looked.json").write_text("{}")
-    (archive.parent / "stray-file").write_text("not an archive")
-    other = archive.parent / "20261102T000000000000Z-ef01"
-    other.mkdir()
-    (other / "notices.json").write_text(json.dumps({"notices": [{"route": f"/heinzel?chat={gone}&x=1"}]}))
-    nothing = archive.parent / "20261103T000000000000Z-ef02"
-    nothing.mkdir()
-    (nothing / "notices.json").write_text(json.dumps({"other": 1}))
+    (archive / "notices.json").write_text(json.dumps([{"route": f"/heinzel?chat={gone}", "title": "secret"}]))
+    (archive / "receipt.json").write_text(json.dumps({"originals": [{"name": "notices.json", "sha256": "x"}]}))
+    real = notify_store._write_private
+    writes: list[str] = []
 
-    assert notify.forget_heinzel(gone) == 2
+    def crashing(path, text):
+        writes.append(path.name)
+        # "archive": die replacing notices.json; "receipt": die binding the receipt after it.
+        if (crash_at == "archive" and path.name == "notices.json") or (
+            crash_at == "receipt" and path.name == "receipt.json" and "notices.json" in writes
+        ):
+            msg = "power cut"
+            raise OSError(msg)
+        real(path, text)
+
+    monkeypatch.setattr(notify_store, "_write_private", crashing)
+    with pytest.raises(OSError, match="power cut"):
+        forget_heinzel(notify.store, AT, gone)
+    monkeypatch.undo()
+    assert json.loads((archive / "receipt.json").read_text()).get("pending_redaction")
+
+    forget_heinzel(notify.store, AT, gone)
 
     text = (archive / "notices.json").read_text()
-    assert "secret" not in text
     receipt = json.loads((archive / "receipt.json").read_text())
+    assert "secret" not in text
+    assert "pending_redaction" not in receipt
     assert receipt["originals"][0]["sha256"] == hashlib.sha256(text.encode()).hexdigest()
-    assert receipt["redactions"][0]["notices_removed"] == 1
-    assert json.loads((other / "notices.json").read_text()) == {"notices": []}
-    assert notify.forget_heinzel(gone) == 0
+    assert [entry["notices_removed"] for entry in receipt["redactions"]] == [1]
+
+
+def test_the_built_in_modules_provide_the_removals_and_channels_default_to_keeping_nothing(make_kernel):
+    from heinzel import ApprovalChannel
+
+    kernel = make_kernel(builtins=True)
+    assert kernel.resolve(HeinzelNoticeRemoval).forget_heinzel("hz-01JC0000000000000000000001") == 0
+    assert isinstance(kernel.resolve(PersonalChatRemoval), PersonalChatRemoval)
+
+    class _Quiet(ApprovalChannel):
+        name = "quiet"
+
+        def owner_actor(self):
+            return None
+
+        def post(self, request):
+            raise NotImplementedError
+
+        def replies(self, references):
+            return []
+
+        def settle(self, reference, outcome):
+            return None
+
+    assert _Quiet().forget("ask-1", None) is None

@@ -16845,7 +16845,7 @@ export interface components {
         heinzel_delete_Input: {
             /**
              * Name
-             * @description Its current name, typed exactly to confirm; in the app's dialog. On the command line you type it when asked.
+             * @description Its current name as the person typed it in the app's dialog.
              */
             name?: string | null;
             /**

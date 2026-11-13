@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import Annotated, Any, Literal, cast, get_args, get_origin
 
 import typer
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -160,14 +160,19 @@ def _present(
 def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
     annotation = parameter.annotation
     description = None
+    hidden = False
     if get_origin(annotation) is Annotated:
         annotation, *metadata = get_args(annotation)
-        description = next((m.description for m in metadata if isinstance(m, FieldInfo)), None)
+        field = next((m for m in metadata if isinstance(m, FieldInfo)), None)
+        description = field.description if field is not None else None
+        # An input only the app's dialog sends (ADR 0148): it works on the CLI never, so its help never offers it.
+        extra = field.json_schema_extra if field is not None else None
+        hidden = isinstance(extra, dict) and cast("dict[str, object]", extra).get("cli_hidden") is True
     parser = _json_parser(annotation) if _structured(annotation) else None
     info = (
         typer.Argument(help=description, metavar=_metavar(annotation), parser=parser)
         if parameter.default is inspect.Parameter.empty
-        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser)
+        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
     )
     return parameter.replace(annotation=Annotated[_as_text(annotation), info], kind=inspect.Parameter.KEYWORD_ONLY)
 

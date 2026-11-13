@@ -116,12 +116,6 @@ def _invalidate(storage: str, owner: str, session: str) -> None:
         cache.close()
 
 
-def forget_indexed_history(service: SessionCrud, session: str) -> None:
-    """Drop this process's search index of a Heinzel being deleted for good (ADR 0148)."""
-    with _LOCK:
-        _invalidate(service.repository.search_storage_id, service.repository.principal_id, session)
-
-
 def _cursor(request: HistorySearchRequest, owner: str, storage: str) -> _Cursor | None:
     if request.cursor is None:
         return None

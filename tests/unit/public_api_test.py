@@ -394,6 +394,7 @@ KERNEL = [
     "HeadRefresh",
     "HealthLet",
     "HeinzelError",
+    "HeinzelNoticeRemoval",
     "Homebrew",
     "HostIntegration",
     "HostIntegrationScope",

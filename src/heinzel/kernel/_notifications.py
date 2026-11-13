@@ -227,10 +227,6 @@ class Notifications:
         """Check a durable key; None means the store could not answer safely."""
         raise NotImplementedError
 
-    def forget_heinzel(self, session_id: str) -> int:
-        """Remove every kept notice about this personal Heinzel (its `/heinzel?chat=` route); how many (ADR 0148)."""
-        raise NotImplementedError
-
     def resolve(self) -> int:
         """Resolve the shown notices whose condition now holds, so they disappear; how many were resolved."""
         raise NotImplementedError
@@ -253,4 +249,16 @@ class Notifications:
 
     def post_native(self) -> int:
         """Pop up the due notices as native notifications unless a head shows them; how many were posted."""
+        raise NotImplementedError
+
+
+class HeinzelNoticeRemoval:
+    """Removes the notices kept about a personal Heinzel being deleted for good; `system.notify` provides it."""
+
+    def forget_heinzel(self, session_id: str) -> int:
+        """Remove every kept notice whose route is `/heinzel?chat=<session_id>`, archives included; how many.
+
+        Raises:
+            OSError: If the notification store cannot be changed safely; the deletion retries later.
+        """
         raise NotImplementedError

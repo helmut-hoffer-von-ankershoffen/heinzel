@@ -2,16 +2,17 @@
 
 import logging
 import sys
+import time
 import unicodedata
 from datetime import datetime
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
-from heinzel import ApprovalChannel, HeinzelError, Kernel, Notifications, SessionEvent
-from heinzel.kernel import PersonalChatRemoval
+from heinzel import ApprovalChannel, HeinzelError, Kernel, SessionEvent
+from heinzel.kernel import HeinzelNoticeRemoval, PersonalChatRemoval
+from heinzel.modules.heinzel import _history_fts
 from heinzel.modules.heinzel._channel_binding import ChannelBinding
-from heinzel.modules.heinzel._history_fts import forget_indexed_history
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId, SessionList
 from heinzel.modules.heinzel._session_repository import SESSION_NAMESPACES
@@ -56,18 +57,22 @@ class PostedApprovals:
             )
             raise HeinzelError(msg) from None
 
-    def forget(self, channel: str, reference: str) -> None:
-        """Close the posted request if the network allows, then let the plugin delete its own copy locally.
+    def settle(self, channel: str, reference: str) -> None:
+        """Close the posted request on the channel, best effort: offline or signed out only logs."""
+        try:
+            binding = ChannelBinding(self.kernel, channel, "approval")
+            binding.call(lambda service: cast("ApprovalChannel", service).settle(reference, "superseded"))
+        except Exception:  # noqa: BLE001 - settling is best effort; an offline channel must not block a deletion
+            logger.warning("closing a %s request of a deleted Heinzel failed; it is forgotten anyway", channel)
+
+    def forget(self, channel: str, request_id: str, reference: str | None) -> None:
+        """Let the plugin delete its own copies of one request, locally.
 
         Raises:
             HeinzelError: If the plugin cannot forget now; the deletion retries it later.
         """
         binding = ChannelBinding(self.kernel, channel, "approval")
-        try:
-            binding.call(lambda service: cast("ApprovalChannel", service).settle(reference, "superseded"))
-        except Exception:  # noqa: BLE001 - settling is best effort; an offline channel must not block a deletion
-            logger.warning("closing a %s request of a deleted Heinzel failed; it is forgotten anyway", channel)
-        binding.call(lambda service: cast("ApprovalChannel", service).forget(reference))
+        binding.call(lambda service: cast("ApprovalChannel", service).forget(request_id, reference))
 
 
 def typed_name(prompt: str) -> str:
@@ -82,27 +87,67 @@ def typed_name(prompt: str) -> str:
     return input(prompt)
 
 
+def _proposed_channel(crud: SessionCrud, session_id: str, event: SessionEvent) -> tuple[str, str] | None:
+    """The channel and kind of a channel proposal, or None when its body is no longer retained."""
+    try:
+        body = crud.read_body(session_id, event)
+    except (FileNotFoundError, HeinzelError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    channel, kind = body.get("channel"), body.get("kind")
+    return (channel, kind) if isinstance(channel, str) and isinstance(kind, str) else None
+
+
 def _posts(crud: SessionCrud, session_id: str, events: list[SessionEvent]) -> list[dict[str, str]]:
-    """The content-free channel references of every approval request this Heinzel posted."""
-    approvals: set[str | None] = set()
+    """The content-free identity of every approval request this Heinzel proposed on a channel, posted or not.
+
+    A plugin may keep a copy before the post returns, so a proposal without a receipt counts too. A proposal whose
+    body is no longer retained counts when its receipt names the channel; `forget` is idempotent.
+    """
+    receipts: dict[str, dict[str, object]] = {}
     for event in events:
-        if event.kind == "channel.proposed":
-            body = crud.read_body(session_id, event)
-            if isinstance(body, dict) and body.get("kind") == "approval":
-                approvals.add(event.key)
+        recorded = event.data.get("receipt")
+        if event.kind == "channel.receipt" and event.key and isinstance(recorded, dict):
+            receipts[event.key] = cast("dict[str, object]", recorded)
     posts: list[dict[str, str]] = []
     for event in events:
-        receipt = event.data.get("receipt")
-        if event.kind != "channel.receipt" or event.key not in approvals or not isinstance(receipt, dict):
+        if event.kind != "channel.proposed" or not event.key:
             continue
-        channel, reference = receipt.get("channel"), receipt.get("reference")
-        if isinstance(channel, str) and isinstance(reference, str):
-            posts.append({"channel": channel, "reference": reference})
+        receipt = receipts.get(event.key, {})
+        proposed = _proposed_channel(crud, session_id, event)
+        if proposed is not None and proposed[1] != "approval":
+            continue
+        channel = proposed[0] if proposed is not None else receipt.get("channel")
+        if not isinstance(channel, str):
+            logger.warning("a channel request of a deleted Heinzel names no channel any more; nothing to forget")
+            continue
+        post = {"channel": channel, "request_id": event.key}
+        reference = receipt.get("reference")
+        if isinstance(reference, str):
+            post["reference"] = reference
+        posts.append(post)
     return posts
+
+
+def _forget_indexed_history(crud: SessionCrud, session_id: str) -> None:
+    """Drop this process's in-memory search index of the Heinzel; another process's is unreadable once gone."""
+    repository = crud.repository
+    # The index module's own lock and eviction, reused unchanged.
+    with _history_fts._LOCK:  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
+        _history_fts._invalidate(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
+            repository.search_storage_id, repository.principal_id, session_id
+        )
 
 
 def _same_name(typed: str, current: str) -> bool:
     return unicodedata.normalize("NFC", typed) == unicodedata.normalize("NFC", current)
+
+
+_FIRST_RETRY = 60.0
+_LAST_RETRY = 3600.0
+_RETRY: dict[str, tuple[float, float]] = {}
+"""Per session: when the next background retry may run and the current delay; lists poll, plugins need not."""
 
 
 class HeinzelDeletion:
@@ -112,7 +157,7 @@ class HeinzelDeletion:
         self,
         crud: SessionCrud,
         chats: PersonalChatRemoval | None,
-        notifications: Notifications | None = None,
+        notifications: HeinzelNoticeRemoval | None = None,
         posted: PostedApprovals | None = None,
     ) -> None:
         """Use the owner's session service and the optional runner, notification and channel services."""
@@ -121,15 +166,27 @@ class HeinzelDeletion:
         self.notifications = notifications
         self.posted = posted
 
+    def _missing_modules(self) -> list[str]:
+        """Built-in modules that keep this Heinzel's content but are turned off, so they cannot remove it."""
+        return [
+            name
+            for name, service in (("system.runner", self.chats), ("system.notify", self.notifications))
+            if service is None
+        ]
+
     def delete(self, session_id: str, name: str) -> HeinzelDeleted:
         """Delete a retired Heinzel after its typed name; a retry finishes or repeats the same result.
 
         Raises:
             HeinzelError: For a wrong name, a Heinzel that is not retired, one finishing a turn or a document
-                append, or a channel plugin holding its posts that is not loaded or is turned off.
+                append, a turned-off module that keeps its content, or a channel plugin holding its posts that is not
+                loaded or is turned off.
         """
         repository = self.crud.repository
         if repository.deletion_state(session_id) == "live":
+            if missing := self._missing_modules():
+                msg = f"Turn on {' and '.join(missing)} first: it keeps this Heinzel's chats or notices"
+                raise HeinzelError(msg)
             # Lock order (ADR 0148 §5): main and channel-processing without waiting, so a running turn or channel
             # reply refuses; then control; the catalog is taken inside. Every check runs under these locks.
             with (
@@ -155,22 +212,23 @@ class HeinzelDeletion:
     def finish(self, session_id: str) -> HeinzelDeleted:
         """Complete a started deletion: hz's own content first, then each plugin's copies, then the tombstone.
 
-        Every step is a no-op when already done, and VACUUM runs on every attempt. A plugin that cannot forget yet
-        never holds hz's removal back: its references stay in the intent and the next list retries them.
+        Every step is a no-op when already done, and VACUUM runs on every attempt. A module or plugin that cannot
+        forget yet never holds the rest back, and the tombstone waits for all of them; the next list retries.
 
         Raises:
             HeinzelError: If the deletion was never started or an hz store cannot be removed yet.
         """
         repository = self.crud.repository
         if repository.deletion_state(session_id) == "deleting":
+            waiting = self._missing_modules()
             if self.chats is not None:
                 self.chats.remove_personal(session_id)
             if self.notifications is not None:
                 self.notifications.forget_heinzel(session_id)
             for namespace in SESSION_NAMESPACES:
                 repository.remove_session_store(namespace, session_id)
-            forget_indexed_history(self.crud, session_id)
-            waiting = self._forget_posts(session_id)
+            _forget_indexed_history(self.crud, session_id)
+            waiting += self._forget_posts(session_id)
             if waiting:
                 return HeinzelDeleted(session_id=session_id, state="forgetting", waiting_for=waiting)
             repository.mark_deleted(session_id)
@@ -181,20 +239,24 @@ class HeinzelDeletion:
         return HeinzelDeleted(session_id=session_id, deleted_at=deleted_at)
 
     def _forget_posts(self, session_id: str) -> list[str]:
-        """Ask each plugin to forget; record each success. Returns the plugins still waiting."""
+        """Close each post once, ask each plugin to forget, record each success; the plugins still waiting."""
         repository = self.crud.repository
         waiting: set[str] = set()
         for post in repository.deletion_posts(session_id):
+            channel, request_id, reference = post["channel"], post["request_id"], post.get("reference")
             if self.posted is None:
-                waiting.add(post["channel"])
+                waiting.add(channel)
                 continue
+            if reference is not None and not repository.was_settled(session_id, request_id):
+                self.posted.settle(channel, reference)
+                repository.mark_settled(session_id, request_id)
             try:
-                self.posted.forget(post["channel"], post["reference"])
+                self.posted.forget(channel, request_id, reference)
             except Exception:  # noqa: BLE001 - one plugin's failure must not hold the others or hz's removal back
-                logger.warning("the %s plugin could not forget a deleted Heinzel's request yet", post["channel"])
-                waiting.add(post["channel"])
+                logger.warning("the %s plugin could not forget a deleted Heinzel's request yet", channel)
+                waiting.add(channel)
                 continue
-            repository.mark_forgotten(session_id, post["channel"], post["reference"])
+            repository.mark_forgotten(session_id, channel, request_id)
         return sorted(waiting)
 
     def listing(self) -> SessionList:
@@ -202,10 +264,20 @@ class HeinzelDeletion:
         self.finish_pending()
         return self.crud.listing()
 
-    def finish_pending(self) -> None:
-        """Finish deletions a crash interrupted; one that still fails is retried on the next call."""
+    def finish_pending(self, *, now: float | None = None) -> None:
+        """Finish deletions a crash or a busy plugin left; each retries with backoff, from a minute to an hour."""
+        moment = time.monotonic() if now is None else now
         for session_id in self.crud.repository.pending_deletions():
+            due, delay = _RETRY.get(session_id, (0.0, 0.0))
+            if moment < due:
+                continue
             try:
-                self.finish(session_id)
+                done = self.finish(session_id).state == "deleted"
             except (HeinzelError, OSError):
-                logger.warning("finishing the deletion of %s failed; the next list retries it", session_id)
+                logger.warning("finishing the deletion of %s failed; it is retried later", session_id)
+                done = False
+            if done:
+                _RETRY.pop(session_id, None)
+            else:
+                delay = min(max(delay * 2, _FIRST_RETRY), _LAST_RETRY)
+                _RETRY[session_id] = (moment + delay, delay)

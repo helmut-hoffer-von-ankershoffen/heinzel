@@ -22,7 +22,8 @@ _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _DELETING = "creation.deleting"
 _DELETED = "creation.deleted"
 _FORGOTTEN = "creation.forgotten"
-DELETION_KINDS = frozenset({_DELETING, _FORGOTTEN, _DELETED})
+_SETTLED = "creation.settled"
+DELETION_KINDS = frozenset({_DELETING, _SETTLED, _FORGOTTEN, _DELETED})
 """Catalog records of a deletion (ADR 0148); every catalog reader skips them."""
 # Per-Heinzel folders, removed in this order; the main journal goes last so a partial deletion is never a live turn.
 SESSION_NAMESPACES = ("channel-processing", "control", "main")
@@ -191,7 +192,10 @@ class PersonalSessionRepository:
             writer.append(_DELETING, key=f"delete:{session_id}", data=data)
 
     def deletion_posts(self, session_id: str) -> list[dict[str, str]]:
-        """The channel references recorded with this session's deletion intent that no plugin has forgotten yet."""
+        """The channel requests recorded with this session's deletion intent that no plugin has forgotten yet.
+
+        Each has `channel` and `request_id`, and `reference` when a receipt was recorded.
+        """
         events = self._catalog().events
         intent = next(
             (event for event in events if event.kind == _DELETING and event.data.get("session_id") == session_id),
@@ -199,26 +203,40 @@ class PersonalSessionRepository:
         )
         posts = intent.data.get("posts") if intent is not None else None
         done = {
-            (event.data.get("channel"), event.data.get("reference"))
+            str(event.data.get("request_id"))
             for event in events
             if event.kind == _FORGOTTEN and event.data.get("session_id") == session_id
         }
-        found = [
-            {"channel": str(post.get("channel")), "reference": str(post.get("reference"))}
-            for post in (posts if isinstance(posts, list) else [])
-            if isinstance(post, dict)
-        ]
-        return [post for post in found if (post["channel"], post["reference"]) not in done]
+        found: list[dict[str, str]] = []
+        for post in posts if isinstance(posts, list) else []:
+            if not isinstance(post, dict) or str(post.get("request_id")) in done:
+                continue
+            item = {key: str(post[key]) for key in ("channel", "request_id", "reference") if post.get(key) is not None}
+            found.append(item)
+        return found
 
-    def mark_forgotten(self, session_id: str, channel: str, reference: str) -> None:
-        """Record that a channel plugin forgot one posted request of a session being deleted."""
+    def _record(self, kind: str, key: str, data: dict[str, JsonValue]) -> None:
         catalog = self._store("catalog")
         with catalog.writer("creations", wait=True) as writer:
-            writer.append(
-                _FORGOTTEN,
-                key=f"forgot:{session_id}:{channel}:{reference}",
-                data={"session_id": session_id, "channel": channel, "reference": reference},
-            )
+            writer.append(kind, key=key, data=data)
+
+    def mark_forgotten(self, session_id: str, channel: str, request_id: str) -> None:
+        """Record that a channel plugin forgot one request of a session being deleted."""
+        data: dict[str, JsonValue] = {"session_id": session_id, "channel": channel, "request_id": request_id}
+        self._record(_FORGOTTEN, f"forgot:{session_id}:{request_id}", data)
+
+    def was_settled(self, session_id: str, request_id: str) -> bool:
+        """Whether closing this posted request was already tried once, whatever the network said."""
+        return any(
+            event.kind == _SETTLED and event.key == f"settled:{session_id}:{request_id}"
+            for event in self._catalog().events
+        )
+
+    def mark_settled(self, session_id: str, request_id: str) -> None:
+        """Record that closing this posted request was tried, so a retry never repeats the network call."""
+        self._record(
+            _SETTLED, f"settled:{session_id}:{request_id}", {"session_id": session_id, "request_id": request_id}
+        )
 
     def remove_session_store(self, namespace: str, session_id: str) -> None:
         """Remove one per-Heinzel folder of a session marked for deletion; an absent folder is already done.

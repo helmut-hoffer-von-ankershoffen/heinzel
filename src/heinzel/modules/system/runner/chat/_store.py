@@ -542,19 +542,30 @@ class ChatStore(McpChatSessions, PersonalChatRemoval):
     def remove_personal(self, session_id: str) -> int:
         """Remove the owner's chats bound to a personal Heinzel being deleted for good (ADR 0148).
 
+        Each chat folder is first moved, under its lock, out of the chat root into `chat-removed/`, where no reader
+        looks, then deleted; every call sweeps what a crash left there first, so nothing of it is orphaned.
+
         Returns:
             How many chats were removed; 0 when none is left, so a resumed deletion finishes.
 
         Raises:
-            HeinzelError: If a bound chat is busy; the deletion is retried later.
+            HeinzelError: If a bound chat is busy, or a chat that names this Heinzel cannot be read; the deletion
+                stays pending and is retried.
         """
         owner = self.personal_owner()
+        trash = self.root.parent / "chat-removed"
         removed = 0
         with self.proposal_request_lock():
+            self._sweep(trash)
             for path in sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []:
+                content = b""
                 try:
-                    raw = ChatSession.model_validate_json(path.read_text(encoding="utf-8"))
+                    content = path.read_bytes()
+                    raw = ChatSession.model_validate_json(content)
                 except (OSError, ValidationError):
+                    if session_id.encode() in content:
+                        msg = "A chat that names this Heinzel cannot be read; repair or remove it, then delete again"
+                        raise HeinzelError(msg) from None
                     continue
                 bound = raw.personal_session_id == session_id and raw.personal_owner_id == owner
                 # Unbound legacy chats name the Heinzel only as their context; session ids are owner-unique.
@@ -564,9 +575,22 @@ class ChatStore(McpChatSessions, PersonalChatRemoval):
                         if not holding:
                             msg = "A chat with this Heinzel is busy right now; try again when it is done"
                             raise HeinzelError(msg)
-                        shutil.rmtree(path.parent)
+                        _private_dir(trash)
+                        path.parent.rename(trash / path.parent.name)
                     removed += 1
+            self._sweep(trash)
         return removed
+
+    @staticmethod
+    def _sweep(trash: Path) -> None:
+        """Delete every chat folder moved aside for removal; an absent trash folder is already clean."""
+        if not trash.is_dir() or trash.is_symlink():
+            return
+        for folder in trash.iterdir():
+            if folder.is_dir() and not folder.is_symlink():
+                shutil.rmtree(folder)
+            else:
+                folder.unlink()
 
     def prune(self) -> list[str]:  # noqa: C901 - retention and owner isolation share the cleanup boundary
         """Remove sessions unchanged for longer than `keep_days`, and the oldest beyond `keep_sessions`.

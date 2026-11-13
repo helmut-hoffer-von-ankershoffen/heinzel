@@ -243,6 +243,7 @@ from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import (
     CapabilityState,
     Delivery,
+    HeinzelNoticeRemoval,
     Notice,
     NoticeHelper,
     NoticeKind,
@@ -599,6 +600,7 @@ __all__ = [
     "HeadRefresh",
     "HealthLet",
     "HeinzelError",
+    "HeinzelNoticeRemoval",
     "Homebrew",
     "HostIntegration",
     "HostIntegrationScope",

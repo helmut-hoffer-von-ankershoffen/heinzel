@@ -8,12 +8,14 @@ kept on this machine only (the state directory, bounded, pruned); nothing is sen
 
 import os
 import sys
+from datetime import UTC, datetime
 from typing import Annotated
 
 from pydantic import Field
 from rich.console import RenderableType
 
 from heinzel import Check, ManualInstall, Module, Notifications
+from heinzel.kernel import HeinzelNoticeRemoval
 from heinzel.modules.system.notify._models import (
     Channel,
     Cleaned,
@@ -27,6 +29,7 @@ from heinzel.modules.system.notify._models import (
 )
 from heinzel.modules.system.notify._native import SESSION
 from heinzel.modules.system.notify._service import NotifyService
+from heinzel.modules.system.notify._store import forget_heinzel
 
 
 def render_installed(result: Installed) -> RenderableType:
@@ -81,6 +84,23 @@ def _notifications(service: NotifyService) -> Notifications:
 
 
 module.service(Notifications, _notifications)
+
+
+class _NoticeRemoval(HeinzelNoticeRemoval):
+    """Removes a deleted Heinzel's notices from this user's notification store and its recovery archives."""
+
+    def __init__(self, service: NotifyService) -> None:
+        self.store = service.store
+
+    def forget_heinzel(self, session_id: str) -> int:
+        return forget_heinzel(self.store, datetime.now(UTC), session_id)
+
+
+def _notice_removal(service: NotifyService) -> HeinzelNoticeRemoval:
+    return _NoticeRemoval(service)
+
+
+module.service(HeinzelNoticeRemoval, _notice_removal)
 
 # Notices name your contracts and what failed on your machine: like `drafts`, they aren't for the unauthenticated REST
 # head, which any web page can reach; the web head's token closes that hole (ADR 0039).

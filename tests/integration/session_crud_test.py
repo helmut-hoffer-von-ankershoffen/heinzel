@@ -14,7 +14,7 @@ from heinzel import CurrentUser, Module
 from heinzel.heads import api, cli, mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads.api._auth import ApiBearer
-from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle
+from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, HeinzelNoticeRemoval, PersonalChatRemoval
 from heinzel.kernel._approval import ApprovalIntent, ApprovalIssuer, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel._session_operations import register_session_operations
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -657,7 +657,20 @@ def test_private_http_refuses_the_cli_only_approval_input(kernel):
     assert "only available on the CLI" in response.text
 
 
+class _NoChats(PersonalChatRemoval):
+    def remove_personal(self, session_id):
+        return 0
+
+
+class _NoNotices(HeinzelNoticeRemoval):
+    def forget_heinzel(self, session_id):
+        return 0
+
+
 def test_delete_for_good_runs_on_private_http_and_an_interactive_cli_and_never_on_stdio_mcp(kernel, monkeypatch):
+    # This kernel has no system.runner or system.notify; delete refuses without them, so stand in for both.
+    kernel.bind(PersonalChatRemoval, _NoChats())
+    kernel.bind(HeinzelNoticeRemoval, _NoNotices())
     client, auth = protected(kernel)
     names = {"http": "By web", "cli": "By terminal"}
     sessions = {}
@@ -685,7 +698,9 @@ def test_delete_for_good_runs_on_private_http_and_an_interactive_cli_and_never_o
     named = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--name", "By terminal", "--json"])
     assert named.exit_code != 0
     assert "type the name when asked" in named.output
-    assert "--yes" not in CliRunner().invoke(app, ["heinzel", "delete", "--help"]).output
+    shown = CliRunner().invoke(app, ["heinzel", "delete", "--help"]).output
+    assert "--yes" not in shown
+    assert "--name" not in shown  # the dialog's input never works on the CLI, so its help does not offer it
 
     from heinzel.modules.heinzel import _session_operations
 
@@ -693,6 +708,15 @@ def test_delete_for_good_runs_on_private_http_and_an_interactive_cli_and_never_o
     removed = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--json"])
     assert removed.exit_code == 0, removed.output
     assert json.loads(removed.output)["state"] == "deleted"
+
+    def never(_prompt):
+        msg = "a finished deletion asks for no name"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(_session_operations, "typed_name", never)
+    again = CliRunner().invoke(app, ["heinzel", "delete", sessions["cli"], "--json"])
+    assert again.exit_code == 0, again.output
+    assert json.loads(again.output)["state"] == "deleted"
 
     async def scenario():
         async with Client(mcp.build(kernel)) as connected:

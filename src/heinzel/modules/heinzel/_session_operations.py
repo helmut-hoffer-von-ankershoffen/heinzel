@@ -18,6 +18,7 @@ from heinzel.kernel import (
     CheckInHistoryMessage,
     DaemonAttestation,
     DaemonInstallationLifecycle,
+    HeinzelNoticeRemoval,
     Kernel,
     PersonalChatRemoval,
     RunnerSnapshotProvider,
@@ -1024,7 +1025,7 @@ def _register_frontdoor_operations(module: Module) -> None:
 
 def _heinzel_deletion(service: SessionCrud, kernel: Kernel) -> HeinzelDeletion:
     chats = kernel.resolve(PersonalChatRemoval) if kernel.provides(PersonalChatRemoval) else None
-    notices = kernel.resolve(Notifications) if kernel.provides(Notifications) else None
+    notices = kernel.resolve(HeinzelNoticeRemoval) if kernel.provides(HeinzelNoticeRemoval) else None
     return HeinzelDeletion(service, chats, notices, PostedApprovals(kernel))
 
 
@@ -1051,10 +1052,10 @@ def _register_lifecycle_operations(module: Module) -> None:
         name: Annotated[
             str | None,
             Field(
-                description="Its current name, typed exactly to confirm; in the app's dialog. On the command line "
-                "you type it when asked.",
+                description="Its current name as the person typed it in the app's dialog.",
                 min_length=1,
                 max_length=100,
+                json_schema_extra={"cli_hidden": True},
             ),
         ] = None,
     ) -> HeinzelDeleted:
@@ -1067,6 +1068,8 @@ def _register_lifecycle_operations(module: Module) -> None:
             if name is not None:
                 msg = "On the command line, type the name when asked; it cannot be passed as an argument"
                 raise HeinzelError(msg)
+            if service.crud.repository.deletion_state(session_id) != "live":
+                return service.finish(session_id)  # resuming: the name was confirmed and is gone now
             name = typed_name("This cannot be undone. Type the Heinzel's name to delete it for good: ")
         if name is None:
             msg = "Type the Heinzel's name to confirm deleting it for good"

@@ -127,8 +127,16 @@ class SessionRepository(Protocol):
         """The channel references recorded with this session's deletion intent, not yet forgotten."""
         ...
 
-    def mark_forgotten(self, session_id: str, channel: str, reference: str) -> None:
-        """Record that a channel plugin forgot one posted request of a session being deleted."""
+    def mark_forgotten(self, session_id: str, channel: str, request_id: str) -> None:
+        """Record that a channel plugin forgot one request of a session being deleted."""
+        ...
+
+    def was_settled(self, session_id: str, request_id: str) -> bool:
+        """Whether closing this posted request was already tried once."""
+        ...
+
+    def mark_settled(self, session_id: str, request_id: str) -> None:
+        """Record that closing this posted request was tried."""
         ...
 
     def remove_session_store(self, namespace: str, session_id: str) -> None:

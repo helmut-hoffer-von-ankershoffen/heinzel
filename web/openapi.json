@@ -21398,7 +21398,8 @@
                 "type": "null"
               }
             ],
-            "description": "Its current name, typed exactly to confirm; in the app's dialog. On the command line you type it when asked.",
+            "cli_hidden": true,
+            "description": "Its current name as the person typed it in the app's dialog.",
             "title": "Name"
           },
           "session_id": {

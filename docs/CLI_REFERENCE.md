@@ -1003,7 +1003,6 @@ $ hz heinzel delete [OPTIONS] {session_id}
 
 **Options**:
 
-* `--name <str>`: Its current name, typed exactly to confirm; in the app&#x27;s dialog. On the command line you type it when asked.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

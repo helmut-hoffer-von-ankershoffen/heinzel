@@ -756,11 +756,52 @@ def _archived_notices(value: object) -> list[object] | None:
     return cast("list[object]", value) if isinstance(value, list) else None
 
 
+def _receipt(target: Path) -> dict[str, object]:
+    path = target / "receipt.json"
+    loaded: object = json.loads(path.read_bytes()) if path.is_file() else {}
+    return cast("dict[str, object]", loaded) if isinstance(loaded, dict) else {}
+
+
+def _bind_receipt(target: Path, receipt: dict[str, object], text: str, removed: int, at: str) -> None:
+    """Point the receipt at the archived `notices.json` as it now is, and close the pending redaction."""
+    originals = receipt.get("originals")
+    for entry in cast("list[object]", originals) if isinstance(originals, list) else []:
+        if isinstance(entry, dict) and cast("dict[str, object]", entry).get("name") == "notices.json":
+            cast("dict[str, object]", entry).update(
+                sha256=hashlib.sha256(text.encode()).hexdigest(), size=len(text.encode())
+            )
+    receipt.pop("pending_redaction", None)
+    redactions = receipt.setdefault("redactions", list[object]())
+    cast("list[object]", redactions).append({"at": at, "file": "notices.json", "notices_removed": removed})
+    _write_private(target / "receipt.json", json.dumps(receipt, indent=1) + "\n")
+
+
+def _redacted_text(value: object, matches: Callable[[str], bool]) -> tuple[str, int] | None:
+    """The archived state without the matching notices, and how many went; None when nothing matches."""
+    notices = _archived_notices(value)
+    if notices is None:
+        return None
+    kept: list[object] = [
+        item
+        for item in notices
+        if not (isinstance(item, dict) and matches(str(cast("dict[str, object]", item).get("route", ""))))
+    ]
+    if len(kept) == len(notices):
+        return None
+    if isinstance(value, dict):
+        holder = cast("dict[str, object]", value)
+        holder["notices"] = kept
+        return json.dumps(holder, indent=1, ensure_ascii=False) + "\n", len(notices) - len(kept)
+    return json.dumps(kept, indent=1, ensure_ascii=False) + "\n", len(notices) - len(kept)
+
+
 def forget_in_archives(store: Store, now: datetime, matches: Callable[[str], bool]) -> int:
     """Remove the notices whose route `matches` from every recovery archive and rebind each receipt (ADR 0148).
 
-    The archived `notices.json` is rewritten without them; its receipt entry gets the new digest and size, and a
-    `redactions` line records when and how many were removed, never what. Returns how many notices were removed.
+    Crash-safe in three writes: the receipt first records a pending redaction with the new file's digest, then the
+    archived `notices.json` is replaced, then the receipt is bound to it with a `redactions` line saying when and how
+    many, never what. A retry that finds a pending redaction whose digest the file already has only finishes the
+    receipt. Returns how many notices were removed.
 
     Raises:
         OSError: If an archive cannot be rewritten; the deletion that asked retries later.
@@ -769,47 +810,53 @@ def forget_in_archives(store: Store, now: datetime, matches: Callable[[str], boo
     if not root.is_dir():
         return 0
     removed = 0
+    at = now.astimezone(UTC).isoformat()
     with store.locked():
         for target in sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink()):
             archived = target / "notices.json"
             if not archived.is_file() or archived.is_symlink():
                 continue
-            value: object = json.loads(archived.read_bytes())
-            notices = _archived_notices(value)
-            holder = cast("dict[str, object]", value) if isinstance(value, dict) else None
-            if notices is None:
+            current = archived.read_text(encoding="utf-8")
+            receipt = _receipt(target)
+            pending = receipt.get("pending_redaction")
+            if isinstance(pending, dict):
+                waiting = cast("dict[str, object]", pending)
+                if waiting.get("sha256") == hashlib.sha256(current.encode()).hexdigest():
+                    count = waiting.get("notices_removed")
+                    _bind_receipt(target, receipt, current, count if isinstance(count, int) else 0, at)
+            redacted = _redacted_text(json.loads(current), matches)
+            if redacted is None:
                 continue
-            kept: list[object] = [
-                item
-                for item in notices
-                if not (isinstance(item, dict) and matches(str(cast("dict[str, object]", item).get("route", ""))))
-            ]
-            if len(kept) == len(notices):
-                continue
-            if holder is not None:
-                holder["notices"] = kept
-                value = holder
-            else:
-                value = kept
-            text = json.dumps(value, indent=1, ensure_ascii=False) + "\n"
+            text, count = redacted
+            receipt = _receipt(target)
+            receipt["pending_redaction"] = {
+                "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "notices_removed": count,
+            }
+            _write_private(target / "receipt.json", json.dumps(receipt, indent=1) + "\n")
             _write_private(archived, text)
-            receipt_path = target / "receipt.json"
-            loaded: object = json.loads(receipt_path.read_bytes()) if receipt_path.is_file() else {}
-            receipt = cast("dict[str, object]", loaded) if isinstance(loaded, dict) else {}
-            originals = receipt.get("originals")
-            for entry in cast("list[object]", originals) if isinstance(originals, list) else []:
-                if isinstance(entry, dict) and cast("dict[str, object]", entry).get("name") == "notices.json":
-                    cast("dict[str, object]", entry).update(
-                        sha256=hashlib.sha256(text.encode()).hexdigest(), size=len(text.encode())
-                    )
-            redactions = receipt.setdefault("redactions", list[object]())
-            cast("list[object]", redactions).append(
-                {
-                    "at": now.astimezone(UTC).isoformat(),
-                    "file": "notices.json",
-                    "notices_removed": len(notices) - len(kept),
-                }
-            )
-            _write_private(receipt_path, json.dumps(receipt, indent=1) + "\n")
-            removed += len(notices) - len(kept)
+            _bind_receipt(target, receipt, text, count, at)
+            removed += count
     return removed
+
+
+def forget_heinzel(store: Store, now: datetime, session_id: str) -> int:
+    """Remove every notice about one personal Heinzel, kept or archived; how many (ADR 0148).
+
+    Raises:
+        OSError: If the store cannot be safely changed; the deletion that asked retries later.
+    """
+    route = f"/heinzel?chat={session_id}"
+
+    def about(value: str) -> bool:
+        return value == route or value.startswith(route + "&")
+
+    def remove(notices: list[Notice]) -> int:
+        kept = [notice for notice in notices if not about(notice.route)]
+        removed = len(notices) - len(kept)
+        notices[:] = kept
+        return removed
+
+    removed = store.change(now, remove) if store.path.exists() else 0
+    # A recovery archive is in this state directory too: its copies go, and its receipt is rebound.
+    return removed + forget_in_archives(store, now, about)
