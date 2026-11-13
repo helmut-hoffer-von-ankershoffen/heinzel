@@ -19,6 +19,9 @@ let browser;
 // Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
 const RAIL_MARGIN = 0.2;
 const result = { viewports: [], tones: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
+// For a failure: the page in use, its console errors and failed requests, written out before the error is rethrown.
+let open = null;
+const consoleErrors = [];
 try {
   try {
     browser = await chromium.launch();
@@ -30,7 +33,14 @@ try {
     { width: 390, height: 844 },
   ]) {
     const page = await browser.newPage({ viewport });
+    open = { page, viewport };
     page.on("pageerror", (error) => result.errors.push(String(error)));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(`${viewport.width}px: ${message.text()}`);
+    });
+    page.on("requestfailed", (request) =>
+      consoleErrors.push(`${viewport.width}px: request failed ${new URL(request.url()).pathname}`),
+    );
     await page.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       if (url.hostname === "127.0.0.1" && url.port === String(address.port) && !url.pathname.startsWith("/api/"))
@@ -350,7 +360,29 @@ try {
   }
   assert.deepEqual(result.errors, []);
   console.log(JSON.stringify(result));
+} catch (error) {
+  await diagnose();
+  throw error;
 } finally {
   await browser?.close();
   await server.close();
+}
+
+/** Write what the failing page showed to stderr and a screenshot next to the others (CI keeps them as an artifact). */
+async function diagnose() {
+  const lines = [`page errors: ${JSON.stringify(result.errors)}`, `console errors: ${JSON.stringify(consoleErrors)}`];
+  if (open && !open.page.isClosed()) {
+    const { page, viewport } = open;
+    lines.push(`viewport: ${viewport.width}x${viewport.height}`);
+    const region = await page
+      .evaluate(
+        () => document.querySelector('section[aria-label="Audio visualizer"]')?.outerHTML.slice(0, 2000) ?? "none",
+      )
+      .catch((failure) => `unreadable: ${failure}`);
+    lines.push(`visualizer region: ${region}`);
+    await page
+      .screenshot({ path: join(shots, `audio-${viewport.width}-diagnostic.png`), fullPage: true })
+      .catch((failure) => lines.push(`no screenshot: ${failure}`));
+  }
+  process.stderr.write(`${lines.join("\n")}\n`);
 }
