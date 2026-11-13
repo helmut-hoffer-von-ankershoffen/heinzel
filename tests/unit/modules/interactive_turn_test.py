@@ -167,3 +167,31 @@ def test_activity_refuses_tool_record_without_matching_prior_turn(tmp_path):
             )
         with pytest.raises(HeinzelError, match="invalid provenance"):
             InteractiveTurn(crud).activity(session)
+
+
+def test_a_turn_refuses_what_it_cannot_run_before_any_model_call(tmp_path):
+    from heinzel.modules.heinzel._interactive_turn import _word_count
+
+    current = CurrentUser(tmp_path / "state" / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("create").session_id
+
+        def model(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+            raise AssertionError
+
+        runner = InteractiveTurn(crud)
+        with pytest.raises(HeinzelError, match="No accepted message"):
+            asyncio.run(runner.run(session, "missing", FunctionModel(model), limits=TurnLimits()))
+        crud.accept(session, MessageRequest(request_id="request", text="x" * 32000))
+        with pytest.raises(HeinzelError, match="too large"):
+            asyncio.run(runner.run(session, "request", FunctionModel(model), limits=TurnLimits()))
+        retired = crud.new_chat("create-retired").session_id
+        crud.accept(retired, MessageRequest(request_id="request", text="Still there?"))
+        crud.retire(retired, "retire-before-turn")
+        with pytest.raises(HeinzelError, match="retired"):
+            asyncio.run(runner.run(retired, "request", FunctionModel(model), limits=TurnLimits()))
+        assert not [event for event in repo.control_read(retired).events if event.kind == "interactive.started"]
+    with pytest.raises(HeinzelError, match="Invalid arguments"):
+        _word_count({"text": 3})
