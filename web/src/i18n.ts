@@ -636,6 +636,7 @@ const en = {
   "today.hiddenCount": "Hidden widgets ({count})",
   "today.restore": "Restore {title}",
   "today.restoreAll": "Restore all",
+  "today.hiddenHelp": "Hiding only removes the card; its Heinzel keeps working.",
   "today.doctor": "Doctor: {count} checks need attention",
   "today.runFailed": "A run failed: {job}",
   "today.lastRun": "Last run {when}",

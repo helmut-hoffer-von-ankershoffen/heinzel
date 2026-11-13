@@ -33,6 +33,7 @@ from heinzel import (
     Status,
     StatusItem,
 )
+from heinzel import Slot as Place
 from heinzel.kernel import Effect
 from heinzel.modules.system.ui._models import (
     ActionEntry,
@@ -228,6 +229,25 @@ def hide(service: UiService, item: ItemId, slot: Slot = None) -> list[Contributi
         HeinzelError: If no contribution has that id, or it can't show in that slot.
     """
     return service.show(item, slot, shown=False)
+
+
+RestoreSlot = Annotated[
+    Place,
+    Field(description="Where to bring hidden items back: `today` (default), `footer`, `sidebar` or `header`."),
+]
+
+
+# The terminal and agents' Restore all; the web app restores its listed widgets one by one through `show`.
+@module.operation(read_only=False, render=render_listing, heads={"cli", "mcp"})
+def restore(service: UiService, slot: RestoreSlot = "today") -> list[ContributionInfo]:
+    """Bring back every contribution you hid from a slot, such as the widgets hidden from Today.
+
+    Hiding only takes a card off the screen: the module behind it keeps running, and its widget comes back here.
+
+    Raises:
+        HeinzelError: If the user file's table isn't valid; nothing is overwritten.
+    """
+    return service.restore(slot)
 
 
 @module.health

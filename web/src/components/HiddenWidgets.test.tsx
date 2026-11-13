@@ -24,6 +24,8 @@ describe("The list of hidden widgets", () => {
     const dialog = screen.getByRole("dialog", { name: "Hidden widgets" });
     expect(dialog).toHaveTextContent("Weather");
     expect(dialog).toHaveTextContent("mail");
+    // What hiding means, in the place a person looks for the way back.
+    expect(dialog).toHaveTextContent("Hiding only removes the card; its Heinzel keeps working.");
     expect(screen.getByRole("button", { name: "Restore Weather" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restore Mail" })).toBeInTheDocument();
   });

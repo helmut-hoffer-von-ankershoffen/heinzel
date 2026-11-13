@@ -306,6 +306,22 @@ def test_show_and_hide_write_the_person_s_choice_per_slot(service):
     assert (info.kind, info.title, info.defaults) == ("action", "Sync reviews", {"header": True})
 
 
+def test_restore_brings_back_every_widget_hidden_from_today_in_one_write(service, monkeypatch):
+    widgets = [i.id for i in service.listing() if i.kind == "widget" and i.defaults.get("today")]
+    for item in widgets[:2]:
+        service.show(item, "today", shown=False)
+    service.show("acme:down", "footer", shown=False)  # another slot's choice stays as it is
+    writes = []
+    original = service._editor.write
+    monkeypatch.setattr(service._editor, "write", lambda *a: (writes.append(a), original(*a))[1])
+    restored = {i.id: i.slots for i in service.restore("today")}
+    assert len(writes) == 1
+    assert all(restored[item]["today"] for item in widgets)
+    assert restored["acme:down"]["footer"] is False
+    assert service.restore("today") == service.listing()  # nothing hidden: nothing written
+    assert len(writes) == 1
+
+
 def test_show_refuses_an_unknown_id_or_slot(service):
     with pytest.raises(HeinzelError, match="No contribution 'acme:nope'"):
         service.show("acme:nope", None, shown=True)
@@ -374,3 +390,31 @@ def test_a_graphic_widget_renders_as_text():
         widget=GraphicWidget(label="Commute", value="12 min", caption="Light traffic"),
     )
     assert render_widgets([entry]) is not None
+
+
+def test_every_listing_reads_as_text_in_the_terminal(service):
+    from rich.console import Console
+
+    from heinzel.modules.system import ui
+
+    service.show("acme:down", "footer", shown=False)
+    restored = ui.restore(service, "footer")  # the CLI's Restore all, through the operation itself
+    assert next(i for i in restored if i.id == "acme:down").slots["footer"] is True
+    console = Console(width=240, record=True)
+    for renderable in (
+        ui.render_status(ui.status(service)),
+        ui.render_actions(ui.actions(service)),
+        ui.render_widgets(ui.widgets(service)),
+        ui.render_listing(ui.list_(service)),
+        ui.render_navigation(ui.navigation(service)),
+        ui.render_status([]),
+        ui.render_listing([]),
+        ui.render_navigation([]),
+    ):
+        console.print(renderable)
+    text = console.export_text()
+    assert "acme:down" in text
+    assert "Sync reviews" in text
+    assert "footer on" in text
+    assert "Nothing is contributed" in text
+    assert ui.views(service) == service.views()
