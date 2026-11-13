@@ -273,14 +273,12 @@ export function Composer({
   inputRef,
   className,
   onCreatePersonal,
-  initialPersonalMessage,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
   onCreatePersonal?: (message: string) => Promise<boolean>;
-  initialPersonalMessage?: string;
 }) {
   const [creating, setCreating] = useState(false);
   const sessionId = chat.session?.id;
@@ -289,9 +287,6 @@ export function Composer({
     sessionId ?? null,
     chat.live != null || chat.deciding || chat.loading,
   );
-  useEffect(() => {
-    if (initialPersonalMessage) setMessage((current) => current || initialPersonalMessage);
-  }, [initialPersonalMessage, setMessage]);
   const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
   const createPersonal = async () => {
@@ -307,7 +302,7 @@ export function Composer({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
-    if (!text || chat.live || chat.loading || creating || initialPersonalMessage) return;
+    if (!text || chat.live || chat.loading || creating) return;
     setMessage("");
     if (!(await chat.send(text, context, picked ?? {})))
       setMessage((current) => current || text); // nothing lost
@@ -326,7 +321,6 @@ export function Composer({
           value={message}
           maxLength={MESSAGE_LIMIT}
           disabled={creating}
-          readOnly={Boolean(initialPersonalMessage)}
           onChange={(event) => {
             setMessage(event.target.value);
             typed(); // a soundscape plays softer while you type (ADR 0058)
@@ -353,7 +347,7 @@ export function Composer({
         <Button
           type="submit"
           size="icon"
-          disabled={!message.trim() || chat.live != null || chat.loading || creating || Boolean(initialPersonalMessage)}
+          disabled={!message.trim() || chat.live != null || chat.loading || creating}
           aria-label={t("chat.send")}
           title={t("chat.send")}
         >
@@ -364,11 +358,6 @@ export function Composer({
         <span role="status" className="sr-only">
           {t("chat.creatingPersonal")}
         </span>
-      )}
-      {initialPersonalMessage && !creating && (
-        <p role="status" className="text-xs text-muted-foreground">
-          An earlier creation is unresolved. Retry it with the preserved message.
-        </p>
       )}
       <div className="flex items-center gap-0.5">
         <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />

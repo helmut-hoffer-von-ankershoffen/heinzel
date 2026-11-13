@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { openChatJourney, openDetails, recurringTurns, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import {
+  openChatJourney,
+  openDetails,
+  recurringTurns,
+  revealChat,
+  runDaemonTurn,
+  saveHeinzelDraft,
+} from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 import { settleRoutes } from "./route-settlement.mjs";
 
@@ -101,6 +108,7 @@ try {
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await saveHeinzelDraft(page);
   await openDetails(page);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });

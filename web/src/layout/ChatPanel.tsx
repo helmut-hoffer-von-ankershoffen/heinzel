@@ -2,11 +2,9 @@
 // it was started on. The session lives in hz, so it survives a reload and `hz chat --continue` picks it up in a
 // terminal. `?chat=<session>` opens a session (a notification's link); `?chat-context=<kind:ref>` opens one about it.
 // The header's switcher picks another session, the Workshop or a new chat.
-import { useQueryClient } from "@tanstack/react-query";
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
-import { api, problem } from "@/api/client";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation } from "@/chat/Conversation";
 import { DurableSession } from "@/chat/DurableSession";
@@ -14,48 +12,12 @@ import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
-
-const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
-type PersonalHandoff = { request_id: string; message: string };
-
-function readPersonalHandoff(): PersonalHandoff | null {
-  try {
-    const raw = sessionStorage.getItem(PERSONAL_HANDOFF);
-    if (raw === null) return null;
-    const value: unknown = JSON.parse(raw);
-    if (
-      !value ||
-      typeof value !== "object" ||
-      !("request_id" in value) ||
-      !("message" in value) ||
-      typeof value.request_id !== "string" ||
-      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.request_id) ||
-      typeof value.message !== "string" ||
-      !value.message.trim() ||
-      value.message.length > 4000
-    )
-      return null;
-    return { request_id: value.request_id, message: value.message };
-  } catch {
-    return null;
-  }
-}
+import { clearChatLink, createDraftPath, handDraftMessage } from "@/lib/chatIntent";
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const client = useQueryClient();
-  const creating = useRef(false);
   const [createError, setCreateError] = useState(false);
-  const [handoff, setHandoff] = useState(readPersonalHandoff);
-  const [handoffUnreadable] = useState(() => {
-    try {
-      return sessionStorage.getItem(PERSONAL_HANDOFF) !== null && !readPersonalHandoff();
-    } catch {
-      return true;
-    }
-  });
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
   const { chat, inputRef, startNewChat } = useSharedChat();
@@ -72,83 +34,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
   const empty = !chat.loading && !chat.session?.messages?.length && !chat.live;
-  // A message handed over creates its Heinzel at once; without one, the page's draft asks for a name and look first.
+  // "+" takes the message to the new Heinzel's draft, like Create: a name and a look first, then its chat holds it.
   const createPersonal = async (initialMessage: string) => {
-    if (creating.current) return false;
-    creating.current = true;
     setCreateError(false);
-    try {
-      const key = "hz.personal-heinzel.creation";
-      const priorRaw = sessionStorage.getItem(PERSONAL_HANDOFF);
-      const prior = readPersonalHandoff();
-      if (priorRaw !== null && (!prior || !initialMessage || prior.message !== initialMessage))
-        throw new Error("An earlier creation request needs recovery.");
-      const storedId = localStorage.getItem(key);
-      if (prior && storedId && storedId !== prior.request_id) throw new Error("The creation request changed.");
-      const request_id = prior?.request_id ?? storedId ?? crypto.randomUUID();
-      localStorage.setItem(key, request_id);
-      if (initialMessage) {
-        const encoded = JSON.stringify({ request_id, message: initialMessage });
-        sessionStorage.setItem(PERSONAL_HANDOFF, encoded);
-        if (sessionStorage.getItem(PERSONAL_HANDOFF) !== encoded)
-          throw new Error("The request could not be preserved.");
-        setHandoff({ request_id, message: initialMessage });
-      }
-      const { data, error, response } = await api.POST("/heinzel/new-chat", {
-        body: { request_id, name: "New Heinzel" },
-      });
-      if (!response.ok || !data) throw problem(response.status, error);
-      if (!/^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(data.session_id) || data.heinzel_id !== data.session_id) {
-        throw new Error("Invalid creation acknowledgement");
-      }
-      if (initialMessage) {
-        const draftKey = `hz.durable.composer.${data.session_id}`;
-        const raw = sessionStorage.getItem(draftKey);
-        const draft = {
-          version: 1,
-          session_id: data.session_id,
-          text: initialMessage,
-          pending: null,
-          agentPending: null,
-          checkInRequest: null,
-        };
-        const encoded = JSON.stringify(draft);
-        if (raw !== null && raw !== encoded) throw new Error("This agent already has unsent work in this tab.");
-        sessionStorage.setItem(draftKey, encoded);
-        if (sessionStorage.getItem(draftKey) !== encoded) throw new Error("The message could not be preserved.");
-      }
-      localStorage.removeItem(key);
-      if (initialMessage) {
-        sessionStorage.removeItem(PERSONAL_HANDOFF);
-        if (sessionStorage.getItem(PERSONAL_HANDOFF) !== null) throw new Error("The request could not be cleared.");
-        setHandoff(null);
-      }
-      client.setQueryData(["heinzel", "session", data.session_id], data);
-      void client.invalidateQueries({ queryKey: ["heinzel", "sessions"] });
-      setParams((current) => {
-        const next = new URLSearchParams(current);
-        for (const key of [
-          "agent-chat",
-          "approval-chat",
-          "approval-request",
-          "agent-open-request",
-          "contract-chat",
-          "schedule-chat",
-          "schedule-request",
-          "notification-chat",
-          "connected-chat",
-        ])
-          next.delete(key);
-        next.set("chat", data.session_id);
-        return next;
-      });
-      return true;
-    } catch {
+    if (!handDraftMessage(initialMessage)) {
       setCreateError(true);
       return false;
-    } finally {
-      creating.current = false;
     }
+    navigate(createDraftPath(params));
+    return true;
   };
   if (durableId && isDurableSession(durableId)) {
     return (
@@ -193,12 +87,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       </div>
       {createError && (
         <p role="alert" className="px-3 text-sm">
-          {t("personal.createError")}
-        </p>
-      )}
-      {handoffUnreadable && (
-        <p role="alert" className="px-3 text-sm">
-          An earlier agent creation request could not be read. It has not been cleared or retried.
+          {t("chat.draftMessageError")}
         </p>
       )}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -217,7 +106,6 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           context={`route:${location.pathname}`}
           inputRef={inputRef}
           onCreatePersonal={createPersonal}
-          initialPersonalMessage={handoff?.message}
         />
       </div>
     </div>

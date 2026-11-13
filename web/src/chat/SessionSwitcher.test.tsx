@@ -188,6 +188,17 @@ describe("The chat's session switcher", () => {
       },
     ]).find((group) => group.label === "Your Heinzels");
     expect(personal?.items[0]).toMatchObject({ kind: "heinzel", title: "Bruno", look: { age: "old", hat: "blue" } });
+    // A retired Heinzel is kept, not offered: it comes back from the Retired list on the Heinzels page.
+    const retired = switcherGroups([], "", [
+      {
+        session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+        name: "Gone",
+        state: "retired",
+        last_seq: 0,
+        updated_at: "2026-10-24T08:00:00Z",
+      },
+    ]);
+    expect(retired.flatMap((group) => group.items).some((item) => item.title === "Gone")).toBe(false);
   });
 });
 

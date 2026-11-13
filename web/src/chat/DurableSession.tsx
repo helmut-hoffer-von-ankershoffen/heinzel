@@ -1,6 +1,6 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Settings } from "lucide-react";
+import { RotateCcw, Search, Settings } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
@@ -239,6 +239,37 @@ function DurableSessionView({
     retry: false,
     placeholderData: (previous) => previous,
   });
+  // "Edit in chat" on the Heinzel's page: open Details on the name and look, also when this chat is already open.
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const customizeRef = useRef<HTMLDetailsElement>(null);
+  const editProfile = params.get("profile-chat") === sessionId;
+  const profileReady = query.data?.session_id === sessionId;
+  useEffect(() => {
+    if (!editProfile || !profileReady || !detailsRef.current || !customizeRef.current) return;
+    detailsRef.current.open = true;
+    customizeRef.current.open = true;
+    customizeRef.current.scrollIntoView?.({ block: "start" });
+  }, [editProfile, profileReady]);
+  // A retired Heinzel keeps its history and takes no new message until it is restored.
+  const retired = query.data?.session_id === sessionId && query.data.state === "retired";
+  const [restoring, setRestoring] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const restore = async () => {
+    setRestoring(true);
+    setRestoreFailed(false);
+    try {
+      const back = await result(
+        api.POST("/heinzel/restore", { body: { session_id: sessionId, request_id: crypto.randomUUID() } }),
+      );
+      if (back.session_id !== sessionId) throw new Error("Unexpected personal session");
+      await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "sessions"] });
+    } catch {
+      setRestoreFailed(true);
+    } finally {
+      setRestoring(false);
+    }
+  };
   useEffect(() => {
     if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
       searchTarget.current?.scrollIntoView?.({ block: "center" });
@@ -999,11 +1030,11 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        <details className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
+        <details ref={detailsRef} className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
           <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
           <div className="mt-3 space-y-3">
             {query.data && (
-              <details className="rounded-lg border border-border p-3">
+              <details ref={customizeRef} className="rounded-lg border border-border p-3">
                 <summary className="cursor-pointer text-sm font-medium">
                   {t("personal.customize")}
                   {profileProposal.data?.session_id === sessionId && " · suggested look"}
@@ -1011,7 +1042,6 @@ function DurableSessionView({
                 <ProfileEditor
                   initial={query.data}
                   onLock={setProfileLocked}
-                  inChat
                   suggestion={profileProposal.data ?? null}
                 />
               </details>
@@ -1660,6 +1690,18 @@ function DurableSessionView({
             </div>
           </details>
         )}
+        {retired && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <p role="status" className="min-w-0 flex-1">
+              {t("durable.retired")}
+            </p>
+            <Button type="button" size="sm" variant="outline" disabled={restoring} onClick={() => void restore()}>
+              <RotateCcw aria-hidden />
+              {t("durable.restore")}
+            </Button>
+          </div>
+        )}
+        {restoreFailed && <p role="alert">{t("personal.restoreError")}</p>}
         <div className="flex items-end gap-2">
           <label htmlFor={composerId} className="sr-only">
             {t("durable.message")}
@@ -1673,7 +1715,7 @@ function DurableSessionView({
             value={sending ? "" : text}
             maxLength={4000}
             placeholder={t("durable.placeholder", { name: heinzelName })}
-            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
+            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked || retired}
             onChange={(event) => updateComposer({ text: event.target.value })}
             onKeyDown={(event) => {
               // Enter sends, as in every chat of the app; Shift+Enter starts a new line.
@@ -1687,6 +1729,7 @@ function DurableSessionView({
             type="submit"
             disabled={
               busy ||
+              retired ||
               storageError ||
               recoveryBlocked ||
               agentChatUnavailable ||

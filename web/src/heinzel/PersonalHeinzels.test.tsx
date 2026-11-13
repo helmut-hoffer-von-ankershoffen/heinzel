@@ -4,12 +4,18 @@ import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 type Section = ReturnType<typeof within>;
-/** The Personal Heinzels section, with the card of the first Heinzel chosen. */
-async function openAlpha(): Promise<Section> {
-  const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
-  fireEvent.click(await section.findByRole("radio", { name: /^Alpha/ }));
-  return section;
+/** The Personal Heinzels section of the page. */
+const page = async (): Promise<Section> => within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+/** Choose a Heinzel on the page and press Edit in chat: its chat, the one editor of its name and look. */
+async function editInChat(name: RegExp = /^Alpha/): Promise<Section> {
+  const section = await page();
+  fireEvent.click(await section.findByRole("radio", { name }));
+  fireEvent.click(await section.findByRole("button", { name: "Edit in chat" }));
+  return within(await screen.findByRole("complementary", { name: "Chat" }));
 }
+const openAlpha = () => editInChat();
+/** While a save is unresolved or edits are unsaved, the chat holds: it cannot be closed. */
+const held = (chat: Section) => expect(chat.getByRole("button", { name: "Back to chat" })).toBeDisabled();
 const swatch = (section: Section, group: string, colour: string) =>
   within(section.getByRole("radiogroup", { name: group })).getByRole("radio", { name: colour });
 
@@ -67,13 +73,13 @@ describe("personal identities", () => {
       expected_revision: 1,
       appearance: { hat: "blue", accessories: ["scarf"] },
     });
-    await waitFor(() => expect(section.getByRole("radio", { name: /^Alpha/ })).not.toBeDisabled());
-    fireEvent.click(section.getByRole("radio", { name: /^Beta/ }));
-    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Beta"));
-    expect(swatch(section, "Hat colour", "Follow theme")).toBeChecked();
-    fireEvent.click(section.getByRole("radio", { name: /^Alpha/ }));
-    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Named helper"));
-    expect(swatch(section, "Hat colour", "Blue")).toBeChecked();
+    await waitFor(() => expect(section.getByRole("button", { name: "Back to chat" })).toBeEnabled());
+    const beta = await editInChat(/^Beta/);
+    await waitFor(() => expect(beta.getByLabelText("Name")).toHaveValue("Beta"));
+    expect(swatch(beta, "Hat colour", "Follow theme")).toBeChecked();
+    const alpha = await editInChat(/^Named helper|^Alpha/);
+    await waitFor(() => expect(alpha.getByLabelText("Name")).toHaveValue("Named helper"));
+    expect(swatch(alpha, "Hat colour", "Blue")).toBeChecked();
   });
 
   it("lets a person choose and save the closed-set accessories shown in the preview", async () => {
@@ -130,19 +136,17 @@ describe("personal identities", () => {
     section = await openAlpha();
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Styled Alpha"));
     expect(section.getByLabelText("Umbrella")).toBeChecked();
-    // Unsaved edits hold the picker, so the other Heinzel is opened in a fresh view.
-    expect(section.getByRole("radio", { name: /^Beta/ })).toBeDisabled();
+    held(section);
     secondView.unmount();
     renderAt("/heinzel");
-    section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
-    fireEvent.click(await section.findByRole("radio", { name: /^Beta/ }));
+    section = await editInChat(/^Beta/);
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Beta"));
     expect(section.getByLabelText("Umbrella")).not.toBeChecked();
     sessionStorage.removeItem(firstDraft);
     sessionStorage.removeItem(secondDraft);
   });
 
-  it("opens the chat only after the selected profile is saved, and confirms the save", async () => {
+  it("shows the chosen Heinzel read-only and edits its name and look in its chat", async () => {
     let stored = { ...snapshot(first, "Alpha"), messages: [], schedule: null };
     mockApi({
       ...shell,
@@ -150,30 +154,87 @@ describe("personal identities", () => {
       "/api/heinzel/session": () => stored,
       "/api/heinzel/profile": async (request: Request) => {
         const body = await request.json();
-        stored = {
-          ...stored,
-          name: body.name,
-          appearance: body.appearance,
-          profile_revision: 2,
-        };
+        stored = { ...stored, name: body.name, appearance: body.appearance, profile_revision: 2 };
         return stored;
       },
     });
-    renderAt("/heinzel");
-    const section = await openAlpha();
-    fireEvent.change(await section.findByLabelText("Name"), { target: { value: "Moss" } });
-    expect(section.getByRole("button", { name: "Chat with Alpha" })).toBeDisabled();
-    expect(section.getByText(/Save or discard your changes before you chat/)).toBeInTheDocument();
-    // Choices read as words, never as the stored values.
-    expect(within(section.getByLabelText("Age")).getByRole("option", { name: "Grown" })).toHaveValue("grown");
-    fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
-    const chatButton = await section.findByRole("button", { name: "Chat with Moss" });
-    expect(chatButton).toBeEnabled();
-    expect(section.getByText("Saved.")).toBeInTheDocument();
-    fireEvent.click(chatButton);
+    const { container } = renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByRole("radio", { name: /^Alpha/ }));
+    // One editor: the page has no name field and no save, only the Heinzel and where to edit it.
+    expect(await section.findByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(section.queryByLabelText("Name")).toBeNull();
+    expect(section.queryByRole("button", { name: "Save name and look" })).toBeNull();
+    expect(section.getByText("Change the name and look in its chat.")).toBeInTheDocument();
+    await expectAccessible(container);
+    fireEvent.click(section.getByRole("button", { name: "Edit in chat" }));
     const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await chat.findByRole("heading", { name: "Moss" })).toBeInTheDocument();
-    expect(await chat.findByRole("button", { name: "Propose check-in schedule" })).toBeInTheDocument();
+    expect(await chat.findByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    fireEvent.change(await chat.findByLabelText("Name"), { target: { value: "Moss" } });
+    // Choices read as words, never as the stored values.
+    expect(within(chat.getByLabelText("Age")).getByRole("option", { name: "Grown" })).toHaveValue("grown");
+    held(chat);
+    fireEvent.click(chat.getByRole("button", { name: "Save name and look" }));
+    expect(await chat.findByText("Saved.")).toBeInTheDocument();
+    expect(await section.findByRole("heading", { name: "Moss" })).toBeInTheDocument();
+  });
+
+  it("retires a Heinzel, keeps it under Retired and restores it", async () => {
+    let state = "proposed";
+    const posts: string[] = [];
+    const list = () => ({
+      sessions: [{ ...sessions[0], state }, sessions[1]],
+    });
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": list,
+      "/api/heinzel/session": () => ({ ...snapshot(first, "Alpha"), state }),
+      "/api/heinzel/retire": async (request: Request) => {
+        const body = await request.json();
+        posts.push(`retire:${body.session_id}`);
+        state = "retired";
+        return { ...snapshot(first, "Alpha"), state };
+      },
+      "/api/heinzel/restore": async (request: Request) => {
+        const body = await request.json();
+        posts.push(`restore:${body.session_id}`);
+        state = "proposed";
+        return { ...snapshot(first, "Alpha"), state };
+      },
+    });
+    const { container } = renderAt(`/heinzel?chat=${first}`);
+    const section = await page();
+    fireEvent.click(await section.findByRole("radio", { name: /^Alpha/ }));
+    fireEvent.click(await section.findByRole("button", { name: "Retire" }));
+    expect(await section.findByText("Alpha is retired. Restore it under Retired.")).toBeInTheDocument();
+    await waitFor(() => expect(section.queryByRole("radio", { name: /^Alpha/ })).toBeNull());
+    expect(section.getByRole("radio", { name: /^Beta/ })).toBeInTheDocument();
+    // Its open conversation closes with it.
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Alpha" })).toBeNull());
+    expect(section.getByText("Retired (1)")).toBeInTheDocument();
+    await expectAccessible(container);
+    fireEvent.click(section.getByRole("button", { name: "Restore Alpha" }));
+    expect(await section.findByRole("radio", { name: /^Alpha/ })).toBeInTheDocument();
+    await waitFor(() => expect(section.queryByText("Retired (1)")).toBeNull());
+    expect(posts).toEqual([`retire:${first}`, `restore:${first}`]);
+  });
+
+  it("says when a retire or a restore did not happen", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions: [{ ...sessions[0], state: "retired" }, sessions[1]] },
+      "/api/heinzel/session": snapshot(second, "Beta"),
+      "/api/heinzel/retire": { status: 503, body: {} },
+      "/api/heinzel/restore": { status: 503, body: {} },
+    });
+    renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByRole("radio", { name: /^Beta/ }));
+    fireEvent.click(await section.findByRole("button", { name: "Retire" }));
+    expect(await section.findByText("Could not retire. Try again.")).toBeInTheDocument();
+    fireEvent.click(section.getByText("Retired (1)"));
+    fireEvent.click(section.getByRole("button", { name: "Restore Alpha" }));
+    expect(await section.findByText("Could not restore. Try again.")).toBeInTheDocument();
   });
 
   it("creates nothing until the styled draft is saved, then lands in its chat for the schedule", async () => {
@@ -281,11 +342,11 @@ describe("personal identities", () => {
     fireEvent.change(await section.findByLabelText("Name"), { target: { value: "New name" } });
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
     const retry = await section.findByRole("button", { name: "Retry save" });
-    expect(section.getByRole("radio", { name: /^Alpha/ })).toBeDisabled();
+    held(section);
     fireEvent.click(retry);
     await waitFor(() => expect(attempts).toHaveLength(2));
     expect(attempts[1]).toEqual(attempts[0]);
-    await waitFor(() => expect(section.getByRole("radio", { name: /^Alpha/ })).not.toBeDisabled());
+    await waitFor(() => expect(section.getByRole("button", { name: "Back to chat" })).toBeEnabled());
   });
 
   it("restores an uncertain profile save after reload and retries the exact request", async () => {
@@ -369,7 +430,7 @@ describe("personal identities", () => {
     });
     renderAt("/heinzel");
     const section = await openAlpha();
-    expect(await section.findByRole("alert")).toHaveTextContent(/profile changed while this save was unresolved/i);
+    expect(await section.findByText(/profile changed while this save was unresolved/i)).toBeInTheDocument();
     expect(section.getByRole("button", { name: "Retry save" })).toBeEnabled();
     expect(attempts).toHaveLength(0);
     fireEvent.click(section.getByRole("button", { name: "Check saved profile" }));
@@ -397,7 +458,7 @@ describe("personal identities", () => {
     await section.findByText(/could not confirm the save/i);
     expect(JSON.parse(sessionStorage.getItem(key) ?? "null")).toEqual(request);
     expect(section.getByLabelText("Name")).toHaveValue("Delayed");
-    expect(section.getByRole("radio", { name: /^Alpha/ })).toBeDisabled();
+    held(section);
     expect(attempts).toBe(0);
   });
 
@@ -432,7 +493,8 @@ describe("personal identities", () => {
     await waitFor(() => expect(sessionStorage.getItem("hz.personal-heinzel.new-draft")).toBeNull());
   });
 
-  it("discards a draft without creating anything", async () => {
+  it("discards a draft and the message it holds without creating anything", async () => {
+    sessionStorage.setItem("hz.personal-heinzel.new-draft-message", "Remind me on Fridays");
     const { calls } = mockApi({ ...shell, "/api/heinzel/sessions": { sessions } });
     const { container } = renderAt("/heinzel?create=1");
     const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
@@ -443,6 +505,7 @@ describe("personal identities", () => {
     expect(await section.findByRole("button", { name: "Create a personal Heinzel" })).toBeEnabled();
     expect(section.queryByLabelText("Name")).not.toBeInTheDocument();
     expect(sessionStorage.getItem("hz.personal-heinzel.new-draft")).toBeNull();
+    expect(sessionStorage.getItem("hz.personal-heinzel.new-draft-message")).toBeNull();
     expect(calls.some((call) => new URL(call.url).pathname.endsWith("/heinzel/new-chat"))).toBe(false);
   });
 
@@ -479,7 +542,7 @@ describe("personal identities", () => {
     await section.findByLabelText("Name");
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
     expect(await section.findByRole("button", { name: "Retry save" })).toBeInTheDocument();
-    expect(section.getByRole("radio", { name: /^Alpha/ })).toBeDisabled();
+    held(section);
   });
   it("keeps the pending save when the acknowledgement contains different profile values", async () => {
     mockApi({
@@ -494,6 +557,6 @@ describe("personal identities", () => {
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
     expect(await section.findByRole("button", { name: "Retry save" })).toBeInTheDocument();
     expect(section.getByLabelText("Name")).toHaveValue("My draft");
-    expect(section.getByRole("radio", { name: /^Alpha/ })).toBeDisabled();
+    held(section);
   });
 });

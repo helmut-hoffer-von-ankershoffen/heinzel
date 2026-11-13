@@ -172,7 +172,19 @@ hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","acces
 
 A profile change names the revision you saw; if another change arrived first, reload before saving. Repeating a
 request id with the same payload returns the first result; a different payload is refused. An empty appearance object
-restores the defaults. The web app's Heinzelmännchen page does the same, with a preview.
+restores the defaults. In the web app the Heinzelmännchen page shows a Heinzel read-only; **Edit in chat** opens its
+chat's Details, the one place to change its name and look. The chat composer's **+** opens the same draft as
+**Create a personal Heinzel**, and the new Heinzel's chat starts with your message in its composer.
+
+Retire a Heinzel you no longer need. It leaves your list and never wakes (no check-in, schedule or draft workflow
+runs), and it takes no new message; its whole history stays. Restore brings it back as it was:
+
+```bash
+hz heinzel retire <session-id> retire-1 --json
+hz heinzel restore <session-id> restore-1 --json
+```
+
+On the page, retired Heinzels sit under **Retired**, each with a Restore button.
 
 ### 12. Chat with it
 

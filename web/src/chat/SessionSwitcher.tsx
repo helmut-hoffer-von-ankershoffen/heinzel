@@ -56,6 +56,7 @@ export function switcherGroups(
     {
       label: t("chat.personalSessions"),
       items: personal
+        .filter((item) => item.state !== "retired")
         .map(
           (item): SwitcherItem => ({
             kind: "heinzel",

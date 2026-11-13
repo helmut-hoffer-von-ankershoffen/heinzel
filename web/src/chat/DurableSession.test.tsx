@@ -76,6 +76,55 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
+  it("opens Details on the name and look for Edit in chat", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, heinzel_id: sessionId, profile_revision: 1 },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    renderAt(`/heinzel?chat=${sessionId}&profile-chat=${sessionId}`);
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const save = await chat.findByRole("button", { name: "Save name and look" });
+    await waitFor(() => expect(save.closest("details")).toHaveProperty("open", true));
+    expect(save.closest("details")?.parentElement?.closest("details")).toHaveProperty("open", true);
+  });
+
+  it("takes no message for a retired Heinzel and restores it", async () => {
+    let state = "retired";
+    const restored: unknown[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": () => ({ ...snapshot, heinzel_id: sessionId, profile_revision: 1, state }),
+      "/api/heinzel/sessions": { sessions: [] },
+      "/api/heinzel/restore": async (request: Request) => {
+        restored.push(await request.json());
+        state = "proposed";
+        return { ...snapshot, heinzel_id: sessionId, profile_revision: 1, state };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await chat.findByText("Retired. Restore it to chat again.")).toBeInTheDocument();
+    expect(chat.getByLabelText("Message your Heinzel")).toBeDisabled();
+    fireEvent.click(chat.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(chat.getByLabelText("Message your Heinzel")).toBeEnabled());
+    expect(chat.queryByText("Retired. Restore it to chat again.")).toBeNull();
+    expect(restored).toEqual([{ session_id: sessionId, request_id: expect.any(String) }]);
+  });
+
+  it("says when a restore did not happen", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, heinzel_id: sessionId, profile_revision: 1, state: "retired" },
+      "/api/heinzel/sessions": { sessions: [] },
+      "/api/heinzel/restore": { status: 503, body: {} },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await chat.findByRole("button", { name: "Restore" }));
+    expect(await chat.findByText("Could not restore. Try again.")).toBeInTheDocument();
+  });
+
   it("pauses and resumes one schedule through the exact human-confirmed action flow", async () => {
     let stored = { ...snapshot, schedule: { ...proposedSchedule, status: "active", revision: 2 } };
     const chats = new Map<string, typeof reviewChat>();

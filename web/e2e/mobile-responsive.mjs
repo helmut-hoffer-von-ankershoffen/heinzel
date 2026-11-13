@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
-import { openDetails } from "./chat-ready.mjs";
+import { openDetails, saveHeinzelDraft } from "./chat-ready.mjs";
 import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
@@ -1102,6 +1102,13 @@ try {
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
     await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+    // The draft opens on the Page tab of a phone and must fit it, its first message included.
+    await assertContained(
+      page,
+      page.getByRole("form", { name: "Your new Heinzel" }),
+      `${spec.name}: new Heinzel draft with a message`,
+    );
+    await saveHeinzelDraft(page);
     await page.getByLabel("Message your Heinzel").waitFor();
     // The composer is one row that fits the phone: the message field and Send side by side.
     await assertContained(page, page.getByLabel("Message your Heinzel"), `${spec.name}: Heinzel composer`);

@@ -1,5 +1,6 @@
 // Personal identities use the durable private session API; they are distinct from the existing workflow list and chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Archive, MessageCircle, Pencil, RotateCcw } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
@@ -13,11 +14,19 @@ import {
 import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { StartHelper } from "@/heinzel/StartHelper";
 import { type MessageKey, t } from "@/i18n";
-import { OPEN_CHAT } from "@/lib/chatIntent";
+import {
+  clearChatLink,
+  clearDraftMessage,
+  editInChatPath,
+  OPEN_CHAT,
+  readDraftMessage,
+  takeDraftMessage,
+} from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 
 const sessionsKey = ["heinzel", "sessions"] as const;
@@ -141,11 +150,14 @@ export function PersonalHeinzels() {
   const [selected, setSelected] = useState<string | null>(null);
   // `?create=1` (the chat switcher, the footer) opens the draft; a draft left in this tab comes back with the page.
   const wanted = params.has("create");
-  const [drafting, setDrafting] = useState(() => wanted || readNewDraft() !== null);
+  const [drafting, setDrafting] = useState(() => wanted || readNewDraft() !== null || readDraftMessage() !== null);
   useEffect(() => {
     if (wanted) setDrafting(true);
   }, [wanted]);
   const [locked, setLocked] = useState(false);
+  const [retiredName, setRetiredName] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState(false);
+  const client = useQueryClient();
   const sessions = useQuery({
     queryKey: sessionsKey,
     queryFn: () => personalResult(api.GET("/heinzel/sessions")),
@@ -177,6 +189,37 @@ export function PersonalHeinzels() {
       );
   };
 
+  const all = sessions.data?.sessions ?? [];
+  const live = all.filter((item) => item.state !== "retired");
+  const retired = all.filter((item) => item.state === "retired");
+  // A retired Heinzel leaves the list and its conversation closes; the Retired list below brings it back.
+  const onRetired = (gone: SchemaSessionSnapshot) => {
+    setSelected(null);
+    setRetiredName(gone.name);
+    setRestoreError(false);
+    if (params.get("chat") === gone.session_id)
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        clearChatLink(next);
+        return next;
+      });
+  };
+  const restore = async (sessionId: string) => {
+    setRestoreError(false);
+    try {
+      const back = await personalResult(
+        api.POST("/heinzel/restore", { body: { session_id: sessionId, request_id: crypto.randomUUID() } }),
+      );
+      if (back.session_id !== sessionId) throw new Error("Invalid restore response");
+      client.setQueryData(["heinzel", "session", sessionId], back);
+      await client.invalidateQueries({ queryKey: sessionsKey });
+      setRetiredName(null);
+      setSelected(sessionId);
+    } catch {
+      setRestoreError(true);
+    }
+  };
+
   return (
     <section aria-labelledby="personal-heinzels" className="mb-6 space-y-3 rounded-lg border border-border p-4">
       <h2 id="personal-heinzels" className="text-base font-semibold">
@@ -193,10 +236,10 @@ export function PersonalHeinzels() {
           aria-label={t("personal.choose")}
           className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3"
         >
-          {(sessions.data.sessions ?? []).length === 0 && (
+          {live.length === 0 && (
             <p className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-3">{t("personal.none")}</p>
           )}
-          {(sessions.data.sessions ?? []).map((item) => (
+          {live.map((item) => (
             // A card of a radio group: the shared button, holding the figure a radio input can't.
             <Button
               key={item.session_id}
@@ -246,9 +289,122 @@ export function PersonalHeinzels() {
       )}
       {!drafting && selected && session.isPending && <p role="status">{t("state.loading")}</p>}
       {!drafting && selected && session.isError && <p role="alert">{t("personal.loadError")}</p>}
-      {!drafting && selected && session.data && (
-        <ProfileEditor key={selected} initial={session.data} onLock={setLocked} />
+      {!drafting && selected && session.data?.state !== "retired" && session.data && (
+        <HeinzelView key={selected} initial={session.data} onRetired={onRetired} />
       )}
+      {retiredName && !selected && <p role="status">{t("personal.retiredDone", { name: retiredName })}</p>}
+      {retired.length > 0 && (
+        <details className="rounded-lg border border-border p-3" open={retiredName !== null || undefined}>
+          <summary className="cursor-pointer text-sm font-medium">
+            {t("personal.retiredList", { count: retired.length })}
+          </summary>
+          <ul aria-label={t("personal.state.retired")} className="mt-2 space-y-1">
+            {retired.map((item) => (
+              <li key={item.session_id} className="flex min-w-0 items-center gap-2">
+                <HeinzelAvatar
+                  view="bust"
+                  {...appearanceLook(item.appearance)}
+                  className="size-8 shrink-0 overflow-hidden"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("personal.restore", { name: item.name })}
+                  title={t("personal.restore", { name: item.name })}
+                  onClick={() => void restore(item.session_id)}
+                >
+                  <RotateCcw aria-hidden />
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {restoreError && <p role="alert">{t("personal.restoreError")}</p>}
+        </details>
+      )}
+    </section>
+  );
+}
+
+/** The chosen Heinzel, read-only: its name and look are edited in its chat's Details, the one editor. */
+function HeinzelView({
+  initial,
+  onRetired,
+}: {
+  initial: SchemaSessionSnapshot;
+  onRetired: (gone: SchemaSessionSnapshot) => void;
+}) {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const heading = useId();
+  const retire = async () => {
+    setBusy(true);
+    setError(false);
+    try {
+      const gone = await personalResult(
+        api.POST("/heinzel/retire", { body: { session_id: initial.session_id, request_id: crypto.randomUUID() } }),
+      );
+      if (gone.session_id !== initial.session_id || gone.state !== "retired")
+        throw new Error("Invalid retire response");
+      client.setQueryData(["heinzel", "session", gone.session_id], gone);
+      client.setQueryData<SchemaSessionList>(sessionsKey, (list) =>
+        list
+          ? {
+              ...list,
+              sessions: list.sessions?.map((item) =>
+                item.session_id === gone.session_id ? { ...item, state: "retired" } : item,
+              ),
+            }
+          : list,
+      );
+      void client.invalidateQueries({ queryKey: sessionsKey });
+      onRetired(gone);
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section aria-labelledby={heading} className="space-y-3 pt-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <HeinzelAvatar
+          label={t("personal.preview")}
+          {...appearanceLook(initial.appearance)}
+          className="h-24 w-16 shrink-0"
+        />
+        <div className="min-w-0">
+          <h3 id={heading} className="truncate text-sm font-semibold">
+            {initial.name}
+          </h3>
+          <p className="text-xs text-muted-foreground">{stateLabel(initial.state ?? "proposed")}</p>
+          <p className="text-sm text-muted-foreground">{t("personal.readOnlyHelp")}</p>
+        </div>
+      </div>
+      {error && <p role="alert">{t("personal.retireError")}</p>}
+      <PaneActions>
+        <PaneAction key="edit" icon={Pencil} onClick={() => navigate(editInChatPath(initial.session_id))}>
+          {t("personal.editInChat")}
+        </PaneAction>
+        <PaneAction
+          key="chat"
+          icon={MessageCircle}
+          onClick={() => {
+            // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
+            if (params.get("chat") === initial.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
+            else navigate(`/heinzel?chat=${encodeURIComponent(initial.session_id)}`);
+          }}
+        >
+          {t("personal.chatWith", { name: initial.name })}
+        </PaneAction>
+        <PaneAction key="retire" icon={Archive} disabled={busy} onClick={() => void retire()}>
+          {t("personal.retire")}
+        </PaneAction>
+      </PaneActions>
     </section>
   );
 }
@@ -289,6 +445,8 @@ function NewHeinzel({
 }) {
   const client = useQueryClient();
   const [stored] = useState(readNewDraft);
+  // A message handed over by the chat composer's "+": it waits in the new chat's composer after Save.
+  const [message] = useState(readDraftMessage);
   const [name, setName] = useState(stored?.name ?? "");
   const [look, setLook] = useState<SchemaHeinzelAppearance>(stored?.appearance ?? defaultLook);
   // A sent creation keeps its id and exact body, so a retry recovers the same Heinzel instead of making a second.
@@ -362,6 +520,8 @@ function NewHeinzel({
           : list,
       );
       void client.invalidateQueries({ queryKey: sessionsKey });
+      // The Heinzel exists either way; a message this tab cannot place stays here for the next draft.
+      if (message) takeDraftMessage(created.session_id, message);
       onCreated(created);
     } catch {
       setError(true);
@@ -376,6 +536,7 @@ function NewHeinzel({
     } catch {
       // Nothing was created by a draft; an unreadable store leaves nothing to clean.
     }
+    clearDraftMessage();
     onCancel();
   };
 
@@ -393,6 +554,14 @@ function NewHeinzel({
         onLook={setLook}
         autoFocus
       />
+      {message && (
+        <figure className="space-y-1 text-sm">
+          <figcaption className="text-muted-foreground">{t("personal.firstMessage")}</figcaption>
+          <blockquote className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded border border-border p-2">
+            {message}
+          </blockquote>
+        </figure>
+      )}
       {error && <p role="alert">{t("personal.createError")}</p>}
       {storageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       <div className="flex flex-wrap gap-2">
@@ -602,20 +771,17 @@ function LookFields({
   );
 }
 
+/** The one editor of a saved Heinzel's name and look, in its chat's Details. */
 export function ProfileEditor({
   initial,
   onLock,
-  inChat = false,
   suggestion = null,
 }: {
   initial: SchemaSessionSnapshot;
   onLock: (locked: boolean) => void;
-  inChat?: boolean;
   suggestion?: SchemaProfileProposal | null;
 }) {
   const client = useQueryClient();
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
@@ -808,11 +974,7 @@ export function ProfileEditor({
       {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       {justSaved && !hasUncommittedChanges && !pending && <p role="status">{t("personal.saved")}</p>}
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="submit"
-          variant={hasUncommittedChanges || pending || inChat ? "default" : "outline"}
-          disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}
-        >
+        <Button type="submit" variant="default" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
         {hasUncommittedChanges && !pending && !pendingStorageInvalid && (
@@ -831,20 +993,6 @@ export function ProfileEditor({
         {(pending || pendingStorageInvalid) && (
           <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}>
             {t("personal.reload")}
-          </Button>
-        )}
-        {!inChat && (
-          <Button
-            type="button"
-            variant={hasUncommittedChanges || pending ? "outline" : "default"}
-            disabled={busy || pending !== null || hasUncommittedChanges}
-            onClick={() => {
-              // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
-              if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
-              else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
-            }}
-          >
-            {t("personal.chatWith", { name: snapshot.name })}
           </Button>
         )}
       </div>

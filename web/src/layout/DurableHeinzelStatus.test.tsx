@@ -47,6 +47,21 @@ describe("The durable Heinzel footer control", () => {
     expect(chat.querySelector("svg")).not.toBeNull();
   });
 
+  it("leaves retired Heinzels out of the count and the faces, and counts them on their own line", async () => {
+    const retired = {
+      ...sessions[0],
+      session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+      name: "Old helper",
+      state: "retired",
+    };
+    mockApi({ ...shell, "/api/heinzel/sessions": { sessions: [retired, ...sessions] } });
+    renderAt("/doctor");
+    fireEvent.click(await screen.findByRole("button", { name: "4 Heinzelmännchen, off" }));
+    const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
+    expect(within(panel).queryByText("Old helper")).toBeNull();
+    expect(within(panel).getByText("Retired", { selector: "dt" }).nextElementSibling).toHaveTextContent("1");
+  });
+
   it("shows zero for an authoritative empty persisted list", async () => {
     mockApi({ ...shell, "/api/heinzel/sessions": { sessions: [] } });
     renderAt("/doctor");

@@ -7,6 +7,13 @@ import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 afterEach(() => sessionStorage.clear());
 
+/** Name the new Heinzel in its draft and save it, as the composer's "+" leads there first. */
+async function saveDraft(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const draft = within(await screen.findByRole("form", { name: "Your new Heinzel" }));
+  await user.type(draft.getByLabelText("Name"), name);
+  await user.click(draft.getByRole("button", { name: "Save and chat" }));
+}
+
 describe("ChatPanel", () => {
   it("clears the prior agent links when closing and creating another personal conversation", async () => {
     const previous = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -47,18 +54,25 @@ describe("ChatPanel", () => {
     ).toBe(false);
   });
 
-  it("takes a workshop sentence into a new agent chat without sending or losing it", async () => {
+  it("takes a workshop sentence through the new Heinzel's draft into its chat without sending it", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const { calls } = mockApi({
       ...base,
-      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "Moss", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Moss", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
-    await user.type(screen.getByLabelText("Your message"), "Keep my notes current");
+    const box = screen.getByLabelText("Your message");
+    await user.type(box, "Keep my notes current");
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
+    // Like Create: the draft asks for a name and a look first, and nothing exists until Save.
+    const draft = within(await screen.findByRole("form", { name: "Your new Heinzel" }));
+    expect(draft.getByText("Keep my notes current")).toBeInTheDocument();
+    expect(box).toHaveValue("");
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/new-chat")).toBe(false);
+    await saveDraft(user, "Moss");
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
     expect(panel.getByRole("button", { name: "Send" })).toBeEnabled();
@@ -66,6 +80,7 @@ describe("ChatPanel", () => {
     expect(JSON.parse(sessionStorage.getItem(`hz.durable.composer.${id}`) ?? "null").text).toBe(
       "Keep my notes current",
     );
+    expect(sessionStorage.getItem("hz.personal-heinzel.new-draft-message")).toBeNull();
   });
 
   it("takes a request from workshop into an agent and shows its saved proposal", async () => {
@@ -112,6 +127,7 @@ describe("ChatPanel", () => {
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Keep the chosen artifact current");
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
+    await saveDraft(user, "New personal Heinzel");
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
     await user.click(panel.getByRole("button", { name: "Send" }));
@@ -122,101 +138,42 @@ describe("ChatPanel", () => {
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
 
-  it("locks workshop text during creation so it cannot erase a later edit", async () => {
-    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    let finish: ((value: object) => void) | undefined;
-    mockApi({
-      ...base,
-      "/api/heinzel/new-chat": () =>
-        new Promise<object>((resolve) => {
-          finish = resolve;
-        }),
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
-      "/api/heinzel/sessions": { sessions: [] },
-    });
-    const user = userEvent.setup();
-    renderAt("/doctor");
-    const box = screen.getByLabelText("Your message");
-    await user.type(box, "First request");
-    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    expect(await screen.findByText("Creating your Heinzel…")).toBeInTheDocument();
-    expect(box).toBeDisabled();
-    await user.type(box, " later edit");
-    expect(box).toHaveValue("First request");
-    finish?.({ session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] });
-    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("First request");
-  });
-
-  it("recovers a workshop sentence and creation ID after a reload before acknowledgement", async () => {
-    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const requests: string[] = [];
-    mockApi({
-      ...base,
-      "/api/heinzel/new-chat": async (request: Request) => {
-        requests.push((await request.json()).request_id);
-        return new Promise(() => {});
-      },
-    });
+  it("keeps the draft and its message after a reload before Save", async () => {
+    mockApi({ ...base, "/api/heinzel/sessions": { sessions: [] } });
     const user = userEvent.setup();
     const first = renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Preserve across reload");
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    await waitFor(() => expect(requests).toHaveLength(1));
+    await screen.findByRole("form", { name: "Your new Heinzel" });
     first.unmount();
-    mockApi({
-      ...base,
-      "/api/heinzel/new-chat": async (request: Request) => {
-        requests.push((await request.json()).request_id);
-        return { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] };
-      },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
-      "/api/heinzel/sessions": { sessions: [] },
-    });
-    renderAt("/doctor");
-    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveValue("Preserve across reload"));
-    expect(screen.getByLabelText("Your message")).toHaveAttribute("readonly");
-    expect(screen.getByText(/earlier creation is unresolved/)).toBeInTheDocument();
-    expect(requests).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve across reload");
-    expect(requests).toEqual([requests[0], requests[0]]);
-    expect(sessionStorage.getItem("hz.personal-heinzel.handoff")).toBeNull();
+    renderAt("/heinzel");
+    const draft = within(await screen.findByRole("form", { name: "Your new Heinzel" }));
+    expect(draft.getByText("Preserve across reload")).toBeInTheDocument();
   });
 
-  it("keeps the sentence and creation identity when local draft storage fails", async () => {
-    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const requests: string[] = [];
+  it("keeps the sentence in the composer when this tab cannot hand it to the draft", async () => {
     const original = Storage.prototype.setItem;
     let fail = true;
     const setter = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (fail && key === `hz.durable.composer.${id}`) throw new Error("storage unavailable");
+      if (fail && key === "hz.personal-heinzel.new-draft-message") throw new Error("storage unavailable");
       return original.call(this, key, value);
     });
-    mockApi({
-      ...base,
-      "/api/heinzel/new-chat": async (request: Request) => {
-        requests.push((await request.json()).request_id);
-        return { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] };
-      },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
-      "/api/heinzel/sessions": { sessions: [] },
-    });
+    mockApi({ ...base, "/api/heinzel/sessions": { sessions: [] } });
     const user = userEvent.setup();
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "Preserve this request");
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText("This tab could not keep your message. Try again.")).toBeInTheDocument();
     expect(box).toHaveValue("Preserve this request");
+    expect(screen.queryByRole("form", { name: "Your new Heinzel" })).toBeNull();
     fail = false;
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve this request");
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toBe(requests[0]);
+    expect(await screen.findByRole("form", { name: "Your new Heinzel" })).toBeInTheDocument();
     setter.mockRestore();
   });
 
-  it("does not overwrite a recovered agent draft when taking a workshop sentence", async () => {
+  it("does not overwrite a recovered agent draft when the new Heinzel takes a workshop sentence", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const key = `hz.durable.composer.${id}`;
     const saved = JSON.stringify({
@@ -230,17 +187,20 @@ describe("ChatPanel", () => {
     sessionStorage.setItem(key, saved);
     mockApi({
       ...base,
-      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "Moss", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Moss", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
-    const box = screen.getByLabelText("Your message");
-    await user.type(box, "A different request");
+    await user.type(screen.getByLabelText("Your message"), "A different request");
     await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(box).toHaveValue("A different request");
+    await saveDraft(user, "Moss");
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Earlier unsent work");
     expect(sessionStorage.getItem(key)).toBe(saved);
-    localStorage.removeItem("hz.personal-heinzel.creation");
+    // The sentence is not lost: the next draft offers it again.
+    expect(sessionStorage.getItem("hz.personal-heinzel.new-draft-message")).toBe("A different request");
   });
 
   it("names the per-message and per-chat caps before anything is sent", async () => {

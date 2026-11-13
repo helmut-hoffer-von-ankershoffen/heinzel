@@ -21,14 +21,16 @@ const useDurableHeinzels = () =>
 export function DurableHeinzelStatus() {
   const query = useDurableHeinzels();
   const [params] = useSearchParams();
-  const sessions = query.isError ? undefined : query.data?.sessions;
+  const all = query.isError ? undefined : query.data?.sessions;
+  // Retired Heinzels are kept but not shown: they are counted on their own line.
+  const sessions = all?.filter((session) => session.state !== "retired");
   const count = sessions?.length;
   const active = sessions?.filter((session) => session.state === "awake").length;
   const paused = sessions?.filter((session) => session.state === "paused").length;
   const attention = sessions?.filter((session) => session.state === "waiting").length;
   const proposed = sessions?.filter((session) => session.state === "proposed").length;
   const asleep = sessions?.filter((session) => session.state === "asleep").length;
-  const retired = sessions?.filter((session) => session.state === "retired").length;
+  const retired = all?.filter((session) => session.state === "retired").length;
   const state: State = query.isError ? "bad" : "off";
   const label = t("nav.heinzelmaennchen");
 

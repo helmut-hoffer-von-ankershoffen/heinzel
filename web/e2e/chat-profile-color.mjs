@@ -71,6 +71,33 @@ try {
   await checkHeader(true);
   const box = await header.boundingBox();
   assert.ok(box && box.width > 16 && box.x >= 0 && box.x + box.width <= 375);
+  // Phone: the Heinzel's page shows it read-only; "Edit in chat" opens the one editor in its chat's Details.
+  const pageTab = page.getByRole("tab", { name: "Page", exact: true });
+  await pageTab.click();
+  const personal = page.getByRole("region", { name: "Personal Heinzels" });
+  await personal.getByRole("radio", { name: /^Original/ }).click();
+  assert.equal(await personal.getByRole("button", { name: "Save name and look" }).count(), 0, "the page is read-only");
+  await personal.getByRole("button", { name: "Edit in chat" }).click();
+  await page.waitForURL((next) => next.searchParams.get("profile-chat") !== null, { timeout: 10000 });
+  await editor.getByRole("button", { name: "Save name and look" }).waitFor({ timeout: 10000 });
+  assert.equal(await editor.evaluate((node) => node.open), true, "Edit in chat opens the name and look");
+  // Retire hides it and keeps it under Retired; Restore brings it back, on the phone as on the desktop.
+  await pageTab.click();
+  await personal.getByRole("radio", { name: /^Original/ }).click();
+  await personal.getByRole("button", { name: "Retire", exact: true }).click();
+  const retiredList = personal.locator("details").filter({ has: page.locator("summary", { hasText: "Retired (1)" }) });
+  await retiredList.waitFor({ timeout: 10000 });
+  assert.equal(
+    await personal.getByRole("radio", { name: /^Original/ }).count(),
+    0,
+    "a retired Heinzel leaves the list",
+  );
+  const restore = retiredList.getByRole("button", { name: "Restore Original" });
+  if (!(await restore.isVisible())) await retiredList.locator("summary").click();
+  const restoreBox = await restore.boundingBox();
+  assert.ok(restoreBox && restoreBox.x >= 0 && restoreBox.x + restoreBox.width <= 375, "Restore fits the phone");
+  await restore.click();
+  await personal.getByRole("radio", { name: /^Original/ }).waitFor({ timeout: 10000 });
   // Phone, Chat tab on /heinzel: creating a Heinzel from the chat switcher changes only the query, and still shows
   // the draft on the Page tab.
   const plain = new URL(url.href);
@@ -84,7 +111,6 @@ try {
     .getByRole("button", { name: "Create a personal Heinzel" })
     .click();
   await page.waitForURL((next) => next.searchParams.get("create") === "1", { timeout: 10000 });
-  const pageTab = page.getByRole("tab", { name: "Page", exact: true });
   const draft = page.getByText("Your new Heinzel", { exact: true });
   await draft.waitFor({ timeout: 10000 });
   const draftInView = async () => {

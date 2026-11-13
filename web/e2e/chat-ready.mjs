@@ -112,11 +112,24 @@ export function recurringTurns(page) {
     .last();
 }
 
+/**
+ * The composer's "+" leads to the new Heinzel's draft, like Create: name it and save. Its chat then holds the
+ * message in its composer. The name defaults to the one the journeys used before the draft.
+ */
+export async function saveHeinzelDraft(page, name = "New Heinzel") {
+  const draft = page.getByRole("form", { name: "Your new Heinzel" });
+  await draft.waitFor({ timeout: 15000 });
+  await draft.getByLabel("Name", { exact: true }).fill(name);
+  await draft.getByRole("button", { name: "Save and chat" }).click();
+  await page.getByLabel("Message your Heinzel").waitFor({ timeout: 15000 });
+}
+
 // One place for the opening steps the workshop and template journeys share.
 /** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
 export async function createHeinzelWithMessage(page, sentence) {
   await page.getByLabel("Your message").fill(sentence);
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await saveHeinzelDraft(page);
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   await openDetails(page);
@@ -172,7 +185,7 @@ export async function appTakesInput(page) {
   );
 }
 
-/** Type the first message into the new-chat composer and press Create: the press must send the creation request. */
+/** Type the first message into the new-chat composer, press "+" and save the draft: Save sends the creation. */
 export async function createHeinzelWith(page, text) {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
@@ -185,6 +198,10 @@ export async function createHeinzelWith(page, text) {
     { timeout: 15000 },
   );
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  const draft = page.getByRole("form", { name: "Your new Heinzel" });
+  await draft.waitFor({ timeout: 15000 });
+  await draft.getByLabel("Name", { exact: true }).fill("New Heinzel");
+  await draft.getByRole("button", { name: "Save and chat" }).click();
   await sent.catch(async () => {
     const state = await page.evaluate(() => ({
       rootInert: document.getElementById("root")?.hasAttribute("inert") ?? null,
