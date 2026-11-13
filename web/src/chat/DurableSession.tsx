@@ -172,7 +172,9 @@ function DurableSessionView({
   const searchTarget = useRef<HTMLDivElement>(null);
   const newest = useRef<HTMLDivElement>(null);
   // Review links (agent, approval, schedule, notification, connected read, contract) land on the sections they name.
-  const [detailsOpen, setDetailsOpen] = useState(() =>
+  // Only the first render sets Details open; afterwards the browser owns it, so React never writes the attribute back
+  // inside the toggle event of a press.
+  const [detailsInitiallyOpen] = useState(() =>
     [...params.keys()].some((key) => key.endsWith("-chat") && key !== "chat"),
   );
   useEffect(() => {
@@ -964,11 +966,7 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        <details
-          className="rounded-lg border border-border p-3"
-          open={detailsOpen}
-          onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
-        >
+        <details className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
           <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
           <div className="mt-3 space-y-3">
             {query.data && (
