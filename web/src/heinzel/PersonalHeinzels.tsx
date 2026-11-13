@@ -242,12 +242,12 @@ export function PersonalHeinzels() {
   };
 
   // Delete for good (ADR 0148): only from the Retired list, after the typed name; nothing of it stays in this tab.
-  const deleteForGood = async (target: { session_id: string; name: string }) => {
+  const deleteForGood = async (target: { session_id: string; name: string }, typed: string) => {
     setDeleteError(null);
     let waiting: string[] = [];
     try {
       const gone = await personalResult(
-        api.POST("/heinzel/delete", { body: { session_id: target.session_id, name: target.name } }),
+        api.POST("/heinzel/delete", { body: { session_id: target.session_id, name: typed } }),
       );
       if (gone.session_id !== target.session_id) throw new Error("Invalid delete response");
       waiting = gone.state === "forgetting" ? (gone.waiting_for ?? []) : [];
@@ -403,7 +403,7 @@ export function PersonalHeinzels() {
           expected={deleting.name}
           action={t("personal.deleteAction")}
           error={deleteError}
-          onConfirm={() => deleteForGood(deleting)}
+          onConfirm={(typed) => deleteForGood(deleting, typed)}
           onClose={() => setDeleting(null)}
         />
       )}

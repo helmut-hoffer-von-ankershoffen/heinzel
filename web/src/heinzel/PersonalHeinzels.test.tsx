@@ -258,7 +258,8 @@ describe("personal identities", () => {
     expect(await section.findByText("Zoë is deleted.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(section.queryByText("Retired (1)")).toBeNull();
-    expect(posts).toEqual([{ session_id: first, name: "Zoë" }]);
+    // The server checks what the person typed, not the list's copy of the name.
+    expect(posts).toEqual([{ session_id: first, name: "Zoe\u0308" }]);
     expect(sessionStorage.getItem(`hz.personal-heinzel.profile-draft.${first}`)).toBeNull();
     expect(sessionStorage.getItem(`hz.personal-heinzel.profile-draft.${second}`)).toBe("{}");
   });

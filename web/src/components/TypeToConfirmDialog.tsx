@@ -25,7 +25,7 @@ export function TypeToConfirmDialog({
   expected: string;
   action: string;
   error: string | null;
-  onConfirm: () => Promise<void>;
+  onConfirm: (typed: string) => Promise<void>;
   onClose: () => void;
 }>) {
   const heading = useId();
@@ -39,7 +39,7 @@ export function TypeToConfirmDialog({
     if (!ready) return;
     setBusy(true);
     try {
-      await onConfirm();
+      await onConfirm(typed);
     } finally {
       setBusy(false);
     }
