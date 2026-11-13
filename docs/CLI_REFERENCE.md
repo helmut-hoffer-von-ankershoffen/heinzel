@@ -2061,6 +2061,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `about`: Show versions, install source, daemon...
 * `agent`: (expert) Install the Heinzelmännchen...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
@@ -2088,6 +2089,22 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `ui`: (expert) List what modules add to the web...
 * `uninstall`: Uninstall the verified Heinzel tool...
 * `update`: Update Heinzelmännchen, every plugin and...
+
+### `hz system about`
+
+Show versions, install source, daemon state and every plugin with its pin.
+
+**Usage**:
+
+```console
+$ hz system about [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz system agent`
 

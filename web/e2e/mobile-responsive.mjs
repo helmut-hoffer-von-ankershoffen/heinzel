@@ -1760,6 +1760,44 @@ try {
       await topPage.close();
     }
     result.topbar = { titleWhole: true, countClearOfMascot: true };
+    stage("phone-about");
+    // About from the footer's version pane on a phone, against the real `hz system about`: it fits, its actions are
+    // touch-sized, and the page runs the build this hz serves (no reload pending).
+    const aboutPage = await browser.newPage({
+      viewport: { width: 375, height: 812 },
+      isMobile: true,
+      hasTouch: true,
+      serviceWorkers: "block",
+    });
+    await aboutPage.addInitScript(() =>
+      localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true })),
+    );
+    await aboutPage.goto(url);
+    await aboutPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    const versionPane = await footerPane(aboutPage, "@version", /^v/);
+    await versionPane.getByRole("button", { name: "About Heinzelmännchen", exact: true }).tap();
+    const about = aboutPage.getByRole("dialog", { name: "Heinzelmännchen", exact: true });
+    await about.getByText("Installed with", { exact: true }).waitFor();
+    const panel = about.locator(":scope > div");
+    await assertContained(aboutPage, panel, "About on a phone");
+    for (const action of ["Copy diagnostics", "Close"])
+      await assertTouchTarget(about.getByRole("button", { name: action, exact: true }), action, "About on a phone");
+    const facts = await about.evaluate((element) =>
+      Object.fromEntries(
+        [...element.querySelectorAll("dl > div")].map((row) => [
+          row.querySelector("dt")?.textContent,
+          row.querySelector("dd")?.textContent,
+        ]),
+      ),
+    );
+    assert.match(facts["Web build"] ?? "", /^[0-9a-f]{12}$/, `About names this page's build: ${JSON.stringify(facts)}`);
+    assert.match(facts.Daemon ?? "", /^(Running|Paused|Stopped|Not installed|Unknown)/, JSON.stringify(facts));
+    assert.match(facts["Installed with"] ?? "", /^(uv tool|environment) from (PyPI|git|path)$/, JSON.stringify(facts));
+    await aboutPage.screenshot({ path: join(shots, "mobile-about-375.png") });
+    await about.getByRole("button", { name: "Close", exact: true }).tap();
+    await about.waitFor({ state: "detached" });
+    await aboutPage.close();
+    result.about = { fits: true, webBuildCurrent: true };
   }
 } catch (error) {
   stage("failure-diagnostics");

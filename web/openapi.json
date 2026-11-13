@@ -1,6 +1,223 @@
 {
   "components": {
     "schemas": {
+      "AboutDaemon": {
+        "description": "The background daemon, as `hz system daemon status` sees it.",
+        "properties": {
+          "outdated": {
+            "default": false,
+            "description": "Whether it runs another hz than this one and is waiting for its restart.",
+            "title": "Outdated",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "`running` (loaded and ticking), `paused`, `stopped` (installed but not loaded), `not installed`, or `unknown` when the service manager could not be asked.",
+            "enum": [
+              "running",
+              "paused",
+              "stopped",
+              "not installed",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hz version its last tick ran, else the one it was installed with.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "state",
+          "version"
+        ],
+        "title": "AboutDaemon",
+        "type": "object"
+      },
+      "AboutPlugin": {
+        "description": "An installed plugin, where it came from and whether an update may move it.",
+        "properties": {
+          "installed": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day this version was installed here; none if unknown.",
+            "title": "Installed"
+          },
+          "name": {
+            "description": "Distribution name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What its install spec pins it to (a tag, a commit, a file or an exact version); none if updates move it.",
+            "title": "Pinned"
+          },
+          "source": {
+            "description": "Installed from an index (PyPI), git or a path.",
+            "enum": [
+              "PyPI",
+              "git",
+              "path"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "description": "Installed version.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "source",
+          "pinned",
+          "installed"
+        ],
+        "title": "AboutPlugin",
+        "type": "object"
+      },
+      "AboutReport": {
+        "description": "What `hz system about` prints and the About dialog shows: versions, install source, daemon and plugins.",
+        "properties": {
+          "channel": {
+            "description": "The update channel it follows (setting `update_channel`).",
+            "title": "Channel",
+            "type": "string"
+          },
+          "daemon": {
+            "$ref": "#/components/schemas/AboutDaemon",
+            "description": "The background daemon."
+          },
+          "desktop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Release of the desktop app hz installed on this Mac; none otherwise.",
+            "title": "Desktop"
+          },
+          "diagnostics": {
+            "description": "The same facts as plain lines, for pasting into a bug report.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "installation": {
+            "description": "Whether hz runs from a uv tool environment or from another Python environment.",
+            "enum": [
+              "uv tool",
+              "environment"
+            ],
+            "title": "Installation",
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day it was installed here; none if unknown.",
+            "title": "Installed"
+          },
+          "platform": {
+            "description": "Operating system and architecture.",
+            "title": "Platform",
+            "type": "string"
+          },
+          "plugins": {
+            "description": "Every installed plugin distribution, built-ins excluded.",
+            "items": {
+              "$ref": "#/components/schemas/AboutPlugin"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "python_version": {
+            "description": "Version of the Python running hz.",
+            "title": "Python Version",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where the core was installed from.",
+            "enum": [
+              "PyPI",
+              "git",
+              "path"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "description": "The Heinzelmännchen core version.",
+            "title": "Version",
+            "type": "string"
+          },
+          "web_build": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Short id of the web app build this installation serves; none if it has no built web app.",
+            "title": "Web Build"
+          }
+        },
+        "required": [
+          "version",
+          "installed",
+          "installation",
+          "source",
+          "channel",
+          "web_build",
+          "desktop",
+          "daemon",
+          "plugins",
+          "python_version",
+          "platform",
+          "diagnostics"
+        ],
+        "title": "AboutReport",
+        "type": "object"
+      },
       "Access": {
         "description": "A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).",
         "properties": {
@@ -27561,6 +27778,28 @@
         "summary": "Restart hz ui to load changes a running server can't, such as an added plugin.",
         "tags": [
           "web"
+        ]
+      }
+    },
+    "/system/about": {
+      "get": {
+        "description": "Show versions, install source, daemon state and every plugin with its pin.\n\nThe same facts the About dialog shows (core, web build, desktop app, channel); `--json` for scripts, the plain\nlines for a bug report.",
+        "operationId": "system_about",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AboutReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show versions, install source, daemon state and every plugin with its pin.",
+        "tags": [
+          "system"
         ]
       }
     },

@@ -21,6 +21,7 @@ from heinzel.kernel import (
     UninstallResult,
     WebHeadRefresh,
 )
+from heinzel.modules.system._about import AboutReport, about_report, render_about
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
@@ -134,6 +135,16 @@ module.prerequisite(
 def info(service: SystemService) -> SystemInfo:
     """Show versions, interpreter, settings, modules and what modules report."""
     return service.info()
+
+
+@module.operation(render=render_about, audience="everyday")
+def about(kernel: Kernel, installation: Installation) -> AboutReport:
+    """Show versions, install source, daemon state and every plugin with its pin.
+
+    The same facts the About dialog shows (core, web build, desktop app, channel); `--json` for scripts, the plain
+    lines for a bug report.
+    """
+    return about_report(kernel, installation)
 
 
 @module.operation(render=render_modules)

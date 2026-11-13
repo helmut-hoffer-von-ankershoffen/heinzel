@@ -6,32 +6,43 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AboutDialog, detailsText } from "./AboutDialog";
+import { AboutDialog, daemonText, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
 const info = {
   version: "1.2.3",
-  installed: "2026-11-08",
-  repository: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
-  python_version: "3.14.1",
-  python_executable: "/py",
-  platform: "macOS",
-  installation: "uv tool",
   latest_release: null,
   plugins: [
-    { name: "heinzel-a", version: "0.4.0", source: "PyPI", repository: null, installed: "2026-11-01" },
-    {
-      name: "heinzel-b",
-      version: "0.4.0",
-      source: "git",
-      repository: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-b",
-      installed: null,
-    },
+    { name: "heinzel-a", repository: null },
+    { name: "heinzel-b", repository: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-b" },
   ],
 };
+const report = {
+  version: "1.2.3",
+  installed: "2026-11-08",
+  installation: "uv tool",
+  source: "PyPI",
+  channel: "stable",
+  web_build: "0123456789ab",
+  desktop: null,
+  daemon: { state: "running", version: "1.2.3", outdated: false },
+  python_version: "3.14.1",
+  platform: "macOS",
+  plugins: [
+    { name: "heinzel-a", version: "0.4.0", source: "PyPI", pinned: null, installed: "2026-11-01" },
+    { name: "heinzel-b", version: "0.4.0", source: "git", pinned: "v0.4.0", installed: null },
+  ],
+  diagnostics: ["hz 1.2.3 (installed 2026-11-08)", "plugin heinzel-a 0.4.0 from PyPI, follows updates"],
+};
 
-let current: unknown = info;
-vi.mock("@/api/queries", () => ({ useInfo: () => ({ data: current, isError: false }) }));
+const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
+let current: unknown = report;
+let failed = false;
+const refetch = vi.fn();
+vi.mock("@/api/queries", () => ({
+  useInfo: () => ({ data: info, isError: false }),
+  useAbout: () => ({ data: current, isError: failed, refetch }),
+}));
 
 const show = () =>
   render(
@@ -44,7 +55,8 @@ const show = () =>
 
 afterEach(() => {
   vi.restoreAllMocks();
-  current = info;
+  current = report;
+  failed = false;
 });
 
 describe("About dialog", () => {
@@ -55,7 +67,7 @@ describe("About dialog", () => {
   });
 
   it("says so when no plugin is installed", () => {
-    current = { ...info, plugins: [] };
+    current = { ...report, plugins: [] };
     show();
     act(() => requestMenuAction("about"));
     expect(screen.getByText("No plugins installed.")).toBeInTheDocument();
@@ -64,14 +76,15 @@ describe("About dialog", () => {
   it("shows one row per plugin, many or long-named, in cells that break instead of overflowing", () => {
     const long = `heinzel-${"x".repeat(200)}`;
     current = {
-      ...info,
+      ...report,
       plugins: [
-        { name: long, version: "1.0.0", source: "path", repository: null },
+        { name: long, version: "1.0.0", source: "path", pinned: "local folder", installed: null },
         ...Array.from({ length: 40 }, (_, i) => ({
           name: `heinzel-p${i}`,
           version: "0.1.0",
           source: "PyPI",
-          repository: null,
+          pinned: null,
+          installed: null,
         })),
       ],
     };
@@ -91,13 +104,57 @@ describe("About dialog", () => {
     expect(mascot).not.toHaveClass("overflow-visible");
   });
 
-  it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {
-    const text = detailsText(info as never, { version: "0.9.29", path: "/Applications/H.app" });
-    expect(text).toContain("hz 1.2.3\n");
-    expect(text).toContain("installation uv tool (installed 2026-11-08)");
-    expect(text).toContain("daemon running 1.2.3");
-    expect(text).toContain("desktop 0.9.29 /Applications/H.app");
-    expect(text).toContain("plugin heinzel-b 0.4.0 git");
+  it("copies hz system about's lines, then this page's build when it differs and the desktop app it runs in", () => {
+    const text = detailsText(report as never, "fedcba987654", { version: "0.9.29", path: "/Applications/H.app" });
+    expect(text.split("\n")).toEqual([
+      ...report.diagnostics,
+      "web build of this page fedcba987654",
+      "desktop app running 0.9.29 /Applications/H.app",
+    ]);
+    expect(detailsText(report as never, "0123456789ab", null)).toBe(report.diagnostics.join("\n"));
+    expect(detailsText({ ...report, web_build: null } as never, null, null)).toBe(report.diagnostics.join("\n"));
+    expect(detailsText(report as never, null, null)).toContain("web build of this page development");
+  });
+
+  it("names each daemon state, with the hz it runs when known", () => {
+    expect(daemonText({ state: "running", version: "1.2.3", outdated: false })).toBe("Running, hz 1.2.3");
+    expect(daemonText({ state: "paused", version: null, outdated: false })).toBe("Paused");
+    expect(daemonText({ state: "stopped", version: null, outdated: false })).toBe("Stopped");
+    expect(daemonText({ state: "not installed", version: null, outdated: false })).toBe("Not installed");
+    expect(daemonText({ state: "unknown", version: null, outdated: false })).toBe("Unknown");
+  });
+
+  it("shows the install source, channel, daemon, desktop app and each plugin's pin, and asks again on open", () => {
+    current = { ...report, desktop: "0.9.30", daemon: { state: "running", version: "1.2.2", outdated: true } };
+    show();
+    act(() => requestMenuAction("about"));
+    const dialog = screen.getByRole("dialog", { name: "Heinzelmännchen" });
+    expect(refetch).toHaveBeenCalled();
+    expect(within(dialog).getByText("uv tool from PyPI")).toBeInTheDocument();
+    expect(within(dialog).getByText("stable")).toBeInTheDocument();
+    expect(within(dialog).getByText("Running, hz 1.2.2")).toBeInTheDocument();
+    expect(within(dialog).getByText("Restarts on the new hz with its next tick.")).toBeInTheDocument();
+    expect(within(dialog).getByText("0.9.30, installed on this Mac")).toBeInTheDocument();
+    expect(within(dialog).getByText("Pinned to v0.4.0")).toBeInTheDocument();
+    expect(within(dialog).getByText("Follows updates")).toBeInTheDocument();
+    // No hashed entrypoints in a test page: the page runs a development build.
+    expect(within(dialog).getByText("Development")).toBeInTheDocument();
+  });
+
+  it("says when no desktop app is installed and opens only once", () => {
+    show();
+    act(() => requestMenuAction("about"));
+    expect(screen.getByText("Not installed")).toBeInTheDocument();
+    act(() => requestMenuAction("about")); // already open: nothing new
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+
+  it("says the details could not be loaded when the report fails", () => {
+    current = undefined;
+    failed = true;
+    show();
+    act(() => requestMenuAction("about"));
+    expect(screen.getByText("The details could not be loaded.")).toBeInTheDocument();
   });
 
   it("opens on the about menu action, shows the plugin table and copies the details", async () => {
@@ -110,12 +167,16 @@ describe("About dialog", () => {
     expect(dialog).toHaveAttribute("data-hz-about-dialog", "");
     expect(within(dialog).getByRole("link", { name: /release/i })).toHaveAttribute(
       "href",
-      `${info.repository}/releases/tag/v${info.version}`,
+      `${REPOSITORY}/releases/tag/v1.2.3`,
     );
-    expect(within(dialog).getByRole("link", { name: "Source repository" })).toHaveAttribute("href", info.repository);
+    expect(within(dialog).getByRole("link", { name: "Source repository" })).toHaveAttribute("href", REPOSITORY);
     expect(screen.getByRole("cell", { name: "heinzel-b" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /copy details/i }));
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("plugin heinzel-a 0.4.0 PyPI"));
+    await userEvent.click(screen.getByRole("button", { name: /copy diagnostics/i }));
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("plugin heinzel-a 0.4.0 from PyPI, follows updates"),
+    );
+    act(() => requestMenuAction("copy")); // the desktop menu's Copy Diagnostics copies the same
+    expect(writeText).toHaveBeenLastCalledWith(writeText.mock.calls[0]?.[0]);
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -136,7 +197,7 @@ describe("About dialog", () => {
       const close = within(dialog).getByRole("button", { name: "Close" });
       expect(close).toHaveFocus();
       await user.tab();
-      expect(within(dialog).getByRole("button", { name: "Copy details" })).toHaveFocus();
+      expect(within(dialog).getByRole("button", { name: "Copy diagnostics" })).toHaveFocus();
       await user.tab({ shift: true });
       expect(close).toHaveFocus();
       await user.tab({ shift: true });
@@ -159,7 +220,7 @@ describe("About dialog", () => {
       opener.focus();
       act(() => requestMenuAction("about"));
       const dialog = screen.getByRole("dialog");
-      expect(within(dialog).getByRole("button", { name: "Copy details" })).toBeDisabled();
+      expect(within(dialog).getByRole("button", { name: "Copy diagnostics" })).toBeDisabled();
       await user.tab();
       expect(within(dialog).getByRole("link", { name: "Source repository" })).toHaveFocus();
       fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));

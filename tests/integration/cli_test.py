@@ -560,6 +560,7 @@ def test_commands_are_sorted(app):
     system = root.commands["system"]  # type: ignore[attr-defined]
     assert root.list_commands(None) == sorted(root.list_commands(None))  # type: ignore[arg-type]
     expected = [
+        "about",
         "agent",
         "capability",
         "changelog",

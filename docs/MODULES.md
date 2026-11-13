@@ -173,6 +173,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Show versions, interpreter, settings, modules and what modules report. | `hz system info` | `system_info` | `GET /system/info` | `GET /api/system/info` |  | expert |
+| Show versions, install source, daemon state and every plugin with its pin. | `hz system about` | `system_about` | `GET /system/about` | `GET /api/system/about` |  |  |
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
 | Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |

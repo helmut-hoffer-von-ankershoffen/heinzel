@@ -2129,6 +2129,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/about": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show versions, install source, daemon state and every plugin with its pin.
+         * @description Show versions, install source, daemon state and every plugin with its pin.
+         *
+         *     The same facts the About dialog shows (core, web build, desktop app, channel); `--json` for scripts, the plain
+         *     lines for a bug report.
+         */
+        get: operations["system_about"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/agent/install": {
         parameters: {
             query?: never;
@@ -4426,6 +4449,126 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AboutDaemon
+         * @description The background daemon, as `hz system daemon status` sees it.
+         */
+        AboutDaemon: {
+            /**
+             * Outdated
+             * @description Whether it runs another hz than this one and is waiting for its restart.
+             * @default false
+             */
+            outdated: boolean;
+            /**
+             * State
+             * @description `running` (loaded and ticking), `paused`, `stopped` (installed but not loaded), `not installed`, or `unknown` when the service manager could not be asked.
+             * @enum {string}
+             */
+            state: "running" | "paused" | "stopped" | "not installed" | "unknown";
+            /**
+             * Version
+             * @description The hz version its last tick ran, else the one it was installed with.
+             */
+            version: string | null;
+        };
+        /**
+         * AboutPlugin
+         * @description An installed plugin, where it came from and whether an update may move it.
+         */
+        AboutPlugin: {
+            /**
+             * Installed
+             * @description The day this version was installed here; none if unknown.
+             */
+            installed: string | null;
+            /**
+             * Name
+             * @description Distribution name.
+             */
+            name: string;
+            /**
+             * Pinned
+             * @description What its install spec pins it to (a tag, a commit, a file or an exact version); none if updates move it.
+             */
+            pinned: string | null;
+            /**
+             * Source
+             * @description Installed from an index (PyPI), git or a path.
+             * @enum {string}
+             */
+            source: "PyPI" | "git" | "path";
+            /**
+             * Version
+             * @description Installed version.
+             */
+            version: string;
+        };
+        /**
+         * AboutReport
+         * @description What `hz system about` prints and the About dialog shows: versions, install source, daemon and plugins.
+         */
+        AboutReport: {
+            /**
+             * Channel
+             * @description The update channel it follows (setting `update_channel`).
+             */
+            channel: string;
+            /** @description The background daemon. */
+            daemon: components["schemas"]["AboutDaemon"];
+            /**
+             * Desktop
+             * @description Release of the desktop app hz installed on this Mac; none otherwise.
+             */
+            desktop: string | null;
+            /**
+             * Diagnostics
+             * @description The same facts as plain lines, for pasting into a bug report.
+             */
+            diagnostics: string[];
+            /**
+             * Installation
+             * @description Whether hz runs from a uv tool environment or from another Python environment.
+             * @enum {string}
+             */
+            installation: "uv tool" | "environment";
+            /**
+             * Installed
+             * @description The day it was installed here; none if unknown.
+             */
+            installed: string | null;
+            /**
+             * Platform
+             * @description Operating system and architecture.
+             */
+            platform: string;
+            /**
+             * Plugins
+             * @description Every installed plugin distribution, built-ins excluded.
+             */
+            plugins: components["schemas"]["AboutPlugin"][];
+            /**
+             * Python Version
+             * @description Version of the Python running hz.
+             */
+            python_version: string;
+            /**
+             * Source
+             * @description Where the core was installed from.
+             * @enum {string}
+             */
+            source: "PyPI" | "git" | "path";
+            /**
+             * Version
+             * @description The Heinzelmännchen core version.
+             */
+            version: string;
+            /**
+             * Web Build
+             * @description Short id of the web app build this installation serves; none if it has no built web app.
+             */
+            web_build: string | null;
+        };
         /**
          * Access
          * @description A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).
@@ -17442,6 +17585,9 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAboutDaemon = components['schemas']['AboutDaemon'];
+export type SchemaAboutPlugin = components['schemas']['AboutPlugin'];
+export type SchemaAboutReport = components['schemas']['AboutReport'];
 export type SchemaAccess = components['schemas']['Access'];
 export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
@@ -21154,6 +21300,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Restart"];
+                };
+            };
+        };
+    };
+    system_about: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AboutReport"];
                 };
             };
         };
