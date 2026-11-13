@@ -433,6 +433,8 @@ def test_canary_no_byte_of_a_deleted_heinzel_remains_anywhere(tmp_path, settings
     with crud.repository.main_writer(session) as writer:  # what a turn writes: a body and an inline checkpoint
         writer.append_body("turn-1", {"text": f"{text} in a turn body"})
         writer.append("turn.note", turn="turn-1", data={"note": f"{text} inline"})
+    with crud.repository.control_writer(session) as writer:  # a control line that carries its text inline
+        writer.append("note.inline", key="w-1", data={"text": f"{text} inline in control"})
     store = ChatStore(Settings(state_dir=tmp_path / "runner"), ChatSettings(), RunnerSettings(), current)
     chat = store.create(ChatContext(kind="text", ref=session), personal_session_id=session)
     with store.locked(chat.id) as held:
