@@ -90,7 +90,15 @@ jobs:
           FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           PYTHONPATH: .
           UV_PYTHON: "3.14.8"
+          FLAKE_LEDGER: flake-ledger.txt # in the workspace, where hashFiles looks
         run: uv run --no-build --frozen --script scripts/focused_gate.py
+      - name: Keep the flake ledger (jobs that passed only on a rerun)
+        if: ${{ !cancelled() && hashFiles('flake-ledger.txt') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flake-ledger-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: flake-ledger.txt
+          retention-days: 90
       - name: Report both verdicts; a gate that didn't pass, or didn't run, fails closed
         if: always() && steps.start.outputs.merge_gate != '' && steps.start.outputs.coverage_floor != ''
         env:

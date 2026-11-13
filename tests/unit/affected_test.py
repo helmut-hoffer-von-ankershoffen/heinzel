@@ -108,7 +108,7 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
     ),
     ("desktop lockfile selects the whole desktop suite", ["desktop/pnpm-lock.yaml"], {"desktop": ["ALL"]}),
     ("a deleted desktop test selects the whole desktop suite", ["desktop/test/gone.test.js"], {"desktop": ["ALL"]}),
-    ("managed backend is not the desktop suite", ["desktop/managed/src/backend.ts"], {"desktop": []}),
+    ("managed backend runs the full set", ["desktop/managed/src/backend.ts"], {"full": True}),
     ("desktop readme runs no desktop test", ["desktop/README.md"], {"desktop": []}),
     ("conftest = full", ["tests/conftest.py"], {"full": True}),
     ("unknown path = full", ["something/new.txt"], {"full": True}),
@@ -231,3 +231,77 @@ def test_web_imports_are_found_in_each_form():
     text = 'import a from "./a"\nexport { b } from \'./b\'\nconst c = await import("./c")\nimport "./d.css"\n'
     found = sorted(spec for pattern in affected.WEB_IMPORTS for spec in pattern.findall(text))
     assert found == ["./a", "./b", "./c", "./d.css"]
+
+
+SOURCE_ROOTS = ("src", "web", "desktop", "template", "starter")
+
+
+def test_every_tracked_source_directory_maps_to_a_lane_or_the_full_set(repo):
+    """A directory the selector knows but gives no lane would merge untested: name every such path."""
+    files = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", *SOURCE_ROOTS], check=True, capture_output=True, text=True, timeout=60
+    ).stdout.split()
+    first: dict[str, str] = {}
+    for path in files:
+        if not path.endswith(".md"):  # documents select the site tests or nothing; code decides the lanes
+            first.setdefault(path.rsplit("/", 1)[0], path)
+    unmapped = []
+    for directory, path in sorted(first.items()):
+        result = affected.classify(repo, [path])
+        lanes, reason = affected.focused_lanes(result, {} if result["full"] else repo.lanes)
+        if not result["full"] and lanes is None and reason == "the selector selects no tests":
+            unmapped.append(f"{directory}/ (e.g. {path})")
+    assert not unmapped, "no lane and no full-set rule for:\n" + "\n".join(unmapped)
+
+
+def test_lane_limits_and_tokens_match_the_focused_ci_resolver(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    from scripts import focused_job, focused_plan
+
+    assert affected.LANE_LIMIT == focused_job.MAX_IDS
+    assert affected.PYTHON_LANE_LIMIT == focused_job.PYTHON_CI_MAX_IDS
+    assert affected.WEB_ALL == focused_plan.WHOLE_SUITES["web"] == focused_job.VITEST_ALL
+    assert focused_plan.WHOLE_SUITES["desktop"] == affected.DESKTOP_ALL
+    assert focused_plan.WHOLE_SUITES["consumers"] == affected.CONSUMERS_MAIN
+    for lane in affected.BROWSER_LANES:
+        assert focused_plan.WHOLE_SUITES[f"e2e-{lane}"] == f"{affected.E2E_DIR}/{lane}"
+
+
+def _result(**changes):
+    base = {"full": False, "pytest": [], "vitest": [], "e2e_lanes": [], "jobs": [], "desktop": []}
+    return base | changes
+
+
+@pytest.mark.parametrize(
+    ("result", "lanes", "reason"),
+    [
+        (_result(full=True), None, "the selector selects the full set"),
+        (_result(pytest=["tests/unit/"]), None, "a test directory is selected"),
+        (_result(e2e_lanes=["cli"]), None, "e2e lane(s) cli have no focused lane"),
+        (_result(pytest=[f"tests/unit/t{i}_test.py" for i in range(33)]), None, "33 pytest files exceed"),
+        (_result(), None, "the selector selects no tests"),
+        (_result(pytest=["tests/unit/a_test.py"]), {"python": ["tests/unit/a_test.py"]}, "focused"),
+        (_result(vitest=["ALL"]), {"web": ["web/ALL"]}, "focused"),
+        (_result(vitest=[f"web/src/f{i}.test.ts" for i in range(11)]), {"web": ["web/ALL"]}, "focused"),
+        (_result(desktop=[f"desktop/test/t{i}.test.js" for i in range(11)]), {"desktop": ["desktop/ALL"]}, "focused"),
+        (
+            _result(e2e_lanes=["web-2"], vitest=["web/src/a.test.ts"]),
+            {"web": ["web/src/a.test.ts"], "browser": ["tests/e2e/b_test.py"]},
+            "focused",
+        ),
+        (
+            _result(e2e_lanes=["web-1", "web-2"], vitest=["web/src/a.test.ts"]),
+            {"web": ["web/src/a.test.ts"], "e2e-web-1": ["tests/e2e/web-1"], "e2e-web-2": ["tests/e2e/web-2"]},
+            "focused",
+        ),
+        (_result(jobs=["consumers"], pytest=["tests/unit/a_test.py"]), None, None),
+    ],
+)
+def test_focused_lanes_fail_open_and_bound_each_lane(result, lanes, reason):
+    files = {"web-1": [f"tests/e2e/w{i}_test.py" for i in range(11)], "web-2": ["tests/e2e/b_test.py"]}
+    got, why = affected.focused_lanes(result, files)
+    if reason is None:  # contract paths add the consumers lane
+        assert got == {"python": ["tests/unit/a_test.py"], "consumers": ["plugins/main"]}
+        return
+    assert got == lanes
+    assert why.startswith(reason)

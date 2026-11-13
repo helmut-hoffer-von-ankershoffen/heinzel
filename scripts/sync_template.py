@@ -47,6 +47,12 @@ def _without_quarantine(text: str) -> str:
     return text[:start] + text[end:] if 0 <= start < end else text
 
 
+# The desktop app's Makefile targets, with their recipe: core-only.
+DESKTOP_TARGETS = re.compile(
+    r"(?m)^desktop-(?:electron-(?:test|sandbox|native|package)|unit-setup|unit):[^\n]*\n(?:\t[^\n]*\n)*\n?"
+)
+
+
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (
@@ -141,6 +147,8 @@ def makefile() -> str:
         "desktop-electron-sandbox",
         "desktop-electron-native",
         "desktop-electron-package",
+        "desktop-unit-setup",  # the desktop app's Node unit suite
+        "desktop-unit",
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
         "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
@@ -149,7 +157,7 @@ def makefile() -> str:
         lambda match: " ".join(name for name in match.group(0).split() if name not in electron_targets),
         text,
     )
-    text = re.sub(r"(?m)^desktop-electron-(?:test|sandbox|native|package):[^\n]*\n(?:\t[^\n]*\n)*", "", text)
+    text = DESKTOP_TARGETS.sub("", text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
@@ -238,15 +246,29 @@ def _without_focused_admission(text: str) -> str:
     text = re.sub(r"\n  focused-tests:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
     text = re.sub(r"\n      - name: Require successful focused workload.*", "", text, flags=re.DOTALL) + "\n"
     text = re.sub(
-        r"(?m)^    if: needs\.changes\.outputs\.full_release == 'true' && \((.*)\) # Core candidate-only$",
+        r"(?m)^    if: needs\.changes\.outputs\.full(?:_release)? == 'true' && \((.*)\) "
+        r"# Core (?:candidate-only|full set: candidate, or a merge-tier fail-open)$",
         r"    if: \1",
         text,
     )
-    text = text.replace(" || needs.changes.outputs.focused_mode != '' # Core focused structural", "")
+    # The merge tier's scoped coverage evidence of a full-set run (ADR 0149) is the core's.
+    text = text.replace("      actions: read # the merge tier's last green main run\n", "")
     text = text.replace(
-        " && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core",
-        " && needs.changes.outputs.core",
+        "          fetch-depth: 0 # the merge tier's scope reads the tested merge's base and the last green main\n", ""
     )
+    text = re.sub(
+        r"\n      - name: Apply the scoped coverage gate to the changed production files \(merge-tier full set\)\n"
+        r".*?\n          retention-days: 7(?=\n)",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    text = text.replace(" || needs.changes.outputs.focused_mode != '' # Core focused structural", "")
+    for gate in ("full_release", "full"):
+        text = text.replace(
+            f" && needs.changes.outputs.{gate} == 'true' && needs.changes.outputs.core",
+            " && needs.changes.outputs.core",
+        )
     text = text.replace(", focused-tests]", "]")
     return text.replace(
         "enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}\n"
@@ -255,6 +277,23 @@ def _without_focused_admission(text: str) -> str:
         "enable-cache: true\n"
         "          cache-dependency-glob: uv.lock\n"
         "          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache",
+    )
+
+
+def _plugin_header(text: str) -> str:
+    """A plugin's CI header: no core evidence tiers, and a concurrency group per main commit."""
+    text = re.sub(r"\n# Two evidence tiers \(ADR 0149\).*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
+    # The core's main pushes share one group and compare against the last green main (ADR 0149); a plugin keeps a
+    # group per main commit, so each of its main commits ends with a CI result.
+    return re.sub(
+        r"# Main pushes share one group:.*?\nconcurrency:\n  group: [^\n]*\n",
+        "# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running "
+        "one and\n# each main commit ends with a CI result. Pull requests share one group per ref and cancel "
+        "superseded runs, except a\n# release PR (head release/*): its full-suite run is release evidence and is "
+        "never cancelled.\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' "
+        "&& github.sha || github.ref }}\n",
+        text,
+        flags=re.DOTALL,
     )
 
 
@@ -293,7 +332,6 @@ def ci_workflow() -> str:
         text,
     )
     text = _without_core_node_selection(_without_core_browser_setup(text))
-    text = re.sub(r"\n      - run: make managed-backend-[^\n]*(?:\n        if: [^\n]*)?", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
         r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
@@ -392,7 +430,7 @@ def ci_workflow() -> str:
         '\'["ubuntu-24.04","macos-latest"]\') }}',
         "os: [ubuntu-24.04, macos-latest]",
     )
-    text = re.sub(r"\n# Ordinary changes and main baselines.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
+    text = _plugin_header(text)
     return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 

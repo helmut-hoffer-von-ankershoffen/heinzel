@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts import focused_job
-from scripts.focused_plan import DESKTOP_ALL, LANES, Scope, current_scope, git
+from scripts.focused_plan import ADVISORY_LANES, DESKTOP_ALL, LANES, WHOLE_SUITES, Scope, current_scope, git
 from scripts.release_candidate import require, unique_object
 
 COVERAGE_VERSION = "7.17.0"
@@ -26,6 +26,11 @@ THRESHOLD = 90
 FLOOR = 80
 TYPE = "pr-affected-production-coverage/v2"
 TEST_TYPE = "focused-tests/v1"
+FULL_TYPE = "full-set/v1"
+ADVISORY_TYPE = "advisory-tests/v1"  # an advisory lane reports its failures without failing the run
+FULL_LANE = "coverage"  # the full set's scoped coverage evidence, from the Coverage job
+PLUGINS_URL = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git"
+PLUGIN_CONTRACT = "core:plugin-api@1"
 MEASUREMENT = "coverage.json"
 REPORT = "evidence.json"
 JUNIT = "junit.xml"
@@ -55,14 +60,16 @@ finally:
 """
 
 
-def _analyse(config: Path, paths: list[str], output: Path, *, datafile: str | None = None) -> None:
+def _analyse(
+    config: Path, paths: list[str], output: Path, *, datafile: str | None = None, combine: bool | None = None
+) -> None:
     """Analyse coverage in an isolated interpreter without disturbing a measured caller."""
     request = {
         "config": str(config),
         "paths": paths,
         "output": str(output),
         "datafile": datafile,
-        "combine": datafile is not None,
+        "combine": datafile is not None if combine is None else combine,
     }
     subprocess.run(  # noqa: S603 - fixed interpreter and analysis code; data is JSON input
         [sys.executable, "-I", "-c", _COVERAGE_ANALYSIS],
@@ -99,6 +106,18 @@ def cases_digest(data: bytes) -> str:
         "focused selection skipped, failed, duplicated, or collected no tests",
     )
     return hashlib.sha256(canonical(sorted(names))).hexdigest()
+
+
+def advisory_cases(data: bytes) -> tuple[str, list[str]]:
+    """The case inventory of an advisory lane and the names of its failed cases, which it reports, not enforces."""
+    require(0 < len(data) <= MAX_FILE, "missing or oversized advisory test report")
+    require(b"<!DOCTYPE" not in data.upper() and b"<!ENTITY" not in data.upper(), "unexpected XML declaration")
+    root = ET.fromstring(data)  # noqa: S314 - bounded report with no DTD or entity declaration
+    cases = list(root.iter("testcase"))
+    names = [(case.get("classname", ""), case.get("name", "")) for case in cases]
+    require(cases and len(set(names)) == len(cases), "advisory lane collected no or duplicate cases")
+    failed = sorted(case.get("name", "") for case in cases if any(child.tag in {"failure", "error"} for child in case))
+    return hashlib.sha256(canonical(sorted(names))).hexdigest(), failed
 
 
 def config_policy(content: bytes) -> dict[str, Any]:
@@ -215,15 +234,28 @@ def evidence(
     attempt: int,
     files: dict[str, bytes],
 ) -> dict[str, Any]:
-    """Recompute the typed evidence from exact reviewed source and raw measurements."""
-    require(lane in scope.selection and run > 0 and attempt == 1, "unexpected focused lane or run attempt")
-    covered = bool(scope.production and lane == "python")
-    require(set(files) == ({JUNIT, MEASUREMENT} if covered else {JUNIT}), "wrong focused evidence inventory")
-    digest = cases_digest(files[JUNIT])
-    require(digest == scope.case_digests[lane], f"{lane} test cases differ from reviewed selection")
+    """Recompute the typed evidence from the exact selected source and raw measurements.
+
+    Merge tier: any attempt of the run may produce it; the attempt is part of the evidence. In full mode the one
+    lane is FULL_LANE, the scoped coverage of the touched production files measured by the whole-suite Coverage job.
+    """
+    full = scope.full and lane == FULL_LANE
+    require((full or lane in scope.selection) and run > 0 and attempt >= 1, "unexpected focused lane or run attempt")
+    covered = bool(scope.production and lane in {"python", FULL_LANE})
+    failed: list[str] = []
+    if full:
+        require(set(files) == ({MEASUREMENT} if covered else set()), "wrong full-set coverage evidence inventory")
+        digest = hashlib.sha256(files.get(MEASUREMENT, b"")).hexdigest()
+    elif lane in ADVISORY_LANES:
+        require(set(files) == {JUNIT}, "wrong advisory evidence inventory")
+        digest, failed = advisory_cases(files[JUNIT])
+    else:
+        require(set(files) == ({JUNIT, MEASUREMENT} if covered else {JUNIT}), "wrong focused evidence inventory")
+        digest = cases_digest(files[JUNIT])
+    require(lane not in scope.case_digests or digest == scope.case_digests[lane], f"{lane} test cases differ")
     result = {
         "schema": 1,
-        "type": TYPE if covered else TEST_TYPE,
+        "type": TYPE if covered else FULL_TYPE if full else ADVISORY_TYPE if lane in ADVISORY_LANES else TEST_TYPE,
         "mode": scope.mode,
         "event": scope.workload.event,
         "base": scope.workload.base,
@@ -238,6 +270,8 @@ def evidence(
         "cases_sha256": digest,
         "raw_sha256": {name: hashlib.sha256(value).hexdigest() for name, value in files.items()},
     }
+    if lane in ADVISORY_LANES:
+        result["failed"] = failed
     if covered:
         config = git("cat-file", "blob", scope.config_blob)
         result["coverage"] = coverage_counts(scope, config, files[MEASUREMENT])
@@ -267,24 +301,6 @@ def _instrument(
         _analyse(rc, list(scope.production), out / MEASUREMENT, datafile=datafile)
 
 
-def _managed_commands(tests: tuple[str, ...], out: Path) -> list[list[str]]:
-    tool = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "pnpm", "--dir", "../desktop/managed"]
-    paths = [f"build/{Path(path).relative_to('desktop/managed').with_suffix('.js')}" for path in tests]
-    return [
-        ["make", "managed-backend-setup"],
-        [*tool, "exec", "tsc", "--project", "."],
-        [
-            *tool,
-            "exec",
-            "node",
-            "--test",
-            "--test-reporter=junit",
-            f"--test-reporter-destination={out / JUNIT}",
-            *paths,
-        ],
-    ]
-
-
 def _desktop_commands(tests: tuple[str, ...], out: Path, root: Path = Path()) -> list[list[str]]:
     """Install the desktop app's locked dependencies without its Electron download, then run its Node unit tests."""
     tool = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "pnpm", "--dir", "../desktop"]
@@ -306,9 +322,55 @@ def _desktop_commands(tests: tuple[str, ...], out: Path, root: Path = Path()) ->
     ]
 
 
+def _consumers(out: Path, env: dict[str, str], work: Path) -> None:
+    """Build this tree's wheel, then run every public plugin's checks at plugins main against it, one at a time.
+
+    Each plugin is one JUnit case; a failing plugin is a failed case, so the lane's evidence names it.
+    """
+    _execute(["make", "build"], env)
+    wheels = sorted(Path("dist").glob("heinzel-*.whl"))
+    require(len(wheels) == 1, "expected exactly one Core wheel in dist/")
+    wheel = str(wheels[0].resolve())
+    plugins = work / "heinzel-plugins"
+    _execute(["git", "clone", "--depth=1", PLUGINS_URL, str(plugins)], env)
+    make = ["make", "--no-print-directory", "-C", str(plugins)]
+    plan = subprocess.run(  # noqa: S603 - fixed make target in the plugins checkout
+        [*make, "plan", f"CONTRACT={PLUGIN_CONTRACT}", f"CORE={wheel}"],
+        env=env,
+        check=True,
+        capture_output=True,
+        timeout=focused_job.TIMEOUT,
+    )
+    names = [row["name"] for row in json.loads(plan.stdout)["include"]]
+    require(bool(names), "the plugins plan selects no consumer")
+    suite = ET.Element("testsuite", name="consumers", tests=str(len(names)))
+    for name in names:
+        case = ET.SubElement(suite, "testcase", classname="consumers", name=name)
+        done = subprocess.run(  # noqa: S603 - fixed make target, one plugin at a time
+            [*make, "check", f"NAME={name}", f"CORE={wheel}"],
+            env=env,
+            check=False,
+            timeout=focused_job.TIMEOUT,
+        )
+        if done.returncode:
+            ET.SubElement(case, "failure", message=f"make check NAME={name} exited {done.returncode}")
+    (out / JUNIT).write_bytes(ET.tostring(suite, encoding="utf-8", xml_declaration=False))
+
+
+def _e2e_suite_commands(suite: str, out: Path, root: Path = Path()) -> list[list[str]]:
+    """One whole browser e2e suite (web-1 or web-2) on three workers, as the candidate's e2e job runs it."""
+    sys.path.insert(0, str(root.resolve() / "scripts"))
+    import affected  # noqa: PLC0415 - this checkout's selector names the suite's files from its Makefile
+
+    files = affected.Repo(root.resolve()).lanes[suite]
+    require(bool(files), f"the {suite} browser suite has no test files")
+    pytest = ["uv", "run", "pytest", "-m", "e2e", "-n", "3", "-q", "-p", "no:cacheprovider", "--session-timeout=900"]
+    return [["make", "e2e-prepare"], [*pytest, f"--junitxml={out / JUNIT}", *files]]
+
+
 def _lane_commands(kind: str, lane: str, selected: tuple[str, ...], out: Path) -> list[list[str]]:
-    if kind == "managed":
-        return _managed_commands(selected, out)
+    if kind == "e2e" and lane in WHOLE_SUITES and selected == (WHOLE_SUITES[lane],):
+        return _e2e_suite_commands(lane.removeprefix("e2e-"), out)
     if kind == "node":
         return _desktop_commands(selected, out)
     return focused_job.plan(
@@ -320,14 +382,25 @@ def _lane_commands(kind: str, lane: str, selected: tuple[str, ...], out: Path) -
 
 
 def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None:
-    """Execute the owning focused-job selection and prepare one exact-attempt artifact."""
-    require(lane in scope.selection and run > 0 and attempt == 1, "unexpected focused lane or run attempt")
+    """Execute the owning focused-job selection and prepare one artifact for this run attempt."""
+    require(lane in scope.selection and run > 0 and attempt >= 1, "unexpected focused lane or run attempt")
     out.mkdir(parents=True, exist_ok=False)
     kind = LANES[lane][2]
     selected = scope.selection[lane]
-    commands = _lane_commands(kind, lane, selected, out)
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
+    if kind == "consumer":
+        with tempfile.TemporaryDirectory(prefix="focused-consumers-") as work:
+            _consumers(out, env, Path(work))
+        files = {path.name: path.read_bytes() for path in out.iterdir()}
+        report = evidence(scope, lane, run, attempt, files)
+        (out / REPORT).write_bytes(canonical(report) + b"\n")
+        if report["failed"] and (summary := os.environ.get("GITHUB_STEP_SUMMARY")):
+            with Path(summary).open("a", encoding="utf-8") as out_summary:
+                names = ", ".join(report["failed"])
+                out_summary.write(f"### Advisory: plugins failing against this Core at plugins main\n\n{names}\n")
+        return
+    commands = _lane_commands(kind, lane, selected, out)
     if lane == "python315":
         env["UV_PYTHON"] = LANES[lane][1]
         commands[0].append("--no-install-package=pyyaml")
@@ -344,10 +417,42 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     (out / REPORT).write_bytes(canonical(evidence(scope, lane, run, attempt, files)) + b"\n")
 
 
+def measure_full(scope: Scope, out: Path, run: int, attempt: int, datafile: Path) -> bool:
+    """Apply the scoped coverage gate to the touched production files, from the whole suite's measurement.
+
+    The full set runs no Python lane, so the Coverage job's data stands in for it: the same files, opportunities and
+    threshold as a focused PR, with every test as the numerator. With no production file it records only the tested
+    source. Returns whether coverage was measured.
+    """
+    require(scope.full and run > 0 and attempt >= 1, "scoped full-set coverage applies only to a full merge-tier run")
+    out.mkdir(parents=True, exist_ok=False)
+    if not scope.production:
+        (out / REPORT).write_bytes(canonical(evidence(scope, FULL_LANE, run, attempt, {})) + b"\n")
+        return False
+    with tempfile.TemporaryDirectory(prefix="focused-full-") as scratch:
+        rc = Path(scratch) / "pyproject.toml"
+        config = git("cat-file", "blob", scope.config_blob)
+        config_policy(config)
+        rc.write_bytes(config)
+        _analyse(rc, list(scope.production), out / MEASUREMENT, datafile=str(datafile), combine=False)
+    files = {MEASUREMENT: (out / MEASUREMENT).read_bytes()}
+    (out / REPORT).write_bytes(canonical(evidence(scope, FULL_LANE, run, attempt, files)) + b"\n")
+    return True
+
+
 def main() -> None:
-    """Run the focused lane of the canonical CI workflow."""
+    """Run the focused lane of the canonical CI workflow, or (`full DATAFILE`) the full set's scoped coverage."""
     scope = current_scope()
     require(isinstance(scope, Scope), "full release candidates do not execute focused workloads")
+    if sys.argv[1:2] == ["full"] and len(sys.argv) == 3:  # noqa: PLR2004 - the subcommand and its data file
+        measure_full(
+            scope,
+            Path(os.environ["RUNNER_TEMP"]) / "focused-evidence",
+            int(os.environ["GITHUB_RUN_ID"]),
+            int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            Path(sys.argv[2]),
+        )
+        return
     run_lane(
         scope,
         os.environ["FOCUSED_LANE"],

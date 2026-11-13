@@ -97,8 +97,13 @@ def test_focused_scope_cannot_be_reused_for_another_event_or_source(router, chan
     "jobs", [(), ("",), ("Focused", "Focused"), ("Coverage",), ("Test (ubuntu-24.04, Python 3.12, unit)",)]
 )
 def test_empty_duplicate_and_full_workloads_are_refused_as_focused_scope(router, jobs):
-    with pytest.raises(router.CandidateError, match=r"reviewed focused jobs|reserved for release candidates"):
+    with pytest.raises(router.CandidateError, match=r"reviewed focused jobs|run only for the full set"):
         route(router, focused=replace(focused_scope(router), jobs=jobs))
+
+
+def test_the_merge_tier_full_set_may_name_the_full_jobs(router):
+    full = replace(focused_scope(router), jobs=("CI OK",), full=True)
+    assert route(router, focused=full) == full
 
 
 def test_change_events_cannot_adopt_a_baseline_or_missing_source(router):

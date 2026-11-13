@@ -69,17 +69,18 @@ JOBS_ALWAYS = ["commits", "dependency-review", "secrets"]  # cheap, every pull r
 FULL = re.compile(
     r"^(?:\.github/|Makefile$|pyproject\.toml$|uv\.lock$|hatch_build\.py$|copier\.yml$|template/|starter/"
     r"|scripts/(?!site_[a-z_]+\.py$|check_docs\.py$)"
-    r"|src/heinzel/__init__\.py$|src/heinzel/__main__\.py$|src/heinzel/_lifecycle_control\.py$|src/_heinzel_launcher\.py$"
+    r"|src/heinzel/__init__\.py$|src/heinzel/__main__\.py$|src/_heinzel_launcher\.py$"
     r"|src/heinzel/kernel/|src/heinzel/testing\.py$"
     r"|src/heinzel/heads/(?:install|bootstrap|daemon_recovery|_desktop_[a-z]+|_tool_install|_prerequisites|_presence|_exposure)\.py$"
     r"|src/heinzel/heads/daemon/|src/heinzel/heads/web/_(?:auto_update|supervision|lifecycle|service)\.py$"
-    r"|src/heinzel/modules/system/(?:daemon|lifecycle|credential|plugin|prerequisite|runner|layer|doctor)/"
+    r"|src/heinzel/modules/system/(?:daemon|credential|plugin|prerequisite|runner|layer|doctor)/"
     r"|src/heinzel/modules/system/notify/macos/"
     r"|tests/conftest\.py$|tests/_[a-z_]+\.py$|tests/fixtures/|tests/unit/conftest\.py$|tests/integration/conftest\.py$"
     r"|tests/e2e/conftest\.py$|tests/e2e/_[a-z_]+\.py$"
     r"|web/package\.json$|web/pnpm-lock\.yaml$|web/vite\.config\.ts$|web/tsconfig\.json$|web/biome\.json$"
     r"|web/src/test/|web/src/main\.tsx$|web/src/App\.tsx$|web/index\.html$"
-    r"|fuzz/|agent-skills/|design/tokens|\.pre-commit|\.gitleaks|SECURITY\.md$)"
+    r"|fuzz/|agent-skills/|design/tokens|\.pre-commit|\.gitleaks|SECURITY\.md$"
+    r"|desktop/managed/)"  # the dormant managed backend has no focused lane of its own (ADR 0149)
 )
 DOCS = re.compile(
     r"^(?:docs/(?!.*\.sh$).*|[^/]*\.md|mkdocs\.yml|scripts/(?:site_[a-z_]+|check_docs)\.py|design/README\.md)$"
@@ -129,6 +130,13 @@ WEB_IMPORTS = (
 # An E2E script name, matched only where a name starts, so a long run of name characters is not rescanned.
 MJS_NAME = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+\.mjs")
 E2E_DIR = "tests/e2e"
+# Focused CI lanes (scripts/focused_plan.py LANES; the limits are scripts/focused_job.py's, a test keeps them equal).
+BROWSER_LANES = ("web-1", "web-2")
+LANE_LIMIT = 10
+PYTHON_LANE_LIMIT = 32
+WEB_ALL = "web/ALL"
+DESKTOP_ALL = "desktop/ALL"
+CONSUMERS_MAIN = "plugins/main"
 REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@^~{}-]*")
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -491,6 +499,62 @@ def classify(repo: Repo, changed: list[str]) -> dict[str, Any]:
         "jobs": sorted(sel.jobs),
         "reasons": sel.reasons,
     }
+
+
+def _full_reason(result: dict[str, Any]) -> str | None:
+    """Why a selection cannot run as focused lanes, or None."""
+    reasons = [
+        (result["full"] or "ALL" in result["pytest"], "the selector selects the full set"),
+        (any(path.endswith("/") for path in result["pytest"]), "a test directory is selected"),
+        (
+            bool(set(result["e2e_lanes"]) - set(BROWSER_LANES)),
+            f"e2e lane(s) {', '.join(sorted(set(result['e2e_lanes']) - set(BROWSER_LANES)))} have no focused lane",
+        ),
+        (
+            len(result["pytest"]) > PYTHON_LANE_LIMIT,
+            f"{len(result['pytest'])} pytest files exceed the Python lane limit of {PYTHON_LANE_LIMIT}",
+        ),
+    ]
+    return next((reason for applies, reason in reasons if applies), None)
+
+
+def _bounded(tests: list[str], whole: str) -> list[str]:
+    return [whole] if "ALL" in tests or len(tests) > LANE_LIMIT else sorted(tests)
+
+
+def focused_lanes(result: dict[str, Any], lane_files: dict[str, list[str]]) -> tuple[dict[str, list[str]] | None, str]:
+    """Map a selection to the focused CI lanes, or None for the full set, with the reason.
+
+    Fail-open: a full selection, a directory, a lane without a focused mapping (cli, supervised) or a Python
+    selection over its limit runs the full set. Vitest and desktop selections over their limits run their whole
+    suite, browser ones each whole browser e2e suite (web-1, web-2). Contract changes add the plugin consumers lane.
+    """
+    browser = sorted({path for lane in result["e2e_lanes"] for path in lane_files.get(lane, [])})
+    reason = _full_reason(result)
+    if reason:
+        return None, reason
+    lanes: dict[str, list[str]] = {}
+    if result["pytest"]:
+        lanes["python"] = sorted(result["pytest"])
+    if result["vitest"]:
+        lanes["web"] = _bounded(result["vitest"], WEB_ALL)
+    if len(browser) > LANE_LIMIT:  # too many files for one lane: each browser e2e suite runs whole, in its own lane
+        lanes.update({f"e2e-{lane}": [f"{E2E_DIR}/{lane}"] for lane in sorted(result["e2e_lanes"])})
+    elif browser:
+        lanes["browser"] = browser
+    if result.get("desktop"):
+        lanes["desktop"] = _bounded(result["desktop"], DESKTOP_ALL)
+    if "consumers" in result["jobs"]:
+        lanes["consumers"] = [CONSUMERS_MAIN]
+    if not lanes:
+        return None, "the selector selects no tests"
+    return lanes, "focused"
+
+
+def focused_selection(repo: Repo, changed: list[str]) -> tuple[dict[str, list[str]] | None, str]:
+    """The focused lanes for changed paths (None: the full set), read from this checkout's map."""
+    result = classify(repo, changed)
+    return focused_lanes(result, {} if result["full"] else repo.lanes)
 
 
 def changed_from_git(repo: Path, base: str) -> list[str]:

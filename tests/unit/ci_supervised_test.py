@@ -47,8 +47,8 @@ def test_supervised_stays_required_in_the_full_release_candidate_matrix():
         "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' "
         '&& \'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}'
     )
-    assert e2e["if"] == (
-        "needs.changes.outputs.full_release == 'true' && "
+    assert e2e["if"] == (  # the release candidate, or a merge-tier change the selector runs in full (ADR 0149)
+        "needs.changes.outputs.full == 'true' && "
         "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
     )
     assert e2e["strategy"]["fail-fast"] is False

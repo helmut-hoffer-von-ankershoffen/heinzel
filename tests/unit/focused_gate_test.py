@@ -72,7 +72,7 @@ def test_focused_artifact_is_bound_to_its_successful_upload_and_digest(focused_g
             focused_gate._artifact(read, job, artifact, name)
 
 
-def test_candidate_composite_still_binds_original_attempt_without_allowing_a_focused_rerun(focused_gate, monkeypatch):
+def test_a_rerun_needs_an_unsuccessful_original_attempt_on_both_tiers(focused_gate, monkeypatch):
     from scripts import merge_gate
     from scripts.release_candidate import REPOSITORY, WORKFLOW
 
@@ -100,9 +100,16 @@ def test_candidate_composite_still_binds_original_attempt_without_allowing_a_foc
 
     monkeypatch.setattr(merge_gate.Gate, "github", github)
     gate = merge_gate.Gate(REPOSITORY, head=head)
-    with pytest.raises(focused_gate.CandidateError, match="successful original attempt"):
-        focused_gate._authenticated_run(gate, 123)
+    assert focused_gate._authenticated_run(gate, 123) == live  # merge tier: a rerun completes the evidence
     assert focused_gate._authenticated_run(gate, 123, candidate_composite=True) == live
+    original["conclusion"] = "timed_out"  # the release tier keeps its narrower recovery set
+    assert focused_gate._authenticated_run(gate, 123) == live
+    with pytest.raises(focused_gate.CandidateError, match="unsuccessful original attempt"):
+        focused_gate._authenticated_run(gate, 123, candidate_composite=True)
+    original["conclusion"] = "success"
+    with pytest.raises(focused_gate.CandidateError, match="unsuccessful original attempt"):
+        focused_gate._authenticated_run(gate, 123)
+    original["conclusion"] = "failure"
     original["head_sha"] = "b" * 40
     with pytest.raises(focused_gate.CandidateError, match="canonical CI workflow"):
         focused_gate._authenticated_run(gate, 123, candidate_composite=True)
@@ -111,7 +118,6 @@ def test_candidate_composite_still_binds_original_attempt_without_allowing_a_foc
 @pytest.fixture
 def first_attempt(focused_gate, monkeypatch):
     """A complete successful PR attempt with independent Git and GitHub observations."""
-    import json
 
     from scripts import focused_coverage, focused_plan, merge_gate
     from scripts.ci_workload import WorkloadSource
@@ -164,25 +170,11 @@ def first_attempt(focused_gate, monkeypatch):
 
     for module in (focused_plan, focused_gate):
         monkeypatch.setattr(module, "git", git)
-        monkeypatch.setattr(module, "git_blob", lambda *_args: blob)
+    monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: blob)
     monkeypatch.setattr(focused_plan, "object_id", lambda _ref: tree)
-    plan = {
-        "schema": 1,
-        "event": "pull_request",
-        "ref": focused_plan.PREOPEN_PR_REF,
-        "base": base,
-        "head": head,
-        "tree": tree,
-        "changed": {test_file: "M"},
-        "diff_sha256": hashlib.sha256(diff).hexdigest(),
-        "config_blob": blob,
-        "execution": dict.fromkeys(focused_plan.PROTECTED_FILES, blob),
-        "production": {},
-        "mode": "python-coverage-not-applicable",
-        "selection": {"python": [test_file]},
-        "case_sha256": {"python": focused_coverage.cases_digest(junit)},
-    }
-    manifest = json.dumps({f"pull_request:{head}": plan})
+    # The judge's own selector over the tested tree; no manifest is needed.
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _commit, _changed: ({"python": [test_file]}, "focused"))
+    manifest = "{}"
     source = WorkloadSource("pull_request", REPOSITORY, ref, {"pull_request": pr}, base, head, diff)
     scope = focused_plan.resolve(source, merge, manifest)
     report = focused_coverage.canonical(focused_coverage.evidence(scope, "python", run_id, 1, {"junit.xml": junit}))
@@ -241,6 +233,7 @@ def first_attempt(focused_gate, monkeypatch):
         },
         f"check-suites/{suite_id}": suite,
         f"actions/runs/{run_id}/attempts/1/jobs?per_page=100&page=1": {"total_count": len(jobs), "jobs": jobs},
+        f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1": {"total_count": len(jobs), "jobs": jobs},
         f"actions/runs/{run_id}/artifacts?per_page=100": {"total_count": 1, "artifacts": [artifact]},
         **{f"check-runs/{check_id}": check for check_id, check in checks.items()},
     }
@@ -327,7 +320,7 @@ def test_protected_reader_only_excludes_authentic_neutral_advisory(
     gate, run, manifest, lane, rows, logs, _git_rows = first_attempt
     suite_id = rows[f"actions/runs/{run}"]["check_suite_id"]
     job, check = _advisory_check(gate.repo, run, gate.head, suite_id)
-    page = rows[f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"]
+    page = rows[f"actions/runs/{run}/jobs?filter=latest&per_page=100&page=1"]
     page["jobs"].extend([*_appended_checks(gate.repo, run, lane, "none"), job | changes.get("job", {})])
     page["total_count"] = len(page["jobs"])
     rows[f"check-runs/{job['id']}"] = check | changes.get("check", {})
@@ -337,7 +330,7 @@ def test_protected_reader_only_excludes_authentic_neutral_advisory(
             focused_gate.verify(gate, run, manifest, logs.__getitem__)
     else:
         assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
-            "Python coverage: not applicable to the reviewed scope"
+            "Python coverage: not applicable to the selected scope"
         )
 
 
@@ -347,23 +340,19 @@ def test_protected_reader_only_excludes_authentic_neutral_advisory(
         ("none", ""),
         ("pending-api-checks", ""),
         ("lookalike-real-job", "workload job inventory"),
-        ("duplicate-api-row", "duplicate candidate job IDs"),
+        ("duplicate-api-row", "duplicate job IDs"),
         ("wrong-job-attempt", "job identity or attempt"),
         ("wrong-job-app", "authentic successful execution"),
-        ("missing-lane", "workload job inventory"),
-        ("missing-artifact", "artifact lane inventory"),
+        ("missing-lane", "evidence"),
+        ("missing-artifact", "evidence"),
+        ("narrowed-by-pr", "evidence differs"),
     ],
 )
-@pytest.mark.parametrize("transport", ["legacy", "slot"])
-def test_protected_reader_verifies_complete_attempt(  # noqa: PLR0913, PLR0917 - independent evidence and transport cases
-    focused_gate, first_attempt, monkeypatch, defect, error, transport
-):
-    gate, run, manifest, lane, rows, logs, _git_rows = first_attempt
-    from scripts.focused_plan import encode_slot
+def test_protected_reader_verifies_complete_attempt(focused_gate, first_attempt, monkeypatch, defect, error):
+    from scripts import focused_plan
 
-    slots = (encode_slot(json.loads(manifest)),) if transport == "slot" else ()
-    manifest = "{}" if slots else manifest
-    jobs_path = f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"
+    gate, run, manifest, lane, rows, logs, _git_rows = first_attempt
+    jobs_path = f"actions/runs/{run}/jobs?filter=latest&per_page=100&page=1"
     artifacts_path = f"actions/runs/{run}/artifacts?per_page=100"
     if defect in {"pending-api-checks", "lookalike-real-job", "duplicate-api-row"}:
         suite_id = rows[f"actions/runs/{run}"]["check_suite_id"]
@@ -379,14 +368,18 @@ def test_protected_reader_verifies_complete_attempt(  # noqa: PLR0913, PLR0917 -
         rows[jobs_path]["total_count"] -= 1
     elif defect == "missing-artifact":
         rows[artifacts_path] = {"total_count": 0, "artifacts": []}
+    elif defect == "narrowed-by-pr":
+        # The judge's selector (main's) wants more than the run executed: the evidence cannot match.
+        wider = {"python": ["tests/unit/focused_gate_test.py", "tests/unit/focused_plan_test.py"]}
+        monkeypatch.setattr(focused_plan, "selector_lanes", lambda _commit, _changed: (wider, "focused"))
 
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
     if error:
         with pytest.raises(focused_gate.CandidateError, match=error):
-            focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
+            focused_gate.verify(gate, run, manifest, logs.__getitem__)
     else:
-        assert focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots) == (
-            "Python coverage: not applicable to the reviewed scope"
+        assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
+            "Python coverage: not applicable to the selected scope"
         )
 
 
@@ -400,7 +393,7 @@ def test_protected_reader_verifies_complete_attempt(  # noqa: PLR0913, PLR0917 -
         ("wrong-run-repo", "does not target protected main"),
         ("wrong-run-pr", "does not bind the exact PR and head"),
         ("wrong-run-head", "does not bind the exact PR and head"),
-        ("old-merge-base", "test merge base differs from reviewed base"),
+        ("old-merge-base", "test merge differs from the tested base"),
     ],
 )
 def test_protected_reader_binds_merge_and_run_to_current_main(focused_gate, first_attempt, monkeypatch, defect, error):
@@ -439,7 +432,7 @@ def test_protected_reader_binds_merge_and_run_to_current_main(focused_gate, firs
             focused_gate.verify(gate, run, manifest, logs.__getitem__)
     else:
         assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
-            "Python coverage: not applicable to the reviewed scope"
+            "Python coverage: not applicable to the selected scope"
         )
 
 
@@ -496,17 +489,13 @@ def test_protected_reader_rechecks_live_source_and_attempt(focused_gate, first_a
 
 
 @pytest.mark.parametrize("defect", ["none", "unrelated-base", "wrong-parent", "wrong-tree", "bad-digest", "moved-main"])
-@pytest.mark.parametrize("transport", ["legacy", "slot"])
 def test_focused_reader_authenticates_original_artifact_before_accepting_ancestor_base(  # noqa: C901 - independent drift cases
-    focused_gate, first_attempt, monkeypatch, defect, transport
+    focused_gate, first_attempt, monkeypatch, defect
 ):
     from scripts import focused_plan
 
     gate, run_id, manifest, _lane, rows, logs, git_rows = first_attempt
-    from scripts.focused_plan import encode_slot
-
-    slots = (encode_slot(json.loads(manifest)),) if transport == "slot" else ()
-    manifest = "{}" if slots else manifest
+    slots = ()
     old = rows["git/ref/heads/main"]["object"]["sha"]
     current, current_merge = "f" * 40, "1" * 40
     original_merge = "c" * 40
@@ -526,6 +515,20 @@ def test_focused_reader_authenticates_original_artifact_before_accepting_ancesto
         git_rows[("rev-list", "--parents", "-n", "1", original_merge)] = (
             f"{original_merge} {current} {gate.head}".encode()
         )
+        diff = (
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--raw",
+            "--no-abbrev",
+            "--no-renames",
+            "-z",
+            current,
+            original_merge,
+        )
+        git_rows[diff] = git_rows[(*diff[:-2], old, original_merge)]
+        git_rows[("merge-base", "--is-ancestor", current, current)] = b""
+        git_rows[("show", f"{current}:pyproject.toml")] = git_rows[("show", f"{old}:pyproject.toml")]
     elif defect == "wrong-tree":
         monkeypatch.setattr(focused_plan, "object_id", lambda _ref: "2" * 40)
     elif defect == "bad-digest":
@@ -555,7 +558,7 @@ def test_focused_reader_authenticates_original_artifact_before_accepting_ancesto
     if defect == "none":
         assert (
             focused_gate.verify(gate, run_id, manifest, logs.__getitem__, slots=slots)
-            == "Python coverage: not applicable to the reviewed scope"
+            == "Python coverage: not applicable to the selected scope"
         )
     else:
         with pytest.raises(focused_gate.CandidateError, match=r".+"):
@@ -707,7 +710,7 @@ def test_full_slots_cannot_evict_or_split_an_admission_pair(registry):
 
 def test_actual_ci_and_protected_gate_inject_all_four_optional_slots(registry):
     root = Path(__file__).resolve().parents[2]
-    for file, readers in (("ci.yml", 2), ("merge-gate.yml", 1)):
+    for file, readers in (("ci.yml", 3), ("merge-gate.yml", 1)):
         text = (root / ".github/workflows" / file).read_text()
         assert text.count("FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}") == readers
         for name in registry.SLOT_VARIABLES:
@@ -751,23 +754,26 @@ def source_manifest(registry, monkeypatch):
     return source, manifest, merge
 
 
-@pytest.mark.parametrize(
-    "defect", ["none", "production", "execution", "case_sha256", "diff_sha256", "tree", "config_blob", "base"]
-)
-def test_slot_transport_cannot_bypass_original_source_or_coverage_contract(registry, source_manifest, defect):
+@pytest.mark.parametrize("transport", ["legacy", "slot"])
+def test_a_manifest_only_widens_the_selection(registry, source_manifest, monkeypatch, transport):
     source, manifest, commit = source_manifest
+    selected = {"python": ["tests/unit/new_test.py"]}
+    monkeypatch.setattr(registry, "selector_lanes", lambda _commit, _changed: (selected, "focused"))
+    automatic = registry.resolve(source, commit, "{}")
+    assert dict(automatic.selection) == {"python": ("tests/unit/new_test.py",)}
+    manifest["selection"] = {"python": ["tests/unit/other_test.py"], "web": ["web/src/x.test.ts"]}
     key = f"pull_request:{source.head}"
-    original = registry.resolve(source, commit, json.dumps({key: manifest}))
-    if defect in {"production", "execution", "case_sha256"}:
-        manifest[defect] = {}
-    elif defect != "none":
-        manifest[defect] = "0" * (64 if defect == "diff_sha256" else 40)
-    slots = (registry.encode_slot({key: manifest}),)
-    if defect == "none":
-        assert registry.resolve(source, commit, "{}", slots=slots) == original
-    else:
-        with pytest.raises(registry.CandidateError):
-            registry.resolve(source, commit, "{}", slots=slots)
+    legacy, slots = (
+        (json.dumps({key: manifest}), ()) if transport == "legacy" else ("{}", (registry.encode_slot({key: manifest}),))
+    )
+    widened = registry.resolve(source, commit, legacy, slots=slots)
+    assert widened.selection == {
+        "python": ("tests/unit/new_test.py", "tests/unit/other_test.py"),
+        "web": ("web/src/x.test.ts",),
+    }
+    manifest["ref"] = "refs/heads/elsewhere"
+    with pytest.raises(registry.CandidateError, match="widening plan does not apply"):
+        registry.resolve(source, commit, json.dumps({key: manifest}))
 
 
 def test_release_candidate_remains_independent_of_broken_slots(registry, source_manifest):
@@ -778,38 +784,37 @@ def test_release_candidate_remains_independent_of_broken_slots(registry, source_
     assert isinstance(registry.resolve(source, commit, "not-json", slots=("broken",)), registry.CandidatePlan)
 
 
-def test_main_tree_lookup_preserves_digest_and_exact_head_precedence(registry, source_manifest):
+def test_main_tree_widening_applies_to_a_main_push(registry, source_manifest, monkeypatch):
     from dataclasses import replace
 
     source, manifest, _commit = source_manifest
     source = replace(source, event="push", ref="refs/heads/main", payload={})
-    manifest.update(event="push", ref=source.ref)
-    del manifest["head"]
-    tree_key = f"push-tree:{manifest['tree']}"
-    encoded = registry.encode_slot({tree_key: manifest})
+    monkeypatch.setattr(
+        registry, "selector_lanes", lambda _commit, _changed: ({"python": ["tests/unit/new_test.py"]}, "focused")
+    )
+    manifest.update(event="push", ref=source.ref, selection={"web": ["web/src/x.test.ts"]})
+    encoded = registry.encode_slot({f"push-tree:{manifest['tree']}": manifest})
     scope = registry.resolve(source, source.head, "{}", slots=(encoded,))
-    assert scope.manifest_digest == hashlib.sha256(registry.registry_bytes(manifest)).hexdigest()
-    bad = manifest | {"head": source.head, "base": "0" * 40}
-    with pytest.raises(registry.CandidateError):
-        registry.resolve(source, source.head, json.dumps({f"push:{source.head}": bad}), slots=(encoded,))
+    assert set(scope.selection) == {"python", "web"}
 
 
-@pytest.mark.parametrize("defect", ["none", "changed-case", "changed-config"])
-def test_protected_main_reader_uses_slots_without_weakening_evidence(focused_gate, first_attempt, monkeypatch, defect):
+@pytest.mark.parametrize("defect", ["none", "base-after-last-green", "no-green-run", "changed-config"])
+def test_protected_main_reader_compares_against_the_last_green_main(focused_gate, first_attempt, monkeypatch, defect):
     from scripts import focused_coverage, focused_plan
 
-    gate, run_id, manifest, lane, rows, logs, git_rows = first_attempt
-    plan = next(iter(json.loads(manifest).values()))
-    base, head, tree = plan["base"], plan["head"], plan["tree"]
-    plan.update(event="push", ref="refs/heads/main")
-    del plan["head"]
+    gate, run_id, _manifest, lane, rows, logs, git_rows = first_attempt
+    base, head, older = "a" * 40, gate.head, "9" * 40
     run = rows[f"actions/runs/{run_id}"]
     run.update(event="push", head_branch="main", head_repository={"full_name": gate.repo})
     rows["git/ref/heads/main"] = {"object": {"sha": head}}
     rows[f"actions/workflows/{focused_gate.CI_WORKFLOW_ID}/runs?head_sha={head}&event=push&per_page=1"] = {
         "workflow_runs": [run]
     }
-    jobs = rows[f"actions/runs/{run_id}/attempts/1/jobs?per_page=100&page=1"]
+    green = older if defect == "base-after-last-green" else base
+    runs = [] if defect == "no-green-run" else [{"id": 77, "head_sha": green}]
+    rows["actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=30"] = {"workflow_runs": runs}
+    rows["actions/runs/77/jobs?filter=latest&per_page=100"] = {"jobs": [{"name": "CI OK", "conclusion": "success"}]}
+    jobs = rows[f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1"]
     jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] not in focused_gate.PR_JOBS]
     jobs["total_count"] = len(jobs["jobs"])
     diff = git_rows[("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, "c" * 40)]
@@ -818,12 +823,17 @@ def test_protected_main_reader_uses_slots_without_weakening_evidence(focused_gat
             ("fetch", "--no-tags", "origin", "refs/heads/main"): b"",
             ("rev-parse", "FETCH_HEAD"): head.encode(),
             ("merge-base", base, head): base.encode(),
+            ("merge-base", "--is-ancestor", green, head): b"",
+            ("merge-base", base, green): (older if green == older else base).encode(),
             ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, head): diff,
         }
     )
+    if defect == "changed-config":
+        relaxed = git_rows[("show", f"{base}:pyproject.toml")].replace(b"fail_under = 90", b"fail_under = 80")
+        assert relaxed != git_rows[("show", f"{base}:pyproject.toml")]
+        git_rows[("show", f"{base}:pyproject.toml")] = relaxed
     source = focused_plan.WorkloadSource("push", gate.repo, "refs/heads/main", {}, base, head, diff)
-    registry = {f"push-tree:{tree}": plan}
-    scope = focused_plan.resolve(source, head, json.dumps(registry))
+    scope = focused_plan.resolve(source, head, "{}")
     junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
     report = focused_coverage.canonical(focused_coverage.evidence(scope, "python", run_id, 1, {"junit.xml": junit}))
     output = io.BytesIO()
@@ -838,16 +848,54 @@ def test_protected_main_reader_uses_slots_without_weakening_evidence(focused_gat
         f"Artifact {artifact['name']} has been successfully uploaded! "
         f"Final size is {len(content)} bytes. Artifact ID is {artifact['id']}\n"
     ).encode()
-    if defect == "changed-case":
-        plan["case_sha256"]["python"] = "0" * 64
-    elif defect == "changed-config":
-        plan["config_blob"] = "0" * 40
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
-    slots = (focused_plan.encode_slot(registry),)
     if defect == "none":
-        result = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__, slots=slots)
+        result = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
         assert result["manifest_sha256"] == scope.manifest_digest
-        assert result["tree"] == tree
+        assert result["attempt"] == 1
     else:
         with pytest.raises(focused_gate.CandidateError):
-            focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__, slots=slots)
+            focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
+
+
+def test_a_rerun_completes_merge_evidence_and_the_flake_stays_on_record(focused_gate, first_attempt, monkeypatch):
+    gate, run_id, manifest, lane, rows, logs, _git_rows = first_attempt
+    run = rows[f"actions/runs/{run_id}"]
+    original = dict(run, run_attempt=1, conclusion="failure")
+    run["run_attempt"] = 2
+    rows[f"actions/runs/{run_id}/attempts/1"] = original
+    failed = dict(lane, id=999, run_attempt=1, conclusion="failure")
+    lane["run_attempt"] = 2
+    artifact = rows[f"actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0]
+    # The lane passed on attempt 2: its evidence and artifact name carry that attempt.
+    from scripts import focused_coverage, focused_plan
+
+    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    source = focused_gate._pr_source(gate, run, focused_gate.pull_identity(gate, gate.head), candidate=False)
+    rescope = focused_plan.resolve(source.source, source.commit, "{}", pr_base_limit=source.source.base)
+    report = focused_coverage.canonical(focused_coverage.evidence(rescope, "python", run_id, 2, {"junit.xml": junit}))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("evidence.json", report)
+        archive.writestr("junit.xml", junit)
+    content = output.getvalue()
+    artifact.update(
+        name=f"focused-pr-evidence-python-{run_id}-2",
+        size_in_bytes=len(content),
+        digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
+    )
+    logs[f"actions/artifacts/{artifact['id']}/zip"] = content
+    logs[f"actions/jobs/{lane['id']}/steps/6/logs"] = (
+        f"Artifact {artifact['name']} has been successfully uploaded! "
+        f"Final size is {len(content)} bytes. Artifact ID is {artifact['id']}\n"
+    ).encode()
+    every = rows[f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1"]["jobs"] + [failed]
+    rows[f"actions/runs/{run_id}/jobs?filter=all&per_page=100&page=1"] = {"total_count": len(every), "jobs": every}
+    assert focused_gate.verify(gate, run_id, manifest, logs.__getitem__) == (
+        "Python coverage: not applicable to the selected scope"
+    )
+    assert focused_gate.rerun_ledger(gate.github, run) == [
+        f"passed on rerun: Focused tests (python) (attempt 1 failure, run {run_id}, head {gate.head})"
+    ]
+    assert focused_gate.rerun_ledger(gate.github, original) == []

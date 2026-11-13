@@ -11,19 +11,21 @@ on:
 
 permissions: {}
 
-# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
-# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
-# release PR (head release/*): its full-suite run is release evidence and is never cancelled.
+# Main pushes share one group: one run at a time and at most one waiting, a newer push replacing the waiting one. A run
+# compares against the last main commit with a green run, not the previous push, so the tip covers every replaced push.
+# Scheduled and dispatched main runs keep a group per commit. Pull requests share one group per ref and cancel
+# superseded runs, except a release PR (head release/*): its full-suite run is release evidence and is never cancelled.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && 'main-push' || github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:
   UV_FROZEN: "1"
   FORCE_COLOR: "1"
 
-# Ordinary changes and main baselines require a reviewed, exact focused scope.
-# The full matrix is reserved for the canonical release candidate. Cheap checks
+# Two evidence tiers (ADR 0149). Merge tier, pull requests and main pushes: the in-repo selector (scripts/affected.py)
+# picks focused lanes and fails open to the full set, which then runs the candidate jobs; a rerun may complete it.
+# Release tier, the canonical release candidate: the full matrix, first attempt, approved source pins. Cheap checks
 # still cancel failing same-repository PR runs. Fork workloads stay read-only.
 jobs:
   admission:
@@ -81,6 +83,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read # the last green main run
     needs: admission
     if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Changed paths
@@ -97,6 +100,8 @@ jobs:
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
+      # The candidate jobs run for the release candidate and for a merge-tier change the selector cannot narrow.
+      full: ${{ steps.release.outputs.full_release == 'true' || steps.focused.outputs.focused_full == 'true' }}
       focused_matrix: ${{ steps.focused.outputs.focused_matrix }}
       focused_mode: ${{ steps.focused.outputs.focused_mode }}
       focused_base: ${{ steps.focused.outputs.focused_base }}
@@ -126,9 +131,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
       - id: focused
-        name: Resolve the exact reviewed focused plan
+        name: Select the merge-tier lanes for the exact diff (fail-open to the full set)
         if: github.event_name != 'schedule' && steps.release.outputs.full_release != 'true'
         env:
+          GH_TOKEN: ${{ github.token }} # reads the last green main run
           FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
           FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
           FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
@@ -277,11 +283,6 @@ jobs:
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-      - run: make managed-backend-setup # private Node process owner
-      - run: make managed-backend-static
-        if: needs.changes.outputs.full_release != 'true'
-      - run: make managed-backend-check
-        if: needs.changes.outputs.full_release == 'true'
       - run: make typecheck
       - if: needs.changes.outputs.full_release == 'true'
         run: make test-web # full candidate component suite
@@ -315,7 +316,7 @@ jobs:
       contents: read
     name: make setup (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true') # Core full set: candidate, or a merge-tier fail-open
     # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
@@ -362,7 +363,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -418,7 +419,7 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
@@ -426,11 +427,13 @@ jobs:
     permissions:
       contents: write # publishes the badge to the python-coverage-comment-action-data branch
       pull-requests: write # comments the coverage report on pull requests
+      actions: read # the merge tier's last green main run
     env:
       UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # the merge tier's scope reads the tested merge's base and the last green main
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
         with:
@@ -449,6 +452,26 @@ jobs:
           name: coverage-total
           path: coverage-total.txt
           retention-days: 7
+      - name: Apply the scoped coverage gate to the changed production files (merge-tier full set)
+        if: needs.changes.outputs.full_release != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
+          BATCH_BASE: ${{ needs.changes.outputs.focused_base }}
+          PYTHONPATH: .
+        run: uv run --no-build --frozen --script scripts/focused_coverage.py full .coverage
+      - name: Upload focused CI evidence
+        if: needs.changes.outputs.full_release != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: focused-pr-evidence-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-evidence/
+          if-no-files-found: error
+          retention-days: 7
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
         if: github.event_name != 'workflow_dispatch'
@@ -462,7 +485,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -487,7 +510,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.site_only == 'true') # Core full set: candidate, or a merge-tier fail-open
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -506,7 +529,7 @@ jobs:
   e2e:
     name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -556,7 +579,7 @@ jobs:
       contents: read
     name: Plugin template
     needs: [lint, changes] # the slowest offline check runs only once the cheap ones pass
-    if: needs.changes.outputs.full_release == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -576,7 +599,7 @@ jobs:
       contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -599,7 +622,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -628,7 +651,7 @@ jobs:
     # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
     # Build the notifier so the real-launch tests cannot silently skip.
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -661,7 +684,7 @@ jobs:
       contents: read
     name: Electron (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.electron == 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -705,7 +728,7 @@ jobs:
       contents: read
     name: Build
     needs: [changes, notifier, macos-smoke]
-    if: ${{ !cancelled() && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.full == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -740,7 +763,7 @@ jobs:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.core == 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -760,7 +783,7 @@ jobs:
       contents: read
     name: Optional source plugins
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1066,7 +1089,7 @@ jobs:
       contents: read
     name: Quarantine plan
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1088,7 +1111,7 @@ jobs:
     name: Quarantine (${{ matrix.os }})
     needs: [changes, quarantine-plan]
     # Non-blocking by design: not in `CI OK`, and `make test-quarantine` exits 0 whatever the tests do.
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core candidate-only
+    if: needs.changes.outputs.full == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core full set: candidate, or a merge-tier fail-open
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -1126,11 +1149,12 @@ jobs:
   focused-tests:
     name: Focused tests (${{ matrix.lane }})
     needs: changes
-    if: needs.changes.outputs.focused_mode != ''
+    if: needs.changes.outputs.focused_mode != '' && needs.changes.outputs.focused_matrix != '{"include":[]}'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read # the merge tier's last green main run
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.focused_matrix || '{"include":[]}') }}
@@ -1159,6 +1183,7 @@ jobs:
           FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
           FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           BATCH_BASE: ${{ needs.changes.outputs.focused_base }}
+          GH_TOKEN: ${{ github.token }}
           PYTHONPATH: .
         run: uv run --no-build --frozen --script scripts/focused_coverage.py
       - name: Upload focused CI evidence
@@ -1193,6 +1218,8 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          FOCUSED_MODE: ${{ needs.changes.outputs.focused_mode }}
+          CORE: ${{ needs.changes.outputs.core }}
           SCHEDULED_MAINTENANCE: ${{ needs.changes.outputs.scheduled_maintenance }}
         run: |
           required=(admission changes lint secrets audit quarantine-registry)
@@ -1201,6 +1228,10 @@ jobs:
               echo "::error::Scheduled maintenance was not selected"
               exit 1
             fi
+          elif [ "$FOCUSED_MODE" = full ]; then
+            # The merge-tier full set: every other job that ran is checked above.
+            if [ "$CORE" = true ]; then required+=(test coverage); fi
+            if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           else
             required+=(focused-tests)
             if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi

@@ -76,7 +76,7 @@ def test_final_owns_integration_and_can_start_before_its_marker(evidence):
         (f"commits/{FIRST}/statuses?per_page=100", (0, "creator", "id"), 7),
         (f"commits/{FIRST}/statuses?per_page=100", (0, "context"), "CI OK"),
         (f"commits/{FINAL}/statuses?per_page=100", (), []),
-        ("actions/runs/99", ("run_attempt",), 2),
+        ("actions/runs/99", ("run_attempt",), 0),
         ("actions/runs/99", ("path",), ".github/workflows/other.yml"),
         ("actions/runs/99", ("head_sha",), FIRST),
         ("actions/runs/99", ("head_branch",), "topic"),
@@ -265,3 +265,11 @@ def test_malformed_final_job_page_does_not_inherit_the_long_wait(evidence, fake_
     page["total_count"] += 1
     assert batch.admit(FIRST, evidence.__getitem__, clock=clock, sleep=sleep)["full"] is True
     assert state["elapsed"] == 0
+
+
+def test_a_rerun_of_the_final_main_run_still_admits_the_batch(evidence):
+    """Merge tier (ADR 0149): a rerun may complete main's evidence; the batch stays bound to the same run."""
+    evidence["actions/runs/99"]["run_attempt"] = 2
+    jobs = evidence["actions/runs/99/attempts/1/jobs?per_page=100"]["jobs"]
+    jobs[0]["name"] = f"Main batch focused scope ({BASE})"
+    assert batch.admit(FIRST, evidence.__getitem__, seconds=0) == {"full": False, "base": BASE, "run": 99}

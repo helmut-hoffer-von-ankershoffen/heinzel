@@ -39,6 +39,7 @@ class FocusedPlan:
     head: str
     diff_sha256: str
     jobs: tuple[str, ...]
+    full: bool = False  # merge tier: the selector failed open, so the candidate-only jobs run on this change
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +133,7 @@ def plan_workload(
         "reviewed focused jobs must be nonempty and unique",
     )
     require(
-        all(job != "Coverage" and not job.startswith("Test (") for job in focused.jobs),
-        "the complete Python matrix and coverage jobs are reserved for release candidates",
+        focused.full or all(job != "Coverage" and not job.startswith("Test (") for job in focused.jobs),
+        "the complete Python matrix and coverage jobs run only for the full set",
     )
     return focused

@@ -10,10 +10,14 @@ import base64
 import binascii
 import gzip
 import hashlib
+import importlib.util
+import io
 import json
 import os
 import re
 import sys
+import tarfile
+import tempfile
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +45,8 @@ from scripts.release_candidate import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    Selector = Callable[[str, list[str]], tuple[dict[str, list[str]] | None, str]]
+
 PATH = re.compile(r"[A-Za-z0-9_.@+-]+(?:/[A-Za-z0-9_.@+-]+)*")
 LANES = {
     "python": ("ubuntu-24.04", "3.14.8", "pytest"),
@@ -48,22 +54,44 @@ LANES = {
     "python315": ("ubuntu-24.04", "3.15", "pytest"),
     "macos": ("macos-latest", "3.14", "pytest"),
     "macos-notifier": ("macos-latest", "3.14", "pytest"),
-    "managed": ("ubuntu-24.04", "3.14", "managed"),
     "desktop": ("ubuntu-24.04", "3.14", "node"),
+    # Advisory until the plugins' lock-by-contract toolkit release: see ADVISORY_LANES.
+    "consumers": ("ubuntu-24.04", "3.14", "consumer"),
     "web": ("ubuntu-24.04", "3.14", "vitest"),
     "browser": ("ubuntu-24.04", "3.14", "e2e"),
+    "e2e-web-1": ("ubuntu-24.04", "3.14", "e2e"),  # a whole browser e2e suite, when "browser" would exceed its limit
+    "e2e-web-2": ("ubuntu-24.04", "3.14", "e2e"),
     "macos-browser": ("macos-latest", "3.14", "e2e"),
 }
 # The whole desktop unit suite (desktop/test/*.test.js); like VITEST_ALL it names no file and stands alone.
 DESKTOP_ALL = "desktop/ALL"
-WHOLE_SUITES = {"web": VITEST_ALL, "desktop": DESKTOP_ALL}
+# Every public plugin's contract tests at heinzel-plugins main, against this tree's wheel, serially.
+CONSUMERS_MAIN = "plugins/main"
+WHOLE_SUITES = {
+    "web": VITEST_ALL,
+    "desktop": DESKTOP_ALL,
+    "consumers": CONSUMERS_MAIN,
+    "e2e-web-1": "tests/e2e/web-1",
+    "e2e-web-2": "tests/e2e/web-2",
+}
+BROWSER_LANES = frozenset({"browser", "macos-browser", "e2e-web-1", "e2e-web-2"})
+# Lanes that report without blocking. TODO(ADR 0149): make "consumers" required once the
+# plugins' lock-by-contract toolkit release lands; until then a Core dependency edit fails it on every plugin.
+ADVISORY_LANES = frozenset({"consumers"})
 PREFIXES = {
     "pytest": "tests/",
     "vitest": "web/",
     "e2e": "tests/e2e/",
-    "managed": "desktop/managed/test/",
     "node": "desktop/test/",
+    "consumer": "plugins/",
 }
+# The job whose success stands for the full set of a merge-tier run (the candidate-only jobs, on a PR or main push).
+FULL_JOB = "CI OK"
+GREEN_RUNS = 30
+# The plugin contract: a change here runs the plugin consumers lane (ci.yml's "contracts" paths).
+CONTRACTS = re.compile(
+    r"^(?:src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)"
+)
 ARTIFACT_PREFIX = "focused-pr-evidence"
 PLAN_VARIABLE = "FOCUSED_CI_PLANS"
 PREOPEN_PR_REF = "refs/pull/*/merge"
@@ -260,10 +288,14 @@ class Scope:
     selection: dict[str, tuple[str, ...]]
     case_digests: dict[str, str]
     manifest_digest: str
+    full: bool = False
+    reason: str = ""
 
     @property
     def mode(self) -> str:
-        """Describe the applicability of the existing Python coverage policy."""
+        """Describe the workload: the full set, or the applicability of the scoped Python coverage policy."""
+        if self.full:
+            return "full"
         return "pr-scoped" if self.production else "python-coverage-not-applicable"
 
     def matrix(self) -> list[dict[str, str]]:
@@ -389,7 +421,6 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
             )
             require(
                 (kind == "vitest" and path == test and re.search(r"\.(?:test|spec)\.[cm]?[jt]sx?$", path))
-                or (kind == "managed" and path == test and path.endswith(".test.ts"))
                 or (kind == "node" and path == test and path.endswith(".test.js"))
                 or (kind in {"pytest", "e2e"} and path.endswith("_test.py")),
                 "focused selections require owning test files or exact test node IDs",
@@ -408,13 +439,17 @@ def resolve(  # noqa: PLR0913 - independent source, dispatch, base and transport
     *,
     pr_base_limit: str | None = None,
     slots: tuple[str, ...] = (),
+    select: Selector | None = None,
 ) -> CandidatePlan | Scope:
-    """Resolve only an exact released candidate or exact reviewed, bounded workload.
+    """Resolve an exact release candidate (release tier) or the selected merge-tier workload.
+
+    Merge tier (pull requests and main pushes): the in-repo selector maps the exact diff to focused lanes and fails
+    open to the full set. A manifest in the plan registry may only widen that selection, never narrow it.
 
     Raises:
-        CandidateError: No exact focused plan or supported candidate was found.
+        CandidateError: The source is not exact, or no supported workload applies.
     """
-    # Full candidate recognition is deliberately independent of focused plans.
+    # Full candidate recognition is deliberately independent of the merge-tier selection.
     if release_version(source.event, source.repository, source.ref.removeprefix("refs/heads/"), source.payload):
         workload = plan_workload(source, dispatch_pr=dispatch_pr)
         if isinstance(workload, CandidatePlan):
@@ -422,119 +457,155 @@ def resolve(  # noqa: PLR0913 - independent source, dispatch, base and transport
         message = "canonical candidate source did not resolve to the full inventory"
         raise CandidateError(message)
     require(valid_sha(commit), "missing exact tested checkout")
-    registry = plan_registry(manifests, slots)
-    plan = registry.get(f"{source.event}:{source.head}")
-    preplanned_main = plan is None and source.event == "push" and source.ref == "refs/heads/main"
-    if preplanned_main:
-        tree = object_id(f"{commit}^{{tree}}")
-        plan = registry.get(f"push-tree:{tree}")
-    if not isinstance(plan, dict):
-        message = "No focused plan for this exact source. Submit an independently reviewed scope manifest."
-        raise CandidateError(message)
-    require(
-        plan["ref"] == source.ref or (source.event == "pull_request" and plan["ref"] == PREOPEN_PR_REF),
-        "reviewed ref does not apply to the exact workflow event",
-    )
-    selection = _selections(plan, commit)
-    workload = plan_workload(
-        source,
-        focused=FocusedPlan(
-            plan["event"],
-            source.ref,
-            plan["base"],
-            plan.get("head", source.head) if preplanned_main else plan["head"],
-            plan["diff_sha256"],
-            tuple(f"Focused tests ({lane})" for lane in selection),
-        ),
-    )
-    if isinstance(workload, FocusedPlan):
-        return _scope(source, workload, commit, plan, selection, pr_base_limit=pr_base_limit)
-    message = "ordinary source did not resolve to a focused workload"
-    raise CandidateError(message)
-
-
-def _scope(  # noqa: PLR0913 - the reader separately supplies the current protected base limit
-    source: WorkloadSource,
-    workload: FocusedPlan,
-    commit: str,
-    plan: dict[str, Any],
-    selection: dict[str, tuple[str, ...]],
-    *,
-    pr_base_limit: str | None = None,
-) -> Scope:
-    require(valid_sha(commit), "invalid tested checkout")
     if source.event == "pull_request":
-        require(pr_merge_base(commit, source.head) == source.base, "GitHub test merge base differs from reviewed base")
+        require(pr_merge_base(commit, source.head) == source.base, "GitHub test merge differs from the tested base")
         limit = pr_base_limit or source.base
         require_pr_base_ancestor(source.base, limit)
         require_pr_base_ancestor(source.payload["pull_request"]["base"]["sha"], limit)
     else:
         require(commit == source.head, "checkout differs from exact source head")
+    changes = changed_paths(source.raw_diff) if source.raw_diff else {}
+    lanes, reason = (select or selector_lanes)(commit, list(changes)) if changes else (None, "no exact change")
+    widening = registry_widening(plan_registry(manifests, slots), source, commit)
+    production = {
+        path: git_blob(commit, path) for path in sorted(changes) if _production(path) and changes[path] != "D"
+    }
+    selection: dict[str, tuple[str, ...]] | None = None
+    if lanes is not None:
+        selection = _selections({"selection": _union(lanes, widening)}, commit)
+        reason = _unmet(changes, production, selection) or reason
+        if reason != "focused":
+            selection = None
+    full = selection is None
+    workload = plan_workload(
+        source,
+        focused=FocusedPlan(
+            source.event,
+            source.ref,
+            source.base,
+            source.head,
+            hashlib.sha256(source.raw_diff).hexdigest(),
+            (FULL_JOB,) if full else tuple(f"Focused tests ({lane})" for lane in selection or {}),
+            full=full,
+        ),
+    )
+    if not isinstance(workload, FocusedPlan):
+        message = "ordinary source did not resolve to a merge-tier workload"
+        raise CandidateError(message)
     tree = object_id(f"{commit}^{{tree}}")
-    changes = changed_paths(source.raw_diff)
-    production = plan["production"]
-    changed_python = {path for path, status in changes.items() if _production(path) and status != "D"}
-    require(
-        type(plan["schema"]) is int
-        and plan["schema"] == 1
-        and plan.get("commit", commit) == commit
-        and plan["tree"] == tree
-        and plan["changed"] == changes
-        and isinstance(production, dict)
-        and len(production) <= MAX_COVERED_FILES
-        and changed_python <= set(production)
-        and all(_path(path) and _production(path) for path in production),
-        "reviewed manifest does not cover the complete tested change and production scope",
-    )
-    require(plan["mode"] == ("pr-scoped" if production else "python-coverage-not-applicable"), "wrong coverage mode")
-    require(not production or "python" in selection, "Python production requires a Linux coverage selection")
-    if any(web_production(path) for path in changes):
-        require(
-            "web" in selection and bool({"browser", "macos-browser"} & selection.keys()),
-            "web production requires reviewed Vitest and browser selections",
-        )
-    require(
-        all(git_blob(commit, path) == blob for path, blob in production.items()),
-        "affected production blob differs from reviewed scope",
-    )
-    if any(path.startswith("desktop/managed/src/") for path in changes):
-        require("managed" in selection, "managed production requires reviewed owning Node tests")
-    if any(desktop_unit(path) for path in changes):
-        require("desktop" in selection, "a desktop change requires the reviewed desktop unit suite")
-    cases = plan["case_sha256"]
-    execution = plan["execution"]
-    require(
-        isinstance(execution, dict)
-        and set(execution) == set(PROTECTED_FILES)
-        and all(git_blob(commit, path) == blob for path, blob in execution.items()),
-        "reviewed workflow and producer blobs differ from the tested source",
-    )
     config_blob = git_blob(commit, "pyproject.toml")
+    # The full set runs the candidate jobs, whose consumer matrix stays release-only: contract changes keep the lane.
+    contracts = {"consumers": (CONSUMERS_MAIN,)} if any(CONTRACTS.match(path) for path in changes) else {}
+    chosen = selection if selection is not None else contracts
+    descriptor = {
+        "schema": 2,
+        "event": source.event,
+        "ref": source.ref,
+        "base": source.base,
+        "head": source.head,
+        "commit": commit,
+        "tree": tree,
+        "changed": changes,
+        "production": production,
+        "config_blob": config_blob,
+        "selection": {lane: list(tests) for lane, tests in chosen.items()},
+        "full": full,
+        "reason": reason,
+    }
+    digest = hashlib.sha256(json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return Scope(workload, commit, tree, changes, production, config_blob, {}, chosen, {}, digest, full, reason)
+
+
+def _union(lanes: dict[str, list[str]], widening: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged = {lane: list(tests) for lane, tests in lanes.items()}
+    for lane, tests in widening.items():
+        current = merged.get(lane, [])
+        whole = WHOLE_SUITES.get(lane)
+        if whole in current or whole in tests:
+            merged[lane] = [whole]
+        else:
+            merged[lane] = sorted({*current, *tests})
+    return merged
+
+
+def _unmet(changes: dict[str, str], production: dict[str, str], selection: dict[str, tuple[str, ...]]) -> str | None:
+    """The first lane requirement a selection misses; the caller then runs the full set (fail-open)."""
+    if len(production) > MAX_COVERED_FILES:
+        return f"{len(production)} production files exceed the scoped coverage bound of {MAX_COVERED_FILES}"
+    if production and "python" not in selection:
+        return "Python production without a Python selection"
+    if any(web_production(path) for path in changes) and not ("web" in selection and BROWSER_LANES & selection.keys()):
+        return "web production without Vitest and browser selections"
+    if any(desktop_unit(path) for path in changes) and "desktop" not in selection:
+        return "a desktop change without the desktop unit suite"
+    return None
+
+
+def registry_widening(registry: dict[str, Any], source: WorkloadSource, commit: str) -> dict[str, list[str]]:
+    """An optional reviewed widening for this exact source: its lanes, which are only ever added."""
+    plan = registry.get(f"{source.event}:{source.head}")
+    if plan is None and source.event == "push" and source.ref == "refs/heads/main":
+        plan = registry.get(f"push-tree:{object_id(f'{commit}^{{tree}}')}")
+    if plan is None:
+        return {}
     require(
-        plan["config_blob"] == config_blob
-        and isinstance(cases, dict)
-        and set(cases) == set(selection)
-        and all(isinstance(value, str) and DIGEST.fullmatch(value) for value in cases.values()),
-        "reviewed configuration or test-case identity missing",
+        isinstance(plan, dict)
+        and (plan.get("ref") == source.ref or (source.event == "pull_request" and plan.get("ref") == PREOPEN_PR_REF)),
+        "a widening plan does not apply to the exact workflow event",
     )
-    digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return Scope(workload, commit, tree, changes, production, config_blob, execution, selection, cases, digest)
+    return {lane: list(tests) for lane, tests in _selections(plan, commit).items()}
+
+
+def selector_lanes(commit: str, changed: list[str]) -> tuple[dict[str, list[str]] | None, str]:
+    """Run this checkout's selector over the exact tested tree, as data.
+
+    The tree is extracted to a scratch directory; only this checkout's own scripts/affected.py and
+    scripts/related_tests.py run, so the judge on the default branch never executes the tested tree's selector.
+    """
+    scripts = Path(__file__).resolve().parent
+    with tempfile.TemporaryDirectory(prefix="focused-select-") as scratch:
+        root = Path(scratch)
+        with tarfile.open(fileobj=io.BytesIO(git("archive", "--format=tar", commit))) as archive:
+            archive.extractall(root, filter="data")
+        affected = _load(scripts / "affected.py", "focused_affected")
+        related = _load(scripts / "related_tests.py", "focused_related_tests")
+        related.ROOT = root
+        repo = affected.Repo(root)
+        repo.__dict__["related"] = related
+        return affected.focused_selection(repo, changed)
+
+
+def _load(path: Path, name: str) -> Any:  # noqa: ANN401 - a module object
+    spec = importlib.util.spec_from_file_location(name, path)
+    require(spec is not None and spec.loader is not None, f"cannot load {path.name}")
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
 
 
 def event_source(
     env: dict[str, str],
     get: Callable[[str], Any],
-) -> tuple[WorkloadSource, str, dict[str, Any] | None]:
-    """Resolve the actual Actions checkout and, for candidate dispatch, its open release PR."""
+) -> tuple[WorkloadSource, str, dict[str, Any] | None, str | None]:
+    """Resolve the actual Actions checkout, a candidate dispatch's open release PR, and why it must run in full."""
     event, ref = env["GITHUB_EVENT_NAME"], env["GITHUB_REF"]
     payload = json.loads(Path(env["GITHUB_EVENT_PATH"]).read_bytes())
     commit = object_id("HEAD")
     require(commit == env["GITHUB_SHA"] and env["GITHUB_REPOSITORY"] == REPOSITORY, "unexpected CI checkout")
     dispatch_pr = None
+    unproven = None
     if event == "pull_request":
         pr = payload["pull_request"]
         head = pr["head"]["sha"]
         base = pr["base"]["sha"] if release_version(event, REPOSITORY, "", payload) else pr_merge_base(commit, head)
+    elif event == "push":
+        head = commit
+        green = last_green_main(get, head)
+        if green is None:  # nothing proven green to compare against: fail open to the full set
+            base = env.get("BATCH_BASE") or payload.get("before") or head
+            unproven = "no green main run before this push"
+        else:
+            base = oldest_ancestor(env.get("BATCH_BASE") or green, green)
     else:
         head = commit
         base = env.get("BATCH_BASE") or payload.get("before") or head
@@ -543,7 +614,46 @@ def event_source(
         ):
             dispatch_pr = dispatch_pull(head, ref.removeprefix("refs/heads/"), get)
             base = dispatch_pr["base"]["sha"]
-    return WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, commit)), commit, dispatch_pr
+    source = WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, commit))
+    return source, commit, dispatch_pr, unproven
+
+
+def _is_ancestor(older: str, newer: str) -> bool:
+    try:
+        git("merge-base", "--is-ancestor", older, newer)
+    except CalledProcessError:
+        return False
+    return True
+
+
+def oldest_ancestor(first: str, second: str) -> str:
+    """The older of two commits on one history, so a main run covers every push since either.
+
+    Raises:
+        CandidateError: The commits are not on one line of history.
+    """
+    require(valid_sha(first) and valid_sha(second), "invalid main base")
+    if first == second or _is_ancestor(first, second):
+        return first
+    require(_is_ancestor(second, first), "main bases are not on one history")
+    return second
+
+
+def last_green_main(get: Callable[[str], Any], head: str) -> str | None:
+    """The newest main commit before HEAD whose push run passed CI OK.
+
+    Main pushes share one concurrency group, so a newer push can replace a pending run. Comparing against the last
+    green commit, not the previous push, makes the tip's run cover the union of every replaced push.
+    """
+    runs = get(f"actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={GREEN_RUNS}")
+    for run in runs.get("workflow_runs", []):
+        sha = run.get("head_sha")
+        if not (isinstance(sha, str) and valid_sha(sha)) or sha == head or not _is_ancestor(sha, head):
+            continue
+        jobs = get(f"actions/runs/{run['id']}/jobs?filter=latest&per_page=100").get("jobs", [])
+        if any(job.get("name") == FULL_JOB and job.get("conclusion") == "success" for job in jobs):
+            return sha
+    return None
 
 
 def current_scope() -> CandidatePlan | Scope:
@@ -552,23 +662,24 @@ def current_scope() -> CandidatePlan | Scope:
     def get(path: str) -> Any:  # noqa: ANN401 - GitHub response is checked against the source contract
         return json.loads(command(["gh", "api", f"repos/{REPOSITORY}/{path}"]))
 
-    source, commit, dispatch_pr = event_source(dict(os.environ), get)
+    source, commit, dispatch_pr, unproven = event_source(dict(os.environ), get)
     return resolve(
-        source, commit, os.environ.get(PLAN_VARIABLE, ""), dispatch_pr, slots=registry_slots(dict(os.environ))
+        source,
+        commit,
+        os.environ.get(PLAN_VARIABLE, ""),
+        dispatch_pr,
+        slots=registry_slots(dict(os.environ)),
+        select=(lambda _commit, _changed: (None, unproven)) if unproven else None,
     )
 
 
 def main() -> None:
-    """Write routing hints or print a reviewer's advisory affected selection."""
+    """Write the merge-tier routing outputs, or print the selection for a base (--suggest BASE)."""
     if sys.argv[1:2] == ["--suggest"] and len(sys.argv[2:]) == 1:
-        from scripts.affected import Repo, classify  # noqa: PLC0415 - advisory mode only
-
-        base = sys.argv[2]
-        changes = changed_paths(raw_diff(base, object_id("HEAD")))
-        result = classify(Repo(Path.cwd()), list(changes))
-        if result["full"] or "ALL" in (*result["pytest"], *result["vitest"]):
-            result = {"files": list(changes), "reasons": result["reasons"], "requires_reviewed_manifest": True}
-        print(json.dumps(result, sort_keys=True, indent=2))
+        commit = object_id("HEAD")
+        changes = changed_paths(raw_diff(object_id(f"{sys.argv[2]}^{{commit}}"), commit))
+        lanes, reason = selector_lanes(commit, list(changes))
+        print(json.dumps({"files": list(changes), "lanes": lanes, "full": lanes is None, "reason": reason}, indent=2))
         return
     scope = current_scope()
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
@@ -577,6 +688,11 @@ def main() -> None:
             output.write(f"focused_matrix={matrix}\n")
             output.write(f"focused_mode={scope.mode}\n")
             output.write(f"focused_base={scope.workload.base}\n")
+            output.write(f"focused_full={'true' if scope.full else 'false'}\n")
+    if isinstance(scope, Scope) and (summary := os.environ.get("GITHUB_STEP_SUMMARY")):
+        with Path(summary).open("a", encoding="utf-8") as out:
+            lanes = ", ".join(f"{lane} ({len(tests)})" for lane, tests in scope.selection.items()) or "none"
+            out.write(f"### Merge-tier selection: {scope.mode}\n\nReason: {scope.reason}\n\nLanes: {lanes}\n")
 
 
 if __name__ == "__main__":

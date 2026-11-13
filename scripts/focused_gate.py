@@ -17,22 +17,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from scripts.ci_workload import WorkloadSource
-from scripts.focused_coverage import MAX_FILE, REPORT, canonical, config_policy, evidence, parse
+from scripts.focused_coverage import FULL_LANE, MAX_FILE, REPORT, canonical, config_policy, evidence, parse
 from scripts.focused_plan import (
+    ADVISORY_LANES,
     ARTIFACT_PREFIX,
-    LANES,
-    MAX_PLAN,
+    FULL_JOB,
     PLAN_VARIABLE,
-    PROTECTED_FILES,
     Scope,
     git,
-    git_blob,
+    last_green_main,
+    pr_merge_base,
     raw_diff,
     registry_slots,
     require_pr_base_ancestor,
     resolve,
     selected_registry,
-    unique_object,
     web_production,
 )
 from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch_evidence, red_below, whole_total
@@ -82,6 +81,7 @@ class GateSource:
     run: dict[str, Any]
     source: WorkloadSource
     commit: str
+    release: bool = False  # release tier: original attempt only
 
 
 def _positive(value: object) -> bool:
@@ -138,15 +138,13 @@ def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = F
         and original["check_suite_id"] == run["check_suite_id"],
         "missing completed evidence from the canonical CI workflow",
     )
-    # Capacity recovery is judged separately by the release verifier. Even in a
-    # canonical composite, this judge reads Coverage from the original attempt.
+    # Release tier: capacity recovery is judged separately by the release verifier, and this judge reads Coverage
+    # from the original attempt. Merge tier: a rerun may complete the evidence; every attempt stays on record.
     if attempt == 1:
         require(original["conclusion"] == "success", "original workflow attempt was unsuccessful")
     else:
-        require(
-            candidate_composite and original["conclusion"] in {"cancelled", "failure"},
-            "ordinary focused CI requires a successful original attempt",
-        )
+        allowed = {"cancelled", "failure"} if candidate_composite else {"cancelled", "failure", "timed_out"}
+        require(original["conclusion"] in allowed, "a rerun requires an unsuccessful original attempt")
     latest = gate.github(
         f"actions/workflows/{CI_WORKFLOW_ID}/runs?head_sha={gate.head}&event={run['event']}&per_page=1"
     )["workflow_runs"]
@@ -196,7 +194,8 @@ def _pr_source(
         ref, merge = f"refs/heads/{pr['head']['ref']}", head
         git("fetch", "--no-tags", "origin", head)
     payload = {"pull_request": pr}
-    return GateSource(run, WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, merge)), merge)
+    workload = WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, merge))
+    return GateSource(run, workload, merge, release=candidate)
 
 
 def _is_published_check(gate: Gate, source: GateSource, job: dict[str, Any]) -> bool:
@@ -245,8 +244,53 @@ def _is_published_check(gate: Gate, source: GateSource, job: dict[str, Any]) -> 
     )
 
 
+def latest_jobs(get: Callable[[str], Any], run_id: int, which: str = "latest") -> list[dict[str, Any]]:
+    """Every job of a merge-tier run: the latest execution of each (which="latest") or of every attempt ("all").
+
+    Raises:
+        CandidateError: The bounded inventory cannot be collected.
+    """
+    rows: list[Any] = []
+    for page in range(1, 11):
+        data = get(f"actions/runs/{run_id}/jobs?filter={which}&per_page=100&page={page}")
+        require(isinstance(data, dict) and isinstance(data.get("jobs"), list), "malformed job page")
+        rows.extend(data["jobs"])
+        if len(rows) >= data.get("total_count", 0) or not data["jobs"]:
+            require(all(isinstance(row, dict) and _positive(row.get("id")) for row in rows), "malformed job identity")
+            require(len({row["id"] for row in rows}) == len(rows), "duplicate job IDs")
+            return rows
+    message = "job pagination exceeded bound"
+    raise CandidateError(message)
+
+
+def rerun_ledger(get: Callable[[str], Any], run: dict[str, Any]) -> list[str]:
+    """One line per job that failed on an earlier attempt and passed on the latest: a flake, never hidden."""
+    if run["run_attempt"] == 1:
+        return []
+    jobs = latest_jobs(get, run["id"], "all")
+    passed = {
+        job["name"]
+        for job in jobs
+        if job.get("run_attempt") == max_attempt(jobs, job["name"]) and job.get("conclusion") == "success"
+    }
+    earlier = sorted(
+        (job for job in jobs if job["name"] in passed and job.get("conclusion") not in {"success", "skipped", None}),
+        key=lambda row: (row["name"], row.get("run_attempt", 0)),
+    )
+    return [
+        f"passed on rerun: {job['name']} (attempt {job.get('run_attempt')} {job['conclusion']}, "
+        f"run {run['id']}, head {run['head_sha']})"
+        for job in earlier
+    ]
+
+
+def max_attempt(jobs: list[dict[str, Any]], name: str) -> int:
+    """The latest attempt in which a job of this name ran."""
+    return max(int(job.get("run_attempt", 0)) for job in jobs if job["name"] == name)
+
+
 def jobs_for(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
-    """Bind each job to the original attempt, exact source and genuine Actions suite."""
+    """Bind each job to its attempt (release tier: the original one), the exact source and the Actions suite."""
     run = source.run
     suite = gate.github(f"check-suites/{run['check_suite_id']}")
     # A pending API check can change the suite's aggregate. The original Actions
@@ -257,13 +301,14 @@ def jobs_for(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
         and suite["head_sha"] == source.source.head,
         "unexpected GitHub Actions check suite",
     )
-    raw_jobs = job_inventory(gate.github, run["id"])
+    raw_jobs = job_inventory(gate.github, run["id"]) if source.release else latest_jobs(gate.github, run["id"])
     jobs = [job for job in raw_jobs if not _is_published_check(gate, source, job)]
     for job in jobs:
         require(
             _positive(job["id"])
             and job.get("run_id") == run["id"]
-            and job.get("run_attempt") == 1
+            and type(job.get("run_attempt")) is int
+            and 1 <= job["run_attempt"] <= (1 if source.release else run["run_attempt"])
             and job.get("head_sha") == source.source.head
             and job.get("status") == "completed",
             "job identity or attempt mismatch",
@@ -288,20 +333,23 @@ def _check(gate: Gate, source: GateSource, job: dict[str, Any]) -> None:
 
 
 def _artifact_inventory(gate: Gate, run: int) -> dict[str, dict[str, Any]]:
+    """The run's artifacts by name. Evidence is looked up by its exact lane, run and attempt name."""
     found = gate.github(f"actions/runs/{run}/artifacts?per_page={MAX_ARTIFACTS}")
     artifacts = found["artifacts"]
     require(
         len(artifacts) == found["total_count"] < MAX_ARTIFACTS
         and len({item["id"] for item in artifacts}) == len(artifacts),
-        "incomplete or duplicated focused artifact inventory",
+        "incomplete or duplicated artifact inventory",
     )
-    require(
-        all(item["name"].startswith(f"{ARTIFACT_PREFIX}-") and item["workflow_run"]["id"] == run for item in artifacts),
-        "unexpected artifact in focused CI",
-    )
+    require(all(item["workflow_run"]["id"] == run for item in artifacts), "artifact from another run")
     names = {item["name"]: item for item in artifacts}
-    require(len(names) == len(artifacts), "duplicate focused artifact name")
+    require(len(names) == len(artifacts), "duplicate artifact name")
     return names
+
+
+def evidence_name(lane: str, run: int, attempt: int) -> str:
+    """The artifact a lane uploads in one attempt of one run."""
+    return f"{ARTIFACT_PREFIX}-{lane}-{run}-{attempt}"
 
 
 def _verified_archive(
@@ -352,7 +400,7 @@ def _artifact(
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         files = archive.infolist()
         require(
-            len(files) in (2, 3)
+            len(files) in (1, 2, 3)
             and len({entry.filename for entry in files}) == len(files)
             and all(0 < entry.file_size <= MAX_FILE for entry in files),
             "focused artifact entries are incomplete, duplicated or oversized",
@@ -367,28 +415,43 @@ def _verify_workload(
     read: Callable[[str], bytes],
 ) -> None:
     jobs = jobs_for(gate, source)
-    expected = STATIC_JOBS | set(scope.workload.jobs)
-    if source.run["event"] == "pull_request":
-        expected |= PR_JOBS
     names = {job["name"]: job for job in jobs}
-    marker = f"Main batch focused scope ({source.source.base})"
-    if source.run["event"] == "push" and marker in names:
-        expected.add(marker)
-    require(
-        len(names) == len(jobs) and {name for name, job in names.items() if job["conclusion"] != "skipped"} == expected,
-        "focused workload job inventory is missing, unexpected or skipped",
-    )
-    for name in sorted(expected):
-        _check(gate, source, names[name])
+    require(len(names) == len(jobs), "duplicate job names in the workload")
+    ran = {name for name, job in names.items() if job["conclusion"] != "skipped"}
     run = source.run["id"]
     artifacts = _artifact_inventory(gate, run)
-    by_lane = {lane: f"{ARTIFACT_PREFIX}-{lane}-{run}-1" for lane in scope.selection}
-    require(set(artifacts) == set(by_lane.values()), "focused artifact lane inventory mismatch")
-    for lane, name in by_lane.items():
-        files = _artifact(read, names[f"Focused tests ({lane})"], artifacts[name], name)
+    if scope.full:
+        # The selector failed open: every job that ran must pass (advisory lanes aside), with the full matrix there.
+        require(
+            {FULL_JOB, "Coverage", *STATIC_JOBS} <= ran and any(name.startswith("Test (") for name in ran),
+            "the full set did not run its matrix and Coverage",
+        )
+        for name in sorted(ran - {f"Focused tests ({lane})" for lane in ADVISORY_LANES}):
+            _check(gate, source, names[name])
+        lanes = {FULL_LANE: names["Coverage"]}
+    else:
+        expected = STATIC_JOBS | set(scope.workload.jobs)
+        if source.run["event"] == "pull_request":
+            expected |= PR_JOBS
+        marker = f"Main batch focused scope ({source.source.base})"
+        if source.run["event"] == "push" and marker in names:
+            expected.add(marker)
+        require(ran == expected, "focused workload job inventory is missing, unexpected or skipped")
+        advisory = {f"Focused tests ({lane})" for lane in ADVISORY_LANES}
+        for name in sorted(expected - advisory):
+            _check(gate, source, names[name])
+        lanes = {
+            lane: names[f"Focused tests ({lane})"]
+            for lane in scope.selection
+            if lane not in ADVISORY_LANES or names[f"Focused tests ({lane})"]["conclusion"] == "success"
+        }
+    for lane, job in lanes.items():
+        name = evidence_name(lane, run, job["run_attempt"])
+        require(name in artifacts, f"missing evidence {name}")
+        files = _artifact(read, job, artifacts[name], name)
         recorded = parse(files.pop(REPORT))
         require(
-            canonical(recorded) == canonical(evidence(scope, lane, run, 1, files)),
+            canonical(recorded) == canonical(evidence(scope, lane, run, job["run_attempt"], files)),
             "focused typed evidence differs from exact source or recorded tests",
         )
 
@@ -401,41 +464,34 @@ def _verify_config(scope: Scope) -> None:
     )
 
 
-def _tested_source_after_main_moves(
-    gate: Gate, source: GateSource, manifest: str, current_main: str, read: Callable[[str], bytes]
-) -> GateSource:
-    """Recover only an artifact-authenticated candidate; the detached plan still judges it."""
-    require(len(manifest.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
-    registry = json.loads(manifest or "{}", object_pairs_hook=unique_object)
-    plan = registry.get(f"pull_request:{source.source.head}") if isinstance(registry, dict) else None
-    require(isinstance(plan, dict) and isinstance(plan.get("selection"), dict), "missing reviewed focused plan")
-    lanes = plan["selection"]
-    require(lanes and set(lanes) <= set(LANES), "invalid focused lane inventory")
-    base = plan.get("base")
-    require(valid_sha(base), "invalid reviewed tested base")
-    git("fetch", "--no-tags", "origin", base)
-    require_pr_base_ancestor(base, current_main)
-    jobs = jobs_for(gate, source)
-    names = {job["name"]: job for job in jobs}
-    expected = STATIC_JOBS | PR_JOBS | {f"Focused tests ({lane})" for lane in lanes}
-    require(
-        len(names) == len(jobs) and {n for n, j in names.items() if j["conclusion"] != "skipped"} == expected,
-        "focused workload job inventory is missing, unexpected or skipped",
-    )
-    for name in sorted(expected):
-        _check(gate, source, names[name])
+def _tested_commit(gate: Gate, source: GateSource, read: Callable[[str], bytes]) -> str:
+    """The merge commit the run tested, as every evidence artifact of its latest jobs records it."""
+    jobs = {job["name"]: job for job in jobs_for(gate, source)}
     artifacts = _artifact_inventory(gate, source.run["id"])
-    by_lane = {lane: f"{ARTIFACT_PREFIX}-{lane}-{source.run['id']}-1" for lane in lanes}
-    require(set(artifacts) == set(by_lane.values()), "focused artifact lane inventory mismatch")
     commits = set()
-    for lane, name in by_lane.items():
-        files = _artifact(read, names[f"Focused tests ({lane})"], artifacts[name], name)
-        commits.add(parse(files[REPORT]).get("commit"))
-    require(len(commits) == 1, "focused artifacts disagree on tested commit")
+    for name, job in jobs.items():
+        lane = "coverage" if name == "Coverage" else name.removeprefix("Focused tests (").removesuffix(")")
+        artifact = evidence_name(lane, source.run["id"], job["run_attempt"])
+        if job["conclusion"] == "success" and artifact in artifacts:
+            files = _artifact(read, job, artifacts[artifact], artifact)
+            commits.add(parse(files[REPORT]).get("commit"))
+    require(len(commits) == 1, "evidence artifacts are missing or disagree on the tested commit")
     commit = commits.pop()
     require(valid_sha(commit), "invalid artifact tested commit")
+    return commit
+
+
+def _tested_source_after_main_moves(
+    gate: Gate, source: GateSource, current_main: str, read: Callable[[str], bytes]
+) -> GateSource:
+    """Judge the merge the run actually tested when main has moved since: its base must precede main."""
+    commit = _tested_commit(gate, source, read)
+    if commit == source.commit:
+        return source
     git("fetch", "--no-tags", "origin", commit)
     require(git("rev-parse", "FETCH_HEAD").decode().strip() == commit, "tested commit fetch changed")
+    base = pr_merge_base(commit, source.source.head)
+    require_pr_base_ancestor(base, current_main)
     recovered = WorkloadSource(
         source.source.event,
         source.source.repository,
@@ -456,12 +512,8 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
         manifest = selected_registry(manifest, slots, f"pull_request:{gate.head}")
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
     source = _pr_source(gate, run, snapshot, candidate=candidate)
-    if (
-        not candidate
-        and json.loads(manifest, object_pairs_hook=unique_object).get(f"pull_request:{gate.head}", {}).get("base")
-        != snapshot[2]
-    ):
-        source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
+    if not candidate:
+        source = _tested_source_after_main_moves(gate, source, snapshot[2], read)
     scope = resolve(
         source.source,
         source.commit,
@@ -485,19 +537,17 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
         require(total >= red_below(Path(WORKFLOW).read_text()), "full candidate coverage is below its floor")
         verdict = "Whole-project coverage measured by the full release candidate"
     else:
-        require(
-            all(git_blob(source.commit, path) == scope.execution[path] for path in PROTECTED_FILES),
-            "focused workflow or producer does not match the detached review",
-        )
+        # This judge runs from main: its own selector recomputed the scope, so the tested tree cannot narrow it.
         _verify_config(scope)
         _verify_workload(gate, source, scope, read)
-        verdict = (
+        verdict = ("Full set (" + scope.reason + "); " if scope.full else "") + (
             "PR scoped coverage passed; whole-project validation deferred to release candidate"
             if scope.production
             else "Python coverage: not applicable; web production changed"
             if any(web_production(path) for path in scope.changed)
-            else "Python coverage: not applicable to the reviewed scope"
+            else "Python coverage: not applicable to the selected scope"
         )
+
     current, merge, main = pull_identity(gate, gate.head)
     require(
         main == snapshot[2]
@@ -542,6 +592,11 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
         and git("merge-base", base, gate.head).decode().strip() == base,
         "main advanced or does not contain the expected aggregate base",
     )
+    green = last_green_main(gate.github, gate.head)
+    require(
+        green is not None and git("merge-base", base, green).decode().strip() == base,
+        "a main base must not be newer than the last main commit with a green run",
+    )
     source = WorkloadSource("push", REPOSITORY, "refs/heads/main", {}, base, gate.head, raw_diff(base, gate.head))
     scope = resolve(source, gate.head, manifest, slots=slots)
     if not isinstance(scope, Scope):
@@ -559,7 +614,7 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
         "head": gate.head,
         "tree": scope.tree,
         "run": run_id,
-        "attempt": 1,
+        "attempt": run["run_attempt"],
         "manifest_sha256": scope.manifest_digest,
     }
 
@@ -583,9 +638,13 @@ def main() -> None:
         )
         return
     verdict = verify(gate, run, manifests, read, slots=registry_slots(dict(os.environ)))
+    ledger = rerun_ledger(gate.github, gate.github(f"actions/runs/{run}"))
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-        output.write(f"verdict={verdict}\n")
-    print(verdict)
+        output.write(f"verdict={verdict}{'; ' + str(len(ledger)) + ' job(s) passed on rerun' if ledger else ''}\n")
+    if ledger:
+        # The flake ledger: the merge gate uploads it, and the coordinator files a flaky bead per line.
+        Path(os.environ.get("FLAKE_LEDGER", "flake-ledger.txt")).write_text("\n".join(ledger) + "\n", encoding="utf-8")
+    print(verdict, *ledger, sep="\n")
 
 
 if __name__ == "__main__":

@@ -223,66 +223,6 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
     assert {2, 5, 8, 11} <= set(measured["executed_lines"])
 
 
-def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, tmp_path):
-    commands = coverage._managed_commands(("desktop/managed/test/backend.test.ts",), tmp_path)
-    assert commands[0] == ["make", "managed-backend-setup"]
-    assert commands[1][-4:] == ["exec", "tsc", "--project", "."]
-    assert commands[-1][-5:] == [
-        "node",
-        "--test",
-        "--test-reporter=junit",
-        f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
-        "build/test/backend.test.js",
-    ]
-
-
-def test_desktop_runner_installs_the_locked_test_dependencies_and_runs_only_the_selection(coverage, tmp_path):
-    commands = coverage._desktop_commands(("desktop/test/shutdown.test.js",), tmp_path)
-    assert commands[0] == ["make", "desktop-unit-setup"]
-    assert commands[-1][-6:] == [
-        "exec",
-        "node",
-        "--test",
-        "--test-reporter=junit",
-        f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
-        "test/shutdown.test.js",
-    ]
-    assert commands[-1][:8] == [
-        "uv",
-        "run",
-        "--quiet",
-        "--script",
-        "scripts/web_build.py",
-        "pnpm",
-        "--dir",
-        "../desktop",
-    ]
-
-
-def test_desktop_runner_expands_the_whole_suite_from_the_checkout(coverage, tmp_path):
-    (tmp_path / "desktop/test").mkdir(parents=True)
-    for name in ("b.test.js", "a.test.js", "helper.js"):
-        (tmp_path / "desktop/test" / name).write_text("")
-    commands = coverage._desktop_commands(("desktop/ALL",), tmp_path / "out", tmp_path)
-    assert commands[-1][-2:] == ["test/a.test.js", "test/b.test.js"]
-    from scripts.release_candidate import CandidateError
-
-    with pytest.raises(CandidateError, match="no test files"):
-        coverage._desktop_commands(("desktop/ALL",), tmp_path, tmp_path / "empty")
-
-
-def test_the_desktop_lane_runs_the_desktop_runner(coverage, scope, monkeypatch, tmp_path):
-    from dataclasses import replace
-
-    scope = replace(scope, selection={"desktop": ("desktop/test/window.test.js",)})
-    calls = []
-    monkeypatch.setattr(coverage, "_execute", lambda command, _env: calls.append(command))
-    monkeypatch.setattr(coverage, "evidence", lambda *_args: {})
-    coverage.run_lane(scope, "desktop", tmp_path / "out", 1, 1)
-    assert calls[0] == ["make", "desktop-unit-setup"]
-    assert calls[-1][-1] == "test/window.test.js"
-
-
 @pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
 def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
     from dataclasses import replace
@@ -360,3 +300,101 @@ def test_web_lane_runs_the_whole_vitest_suite_for_the_sentinel(coverage, scope, 
     ]
     assert sentinel not in command
     assert json.loads((out / coverage.REPORT).read_bytes())["cases_sha256"] == coverage.cases_digest(junit)
+
+
+JUNIT_OK = b'<testsuite><testcase classname="c" name="a"/><testcase classname="c" name="b"/></testsuite>'
+JUNIT_RED = (
+    b'<testsuite><testcase classname="c" name="a"/><testcase classname="c" name="b"><failure/></testcase></testsuite>'
+)
+
+
+def test_merge_tier_evidence_records_a_later_attempt(coverage, scope):
+    from dataclasses import replace
+
+    scope = replace(scope, production={}, selection={"web": ("web/src/a.test.ts",)})
+    from scripts.release_candidate import CandidateError
+
+    with pytest.raises(CandidateError, match="run attempt"):
+        coverage.evidence(scope, "web", 1, 0, {coverage.JUNIT: JUNIT_OK})
+    assert coverage.evidence(scope, "web", 1, 3, {coverage.JUNIT: JUNIT_OK})["attempt"] == 3
+
+
+def test_an_advisory_lane_reports_failures_without_failing(coverage, scope):
+    from dataclasses import replace
+
+    from scripts.release_candidate import CandidateError
+
+    scope = replace(scope, production={}, selection={"consumers": ("plugins/main",)})
+    report = coverage.evidence(scope, "consumers", 1, 1, {coverage.JUNIT: JUNIT_RED})
+    assert (report["type"], report["failed"]) == (coverage.ADVISORY_TYPE, ["b"])
+    assert coverage.evidence(scope, "consumers", 1, 1, {coverage.JUNIT: JUNIT_OK})["failed"] == []
+    with pytest.raises(CandidateError, match="no or duplicate cases"):
+        coverage.evidence(scope, "consumers", 1, 1, {coverage.JUNIT: b"<testsuite/>"})
+    gated = replace(scope, selection={"web": ("web/src/a.test.ts",)})
+    with pytest.raises(CandidateError, match="failed"):
+        coverage.evidence(gated, "web", 1, 1, {coverage.JUNIT: JUNIT_RED})
+
+
+def test_the_full_set_records_its_source_and_the_scoped_coverage(coverage, scope, tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from scripts.release_candidate import CandidateError
+
+    full = replace(scope, production={}, selection={}, full=True)
+    assert coverage.measure_full(full, tmp_path / "a", 5, 2, tmp_path / ".coverage") is False
+    report = json.loads((tmp_path / "a" / coverage.REPORT).read_bytes())
+    assert (report["type"], report["lane"], report["attempt"]) == (coverage.FULL_TYPE, coverage.FULL_LANE, 2)
+    with pytest.raises(CandidateError, match="full merge-tier run"):
+        coverage.measure_full(scope, tmp_path / "b", 5, 1, tmp_path / ".coverage")
+    calls = []
+
+    def analyse(_rc, paths, output, **kwargs):
+        calls.append((paths, kwargs))
+        message = "measured"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(coverage, "_analyse", analyse)
+    monkeypatch.setattr(coverage, "git", lambda *_args: CONFIG)
+    with pytest.raises(RuntimeError, match="measured"):
+        coverage.measure_full(replace(scope, full=True), tmp_path / "c", 5, 1, tmp_path / ".coverage")
+    assert calls == [([PRODUCTION, ALREADY_USED], {"datafile": str(tmp_path / ".coverage"), "combine": False})]
+
+
+def test_a_whole_browser_suite_runs_its_makefile_files_with_a_report(coverage, tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    commands = coverage._e2e_suite_commands("web-2", tmp_path, root)
+    assert commands[0] == ["make", "e2e-prepare"]
+    assert f"--junitxml={tmp_path / coverage.JUNIT}" in commands[1]
+    files = [arg for arg in commands[1] if arg.startswith("tests/e2e/")]
+    assert len(files) > 10
+    assert "tests/e2e/web_ui_test.py" not in files
+    assert (
+        coverage._lane_commands("e2e", "e2e-web-1", ("tests/e2e/web-1",), tmp_path)[1][-1] == "tests/e2e/web_ui_test.py"
+    )
+
+
+def test_the_consumers_lane_checks_every_plugin_serially(coverage, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "heinzel-1.0-py3-none-any.whl").write_bytes(b"")
+    executed, runs = [], []
+    monkeypatch.setattr(coverage, "_execute", lambda args, _env: executed.append(args))
+
+    def run(args, **_kwargs):
+        runs.append(args)
+        if "plan" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"include": [{"name": "x"}, {"name": "y"}]}).encode()
+            )
+        return subprocess.CompletedProcess(args, 1 if "NAME=y" in args else 0)
+
+    monkeypatch.setattr(coverage.subprocess, "run", run)
+    out = tmp_path / "out"
+    out.mkdir()
+    coverage._consumers(out, {}, tmp_path / "work")
+    assert executed[0] == ["make", "build"]
+    assert executed[1][:3] == ["git", "clone", "--depth=1"]
+    assert [args[-2] for args in runs[1:]] == ["NAME=x", "NAME=y"]
+    digest, failed = coverage.advisory_cases((out / coverage.JUNIT).read_bytes())
+    assert failed == ["y"]
+    assert len(digest) == 64

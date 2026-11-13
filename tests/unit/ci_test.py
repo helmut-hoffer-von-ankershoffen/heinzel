@@ -265,19 +265,6 @@ def test_source_plugin_audits_receive_authoritative_repository_visibility():
     assert workflow["jobs"]["local-plugin-check"]["env"]["PLUGIN_PRIVATE"] == "${{ github.event.repository.private }}"
 
 
-def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templates():
-    """The source-only native owner is checked by required CI; plugins never install its private Node toolchain."""
-    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
-    jobs = workflow["jobs"]
-    assert "lint" in jobs["ci-ok"]["needs"]
-    runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
-    assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
-    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_release != 'true'"
-    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
-    for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
-        assert "managed-backend" not in (REPO / "template" / name).read_text()
-
-
 def test_core_lint_does_not_export_an_empty_github_token_to_zizmor():
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     job = workflow["jobs"]["lint"]
@@ -1469,13 +1456,13 @@ def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_test
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     for name in ("test", "coverage", "perf", "e2e"):
         assert jobs[name]["if"] == (
-            "needs.changes.outputs.full_release == 'true' && "
+            "needs.changes.outputs.full == 'true' && "
             "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
         )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
     assert jobs["site-tests"]["if"] == (
-        "needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true')"
+        "needs.changes.outputs.full == 'true' && (needs.changes.outputs.site_only == 'true')"
     )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
@@ -1604,7 +1591,8 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
         assert condition.startswith(
             (
                 "needs.changes.outputs.full_release == 'true'",
-                "${{ !cancelled() && needs.changes.outputs.full_release == 'true'",
+                "needs.changes.outputs.full == 'true'",
+                "${{ !cancelled() && needs.changes.outputs.full == 'true'",
                 "github.event_name == 'pull_request'",
                 "failure() && github.event_name == 'pull_request'",
                 "github.event_name == 'push' &&",
@@ -1695,10 +1683,12 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
 
 def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
     jobs = _ci_jobs()
-    candidate_only = "needs.changes.outputs.full_release == 'true'"
+    full_set = "needs.changes.outputs.full == 'true'"  # the release candidate, or a merge-tier fail-open (ADR 0149)
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron", "quarantine"):
-        assert jobs[name]["if"].startswith(candidate_only)
-    assert jobs["focused-tests"]["if"] == "needs.changes.outputs.focused_mode != ''"
+        assert jobs[name]["if"].startswith(full_set)
+    assert jobs["focused-tests"]["if"] == (
+        "needs.changes.outputs.focused_mode != '' && needs.changes.outputs.focused_matrix != '{\"include\":[]}'"
+    )
     assert "fromJSON(needs.changes.outputs.focused_matrix" in jobs["focused-tests"]["strategy"]["matrix"]
     assert "focused-tests" in jobs["ci-ok"]["needs"]
     assert "quarantine" not in jobs["ci-ok"]["needs"]
@@ -1858,3 +1848,30 @@ def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_release == 'true'", "run": "make test-web"}
     # Cancelled at 5:17 under five minutes in the 0.9.40 candidates; ten is about twice the observed duration.
     assert lint["timeout-minutes"] == 10
+
+
+def test_main_pushes_share_one_concurrency_group_and_other_runs_keep_theirs():
+    """ADR 0149: one main-push group; scheduled and dispatched main runs and PRs keep their own groups."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    group = workflow["concurrency"]["group"]
+    assert "github.event_name == 'push' && 'main-push'" in group
+    assert "github.ref == 'refs/heads/main' && github.sha || github.ref" in group
+    assert "cancel-in-progress" in workflow["concurrency"]
+    assert "github.event_name == 'pull_request'" in workflow["concurrency"]["cancel-in-progress"]
+
+
+def test_a_merge_tier_full_set_measures_scoped_coverage_and_the_gate_keeps_the_flake_ledger():
+    jobs = _ci_jobs()
+    assert "steps.focused.outputs.focused_full == 'true'" in jobs["changes"]["outputs"]["full"]
+    steps = {step.get("name"): step for step in jobs["coverage"]["steps"]}
+    measure = steps["Apply the scoped coverage gate to the changed production files (merge-tier full set)"]
+    assert measure["if"] == "needs.changes.outputs.full_release != 'true'"
+    assert measure["run"].endswith("scripts/focused_coverage.py full .coverage")
+    upload = steps["Upload focused CI evidence"]
+    assert upload["with"]["name"] == "focused-pr-evidence-coverage-${{ github.run_id }}-${{ github.run_attempt }}"
+    gate = yaml.safe_load((REPO / ".github/workflows/merge-gate.yml").read_text(encoding="utf-8"))["jobs"]["gates"]
+    coverage = next(step for step in gate["steps"] if step.get("id") == "coverage")
+    assert coverage["env"]["FLAKE_LEDGER"] == "flake-ledger.txt"
+    ledger = next(step for step in gate["steps"] if "flake ledger" in step.get("name", ""))
+    assert ledger["with"]["path"] == "flake-ledger.txt"
+    assert "hashFiles('flake-ledger.txt')" in ledger["if"]

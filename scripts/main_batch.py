@@ -100,14 +100,14 @@ def decode(url: object) -> dict[str, Any] | None:
 
 
 def valid_run(run: dict[str, Any], proof: dict[str, Any]) -> bool:
-    """Bind the exact first-attempt main push workflow without accepting reruns."""
+    """Bind the exact main push workflow; a rerun of it may complete the merge-tier evidence (ADR 0149)."""
     return (
         isinstance(run, dict)
         and type(run.get("id")) is int
         and run["id"] > 0
         and run["id"] == proof["run"]
         and type(run.get("run_attempt")) is int
-        and run["run_attempt"] == 1
+        and run["run_attempt"] >= 1
         and run.get("event") == "push"
         and run.get("head_branch") == "main"
         and run.get("head_sha") == proof["prs"][-1][1]

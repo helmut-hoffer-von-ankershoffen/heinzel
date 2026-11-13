@@ -56,6 +56,7 @@ def git_objects(focused_plan, monkeypatch):
     monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: BLOB)
     monkeypatch.setattr(focused_plan, "object_id", lambda _ref: TREE)
     monkeypatch.setattr(focused_plan, "git", lambda *_args: f"{MERGE} {BASE} {HEAD}".encode())
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _commit, _changed: ({"python": [TEST_PATH]}, "focused"))
 
 
 def test_reviewed_plan_accepts_hyphenated_owning_web_paths(focused_plan, git_objects):
@@ -79,13 +80,15 @@ def test_reviewed_plan_rejects_unsafe_or_non_owning_hyphenated_paths(focused_pla
         focused_plan._selections({"selection": {"web": [path]}}, MERGE)
 
 
-def test_reviewed_tree_can_be_provisioned_before_pr_number_and_merge_sha_exist(focused_plan, git_objects):
-    source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
-    scope = focused_plan.resolve(source, MERGE, json.dumps({f"pull_request:{HEAD}": plan}))
+def test_a_pull_request_needs_no_manifest(focused_plan, git_objects):
+    source, _plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    scope = focused_plan.resolve(source, MERGE, "{}")
     assert isinstance(scope, focused_plan.Scope)
-    assert scope.commit == MERGE
-    assert scope.tree == TREE
-    assert scope.workload.ref == "refs/pull/5/merge"
+    assert (scope.commit, scope.tree, scope.workload.ref) == (MERGE, TREE, "refs/pull/5/merge")
+    assert scope.selection == {"python": (TEST_PATH,)}
+    assert scope.production == {SOURCE_PATH: BLOB}
+    assert (scope.full, scope.mode) == (False, "pr-scoped")
+    assert scope.matrix() == [{"lane": "python", "os": "ubuntu-24.04", "python": "3.14.8", "kind": "pytest"}]
 
 
 def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan, git_objects):
@@ -93,7 +96,7 @@ def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan,
     assert focused_plan._selections({"selection": {"python": ids[:32]}}, MERGE)["python"] == tuple(ids[:32])
     with pytest.raises(focused_plan.CandidateError, match="broad focused lane python"):
         focused_plan._selections({"selection": {"python": ids}}, MERGE)
-    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
+    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "browser", "macos-browser"):
         with pytest.raises(focused_plan.CandidateError, match="broad focused lane"):
             focused_plan._selections({"selection": {lane: ids[:11]}}, MERGE)
     with pytest.raises(focused_plan.CandidateError, match="duplicate selection"):
@@ -101,24 +104,41 @@ def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan,
 
 
 @pytest.mark.parametrize(
-    "defect", ["tree", "parents", "commit", "production", "ref", "base", "diff_sha256", "execution"]
+    ("lanes", "reason"),
+    [
+        (None, "the selector selects the full set"),
+        ({"web": ["web/src/x.test.ts"]}, "Python production without a Python selection"),
+        ({"python": [TEST_PATH]}, None),
+    ],
 )
-def test_plan_cannot_cover_other_source_or_omit_new_production(focused_plan, git_objects, monkeypatch, defect):
-    source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
-    if defect == "parents":
-        monkeypatch.setattr(focused_plan, "git", lambda *_args: f"{MERGE} {HEAD} {BASE}".encode())
+def test_the_selector_fails_open_to_the_full_set(focused_plan, git_objects, monkeypatch, lanes, reason):
+    source, _plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _c, _p: (lanes, reason or "focused"))
+    scope = focused_plan.resolve(source, MERGE, "{}")
+    if reason:
+        assert (scope.full, scope.mode, scope.reason, scope.selection) == (True, "full", reason, {})
+        assert scope.workload.jobs == (focused_plan.FULL_JOB,)
+        assert scope.matrix() == []
     else:
-        plan[defect] = {
-            "tree": BLOB,
-            "commit": BLOB,
-            "production": {},
-            "ref": "refs/pull/9/merge",
-            "base": BLOB,
-            "diff_sha256": "0" * 64,
-            "execution": dict.fromkeys(focused_plan.PROTECTED_FILES, HEAD),
-        }[defect]
-    with pytest.raises(focused_plan.CandidateError, match=r".+"):
-        focused_plan.resolve(source, MERGE, json.dumps({f"pull_request:{HEAD}": plan}))
+        assert not scope.full
+
+
+def test_a_full_contract_change_keeps_the_consumers_lane(focused_plan, git_objects, monkeypatch):
+    path = "src/heinzel/heads/api/_routes.py"
+    diff = f":100644 100644 {BLOB} {BLOB} M\0{path}\0".encode()
+    source, _plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    source = dataclasses.replace(source, raw_diff=diff)
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _c, _p: (None, "e2e lane(s) cli have no focused lane"))
+    scope = focused_plan.resolve(source, MERGE, "{}")
+    assert scope.full
+    assert scope.selection == {"consumers": ("plugins/main",)}
+
+
+def test_a_wrong_merge_parent_is_refused(focused_plan, git_objects, monkeypatch):
+    source, _plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    monkeypatch.setattr(focused_plan, "git", lambda *_args: f"{MERGE} {HEAD} {BASE}".encode())
+    with pytest.raises(focused_plan.CandidateError, match="ordered base and head"):
+        focused_plan.resolve(source, MERGE, "{}")
 
 
 @pytest.mark.parametrize(
@@ -139,7 +159,7 @@ def test_actions_checkout_supplies_exact_base_despite_cached_event_metadata(
     focused_plan, monkeypatch, tmp_path, defect, error
 ):
     ref = "refs/pull/5/merge"
-    source, plan = _input(focused_plan, "pull_request", ref, focused_plan.PREOPEN_PR_REF)
+    source, _plan = _input(focused_plan, "pull_request", ref, focused_plan.PREOPEN_PR_REF)
     reported = "f" * 40 if defect != "future-base" else "1" * 40
     pr = source.payload["pull_request"]
     pr["base"]["sha"] = reported
@@ -174,11 +194,15 @@ def test_actions_checkout_supplies_exact_base_despite_cached_event_metadata(
     monkeypatch.setattr(focused_plan, "object_id", lambda ref: MERGE if ref == "HEAD" else TREE)
     monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: BLOB)
     monkeypatch.setattr(focused_plan, "git", git)
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _c, _p: ({"python": [TEST_PATH]}, "focused"))
 
     def resolve_event():
-        actual, commit, dispatch_pr = focused_plan.event_source(env, lambda _: pytest.fail("unexpected API read"))
+        actual, commit, dispatch_pr, unproven = focused_plan.event_source(
+            env, lambda _: pytest.fail("unexpected API read")
+        )
         assert actual.payload["pull_request"]["base"]["sha"] == reported
-        return focused_plan.resolve(actual, commit, json.dumps({f"pull_request:{HEAD}": plan}), dispatch_pr)
+        assert unproven is None
+        return focused_plan.resolve(actual, commit, "{}", dispatch_pr)
 
     if error:
         with pytest.raises(focused_plan.CandidateError, match=error):
@@ -189,29 +213,73 @@ def test_actions_checkout_supplies_exact_base_despite_cached_event_metadata(
         assert scope.commit == MERGE
 
 
-def test_preopen_planning_ref_is_accepted_only_for_a_pull_request(focused_plan, git_objects):
+def test_preopen_widening_ref_is_accepted_only_for_a_pull_request(focused_plan, git_objects):
     source, plan = _input(focused_plan, "push", "refs/heads/main", focused_plan.PREOPEN_PR_REF)
-    with pytest.raises(focused_plan.CandidateError, match="reviewed ref"):
+    with pytest.raises(focused_plan.CandidateError, match="widening plan does not apply"):
         focused_plan.resolve(source, HEAD, json.dumps({f"push:{HEAD}": plan}))
 
 
-def test_main_squash_can_preprovision_the_exact_base_and_result_tree(focused_plan, git_objects):
+def test_a_main_push_needs_no_manifest_and_a_tree_widening_still_applies(focused_plan, git_objects):
     source, plan = _input(focused_plan, "push", "refs/heads/main", "refs/heads/main")
-    del plan["head"]
-    scope = focused_plan.resolve(source, HEAD, json.dumps({f"push-tree:{TREE}": plan}))
-    assert isinstance(scope, focused_plan.Scope)
-    assert scope.workload.head == HEAD
-    assert scope.workload.base == BASE
-    assert scope.tree == TREE
-    plan["base"] = BLOB
-    with pytest.raises(focused_plan.CandidateError, match="exact event, ref and diff"):
-        focused_plan.resolve(source, HEAD, json.dumps({f"push-tree:{TREE}": plan}))
+    scope = focused_plan.resolve(source, HEAD, "{}")
+    assert (scope.workload.head, scope.workload.base, scope.tree) == (HEAD, BASE, TREE)
+    plan["selection"] = {"web": ["web/src/x.test.ts"]}
+    widened = focused_plan.resolve(source, HEAD, json.dumps({f"push-tree:{TREE}": plan}))
+    assert set(widened.selection) == {"python", "web"}
 
 
-def test_tree_registry_key_does_not_replace_exact_head_for_a_pr(focused_plan, git_objects):
+def test_a_tree_widening_does_not_apply_to_a_pr(focused_plan, git_objects):
     source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
-    with pytest.raises(focused_plan.CandidateError, match="independently reviewed scope manifest"):
-        focused_plan.resolve(source, MERGE, json.dumps({f"push-tree:{TREE}": plan}))
+    plan["selection"] = {"web": ["web/src/x.test.ts"]}
+    scope = focused_plan.resolve(source, MERGE, json.dumps({f"push-tree:{TREE}": plan}))
+    assert set(scope.selection) == {"python"}
+
+
+@pytest.mark.parametrize(
+    ("green_runs", "batch", "expected", "unproven"),
+    [
+        ([("9" * 40, True)], None, "9" * 40, None),  # the last green commit, not the previous push
+        ([("8" * 40, False), ("9" * 40, True)], None, "9" * 40, None),  # a run whose CI OK did not pass is skipped
+        ([("9" * 40, True)], "7" * 40, "7" * 40, None),  # an older batch base covers more
+        ([], None, "6" * 40, "no green main run before this push"),  # nothing green: the full set
+    ],
+)
+def test_a_main_push_compares_against_the_last_green_main(  # noqa: PLR0913, PLR0917 - independent observations
+    focused_plan, monkeypatch, tmp_path, green_runs, batch, expected, unproven
+):
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"before": "6" * 40}))
+    env = {
+        "GITHUB_EVENT_NAME": "push",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_EVENT_PATH": str(event),
+        "GITHUB_SHA": HEAD,
+        "GITHUB_REPOSITORY": focused_plan.REPOSITORY,
+    } | ({"BATCH_BASE": batch} if batch else {})
+    order = ["7" * 40, "8" * 40, "9" * 40, HEAD]  # oldest first, one line of history
+
+    def git(*args):
+        if args[:2] == ("merge-base", "--is-ancestor"):
+            if order.index(args[2]) < order.index(args[3]):
+                return b""
+            raise CalledProcessError(1, args)
+        if args[0] == "diff-tree":
+            return DIFF
+        raise AssertionError(args)
+
+    runs = [{"id": index, "head_sha": sha} for index, (sha, _ok) in enumerate(green_runs, 1)]
+    ok = {index: passed for index, (_sha, passed) in enumerate(green_runs, 1)}
+
+    def get(path):
+        if path.startswith("actions/workflows/ci.yml/runs?branch=main&event=push&status=success"):
+            return {"workflow_runs": runs}
+        index = int(path.split("/")[2])
+        return {"jobs": [{"name": "CI OK", "conclusion": "success" if ok[index] else "failure"}]}
+
+    monkeypatch.setattr(focused_plan, "object_id", lambda _ref: HEAD)
+    monkeypatch.setattr(focused_plan, "git", git)
+    source, commit, _dispatch, reason = focused_plan.event_source(env, get)
+    assert (source.base, commit, reason) == (expected, HEAD, unproven)
 
 
 def test_reviewed_plan_accepts_the_whole_vitest_suite_alone_in_the_web_lane(focused_plan, git_objects, monkeypatch):
@@ -230,7 +298,6 @@ def test_reviewed_plan_accepts_the_whole_vitest_suite_alone_in_the_web_lane(focu
         {"web": ["web/ALL", "web/ALL"]},
         {"python": ["web/ALL"]},
         {"browser": ["web/ALL"]},
-        {"managed": ["web/ALL"]},
         {"web": ["ALL"]},
     ],
 )
@@ -267,28 +334,22 @@ def test_reviewed_plan_refuses_desktop_selections_outside_the_desktop_suite(focu
 
 
 @pytest.mark.parametrize(
-    ("path", "selection", "error"),
+    ("path", "selection", "full"),
     [
-        ("desktop/src/main.js", {"python": [TEST_PATH]}, "desktop unit suite"),
-        ("desktop/test/window.test.js", {"python": [TEST_PATH]}, "desktop unit suite"),
-        ("desktop/src/main.js", {"python": [TEST_PATH], "desktop": ["desktop/ALL"]}, None),
-        ("desktop/managed/src/backend.ts", {"python": [TEST_PATH]}, "managed production"),
-        ("desktop/README.md", {"python": [TEST_PATH]}, None),
+        ("desktop/src/main.js", {"python": [TEST_PATH]}, True),
+        ("desktop/test/window.test.js", {"python": [TEST_PATH]}, True),
+        ("desktop/src/main.js", {"python": [TEST_PATH], "desktop": ["desktop/ALL"]}, False),
+        ("desktop/README.md", {"python": [TEST_PATH]}, False),
     ],
 )
-def test_a_desktop_change_requires_the_desktop_unit_suite(focused_plan, git_objects, path, selection, error):
+def test_a_desktop_change_requires_the_desktop_unit_suite(  # noqa: PLR0913, PLR0917 - one case per row
+    focused_plan, git_objects, monkeypatch, path, selection, full
+):
     diff = DIFF + f":100644 100644 {BLOB} {BLOB} M\0{path}\0".encode()
-    source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    source, _plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
     source = dataclasses.replace(source, raw_diff=diff)
-    plan |= {
-        "diff_sha256": hashlib.sha256(diff).hexdigest(),
-        "changed": {SOURCE_PATH: "A", path: "M"},
-        "selection": selection,
-        "case_sha256": dict.fromkeys(selection, "f" * 64),
-    }
-    registry = json.dumps({f"pull_request:{HEAD}": plan})
-    if error is None:
-        assert isinstance(focused_plan.resolve(source, MERGE, registry), focused_plan.Scope)
-    else:
-        with pytest.raises(focused_plan.CandidateError, match=error):
-            focused_plan.resolve(source, MERGE, registry)
+    monkeypatch.setattr(focused_plan, "selector_lanes", lambda _c, _p: (selection, "focused"))
+    scope = focused_plan.resolve(source, MERGE, "{}")
+    assert scope.full is full
+    if full:
+        assert scope.reason == "a desktop change without the desktop unit suite"
