@@ -41,9 +41,14 @@ try {
   await editor.locator("summary").click();
   const suggestion = editor.getByRole("region", { name: "Suggested identity" });
   await suggestion.waitFor({ timeout: 30000 });
-  assert.equal(await editor.getByLabel("Hat colour").inputValue(), "green");
+  const hat = () =>
+    editor
+      .getByRole("radiogroup", { name: "Hat colour" })
+      .getByRole("radio", { checked: true })
+      .getAttribute("aria-label");
+  assert.equal(await hat(), "Green");
   await suggestion.getByRole("button", { name: "Use suggested identity" }).click();
-  assert.equal(await editor.getByLabel("Hat colour").inputValue(), "blue");
+  assert.equal(await hat(), "Blue");
   const saved = page.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/heinzel/profile" && response.request().method() === "POST",
   );
@@ -54,7 +59,7 @@ try {
   if (!(await message.isVisible())) await chatTab.click();
   await openDetails(page);
   await editor.locator("summary").click();
-  assert.equal(await editor.getByLabel("Hat colour").inputValue(), "blue");
+  assert.equal(await hat(), "Blue");
   await checkHeader(true);
   const avatar = editor.getByRole("img", { name: "Appearance preview" });
   assert.ok((await avatar.locator('[fill="#1E88E5"]').count()) > 0);

@@ -34,6 +34,9 @@ describe("ChatPanel", () => {
     await user.click(await screen.findByRole("button", { name: "Back to chat" }));
     await user.click(await screen.findByRole("button", { name: /switch chats/ }));
     await user.click(await screen.findByRole("button", { name: /^Create a personal Heinzel$/ }));
+    // The page's draft asks for the name first; saving it creates the Heinzel and opens its conversation.
+    await user.type(await screen.findByLabelText("Name"), "New personal Heinzel");
+    await user.click(screen.getByRole("button", { name: "Save and chat" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByRole("heading", { name: "New personal Heinzel" })).toBeInTheDocument();
     await user.type(await panel.findByLabelText("Message your Heinzel"), "Keep this in the new conversation");

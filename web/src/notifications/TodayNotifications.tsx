@@ -2,7 +2,9 @@
 // to all of them. Nothing unread, nothing shown: the center itself is a click away on the bell.
 import { Bell, ChevronRight, ListChecks } from "lucide-react";
 import { Link } from "react-router";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { useNoticeLook } from "@/heinzel/useNoticeLook";
 import { t } from "@/i18n";
 import { useLiveNotices, useSeen, when } from "@/layout/NotificationCenter";
 
@@ -12,6 +14,7 @@ export function TodayNotifications() {
   const notices = useLiveNotices();
   const [seen] = useSeen();
   const unread = (notices.data?.notices ?? []).filter((notice) => notice.id > seen);
+  const lookOf = useNoticeLook(unread);
   if (unread.length === 0) return null;
   // The same notice repeated (a test sent three times) is one line; the count above still counts them all.
   const teased = [...new Map(unread.map((notice) => [`${notice.title}\n${notice.route}`, notice])).values()].slice(
@@ -41,6 +44,9 @@ export function TodayNotifications() {
               data-nav-row
               className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent/60"
             >
+              {lookOf(notice) && (
+                <HeinzelAvatar view="bust" {...lookOf(notice)} className="size-4 shrink-0 overflow-hidden" />
+              )}
               <span className="truncate" title={notice.title}>
                 {notice.title}
               </span>

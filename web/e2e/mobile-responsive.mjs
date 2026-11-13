@@ -1103,12 +1103,20 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
     await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
+    // The composer is one row that fits the phone: the message field and Send side by side.
+    await assertContained(page, page.getByLabel("Message your Heinzel"), `${spec.name}: Heinzel composer`);
+    await assertContained(page, page.getByRole("button", { name: "Send" }), `${spec.name}: Heinzel send`);
     // The suggestion sits with the other reviews behind the Details disclosure.
     await openDetails(page);
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);
     await useSuggestion.click();
+    await assertContained(
+      page,
+      page.getByRole("radiogroup", { name: "Shirt colour" }),
+      `${spec.name}: shirt colour swatches`,
+    );
     assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Mira");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-suggested-identity.png`) });
     // A real visual viewport zoom exercises fixed panels independently of layout viewport size.

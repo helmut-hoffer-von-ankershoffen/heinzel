@@ -177,27 +177,25 @@ describe("The chat's session switcher", () => {
   it("groups and words what it lists", () => {
     expect(switcherGroups(sessions, "doctor").map((group) => group.label)).toEqual(["Recent chats"]);
     expect(ago("2026-10-24T08:00:00Z", Date.parse("2026-10-24T10:00:00Z"))).toBe("2 hours ago");
+    const personal = switcherGroups([], "", [
+      {
+        session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        name: "Bruno",
+        state: "proposed",
+        last_seq: 0,
+        updated_at: "2026-10-24T08:00:00Z",
+        appearance: { age: "old", build: "round", hat: "blue", accessories: [] },
+      },
+    ]).find((group) => group.label === "Your Heinzels");
+    expect(personal?.items[0]).toMatchObject({ kind: "heinzel", title: "Bruno", look: { age: "old", hat: "blue" } });
   });
 });
 
-it("creates a personal Heinzel from the chat and opens its durable session", async () => {
-  const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-  const saved = {
-    session_id: id,
-    heinzel_id: id,
-    name: "New Heinzel",
-    messages: [],
-    schedule: null,
-    contracts: [],
-    appearance: { age: "grown", build: "regular" },
-    profile_revision: 1,
-  };
+it("opens the draft of a new Heinzel from the chat without creating one", async () => {
   const { calls } = mockApi({
     ...base,
     "/api/system/runner/chat/list": [],
-    "/api/heinzel/new-chat": saved,
-    "/api/heinzel/session": saved,
-    "/api/heinzel/latest-scheduled-agent-proposal": null,
+    "/api/heinzel/sessions": { sessions: [] },
   });
   const user = userEvent.setup();
   renderAt("/doctor");
@@ -207,10 +205,10 @@ it("creates a personal Heinzel from the chat and opens its durable session", asy
       name: "Create a personal Heinzel",
     }),
   );
-  expect(await screen.findByText("New Heinzel")).toBeInTheDocument();
-  const created = calls.find((call) => new URL(call.url).pathname === "/api/heinzel/new-chat");
-  expect(await created?.clone().json()).toMatchObject({ name: "New Heinzel", request_id: expect.any(String) });
-  expect(localStorage.getItem("hz.personal-heinzel.creation")).toBeNull();
+  // No "New Heinzel" is left behind by a look around: the page's draft asks for a name and a look first.
+  expect(await screen.findByRole("heading", { name: "Your new Heinzel" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Name")).toHaveValue("");
+  expect(calls.some((call) => new URL(call.url).pathname === "/api/heinzel/new-chat")).toBe(false);
 });
 
 it("opens an existing personal Heinzel's continuous chat from the switcher", async () => {

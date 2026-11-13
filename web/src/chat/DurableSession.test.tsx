@@ -567,7 +567,7 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByRole("heading", { name: "Personal helper" })).toBeInTheDocument();
     expect(panel.getByText("Hello")).toBeInTheDocument();
-    expect(panel.getByText(/Messages and replies stay in this conversation/)).toBeInTheDocument();
+    expect(panel.getByLabelText("Message your Heinzel")).toHaveAttribute("placeholder", "Message Personal helper");
     expect(calls.some((request) => new URL(request.url).pathname === "/api/system/runner/chat/show")).toBe(false);
     expect(calls.some((request) => new URL(request.url).searchParams.get("session_id") === sessionId)).toBe(true);
     await expectAccessible(container);
@@ -850,7 +850,7 @@ describe("personal conversation links", () => {
       }),
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    const answer = (await screen.findByText("A recorded answer")).closest("div");
+    const answer = (await screen.findByText("A recorded answer")).closest<HTMLElement>("[data-message-speaker]");
     if (!answer) throw new Error("Missing answer");
     const attached = within(answer).getByText(/Tool activity for this reply/);
     fireEvent.click(attached);
@@ -895,7 +895,7 @@ describe("personal conversation links", () => {
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    const answer = (await screen.findByText("Recorded answer")).closest("div");
+    const answer = (await screen.findByText("Recorded answer")).closest<HTMLElement>("[data-message-speaker]");
     if (!answer) throw new Error("Missing answer");
     expect(await within(answer).findByText("Approved read: first recorded result.")).toBeInTheDocument();
     expect(screen.getByText(/Read without a visible reply: same exact result/)).toBeInTheDocument();
@@ -1132,7 +1132,11 @@ describe("personal conversation links", () => {
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    expect(await screen.findByText("Daemon:")).toBeInTheDocument();
+    const trigger = (await screen.findByText("Daemon")).closest("[data-message-speaker]") as HTMLElement;
+    expect(trigger).toHaveAttribute("data-message-speaker", "daemon");
+    // A waiting message says so in words, never as the stored status.
+    expect(trigger).toHaveTextContent("Queued");
+    expect(trigger).not.toHaveTextContent("pending");
     expect(screen.queryByText("user:")).not.toBeInTheDocument();
   });
 
@@ -1965,7 +1969,7 @@ it("shows recorded activity and stored drafts without exposing tool bodies or in
     },
   });
   renderAt(`/?chat=${sessionId}`);
-  expect((await screen.findByText(/Tool activity:/)).parentElement).toHaveTextContent("failed");
+  expect((await screen.findByText("Tool activity")).closest("[data-message-speaker]")).toHaveTextContent("Failed");
   expect(screen.queryByText("private tool payload")).not.toBeInTheDocument();
   expect(screen.getByText("Waiting for approval", { exact: false })).toBeInTheDocument();
   expect(screen.getByText("Draft: A draft")).toBeInTheDocument();
@@ -1993,18 +1997,79 @@ it("shows the Heinzel's chosen look in the header and before its replies, not be
   expect(header).toHaveAttribute("aria-label", "Personal helper, wearing a scarf");
   expect(header.querySelector('[fill="#1E88E5"]')).not.toBeNull();
   expect(header.querySelector('[fill="#8E5BD8"]')).not.toBeNull();
-  const reply = (await screen.findByText("Good day", { exact: false })).closest("p") as HTMLElement;
-  expect(reply.querySelector('svg[data-view="head"]')).not.toBeNull();
-  expect(reply.querySelector("strong")).toHaveTextContent("Personal helper:");
-  expect(reply).not.toHaveTextContent("assistant:");
-  const own = screen.getByText("Hello", { exact: false }).closest("p") as HTMLElement;
+  const reply = (await screen.findByText("Good day")).closest("[data-message-speaker]") as HTMLElement;
+  expect(reply).toHaveAttribute("data-message-speaker", "heinzel");
+  expect(reply.querySelector('svg[data-view="bust"] [fill="#1E88E5"]')).not.toBeNull();
+  expect(reply).toHaveTextContent("Personal helper");
+  expect(reply).not.toHaveTextContent("assistant");
+  const own = screen.getByText("Hello").closest("[data-message-speaker]") as HTMLElement;
+  expect(own).toHaveAttribute("data-message-speaker", "you");
   expect(own.querySelector("svg")).toBeNull();
   await expectAccessible(container);
 });
 
+it("reads as a chat: formatted replies, the sent message at once, and the Heinzel thinking until it answers", async () => {
+  let answer: ((value: unknown) => void) | null = null;
+  let stored: Record<string, unknown> = { ...snapshot, name: "Bruno", profile_revision: 1, messages: [] };
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": () => stored,
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      await new Promise((resolve) => {
+        answer = resolve;
+      });
+      const reply = {
+        id: "a1",
+        seq: 2,
+        role: "assistant",
+        text: "Here is **the plan**:\n\n- one",
+        status: "completed",
+      };
+      stored = {
+        ...stored,
+        messages: [{ id: body.request_id, seq: 1, role: "user", text: "What now?", status: "completed" }, reply],
+      };
+      return { session_id: sessionId, request_id: body.request_id, message: reply };
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  // An empty conversation greets with the figure instead of a blank pane.
+  expect(await screen.findByText("Say hello to Bruno.")).toBeInTheDocument();
+  const composer = screen.getByLabelText("Message your Heinzel");
+  fireEvent.change(composer, { target: { value: "What now?" } });
+  // Shift+Enter is a new line; Enter sends, as in every chat of the app.
+  fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
+  expect(screen.queryByText("Bruno is thinking…")).not.toBeInTheDocument();
+  fireEvent.keyDown(composer, { key: "Enter" });
+  expect(await screen.findByText("Bruno is thinking…")).toHaveAttribute("role", "status");
+  const sent = screen.getByText("Sending…").closest("[data-message-speaker]") as HTMLElement;
+  expect(sent).toHaveAttribute("data-message-speaker", "you");
+  expect(sent).toHaveTextContent("What now?");
+  expect(screen.queryByText("Say hello to Bruno.")).not.toBeInTheDocument();
+  await waitFor(() => expect(answer).not.toBeNull());
+  await act(async () => answer?.(null));
+  const reply = (await screen.findByText("the plan")).closest("[data-message-speaker]") as HTMLElement;
+  expect(reply).toHaveAttribute("data-message-speaker", "heinzel");
+  expect(screen.getByText("the plan").tagName).toBe("STRONG");
+  expect(within(reply).getByRole("listitem")).toHaveTextContent("one");
+  expect(reply).not.toHaveTextContent("**");
+  await waitFor(() => expect(screen.queryByText("Bruno is thinking…")).not.toBeInTheDocument());
+  expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
+  expect(screen.getAllByText("What now?")).toHaveLength(1);
+});
+
 it("keeps the conversation first: the admin sections sit behind one Details disclosure and the button says Send", async () => {
-  const scrolled = vi.fn();
-  Element.prototype.scrollIntoView = scrolled;
+  // The newest message sits 500 px below the bottom edge of the conversation's own scroll area.
+  const pageScrolled = vi.fn();
+  Element.prototype.scrollIntoView = pageScrolled;
+  const rects = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { bottom: this.hasAttribute("data-newest") ? 900 : 400 } as DOMRect;
+  });
   mockApi({
     ...shell,
     "/api/heinzel/session": {
@@ -2021,8 +2086,12 @@ it("keeps the conversation first: the admin sections sit behind one Details disc
   expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
   try {
-    await waitFor(() => expect(scrolled).toHaveBeenCalledWith({ block: "end" }));
+    // Only the conversation scrolls to it: moving the page too would push a phone's composer off the screen.
+    const list = screen.getByText("Good day").closest(".overflow-y-auto") as HTMLElement;
+    await waitFor(() => expect(list.scrollTop).toBe(512));
+    expect(pageScrolled).not.toHaveBeenCalled();
   } finally {
+    rects.mockRestore();
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   }
 });

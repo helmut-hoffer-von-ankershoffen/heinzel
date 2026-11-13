@@ -247,11 +247,6 @@ function Layout() {
       setActivePanel(requestedId);
     }
   }, [requestedId]);
-  // A link to one conversation (?chat=) on a narrow screen opens its Chat tab instead of leaving the person on the page.
-  const chatParam = params.get("chat");
-  useEffect(() => {
-    if (chatParam && window.innerWidth < 1024) setActivePanel("chat");
-  }, [chatParam]);
   const selectedPanel =
     requestedId ??
     (activePanel === "browser" && browserOpen && browserEnabled
@@ -328,6 +323,15 @@ function Layout() {
       requestScroll(requestedId ?? "page");
     }
   }, [beside, viewOpen, location, requestScroll, requestedId]);
+  // A link to one conversation (?chat=) on a narrow screen opens its Chat tab instead of leaving the person on the page.
+  // Declared after the navigation effect above, which drops any scroll request when the address changes.
+  const chatParam = params.get("chat");
+  useEffect(() => {
+    if (!chatParam || window.innerWidth >= 1024) return;
+    setActivePanel("chat");
+    // The workspace sits below the page there: bring the conversation into view, as choosing its tab does.
+    requestScroll("chat");
+  }, [chatParam, requestScroll]);
 
   useLayoutEffect(() => {
     if (!scrollTarget) return;
