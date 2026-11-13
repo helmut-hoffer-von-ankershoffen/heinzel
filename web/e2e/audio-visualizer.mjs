@@ -1,7 +1,7 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +23,13 @@ await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");
 let browser;
+// The aurora canvas per viewport (context lost, replacements, in-memory drawing) at each reading, written next to the
+// screenshots after every step that reads it: CI keeps them as an artifact, passed or failed.
+const canvasLog = [];
+const logCanvas = (entry) => {
+  canvasLog.push(entry);
+  writeFileSync(join(shots, "audio-canvas.json"), `${JSON.stringify(canvasLog, null, 1)}\n`);
+};
 // Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
 const RAIL_MARGIN = 0.2;
 const result = {
@@ -213,6 +220,7 @@ try {
       low,
     );
     result.tones.push({ width: viewport.width, low, high });
+    logCanvas({ width: viewport.width, step: "tones", low: low.canvas, high: high.canvas });
     assert(
       high.count > 0,
       `${viewport.width}px: the moved tone must still paint the aurora: ${JSON.stringify({ low, high })}`,
@@ -248,6 +256,7 @@ try {
         reset.visible > 0.03,
         `${viewport.width}px: after a GPU reset the aurora must be visible again: ${JSON.stringify(reset)}`,
       );
+      logCanvas({ width: viewport.width, step: "gpu-reset", reset: reset.canvas });
       result.gpuReset = true;
     }
     // What the person sees: a region of the page away from the controls must change while the aurora paints and
