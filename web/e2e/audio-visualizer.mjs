@@ -1,8 +1,9 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
@@ -11,7 +12,13 @@ const [shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
-const server = await createServer({ server: { host: "127.0.0.1", port: 0, strictPort: false } });
+// Its own dependency cache, and the harness page scanned before the first request: other journeys start Vite servers
+// in parallel on CI, and a shared cold cache re-optimized by one of them answers this page "504 Outdated Optimize Dep".
+const server = await createServer({
+  cacheDir: mkdtempSync(join(tmpdir(), "vite-audio-")),
+  optimizeDeps: { entries: ["e2e/audio-visualizer.html"] },
+  server: { host: "127.0.0.1", port: 0, strictPort: false },
+});
 await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");
@@ -19,6 +26,9 @@ let browser;
 // Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
 const RAIL_MARGIN = 0.2;
 const result = { viewports: [], tones: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
+// For a failure: the page in use, its console errors and failed requests, written out before the error is rethrown.
+let open = null;
+const consoleErrors = [];
 try {
   try {
     browser = await chromium.launch();
@@ -30,7 +40,21 @@ try {
     { width: 390, height: 844 },
   ]) {
     const page = await browser.newPage({ viewport });
+    open = { page, viewport };
     page.on("pageerror", (error) => result.errors.push(String(error)));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(`${viewport.width}px: ${message.text()}`);
+    });
+    page.on("requestfailed", (request) =>
+      consoleErrors.push(`${viewport.width}px: request failed ${new URL(request.url()).pathname}`),
+    );
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "127.0.0.1" && url.port === String(address.port) && !url.pathname.startsWith("/api/"))
+        return route.continue();
+      result.errors.push("Unexpected non-fixture browser request");
+      return route.abort();
+    });
     await page.goto(`http://127.0.0.1:${address.port}/e2e/audio-visualizer.html`);
     const trigger = page
       .getByRole("region", { name: "Audio visualizer", exact: true })
@@ -65,20 +89,41 @@ try {
         }
         const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
         let share = 0,
-          count = 0;
+          count = 0,
+          strong = 0;
         for (let i = 0; i < data.length; i += 4)
           if (data[i + 3]) {
             share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
             count += 1;
+            if (data[i + 3] >= 32) strong += 1;
           }
         return {
           centroid: Number(rail.dataset.vizCentroid ?? "-1"),
           sampleRate: Number(rail.dataset.vizSampleRate ?? "0"),
           rail: height / Math.max(1, mass),
           count,
+          // The share of the window painted at an alpha a person can see (1/8 or more), not just nonzero.
+          visible: strong / (data.length / 4),
           share: share / Math.max(1, count),
         };
       });
+    const allStopped = () =>
+      page.evaluate(() =>
+        window.audioFixture.streams.every((stream) =>
+          stream.getTracks().every((track) => track.readyState === "ended"),
+        ),
+      );
+    const audit = () =>
+      page.evaluate(async () =>
+        (
+          await window.axe.run(document, {
+            runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
+          })
+        ).violations.map((item) => ({
+          id: item.id,
+          nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+        })),
+      );
     // Fails with what was measured, so a CI log tells a dead analyser from a drawing or timing problem.
     const until = async (what, predicate, arg) => {
       try {
@@ -100,6 +145,11 @@ try {
     await page.waitForTimeout(1500);
     const low = await measure();
     assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
+    // One plain tone fills a single band: it must still light the window visibly, not paint a trace nobody sees.
+    assert(
+      low.visible > 0.03,
+      `${viewport.width}px: a single tone must paint a visible aurora, not a faint trace: ${JSON.stringify(low)}`,
+    );
     await page.evaluate(() => {
       window.audioFixture.oscillator.frequency.value = 12000;
     });
@@ -114,6 +164,12 @@ try {
     const high = await measure();
     result.tones.push({ width: viewport.width, low, high });
     assert(high.count > 0, "The moved tone must still paint the aurora");
+    // Measured 0.002 (1440) and 0.011 (390) while loudness was the mean over all bands, 0.09 and 0.12 since: the
+    // threshold sits a factor of three from both, for other renderers.
+    assert(
+      high.visible > 0.03,
+      `${viewport.width}px: a single high tone must paint a visible aurora: ${JSON.stringify(high)}`,
+    );
     assert(
       high.centroid > low.centroid + 0.25,
       `Changing a real tone must move the measured spectrum: ${JSON.stringify({ low, high })}`,
@@ -125,8 +181,102 @@ try {
     result.realSignal = true;
     // What the person sees: a region of the page away from the controls must change while the aurora paints and
     // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
-    const away = { x: 40, y: Math.round(viewport.height / 3), width: Math.round(viewport.width / 4), height: 200 };
+    const away = { x: 260, y: Math.round(viewport.height / 3), width: Math.min(80, viewport.width - 260), height: 200 };
     const lit = await page.screenshot({ clip: away });
+    // The Heinzel styles, from the same signal: the Halo's rays are drawn, and the Swarm's figures move.
+    const heinzels = () =>
+      page.evaluate(() => {
+        const halo = document.querySelector("canvas[data-testid=audio-halo]");
+        let ink = 0;
+        if (halo)
+          for (const [index, value] of halo.getContext("2d").getImageData(0, 0, halo.width, halo.height).data.entries())
+            if (index % 4 === 3) ink += value;
+        const moving = [...document.querySelectorAll("[data-swarm-figure]")].filter((figure) => figure.style.transform);
+        return {
+          halo: Boolean(halo),
+          ink,
+          figures: document.querySelectorAll("[data-swarm-figure]").length,
+          moving: moving.length,
+        };
+      });
+    // Show is pick-any: unchecking the Halo chip takes the Halo away, checking it brings it back.
+    const haloChip = pane.getByRole("checkbox", { name: "Halo", exact: true });
+    // The chip is the label a person presses; its native checkbox is visually hidden.
+    const haloLabel = pane.locator("label").filter({ hasText: /^Halo$/ });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), false);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor({ state: "detached" });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), true);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor();
+    const swarmChip = pane.getByRole("checkbox", { name: "Swarm", exact: true });
+    const swarmLabel = pane.locator("label").filter({ hasText: /^Swarm$/ });
+    await swarmLabel.click();
+    assert.equal(await swarmChip.isChecked(), false);
+    await page.locator("canvas[data-testid=audio-swarm]").waitFor({ state: "detached" });
+    assert.equal(await page.locator("[data-swarm-figure]").count(), 0);
+    await swarmLabel.click();
+    assert.equal(await swarmChip.isChecked(), true);
+    await page.locator("canvas[data-testid=audio-swarm]").waitFor();
+    await page.waitForTimeout(400);
+    const playing = await heinzels();
+    assert(
+      playing.halo && playing.figures === 3,
+      `${viewport.width}px: Halo and Swarm must stand: ${JSON.stringify(playing)}`,
+    );
+    // The portal must belong to the real Sidebar, immediately before its real PlayerCard dock, not a fixture stand-in.
+    const geometry = await page.evaluate(() => {
+      const sidebar = document.querySelector('aside[aria-label="Main"]');
+      const stage = sidebar?.querySelector("[data-viz-stage]");
+      const dock = sidebar?.querySelector("[data-sound-dock]");
+      const card = document.querySelector('[data-dock="docked"]');
+      if (!stage || !dock || !card || !stage.contains(document.querySelector('[data-testid="audio-halo"]')))
+        return null;
+      const s = stage.getBoundingClientRect(),
+        d = dock.getBoundingClientRect(),
+        p = card.getBoundingClientRect();
+      return {
+        ordered: Boolean(stage.compareDocumentPosition(dock) & Node.DOCUMENT_POSITION_FOLLOWING),
+        stageTop: s.top,
+        stageBottom: s.bottom,
+        stageWidth: s.width,
+        stageHeight: s.height,
+        haloHeight: document.querySelector('[data-testid="audio-halo"]').getBoundingClientRect().height,
+        figureHeight: document.querySelector("[data-swarm-figure]").getBoundingClientRect().height,
+        navBottom: sidebar.querySelector("nav").getBoundingClientRect().bottom,
+        dockTop: d.top,
+        cardTop: p.top,
+        cardWidth: p.width,
+      };
+    });
+    assert(
+      geometry?.ordered &&
+        geometry.stageWidth > 0 &&
+        geometry.stageBottom <= geometry.dockTop + 1 &&
+        Math.abs(geometry.dockTop - geometry.cardTop) <= 2 &&
+        geometry.cardWidth > 0 &&
+        geometry.stageTop >= 0,
+      `${viewport.width}px: real Sidebar stage and player must be visible and not overlap: ${JSON.stringify(geometry)}`,
+    );
+    // The stage fills the gap the navigation leaves (20 rem at most), not an 80 px strip: the Halo above, the Swarm
+    // on the floor, both far larger than on the strip, and the navigation keeps its own room above them.
+    assert(
+      geometry.stageHeight >= 300 &&
+        geometry.stageHeight <= 321 &&
+        geometry.haloHeight >= 150 &&
+        geometry.figureHeight >= 70 &&
+        geometry.navBottom <= geometry.stageTop + 1,
+      `${viewport.width}px: Halo and Swarm must fill the sidebar's gap: ${JSON.stringify(geometry)}`,
+    );
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("[data-swarm-figure]")].some((figure) => figure.style.transform),
+    );
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.waitForFunction(() => {
+      const figures = [...document.querySelectorAll("[data-swarm-figure]")];
+      return figures.length === 3 && figures.every((figure) => !figure.style.transform);
+    });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
       window.audioFixture.gain.gain.value = 0;
@@ -140,19 +290,18 @@ try {
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
+    const resting = await heinzels();
+    assert(
+      resting.moving === 0 && playing.ink > resting.ink * 1.5,
+      `${viewport.width}px: the Halo must grow with the sound and the Swarm stand still in silence: ${JSON.stringify({ playing, resting })}`,
+    );
     assert(
       !lit.equals(await page.screenshot({ clip: away })),
       `${viewport.width}px: the aurora painted but nothing on the page changed: it is hidden under another layer`,
     );
     result.realSilence = true;
     await pane.getByRole("radio", { name: "Off", exact: true }).click();
-    assert(
-      await page.evaluate(() =>
-        window.audioFixture.streams.every((stream) =>
-          stream.getTracks().every((track) => track.readyState === "ended"),
-        ),
-      ),
-    );
+    assert(await allStopped(), "Every generated stream must be stopped");
     result.cleanup = true;
     await page.evaluate(() => {
       window.audioFixture.mode = "no-audio";
@@ -160,13 +309,7 @@ try {
     await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("No audio was shared"));
     assert(await pane.getByRole("status").isVisible());
-    assert(
-      await page.evaluate(() =>
-        window.audioFixture.streams.every((stream) =>
-          stream.getTracks().every((track) => track.readyState === "ended"),
-        ),
-      ),
-    );
+    assert(await allStopped(), "Every generated stream must be stopped");
     await page.evaluate(() => {
       window.audioFixture.mode = "deny";
     });
@@ -181,6 +324,9 @@ try {
     // Not offered any more: the choice leaves the group and one line says why.
     await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
     assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
+    // The fixture offers no microphone either, so nothing is left to choose: no group, not a lone "Off".
+    assert.equal(await pane.getByRole("radiogroup", { name: "Listen to" }).count(), 0);
+    assert.equal(await pane.getByRole("radio", { name: "Microphone", exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => window.audioFixture.requests), beforeUnsupported);
     const bounds = await pane.boundingBox();
     assert(
@@ -190,17 +336,26 @@ try {
         bounds.y + bounds.height <= viewport.height,
     );
     await page.evaluate(axe);
-    const violations = await page.evaluate(async () =>
-      (
-        await window.axe.run(document, {
-          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
-        })
-      ).violations.map((item) => ({
-        id: item.id,
-        nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
-      })),
-    );
+    const violations = await audit();
     assert.deepEqual(violations, [], `${viewport.width}px axe: ${JSON.stringify(violations)}`);
+    // And in dark mode: the chip and segment fills keep their contrast.
+    await page.evaluate(() => {
+      localStorage.setItem("hz.theme", "dark");
+      window.dispatchEvent(new Event("hz:mode"));
+    });
+    await page.waitForFunction(
+      () =>
+        document.documentElement.classList.contains("dark") &&
+        getComputedStyle(document.body).color === "rgb(233, 237, 229)" &&
+        Number(getComputedStyle(document.querySelector('[data-testid="heinzel-wordmark"]')).color.match(/\d+/)?.[0]) >
+          200,
+    );
+    const dark = await audit();
+    await page.evaluate(() => {
+      localStorage.setItem("hz.theme", "light");
+      window.dispatchEvent(new Event("hz:mode"));
+    });
+    assert.deepEqual(dark, [], `${viewport.width}px axe, dark: ${JSON.stringify(dark)}`);
     await page.keyboard.press("Escape");
     await pane.waitFor({ state: "hidden" });
     assert(await trigger.evaluate((element) => element === document.activeElement));
@@ -212,7 +367,29 @@ try {
   }
   assert.deepEqual(result.errors, []);
   console.log(JSON.stringify(result));
+} catch (error) {
+  await diagnose();
+  throw error;
 } finally {
   await browser?.close();
   await server.close();
+}
+
+/** Write what the failing page showed to stderr and a screenshot next to the others (CI keeps them as an artifact). */
+async function diagnose() {
+  const lines = [`page errors: ${JSON.stringify(result.errors)}`, `console errors: ${JSON.stringify(consoleErrors)}`];
+  if (open && !open.page.isClosed()) {
+    const { page, viewport } = open;
+    lines.push(`viewport: ${viewport.width}x${viewport.height}`);
+    const region = await page
+      .evaluate(
+        () => document.querySelector('section[aria-label="Audio visualizer"]')?.outerHTML.slice(0, 2000) ?? "none",
+      )
+      .catch((failure) => `unreadable: ${failure}`);
+    lines.push(`visualizer region: ${region}`);
+    await page
+      .screenshot({ path: join(shots, `audio-${viewport.width}-diagnostic.png`), fullPage: true })
+      .catch((failure) => lines.push(`no screenshot: ${failure}`));
+  }
+  process.stderr.write(`${lines.join("\n")}\n`);
 }

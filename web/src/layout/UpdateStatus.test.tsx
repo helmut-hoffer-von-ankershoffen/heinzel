@@ -281,9 +281,7 @@ it("names the plugins from git or a folder that are updated by hand", async () =
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   expect(
-    await screen.findByText(
-      "heinzel-crm is installed from the Heinzel catalog source and isn't followed for updates yet",
-    ),
+    await screen.findByText("heinzel-crm is installed from git and isn't followed for updates yet"),
   ).toBeInTheDocument();
 });
 

@@ -115,6 +115,20 @@ describe("Widget visibility", () => {
     await waitFor(() => expect(result.current.hidden.map((w) => w.id)).toEqual(["hidden"]));
   });
 
+  it("names a hidden widget as its card did, and by its listing title when the card has no value", async () => {
+    mockApi({
+      "/api/system/ui/list": [item("acme:at-work", "widget", false, true), item("acme:roadmap", "widget", false, true)],
+      "/api/system/ui/widgets": [
+        { id: "acme:at-work", widget: { kind: "metric", label: "Zones at work now", value: "2/3" } },
+        { id: "acme:roadmap", widget: null },
+      ],
+    });
+    const { result } = renderHook(() => useWidgetVisibility(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.hidden.map((w) => w.title)).toEqual(["Zones at work now", "acme:roadmap"]),
+    );
+  });
+
   it("restores widgets one call at a time, in order, on the Today slot", async () => {
     const { calls } = mockApi({
       "/api/system/ui/list": [],

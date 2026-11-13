@@ -227,6 +227,9 @@ export function subtractFloor(levels: Float32Array, floor: Float32Array, dt: num
   return levels;
 }
 
+/** The share of the strongest band that counts as loudness when the rest of the spectrum is empty. */
+export const NARROW_SHARE = 0.3;
+
 export interface StepOptions {
   readonly reduced: boolean;
   /** Microphone input: take out the room's noise floor. */
@@ -259,7 +262,11 @@ export function stepState(
   }
   const bass = energy(raw, 0, 10);
   const treble = energy(state.levels, 28, BANDS);
-  state.loud = ease(state.loud, energy(raw, 0, BANDS), dt, 8, 2.5);
+  // How loud the sound is: the mean over all bands, but never less than 30 % of the strongest band. A voice, a
+  // whistle or one instrument fills few bands; by the mean alone its ribbons stayed too faint to see.
+  let strongest = 0;
+  for (let band = 0; band < BANDS; band += 1) strongest = Math.max(strongest, raw[band] ?? 0);
+  state.loud = ease(state.loud, Math.max(energy(raw, 0, BANDS), strongest * NARROW_SHARE), dt, 8, 2.5);
   state.pulse = Math.max(0, state.pulse - dt * 2.6);
   const beat = !options.reduced && detectBeat(bass, state.avgBass, state.lastBeat, now);
   state.avgBass = ease(state.avgBass, bass, dt, 1.6, 1.6);

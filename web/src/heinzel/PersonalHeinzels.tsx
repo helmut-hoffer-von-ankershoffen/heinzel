@@ -152,6 +152,15 @@ async function personalResult<T>(call: Promise<{ data?: T; error?: unknown; resp
   throw problem(response.status, error);
 }
 
+/** The person's own Heinzels; the Heinzelmännchen page reads the same list to know whether it has any. */
+export function usePersonalSessions() {
+  return useQuery({
+    queryKey: sessionsKey,
+    queryFn: () => personalResult(api.GET("/heinzel/sessions")),
+    retry: false,
+  });
+}
+
 export function PersonalHeinzels() {
   const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const navigate = useNavigate();
@@ -174,11 +183,7 @@ export function PersonalHeinzels() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletedNote, setDeletedNote] = useState<string | null>(null);
   const client = useQueryClient();
-  const sessions = useQuery({
-    queryKey: sessionsKey,
-    queryFn: () => personalResult(api.GET("/heinzel/sessions")),
-    retry: false,
-  });
+  const sessions = usePersonalSessions();
   const session = useQuery({
     queryKey: ["heinzel", "session", selected],
     queryFn: async () => {

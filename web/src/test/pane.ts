@@ -2,7 +2,7 @@
 // and one bottom row of action buttons, and no button or link anywhere else in the pane.
 import { within } from "@testing-library/react";
 import { expect } from "vitest";
-import { paneStructureProblems } from "@/components/FooterItem";
+import { footerPaneProblems, paneStructureProblems } from "@/components/FooterItem";
 import { expectAccessible } from "./render";
 
 /** The pane's actions row, by role and name; null when the pane has no action. */
@@ -11,7 +11,9 @@ export function paneActions(pane: HTMLElement): HTMLElement | null {
 }
 
 export function expectPaneStructure(pane: HTMLElement) {
-  expect(paneStructureProblems(pane)).toEqual([]);
+  // A footer pane also keeps its one row in the frame and underlines nothing.
+  const footer = pane.closest("[data-footer-pane]") ?? pane.querySelector("[data-footer-pane]");
+  expect((footer ? footerPaneProblems : paneStructureProblems)(pane)).toEqual([]);
   const row = paneActions(pane);
   if (!row) return;
   // The divider is the row's own top border, so nothing can sit between the content and it.

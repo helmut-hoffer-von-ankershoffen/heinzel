@@ -27,6 +27,11 @@ const PERSISTENT = new Set(["/system/daemon/install", "/system/daemon/uninstall"
 /** Safe, easily repeated writes the app runs at once, with plain words instead of the exact call. */
 const QUICK = new Set(["/system/daemon/restart"]);
 const copyOf = (path: string) => (path.endsWith("/uninstall") ? "uninstall" : "install");
+/** Writes whose committing button names the action instead of "Run it". */
+const ACTION: Record<string, MessageKey> = {
+  "/org/calendar-reminders-install": "calendar.setUpWorker",
+  "/org/calendar-reminders-uninstall": "calendar.turnOff",
+};
 
 const ICON: Record<PhaseState, typeof Check | null> = {
   pending: null,
@@ -262,7 +267,7 @@ export function OperationDialog() {
               {t("contrib.cancel")}
             </PaneAction>
             <PaneAction key="go" icon={Play} primary onClick={go}>
-              {persistent ? t(`op.daemon.${copy}.button` as MessageKey) : t("contrib.run")}
+              {persistent ? t(`op.daemon.${copy}.button` as MessageKey) : t(ACTION[run.call.path] ?? "contrib.run")}
             </PaneAction>
           </PaneActions>
         </>
