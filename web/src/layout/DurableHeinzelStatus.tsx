@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Bot, MessageSquare, Plus, RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction } from "@/components/PaneActions";
 import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { t } from "@/i18n";
+import { createDraftPath } from "@/lib/chatIntent";
 
 const useDurableHeinzels = () =>
   useQuery({
@@ -18,6 +20,7 @@ const useDurableHeinzels = () =>
 
 export function DurableHeinzelStatus() {
   const query = useDurableHeinzels();
+  const [params] = useSearchParams();
   const sessions = query.isError ? undefined : query.data?.sessions;
   const count = sessions?.length;
   const active = sessions?.filter((session) => session.state === "awake").length;
@@ -62,7 +65,7 @@ export function DurableHeinzelStatus() {
             </PaneAction>
           ) : !query.isPending && !sessions?.length ? (
             // The page's draft asks for a name and a look first; nothing exists until it is saved.
-            <PaneAction icon={Plus} primary to="/heinzel?create=1">
+            <PaneAction icon={Plus} primary to={createDraftPath(params)}>
               {t("durable.create")}
             </PaneAction>
           ) : null}

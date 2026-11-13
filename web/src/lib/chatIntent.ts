@@ -18,3 +18,12 @@ export function clearChatLink(params: URLSearchParams) {
   ])
     params.delete(key);
 }
+
+/** The new Heinzel's draft on its page (`?create=1`), keeping the linked personal conversation (`?chat=`). */
+export function createDraftPath(current: URLSearchParams) {
+  const next = new URLSearchParams();
+  const chat = current.get("chat");
+  if (chat) next.set("chat", chat);
+  next.set("create", "1");
+  return `/heinzel?${next}`;
+}

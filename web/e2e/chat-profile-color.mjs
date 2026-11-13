@@ -71,6 +71,32 @@ try {
   await checkHeader(true);
   const box = await header.boundingBox();
   assert.ok(box && box.width > 16 && box.x >= 0 && box.x + box.width <= 375);
+  // Phone, Chat tab on /heinzel: creating a Heinzel from the chat switcher changes only the query, and still shows
+  // the draft on the Page tab.
+  const plain = new URL(url.href);
+  plain.searchParams.delete("chat");
+  await page.goto(plain.href);
+  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
+  await chatTab.click();
+  await page.getByRole("button", { name: /: switch chats$/ }).click();
+  await page
+    .getByRole("dialog", { name: "Your chats" })
+    .getByRole("button", { name: "Create a personal Heinzel" })
+    .click();
+  await page.waitForURL((next) => next.searchParams.get("create") === "1", { timeout: 10000 });
+  const pageTab = page.getByRole("tab", { name: "Page", exact: true });
+  const draft = page.getByText("Your new Heinzel", { exact: true });
+  await draft.waitFor({ timeout: 10000 });
+  const draftInView = async () => {
+    const at = await draft.boundingBox();
+    return Boolean(at && at.y >= 0 && at.y + at.height <= 812);
+  };
+  const until = Date.now() + 10000;
+  while (Date.now() < until && !((await pageTab.getAttribute("aria-selected")) === "true" && (await draftInView())))
+    await page.waitForTimeout(200);
+  assert.equal(await pageTab.getAttribute("aria-selected"), "true", "the draft opens the Page tab");
+  assert.ok(await draftInView(), "the draft is in view");
+  assert.equal(new URL(page.url()).pathname, "/heinzel");
   console.log(JSON.stringify({ completed: true }));
 } catch (error) {
   process.stderr.write(`${String(error).replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);

@@ -14,7 +14,7 @@ import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { clearChatLink } from "@/lib/chatIntent";
+import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
 
 const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
 type PersonalHandoff = { request_id: string; message: string };
@@ -169,7 +169,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
-        <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate("/heinzel?create=1")} />
+        <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate(createDraftPath(params))} />
         <Button
           variant="ghost"
           size="icon"
