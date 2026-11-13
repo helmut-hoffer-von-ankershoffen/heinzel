@@ -2,6 +2,7 @@
 
 import importlib.util
 import io
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -284,6 +285,8 @@ def test_the_check_guards_commits_lint_ci_and_publishing():
 
 
 def test_git_output_keeps_carriage_returns_so_binary_diff_hunks_stay_aligned(tmp_path, monkeypatch):
+    for name in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(name)  # a pre-push hook points Git at the real repository; this one is a scratch repo
     monkeypatch.chdir(tmp_path)
     for command in (["init", "-q"], ["config", "user.email", "a@b.c"], ["config", "user.name", "n"]):
         subprocess.run(["git", *command], check=True)
