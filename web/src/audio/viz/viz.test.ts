@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { readPalette } from "../aurora";
+import { bandEdges, createState, isSettled, readPalette, stepState } from "../aurora";
 import { Analysis, bandRanges, VIZ_BANDS } from "./analysis";
 import { watchTheme } from "./color";
+import { drawHalo, HALO_RAYS, haloBand } from "./halo";
 import { drawRail, railLayout } from "./rail";
 import { DEFAULT_SETTINGS, parseSettings, styleOn } from "./settings";
+import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./swarm";
 import { readVizTheme } from "./theme";
 
 const theme = { a: { r: 166, g: 64, b: 40 }, b: { r: 31, g: 116, b: 68 }, c: { r: 183, g: 132, b: 28 }, dark: false };
@@ -147,7 +149,8 @@ describe("settings", () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings("not json")).toEqual(DEFAULT_SETTINGS);
     const stored = parseSettings(JSON.stringify({ master: true, styles: { aurora: false } }));
-    expect(stored.styles).toEqual({ spectrum: true, aurora: false });
+    // A choice stored before Halo and Swarm existed keeps them on, as the default.
+    expect(stored.styles).toEqual({ spectrum: true, aurora: false, halo: true, swarm: true });
     expect(styleOn(stored, "aurora")).toBe(false);
     expect(styleOn(parseSettings(JSON.stringify({ master: false })), "spectrum")).toBe(false);
   });
@@ -177,5 +180,138 @@ describe("theme colours", () => {
       root.classList.remove("dark");
       for (const name of ["--color-primary", "--color-ok", "--color-warn"]) root.style.removeProperty(name);
     }
+  });
+});
+
+describe("halo", () => {
+  const ctx = () =>
+    ({
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn(),
+      fillRect: vi.fn(),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineWidth: 1,
+      lineCap: "butt",
+      strokeStyle: "",
+    }) as unknown as CanvasRenderingContext2D;
+
+  /** The length of the first ray a frame drew (the bass ray at the bottom). */
+  const firstRay = (drawn: CanvasRenderingContext2D) => {
+    const [fromX, fromY] = vi.mocked(drawn.moveTo).mock.calls[0] ?? [];
+    const [toX, toY] = vi.mocked(drawn.lineTo).mock.calls[0] ?? [];
+    return Math.hypot(Number(toX) - Number(fromX), Number(toY) - Number(fromY));
+  };
+
+  it("puts bass at the bottom and treble at the top, mirrored", () => {
+    expect(haloBand(0)).toBe(0);
+    expect(haloBand(HALO_RAYS / 2)).toBe(VIZ_BANDS - 1);
+    expect(haloBand(HALO_RAYS / 4)).toBe(haloBand((HALO_RAYS * 3) / 4));
+  });
+
+  it("is a still ring when quiet, grows its rays with the sound and pulses at most 5 % on a beat", () => {
+    const a = analysis();
+    const still = ctx();
+    expect(drawHalo(still, a, theme, 80, 80, false)).toBe(1);
+    const quietLength = firstRay(still);
+    for (let index = 0; index < 4; index += 1) a.step(new Uint8Array(1024).fill(255), null, 1000 + index * 33, 0.033);
+    const loud = ctx();
+    const scale = drawHalo(loud, a, theme, 80, 80, false);
+    expect(scale).toBeGreaterThanOrEqual(1);
+    expect(scale).toBeLessThanOrEqual(1.05);
+    const loudLength = firstRay(loud);
+    expect(loudLength).toBeGreaterThan(quietLength * 3);
+    expect(vi.mocked(loud.lineTo)).toHaveBeenCalledTimes(HALO_RAYS);
+    // The lantern glow follows the sound and is never drawn in silence; it fades out inside the canvas.
+    expect(still.createRadialGradient).not.toHaveBeenCalled();
+    expect(vi.mocked(loud.createRadialGradient).mock.calls[0]?.[5]).toBeLessThanOrEqual(40);
+    // Drawn from its own size: on the full stage the same sound gives rays four times as long as on the strip.
+    const large = ctx();
+    drawHalo(large, a, theme, 320, 320, true);
+    const largeLength = firstRay(large);
+    expect(largeLength).toBeCloseTo(loudLength * 4, 0);
+    expect(drawHalo(ctx(), a, theme, 80, 80, true)).toBe(1);
+  });
+});
+
+describe("swarm", () => {
+  const ctx = () =>
+    ({
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      globalAlpha: 1,
+      globalCompositeOperation: "source-over",
+      fillStyle: "",
+    }) as unknown as CanvasRenderingContext2D;
+
+  it("stands still when quiet or under reduced motion, and moves with the bands when loud", () => {
+    const a = analysis();
+    const state = createSwarm(7);
+    expect(stepSwarm(state, a, 0.033, false)).toEqual(["none", "none", "none"]);
+    for (let index = 0; index < 4; index += 1) a.step(new Uint8Array(1024).fill(255), null, 1000 + index * 33, 0.033);
+    expect(stepSwarm(state, a, 0.033, false).every((move) => move !== "none")).toBe(true);
+    // On a taller stage the figures are bigger, so they travel further: twice the stage, twice the lift.
+    const lift = (move: string | undefined) => Number(/translateY\((-?[\d.]+)px\)/.exec(move ?? "")?.[1] ?? "0");
+    const strip = lift(stepSwarm(createSwarm(7), a, 0.033, false)[1]);
+    const tall = lift(stepSwarm(createSwarm(7), a, 0.033, false, 2)[1]);
+    expect(strip).toBeLessThan(0);
+    expect(tall).toBeCloseTo(strip * 2, 1);
+    expect(stepSwarm(state, a, 0.033, true, 2)).toEqual(["none", "none", "none"]);
+  });
+
+  it("bursts sparks on a beat, never under reduced motion, caps them and lets them settle", () => {
+    const a = analysis();
+    for (let frame = 0; frame < 3; frame += 1) a.step(new Uint8Array(1024), null, frame * 33, 0.033);
+    const bass = new Uint8Array(1024);
+    bass.fill(255, 0, 40);
+    a.step(bass, null, 1000, 0.033);
+    expect(a.beatEvent).toBe(true);
+    const state = createSwarm(3);
+    drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.033, true);
+    expect(state.sparks).toHaveLength(0);
+    for (let burst = 0; burst < 5; burst += 1) drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.033, false);
+    expect(state.sparks.length).toBeGreaterThan(0);
+    expect(state.sparks.length).toBeLessThanOrEqual(40);
+    a.rest();
+    for (let index = 0; index < 120 && state.sparks.length; index += 1)
+      drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.05, false);
+    stepSwarm(state, a, 0.05, false);
+    expect(swarmSettled(state)).toBe(true);
+  });
+
+  it("clears existing sparks immediately when reduced motion is enabled", () => {
+    const a = analysis();
+    const state = createSwarm(3);
+    state.sparks.push({ x: 1, y: 20, vx: 3, vy: -5, life: 1, warm: true });
+    const canvas = ctx();
+    drawSwarm(canvas, state, a, theme, 200, 80, [40, 100, 160], 0.033, true);
+    expect(state.sparks).toHaveLength(0);
+    expect(canvas.arc).not.toHaveBeenCalled();
+  });
+});
+
+// Beside the other styles' signal tests: the Aurora shares their sound and must show it as they do.
+describe("aurora loudness", () => {
+  it("shows a sound that fills only a few bands: a single tone still lights the ribbons, silence does not", () => {
+    const edges = bandEdges(512);
+    const options = { reduced: false, width: 800, height: 600 };
+    const tone = new Uint8Array(512);
+    tone.fill(255, 9, 11); // 440 Hz at 48 kHz, fft 1024
+    const state = createState(5);
+    for (let index = 0; index < 60; index += 1) stepState(state, tone, edges, 0.033, 1000 + index * 33, options);
+    // The ribbon gain is min(1, loud * 3.2): by the mean alone a tone gave about 0.1 of it, too faint to see.
+    expect(Math.min(1, state.loud * 3.2)).toBeGreaterThan(0.6);
+    const silence = new Uint8Array(512);
+    for (let index = 0; index < 600; index += 1) stepState(state, silence, edges, 0.05, 4000 + index * 50, options);
+    expect(isSettled(state)).toBe(true);
   });
 });
