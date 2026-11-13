@@ -206,7 +206,9 @@ describe("personal identities", () => {
     const section = await page();
     fireEvent.click(await section.findByRole("radio", { name: /^Alpha/ }));
     fireEvent.click(await section.findByRole("button", { name: "Retire" }));
-    expect(await section.findByText("Alpha is retired. Restore it under Retired.")).toBeInTheDocument();
+    const done = await section.findByText("Alpha is retired. Restore it under Retired.");
+    // Retire's view is gone; focus lands on what happened instead of the page body.
+    await waitFor(() => expect(done).toHaveFocus());
     await waitFor(() => expect(section.queryByRole("radio", { name: /^Alpha/ })).toBeNull());
     expect(section.getByRole("radio", { name: /^Beta/ })).toBeInTheDocument();
     // Its open conversation closes with it.

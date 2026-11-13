@@ -1653,13 +1653,14 @@ def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
     assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
 
 
-def test_a_retired_heinzel_compiles_no_check_in_until_it_is_restored(make):
+def test_a_retired_heinzel_compiles_no_check_in_and_a_restore_resumes_from_now(make):
     service = make()
     current = service._kernel.resolve(CurrentUser)
+    now = [NOW]
     sessions = SessionCrud(
-        PersonalSessionRepository(current, clock=lambda: NOW),
+        PersonalSessionRepository(current, clock=lambda: now[0]),
         lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
-        clock=lambda: NOW,
+        clock=lambda: now[0],
     )
     with current.local("cli"):
         created = sessions.new_chat("retire-create", "Retired helper")
@@ -1677,11 +1678,17 @@ def test_a_retired_heinzel_compiles_no_check_in_until_it_is_restored(make):
             proposed.schedule.contract_version,
             proposed.schedule.preview_hash,
         )
+        now[0] = NOW + timedelta(minutes=5)
         sessions.retire(created.session_id, "retire-it")
     name = f"check-in-{created.session_id.lower()}"
     with current.local("daemon"):
         assert name not in [item.name for item in service.compiled(sessions=sessions).jobs]
+    now[0] = NOW + timedelta(minutes=12)
     with current.local("cli"):
         sessions.retire(created.session_id, "restore-it", retired=False)
     with current.local("daemon"):
-        assert name in [item.name for item in service.compiled(sessions=sessions).jobs]
+        job = next(item for item in service.compiled(sessions=sessions).jobs if item.name == name)
+        # The slot missed while retired is not caught up; the next one after the restore runs.
+        missed = job.run_for_slot(NOW + timedelta(minutes=10))
+        assert missed.__class__.__name__ == "JobInactive"
+        assert job.run_for_slot(NOW + timedelta(minutes=15))["notice"] is True

@@ -177,7 +177,10 @@ chat's Details, the one place to change its name and look. The chat composer's *
 **Create a personal Heinzel**, and the new Heinzel's chat starts with your message in its composer.
 
 Retire a Heinzel you no longer need. It leaves your list and never wakes (no check-in, schedule or draft workflow
-runs), and it takes no new message; its whole history stays. Restore brings it back as it was:
+runs), and it takes no new message, not even one sent just before you retired it; its whole history stays. Restore
+brings it back as it was: schedules you approved resume from the next slot (missed slots are not caught up) without
+a new approval, from any head, MCP included, since retiring never revoked them. Pause a schedule first if it should
+stay off:
 
 ```bash
 hz heinzel retire <session-id> retire-1 --json

@@ -187,7 +187,8 @@ session; what leaves the machine is lineage without content.** Checkable stateme
    list` filters by artifact (asset ref), state and contract (name, version, a frontmatter key) in every head and never
    opens a spine. States: `proposed` (version 1 not yet approved), `asleep`, `awake` (a turn is running), `waiting` (a
    draft awaits approval, or a question or amendment awaits the user), `paused` (by the user, or a team contract whose
-   pinned content changed, ADR 0021 §10) and `retired` (kept, never woken; `hz heinzel retire`, reversible).
+   pinned content changed, ADR 0021 §10) and `retired` (kept, never woken; `hz heinzel retire`, reversible with
+   `hz heinzel restore`; recorded as `heinzel.retired` / `heinzel.restored` in the session's control journal).
    `waiting` also covers a turn that waits for a time or a change (statement 12); the row then
    carries what it waits on.
 8. **What a turn sees: deterministic context, hz's summaries.** The model's instructions are, in this order: hz's

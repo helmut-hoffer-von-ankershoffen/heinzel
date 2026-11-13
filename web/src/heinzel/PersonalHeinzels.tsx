@@ -156,6 +156,10 @@ export function PersonalHeinzels() {
   }, [wanted]);
   const [locked, setLocked] = useState(false);
   const [retiredName, setRetiredName] = useState<string | null>(null);
+  const retiredStatus = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (retiredName) retiredStatus.current?.focus();
+  }, [retiredName]);
   const [restoreError, setRestoreError] = useState(false);
   const client = useQueryClient();
   const sessions = useQuery({
@@ -292,7 +296,12 @@ export function PersonalHeinzels() {
       {!drafting && selected && session.data?.state !== "retired" && session.data && (
         <HeinzelView key={selected} initial={session.data} onRetired={onRetired} />
       )}
-      {retiredName && !selected && <p role="status">{t("personal.retiredDone", { name: retiredName })}</p>}
+      {retiredName && !selected && (
+        // The view that held Retire is gone: focus moves here, so a keyboard or screen reader user hears where it went.
+        <p role="status" ref={retiredStatus} tabIndex={-1}>
+          {t("personal.retiredDone", { name: retiredName })}
+        </p>
+      )}
       {retired.length > 0 && (
         <details className="rounded-lg border border-border p-3" open={retiredName !== null || undefined}>
           <summary className="cursor-pointer text-sm font-medium">

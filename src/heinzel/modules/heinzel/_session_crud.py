@@ -661,6 +661,9 @@ class SessionCrud(ApprovalIssuer):
     def retire(self, session_id: str, request_id: str, *, retired: bool = True) -> SessionSnapshot:
         """Retire (hide, never wake) or restore this Heinzel; its whole history stays, and an exact retry is a no-op.
 
+        An exact retry returns the current snapshot, so replaying an old retire after a later restore reports the
+        restored Heinzel; it does not retire it again. A restore resumes check-ins from now, without catch-up.
+
         Raises:
             HeinzelError: If the request already identifies the opposite change or the creation is incomplete.
         """
@@ -1699,7 +1702,12 @@ class SessionCrud(ApprovalIssuer):
             if revision != schedule_revision:
                 return JobInactive(reason="the check-in schedule changed before this slot ran")
             active_since = next(
-                (event.ts for event in reversed(events) if event.kind in {"schedule.activated", "schedule.resume"}),
+                # A restore resumes from now, like a resume: no catch-up for slots missed while retired.
+                (
+                    event.ts
+                    for event in reversed(events)
+                    if event.kind in {"schedule.activated", "schedule.resume", "heinzel.restored"}
+                ),
                 None,
             )
             if slot.tzinfo is None or slot.utcoffset() is None or active_since is None:

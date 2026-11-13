@@ -1030,7 +1030,7 @@ def _register_lifecycle_operations(module: Module) -> None:
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def restore(service: SessionCrud, session_id: Identity, request_id: Request) -> SessionSnapshot:
-        """Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were."""
+        """Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved."""
         return service.retire(session_id, request_id, retired=False)
 
 

@@ -471,10 +471,12 @@ class ChannelDelivery(ChannelReplyConsumer):
                 return 0
             self._binding(terms)
             with self.crud.repository.control_writer(session) as writer:
+                # Retire takes this same lock: a reply that arrives as its Heinzel is retired claims nothing.
                 if (
                     self._events(session, "channel.claimed", request)
                     or self._events(session, "channel.closed", request)
                     or self.crud.clock() >= terms.approval.expires_at
+                    or is_retired(self.crud.repository.control_read(session).events)
                 ):
                     return 0
                 writer.append(

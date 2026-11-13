@@ -31,7 +31,7 @@ from heinzel.modules.heinzel._priced_model import ReservedModel
 from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTools, schedule_suggestion_schemas
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
 from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestionTools, source_set_suggestion_schemas
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
@@ -353,6 +353,11 @@ class InteractiveTurn:
                 history.insert(0, {"role": "system", "text": "Some earlier conversation is omitted from this turn."})
             prompt = json.dumps([*history, current_item], ensure_ascii=True)
             with repo.control_writer(session_id) as writer:
+                # Retire and launch share this lock: a Heinzel retired after its message was accepted never wakes.
+                # A turn whose start is already recorded finishes normally.
+                if is_retired(repo.control_read(session_id).events):
+                    msg = "This Heinzel is retired; restore it to chat with it again"
+                    raise HeinzelError(msg)
                 writer.append(
                     "interactive.started",
                     key=turn,

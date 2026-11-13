@@ -1573,8 +1573,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.
-         * @description Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.
+         * Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.
+         * @description Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.
          */
         post: operations["heinzel_restore"];
         delete?: never;
