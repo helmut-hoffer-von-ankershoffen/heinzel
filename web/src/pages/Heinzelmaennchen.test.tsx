@@ -52,6 +52,24 @@ describe("Heinzelmännchen", () => {
     expect(await screen.findByText("hz heinzel new my-first-heinzel")).toBeInTheDocument();
   });
 
+  it("doesn't say there is none while personal Heinzels are listed", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/list": {
+        ...heinzelmaennchen,
+        heinzelmaennchen: [],
+        next: [{ command: "hz heinzel new my-first-heinzel", why: "a starter contract" }],
+      },
+      "/api/heinzel/sessions": {
+        sessions: [{ session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "Alpha", state: "proposed" }],
+      },
+    });
+    renderAt("/heinzel");
+    expect(await screen.findByRole("radio", { name: /^Alpha/ })).toBeInTheDocument();
+    expect(screen.queryByText("No Heinzelmännchen yet. Start one:")).not.toBeInTheDocument();
+    expect(screen.queryByText("hz heinzel new my-first-heinzel")).not.toBeInTheDocument();
+  });
+
   it("is in the navigation for everyone, the rail included", async () => {
     mockApi({ ...shell, "/api/system/expert": everyday });
     renderAt("/");
