@@ -1667,6 +1667,86 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-iphone-notification-test.png") });
     result.iphoneControls = { deviceVolume: true, notificationTest: true, serverActionsHidden: true };
     await soundPage.close();
+    stage("phone-topbar");
+    // The narrowest phones with the audio visualizer on (its default): the header keeps "Today" whole, and the
+    // hidden-widgets count stays clear of the header's mascot, which reaches below the header line.
+    // One width after the other on purpose: each page loads the whole app, and the gate runs this beside other lanes.
+    for (const width of [360, 375]) {
+      const topPage = await browser.newPage({
+        viewport: { width, height: 812 },
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: "block",
+      });
+      await topPage.addInitScript(() =>
+        localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true })),
+      );
+      await topPage.route("**/api/system/ui/list", async (route) => {
+        const response = await fetchOnce(route);
+        const listing = await response.json();
+        listing.push({
+          id: "probe:hidden",
+          module: "probe",
+          kind: "widget",
+          title: "Hidden probe",
+          slots: { today: false },
+          defaults: { today: true },
+        });
+        await route.fulfill({ response, json: listing });
+      });
+      await topPage.goto(url);
+      await topPage.getByRole("heading", { name: "Today" }).waitFor();
+      await topPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+      await topPage.getByRole("region", { name: "Audio visualizer" }).waitFor();
+      await topPage.getByRole("button", { name: /^Hidden widgets/ }).waitFor();
+      const top = await topPage.evaluate(() => {
+        const title = document.querySelector('.workspace-topbar button[aria-haspopup="menu"] > span');
+        // The whole figure: the avatar draws its body outside the head's box.
+        const figure = [
+          ...(document
+            .querySelector('.workspace-topbar [data-testid="chat-open-dot"]')
+            ?.parentElement?.querySelectorAll("svg, svg *") ?? []),
+        ]
+          .map((part) => part.getBoundingClientRect())
+          .filter((box) => box.width > 0 && box.height > 0);
+        const mascot = figure.length
+          ? new DOMRect(
+              Math.min(...figure.map((box) => box.left)),
+              Math.min(...figure.map((box) => box.top)),
+              Math.max(...figure.map((box) => box.right)) - Math.min(...figure.map((box) => box.left)),
+              Math.max(...figure.map((box) => box.bottom)) - Math.min(...figure.map((box) => box.top)),
+            )
+          : undefined;
+        const count = document
+          .querySelector('button[aria-label^="Hidden widgets"]')
+          ?.parentElement?.querySelector(":scope > span[aria-hidden]")
+          ?.getBoundingClientRect();
+        return {
+          title: title?.textContent,
+          titleFits: !!title && title.scrollWidth <= title.clientWidth,
+          // Touching counts too: the count must keep 4 px clear of the figure.
+          overlap:
+            !!mascot &&
+            !!count &&
+            count.left < mascot.right + 4 &&
+            mascot.left - 4 < count.right &&
+            count.top < mascot.bottom + 4 &&
+            mascot.top - 4 < count.bottom,
+          mascot: mascot?.toJSON(),
+          count: count?.toJSON(),
+        };
+      });
+      await topPage.screenshot({ path: join(shots, `mobile-topbar-${width}.png`) });
+      assert.equal(top.title, "Today", JSON.stringify(top));
+      assert.ok(top.titleFits, `${width}px: the header title is cut: ${JSON.stringify(top)}`);
+      assert.equal(
+        top.overlap,
+        false,
+        `${width}px: the hidden-widgets count touches the mascot: ${JSON.stringify(top)}`,
+      );
+      await topPage.close();
+    }
+    result.topbar = { titleWhole: true, countClearOfMascot: true };
   }
 } catch (error) {
   stage("failure-diagnostics");

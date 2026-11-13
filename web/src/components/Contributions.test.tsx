@@ -415,10 +415,10 @@ describe("Contributions", () => {
     expect(control).toHaveTextContent("");
     await user.click(control);
     const dialog = await screen.findByRole("dialog", { name: "Hidden widgets" });
-    expect(within(dialog).getByText("Zones at work")).toBeInTheDocument();
+    expect(within(dialog).getByText("Zones at work now")).toBeInTheDocument();
     expect(within(dialog).getAllByText("acme")).toHaveLength(2);
     assertActionStructure(dialog);
-    await user.click(within(dialog).getByRole("button", { name: "Restore Zones at work" }));
+    await user.click(within(dialog).getByRole("button", { name: "Restore Zones at work now" }));
     expect(await screen.findByText("2/3")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Hidden widgets (1)" })).toBeInTheDocument();
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restore all" }));
