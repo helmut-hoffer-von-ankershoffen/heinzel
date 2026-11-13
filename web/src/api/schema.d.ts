@@ -723,6 +723,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.
+         * @description Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.
+         *
+         *     Raises:
+         *         HeinzelError: Without the typed name, or with a name passed as an argument on the command line.
+         */
+        post: operations["heinzel_delete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/deliver-channel-item": {
         parameters: {
             query?: never;
@@ -8842,6 +8865,34 @@ export interface components {
             shirt?: ("green" | "blue" | "purple" | "red-brown" | "ochre" | "teal" | "slate" | "rose") | null;
         };
         /**
+         * HeinzelDeleted
+         * @description The content-free record that stays after a Heinzel is deleted for good.
+         */
+        HeinzelDeleted: {
+            /**
+             * Deleted At
+             * @description When the deletion finished; none while forgetting.
+             */
+            deleted_at?: string | null;
+            /**
+             * Session Id
+             * @description The identity of the deleted Heinzel; nothing else about it is kept.
+             */
+            session_id: string;
+            /**
+             * State
+             * @description `deleted`: gone, no undo. `forgetting`: gone from hz; a channel plugin still has to forget its copies, retried on every list.
+             * @default deleted
+             * @enum {string}
+             */
+            state: "deleted" | "forgetting";
+            /**
+             * Waiting For
+             * @description Channel plugins that still have to forget this Heinzel's requests.
+             */
+            waiting_for?: string[];
+        };
+        /**
          * HeinzelList
          * @description `hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.
          */
@@ -16790,6 +16841,19 @@ export interface components {
              */
             when_busy: "follow_up" | "steer";
         };
+        /** heinzel_delete_Input */
+        heinzel_delete_Input: {
+            /**
+             * Name
+             * @description Its current name, typed exactly to confirm; in the app's dialog. On the command line you type it when asked.
+             */
+            name?: string | null;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_deliver_channel_item_Input */
         heinzel_deliver_channel_item_Input: {
             /** Approval Proof */
@@ -17627,6 +17691,7 @@ export type SchemaHttpValidationError = components['schemas']['HTTPValidationErr
 export type SchemaHeadRefresh = components['schemas']['HeadRefresh'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
+export type SchemaHeinzelDeleted = components['schemas']['HeinzelDeleted'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
@@ -17858,6 +17923,7 @@ export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['h
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelDeleteInput = components['schemas']['heinzel_delete_Input'];
 export type SchemaHeinzelDeliverChannelItemInput = components['schemas']['heinzel_deliver_channel_item_Input'];
 export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
 export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
@@ -18992,6 +19058,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectedReadState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_delete_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeinzelDeleted"];
                 };
             };
             /** @description Validation Error */

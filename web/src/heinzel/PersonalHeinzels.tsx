@@ -1,6 +1,6 @@
 // Personal identities use the durable private session API; they are distinct from the existing workflow list and chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, MessageCircle, Pencil, RotateCcw } from "lucide-react";
+import { Archive, MessageCircle, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
@@ -15,6 +15,7 @@ import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { TypeToConfirmDialog } from "@/components/TypeToConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { StartHelper } from "@/heinzel/StartHelper";
@@ -34,6 +35,14 @@ const newDraftKey = "hz.personal-heinzel.new-draft";
 const defaultLook: SchemaHeinzelAppearance = { age: "grown", build: "regular" };
 const profileDraftKey = (sessionId: string) => `hz.personal-heinzel.profile-draft.${sessionId}`;
 const profileSaveKey = (sessionId: string) => `hz.personal-heinzel.profile-save.${sessionId}`;
+
+/** Drop every draft this tab keeps for a deleted Heinzel: profile, composer and proposal keys all name its id. */
+function forgetStored(sessionId: string) {
+  for (const storage of [sessionStorage, localStorage]) {
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    for (const key of keys) if (key?.includes(sessionId)) storage.removeItem(key);
+  }
+}
 const field = "block w-full rounded border border-border bg-background px-2 py-1 text-sm";
 
 type ProfileDraft = { name: string; appearance: SchemaHeinzelAppearance };
@@ -161,6 +170,9 @@ export function PersonalHeinzels() {
     if (retiredName) retiredStatus.current?.focus();
   }, [retiredName]);
   const [restoreError, setRestoreError] = useState(false);
+  const [deleting, setDeleting] = useState<{ session_id: string; name: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletedNote, setDeletedNote] = useState<string | null>(null);
   const client = useQueryClient();
   const sessions = useQuery({
     queryKey: sessionsKey,
@@ -222,6 +234,34 @@ export function PersonalHeinzels() {
     } catch {
       setRestoreError(true);
     }
+  };
+
+  // Delete for good (ADR 0148): only from the Retired list, after the typed name; nothing of it stays in this tab.
+  const deleteForGood = async (target: { session_id: string; name: string }) => {
+    setDeleteError(null);
+    let waiting: string[] = [];
+    try {
+      const gone = await personalResult(
+        api.POST("/heinzel/delete", { body: { session_id: target.session_id, name: target.name } }),
+      );
+      if (gone.session_id !== target.session_id) throw new Error("Invalid delete response");
+      waiting = gone.state === "forgetting" ? (gone.waiting_for ?? []) : [];
+    } catch (error) {
+      // The server's own words say why (a turn still finishing, an unavailable channel); a bare status does not.
+      const said = error instanceof Error && error.message && !error.message.startsWith("HTTP ");
+      setDeleteError(said ? (error as Error).message : t("personal.deleteError"));
+      return;
+    }
+    forgetStored(target.session_id);
+    client.removeQueries({ queryKey: ["heinzel", "session", target.session_id] });
+    await client.invalidateQueries({ queryKey: sessionsKey });
+    setDeleting(null);
+    setRetiredName(null);
+    setDeletedNote(
+      waiting.length
+        ? t("personal.deletedWaiting", { name: target.name, plugins: waiting.join(", ") })
+        : t("personal.deletedDone", { name: target.name }),
+    );
   };
 
   return (
@@ -326,11 +366,41 @@ export function PersonalHeinzels() {
                 >
                   <RotateCcw aria-hidden />
                 </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-bad"
+                  aria-label={t("personal.delete", { name: item.name })}
+                  title={t("personal.delete", { name: item.name })}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleting({ session_id: item.session_id, name: item.name });
+                  }}
+                >
+                  <Trash2 aria-hidden />
+                </Button>
               </li>
             ))}
           </ul>
           {restoreError && <p role="alert">{t("personal.restoreError")}</p>}
         </details>
+      )}
+      {deletedNote && (
+        <p role="status" className="text-sm">
+          {deletedNote}
+        </p>
+      )}
+      {deleting && (
+        <TypeToConfirmDialog
+          title={t("personal.deleteTitle", { name: deleting.name })}
+          lines={[t("personal.deleteWhat"), t("personal.deleteOutside"), t("personal.deleteNoUndo")]}
+          expected={deleting.name}
+          action={t("personal.deleteAction")}
+          error={deleteError}
+          onConfirm={() => deleteForGood(deleting)}
+          onClose={() => setDeleting(null)}
+        />
       )}
     </section>
   );

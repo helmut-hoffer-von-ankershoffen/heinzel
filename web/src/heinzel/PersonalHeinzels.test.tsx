@@ -221,6 +221,107 @@ describe("personal identities", () => {
     expect(posts).toEqual([`retire:${first}`, `restore:${first}`]);
   });
 
+  it("deletes a retired Heinzel for good only after its name is typed", async () => {
+    let deleted = false;
+    const posts: unknown[] = [];
+    sessionStorage.setItem(`hz.personal-heinzel.profile-draft.${first}`, "{}");
+    sessionStorage.setItem(`hz.personal-heinzel.profile-draft.${second}`, "{}");
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": () => ({
+        sessions: deleted ? [sessions[1]] : [{ ...sessions[0], name: "Zoë", state: "retired" }, sessions[1]],
+      }),
+      "/api/heinzel/session": snapshot(second, "Beta"),
+      "/api/heinzel/delete": async (request: Request) => {
+        posts.push(await request.json());
+        deleted = true;
+        return { session_id: first, state: "deleted", deleted_at: "2026-11-13T00:00:00Z" };
+      },
+    });
+    const { container } = renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByText("Retired (1)"));
+    fireEvent.click(section.getByRole("button", { name: "Delete Zoë for good" }));
+    const dialog = within(await screen.findByRole("alertdialog", { name: "Delete Zoë for good?" }));
+    expect(dialog.getByText("This cannot be undone.")).toBeInTheDocument();
+    const go = dialog.getByRole("button", { name: "Delete for good" });
+    const field = dialog.getByLabelText("Type Zoë to confirm");
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(go).toBeDisabled();
+    fireEvent.change(field, { target: { value: "zoë" } });
+    expect(go).toBeDisabled();
+    await expectAccessible(container.ownerDocument.body);
+    // A decomposed ë is the same name.
+    fireEvent.change(field, { target: { value: "Zoe\u0308" } });
+    expect(go).toBeEnabled();
+    fireEvent.click(go);
+    expect(await section.findByText("Zoë is deleted.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(section.queryByText("Retired (1)")).toBeNull();
+    expect(posts).toEqual([{ session_id: first, name: "Zoë" }]);
+    expect(sessionStorage.getItem(`hz.personal-heinzel.profile-draft.${first}`)).toBeNull();
+    expect(sessionStorage.getItem(`hz.personal-heinzel.profile-draft.${second}`)).toBe("{}");
+  });
+
+  it("keeps the dialog open with the reason when a delete is refused, and Cancel closes it", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions: [{ ...sessions[0], state: "retired" }, sessions[1]] },
+      "/api/heinzel/session": snapshot(second, "Beta"),
+      "/api/heinzel/delete": { status: 409, body: { error: "It is finishing a turn; try again in a moment" } },
+    });
+    renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByText("Retired (1)"));
+    fireEvent.click(section.getByRole("button", { name: "Delete Alpha for good" }));
+    const dialog = within(await screen.findByRole("alertdialog"));
+    fireEvent.change(dialog.getByLabelText("Type Alpha to confirm"), { target: { value: "Alpha" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Delete for good" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("It is finishing a turn; try again in a moment");
+    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(section.getByRole("button", { name: "Delete Alpha for good" })).toBeInTheDocument();
+  });
+
+  it("says when a channel plugin still has to forget a deleted Heinzel's requests", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions: [{ ...sessions[0], state: "retired" }, sessions[1]] },
+      "/api/heinzel/session": snapshot(second, "Beta"),
+      "/api/heinzel/delete": { session_id: first, state: "forgetting", deleted_at: null, waiting_for: ["chatops"] },
+    });
+    renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByText("Retired (1)"));
+    fireEvent.click(section.getByRole("button", { name: "Delete Alpha for good" }));
+    const dialog = within(await screen.findByRole("alertdialog"));
+    fireEvent.change(dialog.getByLabelText("Type Alpha to confirm"), { target: { value: "Alpha" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Delete for good" }));
+    expect(
+      await section.findByText("Alpha is deleted here. chatops still has to forget its requests; hz retries."),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when a delete fails without a reason, and Escape closes the dialog", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions: [{ ...sessions[0], state: "retired" }, sessions[1]] },
+      "/api/heinzel/session": snapshot(second, "Beta"),
+      "/api/heinzel/delete": { status: 503, body: {} },
+    });
+    renderAt("/heinzel");
+    const section = await page();
+    fireEvent.click(await section.findByText("Retired (1)"));
+    fireEvent.click(section.getByRole("button", { name: "Delete Alpha for good" }));
+    const box = await screen.findByRole("alertdialog");
+    const dialog = within(box);
+    fireEvent.change(dialog.getByLabelText("Type Alpha to confirm"), { target: { value: "Alpha" } });
+    fireEvent.submit(dialog.getByLabelText("Type Alpha to confirm"));
+    expect(await dialog.findByText("Could not delete. Try again.")).toBeInTheDocument();
+    fireEvent.keyDown(box, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
   it("says when a retire or a restore did not happen", async () => {
     mockApi({
       ...shell,

@@ -7736,6 +7736,53 @@
         "title": "HeinzelAppearance",
         "type": "object"
       },
+      "HeinzelDeleted": {
+        "description": "The content-free record that stays after a Heinzel is deleted for good.",
+        "properties": {
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the deletion finished; none while forgetting.",
+            "title": "Deleted At"
+          },
+          "session_id": {
+            "description": "The identity of the deleted Heinzel; nothing else about it is kept.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "default": "deleted",
+            "description": "`deleted`: gone, no undo. `forgetting`: gone from hz; a channel plugin still has to forget its copies, retried on every list.",
+            "enum": [
+              "deleted",
+              "forgetting"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "waiting_for": {
+            "description": "Channel plugins that still have to forget this Heinzel's requests.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Waiting For",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "HeinzelDeleted",
+        "type": "object"
+      },
       "HeinzelList": {
         "description": "`hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.",
         "properties": {
@@ -21337,6 +21384,36 @@
         "title": "heinzel_chat_Input",
         "type": "object"
       },
+      "heinzel_delete_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its current name, typed exactly to confirm; in the app's dialog. On the command line you type it when asked.",
+            "title": "Name"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "heinzel_delete_Input",
+        "type": "object"
+      },
       "heinzel_deliver_channel_item_Input": {
         "additionalProperties": false,
         "properties": {
@@ -24385,6 +24462,48 @@
           }
         },
         "summary": "Inspect the latest recorded connected-read state for this session.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/delete": {
+      "post": {
+        "description": "Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.\n\nRaises:\n    HeinzelError: Without the typed name, or with a name passed as an argument on the command line.",
+        "operationId": "heinzel_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_delete_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeinzelDeleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a retired Heinzel for good after you type its name; its chats and memory go, with no undo.",
         "tags": [
           "heinzel"
         ]
