@@ -114,7 +114,7 @@ it("gives Heinzel and each plugin its own line when they differ", () => {
     "Heinzel 0.9.28 is available",
     "heinzel-weather 0.9.3 is available",
     "heinzel-google is pinned to 0.9.1; Heinzel skips it",
-    "heinzel-acme is installed from git and isn't followed for updates yet",
+    "heinzel-acme from git isn't updated by Heinzel",
   ]);
   expect(view.count).toBe(2);
   expect(view.tone).toBe("warn");
@@ -142,10 +142,7 @@ it("describes folders and links, progress, and a failed update with its reason",
       },
     }),
   ).toEqual(
-    expect.arrayContaining([
-      "a is installed from a folder and isn't followed for updates yet",
-      "b is installed from a link and isn't followed for updates yet",
-    ]),
+    expect.arrayContaining(["a from a folder isn't updated by Heinzel", "b from a link isn't updated by Heinzel"]),
   );
   expect(describe({ ...base, phase: "Installing" }).rows[0]).toMatchObject({ text: "Installing", busy: true });
   expect(describe({ ...base, plan: { ...plan, phase: "applying" } }).rows[0]?.text).toBe("Updating Heinzel…");
@@ -162,12 +159,12 @@ it("says a newer release waits for its acceptance, and only while it is held", (
   });
   expect(view.rows.map((row) => [row.id, row.tone, row.text])).toEqual([
     ["core", "warn", "Heinzel 0.9.31 is available"],
-    ["core-held", "off", "Heinzel 0.9.31 isn't accepted yet; update by hand"],
+    ["core-held", "off", "Heinzel 0.9.31 is held back; you can still update"],
   ]);
   expect(texts({ plan: { ...plan, core_held: null } })).toEqual(["Heinzel 0.9.27 is up to date · checked 10:32"]);
   expect(
     texts({ plan: { ...plan, phase: "off", reason: "Automatic updates are off.", core_held: "0.9.31" } }),
-  ).not.toContain("Heinzel 0.9.31 isn't accepted yet; update by hand");
+  ).not.toContain("Heinzel 0.9.31 is held back; you can still update");
 });
 
 it("tells a failed update once, not again as the plan's message", () => {
