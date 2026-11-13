@@ -129,7 +129,8 @@ scope.
    stays `forgetting`, naming the module, until it is on again. Then each plugin forgets its requests; every success
    is recorded as a content-free `creation.forgotten` record, and the request stays in the intent until it is
    forgotten. A module or plugin that cannot forget yet never holds hz's own removal back: delete answers
-   `forgetting` with what is still waiting, the app says so, and a list retries with backoff from a minute to an
+   `forgetting` with what is still waiting, the app says so, `hz system doctor` reports each unfinished deletion
+   by id with what it waits for and the fix until it is done, and a list retries with backoff from a minute to an
    hour. Last comes `creation.deleted`; it is never written while anything waits. A crash after the intent leaves a
    pending deletion that the next delete or list finishes; a crash before it leaves the retired Heinzel untouched.
    Deleting again returns the same result without asking for the name.

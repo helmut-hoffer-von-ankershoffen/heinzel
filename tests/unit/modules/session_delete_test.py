@@ -812,3 +812,32 @@ def test_the_built_in_modules_provide_the_removals_and_channels_default_to_keepi
             return None
 
     assert _Quiet().forget("ask-1", None) is None
+
+
+def test_doctor_names_every_unfinished_deletion_and_its_fix(crud, chats, notices, monkeypatch):
+    waiting_plugin = _retired(crud, "create-da", "Da")
+    _post_approval(crud, waiting_plugin, "ask-1", "ref-1")
+    HeinzelDeletion(crud, chats, notices, _FlakyPosted()).delete(waiting_plugin, "Da")  # type: ignore[arg-type]
+    crashed = _retired(crud, "create-db", "Db")
+    crud.repository.mark_deleting(crashed, [])
+    finished = _retired(crud, "create-dc", "Dc")
+    HeinzelDeletion(crud, chats, notices).delete(finished, "Dc")
+
+    checks = {check.name: check for check in HeinzelDeletion(crud, chats, notices).health()}
+
+    assert set(checks) == {f"heinzel deletion {waiting_plugin}", f"heinzel deletion {crashed}"}
+    plugin = checks[f"heinzel deletion {waiting_plugin}"]
+    assert plugin.status == "degraded"
+    assert "waiting for chatops" in plugin.detail
+    assert "chatops plugin" in plugin.fix
+    assert "hz heinzel sessions" in checks[f"heinzel deletion {crashed}"].fix
+    assert "Da" not in plugin.detail.replace(waiting_plugin, "")  # an id at most, never the name
+    module = {check.name: check for check in HeinzelDeletion(crud, None, notices).health()}
+    assert "Turn on system.runner" in module[f"heinzel deletion {crashed}"].fix
+
+    def unowned():
+        msg = "no authenticated owner"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(crud.repository, "pending_deletions", unowned)
+    assert HeinzelDeletion(crud, chats, notices).health() == []

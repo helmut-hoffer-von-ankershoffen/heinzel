@@ -24,6 +24,7 @@ from rich.console import RenderableType
 from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
 from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+from heinzel.modules.heinzel._heinzel_delete import HeinzelDeletion
 from heinzel.modules.heinzel._measure import Measurements, Sent
 from heinzel.modules.heinzel._models import (
     CheckReport,
@@ -376,9 +377,9 @@ def prune_expired(service: HeinzelService) -> JsonValue:
 
 
 @module.health
-def health(service: HeinzelService, config: Config) -> list[Check]:
-    """Contracts with errors, scheduled contracts whose capabilities no adapter serves, and settings still to move."""
-    return [*service.health(), *service.renamed_settings(config)]
+def health(service: HeinzelService, config: Config, deletions: HeinzelDeletion) -> list[Check]:
+    """Contracts with errors, unservable scheduled contracts, settings still to move, and unfinished deletions."""
+    return [*service.health(), *service.renamed_settings(config), *deletions.health()]
 
 
 __all__ = [

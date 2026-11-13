@@ -9,7 +9,7 @@ from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
-from heinzel import ApprovalChannel, HeinzelError, Kernel, SessionEvent
+from heinzel import ApprovalChannel, Check, HeinzelError, Kernel, SessionEvent, Status
 from heinzel.kernel import HeinzelNoticeRemoval, PersonalChatRemoval
 from heinzel.modules.heinzel import _history_fts
 from heinzel.modules.heinzel._channel_binding import ChannelBinding
@@ -258,6 +258,38 @@ class HeinzelDeletion:
                 continue
             repository.mark_forgotten(session_id, channel, request_id)
         return sorted(waiting)
+
+    def health(self) -> list[Check]:
+        """One doctor finding per deletion that has not finished, naming what it waits for and the fix (ADR 0148).
+
+        A deletion stuck in `forgetting` keeps copies on this machine, so it must surface again, not only once.
+        """
+        repository = self.crud.repository
+        try:
+            pending = repository.pending_deletions()
+        except HeinzelError:
+            return []  # no authenticated owner here: the owner's own doctor run reports it
+        checks: list[Check] = []
+        for session_id in pending:
+            modules = self._missing_modules()
+            plugins = sorted({post["channel"] for post in repository.deletion_posts(session_id)})
+            if modules:
+                fix = f"Turn on {' and '.join(modules)}; hz then finishes the deletion by itself"
+            elif plugins:
+                fix = f"Turn on the {', '.join(plugins)} plugin; hz retries by itself, or run `hz heinzel sessions`"
+            else:
+                fix = "Run `hz heinzel sessions` or open Heinzelmännchen to finish it"
+            waiting = ", ".join([*modules, *plugins]) or "a retry"
+            checks.append(
+                Check(
+                    name=f"heinzel deletion {session_id}",
+                    status=Status.DEGRADED,
+                    detail=f"Deleted Heinzel {session_id} is not fully gone yet; waiting for {waiting}",
+                    fix=fix,
+                    cause="A deletion has not finished",
+                )
+            )
+        return checks
 
     def listing(self) -> SessionList:
         """List the owner's Heinzels after finishing any deletion a crash interrupted."""
