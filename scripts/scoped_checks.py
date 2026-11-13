@@ -232,7 +232,7 @@ def python_overrides(changed: list[str], selected: list[str] | None = None) -> l
     A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
     nothing is related (a script no test mentions), only the hook's own test runs besides lint, contracts and types.
     """
-    overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}"]
+    overrides = ["WEB_TESTS=", f"FAST_TYPES={TYPES}"]
     sys.path.insert(0, str(ROOT / "scripts"))
     from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
 

@@ -125,16 +125,6 @@ def makefile() -> str:
     text = text.replace("@$(TOOLS) install build web", "@$(TOOLS) install")
     text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
     text = text.replace(" src/heinzel/heads/web/static", "")
-    # Native process ownership belongs to the core; plugins carry neither its code nor build dependencies.
-    text = text.replace(" managed-backend-setup managed-backend-static managed-backend-check", "")
-    text = re.sub(
-        r"\n# The managed backend has no Electron dependency;.*?\nMANAGED_TYPES := [^\n]*", "", text, flags=re.DOTALL
-    )
-    text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
-    text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
-    text = re.sub(
-        r"\n(managed-backend-setup|managed-backend-static|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text
-    )
     # The native application is core-only; plugins do not carry the Electron window or Linux sandbox setup.
     electron_targets = {
         "desktop-electron-test",

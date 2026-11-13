@@ -86,7 +86,6 @@ RISK_NAMES = (
     "*review*",
 )
 RISK_PATHS = (  # areas whose files carry no telling name
-    "src/heinzel/modules/system/lifecycle/*",
     "src/heinzel/modules/system/daemon/*",
     "src/heinzel/modules/system/runner/*",
     "src/heinzel/modules/system/claude/*",
@@ -95,7 +94,6 @@ RISK_PATHS = (  # areas whose files carry no telling name
     "src/heinzel/heads/api/*",
     "src/heinzel/heads/mcp/*",
     "desktop/ci/*",
-    "desktop/managed/*",
     "scripts/tools*",
     "scripts/pr.sh",
     "makefile",

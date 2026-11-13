@@ -151,7 +151,7 @@ def test_site_assets_and_configuration_run_only_the_documentation_checks():
     assert names(steps) == ["template", "docs", "demo", "typos", "tests"]
 
 
-def test_web_files_alone_run_the_web_checks_without_python_unit_tests_or_the_managed_backend():
+def test_web_files_alone_run_the_web_checks_without_python_unit_tests():
     steps = scoped.scoped_steps(["web/src/components/ErrorScreen.tsx"])
     assert names(steps) == ["web-prepare", "web-lint", "web-client", "web-types", "web-tests"]
 
@@ -333,7 +333,7 @@ def test_the_push_hook_runs_the_types_and_only_the_unit_tests_related_to_the_cha
     assert 0 < len(targets) < 20  # not the ~340 test files of the full run
     assert "mypy" in given["FAST_TYPES"]
     assert "pyright" in given["FAST_TYPES"]
-    assert given["WEB_TESTS"] == given["MANAGED_CHECK"] == ""
+    assert given["WEB_TESTS"] == ""
 
 
 def test_a_changed_test_file_runs_itself_and_a_changed_script_runs_the_tests_that_name_it():
@@ -567,7 +567,6 @@ def test_explicit_scope_keeps_all_local_owning_checks_and_only_declared_hosted_o
     assert scoped.local_python_scope([own], "a" * 40) == ([own], packet["hosted_only"])
     assert scoped.python_overrides([own], [own]) == [
         "WEB_TESTS=",
-        "MANAGED_CHECK=",
         f"FAST_TYPES={scoped.TYPES}",
         f"UNIT_TARGETS={own}",
     ]
@@ -717,7 +716,6 @@ def test_readonly_preview_matches_actual_normal_hook_commands(local_scope_packet
         "make",
         "check-fast",
         "WEB_TESTS=",
-        "MANAGED_CHECK=",
         f"FAST_TYPES={scoped.TYPES}",
         f"UNIT_TARGETS={own}",
     ]

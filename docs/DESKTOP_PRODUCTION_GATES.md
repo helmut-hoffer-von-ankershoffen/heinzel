@@ -1,7 +1,9 @@
 # Desktop production gates
 
-The shared lifecycle authority is a source foundation. Electron installation and the complete native lifecycle
-are not shipped by this change. The broader native candidate is preserved separately for follow-on review.
+The shared lifecycle authority and the managed backend are no longer on main. They are kept on the branch
+`archive/managed-desktop` ([ADR 0087](adr/0087-managed-backend-ownership-is-independent-of-the-window.md)).
+Electron installation and the complete native lifecycle are not shipped. The broader native candidate is preserved
+separately for follow-on review.
 
 ## Build-owner trust and payload inputs
 

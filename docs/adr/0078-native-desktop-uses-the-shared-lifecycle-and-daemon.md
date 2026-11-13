@@ -128,3 +128,8 @@ Existing import contracts, authentication/CSP, confidentiality, platform CI and 
 - [Electron audio capture](https://github.com/electron/electron/blob/main/docs/api/desktop-capturer.md)
 - [Electron update platform limits](https://github.com/electron/electron/blob/main/docs/api/auto-updater.md)
 - [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
+
+Amended 2026-11-13: main no longer has the Python lifecycle authority (`heinzel.modules.system.lifecycle`,
+`heinzel._lifecycle_control`) or the managed backend of
+[ADR 0087](0087-managed-backend-ownership-is-independent-of-the-window.md). No shipped caller used them.
+They are kept on the branch `archive/managed-desktop`. The Electron window built for this ADR stays.

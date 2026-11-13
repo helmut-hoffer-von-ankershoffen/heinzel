@@ -18,10 +18,10 @@ amended-by: 0129
 
 The scheduled daemon runs short-lived ticks; it does not keep the web workspace available.
 `hz ui` remains foreground, and [ADR 0046](0046-an-installable-web-app-with-paired-devices.md) defers start at login.
-The [managed backend](../../desktop/managed/README.md) retains a listener and recovers owned workers, but requires
-immutable inventories and an explicit controller pipe. It is a private verification library, not installed OS
-integration for the supported uv application. A detached foreground process provides no recovery after its death
-or restart after login.
+The [managed backend](0087-managed-backend-ownership-is-independent-of-the-window.md) retained a listener and recovered
+owned workers, but required immutable inventories and an explicit controller pipe. It was a private verification
+library, not installed OS integration for the supported uv application, and is no longer on main. A detached
+foreground process provides no recovery after its death or restart after login.
 
 ## Considered Options
 

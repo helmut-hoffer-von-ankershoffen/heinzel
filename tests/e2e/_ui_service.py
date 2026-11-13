@@ -140,7 +140,6 @@ _STARTUP_BUILTINS = (
     "system/doctor",
     "system/expert",
     "system/layer",
-    "system/lifecycle",
     "system/notify",
     "system/plugin",
     "system/plugin/docs",

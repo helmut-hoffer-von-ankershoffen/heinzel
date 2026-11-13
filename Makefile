@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -44,10 +44,6 @@ WEB_LINT := "&web-lint=$(WEB) exec biome ci ." "&web-client=$(WEB_PROJECT_CLEAN)
 # Keep the native TypeScript CLI distinct from the compiler API openapi-typescript imports.
 WEB_TYPES := "&web-types=$(WEB) exec node node_modules/@typescript/native/bin/tsc --noEmit -p ."
 WEB_TESTS := "&web-tests=$(WEB) exec vitest run"
-# The managed backend has no Electron dependency; plugins do not carry its private verification package.
-MANAGED := $(WEB) pnpm --dir ../desktop/managed
-MANAGED_CHECK := "managed-backend=$(MANAGED) run check"
-MANAGED_TYPES := "&managed-types=$(MANAGED) exec tsc --noEmit --project ."
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -57,7 +53,6 @@ install: ## Install what the build needs: Python with every dependency group (.v
 	@uv run --quiet --script scripts/build.py sync && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
-	@$(MAKE) --no-print-directory managed-backend-setup
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
 	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
@@ -75,7 +70,7 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
 	@$(WEB) prepare
-	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS) $(MANAGED_CHECK)
+	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS)
 
 linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
@@ -98,7 +93,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS))
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"
@@ -107,7 +102,7 @@ preflight: ## What CI checks, before you push: check with coverage, template, bu
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
 		"&build=uv run --quiet --script scripts/build.py --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
-		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
+		"&commits=$(MAKE) --no-print-directory commits"
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
 fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated files; then list changed files
@@ -134,18 +129,7 @@ format: ## Format and autofix
 	uv run ruff format .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
-	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES) $(MANAGED_TYPES)
-
-managed-backend-setup: ## Install locked private backend verification tools; no application or OS service
-	@$(MANAGED) install --frozen-lockfile --ignore-scripts --prefer-offline --reporter=silent
-	@echo "✓ managed backend: locked verification dependencies"
-
-managed-backend-static: ## Check the managed runtime code and formatting without executing its test suite
-	@$(MANAGED) exec node tools/runtime-code.mjs --check
-	@$(MANAGED) exec biome ci .
-
-managed-backend-check: ## Check sealed helpers, strict Node types and owned process/inventory behavior
-	$(STEPS) $(MANAGED_CHECK)
+	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES)
 
 desktop-electron-test: ## Install the locked Electron runtime and run its unit suite
 	pnpm --dir desktop install --frozen-lockfile

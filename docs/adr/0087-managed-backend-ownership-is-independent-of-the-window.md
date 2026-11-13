@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-10-27
+status: deprecated
+date: 2026-11-13
 implementation: built
 decision-makers: maintainer, architect and security reviewer
 related: 0078, 0083, 0084
@@ -54,3 +54,11 @@ window, installer or native permission.
 owned start/stop behavior. `tests/integration/managed_backend_broker_test.py` checks real descriptor ownership,
 foreign listener/profile refusal, parent death, crash recovery and cleanup on macOS and Linux. This does not ship
 an Electron application or establish signing, Linux application installation or OS permission behavior.
+
+## More Information
+
+Amended 2026-11-13: deprecated. No shipped caller used this library: the Electron shell starts `hz ui serve` and
+never loaded `desktop/managed`. Main no longer has `desktop/managed`, the Python lifecycle authority of ADR 0078
+(`heinzel.modules.system.lifecycle`, `heinzel._lifecycle_control`), their tests, the `managed` focused lane or the
+`managed-backend-*` make targets. The last revision that had them is kept on the branch `archive/managed-desktop`.
+A managed desktop needs a new ADR, built on the daemon's current lifecycle and not as a second authority.

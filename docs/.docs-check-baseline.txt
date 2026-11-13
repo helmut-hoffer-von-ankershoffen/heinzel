@@ -8,7 +8,6 @@ README.md:filler
 README.md:paragraph
 docs/ARCHITECTURE.md:paragraph
 docs/CODING_STANDARDS.md:paragraph
-docs/DESKTOP_RUNTIME_AUTHORITY.md:paragraph
 docs/DURABLE_TURNS.md:paragraph
 docs/HEINZELMAENNCHEN.md:paragraph
 docs/PLAYBOOKS.md:filler
