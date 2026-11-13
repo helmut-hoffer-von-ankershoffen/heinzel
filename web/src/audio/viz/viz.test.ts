@@ -3,7 +3,7 @@ import { bandEdges, createState, isSettled, readPalette, stepState } from "../au
 import { Analysis, bandRanges, VIZ_BANDS } from "./analysis";
 import { watchTheme } from "./color";
 import { drawHalo, HALO_RAYS, haloBand } from "./halo";
-import { drawRail, railLayout } from "./rail";
+import { drawRail, drawStrip, railLayout, stripLayout } from "./rail";
 import { DEFAULT_SETTINGS, parseSettings, styleOn } from "./settings";
 import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./swarm";
 import { readVizTheme } from "./theme";
@@ -140,6 +140,45 @@ describe("spectrum rail", () => {
     a.step(new Uint8Array(1024).fill(255), null, 1000, 0.033);
     const calm = ctx();
     drawRail(calm, a, theme, 36, 600, true);
+    expect(calm.shadowBlur).toBe(0);
+  });
+
+  it("stands 32 columns across the phone's strip, inside it at any width, bass on the left", () => {
+    const { gap, column } = stripLayout(319, 8);
+    expect(32 * column + 33 * gap).toBeCloseTo(319, 3);
+    for (const [width, height] of [
+      [1, 1],
+      [264, 8],
+      [319, 8],
+    ] as const) {
+      const a = analysis();
+      a.step(new Uint8Array(1024).fill(255), null, 1000, 0.033);
+      const draw = ctx();
+      drawStrip(draw, a, theme, width, height, false);
+      const boxes = vi
+        .mocked(draw.roundRect)
+        .mock.calls.map(([x, y, w, h]) => [Number(x), Number(y), Number(w), Number(h)] as const);
+      expect(boxes).toHaveLength(32);
+      for (const [x, y, w, h] of boxes) {
+        expect(x).toBeGreaterThanOrEqual(-1e-9);
+        expect(y).toBeGreaterThanOrEqual(-1e-9);
+        expect(x + w).toBeLessThanOrEqual(width + 1e-9);
+        expect(y + h).toBeLessThanOrEqual(height + 1e-9);
+      }
+      expect(boxes.map(([x]) => x)).toEqual([...boxes.map(([x]) => x)].sort((p, q) => p - q));
+    }
+  });
+
+  it("rests the strip as a low dim line and raises columns with sound, without glow under reduced motion", () => {
+    const a = analysis();
+    const quiet = ctx();
+    drawStrip(quiet, a, theme, 319, 8, false);
+    expect(vi.mocked(quiet.roundRect).mock.calls.every((call) => Number(call[3]) === 1.5)).toBe(true);
+    expect(quiet.globalAlpha).toBe(1);
+    a.step(new Uint8Array(1024).fill(255), null, 1000, 0.033);
+    const calm = ctx();
+    drawStrip(calm, a, theme, 319, 8, true);
+    expect(Math.max(...vi.mocked(calm.roundRect).mock.calls.map((call) => Number(call[3])))).toBeGreaterThan(4);
     expect(calm.shadowBlur).toBe(0);
   });
 });

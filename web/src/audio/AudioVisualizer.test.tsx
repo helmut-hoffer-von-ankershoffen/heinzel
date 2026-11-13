@@ -295,6 +295,32 @@ describe("AudioVisualizer", () => {
     expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
   });
 
+  it("in the phone's top bar keeps a 44 px trigger and lays the spectrum as a strip behind the bar's foot", () => {
+    const analyser = {
+      frequencyBinCount: 16,
+      getByteFrequencyData: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as AnalyserNode;
+    act(() => publishOwnAudio({ mode: "analysed", analyser, label: "Rain" }));
+    const { container, rerender } = render(<AudioVisualizer placement="bar" />);
+    const strip = screen.getByRole("img", { name: "Shared audio spectrum" });
+    expect(strip).toHaveClass("pointer-events-none", "absolute", "inset-x-0", "bottom-0", "-z-10", "h-2", "w-full");
+    expect(strip).not.toHaveClass("flex-1");
+    const root = container.firstElementChild;
+    expect(root).not.toHaveClass("flex-col");
+    // The trigger, with its capture state word, stays visible: 44 px wide and tall in the 48 px bar.
+    const trigger = screen.getByRole("button", { name: /^Audio sharing active/ });
+    expect(trigger).toHaveClass("h-11", "min-w-11");
+    expect(trigger).toHaveTextContent("On");
+    // Spectrum off: nothing stands in for the strip, so the bar keeps only the trigger.
+    act(() => setStyle("spectrum", false));
+    expect(root?.querySelectorAll(":scope > div[aria-hidden]")).toHaveLength(0);
+    act(() => setStyle("spectrum", true));
+    rerender(<AudioVisualizer placement="rail" />);
+    expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toHaveClass("flex-1");
+    expect(screen.getByRole("button", { name: /^Audio sharing active/ })).toHaveClass("h-12");
+  });
+
   it("asks once, inline, to see music playing in a frame, and remembers the answer", () => {
     render(<AudioVisualizer />);
     expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();

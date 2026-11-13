@@ -750,7 +750,13 @@ def check_mobile_result(section, result):
         assert result["cases"] == []
         assert result["dockedPlayer"]["popOutUsable"] is True
         assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
-        assert result["topbar"] == {"titleWhole": True, "countClearOfMascot": True}
+        assert result["topbar"] == {
+            "titleWhole": True,
+            "countClearOfMascot": True,
+            "visualizerInTopBar": True,
+            "paneFullWidth": True,
+            "captureShown": True,
+        }
     elif section == "updates-actions":
         assert result["cases"] == []
         assert [profile["name"] for profile in result["updateActions"]] == [

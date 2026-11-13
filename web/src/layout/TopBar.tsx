@@ -48,6 +48,8 @@ type Props = {
   browserOpen?: boolean;
   onToggleBrowser?: () => void;
   navigationMode?: boolean;
+  /** On a phone: where the audio visualizer's trigger goes, last in the bar; its spectrum runs along the bar's foot. */
+  audioSlot?: (element: HTMLDivElement | null) => void;
 };
 
 export function TopBar({
@@ -60,6 +62,7 @@ export function TopBar({
   browserOpen = false,
   onToggleBrowser,
   navigationMode = false,
+  audioSlot,
 }: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
@@ -101,7 +104,8 @@ export function TopBar({
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
     // On a phone the five actions leave the title little room: tighter spacing and no chevron keep "Today" whole.
-    <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3 max-sm:px-2">
+    // Relative and isolated: the phone's spectrum strip is placed against the bar and drawn behind its controls.
+    <header className="workspace-topbar relative isolate flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3 max-sm:px-2">
       <div ref={menuRef} className="relative min-w-0">
         <button
           type="button"
@@ -200,6 +204,7 @@ export function TopBar({
             )}
           />
         </Button>
+        {audioSlot && <div ref={audioSlot} className="flex h-full shrink-0 items-center" />}
       </div>
       <span className="sr-only" aria-live="polite">
         {copied && t("command.copied")}

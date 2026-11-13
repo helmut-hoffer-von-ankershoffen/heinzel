@@ -16,7 +16,7 @@ import { t } from "@/i18n";
 import { clearChatLink, OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
-import { useWidth } from "@/lib/useWidth";
+import { isPhoneWidth, useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { useVisualViewport } from "@/lib/viewport";
 import { anchorWorkspace } from "@/lib/workspaceAnchor";
@@ -81,6 +81,26 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 
 /** No element: `useWidth` then follows the window. */
 const WINDOW = { current: null };
+
+/**
+ * A detached element for a portal that moves into whichever place `target` names after each commit: the mounted
+ * contents keep their state (and the focused control its focus) when the layout moves them.
+ */
+function useMovingHost<K extends "div" | "section">(
+  tag: K,
+  target: () => HTMLElement | null,
+): HTMLElementTagNameMap[K] {
+  const [host] = useState(() => document.createElement(tag));
+  useLayoutEffect(() => {
+    const place = target();
+    if (!place || host.parentElement === place) return;
+    const focused = host.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
+    place.appendChild(host);
+    focused?.focus({ preventScroll: true });
+  });
+  useLayoutEffect(() => () => host.remove(), [host]);
+  return host;
+}
 
 const GO: Record<string, string> = {
   "go:today": "/",
@@ -191,26 +211,20 @@ function Layout() {
   const sidebarShown = clampSidebar(sidebarWidth, windowWidth, areaWidth);
   const besideHeader = useRef<HTMLDivElement>(null);
   const belowHeader = useRef<HTMLDivElement>(null);
-  const [headerHost] = useState(() => document.createElement("div"));
-  useLayoutEffect(() => {
-    const target = beside ? besideHeader.current : belowHeader.current;
-    if (!target || headerHost.parentElement === target) return;
-    const focused = headerHost.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
-    target.appendChild(headerHost);
-    focused?.focus({ preventScroll: true });
-  }, [beside, headerHost]);
-  useLayoutEffect(() => () => headerHost.remove(), [headerHost]);
+  const headerHost = useMovingHost("div", () => (beside ? besideHeader.current : belowHeader.current));
   const besideFooter = useRef<HTMLDivElement>(null);
   const belowFooter = useRef<HTMLDivElement>(null);
-  const [footerHost] = useState(() => document.createElement("div"));
+  const footerHost = useMovingHost("div", () => (beside ? besideFooter.current : belowFooter.current));
+  // On a phone the audio visualizer sits in the top bar instead of taking a column from every pane. One mounted
+  // visualizer moves between the two places, so a running capture survives turning the phone.
+  const phone = isPhoneWidth(windowWidth);
+  const [audioColumn, setAudioColumn] = useState<HTMLDivElement | null>(null);
+  const [audioSlot, setAudioSlot] = useState<HTMLDivElement | null>(null);
+  const audioHost = useMovingHost("section", () => (phone ? audioSlot : audioColumn));
   useLayoutEffect(() => {
-    const target = beside ? besideFooter.current : belowFooter.current;
-    if (!target || footerHost.parentElement === target) return;
-    const focused = footerHost.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
-    target.appendChild(footerHost);
-    focused?.focus({ preventScroll: true });
-  }, [beside, footerHost]);
-  useLayoutEffect(() => () => footerHost.remove(), [footerHost]);
+    audioHost.setAttribute("aria-label", "Audio visualizer");
+    audioHost.className = phone ? "flex h-full shrink-0 items-center" : "h-full min-h-0";
+  }, [audioHost, phone]);
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
   const durableChat = params.get("chat");
@@ -737,6 +751,7 @@ function Layout() {
             onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => toggleTerminal(beside)}
+            audioSlot={showAudioVisualizer && phone ? setAudioSlot : undefined}
           />,
           headerHost,
         )}
@@ -751,11 +766,14 @@ function Layout() {
           footerHost,
         )}
       </div>
-      {showAudioVisualizer && (
-        <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
-          <AudioVisualizer />
-        </section>
+      {showAudioVisualizer && !phone && (
+        <div
+          ref={setAudioColumn}
+          data-testid="audio-column"
+          className="min-h-0 w-11 shrink-0 self-stretch border-l border-border"
+        />
       )}
+      {showAudioVisualizer && createPortal(<AudioVisualizer placement={phone ? "bar" : "rail"} />, audioHost)}
       {params.get("panel") === "notifications" && (
         <NotificationPanel
           navOpen={navOpen}

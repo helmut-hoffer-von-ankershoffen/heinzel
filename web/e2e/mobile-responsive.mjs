@@ -141,6 +141,83 @@ async function assertTouchTarget(locator, description, name) {
   return box;
 }
 
+/**
+ * On a phone the audio visualizer stands in the top bar: no right-hand column, the pane reaches the window's right
+ * edge, the trigger keeps a 44px target inside the bar, and the title stays whole beside it.
+ */
+async function assertAudioInTopBar(page, width, when) {
+  const facts = await page.evaluate(() => {
+    const box = (element) => element?.getBoundingClientRect().toJSON();
+    const header = document.querySelector(".workspace-topbar");
+    const region = document.querySelector('section[aria-label="Audio visualizer"]');
+    const title = document.querySelector('.workspace-topbar button[aria-haspopup="menu"] > span');
+    return {
+      width: innerWidth,
+      column: document.querySelector('[data-testid="audio-column"]') !== null,
+      inTopBar: !!header && !!region && header.contains(region),
+      area: box(document.querySelector(".workspace-area")),
+      header: box(header),
+      trigger: box(region?.querySelector("button")),
+      strip: box(region?.querySelector('canvas[aria-label="Shared audio spectrum"]')),
+      title: title?.textContent,
+      titleFits: !!title && title.scrollWidth <= title.clientWidth,
+    };
+  });
+  const name = `${width}px ${when}: ${JSON.stringify(facts)}`;
+  assert.equal(facts.column, false, `the audio visualizer still takes a column: ${name}`);
+  assert.ok(facts.area && Math.abs(facts.area.right - facts.width) <= 0.5, `the pane misses full width: ${name}`);
+  assert.ok(facts.inTopBar, `the audio visualizer is not in the top bar: ${name}`);
+  assert.ok(
+    facts.trigger &&
+      facts.trigger.width >= 44 &&
+      facts.trigger.height >= 44 &&
+      facts.trigger.top >= facts.header.top - 0.5 &&
+      facts.trigger.bottom <= facts.header.bottom + 0.5 &&
+      facts.trigger.right <= facts.width + 0.5,
+    `the audio trigger is not a 44px target inside the top bar: ${name}`,
+  );
+  assert.equal(facts.title, "Today", name);
+  assert.ok(facts.titleFits, `the header title is cut: ${name}`);
+  return facts;
+}
+
+/**
+ * Listening on a phone: the pane discloses the microphone, the trigger keeps its capture state in sight, and the
+ * spectrum runs as a strip along the top bar's foot, behind the controls. Needs the generated-tone microphone.
+ */
+async function assertListeningInTopBar(page, width, shots) {
+  const audioTrigger = page.locator('.workspace-topbar section[aria-label="Audio visualizer"] button').first();
+  await audioTrigger.tap();
+  const audioControls = page.getByRole("region", { name: "Audio visualizer controls" });
+  await assertContained(page, audioControls, `${width}px: audio visualizer controls`);
+  await audioControls.getByRole("radio", { name: "Microphone", exact: true }).click();
+  await audioControls
+    .locator("output")
+    .filter({ hasText: /the microphone/ })
+    .waitFor();
+  await assertContained(page, audioControls, `${width}px: audio visualizer controls, listening`);
+  await page.screenshot({ path: join(shots, `mobile-topbar-audio-pane-${width}.png`) });
+  await audioTrigger.focus();
+  await page.keyboard.press("Escape");
+  await audioControls.waitFor({ state: "hidden", timeout: 5000 });
+  assert.match((await audioTrigger.textContent()) ?? "", /On/, `${width}px: the capture indicator is not shown`);
+  await page.waitForFunction(() => {
+    const strip = document.querySelector('.workspace-topbar canvas[aria-label="Shared audio spectrum"]');
+    const pixels = strip?.getContext("2d")?.getImageData(0, 0, strip.width, strip.height).data ?? [];
+    return [...pixels].some((value, index) => index % 4 === 3 && value > 0);
+  });
+  const live = await assertAudioInTopBar(page, width, "listening");
+  assert.ok(
+    live.strip &&
+      Math.abs(live.strip.bottom - live.header.bottom) <= 1 &&
+      live.strip.height <= 8.5 &&
+      live.strip.left <= live.header.left + 1 &&
+      live.strip.right >= live.header.right - 1,
+    `${width}px: the spectrum is not a strip along the top bar's foot: ${JSON.stringify(live)}`,
+  );
+  await page.screenshot({ path: join(shots, `mobile-topbar-listening-${width}.png`) });
+}
+
 async function assertContained(page, locator, name) {
   await locator.waitFor();
   await locator.scrollIntoViewIfNeeded();
@@ -1678,6 +1755,7 @@ try {
     stage("phone-topbar");
     // The narrowest phones with the audio visualizer on (its default): the header keeps "Today" whole, and the
     // hidden-widgets count stays clear of the header's mascot, which reaches below the header line.
+    // Below sm the visualizer stands in the top bar, not in a column of its own: the pane keeps the full width.
     // One width after the other on purpose: each page loads the whole app, and the gate runs this beside other lanes.
     for (const width of [360, 375]) {
       const topPage = await browser.newPage({
@@ -1688,6 +1766,23 @@ try {
       });
       await topPage.addInitScript(() =>
         localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true })),
+      );
+      // Test transport only: the "microphone" is a generated tone in the page; nothing is captured.
+      await topPage.addInitScript(() =>
+        Object.defineProperty(navigator, "mediaDevices", {
+          configurable: true,
+          value: {
+            getUserMedia: async () => {
+              const context = new AudioContext();
+              const tone = context.createOscillator();
+              const out = context.createMediaStreamDestination();
+              tone.connect(out);
+              tone.start();
+              await context.resume();
+              return out.stream;
+            },
+          },
+        }),
       );
       await topPage.route("**/api/system/ui/list", async (route) => {
         const response = await fetchOnce(route);
@@ -1747,6 +1842,8 @@ try {
       await topPage.screenshot({ path: join(shots, `mobile-topbar-${width}.png`) });
       assert.equal(top.title, "Today", JSON.stringify(top));
       assert.ok(top.titleFits, `${width}px: the header title is cut: ${JSON.stringify(top)}`);
+      await assertAudioInTopBar(topPage, width, "at rest");
+      await assertListeningInTopBar(topPage, width, shots);
       // A selector that stops matching must fail here, not pass the overlap check below for want of a box.
       assert.ok(
         top.mascot && top.count,
@@ -1759,7 +1856,13 @@ try {
       );
       await topPage.close();
     }
-    result.topbar = { titleWhole: true, countClearOfMascot: true };
+    result.topbar = {
+      titleWhole: true,
+      countClearOfMascot: true,
+      visualizerInTopBar: true,
+      paneFullWidth: true,
+      captureShown: true,
+    };
   }
 } catch (error) {
   stage("failure-diagnostics");

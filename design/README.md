@@ -90,6 +90,11 @@ follows from it:
   like every Gnome, only while "playful" is on. They fill that gap (2026-11-12): the stage takes the room the
   navigation leaves, between 5 and 20 rem; a long navigation keeps its links and the stage stays a strip with both
   side by side, and from 12 rem the Halo takes the upper part and the Swarm the floor, drawn and moving to scale.
+- **On a phone the audio visualizer is in the top bar (owner decision 2026-11-13).** Below the `sm` breakpoint the
+  Spectrum rail's column would take 44 px from every pane, so the visualizer leaves it: its trigger (44 px, with the
+  capture state word) is the bar's last control, and the Spectrum is an 8 px strip of 32 columns along the bar's foot,
+  behind the controls and below every icon and the title's letters. The one mounted visualizer moves between the two
+  places, so turning the phone keeps a running capture. From `sm` up the column stays.
 - **Switches show the person's choice (2026-11-08).** A provider switch (`ContributionToggle`) reads On as soon as the
   person turns it on; whether it is live is its one status line: *Turning on…*, the URL, or one short cause with
   **Try again** (or **Restart hz** when only a restart loads the change). The line is at most 60 characters in the

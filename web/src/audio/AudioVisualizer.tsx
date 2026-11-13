@@ -37,7 +37,7 @@ import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
 import { drawHalo } from "./viz/halo";
-import { drawRail } from "./viz/rail";
+import { drawRail, drawStrip } from "./viz/rail";
 import { STYLES, setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
 import { useVizStage } from "./viz/stage";
 import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./viz/swarm";
@@ -169,12 +169,24 @@ function captureProblem(error: unknown) {
 }
 
 /**
+ * Where the visualizer stands: "rail", its own column at the window's right edge, the spectrum a vertical ladder; "bar",
+ * on a phone, its trigger in the top bar and the spectrum a thin strip along the bar's foot.
+ */
+export type Placement = "rail" | "bar";
+
+/**
  * The audio visualizations: one analyser and one render loop feed every style that is switched on. Heinzel's own sound
  * is analysed in the page with no prompt; music in a host's frame (YouTube) needs the person's consent, asked once,
  * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
  * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
-export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
+export function AudioVisualizer({
+  enabled = true,
+  placement = "rail",
+}: {
+  readonly enabled?: boolean;
+  readonly placement?: Placement;
+}) {
   const own = useOwnAudio();
   const settings = useVizSettings();
   const [remembered, setRemembered] = useState<Remembered>(readSource);
@@ -383,6 +395,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const haloOn = styleOn(settings, "halo") && stageElement !== null;
   const swarmOn = styleOn(settings, "swarm") && stageElement !== null;
   const drawing = Boolean(analyser) && (railOn || auroraOn);
+  const inBar = placement === "bar";
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new sidebar stage remounts the Heinzel canvases
   useEffect(() => {
     if (!analyser || (!railOn && !auroraOn && !haloOn && !swarmOn)) return;
@@ -404,6 +417,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     const edges = bandEdges(freq.length, BANDS);
     const aurora = createState(Date.now() | 0);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const drawSpectrum = inBar ? drawStrip : drawRail;
     let palette = readPalette();
     let theme = readVizTheme();
     let frame = 0;
@@ -506,7 +520,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       publish();
       if (rail && railContext) {
         railSize = sizeOf(rail, railContext);
-        drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+        drawSpectrum(railContext, analysis, theme, railSize.width, railSize.height, true);
       }
       if (sky && skyContext) {
         skyContext.setTransform(1, 0, 0, 1, 0, 0);
@@ -539,7 +553,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       if (rail && railContext) {
         if (railSize.width !== Math.max(1, rail.clientWidth) || railSize.height !== Math.max(1, rail.clientHeight))
           railSize = sizeOf(rail, railContext);
-        drawRail(railContext, analysis, theme, railSize.width, railSize.height, slow);
+        drawSpectrum(railContext, analysis, theme, railSize.width, railSize.height, slow);
       }
       if (sky && skyContext) {
         if (skySize.width !== Math.max(1, sky.clientWidth) || skySize.height !== Math.max(1, sky.clientHeight))
@@ -570,7 +584,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     const unwatch = watchTheme(() => {
       palette = readPalette();
       theme = readVizTheme();
-      if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+      if (resting && rail && railContext)
+        drawSpectrum(railContext, analysis, theme, railSize.width, railSize.height, true);
       if (resting) drawHeinzels(0, true);
     });
     document.addEventListener("visibilitychange", visibility);
@@ -581,7 +596,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement]);
+  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement, inBar]);
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
@@ -661,7 +676,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
-    <div ref={rootElement} className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
+    <div
+      ref={rootElement}
+      className={cn("flex h-full min-h-0 items-center text-muted-foreground", !inBar && "flex-col")}
+    >
       <FooterItem
         label="Audio visualizer"
         paneName="Audio visualizer controls"
@@ -673,7 +691,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <span className="text-[10px]">{controlWord}</span>
           </>
         }
-        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${
+        className={`${inBar ? "h-11" : "h-12"} min-w-11 flex-col gap-0.5 px-1 ${
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
@@ -782,10 +800,14 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           ref={railCanvas}
           role="img"
           aria-label="Shared audio spectrum"
-          className="pointer-events-none min-h-0 w-full flex-1 px-0.5 pb-1"
+          // In the bar the strip lies behind the controls along its foot, below the icons and the title's letters.
+          className={cn(
+            "pointer-events-none",
+            inBar ? "absolute inset-x-0 bottom-0 -z-10 h-2 w-full" : "min-h-0 w-full flex-1 px-0.5 pb-1",
+          )}
         />
       ) : (
-        <div className="min-h-0 flex-1" aria-hidden />
+        !inBar && <div className="min-h-0 flex-1" aria-hidden />
       )}
       {drawing &&
         auroraOn &&

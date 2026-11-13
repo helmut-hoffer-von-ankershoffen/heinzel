@@ -14,6 +14,22 @@ const answers = {
   "/api/system/daemon/jobs": [],
 };
 
+const withVisualizer = {
+  ...config,
+  settings: [
+    ...config.settings,
+    {
+      section: "system.ui",
+      key: "audio_visualizer",
+      value: true,
+      default: false,
+      source: "user" as const,
+      env: "HZ_SYSTEM_UI__AUDIO_VISUALIZER",
+      description: "Show the optional audio sharing visualizer.",
+    },
+  ],
+};
+
 describe("Shell", () => {
   it("keeps the audio visualizer off unless the System setting is enabled", async () => {
     const first = mockApi({ ...answers, "/api/system/config/show": config });
@@ -22,25 +38,45 @@ describe("Shell", () => {
     expect(screen.queryByRole("region", { name: "Audio visualizer" })).not.toBeInTheDocument();
     unmount();
 
-    const enabled = {
-      ...config,
-      settings: [
-        ...config.settings,
-        {
-          section: "system.ui",
-          key: "audio_visualizer",
-          value: true,
-          default: false,
-          source: "user" as const,
-          env: "HZ_SYSTEM_UI__AUDIO_VISUALIZER",
-          description: "Show the optional audio sharing visualizer.",
-        },
-      ],
-    };
-    mockApi({ ...answers, "/api/system/config/show": enabled });
+    mockApi({ ...answers, "/api/system/config/show": withVisualizer });
     renderAt("/doctor");
     const visualizer = await screen.findByRole("region", { name: "Audio visualizer" });
-    expect(visualizer).toHaveClass("self-stretch", "min-h-0");
+    expect(screen.getByTestId("audio-column")).toHaveClass("self-stretch", "min-h-0", "w-11");
+    expect(screen.getByTestId("audio-column")).toContainElement(visualizer);
+  });
+
+  it("moves the audio visualizer into the top bar below the sm breakpoint and back, keeping it mounted", async () => {
+    mockApi({ ...answers, "/api/system/config/show": withVisualizer });
+    const initialWidth = window.innerWidth;
+    const resize = (width: number) =>
+      act(() => {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        window.dispatchEvent(new Event("resize"));
+      });
+    try {
+      await resize(375);
+      const { container } = renderAt("/doctor");
+      const visualizer = await screen.findByRole("region", { name: "Audio visualizer" });
+      const topBar = container.querySelector(".workspace-topbar");
+      // No column on a phone: the pane keeps the whole width, and the trigger stands in the top bar.
+      expect(screen.queryByTestId("audio-column")).not.toBeInTheDocument();
+      expect(topBar).toContainElement(visualizer);
+      const trigger = within(visualizer).getAllByRole("button")[0];
+      expect(trigger).toHaveClass("h-11", "min-w-11");
+      await resize(639);
+      expect(topBar).toContainElement(visualizer);
+      await resize(640);
+      expect(screen.getByTestId("audio-column")).toContainElement(visualizer);
+      expect(topBar).not.toContainElement(visualizer);
+      // Moved, not remounted: a running capture survives turning the phone.
+      expect(within(visualizer).getAllByRole("button")[0]).toBe(trigger);
+      await resize(375);
+      expect(screen.queryByTestId("audio-column")).not.toBeInTheDocument();
+      expect(container.querySelector(".workspace-topbar")).toContainElement(visualizer);
+      await expectAccessible(container);
+    } finally {
+      await resize(initialWidth);
+    }
   });
 
   it("keeps one mounted footer and its focus when the side panel moves below and back", async () => {

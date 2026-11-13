@@ -59,3 +59,39 @@ export function drawRail(
   }
   ctx.globalAlpha = 1;
 }
+
+/** Fits the strip's columns across its width: gaps shrink on a narrow strip; a quiet column keeps a low line. */
+export function stripLayout(width: number, height: number) {
+  const gap = Math.min(2, width / (VIZ_BANDS * 2 + 1));
+  const column = (width - gap * (VIZ_BANDS + 1)) / VIZ_BANDS;
+  const minTall = Math.min(1.5, height);
+  return { gap, column, minTall, maxTall: Math.max(minTall, height) };
+}
+
+/**
+ * The phone's Spectrum: the same 32 bands as the rail, bass on the left, as columns standing on the top bar's foot.
+ * The strip is a few pixels high, so it has no peak caps; `reduced` drops the glow and the beat lift as on the rail.
+ */
+export function drawStrip(
+  ctx: CanvasRenderingContext2D,
+  analysis: Analysis,
+  theme: VizTheme,
+  width: number,
+  height: number,
+  reduced: boolean,
+) {
+  ctx.clearRect(0, 0, width, height);
+  const { gap, column, minTall, maxTall } = stripLayout(width, height);
+  const lift = reduced ? 0 : analysis.beat * 0.15;
+  const quiet = analysis.quiet;
+  ctx.shadowBlur = 0;
+  for (let band = 0; band < VIZ_BANDS; band += 1) {
+    const value = quiet ? 0 : (analysis.smooth[band] ?? 0);
+    const tall = minTall + value * (maxTall - minTall);
+    ctx.globalAlpha = quiet ? 0.14 : clamp(0.2 + value * 0.8 + lift, 0, 1);
+    ctx.fillStyle = rgba(mixRgb(theme.a, theme.b, band / (VIZ_BANDS - 1)), 1);
+    pillPath(ctx, gap + band * (column + gap), height - tall, column, tall);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
