@@ -16,8 +16,40 @@ page.on("response", (response) => {
 });
 
 try {
+  await page.addInitScript(() => {
+    const log = (window.__dlog = []);
+    const t0 = performance.now();
+    const at = () => Math.round(performance.now() - t0);
+    const seen = new WeakSet();
+    let n = 0;
+    new MutationObserver(() => {
+      for (const s of document.querySelectorAll("details > summary")) {
+        if (s.textContent !== "Details" || seen.has(s.parentElement)) continue;
+        const d = s.parentElement;
+        const id = ++n;
+        seen.add(d);
+        log.push(`${at()} details#${id} new open=${d.open}`);
+        d.addEventListener("toggle", (e) => log.push(`${at()} details#${id} toggle ${e.newState} open=${d.open}`));
+        new MutationObserver(() => log.push(`${at()} details#${id} attr open=${d.open}`)).observe(d, { attributes: true, attributeFilter: ["open"] });
+        const check = setInterval(() => { if (!d.isConnected) { log.push(`${at()} details#${id} gone`); clearInterval(check); } }, 20);
+      }
+    }).observe(document, { subtree: true, childList: true });
+    document.addEventListener("click", (e) => log.push(`${at()} click ${e.target.nodeName}:${(e.target.textContent || "").slice(0, 16)}`), true);
+  });
   await startChatJourney(page, url);
   const panel = page.getByRole("region", { name: "Connected read review" });
+  await panel.getByLabel("Read operation").waitFor({ state: "visible", timeout: 10000 }).catch(async (error) => {
+    const why = await panel.getByLabel("Read operation").evaluate((node) => {
+      const chain = [];
+      for (let el = node; el && el !== document.documentElement; el = el.parentElement) {
+        const st = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        chain.push({ tag: el.nodeName, cls: (el.className && String(el.className).slice(0, 60)) || "", hidden: el.hidden, inert: el.inert, open: el.nodeName === "DETAILS" ? el.open : undefined, display: st.display, vis: st.visibility, cv: st.contentVisibility, rect: [r.x, r.y, r.width, r.height].map(Math.round) });
+      }
+      return { checkVisibility: node.checkVisibility?.(), chain, log: window.__dlog };
+    });
+    throw new Error(`Read operation hidden: ${JSON.stringify(why)}\n${error}`);
+  });
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   await panel
     .getByLabel("Fixed arguments (JSON)")
