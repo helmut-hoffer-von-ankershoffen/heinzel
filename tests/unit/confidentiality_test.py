@@ -289,10 +289,10 @@ def test_git_output_keeps_carriage_returns_so_binary_diff_hunks_stay_aligned(tmp
         monkeypatch.delenv(name)  # a pre-push hook points Git at the real repository; this one is a scratch repo
     monkeypatch.chdir(tmp_path)
     for command in (["init", "-q"], ["config", "user.email", "a@b.c"], ["config", "user.name", "n"]):
-        subprocess.run(["git", *command], check=True)
+        subprocess.run(["git", *command], check=True, timeout=60)
     (tmp_path / "blob.bin").write_bytes(b"one\rtwo\r\nthree\n" * 3)
-    subprocess.run(["git", "add", "."], check=True)
-    subprocess.run(["git", "commit", "-qm", "x"], check=True)
+    subprocess.run(["git", "add", "."], check=True, timeout=60)
+    subprocess.run(["git", "commit", "-qm", "x"], check=True, timeout=60)
     diff = confidentiality._git("diff-tree", "-p", "--text", "-U0", "--no-color", "--root", "HEAD")
     assert "\r" in diff
     [(_, lines)] = list(confidentiality.added_lines(diff))
