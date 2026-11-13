@@ -31,7 +31,7 @@ from heinzel.modules.heinzel._draft_workflow_notice import LocalDraftNotice
 from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
 from heinzel.modules.heinzel._draft_workflow_runtime import tick
 from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, share_payload
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 from heinzel.modules.heinzel._user_chat import UserChatService
 
@@ -234,6 +234,8 @@ def workflow_jobs(host: DraftWorkflowPublication) -> list[tuple[str, str]]:
         if head.problem:
             continue
         try:
+            if is_retired(host.crud.repository.control_read(head.session).events):
+                continue
             if not matching(host.journal.events(head.session), "draft.published"):
                 continue
             terms = host.published(head.session)

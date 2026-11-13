@@ -795,6 +795,8 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `prune`: (expert) Delete drafts and records older...
 * `publish-draft-workflow`: Publish only the exact standing draft...
 * `release-workflow`: Read the published workflow and durable...
+* `restore`: Bring a retired Heinzel back to your list...
+* `retire`: Retire this Heinzel: it leaves your list...
 * `review-release-draft`: Capture the human-edited marked section...
 * `revoke-release-workflow`: Revoke future recurring draft and notice...
 * `schedule-control`: Pause a schedule; activation and resume...
@@ -1320,6 +1322,48 @@ $ hz heinzel release-workflow [OPTIONS] {session_id}
 **Arguments**:
 
 * `session_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel restore`
+
+Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.
+
+**Usage**:
+
+```console
+$ hz heinzel restore [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel retire`
+
+Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+
+**Usage**:
+
+```console
+$ hz heinzel retire [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 

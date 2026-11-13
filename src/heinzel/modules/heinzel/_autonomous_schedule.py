@@ -30,7 +30,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationInventory, ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
 from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
@@ -586,6 +586,11 @@ class AutonomousSchedules:
             msg = "The schedule occurrence time is invalid"
             raise HeinzelError(msg)
 
+    def _require_not_retired(self, session: str) -> None:
+        if is_retired(self.crud.repository.control_read(session).events):
+            msg = "This Heinzel is retired; restore it to run its schedule"
+            raise HeinzelError(msg)
+
     async def tick(self, session: str, request: str, when: datetime) -> str | None:
         """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
 
@@ -593,6 +598,7 @@ class AutonomousSchedules:
             HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
         """
         self._require_daemon_occurrence(when)
+        self._require_not_retired(session)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
         now = datetime.now(UTC)

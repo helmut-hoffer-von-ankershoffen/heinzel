@@ -59,6 +59,7 @@ from heinzel.modules.heinzel._session_models import (
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
 _VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed", "draft.workflow-message"}
+_LIFECYCLE_KINDS = {"heinzel.retired", "heinzel.restored"}
 _ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
@@ -496,8 +497,18 @@ def _validate_schedule_state(state: _ScheduleState, contracts: list[ContractVers
     return state
 
 
-def _session_state(schedule: WakeScheduleView | None) -> Literal["proposed", "awake", "paused"]:
-    """Project an unapproved schedule as proposed, not as a schedule the person paused."""
+def is_retired(events: list[SessionEvent]) -> bool:
+    """Whether the latest retire or restore in this control journal retired the Heinzel (ADR 0049 §7)."""
+    last = next((event for event in reversed(events) if event.kind in _LIFECYCLE_KINDS), None)
+    return last is not None and last.kind == "heinzel.retired"
+
+
+def _session_state(
+    schedule: WakeScheduleView | None, *, retired: bool = False
+) -> Literal["proposed", "awake", "paused", "retired"]:
+    """Project a retired Heinzel as retired, and an unapproved schedule as proposed, not as one the person paused."""
+    if retired:
+        return "retired"
     if schedule is None or schedule.status == "proposed":
         return "proposed"
     return "awake" if schedule.status == "active" else "paused"
@@ -647,6 +658,27 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
+    def retire(self, session_id: str, request_id: str, *, retired: bool = True) -> SessionSnapshot:
+        """Retire (hide, never wake) or restore this Heinzel; its whole history stays, and an exact retry is a no-op.
+
+        Raises:
+            HeinzelError: If the request already identifies the opposite change or the creation is incomplete.
+        """
+        _REQUEST.validate_python(request_id)
+        kind = "heinzel.retired" if retired else "heinzel.restored"
+        key = f"lifecycle-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((item for item in events if item.key == key), None)
+            if prior is not None:
+                if prior.kind != kind:
+                    msg = "This request already identifies a different retire or restore"
+                    raise HeinzelError(msg)
+            else:
+                self._profile(session_id, events)
+                writer.append(kind, key=key, data={})
+        return self.snapshot(session_id)
+
     def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
         """Record the exact inbox request before model work, preserving request identity across lost replies.
 
@@ -668,6 +700,9 @@ class SessionCrud(ApprovalIssuer):
         """
         digest = _digest(request.model_dump(mode="json"))
         events = self.repository.control_read(session_id).events
+        if is_retired(events) and not any(event.key == f"message-{request.request_id}" for event in events):
+            msg = "This Heinzel is retired; restore it to chat with it again"
+            raise HeinzelError(msg)
         created = next((event for event in events if event.kind == "profile.updated" and event.key == "created"), None)
         if created is not None and "initial_request_id" in created.data:
             first_id = created.data["initial_request_id"]
@@ -1657,6 +1692,8 @@ class SessionCrud(ApprovalIssuer):
             events = self.repository.control_read(session_id).events
             state = self._schedule_state(session_id, events)
             revision = self._schedule_revision(events)
+            if is_retired(events):
+                return JobInactive(reason="this Heinzel is retired")
             if state is None or state.status != "active" or state.contract_version != contract_version:
                 return JobInactive(reason="the check-in schedule is no longer active")
             if revision != schedule_revision:
@@ -1825,7 +1862,7 @@ class SessionCrud(ApprovalIssuer):
             appearance=profile.appearance,
             profile_revision=revision,
             contract_version=approved,
-            state=_session_state(schedule),
+            state=_session_state(schedule, retired=is_retired(events)),
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
@@ -1877,7 +1914,7 @@ class SessionCrud(ApprovalIssuer):
                     session_id=head.session,
                     name=profile.name,
                     appearance=profile.appearance,
-                    state=_session_state(schedule),
+                    state=_session_state(schedule, retired=is_retired(events)),
                     last_seq=events[-1].seq,
                     updated_at=events[-1].ts,
                     contract_version=approved,

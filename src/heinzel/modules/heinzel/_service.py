@@ -106,7 +106,7 @@ from heinzel.modules.heinzel._models import (
     Step,
 )
 from heinzel.modules.heinzel._retention import Sweep, expired
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._starter import from_template, is_name, slug, starter
 
 logger = logging.getLogger(__name__)
@@ -611,6 +611,8 @@ class HeinzelService:
                 continue
             try:
                 events = sessions.repository.control_read(head.session).events
+                if is_retired(events):
+                    continue
                 requests = [event.key for event in events if event.kind == "agent.schedule-proposed" and event.key]
                 for request in requests:
                     try:
@@ -664,7 +666,9 @@ class HeinzelService:
             except HeinzelError:
                 continue
             schedule = snapshot.schedule
-            if schedule is None or schedule.status != "active" or schedule.cron != "*/5 * * * *":
+            if snapshot.state == "retired" or schedule is None:
+                continue
+            if schedule.status != "active" or schedule.cron != "*/5 * * * *":
                 continue
             jobs.append(
                 self._check_in_job(

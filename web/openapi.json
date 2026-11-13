@@ -22236,6 +22236,52 @@
         "title": "heinzel_resolve_scheduled_notification_Input",
         "type": "object"
       },
+      "heinzel_restore_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_restore_Input",
+        "type": "object"
+      },
+      "heinzel_retire_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_retire_Input",
+        "type": "object"
+      },
       "heinzel_review_release_draft_Input": {
         "additionalProperties": false,
         "properties": {
@@ -26295,6 +26341,90 @@
           }
         },
         "summary": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/restore": {
+      "post": {
+        "description": "Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.",
+        "operationId": "heinzel_restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_restore_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/retire": {
+      "post": {
+        "description": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
+        "operationId": "heinzel_retire",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_retire_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
         "tags": [
           "heinzel"
         ]

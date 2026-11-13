@@ -11,6 +11,7 @@ from heinzel.modules.heinzel._draft_workflow_effects import append_draft, post_o
 from heinzel.modules.heinzel._draft_workflow_journal import grant_payload, matching, target_key
 from heinzel.modules.heinzel._draft_workflow_models import DraftPublicationTerms, DraftRelease
 from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
+from heinzel.modules.heinzel._session_crud import is_retired
 from heinzel.modules.heinzel._session_models import MessageRequest
 
 
@@ -229,6 +230,9 @@ async def tick(host: DraftWorkflowPublication, session: str, request: str, when:
         HeinzelError: If authority, cadence, source or an uncertain outcome prevents safe work.
     """
     host.owner(daemon=True)
+    if is_retired(host.crud.repository.control_read(session).events):
+        msg = "This Heinzel is retired; restore it to run its draft workflow"
+        raise HeinzelError(msg)
     terms = host.published(session, request)
     now = host.crud.clock()
     cadence = terms.request.cadence_seconds

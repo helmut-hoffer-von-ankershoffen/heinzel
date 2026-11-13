@@ -1563,6 +1563,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.
+         * @description Bring a retired Heinzel back to your list with its whole history; its schedules stay as they were.
+         */
+        post: operations["heinzel_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+         * @description Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+         */
+        post: operations["heinzel_retire"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/review-release-draft": {
         parameters: {
             query?: never;
@@ -17208,6 +17248,32 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_restore_Input */
+        heinzel_restore_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_retire_Input */
+        heinzel_retire_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_review_release_draft_Input */
         heinzel_review_release_draft_Input: {
             /**
@@ -17816,6 +17882,8 @@ export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinz
 export type SchemaHeinzelPublishDraftWorkflowInput = components['schemas']['heinzel_publish_draft_workflow_Input'];
 export type SchemaHeinzelQueueAgentNotificationInput = components['schemas']['heinzel_queue_agent_notification_Input'];
 export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas']['heinzel_resolve_scheduled_notification_Input'];
+export type SchemaHeinzelRestoreInput = components['schemas']['heinzel_restore_Input'];
+export type SchemaHeinzelRetireInput = components['schemas']['heinzel_retire_Input'];
 export type SchemaHeinzelReviewReleaseDraftInput = components['schemas']['heinzel_review_release_draft_Input'];
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
@@ -20285,6 +20353,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledNotificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_restore_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_retire: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_retire_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
                 };
             };
             /** @description Validation Error */

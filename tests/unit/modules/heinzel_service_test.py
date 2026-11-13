@@ -1651,3 +1651,37 @@ def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
     assert "workflow.retention_days, HZ_WORKFLOW__MAX_USD" in check.detail
     assert "hz system config unset workflow.retention_days" in check.fix
     assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
+
+
+def test_a_retired_heinzel_compiles_no_check_in_until_it_is_restored(make):
+    service = make()
+    current = service._kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(current, clock=lambda: NOW),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with current.local("cli"):
+        created = sessions.new_chat("retire-create", "Retired helper")
+        proposed = sessions.propose_check_in(created.session_id, "retire-proposal", "UTC")
+        assert proposed.schedule is not None
+        proof = _approve_test_schedule(
+            sessions, current, created.session_id, "retire-activate", 1, "activate", proposed.schedule.preview_hash
+        )
+        sessions.schedule_control(
+            created.session_id,
+            "retire-activate",
+            1,
+            "activate",
+            proof,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+        sessions.retire(created.session_id, "retire-it")
+    name = f"check-in-{created.session_id.lower()}"
+    with current.local("daemon"):
+        assert name not in [item.name for item in service.compiled(sessions=sessions).jobs]
+    with current.local("cli"):
+        sessions.retire(created.session_id, "restore-it", retired=False)
+    with current.local("daemon"):
+        assert name in [item.name for item in service.compiled(sessions=sessions).jobs]
