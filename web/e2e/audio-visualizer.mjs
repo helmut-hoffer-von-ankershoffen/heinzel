@@ -66,6 +66,15 @@ try {
     // Diagnosis only: lost and restored canvas contexts, and whether the page still renders frames at all.
     await page.addInitScript(() => {
       const seen = { lost: 0, restored: 0, frames: 0 };
+      // Reads a canvas with the visualizer's own context options: the first getContext call on a new canvas fixes
+      // them, so a read before the visualizer's effect must not take the in-memory mode away from a replaced canvas.
+      window.vizContext = (canvas) =>
+        canvas.getContext(
+          "2d",
+          document.querySelector("canvas[data-testid=audio-aurora]")?.dataset.vizRender === "memory"
+            ? { willReadFrequently: true }
+            : undefined,
+        );
       window.canvasEvents = seen;
       document.addEventListener("contextlost", () => (seen.lost += 1), true);
       document.addEventListener("contextrestored", () => (seen.restored += 1), true);
@@ -102,13 +111,13 @@ try {
         const sky = document.querySelector("canvas[data-testid=audio-aurora]");
         let mass = 0,
           height = 0;
-        const pixels = rail.getContext("2d").getImageData(0, 0, rail.width, rail.height).data;
+        const pixels = window.vizContext(rail).getImageData(0, 0, rail.width, rail.height).data;
         for (let i = 3; i < pixels.length; i += 4) {
           const row = Math.floor((i - 3) / 4 / rail.width);
           mass += pixels[i];
           height += pixels[i] * (1 - row / Math.max(1, rail.height - 1));
         }
-        const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
+        const { data } = window.vizContext(sky).getImageData(0, 0, sky.width, sky.height);
         let share = 0,
           count = 0,
           strong = 0;
@@ -130,7 +139,7 @@ try {
           // audio clock falls behind and the failure log names a starved signal instead of a drawing problem.
           canvas: {
             ...window.canvasEvents,
-            skyLost: sky.getContext("2d").isContextLost?.() ?? null,
+            skyLost: window.vizContext(sky).isContextLost?.() ?? null,
             generation: Number(sky.dataset.vizGeneration ?? "0"),
             render: sky.dataset.vizRender,
             visibility: document.visibilityState,
@@ -173,7 +182,7 @@ try {
       const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
       const sky = document.querySelector("canvas[data-testid=audio-aurora]");
       if (!rail || !sky || Number(rail.dataset.vizCentroid ?? "-1") < 0) return false;
-      const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
+      const { data } = window.vizContext(sky).getImageData(0, 0, sky.width, sky.height);
       return data.some((value, index) => index % 4 === 3 && value > 0);
     });
     // Let the 440 Hz tone settle, then move it to 12 kHz: the measured spectrum position must climb by at least a
@@ -251,7 +260,10 @@ try {
         const halo = document.querySelector("canvas[data-testid=audio-halo]");
         let ink = 0;
         if (halo)
-          for (const [index, value] of halo.getContext("2d").getImageData(0, 0, halo.width, halo.height).data.entries())
+          for (const [index, value] of window
+            .vizContext(halo)
+            .getImageData(0, 0, halo.width, halo.height)
+            .data.entries())
             if (index % 4 === 3) ink += value;
         const moving = [...document.querySelectorAll("[data-swarm-figure]")].filter((figure) => figure.style.transform);
         return {
@@ -347,8 +359,8 @@ try {
     // Analyser smoothing decays naturally; the UI does not invent idle bars.
     await page.waitForFunction(() => {
       const element = document.querySelector("canvas[data-testid=audio-aurora]");
-      return element
-        .getContext("2d")
+      return window
+        .vizContext(element)
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
