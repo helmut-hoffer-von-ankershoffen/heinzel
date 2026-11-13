@@ -1851,3 +1851,10 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
         "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["python"])
     )
+
+
+def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
+    lint = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]["lint"]
+    assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_release == 'true'", "run": "make test-web"}
+    # Cancelled at 5:17 under five minutes in the 0.9.40 candidates; ten is about twice the observed duration.
+    assert lint["timeout-minutes"] == 10
