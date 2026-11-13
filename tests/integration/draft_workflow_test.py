@@ -510,3 +510,46 @@ def test_owner_declines_initial_publication_and_no_daemon_job_or_external_effect
         assert not any(job.name.startswith("draft-") for job in host.kernel.resolve(CompiledJobs).jobs)
     assert not state["appends"]
     assert state["shares"] == []
+
+
+def test_a_retired_heinzel_publication_neither_compiles_nor_polls_until_restored(workflow):
+    import asyncio
+
+    from heinzel.modules.heinzel._draft_workflow_operations import workflow_jobs
+    from heinzel.modules.heinzel._draft_workflow_runtime import tick
+
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    host.crud.retire(session, "retire-draft")
+    with host.current_user.local("daemon"):
+        assert workflow_jobs(host) == []
+        with pytest.raises(HeinzelError, match="retired"):
+            asyncio.run(tick(host, session, request.request_id, host.crud.clock()))
+    assert state["appends"] == 0
+    host.crud.retire(session, "restore-draft", retired=False)
+    with host.current_user.local("daemon"):
+        assert workflow_jobs(host) == [(session, request.request_id)]
+
+
+def test_a_release_tag_that_changes_after_its_draft_is_never_appended_again(workflow, monkeypatch):
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    run_tick(host, session, request)
+    assert state["appends"] == 1
+    later = host.crud.clock() + timedelta(minutes=5)
+    monkeypatch.setattr(host.crud, "clock", lambda: later)
+    monkeypatch.setattr(host.crud.repository, "clock", lambda: later)
+    add_release(state, text="The same tag, rewritten")
+    with pytest.raises(HeinzelError, match="observed release tag changed"):
+        run_tick(host, session, request)
+    assert state["appends"] == 1
+
+
+def test_a_prompt_needs_one_name_one_changelog_and_one_document(workflow):
+    from heinzel.modules.heinzel._draft_workflow_operations import prompt_request
+
+    host, _session, _request, _state = workflow
+    with pytest.raises(HeinzelError, match="Supply one prompt"):
+        prompt_request(host.kernel, "prompt-1", "Write poems about https://example.test/changelog")

@@ -416,3 +416,25 @@ def test_disabled_consumer_performs_no_owner_or_transport_work(flow):
     with flow.current.using(None):
         assert flow.service.apply_channel_replies() == 0
     assert flow.channel.posted == []
+
+
+def test_a_retired_heinzel_applies_no_channel_reply_until_restored(flow):
+    terms = _propose(flow)
+    assert _post(flow, terms) == "delivered"
+    _reply(flow, terms)
+    flow.crud.retire(terms.session_id, "retire-channel")
+    with flow.current.local("daemon"):
+        assert flow.service.apply_channel_replies() == 0
+    assert flow.provider.writes == 0
+    flow.crud.retire(terms.session_id, "restore-channel", retired=False)
+    with flow.current.local("daemon"):
+        assert flow.service.apply_channel_replies() == 1
+
+
+def test_a_posting_names_one_thing_and_unknown_requests_are_not_invented(flow):
+    with pytest.raises(HeinzelError, match="one notice or one exact captured-write review"):
+        flow.service.propose(flow.draft.session, "post-none", "fixture")
+    with pytest.raises(HeinzelError):
+        flow.service.review(flow.draft.session, "never-proposed")
+    terms = _propose(flow)
+    assert flow.service.status(terms.session_id, terms.request_id) == "pending"

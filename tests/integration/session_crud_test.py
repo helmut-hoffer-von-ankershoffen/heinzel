@@ -613,3 +613,45 @@ def test_retire_and_restore_are_one_operation_each_on_private_http_cli_and_stdio
     anyio.run(scenario)
     listed = client.get("/heinzel/sessions", headers=auth).json()["sessions"]
     assert [(item["session_id"], item["state"]) for item in listed] == [(session, "retired")]
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "extra"),
+    [
+        ("get", "/heinzel/skill-sharing", {"request_id": "missing"}),
+        ("get", "/heinzel/skill-drafts", {}),
+        ("get", "/heinzel/notification-proposal", {"request_id": "missing"}),
+        ("get", "/heinzel/notification-proposals", {}),
+        ("get", "/heinzel/connected-read-review", {"request_id": "missing"}),
+        ("post", "/heinzel/resolve-scheduled-notification", {"request_id": "missing"}),
+        ("post", "/heinzel/revoke-connected-read-set", {"request_id": "missing"}),
+    ],
+)
+def test_private_http_reads_of_unknown_records_answer_without_inventing_them(kernel, method, path, extra):
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "unknown-records"}).json()
+    arguments = {"session_id": session["session_id"], **extra}
+    if method == "get":
+        response = client.get(path, headers=auth, params=arguments)
+    else:
+        response = client.post(path, headers=auth, json=arguments)
+    # Either an empty answer or a refusal naming the missing record; never a server error.
+    assert response.status_code < 500, response.text
+
+
+def test_private_http_refuses_the_cli_only_approval_input(kernel):
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "cli-only-proof"}).json()
+    response = client.post(
+        "/heinzel/schedule-control",
+        headers=auth,
+        json={
+            "session_id": session["session_id"],
+            "request_id": "proof-dash",
+            "expected_revision": 1,
+            "action": "activate",
+            "approval_proof": "-",
+        },
+    )
+    assert response.status_code >= 400
+    assert "only available on the CLI" in response.text

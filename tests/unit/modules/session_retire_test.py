@@ -1,10 +1,13 @@
 """Retire hides a personal Heinzel and keeps its history; restore brings it back (ADR 0049 §7)."""
 
+import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
 from heinzel import CurrentUser, HeinzelError, JobInactive
+from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -76,3 +79,24 @@ def test_a_retired_heinzel_does_not_check_in(service):
 def test_retire_needs_a_completed_heinzel_of_this_owner(service):
     with pytest.raises(HeinzelError):
         service.retire("hz-01JC0000000000000000000000", "retire-1")
+
+
+def test_a_retired_heinzel_launches_no_scheduled_turn(service):
+    created = service.new_chat("create-ed", "Ed")
+    service.retire(created.session_id, "retire-1")
+    current = service.repository.current
+    schedules = AutonomousSchedules(service, SimpleNamespace(current=current))
+    with current.local("daemon"), pytest.raises(HeinzelError, match="retired"):
+        asyncio.run(schedules.tick(created.session_id, "schedule", AT))
+
+
+def test_unknown_schedules_and_naive_occurrences_are_refused(service):
+    created = service.new_chat("create-fy", "Fy")
+    current = service.repository.current
+    schedules = AutonomousSchedules(service, SimpleNamespace(current=current))
+    with pytest.raises(HeinzelError, match="proposal is unavailable"):
+        schedules.current(created.session_id, "missing")
+    with pytest.raises(HeinzelError, match="proposal is unavailable"):
+        schedules.approved(created.session_id, "missing", validate_current=False)
+    with current.local("daemon"), pytest.raises(HeinzelError, match="occurrence time is invalid"):
+        asyncio.run(schedules.tick(created.session_id, "schedule", AT.replace(tzinfo=None)))
