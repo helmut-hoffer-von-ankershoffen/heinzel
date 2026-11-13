@@ -192,12 +192,17 @@ On the page, retired Heinzels sit under **Retired**, each with a Restore button.
 To remove a retired Heinzel for good, press **Delete for good** next to Restore and type its name. Its chats,
 schedules, drafts, notices and memory are removed from this computer; this cannot be undone. Messages it already
 posted on a channel, notifications your system already showed and drafts it placed in documents stay where they
-went. Agents cannot delete a Heinzel: there is no MCP tool for it, and on the command line it asks you to type the
-name at an interactive terminal (a script or a pipe is refused):
+went. A Heinzel cannot delete another one: there is no MCP tool for it, and on the command line it asks you to type
+the name at an interactive terminal (a script or a pipe is refused). This is not a wall against every program: one
+running as your user with a shell, such as a coding agent, can reach the app's private API like the app does. Keep
+such agents away from your Heinzels if that matters to you.
 
 ```bash
 hz heinzel delete <session-id>
 ```
+
+If a channel plugin is offline or turned off, the Heinzel is gone from hz at once and the app says which plugin still
+has to forget its requests; hz retries on its own.
 
 ### 12. Chat with it
 

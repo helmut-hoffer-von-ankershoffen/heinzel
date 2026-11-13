@@ -31,8 +31,8 @@ by hand reads as tampering.
 
 ## Decision Drivers
 
-- Irreversible on purpose: two deliberate steps, and a person in the loop for the second one: no MCP tool, and on
-  the command line only someone typing the name at an interactive terminal.
+- Irreversible on purpose: two deliberate steps, and a person in the loop for the second one: no MCP tool, a typed
+  name in the app, and on the command line only someone typing the name at an interactive terminal.
 - Never half state: a crash at any point leaves either the Heinzel or a resumable deletion, never a damaged store.
 - Gone means gone on this machine: no byte of its content stays in a file, a free SQLite page or a plugin store.
 - Owner-wide accounting stays true: budget caps and publication fences must not change because a Heinzel left.
@@ -58,15 +58,20 @@ one undoable step before the irreversible one and removes everything that holds 
 accounting stays. It covers personal Heinzels only; a team Heinzel's state on `hz/state` (ADR 0049 §10) is out of
 scope.
 
-1. **Who can delete.** In the app, through the Retired list's type-to-confirm dialog, which calls the private REST
-   operation `POST /api/heinzel/delete` with the typed name. On the command line, `hz heinzel delete SESSION_ID`
-   asks the person to type the name at an interactive terminal; it refuses when standard input is not a terminal,
-   refuses a name passed as an argument, and has no `--yes`, so a script, a pipe or an agent's shell cannot
-   delete. There is no MCP tool: the operation is declared for the CLI, web and private API heads only, and a test
-   fails if the MCP head lists it. The operation refuses unless the Heinzel's latest lifecycle event is
-   `heinzel.retired` and the typed name equals its current name after Unicode NFC normalisation, so no head can
-   skip a check. The private REST API remains reachable by anything holding the owner's app token, as every
-   private operation is.
+1. **Who can delete.** The boundary, stated plainly:
+   - The CLI is interactive only. `hz heinzel delete SESSION_ID` asks for the name at an interactive terminal; it
+     refuses when standard input is not a terminal, refuses a name passed as an argument (the option is hidden from
+     its help) and has no `--yes`. A script or a pipe cannot answer it. Resuming a started deletion asks nothing.
+   - MCP does not expose delete: the operation is declared for the CLI, web and private API heads only, and a test
+     fails if the stdio, HTTP or check-in MCP head lists it.
+   - The app's Retired list opens a type-to-confirm dialog; it calls the private REST operation
+     `POST /api/heinzel/delete` with the name the person typed, which needs the private UI token.
+   - Not a boundary: an agent running as the same operating-system user with a shell can obtain that token (for
+     example through `hz ui open`) and call the private API. Separating a person from such an agent needs
+     operating-system isolation, which is out of scope here. The privacy page and the user guide say so.
+
+   The operation refuses unless the Heinzel's latest lifecycle event is `heinzel.retired` and the typed name equals
+   its current name after Unicode NFC normalisation, so no head can skip a check.
 2. **What is removed.** The main journal with every turn body (messages, replies, tool activity, drafts, lessons and
    what it remembered, which lives in its outputs); the control journal (profile, contract versions, schedules and
    their proposals, draft workflows and approvals, channel requests, retire and restore); the channel-processing
@@ -77,24 +82,29 @@ scope.
    notices were removed, never which); the plugin's copy of each approval request it posted (statement 4); and the
    in-memory search index.
 3. **What is kept.** In the owner catalog: the original `creation.reserved` record (request id, session id, a digest
-   of the creation payload), the `creation.deleting` intent (session id, and channel names with the references of
-   posted approval requests), one `creation.forgotten` record per request a plugin forgot (session id, channel name,
-   reference) and the `creation.deleted` tombstone (session id; the record's time). In the owner-wide
-   budget and subscription ledgers and draft-target fences: existing records naming the session id with amounts,
-   token envelopes and digests, and no text. Not recalled, because they left hz: messages already posted on a
-   channel, notices already shown by macOS Notification Center, and drafts already placed in a document. The user
-   guide, the privacy page and the CLI help say so.
-4. **Channel plugins forget.** `ApprovalChannel.forget(reference)` is an optional hook with a no-op default: it
-   deletes every copy the plugin keeps of that posted request, locally and offline, and is idempotent. Delete records
-   each posted approval's channel and reference in the intent, so the map survives the control journal. Before the
-   intent, delete refuses only when a plugin that holds posts is not loaded or is turned off, naming the plugin and
-   the fix; being offline or signed out never refuses. While finishing, hz first calls
-   `settle(reference, "superseded")` so no Approve button stays live; that is a network call, best effort, bounded by
-   the plugin's own timeouts, its failure logged and never blocking. Then it calls `forget(reference)`. heinzel-slack
-   is the first implementer, released with this change: its `forget` deletes the request's rows, preview, detail and
-   audit lines with `secure_delete` on, then runs `VACUUM` and `PRAGMA wal_checkpoint(TRUNCATE)` (its store uses
-   WAL, and older row versions sit in free pages and WAL frames), and the plugin carries its own canary test with a
-   positive control. That is the acceptance condition for the heinzel-plugins head.
+   of the creation payload); the `creation.deleting` intent (session id, and the channel name, request id and, when
+   known, reference of each approval request); one `creation.settled` and one `creation.forgotten` record per
+   request (session id, channel name, request id); and the `creation.deleted` tombstone (session id; the record's
+   time). In the owner-wide budget and subscription ledgers and draft-target fences: existing records naming the
+   session id with amounts, token envelopes and digests, and no text. Not recalled, because they left hz: messages
+   already posted on a channel, notices already shown by macOS Notification Center, and drafts already placed in a
+   document. The user guide, the privacy page and the CLI help say so.
+4. **Channel plugins forget.** `ApprovalChannel.forget(request_id, reference)` is an optional hook with a no-op
+   default: it deletes every copy the plugin keeps of one approval request, locally and offline, is idempotent and
+   treats an unknown request as forgotten. `request_id` is what hz passed to `post`; `reference` is the receipt's
+   reference, or None when no receipt was recorded, because a plugin may store its copy before the post returns.
+   Delete records, in the intent, the channel and request id of every approval it proposed on a channel, with the
+   reference when known, so the map survives the control journal; a proposal whose body is no longer retained still
+   counts when its receipt names the channel. Before the intent, delete refuses only when a plugin that holds
+   requests is not loaded or is turned off, naming the plugin and the fix; being offline or signed out never refuses.
+   While finishing, hz calls `settle(reference, "superseded")` once per posted request so no Approve button stays
+   live: a network call, best effort, bounded by the plugin's own timeouts, recorded as a content-free
+   `creation.settled` record whatever it answered, never repeated. Then it calls `forget(request_id, reference)`.
+   heinzel-slack is the first implementer and ships with or before this change: its `forget` deletes the request's
+   rows, preview, detail and audit lines with `secure_delete` on, then runs `VACUUM` and
+   `PRAGMA wal_checkpoint(TRUNCATE)` (its store uses WAL, and older row versions sit in free pages and WAL frames),
+   and the plugin carries its own canary test with a positive control. That is the acceptance condition for the
+   heinzel-plugins head.
 5. **Locks and checks.** Delete takes the main writer and the channel-processing writer without waiting (a running
    turn or a channel reply in flight refuses: "it is finishing; try again in a moment"), then the control writer,
    then the catalog writer for the intent; this is the order turns use. Under these locks it checks retired, the
@@ -103,16 +113,26 @@ scope.
    each chat's own lock, without waiting.
 6. **Order, crash safety and resume.** After `creation.deleting`, every read and write of the session is refused and
    it leaves every list. Finishing removes hz's own content first: the runner chats, the notices and archived
-   notices, then the channel-processing, control and main folders, and the search index. The session store removes
-   a folder by renaming it to a hidden `.removed-<id>` name its index ignores, deleting its index rows, running
-   `VACUUM`, then deleting the renamed folder; each step is a no-op when already done, and `VACUUM` runs on every
-   attempt, not once. Then each plugin forgets its posts; every success is recorded as a content-free
-   `creation.forgotten` record, and the references stay in the intent until each forget succeeds. A plugin that
-   cannot forget yet never holds hz's removal back: delete answers `forgetting` with the plugins still waiting, the
-   app says "deleted here; <plugin> still has to forget its requests", and the next list retries. Last comes
-   `creation.deleted`. A crash after the intent leaves a pending deletion that the next delete or list of Heinzels
-   finishes; a crash before it leaves the retired Heinzel untouched. Deleting again returns the same result without
-   the name check.
+   notices, then the channel-processing, control and main folders, and the search index. Each removal survives a
+   crash at any point:
+   - The session store renames a folder to a hidden `.removed-<id>` name its index ignores, deletes its index rows,
+     runs `VACUUM`, then deletes the renamed folder; each step is a no-op when done, and `VACUUM` runs on every
+     attempt, not once.
+   - The runner moves each chat folder, under its lock, out of the chat root into `chat-removed/`, where no reader
+     looks, then deletes it; every attempt sweeps `chat-removed/` first. A chat whose file names the Heinzel but
+     cannot be read keeps the deletion pending instead of being skipped.
+   - A recovery archive's receipt first records the pending redaction with the new file's digest, then the archive
+     is rewritten, then the receipt is bound to it; a retry that finds the pending digest on disk finishes the
+     receipt.
+
+   If `system.runner` or `system.notify` is turned off, delete refuses up front, and a deletion already started
+   stays `forgetting`, naming the module, until it is on again. Then each plugin forgets its requests; every success
+   is recorded as a content-free `creation.forgotten` record, and the request stays in the intent until it is
+   forgotten. A module or plugin that cannot forget yet never holds hz's own removal back: delete answers
+   `forgetting` with what is still waiting, the app says so, and a list retries with backoff from a minute to an
+   hour. Last comes `creation.deleted`; it is never written while anything waits. A crash after the intent leaves a
+   pending deletion that the next delete or list finishes; a crash before it leaves the retired Heinzel untouched.
+   Deleting again returns the same result without asking for the name.
 7. **Late writers and the running daemon.** Every session writer, and every shared ledger writer, re-checks the
    catalog after taking its lock; a writer that waited past the intent refuses before writing and removes a folder
    it recreated. A store writer also refuses a lock won on a folder that was renamed away. Daemon loops read the
