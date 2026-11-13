@@ -55,6 +55,18 @@ test("a pending owned fetch may be disposed only during deliberate teardown", as
   );
 });
 
+test("a fetched response may be disposed before it is fulfilled only during deliberate teardown", async () => {
+  const disposed = (closing) => {
+    const { route } = request(`${origin}/api/state`, async () => ({ status: () => 200 }));
+    route.fulfill = async () => {
+      throw new Error("route.fulfill: Fetch response has been disposed");
+    };
+    return guardGalleryRequest(route, origin, [], () => closing);
+  };
+  await disposed(true);
+  await assert.rejects(disposed(false), /Fetch response has been disposed/);
+});
+
 test("external requests and local redirects remain recorded and blocked", async () => {
   const unexpected = [];
   const external = request("https://example.invalid/", () => assert.fail("must not fetch"));
