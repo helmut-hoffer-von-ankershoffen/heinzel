@@ -56,6 +56,37 @@ it("gives every footer pane one structure: content, a divider, then one row of a
   expect(freeform).toEqual(FREEFORM);
 });
 
+// Files that draw a footer pane may draw an action row of their own only for something that is not a footer pane,
+// with the reason; a footer pane's one row is FooterItem's, from its `actions`. This list only shrinks.
+const OWN_ROWS: Record<string, { count: number; reason: string }> = {
+  "../components/Contributions.tsx": { count: 2, reason: "the sidebar status popover and the Today widget card" },
+  "../layout/PluginsPending.tsx": {
+    count: 1,
+    reason: "the inline Restart and apply card on the Plugins settings page",
+  },
+};
+// Raw links in files that draw a footer pane: only the version pane's release link (freeform). Only shrinks.
+const RAW_LINKS: Record<string, number> = {
+  "../layout/StatusBar.tsx": 1,
+};
+
+it("keeps footer pane actions in the frame's one row: no own row, no raw link, no underlined text", () => {
+  const rows: Record<string, number> = {};
+  const links: Record<string, number> = {};
+  const underlinedFiles: string[] = [];
+  for (const [file, source] of sources) {
+    if (!source.includes("<FooterItem") || file.endsWith("/FooterItem.tsx")) continue;
+    const own = openingTags(source, "PaneActions").length;
+    if (own) rows[file] = own;
+    const raw = openingTags(source, "a").length;
+    if (raw) links[file] = raw;
+    if (/className=(?:"[^"]*|\{[^}]*)(?<![\w:-])underline\b/.test(source)) underlinedFiles.push(file);
+  }
+  expect(rows).toEqual(Object.fromEntries(Object.entries(OWN_ROWS).map(([file, entry]) => [file, entry.count])));
+  expect(links).toEqual(RAW_LINKS);
+  expect(underlinedFiles).toEqual([]);
+});
+
 it("has no withText: the first action of a row leads with words, the rest are icons", () => {
   const found = sources.filter(([, source]) => /\swithText=/.test(source)).map(([file]) => file);
   expect(found).toEqual([]);

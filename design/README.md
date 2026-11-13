@@ -197,14 +197,22 @@ top-right on one card and bottom-left on the next; a wizard that puts Next befor
 - `web/src/components/PaneActions.tsx` holds the one action row (`PaneActions`, `align`, `words`), the one action
   (`PaneAction`, `primary`, `destructive`, `ghost`, `to`, `href`) and the title row with chrome (`PaneTitle chrome`).
   `FooterItem actions={…}` draws the row; plugins get the same components from the SDK and the same renderer for data.
+- `FooterItem` is the one footer pane frame: content, then its divider and its one row from `actions`. A component
+  inside a pane hands its actions to that row instead of drawing its own (`ContributionToggle frame`: a provider's
+  switch gives its Share, Copy link, Open and Retry to the frame); a plugin's status item is data, so Core draws the
+  same frame for every plugin pane.
 - In development and tests, every open container is checked: a button or link outside the row, content after it, a
   second row, an action that is not a `PaneAction`, one without an icon or a name, words on more than the lead, and
-  actions on more than one line fail loudly.
+  actions on more than one line fail loudly. An open footer pane also fails on an action row inside its content and
+  on underlined text (`footerPaneProblems`).
 - `web/src/test/links-standards.test.ts` fails on a link tag (`a`, `Link`, `NavLink`, `role="link"`) in a file that is
   not listed, on any link look (`underline`, `text-primary`, `variant="link"`) on a control, and on `data-prose-link`
   outside prose. Its list of files only shrinks; a row marked `CONVERT` leaves it with its conversion.
 - `web/src/lib/paneActionsStandards.test.ts` fails on a hand-drawn `border-t`
   row, a right-aligned button row outside `PaneActions`, an icon button without a name, a raw `<button>` outside the
-  listed kinds (switch, tab, menu row, nav) and an unlisted `freeform` container.
+  listed kinds (switch, tab, menu row, nav) and an unlisted `freeform` container; in a file that draws a footer pane
+  also on an unlisted own `PaneActions` row, a raw link (only the version pane's) and an `underline` class.
 - The mobile browser sweep opens every footer pane, one dialog and one Today card at phone width on Chromium and
-  WebKit and asserts one row, a lead with words or a declared fallback, and 44px targets.
+  WebKit and asserts one row, a lead with words or a declared fallback, and 44px targets. `web/e2e/footer-panes.mjs`
+  mounts Core's and a plugin's footer panes at 375px on both engines and asserts the frame's row after all content, a
+  divider, the same actions, no action or underlined text in the content, 44px targets and axe WCAG 2.2 AA.

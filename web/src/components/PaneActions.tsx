@@ -39,11 +39,14 @@ export function PaneActions({
   className,
   align = "start",
   words = "lead",
+  frame = false,
 }: {
   children?: ReactNode;
   className?: string;
   align?: "start" | "end";
   words?: "lead" | "all";
+  /** The row a footer pane's frame draws (FooterItem); a row drawn inside a pane's content is not. */
+  frame?: boolean;
 }) {
   // Only PaneAction may sit in the row, so a text link or a differently sized button cannot creep in beside them:
   // development and tests fail loudly, a release drops the stranger rather than the whole pane.
@@ -81,6 +84,7 @@ export function PaneActions({
     <fieldset
       ref={row}
       data-pane-actions=""
+      data-pane-frame={frame ? "" : undefined}
       data-words={mode}
       aria-label={t("pane.actions")}
       className={cn(

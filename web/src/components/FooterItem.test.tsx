@@ -3,8 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Play } from "lucide-react";
 import { afterEach, expect, it, vi } from "vitest";
-import { FooterItem, paneStructureProblems } from "./FooterItem";
-import { PaneAction } from "./PaneActions";
+import { FooterItem, footerPaneProblems, paneStructureProblems } from "./FooterItem";
+import { PaneAction, PaneActions } from "./PaneActions";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -205,4 +205,38 @@ it("fails loudly in development when an open pane draws a button in its content,
   );
   await user.click(screen.getByRole("button", { name: "Version" }));
   expect(screen.getByRole("link", { name: "Notes" })).toBeVisible();
+});
+
+it("keeps a footer pane's one row in its frame and underlines nothing", () => {
+  const icon = '<svg aria-hidden="true"></svg>';
+  const pane = document.createElement("section");
+  const row = (frame: boolean) =>
+    `<fieldset data-pane-actions=""${frame ? ' data-pane-frame=""' : ""} data-words="lead">` +
+    `<button type="button" data-pane-action="text">${icon}Open</button></fieldset>`;
+  pane.innerHTML = `<p>Facts</p>${row(true)}`;
+  expect(footerPaneProblems(pane)).toEqual([]);
+  // A row the content draws for itself (a switch's Share and Open) sits indented, apart from the frame's.
+  pane.innerHTML = `<div class="px-1.5"><p>Facts</p>${row(false)}</div>`;
+  expect(footerPaneProblems(pane)).toEqual([
+    'an action row inside the content ("Open"); pass its actions to FooterItem',
+  ]);
+  pane.innerHTML = `<p class="text-xs underline">Read more</p><p class="hover:underline no-underline">Fine</p>${row(true)}`;
+  expect(footerPaneProblems(pane)).toEqual(['"Read more" is underlined like a text link']);
+});
+
+it("fails loudly in development when an open pane draws its own action row in the content", async () => {
+  const user = userEvent.setup();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const nested = (
+    <FooterItem label="Nested" state="ok" text="Nested">
+      <PaneActions>
+        <PaneAction icon={Play} onClick={() => undefined}>
+          Run
+        </PaneAction>
+      </PaneActions>
+    </FooterItem>
+  );
+  render(nested);
+  await expect(user.click(screen.getByRole("button", { name: "Nested" }))).rejects.toThrow(/inside the content/);
+  errors.mockRestore();
 });

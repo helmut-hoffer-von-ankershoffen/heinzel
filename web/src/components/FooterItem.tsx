@@ -9,7 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility, useOpenFooterOverflow } from "./FooterLayout";
-import { actionStructureProblems, assertActionStructure, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
+import { actionStructureProblems, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -172,7 +172,7 @@ export function FooterItem({
     const mutations = new MutationObserver((records) => {
       // Ignore placement's own writes; content changes still need synchronous measurement.
       if (records.some((record) => record.target !== element || record.attributeName !== "style")) {
-        if (structured.current) assertActionStructure(element);
+        if (structured.current) assertFooterPane(element);
         place();
       }
     });
@@ -191,7 +191,7 @@ export function FooterItem({
     };
   }, [open, align]);
   useLayoutEffect(() => {
-    if (open && structured.current && pane.current) assertActionStructure(pane.current);
+    if (open && structured.current && pane.current) assertFooterPane(pane.current);
     if (open) position.current?.();
   });
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -302,6 +302,7 @@ export function FooterItem({
           >
             <PaneLeave.Provider value={close}>
               <section
+                data-footer-pane=""
                 aria-label={paneName ?? label}
                 className={cn(
                   "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
@@ -310,7 +311,9 @@ export function FooterItem({
               >
                 {!hideHeading && <PaneTitle>{label}</PaneTitle>}
                 {typeof children === "function" ? children(close) : children}
-                <PaneActions {...actionRow}>{actions}</PaneActions>
+                <PaneActions frame {...actionRow}>
+                  {actions}
+                </PaneActions>
               </section>
             </PaneLeave.Provider>
           </div>,
@@ -320,5 +323,32 @@ export function FooterItem({
   );
 }
 
-/** The action structure check, by its footer-pane name for the tests that already use it. */
+/** The action structure check of any container with one action row (panes, popovers, cards). */
 export const paneStructureProblems = actionStructureProblems;
+
+/** A class list with Tailwind's `underline` (not `no-underline`, not a variant such as `hover:underline`). */
+const UNDERLINED = /(?:^|\s)underline(?:\s|$)/;
+
+/**
+ * A footer pane's structure (design/README.md, "Actions"): content, then the frame's divider and one row of icon+text
+ * or icon-only buttons. Beyond the shared action rules, the row is the one FooterItem draws from its `actions` (a row
+ * drawn inside the content sits indented and can stack under another), and no text is underlined like a link.
+ */
+export function footerPaneProblems(container: Element): string[] {
+  const problems = actionStructureProblems(container);
+  for (const row of container.querySelectorAll("[data-pane-actions]:not([data-pane-frame])"))
+    problems.push(
+      `an action row inside the content ("${row.textContent?.trim() || row.getAttribute("aria-label")}"); pass its actions to FooterItem`,
+    );
+  for (const element of container.querySelectorAll("[class]"))
+    if (UNDERLINED.test(element.getAttribute("class") ?? ""))
+      problems.push(`"${element.textContent?.trim()}" is underlined like a text link`);
+  return problems;
+}
+
+/** Throws, in development and tests only, when an open footer pane breaks its structure. */
+function assertFooterPane(container: Element) {
+  if (!import.meta.env.DEV) return;
+  const problems = footerPaneProblems(container);
+  if (problems.length) throw new Error(`Action structure (design/README.md, "Actions"): ${problems.join("; ")}`);
+}
