@@ -22,7 +22,7 @@ from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.heads.cli._serve import UI_STOPPED
 from heinzel.heads.web import _terminal
-from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
+from heinzel.heads.web._shutdown import GRACE_SECONDS, OVERDUE, STOP_SECONDS, Stopping
 
 pytestmark = [
     pytest.mark.integration,
@@ -42,6 +42,22 @@ sys.argv = ["hz", "ui", "serve", "--no-browser", "--port", "0"]
 main()
 """
 """`hz ui` itself, with the built app swapped for a made-up one, so the test needs no `make web-build`."""
+BUSY_SCRIPT = """
+import socket, sys, time
+import uvicorn
+from fastapi import FastAPI
+from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping, server
+app = FastAPI()
+@app.get("/busy")
+def busy():
+    time.sleep(60)  # a plain `def` endpoint runs in a worker thread that uvicorn can't cancel
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+sock.listen()
+print(sock.getsockname()[1], flush=True)
+server(uvicorn.Config(app, lifespan="off", timeout_graceful_shutdown=GRACE_SECONDS), Stopping()).run(sockets=[sock])
+"""
+"""The server `hz ui` runs, with one request whose worker thread is busy for a minute."""
 
 
 @pytest.fixture
@@ -157,3 +173,28 @@ def test_a_stream_opened_after_the_server_stopped_ends_at_once(make_kernel):
     response = client.get(STREAM, headers={"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 200
     assert response.text == "retry: 3000\n\n"
+
+
+@pytest.mark.timeout(60)
+def test_ctrl_c_stops_within_the_deadline_while_a_request_is_still_running():
+    process = subprocess.Popen(
+        [sys.executable, "-c", BUSY_SCRIPT], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert process.stdout
+        port = int(process.stdout.readline())
+        threading.Thread(
+            target=lambda: httpx.get(f"http://127.0.0.1:{port}/busy", timeout=STOP_SECONDS * 4), daemon=True
+        ).start()
+        time.sleep(0.5)  # the request is in its worker thread
+        started = time.monotonic()
+        process.send_signal(signal.SIGINT)
+        _, err = process.communicate(timeout=STOP_SECONDS * 3)
+        took = time.monotonic() - started
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+    assert STOP_SECONDS - 1 < took < STOP_SECONDS + 2  # the deadline, not the minute the request would take
+    assert process.returncode == 0  # a stop asked for is a normal end, never a crash
+    assert err.strip().splitlines()[-1] == OVERDUE
