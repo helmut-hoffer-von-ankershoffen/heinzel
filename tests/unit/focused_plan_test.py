@@ -1,5 +1,6 @@
 """Pre-open planning binds the eventual GitHub merge without guessing its commit ID."""
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -238,3 +239,56 @@ def test_reviewed_plan_refuses_the_whole_vitest_suite_mixed_or_outside_the_web_l
 ):
     with pytest.raises(focused_plan.CandidateError):
         focused_plan._selections({"selection": selection}, MERGE)
+
+
+def test_reviewed_plan_accepts_owning_desktop_tests_and_the_whole_desktop_suite(focused_plan, git_objects):
+    paths = ["desktop/test/shutdown.test.js", "desktop/test/window.test.js"]
+    assert focused_plan._selections({"selection": {"desktop": paths}}, MERGE) == {"desktop": tuple(paths)}
+    whole = focused_plan._selections({"selection": {"desktop": [focused_plan.DESKTOP_ALL]}}, MERGE)
+    assert whole == {"desktop": ("desktop/ALL",)}
+    assert focused_plan.LANES["desktop"] == ("ubuntu-24.04", "3.14", "node")
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"desktop": ["desktop/src/shutdown.js"]},
+        {"desktop": ["desktop/managed/test/backend.test.ts"]},
+        {"desktop": ["desktop/test/shutdown.test.ts"]},
+        {"desktop": ["desktop/ALL", "desktop/test/window.test.js"]},
+        {"desktop": ["web/ALL"]},
+        {"web": ["desktop/ALL"]},
+        {"managed": ["desktop/test/window.test.js"]},
+    ],
+)
+def test_reviewed_plan_refuses_desktop_selections_outside_the_desktop_suite(focused_plan, git_objects, selection):
+    with pytest.raises(focused_plan.CandidateError):
+        focused_plan._selections({"selection": selection}, MERGE)
+
+
+@pytest.mark.parametrize(
+    ("path", "selection", "error"),
+    [
+        ("desktop/src/main.js", {"python": [TEST_PATH]}, "desktop unit suite"),
+        ("desktop/test/window.test.js", {"python": [TEST_PATH]}, "desktop unit suite"),
+        ("desktop/src/main.js", {"python": [TEST_PATH], "desktop": ["desktop/ALL"]}, None),
+        ("desktop/managed/src/backend.ts", {"python": [TEST_PATH]}, "managed production"),
+        ("desktop/README.md", {"python": [TEST_PATH]}, None),
+    ],
+)
+def test_a_desktop_change_requires_the_desktop_unit_suite(focused_plan, git_objects, path, selection, error):
+    diff = DIFF + f":100644 100644 {BLOB} {BLOB} M\0{path}\0".encode()
+    source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    source = dataclasses.replace(source, raw_diff=diff)
+    plan |= {
+        "diff_sha256": hashlib.sha256(diff).hexdigest(),
+        "changed": {SOURCE_PATH: "A", path: "M"},
+        "selection": selection,
+        "case_sha256": dict.fromkeys(selection, "f" * 64),
+    }
+    registry = json.dumps({f"pull_request:{HEAD}": plan})
+    if error is None:
+        assert isinstance(focused_plan.resolve(source, MERGE, registry), focused_plan.Scope)
+    else:
+        with pytest.raises(focused_plan.CandidateError, match=error):
+            focused_plan.resolve(source, MERGE, registry)

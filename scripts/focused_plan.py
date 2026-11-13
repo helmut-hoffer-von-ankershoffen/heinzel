@@ -49,9 +49,20 @@ LANES = {
     "macos": ("macos-latest", "3.14", "pytest"),
     "macos-notifier": ("macos-latest", "3.14", "pytest"),
     "managed": ("ubuntu-24.04", "3.14", "managed"),
+    "desktop": ("ubuntu-24.04", "3.14", "node"),
     "web": ("ubuntu-24.04", "3.14", "vitest"),
     "browser": ("ubuntu-24.04", "3.14", "e2e"),
     "macos-browser": ("macos-latest", "3.14", "e2e"),
+}
+# The whole desktop unit suite (desktop/test/*.test.js); like VITEST_ALL it names no file and stands alone.
+DESKTOP_ALL = "desktop/ALL"
+WHOLE_SUITES = {"web": VITEST_ALL, "desktop": DESKTOP_ALL}
+PREFIXES = {
+    "pytest": "tests/",
+    "vitest": "web/",
+    "e2e": "tests/e2e/",
+    "managed": "desktop/managed/test/",
+    "node": "desktop/test/",
 }
 ARTIFACT_PREFIX = "focused-pr-evidence"
 PLAN_VARIABLE = "FOCUSED_CI_PLANS"
@@ -297,6 +308,11 @@ def web_production(path: str) -> bool:
     return path.startswith("web/src/") and not re.search(r"\.(?:test|spec)\.[cm]?[jt]sx?$", path)
 
 
+def desktop_unit(path: str) -> bool:
+    """Recognize the desktop app's own files, which its Node unit suite (desktop/test) tests."""
+    return path.startswith("desktop/") and not path.startswith("desktop/managed/") and not path.endswith(".md")
+
+
 def _path(path: object) -> bool:
     return isinstance(path, str) and PATH.fullmatch(path) is not None and not {".", ".."}.intersection(path.split("/"))
 
@@ -356,14 +372,15 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
     selected = {}
     for lane, tests in rows.items():
         kind = LANES[lane][2]
-        prefix = {"pytest": "tests/", "vitest": "web/", "e2e": "tests/e2e/", "managed": "desktop/managed/test/"}[kind]
+        prefix = PREFIXES[kind]
         limit = PYTHON_CI_MAX_IDS if lane == "python" else MAX_IDS
         require(isinstance(tests, list) and 0 < len(tests) <= limit, f"empty or broad focused lane {lane}")
         require(len(set(tests)) == len(tests), f"duplicate selection in {lane}")
-        if VITEST_ALL in tests:
-            # The whole Vitest suite: only alone, only in the web lane; it names no file, so no blob to pin.
-            require(lane == "web" and tests == [VITEST_ALL], "the whole Vitest suite is only a web lane on its own")
-            selected[lane] = (VITEST_ALL,)
+        whole = [owner for owner, token in WHOLE_SUITES.items() if token in tests]
+        if whole:
+            # A whole suite: only alone, only in its own lane; it names no file, so no blob to pin.
+            require(whole == [lane] and tests == [WHOLE_SUITES[lane]], "a whole suite is only its own lane, alone")
+            selected[lane] = (WHOLE_SUITES[lane],)
             continue
         for test in tests:
             path = test.split("::", 1)[0]
@@ -373,6 +390,7 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
             require(
                 (kind == "vitest" and path == test and re.search(r"\.(?:test|spec)\.[cm]?[jt]sx?$", path))
                 or (kind == "managed" and path == test and path.endswith(".test.ts"))
+                or (kind == "node" and path == test and path.endswith(".test.js"))
                 or (kind in {"pytest", "e2e"} and path.endswith("_test.py")),
                 "focused selections require owning test files or exact test node IDs",
             )
@@ -481,6 +499,8 @@ def _scope(  # noqa: PLR0913 - the reader separately supplies the current protec
     )
     if any(path.startswith("desktop/managed/src/") for path in changes):
         require("managed" in selection, "managed production requires reviewed owning Node tests")
+    if any(desktop_unit(path) for path in changes):
+        require("desktop" in selection, "a desktop change requires the reviewed desktop unit suite")
     cases = plan["case_sha256"]
     execution = plan["execution"]
     require(

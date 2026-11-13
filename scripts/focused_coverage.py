@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts import focused_job
-from scripts.focused_plan import LANES, Scope, current_scope, git
+from scripts.focused_plan import DESKTOP_ALL, LANES, Scope, current_scope, git
 from scripts.release_candidate import require, unique_object
 
 COVERAGE_VERSION = "7.17.0"
@@ -285,22 +285,47 @@ def _managed_commands(tests: tuple[str, ...], out: Path) -> list[list[str]]:
     ]
 
 
+def _desktop_commands(tests: tuple[str, ...], out: Path, root: Path = Path()) -> list[list[str]]:
+    """Install the desktop app's locked dependencies without its Electron download, then run its Node unit tests."""
+    tool = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "pnpm", "--dir", "../desktop"]
+    if tests == (DESKTOP_ALL,):
+        tests = tuple(sorted(path.relative_to(root).as_posix() for path in root.glob("desktop/test/*.test.js")))
+    require(bool(tests), "the desktop unit suite has no test files")
+    paths = [test.removeprefix("desktop/") for test in tests]
+    return [
+        ["make", "desktop-unit-setup"],
+        [
+            *tool,
+            "exec",
+            "node",
+            "--test",
+            "--test-reporter=junit",
+            f"--test-reporter-destination={out / JUNIT}",
+            *paths,
+        ],
+    ]
+
+
+def _lane_commands(kind: str, lane: str, selected: tuple[str, ...], out: Path) -> list[list[str]]:
+    if kind == "managed":
+        return _managed_commands(selected, out)
+    if kind == "node":
+        return _desktop_commands(selected, out)
+    return focused_job.plan(
+        kind,
+        " ".join(selected),
+        out,
+        max_ids=focused_job.PYTHON_CI_MAX_IDS if lane == "python" else focused_job.MAX_IDS,
+    )
+
+
 def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None:
     """Execute the owning focused-job selection and prepare one exact-attempt artifact."""
     require(lane in scope.selection and run > 0 and attempt == 1, "unexpected focused lane or run attempt")
     out.mkdir(parents=True, exist_ok=False)
     kind = LANES[lane][2]
     selected = scope.selection[lane]
-    commands = (
-        _managed_commands(selected, out)
-        if kind == "managed"
-        else focused_job.plan(
-            kind,
-            " ".join(selected),
-            out,
-            max_ids=focused_job.PYTHON_CI_MAX_IDS if lane == "python" else focused_job.MAX_IDS,
-        )
-    )
+    commands = _lane_commands(kind, lane, selected, out)
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
     if lane == "python315":

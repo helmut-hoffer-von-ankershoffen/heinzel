@@ -236,6 +236,53 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
     ]
 
 
+def test_desktop_runner_installs_the_locked_test_dependencies_and_runs_only_the_selection(coverage, tmp_path):
+    commands = coverage._desktop_commands(("desktop/test/shutdown.test.js",), tmp_path)
+    assert commands[0] == ["make", "desktop-unit-setup"]
+    assert commands[-1][-6:] == [
+        "exec",
+        "node",
+        "--test",
+        "--test-reporter=junit",
+        f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
+        "test/shutdown.test.js",
+    ]
+    assert commands[-1][:8] == [
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/web_build.py",
+        "pnpm",
+        "--dir",
+        "../desktop",
+    ]
+
+
+def test_desktop_runner_expands_the_whole_suite_from_the_checkout(coverage, tmp_path):
+    (tmp_path / "desktop/test").mkdir(parents=True)
+    for name in ("b.test.js", "a.test.js", "helper.js"):
+        (tmp_path / "desktop/test" / name).write_text("")
+    commands = coverage._desktop_commands(("desktop/ALL",), tmp_path / "out", tmp_path)
+    assert commands[-1][-2:] == ["test/a.test.js", "test/b.test.js"]
+    from scripts.release_candidate import CandidateError
+
+    with pytest.raises(CandidateError, match="no test files"):
+        coverage._desktop_commands(("desktop/ALL",), tmp_path, tmp_path / "empty")
+
+
+def test_the_desktop_lane_runs_the_desktop_runner(coverage, scope, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    scope = replace(scope, selection={"desktop": ("desktop/test/window.test.js",)})
+    calls = []
+    monkeypatch.setattr(coverage, "_execute", lambda command, _env: calls.append(command))
+    monkeypatch.setattr(coverage, "evidence", lambda *_args: {})
+    coverage.run_lane(scope, "desktop", tmp_path / "out", 1, 1)
+    assert calls[0] == ["make", "desktop-unit-setup"]
+    assert calls[-1][-1] == "test/window.test.js"
+
+
 @pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
 def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
     from dataclasses import replace

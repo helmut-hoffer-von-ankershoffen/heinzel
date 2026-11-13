@@ -94,8 +94,22 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
     (
         "desktop",
         ["desktop/src/main.js", "desktop/test/window.test.js"],
-        {"full": False, "jobs_has": ["electron"], "jobs_not": ["test-linux", "lint"]},
+        {
+            "full": False,
+            "jobs_has": ["electron"],
+            "jobs_not": ["test-linux", "lint"],
+            "desktop_has": ["desktop/test/window.test.js"],
+        },
     ),
+    (
+        "desktop source selects the node tests that import it",
+        ["desktop/src/shutdown.js"],
+        {"full": False, "desktop": ["desktop/test/shutdown.test.js", "desktop/test/window.test.js"]},
+    ),
+    ("desktop lockfile selects the whole desktop suite", ["desktop/pnpm-lock.yaml"], {"desktop": ["ALL"]}),
+    ("a deleted desktop test selects the whole desktop suite", ["desktop/test/gone.test.js"], {"desktop": ["ALL"]}),
+    ("managed backend is not the desktop suite", ["desktop/managed/src/backend.ts"], {"desktop": []}),
+    ("desktop readme runs no desktop test", ["desktop/README.md"], {"desktop": []}),
     ("conftest = full", ["tests/conftest.py"], {"full": True}),
     ("unknown path = full", ["something/new.txt"], {"full": True}),
     (

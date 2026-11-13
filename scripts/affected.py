@@ -20,7 +20,8 @@ and any path the map does not know select the FULL set. Everything else narrows:
                                  graph) plus the tests named after it, the Linux test cell, coverage and the E2E lanes
                                  the head needs; macOS smoke only for native paths
   tests/*                     -> the changed test files themselves (and their lane)
-  desktop/                    -> Electron; plugins/ -> the source plugin row
+  desktop/                    -> Electron, and the desktop unit tests (node --test) that import or name the change;
+                                 the whole desktop suite when no test owns it; plugins/ -> the source plugin row
 The repo is the checkout this script lives in unless --repo names another; the map reads that checkout's own Makefile
 lanes and tests, so it follows the repo rather than a copy of its rules. Advisory in CI: the ci.yml `changes` job
 publishes the selection in shadow mode and no job is skipped by it. Exit 0; 2 when the repo is unusable.
@@ -87,6 +88,10 @@ SITE_TEST_FILES = re.compile(
     r"^tests/unit/(?:site_[a-z_]+|docs_style|documentation|standards|repository|pypi_description|readme_diagnostics)_test\.py$"
 )
 DESKTOP = re.compile(r"^desktop/")
+# The desktop app's own files (not the managed backend, which has its own lane; not its Markdown).
+DESKTOP_UNIT = re.compile(r"^desktop/(?!managed/)(?!.*\.md$)")
+DESKTOP_LOCKED = re.compile(r"^desktop/(?:package\.json|pnpm-lock\.yaml)$")  # every test depends on them
+DESKTOP_TEST = re.compile(r"^desktop/test/[^/]+\.test\.js$")
 PLUGINS = re.compile(r"^plugins/")
 WEB_SRC = re.compile(r"^web/src/.*\.(?:ts|tsx|css)$")
 WEB_E2E = re.compile(r"^web/(?:e2e/.*\.(?:mjs|html|tsx)|public/.*)$")
@@ -181,6 +186,29 @@ class Repo:
                 if re.fullmatch(r"tests/(?:unit|integration)/.*_test\.py", t) and t.endswith(f"/{stem}_test.py")
             }
         return sorted(t for t in tests if (self.root / t).is_file())
+
+    # -- desktop --------------------------------------------------------------------------------------------------
+    @functools.cached_property
+    def desktop_tests(self) -> dict[str, str]:
+        """The desktop unit test files and their text."""
+        return {
+            path.relative_to(self.root).as_posix(): path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted((self.root / "desktop/test").glob("*.test.js"))
+        }
+
+    def desktop_tests_for(self, changed: list[str]) -> list[str] | None:
+        """Desktop unit tests that are, import or name a changed file; None (the whole suite) when one has no owner."""
+        tests: set[str] = set()
+        for path in changed:
+            if path in self.desktop_tests:
+                tests.add(path)
+                continue
+            name = re.compile(rf"(?<![\w.-]){re.escape(Path(path).name)}(?![\w.-])")
+            owners = {test for test, text in self.desktop_tests.items() if name.search(text)}
+            if DESKTOP_TEST.match(path) or DESKTOP_LOCKED.match(path) or not owners:
+                return None
+            tests |= owners
+        return sorted(tests)
 
     # -- E2E lanes ------------------------------------------------------------------------------------------------
     @functools.cached_property
@@ -288,6 +316,7 @@ class Selection:
         self.pytest: set[str] = set()
         self.lanes: set[str] = set()
         self.vitest: set[str] | None = set()  # None means every Vitest file
+        self.desktop: list[str] | None = []  # None means the whole desktop unit suite
         self.reasons: list[str] = []
 
 
@@ -297,6 +326,7 @@ def _full_result(changed: list[str], reasons: list[str]) -> dict[str, Any]:
         "full": True,
         "pytest": ["ALL"],
         "vitest": ["ALL"],
+        "desktop": ["ALL"],
         "e2e_lanes": list(ALL_LANES),
         "jobs": [*JOBS_ALWAYS, *JOBS_FULL],
         "reasons": reasons,
@@ -407,10 +437,15 @@ def _select_web(repo: Repo, sel: Selection, changed: list[str]) -> None:
         sel.reasons.append("web/openapi.json: the API's tests and both browser lanes")
 
 
-def _select_other(sel: Selection, changed: list[str]) -> None:
+def _select_other(repo: Repo, sel: Selection, changed: list[str]) -> None:
     if any(DESKTOP.match(p) for p in changed):
         sel.jobs.add("electron")
         sel.reasons.append("desktop/: Electron")
+    desktop = [p for p in changed if DESKTOP_UNIT.match(p)]
+    if desktop:
+        sel.desktop = repo.desktop_tests_for(desktop)
+        owned = "the whole suite" if sel.desktop is None else f"{len(sel.desktop)} test file(s)"
+        sel.reasons.append(f"{len(desktop)} desktop file(s): desktop unit tests (node --test), {owned}")
     if any(PLUGINS.match(p) for p in changed):
         sel.jobs.update({"core-wheel", "local-plugins"})
         sel.reasons.append("plugins/: the source plugin row")
@@ -430,6 +465,7 @@ def classify(repo: Repo, changed: list[str]) -> dict[str, Any]:
             "full": False,
             "pytest": [],
             "vitest": [],
+            "desktop": [],
             "e2e_lanes": [],
             "jobs": list(JOBS_ALWAYS),
             "reasons": ["no changed files: nothing to run"],
@@ -443,13 +479,14 @@ def classify(repo: Repo, changed: list[str]) -> dict[str, Any]:
     _select_docs(sel, changed)
     _select_python(repo, sel, changed)
     _select_web(repo, sel, changed)
-    _select_other(sel, changed)
+    _select_other(repo, sel, changed)
     sel.jobs.update(f"e2e-{lane}" for lane in sel.lanes)
     return {
         "files": changed,
         "full": False,
         "pytest": sorted(sel.pytest),
         "vitest": ["ALL"] if sel.vitest is None else sorted(sel.vitest),
+        "desktop": ["ALL"] if sel.desktop is None else sel.desktop,
         "e2e_lanes": sorted(sel.lanes),
         "jobs": sorted(sel.jobs),
         "reasons": sel.reasons,
@@ -498,6 +535,7 @@ def render(result: dict[str, Any]) -> str:
         "e2e lanes: " + (" ".join(result["e2e_lanes"]) or "-"),
         _clip("pytest", result["pytest"]),
         _clip("vitest", result["vitest"]),
+        _clip("desktop", result["desktop"]),
     ]
     lines.extend("  - " + reason for reason in result["reasons"])
     return "\n".join(lines)
