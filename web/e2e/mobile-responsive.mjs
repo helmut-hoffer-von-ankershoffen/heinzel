@@ -1739,6 +1739,11 @@ try {
       await topPage.screenshot({ path: join(shots, `mobile-topbar-${width}.png`) });
       assert.equal(top.title, "Today", JSON.stringify(top));
       assert.ok(top.titleFits, `${width}px: the header title is cut: ${JSON.stringify(top)}`);
+      // A selector that stops matching must fail here, not pass the overlap check below for want of a box.
+      assert.ok(
+        top.mascot && top.count,
+        `${width}px: mascot or hidden-widgets count not found: ${JSON.stringify(top)}`,
+      );
       assert.equal(
         top.overlap,
         false,
