@@ -13,6 +13,16 @@ from pathlib import Path
 SOURCE = Path("/etc/apt/sources.list.d/ubuntu.sources")
 ORIGINAL = "mirror+file:/etc/apt/apt-mirrors.txt"
 MIRROR = "https://mirrors.edge.kernel.org/ubuntu"
+# Some hosted images keep cloud-init's official Ubuntu archive URIs instead of the mirror list
+# (actions/runner-images 9b75b60f5); the workflow's preceding step turns the Azure one into HTTPS archive.
+OFFICIAL = frozenset(
+    {ORIGINAL, "https://archive.ubuntu.com/ubuntu", "https://archive.ubuntu.com/ubuntu/"}
+    | {
+        f"http://{host}.ubuntu.com/ubuntu{slash}"
+        for host in ("azure.archive", "archive", "security")
+        for slash in ("", "/")
+    }
+)
 EXPECTED = (
     {
         "Types": "deb",
@@ -73,17 +83,15 @@ def transform(text: str) -> str:
         if set(actual) != {*expected, "URIs"} or any(actual[k] != v for k, v in expected.items()):
             msg = "Ubuntu source trust or scope differs from reviewed runner"
             raise ValueError(msg)
-        if actual["URIs"] not in {ORIGINAL, MIRROR}:
-            msg = "Ubuntu source URI differs from reviewed runner"
+        if actual["URIs"] not in {*OFFICIAL, MIRROR}:
+            msg = f"Ubuntu source URI differs from reviewed runner: {actual['URIs']!r}"
             raise ValueError(msg)
         uris.append(actual["URIs"])
-    if len(set(uris)) != 1:
+    if MIRROR in uris and set(uris) != {MIRROR}:
         msg = "mixed Ubuntu source URIs"
         raise ValueError(msg)
-    return "".join(
-        "URIs: " + MIRROR + "\n" if line == "URIs: " + ORIGINAL + "\n" else line
-        for line in text.splitlines(keepends=True)
-    )
+    official = {"URIs: " + uri + "\n" for uri in OFFICIAL}
+    return "".join("URIs: " + MIRROR + "\n" if line in official else line for line in text.splitlines(keepends=True))
 
 
 def main(path: Path) -> None:
