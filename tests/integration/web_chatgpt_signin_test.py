@@ -19,6 +19,7 @@ from heinzel import CredentialLet, Credentials
 from heinzel.heads import web
 from heinzel.heads.web import _chatgpt_signin
 from heinzel.heads.web._devices import Devices
+from heinzel.kernel import EnvironmentBackend
 from heinzel.testing import MemoryBackend
 
 pytestmark = pytest.mark.integration
@@ -167,6 +168,22 @@ def test_an_owner_browser_can_omit_fetch_metadata_but_keeps_the_exact_origin(sig
     monkeypatch.setattr(_chatgpt_signin.webbrowser, "open", lambda *_args, **_kwargs: False)
     result = client.post(START, headers={name: value for name, value in AUTH.items() if name != "Sec-Fetch-Site"})
     assert result.json() == {"outcome": "browser-unavailable"}
+
+
+def test_credentials_from_the_environment_refuse_at_once_without_a_browser(make_kernel, tmp_path, monkeypatch):
+    kernel = make_kernel(builtins=True)
+    kernel.bind(
+        Credentials, Credentials(EnvironmentBackend(), [(r.qualname, let) for r, let in kernel.lets(CredentialLet)])
+    )
+    app = web.build(
+        kernel, port=34123, token="fictional-owner-session", static=None, devices=Devices(tmp_path / "devices")
+    )
+    opened = []
+    monkeypatch.setattr(_chatgpt_signin.webbrowser, "open", lambda url, *, new: opened.append(url) or True)
+    with TestClient(app, base_url=ORIGIN, client=("127.0.0.1", 50400), follow_redirects=False) as client:
+        result = client.post(START, headers=AUTH)
+    assert result.json() == {"outcome": "failed"}
+    assert opened == []
 
 
 def test_a_forged_signature_never_replaces_a_prior_credential(sign_in, monkeypatch):

@@ -46,9 +46,8 @@ for (const [engine, launcher] of [
       assert.equal(request.postData(), null);
       assert.equal(headers.origin, target.origin);
       if (headers["sec-fetch-site"] !== undefined) assert.equal(headers["sec-fetch-site"], "same-origin");
-      // The fixture's environment credential backend cannot connect a plan or launch the OAuth browser.
-      const refused = await route.fetch();
-      assert.deepEqual(await refused.json(), { outcome: "failed" });
+      // Answered here, never forwarded: the server's refusal without a keychain is an integration test, and a
+      // Playwright-own request to the server would add a 30 s wait this journey does not need.
       starts += 1;
       connected = true;
       await route.fulfill({ json: { outcome: "connected" } });
