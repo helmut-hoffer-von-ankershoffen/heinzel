@@ -45,7 +45,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [mcp-types](#mcp-types-230) | 2.3.0 | MIT |
 | [mdurl](#mdurl-012) | 0.1.2 | MIT |
 | [more-itertools](#more-itertools-1121) | 11.2.1 | MIT |
-| [opentelemetry-api](#opentelemetry-api-1451) | 1.45.1 | Apache-2.0 |
+| [opentelemetry-api](#opentelemetry-api-1452) | 1.45.2 | Apache-2.0 |
 | [packaging](#packaging-263) | 26.3 | Apache-2.0 OR BSD-2-Clause |
 | [platformdirs](#platformdirs-4140) | 4.14.0 | MIT |
 | [pluggy](#pluggy-170) | 1.7.0 | MIT |
@@ -1258,7 +1258,7 @@ SOFTWARE.
 
 </details>
 
-### opentelemetry-api 1.45.1
+### opentelemetry-api 1.45.2
 
 - License: Apache-2.0
 - Homepage: <https://github.com/open-telemetry/opentelemetry-python>
