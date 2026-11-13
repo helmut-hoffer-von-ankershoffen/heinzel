@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, WebContentsView, webContents } from "electron";
@@ -10,7 +11,7 @@ import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
-import { createWorkspaceAudio } from "./workspace-audio.js";
+import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { hideWindows, quitLogLine, refreshAfterQuit, shouldRefresh, showWindows, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
@@ -67,6 +68,7 @@ const instance = createInstanceLifecycle({
         fromFrame: (frame) => frame ? webContents.fromFrame(frame) : null,
         connection: () => (stopping || quitting ? null : instance.currentConnection()),
         prompt: (owner, options) => dialog.showMessageBox(owner, options),
+        system: systemAudioAvailable(process.platform, release()),
       });
       workspaceAudio = audio;
       window.webContents.session.setPermissionCheckHandler((contents, permission, origin, details) =>
@@ -154,6 +156,9 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     open: (url) => shell.openExternal(url),
     log: (entry) => console.info(JSON.stringify(entry)),
   }));
+  // The visualizer's desktop sources: whether system loopback exists here, and the next capture's source.
+  ipcMain.handle("hz:system-audio", () => workspaceAudio?.available() === true);
+  ipcMain.handle("hz:audio-source", (event, source) => workspaceAudio?.choose(event, source) === true);
   let serviceStarted = false;
   let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {

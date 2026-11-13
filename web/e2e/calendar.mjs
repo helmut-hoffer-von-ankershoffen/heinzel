@@ -175,7 +175,7 @@ for (const [name, engine] of [
       await scroller.evaluate((element) => {
         element.scrollTop = 0;
       });
-      const band = panel.getByText("Reminders need a background worker on this computer.", { exact: true });
+      const band = panel.getByText("Meeting reminders are not on for this computer yet.", { exact: true });
       await band.waitFor();
       assert.equal(await band.locator("a, button").count(), 0, "the reminder band holds a control");
       await page.evaluate(axe.source);
@@ -203,7 +203,45 @@ for (const [name, engine] of [
         0,
         `${name}/${size}: the footer pane is still open; focus=${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160))}`,
       );
-      await panel.getByRole("button", { name: "Set up reminder worker" }).click();
+      const turnOn = panel.getByRole("group", { name: "Actions" }).getByRole("button", { name: "Turn on reminders" });
+      assert.equal(
+        await turnOn.getAttribute("data-pane-action"),
+        "text",
+        `${name}/${size}: Turn on reminders lost its words and became an icon`,
+      );
+      assert.match(await turnOn.textContent(), /Turn on reminders/);
+      if (size === "phone") {
+        // The row re-measures on resize: on the phone the lead wraps above the icons, widened it rejoins their line.
+        const actions = panel.getByRole("group", { name: "Actions" });
+        const layout = () =>
+          actions.evaluate((row) => {
+            const [lead, ...icons] = [...row.querySelectorAll("[data-pane-action]")].map((action) => ({
+              top: Math.round(action.getBoundingClientRect().top),
+              kind: action.getAttribute("data-pane-action"),
+            }));
+            return { words: row.getAttribute("data-words"), same: row.dataset.resized === "", lead, icons };
+          });
+        const phone = await layout();
+        assert.equal(phone.words, "wrap", `${name}/phone: the row has no room for the lead beside the icons`);
+        assert.ok(
+          phone.icons.length && phone.icons.every((icon) => icon.top > phone.lead.top && icon.kind === "icon"),
+          `${name}/phone: the lead sits on its own line above the icons ${JSON.stringify(phone)}`,
+        );
+        // Marked, so the widened row is provably the same element re-measured, not a fresh mount.
+        await actions.evaluate((row) => {
+          row.dataset.resized = "";
+        });
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await actions.and(page.locator('[data-words="lead"]')).waitFor({ timeout: 10000 });
+        const wide = await layout();
+        assert.ok(
+          wide.same && wide.lead.kind === "text" && wide.icons.every((icon) => icon.top === wide.lead.top),
+          `${name}/phone widened: the row is back on one line with the lead's words ${JSON.stringify(wide)}`,
+        );
+        await page.setViewportSize(viewport);
+        await actions.and(page.locator('[data-words="wrap"]')).waitFor({ timeout: 10000 });
+      }
+      await turnOn.click();
       const confirmation = page.locator("[data-operation]");
       await confirmation.waitFor({ state: "visible" });
       assert.match(await confirmation.textContent(), /at every login/);
@@ -212,8 +250,8 @@ for (const [name, engine] of [
       await page.screenshot({ path: join(shots, `${name}-${size}-setup.png`) });
       await confirmation.getByRole("button", { name: "Cancel" }).click();
       assert.equal(installs, 0);
-      await panel.getByRole("button", { name: "Set up reminder worker" }).click();
-      await confirmation.getByRole("button", { name: "Run it" }).click();
+      await panel.getByRole("button", { name: "Turn on reminders" }).click();
+      await confirmation.getByRole("button", { name: "Turn on reminders" }).click();
       await confirmation.getByText("Done.", { exact: true }).waitFor();
       assert.equal(installs, 1);
       await context.close();

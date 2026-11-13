@@ -18,9 +18,20 @@ export function useWidgetVisibility() {
     queryFn: () => unwrap(api.GET("/system/ui/list")),
     retry: false,
   });
+  // The same list the Today cards read: a hidden widget is named as its card was, not by its id.
+  const widgets = useQuery({
+    queryKey: ["ui", "widgets"],
+    queryFn: () => unwrap(api.GET("/system/ui/widgets", { params: { query: {} } })),
+    retry: false,
+  });
+  const shownAs = new Map(
+    (widgets.data ?? []).flatMap(({ id, widget }) =>
+      widget ? [[id, "title" in widget ? widget.title : widget.label] as const] : [],
+    ),
+  );
   const hidden: HiddenWidget[] = (list.data ?? [])
     .filter((info) => info.kind === "widget" && info.slots.today === false && info.defaults.today !== false)
-    .map(({ id, title, module }) => ({ id, title, module }));
+    .map(({ id, title, module }) => ({ id, title: shownAs.get(id) ?? title, module }));
   const set = async (ids: string[], shown: boolean) => {
     // One at a time: each call rewrites the same user file.
     for (const item of ids) {
@@ -88,7 +99,8 @@ export function HiddenWidgets({
       </PaneAction>
       <span
         aria-hidden
-        className="pointer-events-none absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground tabular-nums"
+        // At the bottom corner: the top one sat under the header's mascot, which reaches below the header line.
+        className="pointer-events-none absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground tabular-nums"
       >
         {hidden.length}
       </span>

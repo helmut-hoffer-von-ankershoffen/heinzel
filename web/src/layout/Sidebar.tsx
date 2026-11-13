@@ -24,7 +24,8 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, matchPath, NavLink, useLocation } from "react-router";
-import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
+import { useContracts, useExpert, useNavigation, usePlayful, useProfile, useSetExpert } from "@/api/queries";
+import { setVizStage } from "@/audio/viz/stage";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -181,7 +182,8 @@ function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
           </div>
         </>
       )}
-      <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-1 overflow-y-auto">
+      {/* Sized by its links first (basis auto), so the audio stage below takes only the room they leave. */}
+      <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-[1_1_auto] overflow-y-auto">
         <ul className="flex flex-col gap-0.5">
           {listedSections.map((section) => (
             <li key={section.label}>
@@ -240,9 +242,31 @@ function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
       </div>
       {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
           the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
+      <VizStageSlot />
       <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />
       <Footer />
     </div>
+  );
+}
+
+/**
+ * The gap above the player where the audio Halo and Heinzel swarm stand; empty, and zero height, while they are off.
+ * Holding them it fills the room the navigation leaves, between 5 and 20 rem: a long navigation keeps its links and
+ * the stage stays a strip; a short one gives the Heinzels the whole gap.
+ */
+function VizStageSlot() {
+  const playful = usePlayful();
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setVizStage(element ? { element, playful } : null);
+    return () => setVizStage(null);
+  }, [element, playful]);
+  return (
+    <div
+      ref={setElement}
+      data-viz-stage
+      className="relative -mx-2 [container-type:size] not-empty:max-h-80 not-empty:min-h-20 not-empty:flex-[999_1_0%]"
+    />
   );
 }
 

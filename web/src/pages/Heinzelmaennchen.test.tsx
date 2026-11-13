@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { everyday, heinzelmaennchen, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -50,6 +50,39 @@ describe("Heinzelmännchen", () => {
     });
     renderAt("/heinzel");
     expect(await screen.findByText("hz heinzel new my-first-heinzel")).toBeInTheDocument();
+  });
+
+  it("doesn't say there is none while personal Heinzels are listed", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/list": {
+        ...heinzelmaennchen,
+        heinzelmaennchen: [],
+        next: [{ command: "hz heinzel new my-first-heinzel", why: "a starter contract" }],
+      },
+      "/api/heinzel/sessions": {
+        sessions: [{ session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "Alpha", state: "proposed" }],
+      },
+    });
+    renderAt("/heinzel");
+    expect(await screen.findByRole("radio", { name: /^Alpha/ })).toBeInTheDocument();
+    expect(screen.queryByText("No Heinzelmännchen yet. Start one:")).not.toBeInTheDocument();
+    expect(screen.queryByText("hz heinzel new my-first-heinzel")).not.toBeInTheDocument();
+  });
+
+  it("doesn't flash the empty line while the personal Heinzels are still loading", async () => {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/list": {
+        ...heinzelmaennchen,
+        heinzelmaennchen: [],
+        next: [{ command: "hz heinzel new my-first-heinzel", why: "a starter contract" }],
+      },
+      "/api/heinzel/sessions": () => new Promise<never>(() => {}),
+    });
+    renderAt("/heinzel");
+    await waitFor(() => expect(calls.some((call) => new URL(call.url).pathname === "/api/heinzel/list")).toBe(true));
+    await expect(screen.findByText("hz heinzel new my-first-heinzel", {}, { timeout: 500 })).rejects.toThrow();
   });
 
   it("is in the navigation for everyone, the rail included", async () => {

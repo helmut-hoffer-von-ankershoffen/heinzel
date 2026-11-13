@@ -5,7 +5,7 @@ import type { SchemaHeinzelSummary } from "@/api/client";
 import { useHeinzelmaennchen } from "@/api/queries";
 import { CopyCommand, Empty, Loaded, Page } from "@/components/common";
 import { Badge } from "@/components/ui/card";
-import { PersonalHeinzels } from "@/heinzel/PersonalHeinzels";
+import { PersonalHeinzels, usePersonalSessions } from "@/heinzel/PersonalHeinzels";
 import { format, type MessageKey, t } from "@/i18n";
 import { contractPath } from "@/layout/navigation";
 
@@ -35,13 +35,18 @@ const fileName = (file: string) => file.split("/").pop() ?? file;
 
 export function Heinzelmaennchen() {
   const list = useHeinzelmaennchen();
+  // "None yet" would contradict the personal Heinzels listed above it, so it waits until they are known.
+  const personal = usePersonalSessions();
+  const hasPersonal = personal.isPending || (personal.data?.sessions ?? []).length > 0;
   return (
     <Page title={t("heinzel.title")} intro={t("heinzel.intro")}>
       <PersonalHeinzels />
       <Loaded query={list}>
         {(shown) =>
           shown.heinzelmaennchen.length === 0 ? (
-            <Empty text={t("heinzel.empty")} commands={shown.next.map((step) => step.command)} />
+            hasPersonal ? null : (
+              <Empty text={t("heinzel.empty")} commands={shown.next.map((step) => step.command)} />
+            )
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-left text-sm">

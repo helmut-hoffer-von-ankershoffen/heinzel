@@ -1,5 +1,8 @@
 // Reject off-origin requests and redirects. A context being deliberately closed
-// can dispose a still-pending local fetch; no other fetch failure is ignored.
+// can dispose a still-pending local fetch, or the fetched response before it is
+// fulfilled; no other fetch or fulfil failure is ignored.
+const DISPOSED = ["route.fetch: Request context disposed.", "route.fulfill: Fetch response has been disposed"];
+
 export async function guardGalleryRequest(route, origin, unexpected, isClosing) {
   const address = new URL(route.request().url());
   if (address.origin !== origin) {
@@ -17,8 +20,7 @@ export async function guardGalleryRequest(route, origin, unexpected, isClosing) 
     }
     return await route.fulfill({ response });
   } catch (error) {
-    if (isClosing() && error instanceof Error && error.message.startsWith("route.fetch: Request context disposed."))
-      return;
+    if (isClosing() && error instanceof Error && DISPOSED.some((message) => error.message.startsWith(message))) return;
     throw error;
   }
 }

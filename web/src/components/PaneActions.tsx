@@ -1,6 +1,6 @@
 // Actions (design/README.md, "Actions"): chrome as at most three ghost icons at the right of the title row, content
 // actions in one bottom row under a divider. The first action leads with icon and words, every other one is
-// icon-only (its words are its name and tooltip), destructive last; the row never wraps.
+// icon-only (its words are its name and tooltip), destructive last; a lead the row has no room for takes its own line.
 import type { LucideIcon } from "lucide-react";
 import {
   Children,
@@ -24,14 +24,19 @@ import { cn } from "@/lib/utils";
  *  what it opened. Outside a pane there is nothing to close. */
 export const PaneLeave = createContext<(() => void) | null>(null);
 
-type Words = "lead" | "all" | "none";
+type Words = "lead" | "wrap" | "all" | "none";
+/** How the lead fits its row: beside the icons, on a line of its own above them, or (alone too wide) as an icon. */
+type Fit = "line" | "wrap" | "icon";
+const MODE: Record<Fit, Words> = { line: "lead", wrap: "wrap", icon: "none" };
 /** What the row tells each action: whether it shows its words. Outside a row (chrome) every action is an icon. */
 const Slot = createContext<{ index: number; words: Words }>({ index: 1, words: "lead" });
 
 /**
- * The only action row: a divider, then the actions on one line that never wraps.
- * `words="lead"` (default): the first action shows its words, the rest are icons; when the lead's words would
- * overflow, measured once before paint, the lead drops to its icon too (`data-words="none"`), so nothing else moves.
+ * The only action row: a divider, then the actions.
+ * `words="lead"` (default): the first action shows its words, the rest are icons on one line. When the row is too
+ * narrow for all of them, the lead takes a full-width line of its own above the icons (`data-words="wrap"`), so its
+ * words never collapse; only a lead too wide even alone drops to its icon (`data-words="none"`). Measured before
+ * paint and again on every resize: a row that grows gets its one line back.
  * `words="all"` with `align="end"`: a dialog's answers, Cancel first and the committing action last.
  */
 export function PaneActions({
@@ -39,11 +44,14 @@ export function PaneActions({
   className,
   align = "start",
   words = "lead",
+  frame = false,
 }: {
   children?: ReactNode;
   className?: string;
   align?: "start" | "end";
   words?: "lead" | "all";
+  /** The row a footer pane's frame draws (FooterItem); a row drawn inside a pane's content is not. */
+  frame?: boolean;
 }) {
   // Only PaneAction may sit in the row, so a text link or a differently sized button cannot creep in beside them:
   // development and tests fail loudly, a release drops the stranger rather than the whole pane.
@@ -55,36 +63,48 @@ export function PaneActions({
   if (import.meta.env.DEV && items.length !== all.length)
     throw new Error("PaneActions holds only PaneAction children (design/README.md)");
   const row = useRef<HTMLFieldSetElement>(null);
-  const [fallback, setFallback] = useState(false);
-  const lead = isValidElement(items[0]) ? items[0].key : null;
-  useLayoutEffect(() => {
-    // A different lead gets its own measurement.
-    void lead;
-    setFallback(false);
-  }, [lead]);
+  const [fit, setFit] = useState<Fit>("line");
+  // The row width each roomier fit needs, learnt when it overflowed: one line, and the lead on a line of its own.
+  const needs = useRef({ line: 0, lead: 0 });
+  // The row's shape: every action's key and the lead's words. Any change makes the learnt widths stale.
+  const shape = items
+    .map((item, index) => (isValidElement<{ children?: unknown }>(item) ? `${item.key}` : `${index}`))
+    .concat(isValidElement<{ children?: unknown }>(items[0]) ? String(items[0].props.children) : "")
+    .join("\n");
+  const measured = useRef(shape);
   useLayoutEffect(() => {
     const element = row.current;
-    if (words !== "lead" || fallback || !element) return;
-    const fits = () => {
-      if (element.scrollWidth > element.clientWidth + 1) setFallback(true);
-    };
-    fits();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fits);
+    if (words !== "lead" || !element) return;
+    if (measured.current !== shape) {
+      // A new shape forgets what it learnt and measures from one line; drawn in another fit, it first returns to
+      // one line, and the next layout effect measures that.
+      measured.current = shape;
+      needs.current = { line: 0, lead: 0 };
+      if (fit !== "line") {
+        setFit("line");
+        return;
+      }
+    }
+    const measure = () => setFit(nextFit(element, fit, needs.current));
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(element);
     return () => observer?.disconnect();
   });
   // A row whose every action is conditionally hidden draws no stray divider.
   if (!items.length) return null;
-  const mode: Words = words === "all" ? "all" : fallback ? "none" : "lead";
+  const mode: Words = words === "all" ? "all" : MODE[fit];
   return (
     // A fieldset is a named group: assistive technology announces the row as the pane's actions.
     <fieldset
       ref={row}
       data-pane-actions=""
+      data-pane-frame={frame ? "" : undefined}
       data-words={mode}
       aria-label={t("pane.actions")}
       className={cn(
-        "mt-2 flex min-w-0 flex-nowrap items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1",
+        "mt-2 flex min-w-0 items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1",
+        mode === "wrap" ? "flex-wrap" : "flex-nowrap",
         align === "end" && "justify-end",
         className,
       )}
@@ -96,6 +116,25 @@ export function PaneActions({
       ))}
     </fieldset>
   );
+}
+
+/**
+ * The fit a row's current layout calls for. Overflow steps down (one line, then the lead on its own line, then the
+ * lead's icon) and records the row width the roomier fit needed; a row at least that wide steps back up.
+ */
+function nextFit(element: HTMLElement, fit: Fit, needs: { line: number; lead: number }): Fit {
+  const width = element.clientWidth;
+  if (fit === "line") {
+    if (element.scrollWidth <= width + 1) return "line";
+    needs.line = element.scrollWidth;
+    return "wrap";
+  }
+  if (needs.line && width >= needs.line) return "line";
+  if (fit === "icon") return needs.lead && width >= needs.lead ? "wrap" : "icon";
+  const first = element.querySelector<HTMLElement>("[data-pane-action]");
+  if (!first || first.scrollWidth <= first.clientWidth + 1) return "wrap";
+  needs.lead = width + first.scrollWidth - first.clientWidth;
+  return "icon";
 }
 
 /** The row's actions with fragments unwrapped and empty conditionals dropped; keys carry their fragment's key. */
@@ -146,13 +185,17 @@ export function PaneAction({
       leave();
     };
   }
-  const words = slot.words === "all" || (slot.words === "lead" && slot.index === 0);
+  const words = slot.words === "all" || ((slot.words === "lead" || slot.words === "wrap") && slot.index === 0);
+  // The lead of a wrapped row fills its own line. `whitespace-nowrap` keeps its words on one line, so a lead too
+  // wide even alone overflows measurably and steps to its icon instead of breaking its words onto a second line.
+  const alone = slot.words === "wrap" && slot.index === 0;
   const look = {
     size: "sm" as const,
     variant: primary ? ("default" as const) : ghost ? ("ghost" as const) : ("outline" as const),
     className: cn(
       "shrink-0 pointer-coarse:h-11",
       !words && "w-8 px-0 pointer-coarse:w-11",
+      alone && "basis-full whitespace-nowrap",
       // Red: the outlined icon in place, or the filled committing button of a dialog that destroys something.
       destructive && (primary ? "bg-bad text-white" : "text-bad"),
       className,
@@ -268,13 +311,18 @@ export function actionStructureProblems(container: Element): string[] {
     const words = action.getAttribute("data-pane-action") === "text";
     if (!words && !(action.getAttribute("aria-label") && action.getAttribute("title")))
       problems.push(`"${name(action)}" is icon-only without a name and tooltip`);
-    const expected = mode === "all" || (mode === "lead" && index === 0);
+    const expected = mode === "all" || ((mode === "lead" || mode === "wrap") && index === 0);
     if (words !== expected)
       problems.push(`"${name(action)}" ${words ? "shows words; only the lead does" : "is the lead without its words"}`);
   }
-  // One row, never wrapped: every action starts at the same height (measurable wherever layout runs).
-  const tops = new Set(actions.map((action) => Math.round(action.getBoundingClientRect().top)));
+  // One line (measurable wherever layout runs); a wrapped row's lead alone sits above it.
+  const top = (action: Element) => Math.round(action.getBoundingClientRect().top);
+  const line = mode === "wrap" ? actions.slice(1) : actions;
+  const tops = new Set(line.map(top));
   if (tops.size > 1) problems.push(`the actions wrap onto ${tops.size} lines`);
+  const [first] = actions;
+  if (mode === "wrap" && first && line.some((action) => top(action) <= top(first)))
+    problems.push("the wrapped lead is not on a line of its own above the other actions");
   return problems;
 }
 

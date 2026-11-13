@@ -257,6 +257,15 @@ def _open_verified_handover_file(path: Path) -> Generator[BinaryIO, None, None]:
                 _invalid_handover()
 
 
+def _failed_once_after_success(ledger: Ledger, job: str) -> bool:
+    """Whether the job's newest run failed and the run before it worked; skipped slots don't count as runs."""
+    try:
+        ran = [receipt for receipt in ledger.chain(job) if receipt.disposition is not Disposition.SKIPPED]
+    except HeinzelError:
+        return False
+    return len(ran) > 1 and ran[-1].disposition is Disposition.FAILED and ran[-2].disposition is Disposition.RENDERED
+
+
 def _heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: str) -> bool:
     last_tick = heartbeat.get("last_tick")
     if not isinstance(last_tick, str) or heartbeat.get("version") != version:
@@ -2218,16 +2227,33 @@ class DaemonService:
                     fix="See `hz system daemon logs`; `hz heinzel check` lists problems in contracts",
                 )
             )
-        if status.failing:
+        failing = self._failing_for_doctor()
+        if failing:
             checks.append(
                 Check(
                     name="jobs",
                     status=Status.DEGRADED,
-                    detail=f"failing: {', '.join(status.failing)}",
+                    detail=f"failing: {', '.join(failing)}",
                     fix="See `hz system daemon jobs` and `hz system daemon logs`",
                 )
             )
         return checks
+
+    def _failing_for_doctor(self) -> list[str]:
+        """Jobs the doctor reports: one failed run right after a good one is a hiccup, not yet a problem.
+
+        `status().failing` still names every job whose last run failed. The doctor, and the notice it raises, wait
+        for the second failed run in a row, so one unreachable feed doesn't degrade the whole installation.
+        """
+        ledger = Ledger(self.receipts_dir)
+        failing: list[str] = []
+        for job in self.jobs():
+            if job.problem is None and job.last_disposition is not Disposition.FAILED:
+                continue
+            if job.problem is None and _failed_once_after_success(ledger, job.job):
+                continue
+            failing.append(job.job)
+        return failing
 
     def jobs(self) -> list[JobInfo]:
         """Every job the kernel knows, with its schedule, next slot and last run; a damaged ledger is a problem."""

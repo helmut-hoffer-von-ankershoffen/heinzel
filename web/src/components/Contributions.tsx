@@ -48,7 +48,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router";
 import {
@@ -357,7 +357,9 @@ function FooterStatus({
     label,
     ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
   ].join("; ");
-  return (
+  // One frame for every plugin pane: the provider's lines (or its switch), then the frame's divider and one row with
+  // the effect, the declared actions and the switch's own Share, Open or Retry.
+  const pane = (body: ReactNode, row: ReactNode) => (
     <FooterItem
       label={accessible}
       // Meter labels already summarize detail bullets; keep the pane heading when there are no bullets.
@@ -395,29 +397,34 @@ function FooterStatus({
           </span>
         ) : undefined
       }
+      actions={row}
     >
-      {/* Under a switch the provider's lines are its longer explanation: on demand in Details, never bullets. */}
-      {!item.toggle && lines}
-      {/* The switch and its URL sit at the end of the body; its Share and Open join the pane's own actions in one row. */}
-      {item.toggle ? (
-        <div className="px-1.5">
-          <StatusControl entry={current} actions={actions} details={item.detail?.length ? lines : undefined} />
-        </div>
-      ) : (
-        <PaneActions>{actions}</PaneActions>
-      )}
+      {body}
     </FooterItem>
   );
+  // Under a switch the provider's lines are its longer explanation: on demand in Details, never bullets.
+  if (item.toggle)
+    return (
+      <StatusControl
+        entry={current}
+        actions={actions}
+        details={item.detail?.length ? lines : undefined}
+        frame={({ body, actions: row }) => pane(<div className="px-1.5">{body}</div>, row)}
+      />
+    );
+  return pane(lines, actions);
 }
 
 function StatusControl({
   entry,
   actions,
   details,
+  frame,
 }: {
   entry: SchemaStatusEntry;
   actions?: ReactNode;
   details?: ReactNode;
+  frame?: ComponentProps<typeof ContributionToggle>["frame"];
 }) {
   const client = useQueryClient();
   const current = useEntry("status", entry, 0);
@@ -428,6 +435,7 @@ function StatusControl({
       control={control}
       actions={actions}
       details={details}
+      frame={frame}
       refresh={async (signal) => {
         const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
         const fresh = entries.find((candidate) => candidate.id === entry.id);
