@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Bell,
+  BellOff,
+  BellRing,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -11,7 +13,6 @@ import {
   Trash2,
   TriangleAlert,
   Video,
-  Wrench,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -121,6 +122,8 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     ? groupWeek({ events: data.events, since: data.since, until: data.until, now, tz: data.timezone })
     : [];
   const today = days.find((day) => day.relation === "today");
+  // Missing reminders on this computer are the one thing to do here, so turning them on leads the row in words.
+  const setUp = !!reminders.data && isLocalServer() && reminders.data.service !== "running";
   const workerAction = (installing: boolean) =>
     requestOperation({
       method: "POST",
@@ -187,6 +190,11 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
       <PaneActions className="mx-3 mb-2">
+        {setUp && (
+          <PaneAction key="worker-setup" icon={BellRing} primary onClick={() => workerAction(true)}>
+            {t("calendar.setUpWorker")}
+          </PaneAction>
+        )}
         <PaneAction key="today" icon={CalendarDays} disabled={offset === 0} onClick={() => setOffset(0)}>
           {t("calendar.today")}
         </PaneAction>
@@ -206,30 +214,17 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             {t("calendar.connect")}
           </PaneAction>
         )}
-        {reminders.data && isLocalServer() && (
-          <PaneAction
-            key="worker"
-            icon={reminders.data.service === "running" ? Trash2 : Wrench}
-            destructive={reminders.data.service === "running"}
-            onClick={() => workerAction(reminders.data.service !== "running")}
-          >
-            {t(reminders.data.service === "running" ? "calendar.removeWorker" : "calendar.setUpWorker")}
+        {reminders.data && isLocalServer() && reminders.data.service !== "not installed" && (
+          <PaneAction key="remove" icon={Trash2} destructive onClick={() => workerAction(false)}>
+            {t("calendar.removeWorker")}
           </PaneAction>
         )}
-        {reminders.data &&
-          isLocalServer() &&
-          reminders.data.service !== "running" &&
-          reminders.data.service !== "not installed" && (
-            <PaneAction key="remove" icon={Trash2} destructive onClick={() => workerAction(false)}>
-              {t("calendar.removeWorker")}
-            </PaneAction>
-          )}
       </PaneActions>
     </section>
   );
 }
 
-/** One line, icon plus sentence, nothing to click: the fix is the worker button in the bottom row. */
+/** One line, icon plus sentence, nothing to click: the fix is Turn on reminders, leading the bottom row. */
 function ReminderBand({ reminders }: { reminders: { data?: ReminderStatus; isPending: boolean; isError: boolean } }) {
   let line: { icon: LucideIcon; text: string } | null = null;
   if (reminders.isError) line = { icon: TriangleAlert, text: t("calendar.statusUnavailable") };
@@ -238,8 +233,8 @@ function ReminderBand({ reminders }: { reminders: { data?: ReminderStatus; isPen
     if (!enabled) line = { icon: Bell, text: t("calendar.remindersOff") };
     else if (service === "not installed") {
       line = isLocalServer()
-        ? { icon: Wrench, text: t("calendar.workerNeeded") }
-        : { icon: Wrench, text: t("calendar.workerRemote") };
+        ? { icon: BellOff, text: t("calendar.workerNeeded") }
+        : { icon: BellOff, text: t("calendar.workerRemote") };
     } else if (service !== "running") line = { icon: TriangleAlert, text: t("calendar.workerUnknown") };
   }
   if (!line) return null;
