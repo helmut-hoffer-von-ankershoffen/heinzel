@@ -113,7 +113,7 @@ describe("The notification test", () => {
     await user.click(within(result).getByRole("button", { name: "Install daemon" }));
     const confirm = await screen.findByRole("dialog", { name: /Keep my Heinzelmännchen working/ });
     expect(confirm).not.toHaveTextContent("hz system daemon install"); // Expert mode only
-    expect(confirm).toHaveTextContent("registers a background service");
+    expect(confirm).toHaveTextContent("checks for due work");
     await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
     expect(opened).not.toHaveBeenCalled();
     window.removeEventListener(OPEN_TERMINAL, opened);

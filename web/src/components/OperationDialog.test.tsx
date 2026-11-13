@@ -100,7 +100,7 @@ describe("OperationDialog", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Keep my Heinzelmännchen working while the app is closed.",
     });
-    expect(dialog).toHaveTextContent("registers a background service that starts whenever you sign in");
+    expect(dialog).toHaveTextContent("Starts at sign-in and checks for due work every 5 minutes.");
     // The raw command is for Expert mode only.
     expect(dialog).not.toHaveTextContent("hz system daemon install");
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
@@ -247,11 +247,11 @@ describe("OperationDialog", () => {
     mount();
     act(() => requestOperation(DAEMON_UNINSTALL));
     const dialog = await screen.findByRole("dialog", { name: "Stop the background service?" });
-    expect(dialog).toHaveTextContent("Your receipts and logs stay");
+    expect(dialog).toHaveTextContent("Scheduled work stops; receipts and logs stay.");
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Uninstall" }));
     await live.close();
     expect(await screen.findByRole("alert")).toHaveTextContent("The stream ended without a result.");
-    expect(dialog).toHaveTextContent("the outcome is not certain");
+    expect(dialog).toHaveTextContent("the outcome is uncertain");
   });
 
   it("ignores a second request while one is being asked about or runs", async () => {
