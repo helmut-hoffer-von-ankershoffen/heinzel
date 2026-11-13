@@ -44,19 +44,33 @@ whole-project coverage floor. `scripts/release_candidate.py` is not touched by t
 
 - One selector, `scripts/affected.py`, maps the exact diff to focused lanes (`python`, `web`, `browser`, `desktop`,
   `consumers`). It fails open to the **full set**, the candidate's jobs, for workflows, scripts, the kernel,
-  lockfiles, unknown paths, a lane without a focused mapping and any selection over its lane limit. A Vitest or
-  desktop selection over its limit runs that whole suite instead.
+  lockfiles (the desktop app's `package.json` and `pnpm-lock.yaml` included), unknown paths, a lane without a focused
+  mapping and a Python selection over its limit. A Vitest or desktop selection over its limit runs that whole suite;
+  a browser selection over its limit runs each whole browser e2e suite (`e2e-web-1`, `e2e-web-2`). Markdown outside
+  the full-set paths runs the site tests.
+- Every selected test file must run at least one case; the judge checks it against the lane's JUnit report.
+- A change to the workflow or the code that decides and runs a workload (`PROTECTED_FILES`: `ci.yml`, the `Makefile`,
+  the focused producers, `uv.lock`) runs a workflow the judge has not seen. The judge then requires a reviewed
+  execution manifest that pins those tested blobs, as before this decision.
 - The judge on the default branch (`scripts/focused_gate.py`) recomputes the selection with its own selector over the
   tested tree. A pull request cannot narrow what judges it: a change to the selector is itself a full-set path.
 - A manifest in the plan registry is optional and can only widen a selection.
 - Coverage is unchanged: 90 % over the whole of every touched production file. On the full set the Coverage job's
   whole-suite data supplies the same scoped gate.
 - A rerun may complete the evidence. Every job that failed on an earlier attempt and passed later is written to the
-  flake ledger (an artifact of the merge gate, one line per job), so a rerun never hides a flake.
-- Main pushes share one concurrency group. A run compares against the last main commit with a green CI OK, not the
-  previous push, so the tip's run covers every push whose run was replaced.
+  flake ledger, one line per job, so a rerun never hides a flake: for a pull request the merge gate uploads it, for
+  a main push the main judge (`verify_main`) returns it in `passed_on_rerun`, and the coordinator's tooling files a
+  flaky bead per line. Edge publishes from a main run that turned green on a rerun; edge is not the candidate.
+- Main pushes share one concurrency group. A run compares against the last main commit whose CI OK passed **and**
+  that the main judge accepted (commit status `hz/main-proof`, posted by the coordinator's tooling after
+  `verify_main`), not the previous push. The tip's run so covers every push whose run was replaced or not accepted.
+  With no accepted commit the run takes the full set. A main push of prose alone runs no app jobs, as before.
 - Contract changes run every public plugin's checks serially against heinzel-plugins `main` in the `consumers`
   lane. It reports without blocking until the plugins' lock-by-contract toolkit release, then becomes required.
+
+The dormant managed backend (`desktop/managed/`) has no lane and maps to the full set until it is deleted; its lint
+steps leave CI with that deletion. `src/heinzel/modules/system/lifecycle/` and `_lifecycle_control.py` leave the
+full-set list and are selected like other modules.
 
 ### Consequences
 

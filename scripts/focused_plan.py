@@ -88,6 +88,11 @@ PREFIXES = {
 # The job whose success stands for the full set of a merge-tier run (the candidate-only jobs, on a PR or main push).
 FULL_JOB = "CI OK"
 GREEN_RUNS = 30
+# The commit status the main judge (verify_main, run by the coordinator's tooling) posts when it accepts a main run.
+MAIN_PROOF_CONTEXT = "hz/main-proof"
+# A main push of prose alone, as ci.yml's "Changed paths" step decides it: the PR already ran everything.
+PROSE = re.compile(r"^(?:docs/.*|.*\.md)$")
+NOT_PROSE = re.compile(r"(?:^|/)CHANGELOG\.md$|^docs/.*\.sh$")
 # The plugin contract: a change here runs the plugin consumers lane (ci.yml's "contracts" paths).
 CONTRACTS = re.compile(
     r"^(?:src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)"
@@ -95,8 +100,11 @@ CONTRACTS = re.compile(
 ARTIFACT_PREFIX = "focused-pr-evidence"
 PLAN_VARIABLE = "FOCUSED_CI_PLANS"
 PREOPEN_PR_REF = "refs/pull/*/merge"
+# The workflow and the code that decides and runs a workload. A merge-tier change to any of them runs a workflow the
+# judge has not seen, so the judge requires a reviewed execution manifest pinning their tested blobs (ADR 0149).
 PROTECTED_FILES = (
     ".github/workflows/ci.yml",
+    "Makefile",
     ".github/actions/setup-uv/action.yml",
     ".github/actions/setup-uv/uv-manifest.json",
     "scripts/bootstrap-pyyaml.sh",
@@ -639,8 +647,21 @@ def oldest_ancestor(first: str, second: str) -> str:
     return second
 
 
+def prose_only(changes: dict[str, str]) -> bool:
+    """A change of prose alone (ci.yml's prose_push rule): its main push runs no app jobs."""
+    return bool(changes) and all(PROSE.match(path) and not NOT_PROSE.search(path) for path in changes)
+
+
+def _accepted(get: Callable[[str], Any], sha: str) -> bool:
+    statuses = get(f"commits/{sha}/statuses?per_page=100")
+    return any(
+        isinstance(row, dict) and row.get("context") == MAIN_PROOF_CONTEXT and row.get("state") == "success"
+        for row in (statuses if isinstance(statuses, list) else [])
+    )
+
+
 def last_green_main(get: Callable[[str], Any], head: str) -> str | None:
-    """The newest main commit before HEAD whose push run passed CI OK.
+    """The newest main commit before HEAD whose push run passed CI OK and that the main judge accepted.
 
     Main pushes share one concurrency group, so a newer push can replace a pending run. Comparing against the last
     green commit, not the previous push, makes the tip's run cover the union of every replaced push.
@@ -651,7 +672,9 @@ def last_green_main(get: Callable[[str], Any], head: str) -> str | None:
         if not (isinstance(sha, str) and valid_sha(sha)) or sha == head or not _is_ancestor(sha, head):
             continue
         jobs = get(f"actions/runs/{run['id']}/jobs?filter=latest&per_page=100").get("jobs", [])
-        if any(job.get("name") == FULL_JOB and job.get("conclusion") == "success" for job in jobs):
+        if any(job.get("name") == FULL_JOB and job.get("conclusion") == "success" for job in jobs) and _accepted(
+            get, sha
+        ):
             return sha
     return None
 

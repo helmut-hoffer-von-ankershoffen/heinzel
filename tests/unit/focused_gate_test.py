@@ -128,7 +128,7 @@ def first_attempt(focused_gate, monkeypatch):
     config = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_bytes()
     test_file = "tests/unit/focused_gate_test.py"
     diff = f":100644 100644 {head} {blob} M\0{test_file}\0".encode()
-    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    junit = b'<testsuite><testcase classname="tests.unit.focused_gate_test" name="test_case"/></testsuite>'
     pr = {
         "number": number,
         "state": "open",
@@ -170,7 +170,8 @@ def first_attempt(focused_gate, monkeypatch):
 
     for module in (focused_plan, focused_gate):
         monkeypatch.setattr(module, "git", git)
-    monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: blob)
+    for module in (focused_plan, focused_gate):
+        monkeypatch.setattr(module, "git_blob", lambda *_args: blob)
     monkeypatch.setattr(focused_plan, "object_id", lambda _ref: tree)
     # The judge's own selector over the tested tree; no manifest is needed.
     monkeypatch.setattr(focused_plan, "selector_lanes", lambda _commit, _changed: ({"python": [test_file]}, "focused"))
@@ -345,7 +346,7 @@ def test_protected_reader_only_excludes_authentic_neutral_advisory(
         ("wrong-job-app", "authentic successful execution"),
         ("missing-lane", "evidence"),
         ("missing-artifact", "evidence"),
-        ("narrowed-by-pr", "evidence differs"),
+        ("narrowed-by-pr", "ran no case|evidence differs"),
     ],
 )
 def test_protected_reader_verifies_complete_attempt(focused_gate, first_attempt, monkeypatch, defect, error):
@@ -798,8 +799,8 @@ def test_main_tree_widening_applies_to_a_main_push(registry, source_manifest, mo
     assert set(scope.selection) == {"python", "web"}
 
 
-@pytest.mark.parametrize("defect", ["none", "base-after-last-green", "no-green-run", "changed-config"])
-def test_protected_main_reader_compares_against_the_last_green_main(focused_gate, first_attempt, monkeypatch, defect):
+@pytest.mark.parametrize("defect", ["none", "base-after-last-green", "no-green-run", "changed-config", "rerun"])
+def test_protected_main_reader_compares_against_the_last_green_main(focused_gate, first_attempt, monkeypatch, defect):  # noqa: PLR0915 - one fixture, five cases
     from scripts import focused_coverage, focused_plan
 
     gate, run_id, _manifest, lane, rows, logs, git_rows = first_attempt
@@ -814,6 +815,7 @@ def test_protected_main_reader_compares_against_the_last_green_main(focused_gate
     runs = [] if defect == "no-green-run" else [{"id": 77, "head_sha": green}]
     rows["actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=30"] = {"workflow_runs": runs}
     rows["actions/runs/77/jobs?filter=latest&per_page=100"] = {"jobs": [{"name": "CI OK", "conclusion": "success"}]}
+    rows[f"commits/{green}/statuses?per_page=100"] = [{"context": "hz/main-proof", "state": "success"}]
     jobs = rows[f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1"]
     jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] not in focused_gate.PR_JOBS]
     jobs["total_count"] = len(jobs["jobs"])
@@ -834,7 +836,7 @@ def test_protected_main_reader_compares_against_the_last_green_main(focused_gate
         git_rows[("show", f"{base}:pyproject.toml")] = relaxed
     source = focused_plan.WorkloadSource("push", gate.repo, "refs/heads/main", {}, base, head, diff)
     scope = focused_plan.resolve(source, head, "{}")
-    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    junit = b'<testsuite><testcase classname="tests.unit.focused_gate_test" name="test_case"/></testsuite>'
     report = focused_coverage.canonical(focused_coverage.evidence(scope, "python", run_id, 1, {"junit.xml": junit}))
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
@@ -849,10 +851,21 @@ def test_protected_main_reader_compares_against_the_last_green_main(focused_gate
         f"Final size is {len(content)} bytes. Artifact ID is {artifact['id']}\n"
     ).encode()
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
-    if defect == "none":
+    if defect == "rerun":  # main repaired by a rerun: the proof carries the flake ledger
+        original = dict(run, run_attempt=1, conclusion="failure")
+        run["run_attempt"] = 2
+        rows[f"actions/runs/{run_id}/attempts/1"] = original
+        failed = dict(lane, id=999, run_attempt=1, conclusion="failure")
+        every = [*jobs["jobs"], failed]
+        rows[f"actions/runs/{run_id}/jobs?filter=all&per_page=100&page=1"] = {"total_count": len(every), "jobs": every}
+        result = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
+        assert result["passed_on_rerun"] == [
+            f"passed on rerun: Focused tests (python) (attempt 1 failure, run {run_id}, head {head})"
+        ]
+    elif defect == "none":
         result = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
         assert result["manifest_sha256"] == scope.manifest_digest
-        assert result["attempt"] == 1
+        assert (result["attempt"], result["passed_on_rerun"], result["full"]) == (1, [], False)
     else:
         with pytest.raises(focused_gate.CandidateError):
             focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
@@ -870,7 +883,7 @@ def test_a_rerun_completes_merge_evidence_and_the_flake_stays_on_record(focused_
     # The lane passed on attempt 2: its evidence and artifact name carry that attempt.
     from scripts import focused_coverage, focused_plan
 
-    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    junit = b'<testsuite><testcase classname="tests.unit.focused_gate_test" name="test_case"/></testsuite>'
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
     source = focused_gate._pr_source(gate, run, focused_gate.pull_identity(gate, gate.head), candidate=False)
     rescope = focused_plan.resolve(source.source, source.commit, "{}", pr_base_limit=source.source.base)
@@ -899,3 +912,88 @@ def test_a_rerun_completes_merge_evidence_and_the_flake_stays_on_record(focused_
         f"passed on rerun: Focused tests (python) (attempt 1 failure, run {run_id}, head {gate.head})"
     ]
     assert focused_gate.rerun_ledger(gate.github, original) == []
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_pr_that_edits_the_workflow_needs_a_reviewed_execution_pin(
+    focused_gate, first_attempt, monkeypatch, reviewed
+):
+    """R1: a PR's ci.yml could drop e2e, perf or Electron from its own run; the judge then demands a reviewed pin."""
+    from scripts import focused_plan
+
+    gate, run, _manifest, _lane, rows, logs, _git_rows = first_attempt
+    merge, blob = "c" * 40, "e" * 40
+    edited = "9" * 40
+
+    def git_blob(commit, path):
+        return edited if (commit, path) == (merge, ".github/workflows/ci.yml") else blob
+
+    for module in (focused_plan, focused_gate):
+        monkeypatch.setattr(module, "git_blob", git_blob)
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    tested = {path: git_blob(merge, path) for path in focused_plan.PROTECTED_FILES}
+    plan = {"ref": focused_plan.PREOPEN_PR_REF, "selection": {"python": ["tests/unit/focused_gate_test.py"]}}
+    manifest = json.dumps({f"pull_request:{gate.head}": plan | {"execution": tested}}) if reviewed else "{}"
+    if reviewed:
+        verdict = focused_gate.verify(gate, run, manifest, logs.__getitem__)
+        assert verdict.endswith("reviewed workflow change: .github/workflows/ci.yml")
+    else:
+        with pytest.raises(
+            focused_gate.CandidateError, match=r"workflow or its producers changed \(.github/workflows/ci.yml\)"
+        ):
+            focused_gate.verify(gate, run, manifest, logs.__getitem__)
+
+
+def test_the_protected_list_covers_the_workflow_and_what_it_runs():
+    from scripts import focused_plan
+
+    for path in (".github/workflows/ci.yml", "Makefile", "scripts/focused_coverage.py", "scripts/focused_plan.py"):
+        assert path in focused_plan.PROTECTED_FILES
+
+
+@pytest.mark.parametrize(
+    ("failed", "clause"),
+    [([], "consumers advisory: passed"), (["acme", "zoo"], "consumers advisory: 2 failing: acme, zoo"), (None, "")],
+)
+def test_the_advisory_consumers_result_is_shown_in_the_verdict(focused_gate, monkeypatch, failed, clause):
+    from scripts.ci_workload import FocusedPlan
+    from scripts.focused_plan import Scope
+
+    workload = FocusedPlan("pull_request", "refs/pull/1/merge", "a" * 40, "b" * 40, "c", ("Focused tests (consumers)",))
+    scope = Scope(workload, "c" * 40, "d" * 40, {}, {}, "e", {}, {"consumers": ("plugins/main",)}, {}, "f")
+    job = {
+        "name": "Focused tests (consumers)",
+        "run_attempt": 1,
+        "conclusion": "success" if failed is not None else "failure",
+    }
+    source = focused_gate.GateSource({"id": 7}, None, "c" * 40)
+    monkeypatch.setattr(focused_gate, "jobs_for", lambda _gate, _source: [job])
+    name = "focused-pr-evidence-consumers-7-1"
+    monkeypatch.setattr(focused_gate, "_artifact_inventory", lambda _gate, _run: {name: {}})
+    report = json.dumps({"failed": failed or []}).encode()
+    monkeypatch.setattr(focused_gate, "_artifact", lambda *_args: {"evidence.json": report})
+    summary = focused_gate.advisory_summary(None, source, scope, lambda _path: b"")
+    assert summary == (clause or "consumers advisory: did not finish")
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "ok"),
+    [("push", "SECURITY.md", True), ("pull_request", "SECURITY.md", False), ("push", "Makefile", False)],
+)
+def test_a_prose_main_push_needs_no_app_jobs_in_the_full_set(focused_gate, monkeypatch, event, changed, ok):
+    """S3: ci.yml runs no app jobs for a main push of prose alone; the judge must not refuse that full set."""
+    from scripts.ci_workload import FocusedPlan
+    from scripts.focused_plan import Scope
+
+    workload = FocusedPlan(event, "refs/heads/main", "a" * 40, "b" * 40, "c", ("CI OK",), full=True)
+    scope = Scope(workload, "b" * 40, "d" * 40, {changed: "M"}, {}, "e", {}, {}, {}, "f", full=True)
+    jobs = [{"name": name, "conclusion": "success", "run_attempt": 1} for name in focused_gate.STATIC_JOBS]
+    monkeypatch.setattr(focused_gate, "jobs_for", lambda _gate, _source: jobs)
+    monkeypatch.setattr(focused_gate, "_check", lambda *_args: None)
+    monkeypatch.setattr(focused_gate, "_artifact_inventory", lambda _gate, _run: {})
+    source = focused_gate.GateSource({"id": 7, "event": event}, None, "b" * 40)
+    if ok:
+        focused_gate._verify_workload(None, source, scope, lambda _path: b"")
+    else:
+        with pytest.raises(focused_gate.CandidateError, match="did not run its matrix"):
+            focused_gate._verify_workload(None, source, scope, lambda _path: b"")

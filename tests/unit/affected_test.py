@@ -106,10 +106,16 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
         ["desktop/src/shutdown.js"],
         {"full": False, "desktop": ["desktop/test/shutdown.test.js", "desktop/test/window.test.js"]},
     ),
-    ("desktop lockfile selects the whole desktop suite", ["desktop/pnpm-lock.yaml"], {"desktop": ["ALL"]}),
+    ("desktop lockfile runs the full set", ["desktop/pnpm-lock.yaml"], {"full": True}),
+    ("desktop package metadata runs the full set", ["desktop/package.json"], {"full": True}),
+    (
+        "nested prose runs the site tests",
+        ["research/notes.md", "desktop/README.md"],
+        {"full": False, "jobs_has": ["site-tests"]},
+    ),
     ("a deleted desktop test selects the whole desktop suite", ["desktop/test/gone.test.js"], {"desktop": ["ALL"]}),
     ("managed backend runs the full set", ["desktop/managed/src/backend.ts"], {"full": True}),
-    ("desktop readme runs no desktop test", ["desktop/README.md"], {"desktop": []}),
+    ("desktop readme runs no desktop test", ["desktop/README.md"], {"desktop": [], "jobs_has": ["site-tests"]}),
     ("conftest = full", ["tests/conftest.py"], {"full": True}),
     ("unknown path = full", ["something/new.txt"], {"full": True}),
     (
@@ -233,24 +239,20 @@ def test_web_imports_are_found_in_each_form():
     assert found == ["./a", "./b", "./c", "./d.css"]
 
 
-SOURCE_ROOTS = ("src", "web", "desktop", "template", "starter")
-
-
-def test_every_tracked_source_directory_maps_to_a_lane_or_the_full_set(repo):
-    """A directory the selector knows but gives no lane would merge untested: name every such path."""
+def test_every_tracked_file_maps_to_a_lane_or_the_full_set(repo):
+    """Each tracked path, one at a time: the full set, or at least one focused lane. Names every path with neither."""
     files = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", *SOURCE_ROOTS], check=True, capture_output=True, text=True, timeout=60
+        ["git", "-C", str(ROOT), "ls-files"], check=True, capture_output=True, text=True, timeout=60
     ).stdout.split()
-    first: dict[str, str] = {}
-    for path in files:
-        if not path.endswith(".md"):  # documents select the site tests or nothing; code decides the lanes
-            first.setdefault(path.rsplit("/", 1)[0], path)
     unmapped = []
-    for directory, path in sorted(first.items()):
+    for path in files:
         result = affected.classify(repo, [path])
-        lanes, reason = affected.focused_lanes(result, {} if result["full"] else repo.lanes)
-        if not result["full"] and lanes is None and reason == "the selector selects no tests":
-            unmapped.append(f"{directory}/ (e.g. {path})")
+        if result["full"]:
+            continue
+        lanes, reason = affected.focused_lanes(result, repo.lanes)
+        if lanes is None and reason == "the selector selects no tests":
+            unmapped.append(path)
+    assert len(files) > 1000
     assert not unmapped, "no lane and no full-set rule for:\n" + "\n".join(unmapped)
 
 

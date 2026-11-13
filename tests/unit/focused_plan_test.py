@@ -242,6 +242,7 @@ def test_a_tree_widening_does_not_apply_to_a_pr(focused_plan, git_objects):
         ([("8" * 40, False), ("9" * 40, True)], None, "9" * 40, None),  # a run whose CI OK did not pass is skipped
         ([("9" * 40, True)], "7" * 40, "7" * 40, None),  # an older batch base covers more
         ([], None, "6" * 40, "no green main run before this push"),  # nothing green: the full set
+        ([("5" * 40, True), ("9" * 40, True)], None, "9" * 40, None),  # CI OK alone is not accepted by the judge
     ],
 )
 def test_a_main_push_compares_against_the_last_green_main(  # noqa: PLR0913, PLR0917 - independent observations
@@ -256,7 +257,7 @@ def test_a_main_push_compares_against_the_last_green_main(  # noqa: PLR0913, PLR
         "GITHUB_SHA": HEAD,
         "GITHUB_REPOSITORY": focused_plan.REPOSITORY,
     } | ({"BATCH_BASE": batch} if batch else {})
-    order = ["7" * 40, "8" * 40, "9" * 40, HEAD]  # oldest first, one line of history
+    order = ["7" * 40, "8" * 40, "9" * 40, "5" * 40, HEAD]  # oldest first, one line of history
 
     def git(*args):
         if args[:2] == ("merge-base", "--is-ancestor"):
@@ -273,6 +274,9 @@ def test_a_main_push_compares_against_the_last_green_main(  # noqa: PLR0913, PLR
     def get(path):
         if path.startswith("actions/workflows/ci.yml/runs?branch=main&event=push&status=success"):
             return {"workflow_runs": runs}
+        if path.startswith("commits/"):  # the main judge accepted every green run here except "5" * 40
+            accepted = "success" if not path.startswith("commits/" + "5" * 40) else "failure"
+            return [{"context": focused_plan.MAIN_PROOF_CONTEXT, "state": accepted}]
         index = int(path.split("/")[2])
         return {"jobs": [{"name": "CI OK", "conclusion": "success" if ok[index] else "failure"}]}
 
@@ -353,3 +357,21 @@ def test_a_desktop_change_requires_the_desktop_unit_suite(  # noqa: PLR0913, PLR
     assert scope.full is full
     if full:
         assert scope.reason == "a desktop change without the desktop unit suite"
+
+
+@pytest.mark.parametrize(
+    ("paths", "prose"),
+    [
+        (["docs/guides/install.md", "README.md"], True),
+        (["SECURITY.md", ".github/AGENTS.md"], True),
+        (["CHANGELOG.md"], False),
+        (["docs/install.sh"], False),
+        (["README.md", "scripts/affected.py"], False),
+        ([], False),
+    ],
+)
+def test_prose_only_matches_the_workflows_prose_push_rule(focused_plan, paths, prose):
+    assert focused_plan.prose_only(dict.fromkeys(paths, "M")) is prose
+    workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "'^(docs/.*|.*\\.md)$'" in workflow
+    assert "'(^|/)CHANGELOG\\.md$|^docs/.*\\.sh$'" in workflow

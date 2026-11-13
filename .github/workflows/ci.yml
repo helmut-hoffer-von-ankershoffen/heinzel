@@ -84,6 +84,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: read # the last green main run
+      statuses: read # and whether the main judge accepted it
     needs: admission
     if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Changed paths
@@ -428,6 +429,7 @@ jobs:
       contents: write # publishes the badge to the python-coverage-comment-action-data branch
       pull-requests: write # comments the coverage report on pull requests
       actions: read # the merge tier's last green main run
+      statuses: read # and whether the main judge accepted it
     env:
       UV_NO_SYNC: "1"
     steps:
@@ -1155,6 +1157,7 @@ jobs:
     permissions:
       contents: read
       actions: read # the merge tier's last green main run
+      statuses: read # and whether the main judge accepted it
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.focused_matrix || '{"include":[]}') }}

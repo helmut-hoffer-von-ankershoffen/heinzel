@@ -12,14 +12,18 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scripts import focused_job
 from scripts.focused_plan import ADVISORY_LANES, DESKTOP_ALL, LANES, WHOLE_SUITES, Scope, current_scope, git
-from scripts.release_candidate import require, unique_object
+from scripts.release_candidate import CandidateError, require, unique_object
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 COVERAGE_VERSION = "7.17.0"
 THRESHOLD = 90
@@ -31,6 +35,7 @@ ADVISORY_TYPE = "advisory-tests/v1"  # an advisory lane reports its failures wit
 FULL_LANE = "coverage"  # the full set's scoped coverage evidence, from the Coverage job
 PLUGINS_URL = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git"
 PLUGIN_CONTRACT = "core:plugin-api@1"
+CONSUMERS_BUDGET = 20 * 60  # seconds for every plugin together, inside the focused job's 30 minutes
 MEASUREMENT = "coverage.json"
 REPORT = "evidence.json"
 JUNIT = "junit.xml"
@@ -106,6 +111,39 @@ def cases_digest(data: bytes) -> str:
         "focused selection skipped, failed, duplicated, or collected no tests",
     )
     return hashlib.sha256(canonical(sorted(names))).hexdigest()
+
+
+def _owner_of(kind: str, test: str) -> tuple[str, str]:
+    """The JUnit attribute and value that name a selected test file's cases, per runner."""
+    path = test.split("::", 1)[0]
+    if kind in {"pytest", "e2e"}:
+        return "classname", path.removesuffix(".py").replace("/", ".")
+    if kind == "vitest":
+        return "classname", path.removeprefix("web/")
+    return "file", path  # node --test names the absolute file
+
+
+def require_cases_cover(kind: str, tests: tuple[str, ...], data: bytes) -> None:
+    """Every selected test file must have run at least one case: a selected file that collects none is refused.
+
+    Raises:
+        CandidateError: A selected file has no case in the report.
+    """
+    if any(test in WHOLE_SUITES.values() for test in tests):
+        return  # a whole suite names no file
+    root = ET.fromstring(data)  # noqa: S314 - bounded report with no DTD or entity declaration, checked by the caller
+    cases = list(root.iter("testcase"))
+    missing = []
+    for test in tests:
+        attribute, owner = _owner_of(kind, test)
+        if not any(
+            (value := case.get(attribute, "")) == owner
+            or value.startswith(owner + ".")
+            or (attribute == "file" and value.endswith("/" + owner))
+            for case in cases
+        ):
+            missing.append(test)
+    require(not missing, "selected tests ran no case: " + ", ".join(missing))
 
 
 def advisory_cases(data: bytes) -> tuple[str, list[str]]:
@@ -252,6 +290,7 @@ def evidence(
     else:
         require(set(files) == ({JUNIT, MEASUREMENT} if covered else {JUNIT}), "wrong focused evidence inventory")
         digest = cases_digest(files[JUNIT])
+        require_cases_cover(LANES[lane][2], scope.selection[lane], files[JUNIT])
     require(lane not in scope.case_digests or digest == scope.case_digests[lane], f"{lane} test cases differ")
     result = {
         "schema": 1,
@@ -322,11 +361,8 @@ def _desktop_commands(tests: tuple[str, ...], out: Path, root: Path = Path()) ->
     ]
 
 
-def _consumers(out: Path, env: dict[str, str], work: Path) -> None:
-    """Build this tree's wheel, then run every public plugin's checks at plugins main against it, one at a time.
-
-    Each plugin is one JUnit case; a failing plugin is a failed case, so the lane's evidence names it.
-    """
+def _consumer_names(env: dict[str, str], work: Path) -> tuple[str, list[str], list[str]]:
+    """Build this tree's wheel and clone plugins main; return the wheel, the make prefix and the planned plugins."""
     _execute(["make", "build"], env)
     wheels = sorted(Path("dist").glob("heinzel-*.whl"))
     require(len(wheels) == 1, "expected exactly one Core wheel in dist/")
@@ -343,17 +379,43 @@ def _consumers(out: Path, env: dict[str, str], work: Path) -> None:
     )
     names = [row["name"] for row in json.loads(plan.stdout)["include"]]
     require(bool(names), "the plugins plan selects no consumer")
-    suite = ET.Element("testsuite", name="consumers", tests=str(len(names)))
+    return wheel, make, names
+
+
+def _consumers(out: Path, env: dict[str, str], work: Path, clock: Callable[[], float] = time.monotonic) -> None:
+    """Run every public plugin's checks at plugins main against this tree's wheel, one at a time, within a budget.
+
+    Each plugin is one JUnit case; a failing plugin is a failed case, so the lane's evidence names it. The lane is
+    advisory: when it cannot even start (build, clone, plan) or runs out of its time budget, that is one more failed
+    case, never a failed job.
+    """
+    suite = ET.Element("testsuite", name="consumers")
+    deadline = clock() + CONSUMERS_BUDGET
+    try:
+        wheel, make, names = _consumer_names(env, work)
+    except (CandidateError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        case = ET.SubElement(suite, "testcase", classname="consumers", name="lane did not run")
+        ET.SubElement(case, "failure", message=f"{type(error).__name__}: {error}"[:500])
+        names = []
     for name in names:
         case = ET.SubElement(suite, "testcase", classname="consumers", name=name)
-        done = subprocess.run(  # noqa: S603 - fixed make target, one plugin at a time
-            [*make, "check", f"NAME={name}", f"CORE={wheel}"],
-            env=env,
-            check=False,
-            timeout=focused_job.TIMEOUT,
-        )
-        if done.returncode:
-            ET.SubElement(case, "failure", message=f"make check NAME={name} exited {done.returncode}")
+        left = deadline - clock()
+        if left <= 0:
+            ET.SubElement(case, "failure", message="not run: the lane's time budget is spent")
+            continue
+        try:
+            done = subprocess.run(  # noqa: S603 - fixed make target, one plugin at a time
+                [*make, "check", f"NAME={name}", f"CORE={wheel}"],
+                env=env,
+                check=False,
+                timeout=min(focused_job.TIMEOUT, left),
+            )
+            code = done.returncode
+        except subprocess.TimeoutExpired:
+            code = "timeout"
+        if code:
+            ET.SubElement(case, "failure", message=f"make check NAME={name} exited {code}")
+    suite.set("tests", str(len(suite)))
     (out / JUNIT).write_bytes(ET.tostring(suite, encoding="utf-8", xml_declaration=False))
 
 

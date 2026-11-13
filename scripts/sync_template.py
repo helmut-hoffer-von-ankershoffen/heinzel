@@ -253,6 +253,7 @@ def _without_focused_admission(text: str) -> str:
     )
     # The merge tier's scoped coverage evidence of a full-set run (ADR 0149) is the core's.
     text = text.replace("      actions: read # the merge tier's last green main run\n", "")
+    text = text.replace("      statuses: read # and whether the main judge accepted it\n", "")
     text = text.replace(
         "          fetch-depth: 0 # the merge tier's scope reads the tested merge's base and the last green main\n", ""
     )

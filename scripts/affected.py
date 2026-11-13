@@ -80,10 +80,11 @@ FULL = re.compile(
     r"|web/package\.json$|web/pnpm-lock\.yaml$|web/vite\.config\.ts$|web/tsconfig\.json$|web/biome\.json$"
     r"|web/src/test/|web/src/main\.tsx$|web/src/App\.tsx$|web/index\.html$"
     r"|fuzz/|agent-skills/|design/tokens|\.pre-commit|\.gitleaks|SECURITY\.md$"
-    r"|desktop/managed/)"  # the dormant managed backend has no focused lane of its own (ADR 0149)
+    r"|desktop/managed/|desktop/(?:package\.json|pnpm-lock\.yaml)$)"  # managed: no lane; desktop deps: Electron
 )
 DOCS = re.compile(
-    r"^(?:docs/(?!.*\.sh$).*|[^/]*\.md|mkdocs\.yml|scripts/(?:site_[a-z_]+|check_docs)\.py|design/README\.md)$"
+    r"^(?:docs/(?!.*\.sh$).*|[^/]*\.md|(?:research|desktop|web)/.*\.md|mkdocs\.yml"
+    r"|scripts/(?:site_[a-z_]+|check_docs)\.py|design/README\.md)$"
 )
 SITE_TEST_FILES = re.compile(
     r"^tests/unit/(?:site_[a-z_]+|docs_style|documentation|standards|repository|pypi_description|readme_diagnostics)_test\.py$"
@@ -91,7 +92,6 @@ SITE_TEST_FILES = re.compile(
 DESKTOP = re.compile(r"^desktop/")
 # The desktop app's own files (not the managed backend, which has its own lane; not its Markdown).
 DESKTOP_UNIT = re.compile(r"^desktop/(?!managed/)(?!.*\.md$)")
-DESKTOP_LOCKED = re.compile(r"^desktop/(?:package\.json|pnpm-lock\.yaml)$")  # every test depends on them
 DESKTOP_TEST = re.compile(r"^desktop/test/[^/]+\.test\.js$")
 PLUGINS = re.compile(r"^plugins/")
 WEB_SRC = re.compile(r"^web/src/.*\.(?:ts|tsx|css)$")
@@ -213,7 +213,7 @@ class Repo:
                 continue
             name = re.compile(rf"(?<![\w.-]){re.escape(Path(path).name)}(?![\w.-])")
             owners = {test for test, text in self.desktop_tests.items() if name.search(text)}
-            if DESKTOP_TEST.match(path) or DESKTOP_LOCKED.match(path) or not owners:
+            if DESKTOP_TEST.match(path) or not owners:
                 return None
             tests |= owners
         return sorted(tests)

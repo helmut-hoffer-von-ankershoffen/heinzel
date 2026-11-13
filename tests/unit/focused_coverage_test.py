@@ -223,6 +223,53 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
     assert {2, 5, 8, 11} <= set(measured["executed_lines"])
 
 
+def test_desktop_runner_installs_the_locked_test_dependencies_and_runs_only_the_selection(coverage, tmp_path):
+    commands = coverage._desktop_commands(("desktop/test/shutdown.test.js",), tmp_path)
+    assert commands[0] == ["make", "desktop-unit-setup"]
+    assert commands[-1][-6:] == [
+        "exec",
+        "node",
+        "--test",
+        "--test-reporter=junit",
+        f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
+        "test/shutdown.test.js",
+    ]
+    assert commands[-1][:8] == [
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/web_build.py",
+        "pnpm",
+        "--dir",
+        "../desktop",
+    ]
+
+
+def test_desktop_runner_expands_the_whole_suite_from_the_checkout(coverage, tmp_path):
+    (tmp_path / "desktop/test").mkdir(parents=True)
+    for name in ("b.test.js", "a.test.js", "helper.js"):
+        (tmp_path / "desktop/test" / name).write_text("")
+    commands = coverage._desktop_commands(("desktop/ALL",), tmp_path / "out", tmp_path)
+    assert commands[-1][-2:] == ["test/a.test.js", "test/b.test.js"]
+    from scripts.release_candidate import CandidateError
+
+    with pytest.raises(CandidateError, match="no test files"):
+        coverage._desktop_commands(("desktop/ALL",), tmp_path, tmp_path / "empty")
+
+
+def test_the_desktop_lane_runs_the_desktop_runner(coverage, scope, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    scope = replace(scope, selection={"desktop": ("desktop/test/window.test.js",)})
+    calls = []
+    monkeypatch.setattr(coverage, "_execute", lambda command, _env: calls.append(command))
+    monkeypatch.setattr(coverage, "evidence", lambda *_args: {})
+    coverage.run_lane(scope, "desktop", tmp_path / "out", 1, 1)
+    assert calls[0] == ["make", "desktop-unit-setup"]
+    assert calls[-1][-1] == "test/window.test.js"
+
+
 @pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
 def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
     from dataclasses import replace
@@ -247,7 +294,7 @@ def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope,
 def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):
     from dataclasses import replace
 
-    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    junit = b'<testsuite><testcase classname="tests.unit.focused_coverage_test" name="test_case"/></testsuite>'
     scope = replace(
         scope,
         selection={"python315": ("tests/unit/focused_coverage_test.py",)},
@@ -312,11 +359,12 @@ def test_merge_tier_evidence_records_a_later_attempt(coverage, scope):
     from dataclasses import replace
 
     scope = replace(scope, production={}, selection={"web": ("web/src/a.test.ts",)})
+    ok = b'<testsuite><testcase classname="src/a.test.ts" name="a"/></testsuite>'
     from scripts.release_candidate import CandidateError
 
     with pytest.raises(CandidateError, match="run attempt"):
-        coverage.evidence(scope, "web", 1, 0, {coverage.JUNIT: JUNIT_OK})
-    assert coverage.evidence(scope, "web", 1, 3, {coverage.JUNIT: JUNIT_OK})["attempt"] == 3
+        coverage.evidence(scope, "web", 1, 0, {coverage.JUNIT: ok})
+    assert coverage.evidence(scope, "web", 1, 3, {coverage.JUNIT: ok})["attempt"] == 3
 
 
 def test_an_advisory_lane_reports_failures_without_failing(coverage, scope):
@@ -398,3 +446,55 @@ def test_the_consumers_lane_checks_every_plugin_serially(coverage, tmp_path, mon
     digest, failed = coverage.advisory_cases((out / coverage.JUNIT).read_bytes())
     assert failed == ["y"]
     assert len(digest) == 64
+
+
+def test_the_consumers_lane_stays_advisory_when_it_cannot_start(coverage, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    def broken(args, _env):
+        raise subprocess.CalledProcessError(2, args)
+
+    monkeypatch.setattr(coverage, "_execute", broken)
+    out = tmp_path / "out"
+    out.mkdir()
+    coverage._consumers(out, {}, tmp_path / "work")
+    _digest, failed = coverage.advisory_cases((out / coverage.JUNIT).read_bytes())
+    assert failed == ["lane did not run"]
+
+
+def test_the_consumers_lane_stops_at_its_time_budget(coverage, tmp_path, monkeypatch):
+    monkeypatch.setattr(coverage, "_consumer_names", lambda _env, _work: ("w.whl", ["make"], ["a", "b", "c"]))
+    ticks = iter([0, 0, coverage.CONSUMERS_BUDGET + 1, coverage.CONSUMERS_BUDGET + 2])
+    runs = []
+    monkeypatch.setattr(
+        coverage.subprocess, "run", lambda args, **_kw: runs.append(args) or subprocess.CompletedProcess(args, 0)
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    coverage._consumers(out, {}, tmp_path, clock=lambda: next(ticks))
+    _digest, failed = coverage.advisory_cases((out / coverage.JUNIT).read_bytes())
+    assert (len(runs), failed) == (1, ["b", "c"])
+
+
+@pytest.mark.parametrize(
+    ("kind", "tests", "case", "ok"),
+    [
+        ("pytest", ("tests/unit/a_test.py::test_x",), 'classname="tests.unit.a_test"', True),
+        ("pytest", ("tests/unit/a_test.py",), 'classname="tests.unit.a_test.TestGroup"', True),
+        ("pytest", ("tests/unit/a_test.py", "tests/unit/b_test.py"), 'classname="tests.unit.a_test"', False),
+        ("vitest", ("web/src/a.test.ts",), 'classname="src/a.test.ts"', True),
+        ("vitest", ("web/src/a.test.ts",), 'classname="src/other.test.ts"', False),
+        ("node", ("desktop/test/a.test.js",), 'classname="test" file="/runner/work/desktop/test/a.test.js"', True),
+        ("node", ("desktop/test/a.test.js",), 'classname="test" file="/runner/work/desktop/test/b.test.js"', False),
+        ("vitest", ("web/ALL",), 'classname="src/anything.test.ts"', True),
+    ],
+)
+def test_every_selected_file_must_run_a_case(coverage, kind, tests, case, ok):
+    from scripts.release_candidate import CandidateError
+
+    report = f'<testsuite><testcase {case} name="n"/></testsuite>'.encode()
+    if ok:
+        coverage.require_cases_cover(kind, tests, report)
+    else:
+        with pytest.raises(CandidateError, match="ran no case"):
+            coverage.require_cases_cover(kind, tests, report)

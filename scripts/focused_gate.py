@@ -23,10 +23,14 @@ from scripts.focused_plan import (
     ARTIFACT_PREFIX,
     FULL_JOB,
     PLAN_VARIABLE,
+    PROTECTED_FILES,
     Scope,
     git,
+    git_blob,
     last_green_main,
+    plan_registry,
     pr_merge_base,
+    prose_only,
     raw_diff,
     registry_slots,
     require_pr_base_ancestor,
@@ -422,13 +426,16 @@ def _verify_workload(
     artifacts = _artifact_inventory(gate, run)
     if scope.full:
         # The selector failed open: every job that ran must pass (advisory lanes aside), with the full matrix there.
+        # A main push of prose alone runs no app jobs (ci.yml's prose_push): its PR already ran everything.
+        prose = source.run["event"] == "push" and prose_only(scope.changed)
         require(
-            {FULL_JOB, "Coverage", *STATIC_JOBS} <= ran and any(name.startswith("Test (") for name in ran),
+            {FULL_JOB, *STATIC_JOBS} <= ran
+            and (prose or ("Coverage" in ran and any(name.startswith("Test (") for name in ran))),
             "the full set did not run its matrix and Coverage",
         )
         for name in sorted(ran - {f"Focused tests ({lane})" for lane in ADVISORY_LANES}):
             _check(gate, source, names[name])
-        lanes = {FULL_LANE: names["Coverage"]}
+        lanes = {} if prose and "Coverage" not in ran else {FULL_LANE: names["Coverage"]}
     else:
         expected = STATIC_JOBS | set(scope.workload.jobs)
         if source.run["event"] == "pull_request":
@@ -454,6 +461,45 @@ def _verify_workload(
             canonical(recorded) == canonical(evidence(scope, lane, run, job["run_attempt"], files)),
             "focused typed evidence differs from exact source or recorded tests",
         )
+
+
+def require_reviewed_execution(scope: Scope, registry: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
+    """A change to the workflow or its producers runs code this judge has not seen: require a reviewed pin of it.
+
+    The selection is this judge's own, but the jobs that ran are the tested tree's workflow. When a protected file
+    differs from the base, a reviewed manifest (the plan registry) must pin every protected blob of the tested tree.
+
+    Raises:
+        CandidateError: A protected file changed without a reviewed execution manifest for these exact blobs.
+    """
+    tested = {path: git_blob(scope.commit, path) for path in PROTECTED_FILES}
+    changed = sorted(path for path, blob in tested.items() if git_blob(scope.workload.base, path) != blob)
+    if changed:
+        plans = [registry[key] for key in keys if isinstance(registry.get(key), dict)]
+        require(
+            any(plan.get("execution") == tested for plan in plans),
+            "the workflow or its producers changed (" + ", ".join(changed) + "): a reviewed execution manifest "
+            "must pin the tested blobs",
+        )
+    return changed
+
+
+def advisory_summary(gate: Gate, source: GateSource, scope: Scope, read: Callable[[str], bytes]) -> str:
+    """One verdict clause per advisory lane: what it found, or that it did not finish. It never blocks."""
+    names = {job["name"]: job for job in jobs_for(gate, source)}
+    artifacts = _artifact_inventory(gate, source.run["id"])
+    clauses = []
+    for lane in sorted(ADVISORY_LANES & scope.selection.keys()):
+        job = names.get(f"Focused tests ({lane})")
+        name = evidence_name(lane, source.run["id"], job["run_attempt"]) if job else ""
+        if not job or job["conclusion"] != "success" or name not in artifacts:
+            clauses.append(f"{lane} advisory: did not finish")
+            continue
+        failed = parse(_artifact(read, job, artifacts[name], name)[REPORT]).get("failed", [])
+        clauses.append(
+            f"{lane} advisory: {len(failed)} failing: {', '.join(failed)}" if failed else f"{lane} advisory: passed"
+        )
+    return "; ".join(clauses)
 
 
 def _verify_config(scope: Scope) -> None:
@@ -538,6 +584,8 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
         verdict = "Whole-project coverage measured by the full release candidate"
     else:
         # This judge runs from main: its own selector recomputed the scope, so the tested tree cannot narrow it.
+        registry = plan_registry(manifest, slots)
+        protected = require_reviewed_execution(scope, registry, (f"pull_request:{gate.head}",))
         _verify_config(scope)
         _verify_workload(gate, source, scope, read)
         verdict = ("Full set (" + scope.reason + "); " if scope.full else "") + (
@@ -547,6 +595,10 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
             if any(web_production(path) for path in scope.changed)
             else "Python coverage: not applicable to the selected scope"
         )
+        if protected:
+            verdict += "; reviewed workflow change: " + ", ".join(protected)
+        if advisory := advisory_summary(gate, source, scope, read):
+            verdict += "; " + advisory
 
     current, merge, main = pull_identity(gate, gate.head)
     require(
@@ -594,14 +646,19 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
     )
     green = last_green_main(gate.github, gate.head)
     require(
-        green is not None and git("merge-base", base, green).decode().strip() == base,
-        "a main base must not be newer than the last main commit with a green run",
+        green is None or git("merge-base", base, green).decode().strip() == base,
+        "a main base must not be newer than the last accepted green main commit",
     )
     source = WorkloadSource("push", REPOSITORY, "refs/heads/main", {}, base, gate.head, raw_diff(base, gate.head))
-    scope = resolve(source, gate.head, manifest, slots=slots)
+    unproven = "no green main run before this push"  # CI ran the full set; this judge requires the same
+    scope = resolve(
+        source, gate.head, manifest, slots=slots, select=(lambda _c, _p: (None, unproven)) if green is None else None
+    )
     if not isinstance(scope, Scope):
         message = "focused main evidence cannot stand in for a full candidate"
         raise CandidateError(message)
+    keys = (f"push:{gate.head}", f"push-tree:{scope.tree}")
+    protected = require_reviewed_execution(scope, plan_registry(manifest, slots), keys)
     _verify_config(scope)
     _verify_workload(gate, GateSource(run, source, gate.head), scope, read)
     require(
@@ -616,6 +673,10 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
         "run": run_id,
         "attempt": run["run_attempt"],
         "manifest_sha256": scope.manifest_digest,
+        "full": scope.full,
+        "reviewed_workflow_change": protected,
+        # The flake ledger for main: every job that passed only on a rerun (ADR 0149). The caller files them.
+        "passed_on_rerun": rerun_ledger(gate.github, run),
     }
 
 
@@ -631,11 +692,11 @@ def main() -> None:
     run = int(os.environ["CI_RUN_ID"])
     manifests = os.environ.get(PLAN_VARIABLE, "")
     if base := os.environ.get("FOCUSED_MAIN_BASE"):
-        print(
-            json.dumps(
-                verify_main(gate, run, base, manifests, read, slots=registry_slots(dict(os.environ))), sort_keys=True
-            )
-        )
+        proof = verify_main(gate, run, base, manifests, read, slots=registry_slots(dict(os.environ)))
+        if proof["passed_on_rerun"]:
+            ledger = Path(os.environ.get("FLAKE_LEDGER", "flake-ledger.txt"))
+            ledger.write_text("\n".join(proof["passed_on_rerun"]) + "\n", encoding="utf-8")
+        print(json.dumps(proof, sort_keys=True))
         return
     verdict = verify(gate, run, manifests, read, slots=registry_slots(dict(os.environ)))
     ledger = rerun_ledger(gate.github, gate.github(f"actions/runs/{run}"))
