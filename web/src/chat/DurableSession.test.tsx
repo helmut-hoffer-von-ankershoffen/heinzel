@@ -2034,6 +2034,26 @@ it("opens the Details for a review link", async () => {
   expect(details.open).toBe(true);
 });
 
+it("leaves Details to the browser: a press opens it with one attribute write and a re-render keeps it open", async () => {
+  mockApi({ ...shell, "/api/heinzel/session": { ...snapshot, profile_revision: 1 } });
+  renderAt(`/?chat=${sessionId}`);
+  const details = (await screen.findByText("Details")).closest("details") as HTMLDetailsElement;
+  await screen.findByText("Customize your Heinzel");
+  const writes: Array<string | null> = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) writes.push((record.target as Element).getAttribute("open"));
+  });
+  observer.observe(details, { attributes: true, attributeFilter: ["open"] });
+  fireEvent.click(screen.getByText("Details"));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  fireEvent.click(screen.getByRole("button", { name: "Search conversations" }));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  observer.disconnect();
+  expect(details.open).toBe(true);
+  expect(writes).toEqual([""]);
+});
+
 it("names the cause of a failed turn, links to the AI settings and keeps the recovery behind one line", async () => {
   mockApi({
     ...shell,

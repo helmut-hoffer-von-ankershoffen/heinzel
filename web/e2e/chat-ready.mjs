@@ -44,6 +44,31 @@ export async function openDetails(page) {
   await pressUntilOpen(summary, 3);
 }
 
+// Runs in the page: why is this element not visible? The first ancestor that hides it, or none.
+const hiddenBy = (node) => {
+  for (let element = node; element; element = element.parentElement) {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    const name = `${element.nodeName.toLowerCase()}${element.getAttribute("aria-label") ? `[${element.getAttribute("aria-label")}]` : ""}`;
+    if (element.nodeName === "DETAILS" && !element.open && element !== node) return `${name} is closed`;
+    if (element.hidden) return `${name} is hidden`;
+    if (style.display === "none") return `${name} has display none`;
+    if (style.visibility !== "visible") return `${name} has visibility ${style.visibility}`;
+    if (element === node && (rect.width === 0 || rect.height === 0)) return `${name} has no size`;
+  }
+  return node.checkVisibility() ? null : "every ancestor is shown, yet checkVisibility() is false";
+};
+
+/** A section behind Details must be visible within 10 s; if not, fail with what hides it, not 30 s later in an action. */
+export async function requireShown(locator, label) {
+  try {
+    await locator.waitFor({ state: "visible", timeout: 10000 });
+  } catch (error) {
+    const cause = await locator.evaluate(hiddenBy).catch(() => "not on the page");
+    throw new Error(`${label} is not visible: ${cause ?? "shown now, after the wait"}`, { cause: error });
+  }
+}
+
 // One place for the locator the scheduled, template and generic chat journeys each need.
 /** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
 export function recurringTurns(page) {
