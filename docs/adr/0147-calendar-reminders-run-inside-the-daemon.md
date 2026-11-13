@@ -75,8 +75,20 @@ Chosen option: **a child-process reminder lane of the scheduled tick that ends o
    that the tick runs its jobs as today.
    - The lane runs 0126's cycle: refresh at least every 30 seconds, wake at the next due instant, revalidate before
      delivery.
+   - The parent tells the lane that its jobs are done by closing a pipe it handed to the child.
+   - **Locks.** The parent holds `lifecycle.lock` and `tick.lock` only while it runs its jobs, as today, including
+     the handling of abandoned job threads. Once its jobs finish it releases both and closes the pipe. It then waits
+     for the lane while holding no daemon lock. `job_running()`, the auto-updater, `pause`, `resume`, `install`,
+     `restart` and `uninstall` therefore see the daemon idle while only a lane runs. The lane itself takes only
+     0126's per-cycle fence.
    - The tick exits only after its jobs are done and the lane has ended. The manager counts one job, one label and
      one consent.
+   - **Crash.** If the child exits before its window (provider bug, out of memory), the parent restarts it with
+     backoff: at most three restarts per tick, 5, 15 and 45 seconds apart. Each crash is recorded in the heartbeat.
+     After the third one, the lane is overdue (point 13) until the next tick.
+   - **Teardown past the slot.** If, after the lane exits, the wall clock is already at or past `s − ε` (one second),
+     the parent starts a new lane for the next window instead of exiting, and records an overrun. A slow teardown
+     therefore cannot drop the next firing and leave an interval without reminders.
 3. **The window rule.** The lane may end only when its tick's jobs have finished and the wall clock is inside the end
    window `[s − m, s − m/2)` of the next local slot `s` (margin `m`, point 6).
    - If the lane is still running jobs at the window, or finds itself past the window, it targets the window of the
@@ -91,40 +103,62 @@ Chosen option: **a child-process reminder lane of the scheduled tick that ends o
    move minute-aligned slots.
 5. **The boundary gap.** Most reminders are due at :25 and :55, which are slot boundaries.
    - In its last cycle the lane delivers every reminder due before the next lane can be running: up to
-     `end + m + H`, where `H` is the measured start-up time of a lane, capped at 90 seconds.
-   - Such a reminder therefore comes up to `m + H` seconds early, never late. The next lane will not repeat it,
-     because 0126's replay keys deduplicate delivery.
+     `end + m + H`, where `end` is the window end `s − m/2` and `H` is the measured start-up time of a lane, capped at
+     90 seconds. On systemd, `s` includes the fixed delay (point 7).
+   - This needs a planner change: in the last cycle only, a reminder counts as due when `due <= now + lookahead`.
+   - Such a reminder comes up to `m + H` seconds early (105 at most), never late. The next lane will not repeat it,
+     because 0126's replay keys deduplicate delivery. Quiet hours still apply to the actual delivery instant, so a
+     07:05 meeting with working hours from 07:00 is a test case.
 6. **The margin.**
    - `m` covers the last cycle, teardown and timer leeway. It is fixed from measurements on macOS and Linux, starting
      at 15 seconds.
    - Agenda reads in the lane have a hard timeout of 8 seconds. A read starts only when `end − now` is more than that
-     timeout.
+     timeout, with `end` the window end `s − m/2`.
    - Because of point 3 a missed margin costs one dropped tick, not a gap, so the margin only has to be usually
      enough.
 7. **Timer settings (amends 0020 decision 1).**
-   - systemd: the timer gets `AccuracySec=1s` and `FixedRandomDelay=true`, so the per-machine delay stays constant
-     and the lane adds it to `s`. The service gets `TimeoutStartSec` of the interval plus the job timeout. Heinzel
-     starts the oneshot only with `--no-block`, because it stays `activating` for the whole lane.
+   - systemd: the timer gets `AccuracySec=1s` and `FixedRandomDelay=true`, so the per-machine delay stays constant.
+     The lane reads `s` from the timer's `NextElapseUSecRealtime` and never recomputes systemd's delay hash.
+   - systemd: the service gets `TimeoutStartSec=infinity`. Several jobs run one after another, so no fixed sum fits;
+     the lane's own window rule and the job timeouts bound the run.
+   - Heinzel starts the oneshot only with `--no-block`, because it stays `activating` for the whole lane.
    - launchd: `StartCalendarInterval` has no jitter and needs no change.
 8. **Lifecycle code that assumes a short tick.** Package handover (`idle_package_handover_matches`), install recovery
    (`_recover_install`), `_service_manager_pid` and the update kickstart all read a live manager PID as "a tick is
    running". With reminders on, that is almost always true.
-   - These paths read the lane marker and treat a lane with no running jobs as interruptible. They set the
-     maintenance gate, the lane exits within one cycle, the tick exits, and the updater then kickstarts the daemon
-     once.
+   - These paths treat a lane with no running jobs as interruptible. Because the parent released its locks
+     (point 2), they can take the daemon lifecycle lock.
+   - The gate is the SDK maintenance gate that 0126's fence checks: the installation mutation marker
+     (`installation_mutation_pending`) under the host maintenance lock. The updater sets it. `_recover_install` and
+     package-handover recovery set it while holding the daemon lifecycle lock.
+   - With the gate set, the updater sends SIGTERM to the lane child named in the lane marker. It sends it only after
+     checking that the PID's process birth time matches the marker. The lane exits at once and the parent exits after
+     it. The updater does not wait for the next cycle.
+   - The daemon counts as idle only when the manager reports no PID after the gate is set, never because of the lane
+     marker. Only then does the updater kickstart the daemon once.
    - Reminders therefore come back within seconds after an update, as with 0126's worker, not at the next slot.
    - With jobs running, they wait as today.
 9. **Migration from 0126 units.** Reminders now run for one profile per daemon: the profile the daemon is bound to.
-   - The retained `calendar-reminder-worker` first checks whether a daemon lane owns its profile. If so, it boots out
-     and removes its own byte-matching unit, then exits. Otherwise it keeps working as under 0126.
+   - The retained `calendar-reminder-worker` first checks whether a daemon lane owns its profile. That means a fresh
+     lane heartbeat (point 13) carrying this profile's identity, not merely a daemon bound to the profile. A paused
+     or broken daemon therefore never makes the worker remove itself with nothing to replace it.
+   - If a lane owns the profile, the worker removes itself in this order. It verifies its unit's bytes, then unlinks
+     the unit file, and only then boots itself out (`launchctl bootout`; on systemd `disable --now --no-block`), and
+     exits. A worker that booted out first would be killed before unlinking, and launchd would load it again at the
+     next login. If no lane owns the profile, the worker keeps working as under 0126.
    - `hz system update`, `system.daemon.install` and the tick before its lane also remove a byte-matching unit of the
-     daemon's profile. They hold the SDK maintenance lock, then the daemon lifecycle lock, then the calendar profile
-     lock, in that order. Migration runs before the lane starts.
+     daemon's profile. They take the SDK maintenance lock and the calendar profile lock as one `MaintenanceLocks`
+     union, which acquires its paths in sorted order. The tick takes it without waiting and skips migration for this
+     tick if the union is busy; it already holds the daemon lifecycle lock while it runs jobs. Migration runs before
+     the lane starts.
+   - In a profile that is not the daemon's profile, Calendar never offers to install the daemon (that would rebind or
+     refuse its one per-user label). It says "Reminders run for the profile this computer's Heinzel daemon uses."
    - Units of other profiles keep working until they are removed.
    - Modified, linked, foreign or shim-changed units are never touched. Doctor lists each leftover unit with its exact
      removal action.
-   - The worker and its uninstall operation remain as long as any 0126 unit can exist. The install operation and its
-     separate confirmation are withdrawn.
+   - The worker and its uninstall operation remain while 0126 units can exist. Doctor's leftover finding names a
+     release after which the worker only removes its own unit or reports, so the operation can go later. The install
+     operation and its separate confirmation are withdrawn.
 10. **0133 inventory.** The calendar namespace stays registered for SDK uninstall. It gains a per-unit classifier for
     migration and doctor: owned and matching, owned but changed, or foreign. Uninstall keeps refusing anything it
     cannot classify, as today.
@@ -132,16 +166,17 @@ Chosen option: **a child-process reminder lane of the scheduled tick that ends o
     user-scoped and off by default. Project configuration cannot grant it, and there is no third step. The copy
     changes:
     - Next to the Calendar reminders toggle: "the background helper reads your calendar about every 30 seconds, also
-      while the app is closed".
+      while the app is closed". When the setting is turned on and no tick is running, the app kickstarts the daemon
+      once, so the first lane starts at once rather than at the next slot.
     - Pause: "also pauses calendar reminders".
     - The daemon pane lists Calendar reminders as keeping it running, with the lane's memory.
 12. **Setup from Calendar.** Calendar's single action calls the existing `system.daemon.install` or
     `system.daemon.resume` operation through 0078 point 3's trusted confirmation. 0078 already moved install to the
     web head; this ADR adds no operation and no REST or MCP path.
 13. **Heartbeat and status.**
-    - The lane writes a heartbeat when its state changes, and otherwise at most once a minute. It records the PID,
-      version, profile identity, window, the last cycle result (`ok`, `provider-unavailable`, `disabled`, `gate`),
-      and the last slot overrun.
+    - The lane writes a heartbeat when its state changes, and at least once a minute (never more than every 30
+      seconds). It records the PID, version, profile identity, window, the last cycle result (`ok`,
+      `provider-unavailable`, `disabled`, `gate`), crashes and restarts, and the last slot overrun.
     - The lane is *overdue* when its heartbeat is older than two minutes and the last slot and the last wake (wall
       time minus monotonic time) are each more than two minutes ago.
     - `org.calendar-reminders-status` reads the daemon and lane state through the `DaemonAttestation` port, which
@@ -174,6 +209,11 @@ Chosen option: **a child-process reminder lane of the scheduled tick that ends o
   - migration with a second profile's unit, a modified unit and a shim-changed unit causes no respawn loop, and
     doctor names each leftover unit;
   - handover after an update, and install recovery, both work with a lane running.
+  - while only a lane runs, `job_running()` is false and an automatic update proceeds;
+  - a killed lane child is restarted with backoff, and a teardown that crosses the slot starts a new lane;
+  - a worker whose profile has a fresh lane heartbeat unlinks its unit before booting out and does not return at
+    the next login, and one whose daemon is paused keeps working;
+  - a 07:05 meeting with working hours from 07:00 is not delivered early, before quiet hours end.
 
 ## More Information
 
