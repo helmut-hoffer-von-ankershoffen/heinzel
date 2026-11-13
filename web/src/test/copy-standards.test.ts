@@ -35,7 +35,6 @@ const ALLOW: Record<string, string> = {
   "durable.agentUnavailable": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
   "durable.proposalInterrupted": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
   "durable.proposalOutcomeUnknown": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
-  "durable.createFailed": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
   "lifecycle.action": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.targetAction": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.question": "sweep backlog row in research/pane-microcopy-2026-11-08.md",

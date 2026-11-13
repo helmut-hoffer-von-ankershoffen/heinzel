@@ -1,4 +1,5 @@
 import type { HeinzelLook } from "@/components/heinzel";
+import { type MessageKey, t } from "@/i18n";
 
 type Appearance = {
   age: NonNullable<HeinzelLook["age"]>;
@@ -20,4 +21,11 @@ export function appearanceLook(appearance: Appearance | null | undefined): Heinz
     shirt: appearance.shirt ?? undefined,
     accessories: appearance.accessories,
   };
+}
+
+const STATES = ["proposed", "awake", "asleep", "waiting", "paused", "retired"] as const;
+
+/** A personal Heinzel's lifecycle state in words; an unknown state is shown as the service named it. */
+export function stateLabel(state: string): string {
+  return (STATES as readonly string[]).includes(state) ? t(`personal.state.${state}` as MessageKey) : state;
 }

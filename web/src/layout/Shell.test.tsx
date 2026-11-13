@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
+import { createDraftPath } from "@/lib/chatIntent";
 import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -75,6 +76,32 @@ describe("Shell", () => {
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
     }
+  });
+
+  it("opens the Page tab on a phone when the chat switcher asks for a new Heinzel on the same page", async () => {
+    mockApi({ ...answers });
+    const initialWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      renderAt("/heinzel");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+      await waitFor(() => expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true"));
+      // Only the query changes (`?create=1` on /heinzel): the pathname alone used to decide the tab.
+      await user.click(screen.getByRole("button", { name: /: switch chats$/ }));
+      const switcher = await screen.findByRole("dialog", { name: "Your chats" });
+      await user.click(within(switcher).getByRole("button", { name: "Create a personal Heinzel" }));
+      await waitFor(() => expect(screen.getByRole("tab", { name: "Page" })).toHaveAttribute("aria-selected", "true"));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
+    }
+  });
+
+  it("keeps a linked conversation in the link to a new Heinzel's draft", () => {
+    expect(createDraftPath(new URLSearchParams({ chat: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", panel: "changelog" }))).toBe(
+      "/heinzel?chat=hz-01ARZ3NDEKTSV4RRFFQ69G5FAV&create=1",
+    );
+    expect(createDraftPath(new URLSearchParams())).toBe("/heinzel?create=1");
   });
 
   it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {

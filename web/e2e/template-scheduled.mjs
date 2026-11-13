@@ -26,21 +26,11 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my source current";
   await createHeinzelWithMessage(page, sentence);
-  const assistantReply = page.locator("p").filter({
-    has: page.locator('svg[data-view="head"]'),
-    hasText: "Done",
-  });
+  const assistantReply = page.locator('[data-message-speaker="heinzel"]').filter({ hasText: "Done" });
   await assistantReply.waitFor({ timeout: 30000 });
-  assert.equal(
-    await assistantReply.evaluate((node) =>
-      [...node.childNodes]
-        .filter((child) => child.nodeType === Node.TEXT_NODE)
-        .map((child) => child.textContent)
-        .join("")
-        .trim(),
-    ),
-    "Done",
-  );
+  // The reply is exactly the model's word, rendered as prose beside the Heinzel's face.
+  await assistantReply.getByText("Done", { exact: true }).waitFor();
+  assert.equal(await assistantReply.locator('svg[data-view="bust"]').count(), 1);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByText("Review proposed terms").click();
   await terms.getByText(/Inspect the approved source/).waitFor();
@@ -111,8 +101,8 @@ try {
   await openDetails(page);
   assert.equal(new URL(page.url()).searchParams.get("chat"), session);
   assert.match(result.first_turn_id, /^interactive-/);
-  const replies = page.locator("p").filter({ has: page.locator('svg[data-view="head"], strong:text-is("Daemon:")') });
-  const firstWakeReply = replies.nth(result.first_reply_index).locator("..");
+  const replies = page.locator('[data-message-speaker="heinzel"], [data-message-speaker="daemon"]');
+  const firstWakeReply = replies.nth(result.first_reply_index);
   await firstWakeReply
     .locator("summary")
     .filter({ hasText: /^Tool activity for this reply · \d+ events$/ })
@@ -130,18 +120,13 @@ try {
       .isVisible()
       .catch(() => false),
     reply: await page
-      .locator("p")
-      .filter({ has: page.locator('svg[data-view="head"]'), hasText: "Done" })
+      .locator('[data-message-speaker="heinzel"]')
+      .filter({ hasText: "Done" })
       .isVisible()
       .catch(() => false),
     assistantExcerpt: await page
-      .locator("p")
-      .evaluateAll((nodes) =>
-        nodes
-          .filter((node) => node.querySelector('svg[data-view="head"]') !== null)
-          .slice(0, 3)
-          .map((node) => (node.textContent ?? "").slice(0, 200)),
-      )
+      .locator('[data-message-speaker="heinzel"]')
+      .evaluateAll((nodes) => nodes.slice(0, 3).map((node) => (node.textContent ?? "").slice(0, 200)))
       .catch(() => []),
     proposal: await page
       .getByRole("region", { name: "Proposed Heinzel terms" })

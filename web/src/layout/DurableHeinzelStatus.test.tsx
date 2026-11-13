@@ -5,7 +5,13 @@ import { expectPane } from "@/test/pane";
 import { mockApi, renderAt } from "@/test/render";
 
 const sessions = [
-  { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "Morning check", state: "awake", last_seq: 4 },
+  {
+    session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    name: "Morning check",
+    state: "awake",
+    last_seq: 4,
+    appearance: { age: "old", build: "round", hat: "blue" },
+  },
   { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", name: "Quiet helper", state: "paused", last_seq: 2 },
   { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAX", name: "Waiting helper", state: "waiting", last_seq: 3 },
   { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAY", name: "New helper", state: "proposed", last_seq: 0 },
@@ -19,10 +25,18 @@ describe("The durable Heinzel footer control", () => {
     fireEvent.click(button);
     const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
     expect(within(panel).getByText("4 persisted personal Heinzels")).toBeInTheDocument();
-    expect(within(panel).getByText("Active").nextElementSibling).toHaveTextContent("1");
-    expect(within(panel).getByText("Paused").nextElementSibling).toHaveTextContent("1");
-    expect(within(panel).getByText("Needs attention").nextElementSibling).toHaveTextContent("1");
-    expect(within(panel).getByText("Proposed").nextElementSibling).toHaveTextContent("1");
+    expect(within(panel).getByText("Active", { selector: "dt" }).nextElementSibling).toHaveTextContent("1");
+    expect(within(panel).getByText("Paused", { selector: "dt" }).nextElementSibling).toHaveTextContent("1");
+    expect(within(panel).getByText("Needs attention", { selector: "dt" }).nextElementSibling).toHaveTextContent("1");
+    expect(within(panel).getByText("Proposed", { selector: "dt" }).nextElementSibling).toHaveTextContent("1");
+    // Each Heinzel is listed with its own look and its state in words.
+    const rows = within(within(panel).getByRole("list", { name: "Your Heinzels" })).getAllByRole("listitem");
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("Morning check");
+    expect(rows[0]).toHaveTextContent("Active");
+    expect(rows[0]?.querySelector('svg[data-view="bust"] [fill="#1E88E5"]')).not.toBeNull();
+    expect(rows[3]).toHaveTextContent("New");
+    expect(button.querySelectorAll('svg[data-view="bust"]')).toHaveLength(3);
     // Content first, then the divider and the one bottom row of buttons with icon and text (design/README.md).
     await expectPane(panel);
     const row = within(panel).getByRole("group", { name: "Actions" });
@@ -49,35 +63,19 @@ describe("The durable Heinzel footer control", () => {
     expect(chat).toHaveAttribute("aria-label", "Open chat");
     expect(chat).toHaveAttribute("title", "Open chat");
     expect(chat).toHaveTextContent(/^$/);
-    expect(within(row).getByRole("button", { name: "Create a personal Heinzel" })).not.toHaveClass("underline");
+    expect(within(row).getByRole("link", { name: "Create a personal Heinzel" })).not.toHaveClass("underline");
   });
 
-  it("creates a durable personal Heinzel and opens its inspectable session", async () => {
-    const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const created = {
-      session_id: sessionId,
-      heinzel_id: sessionId,
-      name: "Personal Heinzel",
-      schedule: null,
-      messages: [],
-    };
-    const { calls } = mockApi({
-      ...shell,
-      "/api/heinzel/sessions": { sessions: [] },
-      "/api/heinzel/new-chat": (request: Request) => {
-        expect(request.method).toBe("POST");
-        return created;
-      },
-      "/api/heinzel/session": created,
-    });
+  it("opens the draft of a new Heinzel without creating one", async () => {
+    const { calls } = mockApi({ ...shell, "/api/heinzel/sessions": { sessions: [] } });
     renderAt("/doctor");
     fireEvent.click(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Create a personal Heinzel" }));
-    expect(await screen.findByRole("heading", { name: "Personal Heinzel" })).toBeInTheDocument();
-    const request = calls.find((item) => new URL(item.url).pathname.endsWith("/new-chat"));
-    expect(request).toBeDefined();
-    if (!request) throw new Error("The personal Heinzel creation request was not sent");
-    expect(await request.json()).toMatchObject({ name: "Personal Heinzel" });
+    const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
+    fireEvent.click(within(panel).getByRole("link", { name: "Create a personal Heinzel" }));
+    // The page asks for a name and a look first; nothing exists until that draft is saved.
+    expect(await screen.findByRole("heading", { name: "Your new Heinzel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save and chat" })).toBeDisabled();
+    expect(calls.some((item) => new URL(item.url).pathname.endsWith("/new-chat"))).toBe(false);
   });
 
   it("shows a loading placeholder without implying a count before the persisted list arrives", async () => {

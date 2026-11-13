@@ -1,80 +1,55 @@
 // Personal identities use the durable private session API; they are distinct from the existing workflow list and chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   api,
   problem,
   type SchemaHeinzelAppearance,
   type SchemaProfileProposal,
+  type SchemaSessionList,
   type SchemaSessionSnapshot,
 } from "@/api/client";
 import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
+import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { StartHelper } from "@/heinzel/StartHelper";
-import { t } from "@/i18n";
+import { type MessageKey, t } from "@/i18n";
+import { OPEN_CHAT } from "@/lib/chatIntent";
+import { cn } from "@/lib/utils";
 
 const sessionsKey = ["heinzel", "sessions"] as const;
-const pendingCreation = "hz.personal-heinzel.creation";
+const newDraftKey = "hz.personal-heinzel.new-draft";
+const defaultLook: SchemaHeinzelAppearance = { age: "grown", build: "regular" };
 const profileDraftKey = (sessionId: string) => `hz.personal-heinzel.profile-draft.${sessionId}`;
 const profileSaveKey = (sessionId: string) => `hz.personal-heinzel.profile-save.${sessionId}`;
 const field = "block w-full rounded border border-border bg-background px-2 py-1 text-sm";
 
 type ProfileDraft = { name: string; appearance: SchemaHeinzelAppearance };
 type ProfileSave = ProfileDraft & { request_id: string; expected_revision: number };
+type NewDraft = ProfileDraft & { request_id?: string };
+const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 function readProfileSave(sessionId: string): { pending: ProfileSave | null; invalid: boolean } {
   try {
     const raw = sessionStorage.getItem(profileSaveKey(sessionId));
     if (raw === null) return { pending: null, invalid: false };
     const stored: unknown = JSON.parse(raw);
-    if (!stored || typeof stored !== "object") return { pending: null, invalid: true };
-    const value = stored as Record<string, unknown>;
-    const appearance = value.appearance;
+    const draft = parseDraft(stored);
+    const value = stored as { request_id?: unknown; expected_revision?: unknown };
     if (
+      !draft ||
       typeof value.request_id !== "string" ||
-      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.request_id) ||
-      typeof value.name !== "string" ||
+      !REQUEST_ID.test(value.request_id) ||
       typeof value.expected_revision !== "number" ||
       !Number.isInteger(value.expected_revision) ||
-      value.expected_revision < 1 ||
-      !appearance ||
-      typeof appearance !== "object"
-    )
-      return { pending: null, invalid: true };
-    const look = appearance as Record<string, unknown>;
-    if (!AGES.includes(look.age as (typeof AGES)[number]) || !BUILDS.includes(look.build as (typeof BUILDS)[number]))
-      return { pending: null, invalid: true };
-    const beard = look.beard;
-    const hat = look.hat;
-    const shirt = look.shirt;
-    const accessories = look.accessories ?? [];
-    if (
-      (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
-      (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
-      (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
-      !Array.isArray(accessories) ||
-      !accessories.every(
-        (item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]),
-      )
+      value.expected_revision < 1
     )
       return { pending: null, invalid: true };
     return {
-      pending: {
-        request_id: value.request_id,
-        name: value.name,
-        expected_revision: value.expected_revision,
-        appearance: {
-          age: look.age as SchemaHeinzelAppearance["age"],
-          build: look.build as SchemaHeinzelAppearance["build"],
-          ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
-          ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
-          ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
-          accessories: accessories as SchemaHeinzelAppearance["accessories"],
-        },
-      },
+      pending: { ...draft, request_id: value.request_id, expected_revision: value.expected_revision },
       invalid: false,
     };
   } catch {
@@ -97,40 +72,56 @@ function profileSaveApplied(pending: ProfileSave, snapshot: SchemaSessionSnapsho
   );
 }
 
+function parseDraft(stored: unknown): ProfileDraft | null {
+  if (!stored || typeof stored !== "object" || !("name" in stored) || typeof stored.name !== "string") return null;
+  if (!("appearance" in stored) || !stored.appearance || typeof stored.appearance !== "object") return null;
+  const appearance = stored.appearance as Record<string, unknown>;
+  const age = appearance.age;
+  const build = appearance.build;
+  if (!AGES.includes(age as (typeof AGES)[number]) || !BUILDS.includes(build as (typeof BUILDS)[number])) return null;
+  const beard = appearance.beard;
+  const hat = appearance.hat;
+  const shirt = appearance.shirt;
+  const accessories = appearance.accessories ?? [];
+  if (
+    (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
+    (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
+    (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
+    !Array.isArray(accessories) ||
+    !accessories.every((item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]))
+  )
+    return null;
+  return {
+    name: stored.name,
+    appearance: {
+      age: age as SchemaHeinzelAppearance["age"],
+      build: build as SchemaHeinzelAppearance["build"],
+      ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
+      ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
+      ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
+      accessories: accessories as SchemaHeinzelAppearance["accessories"],
+    },
+  };
+}
+
 function readProfileDraft(sessionId: string): ProfileDraft | null {
   try {
-    const stored: unknown = JSON.parse(sessionStorage.getItem(profileDraftKey(sessionId)) ?? "null");
-    if (!stored || typeof stored !== "object" || !("name" in stored) || typeof stored.name !== "string") return null;
-    if (!("appearance" in stored) || !stored.appearance || typeof stored.appearance !== "object") return null;
-    const appearance = stored.appearance as Record<string, unknown>;
-    const age = appearance.age;
-    const build = appearance.build;
-    if (!AGES.includes(age as (typeof AGES)[number]) || !BUILDS.includes(build as (typeof BUILDS)[number])) return null;
-    const beard = appearance.beard;
-    const hat = appearance.hat;
-    const shirt = appearance.shirt;
-    const accessories = appearance.accessories ?? [];
-    if (
-      (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
-      (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
-      (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
-      !Array.isArray(accessories) ||
-      !accessories.every(
-        (item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]),
-      )
-    )
-      return null;
-    return {
-      name: stored.name,
-      appearance: {
-        age: age as SchemaHeinzelAppearance["age"],
-        build: build as SchemaHeinzelAppearance["build"],
-        ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
-        ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
-        ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
-        accessories: accessories as SchemaHeinzelAppearance["accessories"],
-      },
-    };
+    return parseDraft(JSON.parse(sessionStorage.getItem(profileDraftKey(sessionId)) ?? "null"));
+  } catch {
+    return null;
+  }
+}
+
+/** The not yet created Heinzel of this tab; `request_id` is set once its creation was sent and may have happened. */
+function readNewDraft(): NewDraft | null {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(newDraftKey) ?? "null");
+    const draft = parseDraft(stored);
+    if (!draft) return null;
+    const request = (stored as { request_id?: unknown }).request_id;
+    if (request === undefined) return draft;
+    if (typeof request !== "string" || !REQUEST_ID.test(request)) return null;
+    return { ...draft, request_id: request };
   } catch {
     return null;
   }
@@ -143,21 +134,17 @@ async function personalResult<T>(call: Promise<{ data?: T; error?: unknown; resp
   throw problem(response.status, error);
 }
 
-function creationId(): string {
-  const saved = localStorage.getItem(pendingCreation);
-  if (saved) return saved;
-  const id = crypto.randomUUID();
-  localStorage.setItem(pendingCreation, id);
-  return id;
-}
-
 export function PersonalHeinzels() {
-  const client = useQueryClient();
   const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const creatingNow = useRef(false);
-  const [creationError, setCreationError] = useState(false);
+  // `?create=1` (the chat switcher, the footer) opens the draft; a draft left in this tab comes back with the page.
+  const wanted = params.has("create");
+  const [drafting, setDrafting] = useState(() => wanted || readNewDraft() !== null);
+  useEffect(() => {
+    if (wanted) setDrafting(true);
+  }, [wanted]);
   const [locked, setLocked] = useState(false);
   const sessions = useQuery({
     queryKey: sessionsKey,
@@ -176,29 +163,18 @@ export function PersonalHeinzels() {
     enabled: selected !== null,
     retry: false,
   });
-
-  const create = async () => {
-    if (creatingNow.current) return;
-    creatingNow.current = true;
-    setCreating(true);
-    setCreationError(false);
-    try {
-      // Retain the id across reloads and unknown acknowledgements so retry never creates a second session.
-      const request_id = creationId();
-      const saved = await personalResult(api.POST("/heinzel/new-chat", { body: { request_id, name: "New Heinzel" } }));
-      if (!/^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(saved.session_id) || saved.heinzel_id !== saved.session_id) {
-        throw new Error("Invalid creation acknowledgement");
-      }
-      localStorage.removeItem(pendingCreation);
-      client.setQueryData(["heinzel", "session", saved.session_id], saved);
-      setSelected(saved.session_id);
-      await client.invalidateQueries({ queryKey: sessionsKey });
-    } catch {
-      setCreationError(true);
-    } finally {
-      creatingNow.current = false;
-      setCreating(false);
-    }
+  const closeDraft = () => {
+    setDrafting(false);
+    setLocked(false);
+    if (wanted)
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("create");
+          return next;
+        },
+        { replace: true },
+      );
   };
 
   return (
@@ -212,32 +188,417 @@ export function PersonalHeinzels() {
       ) : sessions.isError ? (
         <p role="alert">{t("personal.loadError")}</p>
       ) : (
-        <label className="block space-y-1 text-sm">
-          <span>{t("personal.choose")}</span>
+        <div
+          role="radiogroup"
+          aria-label={t("personal.choose")}
+          className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {(sessions.data.sessions ?? []).length === 0 && (
+            <p className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-3">{t("personal.none")}</p>
+          )}
+          {(sessions.data.sessions ?? []).map((item) => (
+            // A card of a radio group: the shared button, holding the figure a radio input can't.
+            <Button
+              key={item.session_id}
+              type="button"
+              variant="outline"
+              role="radio"
+              aria-checked={!drafting && item.session_id === selected}
+              disabled={locked || drafting}
+              onClick={() => setSelected(item.session_id)}
+              className={cn(
+                // The shared button sizes an icon; the card holds a figure, so it names the figure's size itself.
+                "h-auto min-h-14 min-w-0 justify-start gap-3 p-2 text-left font-normal [&_svg]:size-10",
+                !drafting && item.session_id === selected && "border-primary bg-accent text-accent-foreground",
+              )}
+            >
+              <HeinzelAvatar
+                view="bust"
+                {...appearanceLook(item.appearance)}
+                className="size-10 shrink-0 overflow-hidden"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{item.name}</span>
+                <span className="block text-xs text-muted-foreground">{stateLabel(item.state)}</span>
+              </span>
+            </Button>
+          ))}
+        </div>
+      )}
+      {!drafting && (
+        <Button type="button" variant="outline" disabled={locked} onClick={() => setDrafting(true)}>
+          {t("personal.create")}
+        </Button>
+      )}
+      {connectedFrontdoor && <StartHelper />}
+      {drafting && (
+        <NewHeinzel
+          onLock={setLocked}
+          onCancel={closeDraft}
+          onCreated={(created) => {
+            setDrafting(false);
+            setLocked(false);
+            setSelected(created.session_id);
+            // Replaces `?create=1`: the new Heinzel's conversation opens beside (on a phone: instead of) the page.
+            navigate(`/heinzel?chat=${encodeURIComponent(created.session_id)}`);
+          }}
+        />
+      )}
+      {!drafting && selected && session.isPending && <p role="status">{t("state.loading")}</p>}
+      {!drafting && selected && session.isError && <p role="alert">{t("personal.loadError")}</p>}
+      {!drafting && selected && session.data && (
+        <ProfileEditor key={selected} initial={session.data} onLock={setLocked} />
+      )}
+    </section>
+  );
+}
+
+/** The one editor below the picker, a draft or a saved profile: set off from the cards by the section's one rule. */
+function EditorForm({
+  labelledBy,
+  onSubmit,
+  children,
+}: {
+  labelledBy?: string;
+  onSubmit: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <form
+      aria-labelledby={labelledBy}
+      className="space-y-3 border-t border-border pt-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+    </form>
+  );
+}
+
+/** A Heinzel that does not exist yet: its name and look are a draft in this tab until Save creates it (ADR 0049). */
+function NewHeinzel({
+  onLock,
+  onCancel,
+  onCreated,
+}: {
+  onLock: (locked: boolean) => void;
+  onCancel: () => void;
+  onCreated: (created: SchemaSessionSnapshot) => void;
+}) {
+  const client = useQueryClient();
+  const [stored] = useState(readNewDraft);
+  const [name, setName] = useState(stored?.name ?? "");
+  const [look, setLook] = useState<SchemaHeinzelAppearance>(stored?.appearance ?? defaultLook);
+  // A sent creation keeps its id and exact body, so a retry recovers the same Heinzel instead of making a second.
+  const [pending, setPending] = useState<Required<NewDraft> | null>(
+    stored?.request_id ? { ...stored, request_id: stored.request_id } : null,
+  );
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const [error, setError] = useState(false);
+  const [storageFailed, setStorageFailed] = useState(false);
+
+  useEffect(() => {
+    if (pending) return;
+    try {
+      if (!name && JSON.stringify(look) === JSON.stringify(defaultLook)) sessionStorage.removeItem(newDraftKey);
+      else sessionStorage.setItem(newDraftKey, JSON.stringify({ name, appearance: look }));
+      setStorageFailed(false);
+    } catch {
+      setStorageFailed(true);
+    }
+  }, [look, name, pending]);
+  useEffect(() => {
+    onLock(busy);
+  }, [busy, onLock]);
+
+  const create = async () => {
+    if (running.current || (!pending && !name.trim())) return;
+    running.current = true;
+    const request = pending ?? { request_id: crypto.randomUUID(), name: name.trim(), appearance: look };
+    try {
+      const serialized = JSON.stringify(request);
+      sessionStorage.setItem(newDraftKey, serialized);
+      if (sessionStorage.getItem(newDraftKey) !== serialized) throw new Error("Creation recovery unavailable");
+    } catch {
+      running.current = false;
+      setStorageFailed(true);
+      setError(true);
+      return;
+    }
+    setPending(request);
+    setBusy(true);
+    setError(false);
+    try {
+      const created = await personalResult(api.POST("/heinzel/new-chat", { body: request }));
+      if (!/^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(created.session_id) || created.heinzel_id !== created.session_id) {
+        throw new Error("Invalid creation acknowledgement");
+      }
+      try {
+        sessionStorage.removeItem(newDraftKey);
+      } catch {
+        // The Heinzel exists; a stale draft would only offer the same idempotent request again.
+      }
+      client.setQueryData(["heinzel", "session", created.session_id], created);
+      // Its card joins the list at once: the page keeps its height while a phone scrolls to the conversation.
+      client.setQueryData<SchemaSessionList>(sessionsKey, (list) =>
+        list && !list.sessions?.some((item) => item.session_id === created.session_id)
+          ? {
+              ...list,
+              sessions: [
+                {
+                  session_id: created.session_id,
+                  name: created.name,
+                  state: "proposed",
+                  last_seq: 0,
+                  updated_at: new Date().toISOString(),
+                  appearance: created.appearance,
+                },
+                ...(list.sessions ?? []),
+              ],
+            }
+          : list,
+      );
+      void client.invalidateQueries({ queryKey: sessionsKey });
+      onCreated(created);
+    } catch {
+      setError(true);
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  };
+  const discard = () => {
+    try {
+      sessionStorage.removeItem(newDraftKey);
+    } catch {
+      // Nothing was created by a draft; an unreadable store leaves nothing to clean.
+    }
+    onCancel();
+  };
+
+  return (
+    <EditorForm labelledBy="new-heinzel" onSubmit={() => void create()}>
+      <h3 id="new-heinzel" className="text-sm font-semibold">
+        {t("personal.draftTitle")}
+      </h3>
+      <p className="text-sm text-muted-foreground">{t("personal.draftHelp")}</p>
+      <LookFields
+        name={name}
+        look={look}
+        disabled={busy || pending !== null}
+        onName={setName}
+        onLook={setLook}
+        autoFocus
+      />
+      {error && <p role="alert">{t("personal.createError")}</p>}
+      {storageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={busy || (!pending && !name.trim())}>
+          {pending && !busy ? t("personal.retryCreate") : t("personal.createSubmit")}
+        </Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={discard}>
+          {t("personal.discardDraft")}
+        </Button>
+      </div>
+      {pending && !busy && <p className="text-sm text-muted-foreground">{t("personal.discardPendingHelp")}</p>}
+    </EditorForm>
+  );
+}
+
+const AGE_LABEL: Record<(typeof AGES)[number], MessageKey> = {
+  baby: "personal.age.baby",
+  young: "personal.age.young",
+  grown: "personal.age.grown",
+  old: "personal.age.old",
+};
+const BEARD_LABEL: Record<(typeof BEARDS)[number], MessageKey> = {
+  none: "personal.beard.none",
+  short: "personal.beard.short",
+  medium: "personal.beard.medium",
+  long: "personal.beard.long",
+};
+const BUILD_LABEL: Record<(typeof BUILDS)[number], MessageKey> = {
+  slim: "personal.build.slim",
+  regular: "personal.build.regular",
+  round: "personal.build.round",
+};
+const COLOUR_LABEL: Record<keyof typeof HATS | keyof typeof SHIRTS, MessageKey> = {
+  red: "personal.colour.red",
+  rust: "personal.colour.rust",
+  ochre: "personal.colour.ochre",
+  green: "personal.colour.green",
+  teal: "personal.colour.teal",
+  blue: "personal.colour.blue",
+  purple: "personal.colour.purple",
+  slate: "personal.colour.slate",
+  "red-brown": "personal.colour.redBrown",
+  rose: "personal.colour.rose",
+};
+
+/** One colour choice as swatches: the theme's own colour first, then the closed palette, each named for a reader. */
+function Swatches<Colour extends keyof typeof COLOUR_LABEL>({
+  label,
+  palette,
+  value,
+  onChange,
+}: {
+  label: string;
+  palette: Record<Colour, string>;
+  value: Colour | null;
+  onChange: (value: Colour | null) => void;
+}) {
+  const choices: [Colour | null, string][] = [
+    [null, t("personal.themeDefault")],
+    ...(Object.keys(palette) as Colour[]).map((item): [Colour, string] => [item, t(COLOUR_LABEL[item])]),
+  ];
+  const id = useId();
+  return (
+    <div className="space-y-1 text-sm">
+      <span id={id}>{label}</span>
+      <div role="radiogroup" aria-labelledby={id} className="flex flex-wrap gap-1.5">
+        {choices.map(([item, name]) => (
+          // A swatch of a radio group: the shared icon button, painted in the colour it chooses.
+          <Button
+            key={item ?? "theme"}
+            type="button"
+            variant="ghost"
+            size="icon"
+            role="radio"
+            aria-checked={value === item}
+            aria-label={name}
+            title={name}
+            onClick={() => onChange(item)}
+            style={item ? { backgroundColor: palette[item] } : undefined}
+            className={cn(
+              "size-8 shrink-0 rounded-full border border-border pointer-coarse:size-11",
+              // The theme's own colour is no colour of the palette: a split disc, half surface and half foreground.
+              !item && "bg-linear-to-br from-muted from-50% to-foreground/40 to-50%",
+              value === item && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A Heinzel's name and its choices, with the figure they make; shared by a draft and a saved profile. */
+function LookFields({
+  name,
+  look,
+  disabled,
+  onName,
+  onLook,
+  autoFocus = false,
+}: {
+  name: string;
+  look: SchemaHeinzelAppearance;
+  disabled: boolean;
+  onName: (name: string) => void;
+  onLook: (look: SchemaHeinzelAppearance) => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-4">
+        <HeinzelAvatar label={t("personal.preview")} {...appearanceLook(look)} className="h-24 w-16" />
+        <p className="text-sm text-muted-foreground">{t("personal.previewHelp")}</p>
+      </div>
+      <fieldset disabled={disabled} className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span>{t("personal.name")}</span>
+          <input
+            className={field}
+            value={name}
+            required
+            maxLength={100}
+            // biome-ignore lint/a11y/noAutofocus: the draft opens on the person's request and its first step is the name
+            autoFocus={autoFocus}
+            onChange={(event) => onName(event.target.value)}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>{t("personal.age")}</span>
           <select
             className={field}
-            value={selected ?? ""}
-            disabled={locked || creating}
-            onChange={(event) => setSelected(event.target.value || null)}
+            value={look.age}
+            onChange={(event) => onLook({ ...look, age: event.target.value as SchemaHeinzelAppearance["age"] })}
           >
-            <option value="">{t("personal.select")}</option>
-            {(sessions.data.sessions ?? []).map((item) => (
-              <option key={item.session_id} value={item.session_id}>
-                {item.name}
+            {AGES.map((item) => (
+              <option key={item} value={item}>
+                {t(AGE_LABEL[item])}
               </option>
             ))}
           </select>
         </label>
-      )}
-      <Button type="button" variant="outline" disabled={creating || locked} onClick={() => void create()}>
-        {creationError ? t("personal.retryCreate") : t("personal.create")}
-      </Button>
-      {connectedFrontdoor && <StartHelper />}
-      {creationError && <p role="alert">{t("personal.createError")}</p>}
-      {selected && session.isPending && <p role="status">{t("state.loading")}</p>}
-      {selected && session.isError && <p role="alert">{t("personal.loadError")}</p>}
-      {selected && session.data && <ProfileEditor key={selected} initial={session.data} onLock={setLocked} />}
-    </section>
+        <label className="space-y-1 text-sm">
+          <span>{t("personal.beard")}</span>
+          <select
+            className={field}
+            value={look.beard ?? ""}
+            onChange={(event) =>
+              onLook({ ...look, beard: (event.target.value || null) as SchemaHeinzelAppearance["beard"] })
+            }
+          >
+            <option value="">{t("personal.ageDefault")}</option>
+            {BEARDS.map((item) => (
+              <option key={item} value={item}>
+                {t(BEARD_LABEL[item])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>{t("personal.build")}</span>
+          <select
+            className={field}
+            value={look.build}
+            onChange={(event) => onLook({ ...look, build: event.target.value as SchemaHeinzelAppearance["build"] })}
+          >
+            {BUILDS.map((item) => (
+              <option key={item} value={item}>
+                {t(BUILD_LABEL[item])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Swatches
+          label={t("personal.hat")}
+          palette={HATS}
+          value={look.hat ?? null}
+          onChange={(hat) => onLook({ ...look, hat })}
+        />
+        <Swatches
+          label={t("personal.shirt")}
+          palette={SHIRTS}
+          value={look.shirt ?? null}
+          onChange={(shirt) => onLook({ ...look, shirt })}
+        />
+        <fieldset className="space-y-1 text-sm">
+          <legend>{t("personal.accessories")}</legend>
+          {ACCESSORIES.map((accessory) => (
+            <label key={accessory} className="mr-3 inline-flex min-h-8 items-center gap-1">
+              <input
+                type="checkbox"
+                checked={(look.accessories ?? []).includes(accessory)}
+                onChange={(event) =>
+                  onLook({
+                    ...look,
+                    accessories: event.target.checked
+                      ? [...(look.accessories ?? []), accessory]
+                      : (look.accessories ?? []).filter((item) => item !== accessory),
+                  })
+                }
+              />
+              {t(`personal.accessory.${accessory}`)}
+            </label>
+          ))}
+        </fieldset>
+      </fieldset>
+    </>
   );
 }
 
@@ -254,6 +615,7 @@ export function ProfileEditor({
 }) {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
@@ -267,6 +629,7 @@ export function ProfileEditor({
   const [busy, setBusy] = useState(false);
   const savingNow = useRef(false);
   const [error, setError] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     const key = profileDraftKey(snapshot.session_id);
@@ -327,6 +690,7 @@ export function ProfileEditor({
         setDraftStorageFailed(true);
       }
       onLock(false);
+      setJustSaved(true);
       client.setQueryData(["heinzel", "session", saved.session_id], saved);
       await client.invalidateQueries({ queryKey: sessionsKey });
     } catch {
@@ -388,19 +752,13 @@ export function ProfileEditor({
     onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
   }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
-    <form
-      className="space-y-3 border-t border-border pt-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
+    <EditorForm onSubmit={() => void save()}>
       {suggestion?.session_id === snapshot.session_id && suggestion.status === "proposed" && (
-        <section aria-label="Suggested identity" className="space-y-2 rounded border border-border p-2 text-sm">
-          <h3 className="font-medium">Suggested identity</h3>
-          <p>{suggestion.name} · Proposed</p>
+        <section aria-label={t("personal.suggested")} className="space-y-2 rounded border border-border p-2 text-sm">
+          <h3 className="font-medium">{t("personal.suggested")}</h3>
+          <p>{t("personal.suggestedName", { name: suggestion.name })}</p>
           <HeinzelAvatar
-            label="Suggested appearance"
+            label={t("personal.suggestedLook")}
             age={suggestion.appearance.age}
             build={suggestion.appearance.build}
             beard={suggestion.appearance.beard ?? undefined}
@@ -409,15 +767,15 @@ export function ProfileEditor({
             accessories={suggestion.appearance.accessories}
             className="h-24 w-16"
           />
-          <p>Review the suggestion, then save it if you want to apply it.</p>
+          <p>{t("personal.suggestedHelp")}</p>
           {suggestion.expected_revision !== snapshot.profile_revision && (
-            <p role="status">The saved profile changed; this suggestion is out of date.</p>
+            <p role="status">{t("personal.suggestedStale")}</p>
           )}
           {hasUncommittedChanges && !pending && suggestionSelected && (
-            <p role="status">Suggested identity is ready to save.</p>
+            <p role="status">{t("personal.suggestedReady")}</p>
           )}
           {hasUncommittedChanges && !pending && !suggestionSelected && (
-            <p role="status">Finish or discard your current profile edits before using this suggestion.</p>
+            <p role="status">{t("personal.suggestedBlocked")}</p>
           )}
           <Button
             type="button"
@@ -428,139 +786,33 @@ export function ProfileEditor({
               setLook(suggestion.appearance);
             }}
           >
-            Use suggested identity
+            {t("personal.suggestedUse")}
           </Button>
         </section>
       )}
-      <div className="flex items-center gap-4">
-        <HeinzelAvatar
-          label={t("personal.preview")}
-          age={look.age}
-          beard={look.beard ?? undefined}
-          build={look.build}
-          hat={look.hat ?? undefined}
-          shirt={look.shirt ?? undefined}
-          accessories={look.accessories}
-          className="h-24 w-16"
-        />
-        <p className="text-sm text-muted-foreground">{t("personal.previewHelp")}</p>
-      </div>
-      <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.name")}</span>
-          <input
-            className={field}
-            value={name}
-            required
-            maxLength={100}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.age")}</span>
-          <select
-            className={field}
-            value={look.age}
-            onChange={(event) => setLook({ ...look, age: event.target.value as SchemaHeinzelAppearance["age"] })}
-          >
-            {AGES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.beard")}</span>
-          <select
-            className={field}
-            value={look.beard ?? ""}
-            onChange={(event) =>
-              setLook({ ...look, beard: (event.target.value || null) as SchemaHeinzelAppearance["beard"] })
-            }
-          >
-            <option value="">{t("personal.ageDefault")}</option>
-            {BEARDS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.build")}</span>
-          <select
-            className={field}
-            value={look.build}
-            onChange={(event) => setLook({ ...look, build: event.target.value as SchemaHeinzelAppearance["build"] })}
-          >
-            {BUILDS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.hat")}</span>
-          <select
-            className={field}
-            value={look.hat ?? ""}
-            onChange={(event) =>
-              setLook({ ...look, hat: (event.target.value || null) as SchemaHeinzelAppearance["hat"] })
-            }
-          >
-            <option value="">{t("personal.themeDefault")}</option>
-            {Object.keys(HATS).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>{t("personal.shirt")}</span>
-          <select
-            className={field}
-            value={look.shirt ?? ""}
-            onChange={(event) =>
-              setLook({ ...look, shirt: (event.target.value || null) as SchemaHeinzelAppearance["shirt"] })
-            }
-          >
-            <option value="">{t("personal.themeDefault")}</option>
-            {Object.keys(SHIRTS).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <fieldset className="space-y-1 text-sm">
-          <legend>{t("personal.accessories")}</legend>
-          {ACCESSORIES.map((accessory) => (
-            <label key={accessory} className="mr-3 inline-flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={(look.accessories ?? []).includes(accessory)}
-                onChange={(event) =>
-                  setLook({
-                    ...look,
-                    accessories: event.target.checked
-                      ? [...(look.accessories ?? []), accessory]
-                      : (look.accessories ?? []).filter((item) => item !== accessory),
-                  })
-                }
-              />
-              {t(`personal.accessory.${accessory}`)}
-            </label>
-          ))}
-        </fieldset>
-      </fieldset>
+      <LookFields
+        name={name}
+        look={look}
+        disabled={disabled}
+        onName={(value) => {
+          setName(value);
+          setJustSaved(false);
+        }}
+        onLook={(value) => {
+          setLook(value);
+          setJustSaved(false);
+        }}
+      />
       {error && <p role="alert">{t("personal.saveError")}</p>}
       {pendingNeedsReload && <p role="alert">{t("personal.saveOutcomeChanged")}</p>}
       {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
+      {justSaved && !hasUncommittedChanges && !pending && <p role="status">{t("personal.saved")}</p>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
+        <Button
+          type="submit"
+          variant={hasUncommittedChanges || pending || inChat ? "default" : "outline"}
+          disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}
+        >
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
         {hasUncommittedChanges && !pending && !pendingStorageInvalid && (
@@ -573,7 +825,7 @@ export function ProfileEditor({
               setLook(savedLook);
             }}
           >
-            Discard unsaved name and look
+            {t("personal.discardEdits")}
           </Button>
         )}
         {(pending || pendingStorageInvalid) && (
@@ -581,18 +833,22 @@ export function ProfileEditor({
             {t("personal.reload")}
           </Button>
         )}
+        {!inChat && (
+          <Button
+            type="button"
+            variant={hasUncommittedChanges || pending ? "outline" : "default"}
+            disabled={busy || pending !== null || hasUncommittedChanges}
+            onClick={() => {
+              // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
+              if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
+              else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
+            }}
+          >
+            {t("personal.chatWith", { name: snapshot.name })}
+          </Button>
+        )}
       </div>
-      {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveBeforeSchedule")}</p>}
-      {!inChat && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy || pending !== null || hasUncommittedChanges}
-          onClick={() => navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`)}
-        >
-          {t("personal.openSchedule")}
-        </Button>
-      )}
-    </form>
+      {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveFirst")}</p>}
+    </EditorForm>
   );
 }
