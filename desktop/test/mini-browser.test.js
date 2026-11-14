@@ -75,13 +75,17 @@ test("device and security-key prompts show the person a chooser; only the picked
   Object.assign(top, { origin: "https://keys.example.com", url: "https://keys.example.com/login" });
   // An embed asks from its own frame: the chooser names the embed, not only the page around it.
   const embed = { top, origin: "https://embed.example.net", url: "https://embed.example.net/widget" };
-  assert.equal(session.device({ deviceType: "hid", origin: "https://keys.example.com", device: { deviceId: "h1" } }), false);
+  // Electron's handler shapes (DeviceInfoToValue), not the chooser entries.
+  const key = { vendorId: 4176, productId: 1031, serialNumber: "KEY1" };
+  assert.equal(session.device({ deviceType: "hid", origin: "https://keys.example.com", device: key }), false);
   for (const permission of ["hid", "usb", "serial"]) assert.equal(session.check(null, permission), true, permission);
   session.display({}, (result) => assert.deepEqual(result, {}));
   const lists = {
-    "select-hid-device": [{ deviceList: [{ deviceId: "h1", name: "Security Key" }, { deviceId: "h2", name: "Keyboard" }], frame: top }],
+    "select-hid-device": [{ deviceList: [
+      { deviceId: "h1", name: "Security Key", vendorId: 4176, productId: 1031, serialNumber: "KEY1" },
+      { deviceId: "h2", name: "Keyboard", vendorId: 1452, productId: 641, serialNumber: "KBD" }], frame: top }],
     "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }], frame: embed }],
-    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial" }], contents],
+    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "0x2341", productId: "0x0043", serialNumber: "SER1" }], contents],
   };
   for (const [chooser, args] of Object.entries(lists)) {
     let prevented = false, picked = "unset";
@@ -96,13 +100,17 @@ test("device and security-key prompts show the person a chooser; only the picked
   assert.equal(asked[1].host, "embed.example.net");
   assert.equal(asked[2].host, "keys.example.com");
   // Only the picked device, for the origin that asked, of that device type, is granted.
-  const check = (deviceType, origin, deviceId) => session.device({ deviceType, origin, device: { deviceId } });
-  assert.equal(check("hid", "https://keys.example.com", "h1"), true);
-  assert.equal(check("hid", "https://keys.example.com", "h2"), false);
-  assert.equal(check("hid", "https://other.example.com", "h1"), false);
-  assert.equal(check("usb", "https://keys.example.com", "h1"), false);
-  assert.equal(check("usb", "https://embed.example.net", "u1"), true);
-  assert.equal(session.device({ deviceType: "serial", origin: "https://keys.example.com", device: { portId: "s1" } }), true);
+  const check = (deviceType, origin, device) => session.device({ deviceType, origin, device });
+  assert.equal(check("hid", "https://keys.example.com", key), true);
+  assert.equal(check("hid", "https://keys.example.com", { vendorId: 1452, productId: 641, serialNumber: "KBD" }), false);
+  assert.equal(check("hid", "https://keys.example.com", { ...key, serialNumber: "OTHER" }), false);
+  assert.equal(check("hid", "https://other.example.com", key), false);
+  assert.equal(check("hid", "https://keys.example.com", { deviceId: "h1" }), false);
+  assert.equal(check("usb", "https://keys.example.com", { deviceId: "u1" }), false);
+  assert.equal(check("usb", "https://embed.example.net", { deviceId: "u1" }), true);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 67, serial_number: "SER1", usb_driver: "x" }), true);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 68, serial_number: "SER1" }), false);
+  assert.equal(check("hid", "https://keys.example.com", { vendorId: 4176, productId: 1031 }), false);
   assert.equal(session.device(undefined), false);
   assert.deepEqual(asked[0].devices, [{ id: "h1", label: "Security Key" }, { id: "h2", label: "Keyboard" }]);
   assert.deepEqual(asked[1].devices, [{ id: "u1", label: "Token · Maker" }]);
@@ -233,7 +241,12 @@ test("sign-ins persist across close and reopen; Clear browsing data empties the 
   // A failed wipe is reported, not hidden.
   session.clearStorageData = async () => { throw new Error("disk"); };
   await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
+  // The restore navigation does not hide it; the next good clear does.
+  f.views[1].webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
   assert.equal((await f.invoke({ action: "state" })).notice, "clear-failed");
+  session.clearStorageData = async () => {};
+  await f.invoke({ action: "clear" });
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
   // Clearing before any guest in this run still opens and empties the persisted partition.
   const cold = fixture();
   await cold.invoke({ action: "clear" });
@@ -358,10 +371,40 @@ test("Clear browsing data also revokes every device the person picked", async ()
   await f.invoke({ action: "navigate", url: "https://keys.example.com/" });
   const session = f.sessions[0], frame = f.views[0].webContents.mainFrame;
   Object.assign(frame, { origin: "https://keys.example.com" });
-  session.emit("select-hid-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "h1" }], frame }, () => {});
+  session.emit("select-hid-device", { preventDefault: () => {} },
+    { deviceList: [{ deviceId: "h1", vendorId: 4176, productId: 1031, serialNumber: "KEY1" }], frame }, () => {});
   await settle();
-  const granted = () => session.device({ deviceType: "hid", origin: "https://keys.example.com", device: { deviceId: "h1" } });
+  const granted = () => session.device({ deviceType: "hid", origin: "https://keys.example.com",
+    device: { vendorId: 4176, productId: 1031, serialNumber: "KEY1" } });
   assert.equal(granted(), true);
   await f.invoke({ action: "clear" });
   assert.equal(granted(), false);
+});
+
+test("device identity matches Electron's chooser and handler shapes, and only with a serial number", async () => {
+  const { deviceIdentity } = await import("../src/mini-browser.js");
+  assert.equal(deviceIdentity("hid", { deviceId: "x", vendorId: 4176, productId: 1031, serialNumber: "A" }),
+    deviceIdentity("hid", { vendorId: "0x1050", productId: "1031", serialNumber: "A" }));
+  assert.equal(deviceIdentity("hid", { vendorId: 1, productId: 2, guid: "g" }), "hid:1:2:g");
+  assert.equal(deviceIdentity("serial", { vendorId: "0x2341", productId: "0x0043", serialNumber: "S" }),
+    deviceIdentity("serial", { vendor_id: 9025, product_id: 67, serial_number: "S" }));
+  for (const [type, device] of [["hid", { vendorId: 1, productId: 2 }], ["serial", { vendor_id: 1, product_id: 2, guid: "g" }],
+    ["hid", { vendorId: "zz", productId: 2, serialNumber: "s" }], ["usb", {}], ["bluetooth", { deviceId: "b" }], ["hid", null]])
+    assert.equal(deviceIdentity(type, device), null, JSON.stringify([type, device]));
+});
+
+test("clear waits for a guest that is still opening before it wipes", async () => {
+  let ready;
+  const gate = new Promise((resolve) => { ready = resolve; });
+  const f = fixture(() => gate);
+  const navigation = f.invoke({ action: "navigate", url: "https://example.com/" });
+  await settle();
+  const clearing = f.invoke({ action: "clear" });
+  await settle();
+  assert.ok(!f.calls.some(([name]) => name === "clear"));
+  ready();
+  await navigation;
+  await clearing;
+  const order = f.calls.map(([name, target]) => (name === "load" ? target : name));
+  assert.ok(order.indexOf("about:blank") < order.indexOf("clear"), order.join(" "));
 });

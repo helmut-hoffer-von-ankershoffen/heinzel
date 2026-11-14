@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
+import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
 
 afterEach(() => {
   Reflect.deleteProperty(window, "heinzelDesktop");
@@ -142,4 +142,44 @@ it("a failed Clear browsing data is shown, not hidden", async () => {
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(/Browsing data could not be cleared/);
+});
+
+it.each([
+  ["google.com", "https://google.com"],
+  ["www.google.com/maps", "https://www.google.com/maps"],
+  ["  example.com/a?b=1  ", "https://example.com/a?b=1"],
+  ["https://example.com/x", "https://example.com/x"],
+  ["http://example.com/x", "http://example.com/x"],
+  ["localhost", "https://localhost"],
+  ["localhost:3000/app", "https://localhost:3000/app"],
+  ["192.168.1.2", "https://192.168.1.2"],
+  ["[::1]:8080", "https://[::1]:8080"],
+  ["javascript:alert(1)", "javascript:alert(1)"],
+  ["weather", "https://www.google.com/search?q=weather"],
+  ["how tall is the eiffel tower", "https://www.google.com/search?q=how+tall+is+the+eiffel+tower"],
+  ["what is example.com about", "https://www.google.com/search?q=what+is+example.com+about"],
+  ["   ", null],
+])("the address bar reads %j as %j", (input, expected) => {
+  expect(addressUrl(input)).toBe(expected);
+});
+
+it("a typed host goes out with https://, and a refused local address shows a visible note", async () => {
+  const browser = vi.fn(async ({ action, url }: Record<string, unknown>) => {
+    if (action === "navigate" && String(url).includes("localhost"))
+      throw new Error(
+        "Error invoking remote method 'hz:browser': Error: Enter a public HTTPS address without credentials.",
+      );
+    return { status: "ready", url: action === "navigate" ? String(url) : "" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  const field = screen.getByRole("textbox", { name: "Website address" });
+  fireEvent.change(field, { target: { value: "www.google.com/maps" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "navigate", url: "https://www.google.com/maps" }));
+  fireEvent.change(field, { target: { value: "localhost" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/only public https websites work here/);
+  fireEvent.change(field, { target: { value: "localhost2" } });
+  expect(screen.queryByRole("alert")).toBeNull();
 });
