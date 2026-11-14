@@ -359,3 +359,33 @@ def test_a_turn_refuses_an_unsafe_endpoint_or_a_missing_key(tmp_path: Path, monk
         assert isinstance(
             access(proxied(base_url="http://localhost:8080")).turn_model(current, "claude-example-1"), TestModel
         )
+
+
+def test_ambient_custom_headers_never_reach_the_endpoint(proxy: Proxy, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gateway setup for Claude Code in hz's environment sends nothing to the endpoint (ADR 0159, A1)."""
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Gateway-Token: gw-must-not-leak\nx-team: also-must-not-leak")
+    proxy.replies += [httpx2.Response(200, json=message([{"type": "text", "text": "OK"}])) for _ in range(3)]
+    model = build_model("claude-example-1", "sk-proxy", BASE, api="anthropic")
+
+    run(model)
+    # A request with retries set goes through a copy of the client, which reads the variable again.
+    run(model, model_settings=AnthropicModelSettings(max_retries=1))
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Later: later-must-not-leak")
+    run(model, model_settings=AnthropicModelSettings(max_retries=1))
+
+    for sent in proxy.requests:
+        assert sent.headers["authorization"] == "Bearer sk-proxy"
+        assert "must-not-leak" not in str(sent.headers)
+        assert {"x-gateway-token", "x-team", "x-later"}.isdisjoint(sent.headers)
+
+
+def test_an_ambient_header_that_overrides_the_key_takes_it_out(proxy: Proxy, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The variable may name `Authorization`: then no token goes at all, rather than the gateway's."""
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "Authorization: Bearer gw-must-not-leak\nanthropic-beta: env-beta")
+    proxy.replies.append(httpx2.Response(200, json=message([{"type": "text", "text": "OK"}])))
+
+    run(build_model("claude-example-1", "sk-proxy", BASE, api="anthropic"))
+
+    sent = proxy.requests[0]
+    assert "must-not-leak" not in str(sent.headers)
+    assert "env-beta" not in sent.headers.get("anthropic-beta", "")

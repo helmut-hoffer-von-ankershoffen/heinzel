@@ -112,7 +112,8 @@ class AccessSettings(ModuleSettings):
         default=None,
         title="Endpoint API",
         description="Which API the Pydantic AI endpoint at the base address speaks: OpenAI's (the default) or "
-        "Anthropic's Messages API, as a company proxy may.",
+        "Anthropic's Messages API, as a company proxy may. Headers from ANTHROPIC_CUSTOM_HEADERS in hz's environment "
+        "are never sent there.",
         json_schema_extra={"x-expert": True},
     )
     plugin_model: str | None = Field(
