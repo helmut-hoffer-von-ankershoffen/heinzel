@@ -9,6 +9,11 @@ const row = (session_id: string, state: SchemaSessionSummary["state"] = "awake")
   state,
   last_seq: 1,
   updated_at: at,
+  activity: "idle",
+  last_run_failed: false,
+  queued_runs: 0,
+  runs_last_hour: 0,
+  waiting_count: 0,
 });
 
 afterEach(() => {

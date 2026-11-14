@@ -185,6 +185,11 @@ describe("The chat's session switcher", () => {
         last_seq: 0,
         updated_at: "2026-10-24T08:00:00Z",
         appearance: { age: "old", build: "round", hat: "blue", accessories: [] },
+        activity: "idle",
+        last_run_failed: false,
+        queued_runs: 0,
+        runs_last_hour: 0,
+        waiting_count: 0,
       },
     ]).find((group) => group.label === "Your Heinzels");
     expect(personal?.items[0]).toMatchObject({ kind: "heinzel", title: "Bruno", look: { age: "old", hat: "blue" } });
