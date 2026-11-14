@@ -31,6 +31,15 @@ struct WorkspaceView: WebRepresentable {
                 context.coordinator, contentWorld: .page, name: "heinzelBrowser"
             )
         }
+        var audioMember = ""
+        #if canImport(ScreenCaptureKit)
+        if #available(iOS 27, *) {
+            configuration.userContentController.addScriptMessageHandler(
+                context.coordinator, contentWorld: .page, name: "heinzelAudio"
+            )
+            audioMember = "systemAudio: () => audio('available'), nativeAudio: audio,"
+        }
+        #endif
         #if os(macOS)
         let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen,"
         #else
@@ -48,9 +57,13 @@ struct WorkspaceView: WebRepresentable {
                     notify();
                     return () => window.removeEventListener("resize", notify);
                 };
+                const audio = action => {
+                    if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
+                    return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
+                };
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) \(browserMember) })
+                    value: Object.freeze({ \(chrome) \(browserMember) \(audioMember) })
                 });
             })();
             """,
@@ -98,6 +111,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private let ready: () -> Void
     weak var workspace: WKWebView?
     private let browser = IntegratedBrowser()
+    private var nativeAudio: AnyObject?
     private let reportError: (String) -> Void
 
     init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (String) -> Void) {
@@ -127,19 +141,49 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) async -> (Any?, String?) {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
-              let workspace, let request = message.body as? [String: Any] else {
-            return (nil, "Browser command unavailable")
+              let workspace, message.webView === workspace,
+              workspace.url.map(endpoint.owns) == true else { return (nil, "Workspace command unavailable") }
+        #if canImport(ScreenCaptureKit)
+        if #available(iOS 27, *), message.name == "heinzelAudio" {
+            switch message.body as? String {
+            case "available": return (SystemAudio.available, nil)
+            case "start":
+                guard SystemAudio.available, nativeAudio == nil else { return (false, nil) }
+                let capture = SystemAudio()
+                nativeAudio = capture
+                let started = await capture.start()
+                if !started, nativeAudio === capture { nativeAudio = nil }
+                return (started, nil)
+            case "read":
+                return ((nativeAudio as? SystemAudio)?.read() as Any? ?? NSNull(), nil)
+            case "stop":
+                stopAudio()
+                return (true, nil)
+            default: return (nil, "Unknown audio command")
+            }
         }
+        #endif
+        guard let request = message.body as? [String: Any] else { return (nil, "Browser command unavailable") }
         return (await browser.handle(request, in: workspace, excluding: endpoint), nil)
     }
 
+    private func stopAudio() {
+        #if canImport(ScreenCaptureKit)
+        if #available(iOS 27, *) { (nativeAudio as? SystemAudio)?.stop() }
+        #endif
+        nativeAudio = nil
+    }
+
     func close(_ view: WKWebView) {
+        stopAudio()
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAudio", contentWorld: .page)
         browser.reset()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelBrowser", contentWorld: .page)
         view.stopLoading()
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        stopAudio()
         browser.reset()
     }
 
@@ -170,6 +214,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        stopAudio()
         reportError("The workspace closed unexpectedly. Reconnect to open it again.")
     }
 

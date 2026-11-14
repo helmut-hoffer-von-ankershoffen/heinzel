@@ -8,6 +8,7 @@ export type CapturedAudio = {
 
 /** The desktop app's bridge: whether it can loop back system audio, and which source the next capture uses. */
 type DesktopAudio = {
+  nativeAudio?: (action: "start" | "read" | "stop") => Promise<unknown>;
   systemAudio?: () => Promise<unknown>;
   audioSource?: (source: "workspace" | "system") => Promise<unknown>;
 };
@@ -27,12 +28,90 @@ export async function systemAudioAvailable(): Promise<boolean> {
   }
 }
 
+/** Read native PCM locally and feed the same analyser used by browser capture. */
+async function captureNativeAudio(
+  signal: AbortSignal,
+  capture: NonNullable<DesktopAudio["nativeAudio"]>,
+): Promise<CapturedAudio> {
+  const context = new AudioContext();
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.75;
+  const destination = context.createMediaStreamDestination();
+  analyser.connect(destination);
+  const stream = destination.stream;
+  let closed = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let nextTime = 0;
+  const stop = () => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(timer);
+    signal.removeEventListener("abort", stop);
+    for (const track of stream.getTracks()) track.stop();
+    void capture("stop").catch(() => undefined);
+    void context.close().catch(() => undefined);
+  };
+  const finish = () => {
+    const tracks = stream.getTracks();
+    stop();
+    for (const track of tracks) track.dispatchEvent(new Event("ended"));
+  };
+  const poll = async () => {
+    try {
+      const result = await capture("read");
+      if (closed) return;
+      if (typeof result !== "string") {
+        finish();
+        return;
+      }
+      if (result) {
+        const bytes = Uint8Array.from(atob(result), (char) => char.charCodeAt(0));
+        const samples = new Float32Array(bytes.buffer);
+        const buffer = context.createBuffer(1, samples.length, 48_000);
+        buffer.copyToChannel(samples, 0);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(analyser);
+        // Recover from scheduling delays without queuing stale audio behind the live signal.
+        if (nextTime > context.currentTime + 0.25) {
+          timer = setTimeout(() => void poll(), 32);
+          return;
+        }
+        nextTime = Math.max(context.currentTime + 0.02, nextTime);
+        source.start(nextTime);
+        nextTime += buffer.duration;
+      }
+      timer = setTimeout(() => void poll(), 32);
+    } catch {
+      if (!closed) finish();
+    }
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  try {
+    const resumed = context.resume().then(
+      () => true,
+      () => false,
+    );
+    if ((await capture("start")) !== true || closed)
+      throw new DOMException("System audio sharing was cancelled or unavailable.", "NotAllowedError");
+    if (!(await resumed) || closed) throw new Error("Audio could not start. Try again.");
+    void poll();
+    return { analyser, stream, label: "System audio", stop };
+  } catch (error) {
+    stop();
+    throw error;
+  }
+}
+
 /**
  * Ask the browser for a shared tab/display with audio; availability belongs to the browser and OS. In the desktop app
  * `system` loops back all sound the computer plays (its own consent, no picker); otherwise the workspace is shared.
  */
 export async function captureAudio(signal: AbortSignal, system = false): Promise<CapturedAudio> {
   if (signal.aborted) throw new DOMException("Capture cancelled", "AbortError");
+  const native = system ? desktopAudio()?.nativeAudio : undefined;
+  if (native && globalThis.AudioContext) return captureNativeAudio(signal, native);
   if (!navigator.mediaDevices?.getDisplayMedia || !globalThis.AudioContext)
     // NotSupportedError, like a browser that has the call but cannot share: the pane then stops offering it.
     throw new DOMException(

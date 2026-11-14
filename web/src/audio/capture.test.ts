@@ -219,6 +219,38 @@ describe("desktop system audio", () => {
     expect(await systemAudioAvailable()).toBe(false);
   });
 
+  it("feeds native system samples into the analyser and releases capture on stop", async () => {
+    const pcm = new Float32Array([0.25, -0.25]);
+    const nativeAudio = vi.fn((action: string) =>
+      Promise.resolve(action === "read" ? btoa(String.fromCharCode(...new Uint8Array(pcm.buffer))) : true),
+    );
+    const copyToChannel = vi.fn();
+    const play = { buffer: null, connect: vi.fn(), start: vi.fn() };
+    const output = track("audio");
+    vi.stubGlobal("heinzelDesktop", { nativeAudio });
+    vi.stubGlobal(
+      "AudioContext",
+      vi.fn(function nativeContext() {
+        return {
+          ...context,
+          currentTime: 0,
+          createAnalyser: () => ({ ...analyser, connect: vi.fn() }),
+          createMediaStreamDestination: () => ({ stream: { getTracks: () => [output] } }),
+          createBuffer: () => ({ copyToChannel, duration: pcm.length / 48_000 }),
+          createBufferSource: () => play,
+        };
+      }),
+    );
+
+    const captured = await captureAudio(new AbortController().signal, true);
+    await vi.waitFor(() => expect(copyToChannel).toHaveBeenCalledWith(pcm, 0));
+    expect(play.connect).toHaveBeenCalledWith(captured.analyser);
+    expect(choose).not.toHaveBeenCalled();
+    captured.stop();
+    expect(nativeAudio).toHaveBeenLastCalledWith("stop");
+    expect(output.stop).toHaveBeenCalledOnce();
+  });
+
   it("arms the chosen source before the one display request", async () => {
     const audioSource = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("heinzelDesktop", { audioSource });
