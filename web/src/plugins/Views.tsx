@@ -7,11 +7,10 @@ import { useLocation } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { token } from "@/api/token";
 import { type Effect, useEffectRunner } from "@/components/Contributions";
-import { LONG_FORM_VALUE } from "@/lib/operationRun";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
-import { confirmOperation } from "@/lib/operationRun";
+import { confirmOperation, LONG_FORM_VALUE } from "@/lib/operationRun";
 import { NotFound } from "@/pages/Profile";
 
 export type ViewEntry = {
