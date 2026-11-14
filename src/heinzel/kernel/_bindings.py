@@ -589,6 +589,7 @@ class Capabilities:
         self._links: dict[tuple[Adapter, str], tuple[str, ...]] = {}
         # Which adapter gave out an id, newest last, so an id without a link goes back to it (ADR 0161).
         self._issued: dict[tuple[str, str], str] = {}
+        self._issuing = threading.Lock()  # the web head routes from several threads at once
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
@@ -727,12 +728,13 @@ class Capabilities:
 
     def remember(self, capability: str, refs: Iterable[str | None], source: str) -> None:
         """Note that `source` gave out `refs`, so a later call naming one without a link goes back to it."""
-        for ref in refs:
-            if ref:
-                self._issued.pop((capability, ref), None)
-                self._issued[capability, ref] = source
-        while len(self._issued) > _ISSUED:
-            del self._issued[next(iter(self._issued))]
+        with self._issuing:
+            for ref in refs:
+                if ref:
+                    self._issued.pop((capability, ref), None)
+                    self._issued[capability, ref] = source
+            while len(self._issued) > _ISSUED:
+                del self._issued[next(iter(self._issued))]
 
     def pick(self, capability: str, ref: str, names: Iterable[str]) -> tuple[str, str]:
         """The adapter of `names` that `ref` belongs to, and `ref` as that adapter takes it (ADR 0161).
@@ -771,7 +773,8 @@ class Capabilities:
             )
             msg = f"No {capability} connector that is on opens links on {host or 'that address'} ({known})."
             raise HeinzelError(msg)
-        owner = self._issued.get((capability, ref))
+        with self._issuing:
+            owner = self._issued.get((capability, ref))
         if owner is not None and owner in names:
             return owner, ref
         msg = (

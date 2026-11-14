@@ -352,3 +352,13 @@ def test_the_view_reports_every_binding_and_the_links(two):
 
 def test_requirement_pins_still_use_one_adapter(two):
     assert two._capabilities.adapter_for(Requirement("documents", frozenset({"read"}), "wiki"))[0].let.adapter == "wiki"
+
+
+def test_only_the_newest_ids_are_remembered(two, monkeypatch):
+    from heinzel.kernel import _bindings
+
+    monkeypatch.setattr(_bindings, "_ISSUED", 2)
+    two._capabilities.remember("documents", ["a", "b", None, "c"], "wiki")
+    assert list(two._capabilities._issued) == [("documents", "b"), ("documents", "c")]
+    two._capabilities.remember("documents", ["b"], "drive")
+    assert two._capabilities._issued == {("documents", "c"): "wiki", ("documents", "b"): "drive"}
