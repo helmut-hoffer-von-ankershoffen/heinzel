@@ -70,8 +70,8 @@ Chosen option: **every chat in the web app is with a Heinzel.** Checkable statem
    untouched and unused: not shown, not imported, not deleted. The operations that hold them stay in the core and the
    CLI; the web app no longer calls `system.runner.chat open` or `list`, nor `ai models` for the general composer's
    picker. The scoped review chats a Heinzel opens (terms, schedules, sources, notifications) keep their operations.
-7. **No flag.** `one_chat` is not a flag; a profile that still names it gets the usual report of an unknown name and
-   nothing else.
+7. **No flag.** `one_chat` is not a flag. It is a retired name, like `persistent_web`: a profile that still names it
+   switches nothing and gets no report of an unknown name.
 
 ### Consequences
 

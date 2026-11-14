@@ -36,3 +36,10 @@ def test_retired_web_preview_setting_is_harmless_without_hiding_other_unknown_fl
     settings = Settings(features={"persistent_web", "misspelled"})
     assert "persistent_web" not in FEATURES
     assert unknown_features(settings) == ["misspelled"]
+
+
+def test_the_retired_one_chat_flag_is_harmless_without_hiding_other_unknown_flags():
+    """ADR 0157: the new chat shipped with no flag; a profile that still names `one_chat` gets no report for it."""
+    settings = Settings(features={"one_chat", "persistent_web", "misspelled"})
+    assert "one_chat" not in FEATURES
+    assert unknown_features(settings) == ["misspelled"]

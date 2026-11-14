@@ -32,7 +32,11 @@ def feature_enabled(settings: Settings, name: str) -> bool:
     return name in settings.features
 
 
+RETIRED_FEATURES = frozenset({"persistent_web", "one_chat"})
+"""Flags whose work shipped without a gate: web availability, and the one kind of chat (ADR 0157)."""
+
+
 def unknown_features(settings: Settings) -> list[str]:
     """Names in the setting that no flag has, to report; they switch nothing on."""
-    # Shipped web availability no longer has a gate; older selected profiles may still name it.
-    return sorted(settings.features - FEATURES.keys() - {"persistent_web"})
+    # Retired flags whose work shipped: older selected profiles may still name them, so they are not reported.
+    return sorted(settings.features - FEATURES.keys() - RETIRED_FEATURES)
