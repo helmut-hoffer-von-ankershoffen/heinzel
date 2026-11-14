@@ -1,10 +1,12 @@
 """A chat that acts: the agent runner with hz's operations as tools, and the person confirming every change.
 
 Each message runs the bound agent runner once, with the conversation so far as its prompt and the chat's context in
-its contract, and with one MCP server: `hz system serve mcp --chat <session>`, a stdio process scoped to this
-session (no network port). Read operations run when the agent calls them; anything else becomes a proposed action
-in the session. Direct `confirm` is CLI/web only; the chat MCP head has a narrower consumer for an exact action
-previously authorized by a person, and never receives its proof. Email addresses never reach the agent: the context,
+its contract, and with hz's operations as its tools (ADR 0162): a runner that runs its model inside hz calls them
+in-process (`hz_tools`), an agent CLI through their private pipe, `hz system serve mcp --chat <session>`, a stdio
+process scoped to this session (no network port); the same toolset and policy either way. Read operations run when
+the agent calls them; anything else becomes a proposed action in the session. Direct `confirm` is CLI/web only; the
+chat's tools have a narrower consumer for an exact action previously authorized by a person, and never receive its
+proof. Email addresses never reach the agent: the context,
 the transcript and every tool result are redacted.
 """
 
@@ -25,6 +27,7 @@ from heinzel import (
     AgentRunner,
     Budget,
     HeinzelError,
+    HzTools,
     Kernel,
     McpServer,
     Notifications,
@@ -820,8 +823,15 @@ class ChatService:
                 if chat.context and chat.context.kind == "check-in"
                 else self._kernel.resolve(ChatSettings).tools
             )
+            # One toolset, two ways in (ADR 0162): a runner that runs its model inside hz calls `hz_tools` directly
+            # and starts nothing; an agent CLI gets the same tools through their private stdio pipe.
             server = McpServer(command=server_command(chat.id, Path.cwd(), tools_set))
-            tools = ToolProfile(working_dir=Path(directory), read_files=False, mcp_servers={SERVER: server})
+            tools = ToolProfile(
+                working_dir=Path(directory),
+                read_files=False,
+                mcp_servers={SERVER: server},
+                hz_tools=HzTools(session=chat.id, tools=tools_set, server=SERVER),
+            )
             chosen: dict[str, str] = {}  # only what the chat chose, so a runner keeps its own defaults
             if chat.model:
                 chosen["model"] = chat.model
