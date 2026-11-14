@@ -297,6 +297,14 @@ function sourceLink(url: string | null | undefined, name: string) {
 
 /** "from github.com/owner/repo", the repository a link; "source unknown" until the backend says. */
 function RepositoryLine({ url }: { url: string | null | undefined }) {
+  // A source that is no https URL (a repository on this machine) is shown as plain text: no link, no URL parsing.
+  if (url && !/^https:\/\//i.test(url)) {
+    return (
+      <span className="block truncate text-xs text-muted-foreground/80" title={url}>
+        {t("plugins.fromPrefix")} {url.replace(/^git\+/, "")}
+      </span>
+    );
+  }
   return url ? (
     <span className="block truncate text-xs text-muted-foreground/80">
       {t("plugins.fromPrefix")}{" "}

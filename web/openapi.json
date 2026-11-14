@@ -11879,6 +11879,18 @@
             "description": "Where it was installed from: PyPI, a git repository, a directory; none if unknown.",
             "title": "Source Kind"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The repository directory on this machine, for a plugin installed from a local git repository (`hz system plugin add /path/to/repository`); none otherwise. It is no link: a browser can't open it.",
+            "title": "Source Path"
+          },
           "source_url": {
             "anyOf": [
               {
@@ -29494,12 +29506,12 @@
         "operationId": "system_plugin_add",
         "parameters": [
           {
-            "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
+            "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
             "in": "query",
             "name": "spec",
             "required": true,
             "schema": {
-              "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
+              "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
               "title": "Spec",
               "type": "string"
             }

@@ -98,7 +98,7 @@ class World:
             raise HeinzelError(msg)
         return json.dumps({"bindings": self.bindings, "message": ""})
 
-    def read(self, spec):
+    def read(self, spec, *, origin="user"):
         self.reads += 1
         if spec not in self.catalog:
             msg = f"no plugin {spec}"

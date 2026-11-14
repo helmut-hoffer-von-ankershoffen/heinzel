@@ -134,7 +134,10 @@ def add(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
         Field(
             description="A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> "
             "(`heinzel-crm==1.2.0`), or a git repository over https "
-            "(`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh "
+            "(`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: "
+            "an absolute path or `~/...` (`~/Code/heinzel-crm`), or "
+            "`git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not "
+            "editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh "
             "login. If the repository's distribution name cannot be resolved, provide its actual name in a named "
             "requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an "
             "earlier answer to install exactly what it showed."
