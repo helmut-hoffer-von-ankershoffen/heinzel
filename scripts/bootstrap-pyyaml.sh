@@ -33,3 +33,8 @@ unset PYYAML_FORCE_CYTHON
 PYYAML_FORCE_LIBYAML=0 uv build --wheel --no-build-isolation --python "$work/backend/bin/python" \
   --out-dir "$work/dist" "$work/pyyaml-6.0.3.tar.gz"
 uv pip install --python "$project_python" --no-build --no-deps "$work"/dist/*.whl
+# The wheel was installed from a file, so uv would see the lock's registry package as changed and rebuild it from the
+# source distribution on the next `uv sync` or `uv run`. Recording it as the registry package it was built from keeps
+# every later sync from building PyYAML again with an unpinned backend.
+site="$("$project_python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+rm -f "$site"/pyyaml-6.0.3.dist-info/direct_url.json

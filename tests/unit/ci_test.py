@@ -1858,3 +1858,19 @@ def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_release == 'true'", "run": "make test-web"}
     # Cancelled at 5:17 under five minutes in the 0.9.40 candidates; ten is about twice the observed duration.
     assert lint["timeout-minutes"] == 10
+
+
+def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
+    """Python 3.15 has no PyYAML wheel: no job may build it from source with an unpinned backend."""
+    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
+    steps = action["runs"]["steps"]
+    bootstrap = next(step for step in steps if "bootstrap-pyyaml.sh" in step.get("run", ""))
+    assert steps[-1] is bootstrap  # after uv and Python are set up, before the caller's first sync
+    assert "uv venv --allow-existing --python 3.15" in bootstrap["run"]
+    assert 'requires-python = ">=3.15"' in bootstrap["run"]
+    script = (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
+    assert 'rm -f "$site"/pyyaml-6.0.3.dist-info/direct_url.json' in script
+    for name, job in _ci_jobs().items():
+        for step in job.get("steps", []):
+            if "uv sync" in step.get("run", ""):
+                assert "--no-install-package pyyaml" in step["run"], f"{name}: syncs PyYAML from source"
