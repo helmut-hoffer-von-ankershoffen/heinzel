@@ -36,19 +36,25 @@ def test_pytest_ids_install_the_test_group_first():
     assert commands[1][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
 
 
-def test_only_explicit_python_ci_plan_accepts_up_to_32_ids():
-    ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(33)]
+def test_the_python_ci_limit_never_binds_a_real_selection():
+    tests = list((REPO / "tests").rglob("*_test.py"))
+    assert 2 * len(tests) < focused_job.PYTHON_CI_MAX_IDS, "the limit is above every test file this repository has"
+
+
+def test_only_explicit_python_ci_plan_accepts_up_to_the_python_limit():
+    limit = focused_job.PYTHON_CI_MAX_IDS
+    ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(limit + 1)]
     with pytest.raises(focused_job.SelectorError, match="at most 10"):
         focused_job.plan("pytest", " ".join(ids[:11]), OUT)
-    assert focused_job.plan("pytest", " ".join(ids[:32]), OUT, max_ids=32)[-1][-32:] == ids[:32]
-    with pytest.raises(focused_job.SelectorError, match="at most 32"):
-        focused_job.plan("pytest", " ".join(ids), OUT, max_ids=32)
+    assert focused_job.plan("pytest", " ".join(ids[:limit]), OUT, max_ids=limit)[-1][-limit:] == ids[:limit]
+    with pytest.raises(focused_job.SelectorError, match=f"at most {limit}"):
+        focused_job.plan("pytest", " ".join(ids), OUT, max_ids=limit)
     with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
-        focused_job.plan("vitest", "src/ci.test.ts", OUT, max_ids=32)
+        focused_job.plan("vitest", "src/ci.test.ts", OUT, max_ids=limit)
     with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
-        focused_job.plan("pytest", ids[0], OUT, max_ids=33)
+        focused_job.plan("pytest", ids[0], OUT, max_ids=limit + 1)
     with pytest.raises(focused_job.SelectorError):
-        focused_job.plan("pytest", " ".join([*ids[:31], "--deselect=tests"]), OUT, max_ids=32)
+        focused_job.plan("pytest", " ".join([*ids[: limit - 1], "--deselect=tests"]), OUT, max_ids=limit)
 
 
 def test_vitest_files_run_with_or_without_the_web_prefix():
