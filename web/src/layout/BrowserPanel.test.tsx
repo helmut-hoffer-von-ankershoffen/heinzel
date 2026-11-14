@@ -341,3 +341,143 @@ it("an agent's tab shows the agent's name and does not use up the person's tabs"
   expect(screen.getByRole("tab", { name: "Ada: Shop" })).toHaveAttribute("aria-selected", "false");
   expect(screen.getByRole("button", { name: "New tab" })).toBeEnabled();
 });
+
+function agentBridge(kind = "heinzel", name = "Ada") {
+  const tab = {
+    id: "t-000000aa",
+    owner: `agent:${name}`,
+    agent: { name, kind },
+    selected: true,
+    status: "ready",
+    url: "https://shop.example.com/",
+    title: "Shop",
+    paused: false,
+    commit: null as { summary: string } | null,
+  };
+  const mine = {
+    id: "t-00000001",
+    owner: "person",
+    selected: false,
+    status: "ready",
+    url: "https://mine.example.com/",
+    title: "Mine",
+  };
+  let stopped = false;
+  const state = () => ({
+    status: "ready",
+    url: tab.url,
+    tabs: stopped ? [{ ...mine, selected: true }] : [mine, { ...tab }],
+    selected: stopped ? mine.id : tab.id,
+  });
+  const browser = vi.fn(async (request: Record<string, unknown>) => {
+    if (request.action === "take-over") tab.paused = true;
+    if (request.action === "hand-back") tab.paused = false;
+    if (request.action === "stop-agent") stopped = true;
+    if (request.action === "commit-approve" || request.action === "commit-refuse") tab.commit = null;
+    return state();
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  return { browser, tab };
+}
+const sent = (browser: ReturnType<typeof vi.fn>, action: string) =>
+  browser.mock.calls.map(([request]) => request as Record<string, unknown>).filter((request) => request.action === action);
+
+it("an agent tab has a bar with Take over, Hand back and Stop, each for that tab only", async () => {
+  const { browser, tab } = agentBridge();
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const bar = await screen.findByRole("group", { name: "Ada is using this tab" });
+  expect(bar).toHaveTextContent("Ada is using this tab");
+  expect(screen.queryByRole("button", { name: "Hand back" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+  expect(sent(browser, "take-over")).toEqual([{ action: "take-over", tab: tab.id }]);
+  expect(await screen.findByText("You took over this tab. Ada waits until you hand it back.")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Hand back" }));
+  expect(sent(browser, "hand-back")).toEqual([{ action: "hand-back", tab: tab.id }]);
+  await screen.findByRole("button", { name: "Take over" });
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(sent(browser, "stop-agent")).toEqual([{ action: "stop-agent", tab: tab.id }]);
+  // The agent's tabs are gone, and so is the bar.
+  await waitFor(() => expect(screen.queryByRole("group", { name: /is using this tab/ })).toBeNull());
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+});
+
+it("a tab the person took over by typing or clicking in the page shows Hand back without a click on Take over", async () => {
+  const { tab } = agentBridge();
+  tab.paused = true;
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(await screen.findByRole("button", { name: "Hand back" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+});
+
+it("a Heinzel's tab shows the Heinzel's face and name, an outside agent's tab its name and an agent mark", async () => {
+  agentBridge();
+  const first = render(<BrowserPanel active onClose={vi.fn()} />);
+  const heinzel = await screen.findByRole("tab", { name: "Ada: Shop" });
+  expect(heinzel.querySelector("[data-agent-kind]")).toHaveAttribute("data-agent-kind", "heinzel");
+  // The person's own tab carries no agent mark, and no bar when it is the one shown.
+  expect(screen.getByRole("tab", { name: "Mine" }).querySelector("[data-agent-kind]")).toBeNull();
+  first.unmount();
+  agentBridge("external", "ci-bot");
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const outside = await screen.findByRole("tab", { name: "ci-bot: Shop" });
+  expect(outside.querySelector("[data-agent-kind]")).toHaveAttribute("data-agent-kind", "external");
+  expect(screen.getByRole("group", { name: "ci-bot is using this tab" })).toBeVisible();
+});
+
+it("the person's own tab has no agent bar and no commit card", async () => {
+  const browser = vi.fn(async () => ({
+    status: "ready",
+    url: "https://mine.example.com/",
+    selected: "t-00000001",
+    tabs: [
+      { id: "t-00000001", owner: "person", selected: true, status: "ready", url: "https://mine.example.com/", title: "Mine" },
+      {
+        id: "t-000000aa",
+        owner: "agent:ci-bot",
+        agent: { name: "ci-bot", kind: "external" },
+        selected: false,
+        status: "ready",
+        url: "https://shop.example.com/",
+        title: "Shop",
+        commit: { summary: 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)' },
+      },
+    ],
+  }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  // The waiting tab says so in the strip; its card shows only once the person looks at that tab.
+  expect(await screen.findByRole("tab", { name: /^ci-bot: Shop\s*, waiting for your answer$/ })).toBeVisible();
+  expect(screen.queryByRole("region", { name: /asks for your yes/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+});
+
+it.each([
+  ["Approve", "commit-approve"],
+  ["Decline", "commit-refuse"],
+])("the commit card shows the action and its target unchanged, and %s sends %s for that tab", async (button, action) => {
+  const { browser, tab } = agentBridge("external", "ci-bot");
+  const summary = 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)';
+  tab.commit = { summary };
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
+  expect(card).toHaveAccessibleDescription(summary);
+  // Not a dialog: the page the person is asked about stays on screen behind no overlay.
+  expect(card.closest('[role="dialog"], [role="alertdialog"]')).toBeNull();
+  expect(sent(browser, "hide")).toEqual([]);
+  expect(sent(browser, "commit-approve")).toEqual([]);
+  expect(sent(browser, "commit-refuse")).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: button }));
+  expect(sent(browser, action)).toEqual([{ action, tab: tab.id }]);
+  expect(sent(browser, action === "commit-approve" ? "commit-refuse" : "commit-approve")).toEqual([]);
+  await waitFor(() => expect(screen.queryByRole("region", { name: /asks for your yes/ })).toBeNull());
+});
+
+it("in the PWA there are no agent tabs, no bar and no commit card", () => {
+  Object.defineProperty(window, "heinzelDesktop", { value: undefined, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(screen.queryByRole("tablist")).toBeNull();
+  for (const name of ["Take over", "Hand back", "Stop", "Approve", "Decline"])
+    expect(screen.queryByRole("button", { name })).toBeNull();
+});

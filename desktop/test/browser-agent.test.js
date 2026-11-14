@@ -762,3 +762,45 @@ test("closing the product window closes every agent tab", async () => {
   f.controller.closeAll();
   await f.refused(f.call(HEINZEL, "open"), "failed");
 });
+
+test("the person's own key or click in an agent's tab takes it over; the agent's own input does not", async () => {
+  const f = fixture();
+  const { tab } = await onPage(f);
+  const view = f.views.at(-1), contents = view.webContents;
+  const paused = async () => (await f.invoke({ action: "tabs" })).tabs.find((entry) => entry.id === tab).paused;
+  // Looking is not steering: the pointer, the wheel and a key going up change nothing.
+  for (const [name, type] of [["before-mouse-event", "mouseMove"], ["before-mouse-event", "mouseWheel"], ["before-input-event", "keyUp"], ["input-event", "mouseEnter"]])
+    contents.emit(name, {}, { type });
+  contents.emit("before-input-event", {});
+  assert.equal(await paused(), false);
+  // The engine's input reaches the page through the same events, and stays the agent's.
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") contents.emit("before-mouse-event", {}, { type: "mouseDown" });
+    if (method === "Input.dispatchKeyEvent") contents.emit("before-input-event", {}, { type: params.type === "keyUp" ? "keyUp" : "rawKeyDown" });
+  };
+  const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint });
+  const focus = await f.call(HEINZEL, "describe", { tab, action: "key" });
+  await f.call(HEINZEL, "key", { tab, keys: "Tab", expect: focus.fingerprint });
+  assert.equal(await paused(), false);
+  assert.deepEqual(f.events, []);
+  // A refused protocol call leaves no mark behind that would hide the person's next click.
+  view.page.on = (method) => { if (method === "Input.dispatchMouseEvent") throw new Error("gone"); };
+  await f.refused(f.call(HEINZEL, "scroll", { tab }), "failed");
+  view.page.on = () => {};
+  for (const [name, type] of [["before-mouse-event", "mouseDown"], ["before-input-event", "keyDown"], ["input-event", "gestureTap"]]) {
+    contents.emit(name, {}, { type });
+    assert.equal(await paused(), true, type);
+    await f.refused(f.call(HEINZEL, "read", { tab }), "paused");
+    // A second press while paused tells nobody again.
+    contents.emit(name, {}, { type });
+    await f.invoke({ action: "hand-back", tab });
+  }
+  assert.deepEqual(f.events.map((event) => event.event), ["take-over", "hand-back", "take-over", "hand-back", "take-over", "hand-back"]);
+  await f.call(HEINZEL, "read", { tab });
+  // The person's own tab has no such listener: nothing is paused and nobody is told.
+  await f.invoke({ action: "navigate", url: "https://mine.example.com" });
+  f.views.at(-1).webContents.emit("before-mouse-event", {}, { type: "mouseDown" });
+  assert.equal((await f.invoke({ action: "state" })).tabs.some((entry) => entry.paused), false);
+  assert.equal(f.events.length, 6);
+});

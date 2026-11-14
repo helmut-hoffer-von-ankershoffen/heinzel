@@ -425,7 +425,10 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     // What counts for clearing is that an override was ever sent on this session, not that its answer came: an
     // answer may be late or never come while the override is in effect all the same.
     if (method === "Emulation.setDeviceMetricsOverride") pageOf(guest).sent = true;
-    return wire.sendCommand(method, params);
+    if (!method.startsWith("Input.")) return wire.sendCommand(method, params);
+    // The agent's own input: the tab must not read it as the person taking over.
+    guest.driving = (guest.driving ?? 0) + 1;
+    try { return await wire.sendCommand(method, params); } finally { guest.driving -= 1; }
   };
   /**
    * A hidden view has no size (its page sees a 0 by 0 window), so nothing in it can be laid out or hit-tested. A tab

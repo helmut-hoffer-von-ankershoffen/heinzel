@@ -22,6 +22,9 @@ const DEFAULT_BOUNDS = Object.freeze({ x: 0, y: 0, width: 1280, height: 800 });
 /** The owner tag of an agent's tabs; never equal to "person", whatever the agent calls itself. */
 export const agentOwner = (id) => `agent:${id}`;
 const TAB_ID = /^t-[0-9a-f]{8}$/;
+// The person's input that takes an agent's tab over: a press, a tap or a key down. Moving the pointer and the wheel
+// only look at the page.
+const PERSON_INPUT = new Set(["mouseDown", "touchStart", "gestureTap", "keyDown", "rawKeyDown"]);
 // The shape of each command; a command may also carry one optional key (a tab id, or a first address).
 const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
   state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
@@ -383,7 +386,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false,
+      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false, driving: 0,
         blank: true, view, session: partition, network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
@@ -452,6 +455,16 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       contents.on("will-frame-navigate", guard);
       contents.on("will-redirect", guard);
       contents.on("will-attach-webview", (event) => event.preventDefault());
+      if (agent) {
+        // The person's own key or click inside an agent's tab takes it over (ADR 0162), as the Take over button does.
+        // Input the agent engine sends through the debugger passes the same events: `driving` marks it.
+        const own = (_event, input) => {
+          if (!PERSON_INPUT.has(input?.type) || guest.driving > 0 || guest.paused) return;
+          guest.paused = true;
+          tell("take-over", guest);
+        };
+        for (const name of ["before-input-event", "input-event", "before-mouse-event"]) contents.on(name, own);
+      }
       contents.on("did-start-loading", () => { guest.status = "loading"; });
       contents.on("did-stop-loading", () => { if (guest.status === "loading") guest.status = "ready"; });
       contents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {

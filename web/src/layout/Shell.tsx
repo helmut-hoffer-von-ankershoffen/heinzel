@@ -23,6 +23,7 @@ import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
+import { useBrowserAgents } from "./browserAgents";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -113,6 +114,7 @@ function Layout() {
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
+  const browserAgents = useBrowserAgents();
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
@@ -745,6 +747,7 @@ function Layout() {
             onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
             onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
+            browserAgents={browserAgents}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => toggleTerminal(beside)}
           />,
