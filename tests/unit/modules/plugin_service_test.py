@@ -2397,3 +2397,141 @@ def test_adding_a_core_extra_keeps_requirements_changed_before_mutation(make_ker
 def test_a_core_extra_outside_the_installed_tool_is_refused_with_why(make_kernel, tmp_path):
     with pytest.raises(HeinzelError, match=r"development environment.*heinzel\[openai\]"):
         service_for(make_kernel, tmp_path).extra_command("openai")
+
+
+def git_repository(root, files, tag=None):
+    """A real git repository with `files` committed (and tagged), for a local plugin source."""
+    root.mkdir(parents=True)
+    environment = {
+        "GIT_AUTHOR_NAME": "Ada",
+        "GIT_AUTHOR_EMAIL": "ada@example.org",
+        "GIT_COMMITTER_NAME": "Ada",
+        "GIT_COMMITTER_EMAIL": "ada@example.org",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "PATH": os.environ["PATH"],
+    }
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    steps = [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "plugin"]]
+    for step in [*steps, *([["tag", tag]] if tag else [])]:
+        subprocess.run(["git", "-C", str(root), *step], check=True, env=environment, capture_output=True)
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], check=True, env=environment, capture_output=True, text=True
+    ).stdout.strip()
+
+
+PLUGIN_FILES = {
+    "pyproject.toml": '[project]\nname = "heinzel-crm"\nversion = "0.1.0"\ndescription = "CRM notes."\n'
+    'authors = [{ name = "Ada Example" }]\n[project.entry-points."heinzel.modules"]\ncrm = "crm"\n',
+    "crm/__init__.py": "",
+}
+
+
+def test_a_local_git_repository_is_added_as_a_pinned_non_editable_git_install(
+    make_kernel, tool_env, monkeypatch, tmp_path
+):
+    repository = tmp_path / "clones" / "heinzel-crm"
+    commit = git_repository(repository, PLUGIN_FILES, tag="v0.1.0")
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    real = repository.resolve()
+    monkeypatch.setattr(
+        service._installation,
+        "hz",
+        lambda *args: (
+            json.dumps(
+                [
+                    {
+                        "distribution": "heinzel-crm",
+                        "version": "0.1.0",
+                        "revision": commit,
+                        "source_kind": "git",
+                        "source_url": None,
+                        "source_path": str(real),
+                        "modules": ["crm"],
+                        "name": "crm",
+                    }
+                ]
+            )
+            if args[:3] == ("system", "plugin", "list")
+            else json.dumps({"bindings": [], "message": ""})
+            if args[:3] == ("system", "plugin", "bind")
+            else "[]"
+        ),
+    )
+    preview = service.add(str(repository))
+    candidate = preview.candidate
+    expected = f"heinzel-crm @ git+{real.as_uri()}@{commit}"
+    assert (preview.done, runs) == (False, [])
+    assert (candidate.requirement, candidate.distribution, candidate.version, candidate.source) == (
+        expected,
+        "heinzel-crm",
+        "0.1.0",
+        "git",
+    )
+    assert (candidate.revision, candidate.url, candidate.publisher, candidate.first_party) == (
+        commit,
+        str(real),
+        "Ada Example",
+        False,
+    )
+    change = service.add(candidate.requirement, confirm=True)
+    assert (change.done, change.action) == (True, "add")
+    [(command, _)] = runs
+    assert expected in command
+    assert "--editable" not in command
+    assert "-e" not in command
+    [event] = service.history()
+    assert (event.requirement, event.source) == (expected, "git")
+
+
+def test_a_local_ref_pins_that_commit_not_head(make_kernel, tool_env, monkeypatch, tmp_path):
+    repository = tmp_path / "heinzel-crm"
+    first = git_repository(repository, PLUGIN_FILES, tag="v0.1.0")
+    (repository / "crm" / "more.py").write_text("x = 1\n", encoding="utf-8")
+    env = {
+        "GIT_AUTHOR_NAME": "A",
+        "GIT_AUTHOR_EMAIL": "a@e.org",
+        "GIT_COMMITTER_NAME": "A",
+        "GIT_COMMITTER_EMAIL": "a@e.org",
+    }
+    for step in (["add", "."], ["commit", "-q", "-m", "more"]):
+        subprocess.run(
+            ["git", "-C", str(repository), *step], check=True, env={**os.environ, **env}, capture_output=True
+        )
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate(f"git+{repository.resolve().as_uri()}@v0.1.0")
+    assert candidate.revision == first
+    assert candidate.requirement.endswith(f"@{first}")
+
+
+def test_a_local_repository_that_is_not_a_plugin_or_has_no_such_ref_is_refused(
+    make_kernel, tool_env, monkeypatch, tmp_path
+):
+    repository = tmp_path / "heinzel-crm"
+    git_repository(repository, {"README.md": "no project\n"})
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    with pytest.raises(HeinzelError, match=r"Can't read|no installable|could not be verified"):
+        service.candidate(str(repository))
+    with pytest.raises(HeinzelError, match="Can't read"):
+        service.candidate(f"git+{repository.resolve().as_uri()}@nope")
+
+
+def test_siblings_of_a_local_plugin_collection_install_first(make_kernel, tool_env, monkeypatch, tmp_path):
+    repository = tmp_path / "heinzel-crm"
+    files = {
+        **PLUGIN_FILES,
+        "pyproject.toml": PLUGIN_FILES["pyproject.toml"].replace(
+            'description = "CRM notes."', 'description = "CRM notes."\ndependencies = ["heinzel-base>=0.1"]'
+        ),
+        "plugins/heinzel-base/pyproject.toml": '[project]\nname = "heinzel-base"\nversion = "0.2.0"\n'
+        '[project.entry-points."heinzel.modules"]\nbase = "base"\n',
+    }
+    commit = git_repository(repository, files)
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate(str(repository))
+    [need] = [n for n in candidate.needs if n.distribution == "heinzel-base"]
+    assert (
+        need.install == f"heinzel-base @ git+{repository.resolve().as_uri()}@{commit}#subdirectory=plugins/heinzel-base"
+    )

@@ -1,13 +1,16 @@
 """Which sources `hz system plugin add` installs from, and what can be read about one before installing it.
 
 Adding a plugin runs its code with your rights, so `add` takes only sources whose identity can be shown before you
-confirm: a package on PyPI named `heinzel-<name>` (ADR 0025) or a git repository over https. Local paths are for
-developing a plugin (`hz system plugin develop`, CLI only); ssh, plain http, file and archive URLs are refused, and so
-are credentials inside a URL, which would end up in the uv receipt and the plugin history (ADR 0047).
+confirm: a package on PyPI named `heinzel-<name>` (ADR 0025), a git repository over https, or a git repository on this
+machine (an absolute path, `file://` or `git+file://`; a normal install at a commit, not editable). An editable
+checkout is for developing a plugin (`hz system plugin develop`, CLI only); ssh, plain http and archive URLs are
+refused, and so are credentials inside a URL, which would end up in the uv receipt and the plugin history (ADR 0047).
+A local path comes only from what the person typed, never from a catalog or a remote.
 """
 
 import base64
 import json
+import os
 import re
 import shlex
 import shutil
@@ -18,8 +21,9 @@ import urllib.request
 from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, replace
 from importlib.metadata import Distribution
+from pathlib import Path
 from typing import Any, Literal, NoReturn, cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import SplitResult, quote, unquote, urlsplit
 
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
@@ -54,7 +58,7 @@ JsonGetter = Callable[[str], Any]
 
 @dataclass(frozen=True, slots=True)
 class PluginSource:
-    """A parsed plugin source: a PyPI requirement or an https git repository."""
+    """A parsed plugin source: a PyPI requirement, an https git repository or one on this machine."""
 
     kind: Literal["pypi", "git"]
     name: str | None
@@ -62,9 +66,17 @@ class PluginSource:
     requirement: Requirement | None = None
     """For PyPI: the requirement as given."""
     url: str | None = None
-    """For git: the repository's https URL, without `git+`, ref or fragment."""
+    """For git: the repository's https (or `file://`) URL, without `git+`, ref or fragment."""
     ref: str | None = None
     subdirectory: str | None = None
+
+    @property
+    def local_path(self) -> Path | None:
+        """The repository directory, for a git repository on this machine (`file://` URL)."""
+        if self.url is None:
+            return None
+        parts = urlsplit(self.url)
+        return Path(unquote(parts.path)) if parts.scheme == "file" else None
 
     @property
     def github(self) -> tuple[str, str] | None:
@@ -93,14 +105,15 @@ def refused(spec: str, why: str) -> NoReturn:
     """
     msg = (
         f"Can't add {spec!r}: {why}. `hz system plugin add` takes a catalog short name (`hz system plugin search`), "
-        f"a PyPI package named {PREFIX}<name>, or a git URL over https "
-        "(`git+https://github.com/acme-example/heinzel-acme@v1.0.0`); a checkout on this machine goes with "
-        "`hz system plugin develop PATH`."
+        f"a PyPI package named {PREFIX}<name>, a git URL over https "
+        "(`git+https://github.com/acme-example/heinzel-acme@v1.0.0`), or a git repository on this machine "
+        "(an absolute path such as `~/Code/heinzel-acme`, or `git+file:///abs/path@v1.0.0`); an editable checkout "
+        "goes with `hz system plugin develop PATH`."
     )
     raise HeinzelError(msg)
 
 
-def parse(spec: str) -> PluginSource:  # noqa: C901 - one rule per refusal reads best flat
+def parse(spec: str) -> PluginSource:
     """Parse what `add` was given into a PyPI requirement or an https git repository.
 
     Raises:
@@ -112,11 +125,20 @@ def parse(spec: str) -> PluginSource:  # noqa: C901 - one rule per refusal reads
     if text.startswith("-") or any(c in text for c in "\0\r\n\t"):
         refused(spec, "it looks like an option or holds control characters")
     if text.startswith(PATH_LIKE) or text.startswith("file:") or (len(text) > 1 and text[1] == ":"):
-        refused(spec, "local paths aren't added, they are developed")
+        return _local_spec(spec, text)
     if text.startswith("https://") and " " not in text:
         text = f"git+{text}"
     if text.startswith("git+"):
         return _git(spec, None, text)
+    return _requirement(spec, text)
+
+
+def _requirement(spec: str, text: str) -> PluginSource:
+    """A PyPI requirement, or `name @ git+URL`.
+
+    Raises:
+        HeinzelError: If it is anything else.
+    """
     try:
         requirement = Requirement(text)
     except InvalidRequirement:
@@ -127,6 +149,8 @@ def parse(spec: str) -> PluginSource:  # noqa: C901 - one rule per refusal reads
         refused(spec, "it is no package name, requirement or URL")
     name = canonicalize_name(requirement.name)
     if requirement.url is not None:
+        if requirement.url.startswith("file:"):
+            return _git(spec, name, f"git+{requirement.url}")
         if not requirement.url.startswith("git+"):
             refused(spec, "only git repositories over https are accepted, not archives or other URLs")
         return _git(spec, name, requirement.url)
@@ -144,8 +168,10 @@ def _git(spec: str, name: str | None, url: str) -> PluginSource:  # noqa: C901 -
         HeinzelError: If it isn't https, carries credentials, a query or an unsafe ref or subdirectory.
     """
     parts = urlsplit(url.removeprefix("git+"))
+    if parts.scheme == "file":
+        return _local_url(spec, name, parts)
     if parts.scheme != "https":
-        refused(spec, f"only git over https is accepted, not {parts.scheme or 'no scheme'}")
+        refused(spec, f"only git over https or file is accepted, not {parts.scheme or 'no scheme'}")
     if "@" in parts.netloc or not parts.hostname:
         refused(spec, "a URL must not carry a user name or token; private GitHub repositories use your gh login")
     if parts.query:
@@ -172,6 +198,66 @@ def _git(spec: str, name: str | None, url: str) -> PluginSource:  # noqa: C901 -
     return PluginSource(
         kind="git", name=name, url=f"https://{netloc}{path.rstrip('/')}", ref=ref, subdirectory=subdirectory
     )
+
+
+def _local_spec(spec: str, text: str) -> PluginSource:
+    """A bare absolute or `~/` path, or a `file://` URL; anything else path-like is refused.
+
+    Raises:
+        HeinzelError: If it is a relative or Windows path, or not a usable local repository.
+    """
+    if text.startswith(("/", "~")):
+        return _local(spec, None, Path(text).expanduser(), None, None)
+    if text.startswith("file:"):
+        return _git(spec, None, f"git+{text}")
+    refused(spec, "a local repository is given as an absolute path (or `~/...`), `file://` or `git+file://` URL")
+
+
+def _local_url(spec: str, name: str | None, parts: SplitResult) -> PluginSource:
+    """A git repository on this machine from `git+file:///abs/path[@ref][#subdirectory=dir]`.
+
+    Raises:
+        HeinzelError: If it names another host, a query, a malformed fragment or no usable repository.
+    """
+    if parts.netloc not in {"", "localhost"} or parts.query:
+        refused(spec, "a file URL names a path on this machine: `git+file:///abs/path[@ref][#subdirectory=dir]`")
+    subdirectory = None
+    if parts.fragment:
+        key, _, value = parts.fragment.partition("=")
+        if key != "subdirectory" or not value:
+            refused(spec, "the only fragment a git URL takes is #subdirectory=<dir>")
+        subdirectory = value
+    path, ref = unquote(parts.path), None
+    if "@" in path and not Path(path).is_dir():
+        path, ref = path.rsplit("@", 1)
+    if not path.startswith("/"):
+        refused(spec, "a file URL needs an absolute path")
+    return _local(spec, name, Path(path), ref, subdirectory)
+
+
+def _local(spec: str, name: str | None, path: Path, ref: str | None, subdirectory: str | None) -> PluginSource:
+    """A checked git repository on this machine, as an absolute real path in a `file://` URL.
+
+    Raises:
+        HeinzelError: If the path is relative, holds control characters, doesn't exist or is no git repository, or
+            the ref or subdirectory is unsafe.
+    """
+    text = str(path)
+    if CONTROL.search(text) or text.startswith("-"):
+        refused(spec, "the path holds control characters or looks like an option")
+    if not path.is_absolute():
+        refused(spec, "a local repository is given as an absolute path (or `~/...`), not a relative one")
+    for part in (ref, subdirectory):
+        if part is not None and (not SAFE_PART.match(part) or ".." in part.split("/") or part.endswith(("/", ".lock"))):
+            refused(spec, f"{part!r} is no git ref or subdirectory")
+    try:
+        real = Path(os.path.realpath(path))
+        is_repository = real.is_dir() and (real / ".git").exists()
+    except OSError:
+        is_repository = False
+    if not is_repository:
+        refused(spec, f"{text} is no git repository on this machine (a directory with a .git)")
+    return PluginSource(kind="git", name=name, url=real.as_uri(), ref=ref, subdirectory=subdirectory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,6 +489,100 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
     )
 
 
+LOCAL_BASE = "local"
+"""The `base` of the paths `local_getter` answers, in the place of `repos/<owner>/<repository>`."""
+CONTENTS = re.compile(r"^local/contents/(?P<path>[^?]*)\?ref=(?P<ref>[0-9a-f]{40,64})$")
+
+
+def _run_git(repository: Path, *arguments: str) -> bytes:
+    """Run git in `repository` without a shell; a failure raises `LookupError` (nothing there) or `OSError`.
+
+    Raises:
+        LookupError: If git answers with an error: the revision, path or repository isn't there.
+        OSError: If git can't be run or takes too long.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603 - resolved git, argument list, no shell
+            [shutil.which("git") or "git", "-C", str(repository), *arguments],
+            capture_output=True,
+            check=False,
+            timeout=TIMEOUT,
+            env=subprocess_environment(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"git {arguments[0]} timed out"
+        raise OSError(msg) from exc
+    if result.returncode != 0:
+        raise LookupError(result.stderr.decode(errors="replace").strip() or f"git {arguments[0]} failed")
+    return result.stdout
+
+
+def local_getter(repository: Path) -> JsonGetter:
+    """Answers what `github_project_at` asks of GitHub's contents API from a local repository, with git.
+
+    Only `local/contents/<path>?ref=<full commit>` is answered: a file as `{type, content}` (base64), a directory as
+    its entries. Anything else, or a path git doesn't know at that commit, raises `LookupError`.
+    """
+
+    def get(path: str) -> Any:  # noqa: ANN401 - free-form JSON
+        match = CONTENTS.match(path)
+        if match is None:
+            msg = f"not found: {path}"
+            raise LookupError(msg)
+        where, ref = unquote(match["path"]).strip("/"), match["ref"]
+        if any(part in {"", ".", ".."} for part in where.split("/")) and where:  # a plain path, never an escape
+            msg = f"not found: {path}"
+            raise LookupError(msg)
+        if where.endswith(".toml"):
+            body = _run_git(repository, "show", f"{ref}:{where}")
+            return {"type": "file", "content": base64.b64encode(body).decode()}
+        listing = _run_git(repository, "ls-tree", "-z", f"{ref}:{where}")
+        entries = [item.split(b"\t", 1) for item in listing.split(b"\0") if item]
+        return [
+            {"name": name.decode(errors="replace"), "type": "dir" if meta.split()[1] == b"tree" else "file"}
+            for meta, name in entries
+        ]
+
+    return get
+
+
+def from_local(source: PluginSource) -> Metadata:
+    """A local git repository's commit (the ref's, else HEAD's) and its pyproject's name and version, read with git.
+
+    Raises:
+        HeinzelError: If the repository, the ref or the pyproject can't be found.
+        OSError: If git can't be run.
+        ValueError: If the pyproject is malformed.
+    """
+    repository = source.local_path
+    if repository is None:  # pragma: no cover - the caller checks
+        msg = "a local source has a path"
+        raise ValueError(msg)
+    get = local_getter(repository)
+    try:
+        wanted = f"{source.ref or 'HEAD'}^{{commit}}"
+        revision = _run_git(repository, "rev-parse", "--verify", "--quiet", wanted).decode().strip()
+        project, directory = _github_project(source, get, LOCAL_BASE, revision)
+    except LookupError as exc:
+        msg = f"Can't read {repository}{'@' + source.ref if source.ref else ''} ({exc}). Check the path and the ref."
+        raise HeinzelError(msg) from exc
+    authors = cast("list[dict[str, Any]]", project.get("authors") or [])
+    version = clean(project.get("version"))
+    needs = cast("dict[str, tuple[str, ...]]", project.get(NEEDS) or {})
+    return Metadata(
+        name=checked_name(str(project["name"]), str(repository)),
+        version=version if _version_key(version)[0] else None,
+        summary=clean(project.get("description")),
+        publisher=clean(authors[0].get("name")) if authors and authors[0].get("name") else None,
+        revision=revision,
+        page=str(repository),
+        subdirectory=directory,
+        requires=needs.get("requires", ()),
+        recommends=needs.get("recommends", ()),
+        dependencies=_dependency_texts(project),
+    )
+
+
 def _dependency_texts(project: dict[str, Any]) -> tuple[str, ...]:
     """The strings of a project's `dependencies` list; anything else in it is ignored."""
     declared: object = project.get("dependencies")
@@ -439,9 +619,9 @@ def siblings_from_github(
         ValueError: If an answer isn't the JSON GitHub sends.
     """
     owner, repository = source.github or ("", "")
-    if not metadata.revision or not owner:
+    if not metadata.revision or not (owner or source.local_path):
         return []
-    base = f"repos/{quote(owner)}/{quote(repository)}"
+    base = LOCAL_BASE if source.local_path else f"repos/{quote(owner)}/{quote(repository)}"
     ordered: dict[str, Sibling] = {}
     visiting = {canonicalize_name(metadata.name or "")}
 

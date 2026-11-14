@@ -26,7 +26,7 @@ from importlib.metadata import Distribution, distributions, entry_points
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -90,11 +90,13 @@ from heinzel.modules.system.plugin._sources import (
     browser_url,
     dependents,
     from_github,
+    from_local,
     from_pypi,
     git_credentials,
     github_getter,
     github_project_at,
     installed_repository_url,
+    local_getter,
     parse,
     pypi_get,
     repository_url,
@@ -397,6 +399,7 @@ class PluginService:
                     summary=str(dist.metadata.get("Summary") or "") if dist else "",
                     source_kind=kind,
                     source_url=url,
+                    source_path=_source_path(dist),
                     revision=revision,
                     homepage=homepage,
                     first_party=_is_first_party(url or homepage),
@@ -474,22 +477,7 @@ class PluginService:
                 resolved = matches[0].install_spec
         source = parse(resolved or spec)
         warnings: list[str] = []
-        metadata = Metadata()
-        try:
-            if source.kind == "pypi":
-                metadata = from_pypi(source, self.pypi)
-            elif source.github is not None:
-                metadata = from_github(source, self.github_api)
-                source = replace(source, subdirectory=metadata.subdirectory or source.subdirectory)
-            else:
-                warnings.append(
-                    f"{urlsplit(source.url or '').hostname} isn't GitHub: its name, version and publisher can't be "
-                    "read before installing; add it only if you trust that repository."
-                )
-        # Isolation boundary: an unreachable PyPI or GitHub leaves the source unverified, which the warning says.
-        except (OSError, ValueError, KeyError, TypeError, UnicodeDecodeError) as exc:
-            reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
-            warnings.append(f"What it is couldn't be read ({reason}): only the source below is known.")
+        metadata, source = self._read_metadata(source, warnings)
         if source.requirement is not None and (source.requirement.extras or source.requirement.marker is not None):
             msg = f"Add {source.requirement.name} without extras or environment markers; a plugin brings what it needs."
             raise HeinzelError(msg)
@@ -536,6 +524,33 @@ class PluginService:
             ],
         )
         return candidate, metadata
+
+    def _read_metadata(self, source: PluginSource, warnings: list[str]) -> tuple[Metadata, PluginSource]:
+        """What the source says about itself, read from PyPI, GitHub or the local repository, with git.
+
+        Raises:
+            HeinzelError: If a local or GitHub repository, ref or pyproject can't be found.
+        """
+        metadata = Metadata()
+        try:
+            if source.kind == "pypi":
+                metadata = from_pypi(source, self.pypi)
+            elif source.local_path is not None:
+                metadata = from_local(source)
+                source = replace(source, subdirectory=metadata.subdirectory or source.subdirectory)
+            elif source.github is not None:
+                metadata = from_github(source, self.github_api)
+                source = replace(source, subdirectory=metadata.subdirectory or source.subdirectory)
+            else:
+                warnings.append(
+                    f"{urlsplit(source.url or '').hostname} isn't GitHub: its name, version and publisher can't be "
+                    "read before installing; add it only if you trust that repository."
+                )
+        # Isolation boundary: an unreachable PyPI or GitHub leaves the source unverified, which the warning says.
+        except (OSError, ValueError, KeyError, TypeError, UnicodeDecodeError) as exc:
+            reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            warnings.append(f"What it is couldn't be read ({reason}): only the source below is known.")
+        return metadata, source
 
     # What a plugin needs: other plugins it requires (installed first) or recommends (offered).
 
@@ -983,14 +998,16 @@ class PluginService:
         Raises:
             HeinzelError: If the sibling closure is larger than one install takes.
         """
-        if source.github is None or not metadata.dependencies:
+        local = source.local_path
+        if (source.github is None and local is None) or not metadata.dependencies:
             return []
+        get = local_getter(local) if local is not None else self.github_api
         installed = {canonicalize_name(p.distribution) for p in self.installed()}
         try:
             with step(
                 log, "plugin.add.closure", plugin=metadata.name, revision=metadata.revision, operation="add"
             ) as running:
-                found = siblings_from_github(source, self.github_api, metadata, skip=installed)
+                found = siblings_from_github(source, get, metadata, skip=installed)
                 running.note(siblings=[item.name for item in found])
         except (OSError, ValueError, KeyError, TypeError) as exc:
             warnings.append(f"The plugins it needs couldn't be read ({exc}); uv resolves them while installing.")
@@ -2196,6 +2213,7 @@ class PluginService:
                         name=short_name(name),
                         source_kind=kind,
                         source_url=url,
+                        source_path=_source_path(distribution),
                         revision=revision,
                     )
                 )
@@ -2351,6 +2369,9 @@ def _matches_git_origin(plugin: PluginInfo, candidate: PluginCandidate) -> bool:
     source = parse(candidate.requirement)
     revision = _known_revision(candidate)
     expected = installed_repository_url(source.url, plugin.revision, source.subdirectory)
+    local = source.local_path
+    if local is not None and plugin.source_path != str(local):
+        return False
     return (
         plugin.source_kind == "git"
         and plugin.revision is not None
@@ -2399,6 +2420,20 @@ def _is_first_party(url: str | None) -> bool:
         )
     except ValueError:
         return False
+
+
+def _source_path(dist: Distribution | None) -> str | None:
+    """The directory of the local git repository a distribution was installed from (`file://` in `direct_url.json`)."""
+    if dist is None:
+        return None
+    try:
+        data = json.loads(dist.read_text("direct_url.json") or "null")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or "vcs_info" not in data:
+        return None
+    parts = urlsplit(str(cast("dict[str, Any]", data).get("url") or ""))
+    return unquote(parts.path) if parts.scheme == "file" else None
 
 
 def _source_of(

@@ -222,8 +222,14 @@ There is no central registration file to edit. Private repositories appear only 
 read them; run `gh auth login` on each installing machine. The same authenticated gateway reads catalog listings
 and project metadata. A topic is optional for direct installation.
 
-Catalog discovery currently uses GitHub. Direct Git installation supports HTTPS repositories; SSH URLs, archives
-and local paths are not `plugin add` sources. Use `hz system plugin develop .` for a local checkout.
+Catalog discovery currently uses GitHub. Direct Git installation supports HTTPS repositories and git repositories
+on the same machine; SSH URLs and archives are not `plugin add` sources.
+
+A private plugin you cloned needs no remote: `hz system plugin add ~/Code/heinzel-harbor` (an absolute path or
+`~/...`), `file:///abs/path` or `git+file:///abs/path@v0.1.0#subdirectory=dir` previews the commit of the ref (else
+`HEAD`) and installs that commit as a normal, non-editable install, reading `pyproject.toml` with git. `hz system
+plugin list` shows the path; there is no link. A new commit or tag in the clone is installed by adding it again.
+Use `hz system plugin develop .` for an editable checkout you are changing.
 
 ## Release one plugin
 
