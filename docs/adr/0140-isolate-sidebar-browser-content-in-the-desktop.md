@@ -97,31 +97,29 @@ Off, links open in the default browser as before. The choice is a setting of the
 file in its own data folder by the main process and read by the page through the bridge. A reset of the page's storage
 cannot turn it on again. In the PWA nothing changes: a link opens a new browser tab.
 
-### Bookmarks (0.9.45)
-
-Bookmarks are owner data in hz, not browser state: one ordered tree of folders and bookmarks per owner, kept by the
-`system.bookmark` module in the data directory and changed only through its operations (`list`, `add`, `folder`,
-`edit`, `move`, `remove`, `restore`). Nothing of it lives in the `persist:hz-browser` partition, so Clear browsing
-data keeps every bookmark. A bookmark is an HTTPS address without sign-in details, as the browser opens no other.
-A removed entry, a folder with everything in it, stays restorable until newer removals push it out.
+Since 0.9.45 the browser has bookmarks. They are owner data in hz, not browser state: one ordered tree of folders and
+bookmarks per owner, kept by the `system.bookmark` module in the data directory and changed only through its operations
+(`list`, `add`, `folder`, `edit`, `move`, `remove`, `restore`). Nothing of it lives in the `persist:hz-browser`
+partition, so Clear browsing data keeps every bookmark. A bookmark is an HTTPS address without sign-in details, as the
+browser opens no other. A removed entry, a folder with everything in it, stays restorable until newer removals push it
+out.
 
 The address bar has a star that adds the shown page and then edits its name and folder or removes it. The manager at
 `/bookmarks` shows the tree: folders, rename, drag and buttons to reorder and move, and remove with undo. The left
 navigation shows the whole tree: folders open and close, and which are open is remembered in that browser; every
-bookmark has its favicon and title. It is a tree view for the keyboard and screen readers: arrow keys move, right
-opens a folder, left folds it, Enter opens. A long tree scrolls inside its own section. The collapsed rail keeps the
-top-level bookmarks as icons. A click on a bookmark opens a new tab of the built-in browser in the desktop app; in
-the PWA the link opens a new browser tab.
+bookmark has its favicon and title. It is a tree view for the keyboard and screen readers: arrow keys move, right opens
+a folder, left folds it, Enter opens. A long tree scrolls inside its own section. The collapsed rail keeps the top-level
+bookmarks as icons. A click on a bookmark opens a new tab of the built-in browser in the desktop app; in the PWA the
+link opens a new browser tab.
 
-A favicon is the icon the page itself named (`page-favicon-updated`): the desktop reads it inside the guest
-partition, under the same public-HTTPS rule and proxy as the page, reduces it to a 32-pixel PNG and keeps it per
-origin for its tabs. For the origin of a bookmark the page hands that small image to hz, which checks it and caches
-it per origin in the cache directory. No third-party favicon service is asked; an origin without an icon shows a
-globe.
+A favicon is the icon the page itself named (`page-favicon-updated`): the desktop reads it inside the guest partition,
+under the same public-HTTPS rule and proxy as the page, reduces it to a 32-pixel PNG and keeps it per origin for its
+tabs. For the origin of a bookmark the page hands that small image to hz, which checks it and caches it per origin in
+the cache directory. No third-party favicon service is asked; an origin without an icon shows a globe.
 
-Agents can read the tree and add to it: `list`, `add` and `folder` are MCP tools over stdio, and a chat proposes an `add` like
-any other write. Rename, move, remove, restore and the favicon cache are the person's (CLI and web app only), so no
-agent can propose them. The unauthenticated REST and HTTP MCP heads get none of the bookmark operations.
+Agents can read the tree and add to it: `list`, `add` and `folder` are MCP tools over stdio, and a chat proposes an
+`add` like any other write. Rename, move, remove, restore and the favicon cache are the person's (CLI and web app only),
+so no agent can propose them. The unauthenticated REST and HTTP MCP heads get none of the bookmark operations.
 
 ### Consequences
 
