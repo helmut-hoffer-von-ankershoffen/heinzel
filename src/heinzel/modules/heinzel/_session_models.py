@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from heinzel.kernel import Billing, Effort, skill_name_problem
+from heinzel.modules.heinzel._activity import MAX_TURN_SECONDS, Activity
 
 SessionId = Annotated[str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$")]
 RequestId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
@@ -532,6 +533,26 @@ class SessionSummary(BaseModel):
     updated_at: datetime = Field(description="When the latest acknowledged control was recorded.")
     contract_version: int | None = Field(
         description="The approved contract version, when one exists.", default=None, ge=1
+    )
+    waiting_count: int = Field(
+        default=0,
+        ge=0,
+        description="Items open for the owner: unsettled write drafts plus a pending check-in proposal.",
+    )
+    runs_last_hour: int = Field(default=0, ge=0, description="Runs (turns) started in the last hour.")
+    queued_runs: int = Field(default=0, ge=0, description="Accepted messages whose run has not started yet.")
+    last_run_failed: bool = Field(
+        default=False,
+        description="Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed "
+        f"turn (started, never finished) reads failed, and so stuck, only after the {MAX_TURN_SECONDS} s turn cap.",
+    )
+    last_approved_at: datetime | None = Field(
+        default=None, description="When the owner last approved or published this Heinzel's work, if ever."
+    )
+    activity: Activity = Field(
+        default="idle",
+        description="One of nine states, computed by code in fixed precedence: paused, stuck, waiting_for_you, "
+        "overloaded, working, waiting_on_others, proud, asleep, idle.",
     )
 
 

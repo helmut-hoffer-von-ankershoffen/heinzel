@@ -9,6 +9,8 @@ from heinzel.modules.heinzel._session_models import (
     MessageRequest,
     SessionCosts,
     SessionSnapshot,
+    SessionSummary,
+    SkillDraft,
 )
 
 pytestmark = pytest.mark.unit
@@ -93,3 +95,46 @@ def test_default_appearance_preserves_inherited_palette_and_age_derived_beard() 
     assert inherited.beard is None
     restored = HeinzelAppearance.model_validate_json(inherited.model_dump_json())
     assert restored == inherited
+
+
+@pytest.mark.parametrize(
+    ("name", "files", "message"),
+    [
+        ("Not A Valid Name!", {"SKILL.md": "x"}, "valid unreserved skill name"),
+        ("helper", {"SKILL.md": "\ud800"}, "valid UTF-8"),
+    ],
+)
+def test_skill_drafts_refuse_invalid_names_and_text(name, files, message):
+    with pytest.raises(ValidationError, match=message):
+        SkillDraft(
+            session_id="hz-" + "A" * 26,
+            request_id="draft-1",
+            name=name,
+            requested_scope="personal",
+            files=files,
+            preview_sha256="0" * 64,
+        )
+
+
+def test_a_summary_without_counts_is_idle_with_nothing_open():
+    summary = SessionSummary.model_validate(
+        {
+            "session_id": "hz-" + "A" * 26,
+            "name": "Helper",
+            "state": "proposed",
+            "last_seq": 1,
+            "updated_at": "2026-11-14T00:00:00Z",
+        }
+    )
+    assert (summary.activity, summary.waiting_count, summary.queued_runs, summary.runs_last_hour) == ("idle", 0, 0, 0)
+    assert not summary.last_run_failed
+    assert summary.last_approved_at is None
+    with pytest.raises(ValidationError):
+        SessionSummary.model_validate({**summary.model_dump(), "activity": "sulking"})
+
+
+def test_the_waiting_count_names_what_it_counts():
+    description = SessionSummary.model_fields["waiting_count"].description or ""
+    assert "write drafts" in description
+    assert "check-in proposal" in description
+    assert "contract" not in description

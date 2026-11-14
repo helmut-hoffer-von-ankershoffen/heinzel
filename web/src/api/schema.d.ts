@@ -13440,6 +13440,13 @@ export interface components {
          * @description Picker metadata, including proposed chats with no approved contract.
          */
         SessionSummary: {
+            /**
+             * Activity
+             * @description One of nine states, computed by code in fixed precedence: paused, stuck, waiting_for_you, overloaded, working, waiting_on_others, proud, asleep, idle.
+             * @default idle
+             * @enum {string}
+             */
+            activity: "paused" | "stuck" | "waiting_for_you" | "overloaded" | "working" | "waiting_on_others" | "proud" | "asleep" | "idle";
             /** @description The persisted character overrides for the session picker. */
             appearance?: components["schemas"]["HeinzelAppearance"];
             /**
@@ -13447,6 +13454,17 @@ export interface components {
              * @description The approved contract version, when one exists.
              */
             contract_version?: number | null;
+            /**
+             * Last Approved At
+             * @description When the owner last approved or published this Heinzel's work, if ever.
+             */
+            last_approved_at?: string | null;
+            /**
+             * Last Run Failed
+             * @description Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed turn (started, never finished) reads failed, and so stuck, only after the 7200 s turn cap.
+             * @default false
+             */
+            last_run_failed: boolean;
             /**
              * Last Seq
              * @description The latest acknowledged control-journal sequence.
@@ -13457,6 +13475,18 @@ export interface components {
              * @description The persisted personal display name.
              */
             name: string;
+            /**
+             * Queued Runs
+             * @description Accepted messages whose run has not started yet.
+             * @default 0
+             */
+            queued_runs: number;
+            /**
+             * Runs Last Hour
+             * @description Runs (turns) started in the last hour.
+             * @default 0
+             */
+            runs_last_hour: number;
             /**
              * Session Id
              * @description The stable personal conversation identity.
@@ -13474,6 +13504,12 @@ export interface components {
              * @description When the latest acknowledged control was recorded.
              */
             updated_at: string;
+            /**
+             * Waiting Count
+             * @description Items open for the owner: unsettled write drafts plus a pending check-in proposal.
+             * @default 0
+             */
+            waiting_count: number;
         };
         /**
          * SettingDoc
