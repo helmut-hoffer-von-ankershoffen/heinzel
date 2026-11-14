@@ -99,14 +99,14 @@ def test_a_missing_method_fails_unless_it_is_declared_unsupported():
 
 
 def test_unsupported_must_name_methods_of_the_capability_in_a_set():
-    class Typo(GoodChat):
-        unsupported = frozenset({"psot"})
+    class Misnamed(GoodChat):
+        unsupported = frozenset({"publish"})
 
     class Text(GoodChat):
         unsupported = "post"
 
-    assert failures(check_adapter(Typo(), "chat", samples=SAMPLES)) == [
-        "Typo (chat) unsupported: names no method of chat: psot (a typo?)"
+    assert failures(check_adapter(Misnamed(), "chat", samples=SAMPLES)) == [
+        "Misnamed (chat) unsupported: names no method of chat: publish (a typo?)"
     ]
     assert "must be a set of method names" in failures(check_adapter(Text(), "chat", samples=SAMPLES))[0]
 
@@ -355,14 +355,14 @@ def test_check_module_reports_a_module_without_adapters():
 
 
 def test_assert_conformant_raises_listing_every_failure_and_warns_the_rest():
-    class Typo(GoodChat):
-        unsupported = frozenset({"psot"})
+    class Misnamed(GoodChat):
+        unsupported = frozenset({"publish"})
 
     with pytest.raises(ConformanceError) as raised, pytest.warns(ConformanceWarning, match="declares no hosts"):
-        assert_conformant(chat_module(Typo, hosts=()), samples={"chat": SAMPLES})
+        assert_conformant(chat_module(Misnamed, hosts=()), samples={"chat": SAMPLES})
     text = str(raised.value)
     assert text.startswith("Conformance against heinzel ")
-    assert "Failures:\n  - acme-chat (chat) unsupported: names no method of chat: psot" in text
+    assert "Failures:\n  - acme-chat (chat) unsupported: names no method of chat: publish" in text
     assert "Warnings:\n  - acme-chat (chat) hosts: declares no hosts" in text
 
 
