@@ -16,6 +16,7 @@ from heinzel.heads import api, mcp
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.kernel import user_config_dir
+from heinzel.kernel._claude_code import CONTRACT_OPTIONS
 
 pytestmark = pytest.mark.integration
 
@@ -28,15 +29,29 @@ def hz(kernel: Kernel, *args: str) -> tuple[int, dict]:
 
 @pytest.fixture
 def fakes(tmp_path, monkeypatch):
-    """A `claude` that is logged in and answers OK, and an `acme` gateway CLI; both record their arguments."""
+    """A `claude` (2.1.321, claude.ai login, the bridge's options; a structured OK for the chat bridge, a plain OK
+    costing $0.001 for the coding runner) and an `acme` gateway CLI.
+
+    Both record their arguments.
+    """
     calls = tmp_path / "calls"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     claude = bin_dir / "claude"
+    options = "\n".join(f"  {option}" for option in CONTRACT_OPTIONS)
+    answer = {"kind": "text", "name": None, "arguments": None, "text": "OK"}
+    result = {"type": "result", "subtype": "success", "is_error": False, "structured_output": answer}
     claude.write_text(
         f'#!/bin/sh\necho "claude $*" >> {calls}\n'
-        'case "$1" in auth) echo \'{"loggedIn": true, "authMethod": "claude.ai"}\';;\n'
-        '*) echo \'{"type": "result", "subtype": "success", "result": "OK", "total_cost_usd": 0.001}\';; esac\n',
+        'case "$1" in\n'
+        'auth) echo \'{"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "firstParty"}\';;\n'
+        "--version) echo '2.1.321 (Claude Code)';;\n"
+        f"--help) printf '%s\\n' '{options}';;\n"
+        "*) cat > /dev/null\n"
+        # the chat bridge asks for its closed schema; the coding runner reads the plain result with its cost
+        f" case \"$*\" in *--json-schema*) echo '{json.dumps(result)}';;\n"
+        ' *) echo \'{"type": "result", "subtype": "success", "result": "OK", "total_cost_usd": 0.001}\';; esac;;\n'
+        "esac\n",
         encoding="utf-8",
     )
     acme = bin_dir / "acme"
@@ -104,11 +119,16 @@ def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
     kernel = make_kernel(builtins=True, config=gateway_config())
     code, report = hz(kernel, "ai", "access", "test", "--name", "gateway")
     assert (code, report["ok"], report["detail"]) == (0, True, "pong")
-    code, report = hz(kernel, "ai", "access", "test")  # the one in use
-    assert (report["name"], report["ok"], report["cost_usd"]) == ("claude-code", True, 0.001)
-    claude_run = [line for line in fakes.read_text(encoding="utf-8").splitlines() if " -p " in line]
-    assert len(claude_run) == 1
-    assert "--max-budget-usd 0.05" in claude_run[0]
+    code, report = hz(kernel, "ai", "access", "test")  # the one in use: the chat's own admission, then one answer
+    assert (report["name"], report["ok"], report["detail"]) == ("claude-code", True, "OK (Claude Code 2.1.321)")
+    assert report["cost_usd"] is None  # a subscription answer has no USD cost
+    claude_calls = [line for line in fakes.read_text(encoding="utf-8").splitlines() if line.startswith("claude ")]
+    assert claude_calls[-4:-1] == ["claude auth status --json", "claude --version", "claude --help"]
+    [claude_run] = [line for line in claude_calls if line.startswith("claude -p ")]
+    assert claude_run == claude_calls[-1]
+    for option in ("--safe-mode", "--restricted", "--strict-mcp-config", "--no-session-persistence", "--json-schema"):
+        assert option in claude_run
+    assert "--tools  --allowed-tools " in claude_run  # both empty: no native tool
     listing = hz(kernel, "ai", "access", "list")[1]
     assert {o["name"]: o["last_test"]["ok"] for o in listing["options"] if o["last_test"]} == {
         "gateway": True,
@@ -135,13 +155,13 @@ def test_the_rest_head_has_no_ai_access(make_kernel):
 
 def test_every_run_is_recorded_and_hz_ai_usage_reports_it(make_kernel, fakes):
     kernel = make_kernel(builtins=True, config=gateway_config())
-    hz(kernel, "ai", "access", "test")  # Claude Code: one short answer, $0.001
+    hz(kernel, "ai", "access", "test")  # Claude Code: one short answer through the chat's admission, no cost read
     code, answer = hz(kernel, "system", "runner", "ask", "What is hz?")
     assert (code, answer["status"]) == (0, "completed")
     code, usage = hz(kernel, "ai", "usage", "--by", "cause")
     assert code == 0
     assert usage["today"]["runs"] == 2
-    assert usage["today"]["cost_usd"] == pytest.approx(0.002)
+    assert usage["today"]["cost_usd"] == pytest.approx(0.001)  # the ask's; the access test reads no cost
     assert {row["key"] for row in usage["breakdowns"]["cause"]} == {"test", "ask"}
     assert [row["key"] for row in usage["breakdowns"]["access"]] == ["claude-code"]
     assert usage["tone"] == "ok"
