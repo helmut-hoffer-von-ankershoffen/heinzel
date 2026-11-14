@@ -205,7 +205,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
   const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
-  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
   assert.deepEqual(opened, ["https://example.com/page?q=1"]);
@@ -407,4 +407,88 @@ test("clear waits for a guest that is still opening before it wipes", async () =
   await clearing;
   const order = f.calls.map(([name, target]) => (name === "load" ? target : name));
   assert.ok(order.indexOf("about:blank") < order.indexOf("clear"), order.join(" "));
+});
+
+const BOUNDS = { x: 0, y: 40, width: 400, height: 300 };
+
+test("tabs: open, select and close; every tab shares the one partition and is tagged with its owner", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const second = await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  const blank = await f.invoke({ action: "new-tab" });
+  assert.equal(blank.tabs.length, 3);
+  assert.deepEqual(blank.tabs.map((tab) => tab.owner), ["person", "person", "person"]);
+  assert(blank.tabs.every((tab) => /^t-[0-9a-f]{8}$/.test(tab.id)));
+  assert.equal(blank.selected, blank.tabs[2].id);
+  assert.equal(f.sessions.length, 1);
+  assert(f.options.every((o) => o.webPreferences.session === f.sessions[0] && o.webPreferences.sandbox === true));
+  assert.equal(second.tabs[1].url, "https://two.example.com/");
+  const [a, b] = blank.tabs;
+  // Only the selected tab with a page is shown.
+  await f.invoke({ action: "layout", bounds: BOUNDS });
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [false, false, false]);
+  assert.equal((await f.invoke({ action: "select-tab", tab: a.id })).selected, a.id);
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [true, false, false]);
+  assert.equal((await f.invoke({ action: "state" })).url, "https://one.example.com/");
+  assert.equal((await f.invoke({ action: "close-tab", tab: a.id })).selected, b.id);
+  assert.equal(f.views[0].webContents.isDestroyed(), true);
+  const last = (await f.invoke({ action: "close-tab", tab: blank.tabs[2].id }));
+  assert.equal(last.selected, b.id);
+  assert.equal((await f.invoke({ action: "close-tab", tab: b.id })).tabs.length, 0);
+  assert.equal((await f.invoke({ action: "state" })).status, "empty");
+});
+
+test("tabs: ids are checked, the limit is 8, and bad tab commands are refused", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (const bad of [{ action: "select-tab" }, { action: "select-tab", tab: "t-00000000" }, { action: "close-tab", tab: "../x" },
+    { action: "close-tab", tab: 5 }, { action: "state", tab: "nope" }, { action: "new-tab", tab: "t-00000000" },
+    { action: "tabs", extra: 1 }, { action: "new-tab", url: "http://127.0.0.1:8737/" }, { action: "new-tab", url: "https://x.example.com:8443" }])
+    await assert.rejects(f.invoke(bad), /./, JSON.stringify(bad));
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 8);
+});
+
+test("tabs: every ADR 0140 rule holds in each tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  for (const view of f.views) {
+    const contents = view.webContents;
+    let prevented = 0;
+    contents.emit("will-redirect", { url: "http://127.0.0.1:8737", preventDefault: () => prevented++ });
+    contents.emit("will-navigate", { url: "file:///etc/passwd", preventDefault: () => prevented++ });
+    contents.emit("will-attach-webview", { preventDefault: () => prevented++ });
+    assert.equal(prevented, 3);
+    assert.deepEqual(contents.popup({ url: "https://x.example.com" }), { action: "deny" });
+  }
+  assert(f.calls.filter((c) => c[0] === "webrtc").length === 2);
+});
+
+test("tabs: Clear browsing data and closing the window cover every tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "clear" });
+  const loads = f.calls.filter((c) => c[0] === "load").map((c) => c[1]);
+  assert.deepEqual(loads.filter((u) => u === "about:blank").length, 2);
+  assert.equal(loads.filter((u) => u === "https://two.example.com/").length, 2);
+  f.owner.emit("closed");
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  await settle();
+  assert.equal(f.calls.filter((c) => c[0] === "network-close").length, 1);
+});
+
+test("tabs: the product page navigating or the panel hiding keeps tabs; only a new document closes them", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "hide" });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
 });
