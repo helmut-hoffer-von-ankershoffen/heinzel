@@ -19,6 +19,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._activity import open_write_drafts
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 
@@ -174,12 +175,7 @@ class CapturedWriteHost:
     def pending(self, session: str) -> list[dict[str, JsonValue]]:
         """Drafts still waiting for their owner, oldest first, with exact review terms."""
         events = self.crud.repository.control_read(session).events
-        settled = {e.key for e in events if e.kind == "write.discarded"} | {
-            e.key.removeprefix("write-attempt-") for e in events if e.kind == "write.attempted" and e.key
-        }
-        return [
-            review_payload(self._read(session, e)) for e in events if e.kind == "write.drafted" and e.key not in settled
-        ]
+        return [review_payload(self._read(session, e)) for e in open_write_drafts(events)]
 
     def _read(self, session: str, event: SessionEvent, *, drafting: bool = False) -> CapturedWriteDraft:
         try:

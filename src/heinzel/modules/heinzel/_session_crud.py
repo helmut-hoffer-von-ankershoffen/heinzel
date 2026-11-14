@@ -31,6 +31,14 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._activity import (
+    OVERLOAD_QUEUE,
+    ActivityFacts,
+    activity,
+    open_write_drafts,
+    recently,
+    run_counts,
+)
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
     ContractVersion,
@@ -1863,6 +1871,7 @@ class SessionCrud(ApprovalIssuer):
             HeinzelError: If an authoritative journal is damaged.
         """
         summaries: list[SessionSummary] = []
+        now = self.clock()
         for head in self.repository.heads():
             if head.problem:
                 msg = "A personal Heinzel journal needs repair before listing can be completed"
@@ -1872,15 +1881,33 @@ class SessionCrud(ApprovalIssuer):
             contracts = self._contracts(head.session, events)
             schedule = self._schedule_view(head.session, events)
             approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
+            state = _session_state(schedule)
+            runs = run_counts(events, now)
+            # Reuses the captured-write host's projection and the schedule view already read: no extra bodies.
+            waiting = len(open_write_drafts(events)) + int(schedule is not None and schedule.status == "proposed")
+            facts = ActivityFacts(
+                paused=state == "paused",
+                stuck=runs.last_run_failed,
+                waiting_for_you=waiting > 0,
+                overloaded=runs.queued_runs >= OVERLOAD_QUEUE,
+                working=runs.running,
+                proud=recently(runs.last_approved_at, now),
+            )
             summaries.append(
                 SessionSummary(
                     session_id=head.session,
                     name=profile.name,
                     appearance=profile.appearance,
-                    state=_session_state(schedule),
+                    state=state,
                     last_seq=events[-1].seq,
                     updated_at=events[-1].ts,
                     contract_version=approved,
+                    waiting_count=waiting,
+                    runs_last_hour=runs.runs_last_hour,
+                    queued_runs=runs.queued_runs,
+                    last_run_failed=runs.last_run_failed,
+                    last_approved_at=runs.last_approved_at,
+                    activity=activity(facts),
                 )
             )
         return SessionList(

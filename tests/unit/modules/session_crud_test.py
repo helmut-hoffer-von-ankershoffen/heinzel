@@ -920,3 +920,32 @@ def test_skill_draft_listing_is_private_paginated_and_stable(services):
     stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"}))
     with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
         service.skill_drafts(session_id)
+
+
+def test_listing_projects_counts_and_activity_from_the_journal_alone(services):
+    service, repository, current = services
+    fresh = service.new_chat("create-idle", "Idle helper")
+    busy = service.new_chat("create-busy", "Busy helper")
+    for request in ("q1", "q2"):
+        service.accept(busy.session_id, MessageRequest(request_id=request, text=request))
+    waiting = service.new_chat("create-waiting", "Waiting helper")
+    service.propose_check_in(waiting.session_id, "check-in-v1", "Europe/Berlin")
+    proud = service.new_chat("create-proud", "Proud helper")
+    _issue_test_approval(repository, current, proud.session_id, "proud-1", 1, "activate", "0" * 64)
+    stuck = service.new_chat("create-stuck", "Stuck helper")
+    with repository.control_writer(stuck.session_id) as writer:
+        writer.append("interactive.abandoned", key="interactive-x", data={})
+
+    summaries = {item.session_id: item for item in service.listing().sessions}
+    idle = summaries[fresh.session_id]
+    assert (idle.activity, idle.waiting_count, idle.runs_last_hour, idle.queued_runs) == ("idle", 0, 0, 0)
+    assert not idle.last_run_failed
+    assert idle.last_approved_at is None
+    assert (summaries[busy.session_id].activity, summaries[busy.session_id].queued_runs) == ("overloaded", 2)
+    assert (summaries[waiting.session_id].activity, summaries[waiting.session_id].waiting_count) == (
+        "waiting_for_you",
+        1,
+    )
+    assert (summaries[proud.session_id].activity, summaries[proud.session_id].last_approved_at) == ("proud", AT)
+    assert summaries[stuck.session_id].activity == "stuck"
+    assert summaries[stuck.session_id].last_run_failed
