@@ -8,6 +8,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from coverage import CoverageData
 
 pytestmark = pytest.mark.unit
 PRODUCTION = "src/heinzel/new.py"
@@ -175,16 +176,14 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
             module.parent.mkdir(parents=True)
             module.write_bytes(SOURCE)
             (module.parent / "__init__.py").touch()
-            sample = tmp_path / "sample_test.py"
-            sample.write_text("def test_sample():\\n    from heinzel.example import value\\n"
-                              "    assert value() == 42\\n")
+            # A plain module, not a nested pytest: the path under test is the analysis, not the runner.
+            (tmp_path / "sample_run.py").write_text("from heinzel.example import value\\nassert value() == 42\\n")
             monkeypatch.setattr(focused, "git", lambda *_args: CONFIG)
             def execute(args, env):
-                subprocess.run([sys.executable, "-m", *args[3:]], check=True, timeout=30,
-                               env={{**os.environ, **env, "PYTHONPATH": str(tmp_path / "src"),
-                                     "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}}, capture_output=True)
+                subprocess.run([sys.executable, "-m", *args[3:]], check=True, timeout=30, cwd=tmp_path,
+                               env={{**os.environ, **env, "PYTHONPATH": str(tmp_path / "src")}}, capture_output=True)
             monkeypatch.setattr(focused, "_execute", execute)
-            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest", str(sample)], tmp_path, {{}})
+            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "sample_run"], tmp_path, {{}})
             assert (tmp_path / focused.MEASUREMENT).is_file()
             assert worker_marker.after_instrument() == 14
     """)
@@ -206,21 +205,13 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
         capture_output=True,
         timeout=90,
     )
-    subprocess.run(
-        [*run, "combine", "--rcfile", str(config)], cwd=tmp_path, env=env, check=True, capture_output=True, timeout=30
-    )
-    report = tmp_path / "outer-coverage.json"
-    subprocess.run(
-        [*run, "json", "--rcfile", str(config), "-o", str(report)],
-        cwd=tmp_path,
-        env=env,
-        check=True,
-        capture_output=True,
-        timeout=30,
-    )
-    files = json.loads(report.read_text())["files"]
-    measured = next(row for name, row in files.items() if Path(name).name == marker.name)
-    assert {2, 5, 8, 11} <= set(measured["executed_lines"])
+    # Read the workers' data files directly: no combine or report interpreters, and nothing measured is disturbed.
+    executed: set[int] = set()
+    for path in tmp_path.glob(".coverage.*"):
+        data = CoverageData(basename=str(path))
+        data.read()
+        executed.update(*(data.lines(name) or () for name in data.measured_files() if Path(name).name == marker.name))
+    assert {2, 5, 8, 11} <= executed
 
 
 def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, tmp_path):
