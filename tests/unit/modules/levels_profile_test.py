@@ -182,6 +182,8 @@ def test_the_level_view_previews_the_turn_and_says_why_it_cant_run(tmp_path):
         on = chat_service(crud, current, Settings(), one_chat=True)
         off = chat_service(crud, current, Settings(), one_chat=False)
         shown, hidden = level_view(on, crud, session), level_view(off, crud, session)
+        claude_on = chat_service(crud, current, Settings(access="claude-code"), one_chat=True)
+        recorded = level_view(claude_on, crud, session)
         set_level(crud, session, "lvl-1", model="missing")
         refused = level_view(on, crud, session)
         claude = level_view(chat_service(crud, current, Settings(access="claude-code"), one_chat=True), crud, session)
@@ -189,6 +191,12 @@ def test_the_level_view_previews_the_turn_and_says_why_it_cant_run(tmp_path):
     assert (shown.runs_as.provider, shown.runs_as.model, shown.runs_as.effort) == ("acme", "acme-sonnet", "medium")
     assert (shown.level, shown.profile_revision, shown.problem) == ("auto", 1, None)
     assert (hidden.runs_as, hidden.problem) == (None, None)
+    assert recorded.runs_as is not None
+    assert (recorded.runs_as.provider, recorded.runs_as.model, recorded.runs_as.level.source) == (
+        None,
+        None,
+        "provider-default",
+    )
     assert refused.runs_as is None
     assert refused.problem is not None
     assert "Couldn't run this Heinzel on the exact model missing" in refused.problem
@@ -209,3 +217,24 @@ def test_the_operations_are_private_and_never_on_mcp(make_kernel):
         assert operation.heads == frozenset({"cli", "web", "api-private"})
     assert found["level"].read_only
     assert not found["set-level"].read_only
+
+
+def test_the_operations_read_and_set_the_level(tmp_path, make_kernel):
+    kernel = make_kernel(builtins=True)
+    operations = {
+        operation.name: operation.func
+        for record, operation in kernel.lets(OperationLet)
+        if record.qualname == "heinzel" and operation.name in {"level", "set-level"}
+    }
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        chat = chat_service(crud, current, Settings(), one_chat=True)
+        before = operations["level"](chat, crud, session)
+        after = operations["set-level"](chat, crud, session, "lvl-1", 1, level="high", provider="acme")
+        again = operations["set-level"](chat, crud, session, "lvl-1", 1, level="high", provider="acme")
+    assert (before.level, before.profile_revision) == ("auto", 1)
+    assert (after.level, after.provider, after.profile_revision) == ("high", "acme", 2)
+    assert after.runs_as is not None
+    assert (after.runs_as.model, after.runs_as.effort) == ("acme-opus", "high")
+    assert again == after
