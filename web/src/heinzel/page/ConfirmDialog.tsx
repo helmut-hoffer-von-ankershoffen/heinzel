@@ -2,9 +2,11 @@
 // (FEASIBILITY 3): the whole item in words, one confirming button and one way out. A native modal <dialog>, as
 // AboutDialog: the page behind it is inert, Tab stays inside, and Escape, the way out and a press on the backdrop close
 // it. Focus starts on the way out (the safe choice) and returns to the button that opened it.
+
+import { Check, X } from "lucide-react";
 import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 
 type Props = {
   title: string;
@@ -91,14 +93,14 @@ export function ConfirmDialog({
         <div id={bodyId} className="flex flex-col gap-2 text-sm">
           {children}
         </div>
-        <div className="mt-2 flex flex-wrap justify-end gap-2 border-t border-border pt-3">
-          <Button ref={safe} type="button" variant="outline" className="min-h-11" disabled={busy} onClick={onCancel}>
+        <PaneActions align="end" words="all" className="mt-2">
+          <PaneAction ref={safe} icon={X} disabled={busy} onClick={onCancel}>
             {cancel}
-          </Button>
-          <Button type="button" className="min-h-11" disabled={busy || !ready} onClick={onConfirm}>
+          </PaneAction>
+          <PaneAction icon={Check} primary disabled={busy || !ready} onClick={onConfirm}>
             {confirm}
-          </Button>
-        </div>
+          </PaneAction>
+        </PaneActions>
       </div>
     </dialog>,
     document.body,

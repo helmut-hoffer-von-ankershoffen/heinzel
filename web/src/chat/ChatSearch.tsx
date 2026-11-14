@@ -260,9 +260,10 @@ export function ChatSearch({
               const time = new Date(hit.at).toLocaleString();
               return (
                 <li key={`${hit.session}:${hit.seq}`}>
-                  <button
+                  <Button
                     type="button"
-                    className="block min-h-11 w-full min-w-0 rounded-lg border border-border px-3 py-2 text-left hover:bg-accent"
+                    variant="ghost"
+                    className="block h-auto min-h-11 w-full min-w-0 rounded-lg border border-border px-3 py-2 text-left font-normal whitespace-normal"
                     onClick={() => onJump(hit.session, hit.cursor)}
                   >
                     <span className="block text-xs text-muted-foreground">
@@ -270,7 +271,7 @@ export function ChatSearch({
                       <time dateTime={hit.at}>{time}</time>
                     </span>
                     <span className="block whitespace-pre-wrap break-words">{hit.text}</span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}

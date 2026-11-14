@@ -1554,146 +1554,151 @@ function DurableSessionView({
           </section>
         )}
       </div>
-      {query.data?.state === "retired" ? (
-        // A retired Heinzel takes no message: one line says so, and its page is where it comes back.
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border p-3 text-sm">
-          <p role="status" className="flex-1">
-            {t("durable.retired")}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11"
-            onClick={() => navigate({ pathname: `/heinzel/${sessionId}`, search: params.toString() })}
-          >
-            {t("durable.retiredPage", { name: heinzelName })}
-          </Button>
-        </div>
-      ) : (
-        <form
-          className="max-h-[60%] shrink-0 space-y-2 overflow-y-auto border-t border-border p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          {recoveryBlocked ? (
-            <div className="space-y-2 text-sm" role="alert">
-              <p>{t("durable.draftUnreadable")}</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (resolveRecovery()) setError(false);
-                }}
-              >
-                {t("durable.clearUnreadableDraft")}
-              </Button>
-            </div>
-          ) : storageError ? (
-            <p className="text-sm" role="alert">
-              {t("durable.preservationFailed")}
+      {/* One edge under the conversation, whichever sits below it: the composer, or a retired Heinzel's line. */}
+      <div className="flex max-h-[60%] shrink-0 flex-col border-t border-border">
+        {query.data?.state === "retired" ? (
+          // A retired Heinzel takes no message: one line says so, and its page is where it comes back.
+          <div className="flex flex-wrap items-center gap-2 p-3 text-sm">
+            <p role="status" className="flex-1">
+              {t("durable.retired")}
             </p>
-          ) : null}
-          {error && pending?.outcome !== "subscription_usage_limit" && (errorDetail || !pending) && (
-            <div className="space-y-1 text-sm" role={pending ? undefined : "alert"}>
-              {!pending && <p>{t("durable.failed")}</p>}
-              {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
-              {errorDetail && (
-                <>
-                  <p>{t("durable.aiAccessHint")}</p>
-                  <PaneAction
-                    icon={Settings}
-                    to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
-                  >
-                    {t("durable.aiAccessLink")}
-                  </PaneAction>
-                </>
-              )}
-            </div>
-          )}
-          {pending?.outcome === "subscription_usage_limit" && (
-            <p role="status" className="text-sm">
-              Claude Code reported its subscription usage limit. Your message is saved; the answer is uncertain and this
-              turn will not run again. This conversation remains blocked until the uncertain turn is resolved.
-            </p>
-          )}
-          {pending?.accepted && (
-            <details
-              className="rounded border border-border p-2 text-sm"
-              open={pending.outcome === "subscription_usage_limit" || undefined}
-            >
-              <summary className="cursor-pointer font-medium">{t("durable.recovery")}</summary>
-              <div className="mt-2 space-y-2">
-                {pending.outcome !== "subscription_usage_limit" && (
-                  <p role="status">
-                    Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted
-                    turn will not be run again.
-                  </p>
-                )}
-                {pending?.accepted && !busy && (
-                  <UncertainTurnRecovery
-                    key={`${sessionId}:${pending.request_id}`}
-                    sessionId={sessionId}
-                    requestId={pending.request_id}
-                    onResolved={() => {
-                      updateComposer({ pending: null, text: "" });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
-                      void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
-                    }}
-                  />
-                )}
-              </div>
-            </details>
-          )}
-          <div className="flex items-end gap-2">
-            <label htmlFor={composerId} className="sr-only">
-              {t("oneChat.message", { name: heinzelName })}
-            </label>
-            <textarea
-              id={composerId}
-              ref={composerInput}
-              rows={2}
-              className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
-              // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.
-              // A message that did not go through waits in its bubble, not here as well.
-              value={sending || pending !== null ? "" : text}
-              maxLength={4000}
-              placeholder={t("durable.placeholder", { name: heinzelName })}
-              disabled={composerDisabled}
-              onChange={(event) => {
-                updateComposer({ text: event.target.value });
-                typed(); // a soundscape plays softer while you type (ADR 0058)
-              }}
-              onKeyDown={(event) => {
-                // Enter sends, as in every chat of the app; Shift+Enter starts a new line.
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  if (text.trim()) void send();
-                }
-              }}
-            />
             <Button
-              type="submit"
-              disabled={
-                retryBlocked ||
-                // A message that did not go through is retried under its bubble.
-                pending !== null ||
-                (!pending && !agentPending && !text.trim())
-              }
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              onClick={() => navigate({ pathname: `/heinzel/${sessionId}`, search: params.toString() })}
             >
-              {busy ? t("durable.scheduleWorking") : agentPending ? t("durable.retry") : t("durable.send")}
+              {t("durable.retiredPage", { name: heinzelName })}
             </Button>
           </div>
-        </form>
-      )}
+        ) : (
+          <form
+            className="min-h-0 space-y-2 overflow-y-auto p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
+            }}
+          >
+            {recoveryBlocked ? (
+              <div className="space-y-2 text-sm" role="alert">
+                <p>{t("durable.draftUnreadable")}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (resolveRecovery()) setError(false);
+                  }}
+                >
+                  {t("durable.clearUnreadableDraft")}
+                </Button>
+              </div>
+            ) : storageError ? (
+              <p className="text-sm" role="alert">
+                {t("durable.preservationFailed")}
+              </p>
+            ) : null}
+            {error && pending?.outcome !== "subscription_usage_limit" && (errorDetail || !pending) && (
+              <div className="space-y-1 text-sm" role={pending ? undefined : "alert"}>
+                {!pending && <p>{t("durable.failed")}</p>}
+                {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
+                {errorDetail && (
+                  <>
+                    <p>{t("durable.aiAccessHint")}</p>
+                    <PaneAction
+                      icon={Settings}
+                      to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
+                    >
+                      {t("durable.aiAccessLink")}
+                    </PaneAction>
+                  </>
+                )}
+              </div>
+            )}
+            {pending?.outcome === "subscription_usage_limit" && (
+              <p role="status" className="text-sm">
+                Claude Code reported its subscription usage limit. Your message is saved; the answer is uncertain and
+                this turn will not run again. This conversation remains blocked until the uncertain turn is resolved.
+              </p>
+            )}
+            {pending?.accepted && (
+              <details
+                className="rounded border border-border p-2 text-sm"
+                open={pending.outcome === "subscription_usage_limit" || undefined}
+              >
+                <summary className="cursor-pointer font-medium">{t("durable.recovery")}</summary>
+                <div className="mt-2 space-y-2">
+                  {pending.outcome !== "subscription_usage_limit" && (
+                    <p role="status">
+                      Your message was saved. Its answer is not confirmed. Retrying uses the same request; an
+                      interrupted turn will not be run again.
+                    </p>
+                  )}
+                  {pending?.accepted && !busy && (
+                    <UncertainTurnRecovery
+                      key={`${sessionId}:${pending.request_id}`}
+                      sessionId={sessionId}
+                      requestId={pending.request_id}
+                      onResolved={() => {
+                        updateComposer({ pending: null, text: "" });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+                        void client.invalidateQueries({
+                          queryKey: ["heinzel", "latest-schedule-suggestion", sessionId],
+                        });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
+                        void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
+                      }}
+                    />
+                  )}
+                </div>
+              </details>
+            )}
+            <div className="flex items-end gap-2">
+              <label htmlFor={composerId} className="sr-only">
+                {t("oneChat.message", { name: heinzelName })}
+              </label>
+              <textarea
+                id={composerId}
+                ref={composerInput}
+                rows={2}
+                className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
+                // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.
+                // A message that did not go through waits in its bubble, not here as well.
+                value={sending || pending !== null ? "" : text}
+                maxLength={4000}
+                placeholder={t("durable.placeholder", { name: heinzelName })}
+                disabled={composerDisabled}
+                onChange={(event) => {
+                  updateComposer({ text: event.target.value });
+                  typed(); // a soundscape plays softer while you type (ADR 0058)
+                }}
+                onKeyDown={(event) => {
+                  // Enter sends, as in every chat of the app; Shift+Enter starts a new line.
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    if (text.trim()) void send();
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                disabled={
+                  retryBlocked ||
+                  // A message that did not go through is retried under its bubble.
+                  pending !== null ||
+                  (!pending && !agentPending && !text.trim())
+                }
+              >
+                {busy ? t("durable.scheduleWorking") : agentPending ? t("durable.retry") : t("durable.send")}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -218,16 +218,17 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
         </p>
       )}
       <div className="space-y-2">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-expanded={advanced}
           aria-controls={advancedId}
           onClick={() => setAdvanced(!advanced)}
-          className="flex min-h-11 items-center gap-2 text-ui text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="min-h-11 px-0 text-ui font-normal text-muted-foreground"
         >
           <ChevronDown aria-hidden className={`size-4 ${advanced ? "" : "-rotate-90"}`} />
           {t("intelligence.advanced")}
-        </button>
+        </Button>
         {advanced && (
           <div id={advancedId}>
             <Offers offer={offer} model={view.model} disabled={pending} onPick={pickModel} />
