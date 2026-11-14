@@ -894,7 +894,7 @@ def page_helpers(path: str, page_url: str, project: Object | None = None) -> lis
                 lane="any",
             )
         ]
-    if path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+    if path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MCP_REFERENCE.md", "MODULES.md"}:
         return [
             helper(
                 "reviewer",
