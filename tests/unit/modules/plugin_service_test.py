@@ -2535,3 +2535,75 @@ def test_siblings_of_a_local_plugin_collection_install_first(make_kernel, tool_e
     assert (
         need.install == f"heinzel-base @ git+{repository.resolve().as_uri()}@{commit}#subdirectory=plugins/heinzel-base"
     )
+
+
+def installed_from(directory, url):
+    """A distribution whose `direct_url.json` says it came from `url` at a commit."""
+    (directory / "direct_url.json").write_text(
+        json.dumps({"url": url, "vcs_info": {"vcs": "git", "commit_id": "a" * 40}}), encoding="utf-8"
+    )
+    return types.SimpleNamespace(read_text=lambda name: (directory / name).read_text(encoding="utf-8"))
+
+
+def test_the_local_path_a_plugin_was_installed_from_is_read_from_its_direct_url(tmp_path):
+    assert _service._source_path(None) is None
+    assert _service._source_path(installed_from(tmp_path, "file:///srv/my%20plugins/heinzel-crm")) == (
+        "/srv/my plugins/heinzel-crm"
+    )
+    assert _service._source_path(installed_from(tmp_path, "https://github.com/acme-example/heinzel-crm")) is None
+    (tmp_path / "direct_url.json").write_text('{"url": "file:///srv/x", "dir_info": {}}', encoding="utf-8")
+    assert _service._source_path(types.SimpleNamespace(read_text=lambda name: (tmp_path / name).read_text())) is None
+    assert _service._source_path(types.SimpleNamespace(read_text=lambda name: "not json")) is None
+
+
+def test_the_installed_list_shows_a_local_path_and_no_link():
+    from rich.console import Console
+
+    from heinzel.modules.system.plugin._render import render_list
+
+    local = PluginInfo(
+        distribution="heinzel-crm",
+        version="0.1.0",
+        modules=["crm"],
+        name="crm",
+        source_kind="git",
+        source_path="/srv/heinzel-crm",
+    )
+    console = Console(width=120, record=True, file=io.StringIO())
+    console.print(render_list([local, local.model_copy(update={"source_path": None})]))
+    assert "git: /srv/heinzel-crm" in console.export_text()
+    assert local.source_url is None
+
+
+def test_a_reinstall_from_another_local_path_does_not_match_the_candidate(make_kernel, tool_env, monkeypatch, tmp_path):
+    repository = tmp_path / "heinzel-crm"
+    commit = git_repository(repository, PLUGIN_FILES)
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate(str(repository))
+    plugin = PluginInfo(
+        distribution="heinzel-crm",
+        version="1",
+        modules=[],
+        name="crm",
+        source_kind="git",
+        revision=commit,
+        source_path="/srv/other",
+    )
+    assert not _service._matches_git_origin(plugin, candidate)
+    assert _service._matches_git_origin(plugin.model_copy(update={"source_path": str(repository.resolve())}), candidate)
+
+
+def test_the_local_getter_answers_only_paths_inside_the_repository(tmp_path):
+    repository = tmp_path / "heinzel-crm"
+    commit = git_repository(repository, {**PLUGIN_FILES, "plugins/a/pyproject.toml": "[project]\nname='a'\n"})
+    get = _sources.local_getter(repository.resolve())
+    assert [entry["name"] for entry in get(f"local/contents/plugins?ref={commit}")] == ["a"]
+    assert {entry["type"] for entry in get(f"local/contents/?ref={commit}")} == {"dir", "file"}
+    for path in (
+        f"local/contents/../pyproject.toml?ref={commit}",
+        "local/contents/pyproject.toml?ref=HEAD",
+        f"local/contents/nope.toml?ref={commit}",
+        "elsewhere",
+    ):
+        with pytest.raises(LookupError):
+            get(path)
