@@ -2416,9 +2416,14 @@ def git_repository(root, files, tag=None):
         (root / name).write_text(text, encoding="utf-8")
     steps = [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "plugin"]]
     for step in [*steps, *([["tag", tag]] if tag else [])]:
-        subprocess.run(["git", "-C", str(root), *step], check=True, env=environment, capture_output=True)
+        subprocess.run(["git", "-C", str(root), *step], check=True, env=environment, capture_output=True, timeout=30)
     return subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], check=True, env=environment, capture_output=True, text=True
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
     ).stdout.strip()
 
 
@@ -2498,7 +2503,7 @@ def test_a_local_ref_pins_that_commit_not_head(make_kernel, tool_env, monkeypatc
         "GIT_COMMITTER_EMAIL": "a@e.org",
     }
     for step in (["add", "."], ["commit", "-q", "-m", "more"]):
-        subprocess.run(["git", "-C", str(repository), *step], check=True, env=env, capture_output=True)
+        subprocess.run(["git", "-C", str(repository), *step], check=True, env=env, capture_output=True, timeout=30)
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     candidate = service.candidate(f"git+{repository.resolve().as_uri()}@v0.1.0")
     assert candidate.revision == first
