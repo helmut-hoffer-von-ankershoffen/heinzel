@@ -777,10 +777,14 @@ def test_the_helpers_log_starts_afresh_once_it_is_too_big(tmp_path, monkeypatch)
     assert log.read_text() == "new"
 
 
-def _helper_kernel(monkeypatch, run_detached) -> None:
+def _helper_kernel(monkeypatch, run_detached) -> list[int]:
+    """The helper's kernel, and how it ended: the codes it would `os._exit` with, in order."""
+    ended: list[int] = []
+    monkeypatch.setattr(helper_module, "_exit", ended.append)
     relay = SimpleNamespace(run_detached=run_detached)
     kernel = SimpleNamespace(resolve=lambda _kind: SimpleNamespace(questions=relay))
     monkeypatch.setattr(helper_module, "boot", lambda cwd: kernel)
+    return ended
 
 
 SESSION_ID = "hz-" + "0" * 26
@@ -789,9 +793,10 @@ TURN_ID = "interactive-" + "a" * 64
 
 def test_a_question_the_helpers_own_answer_turn_asks_gets_a_helper_of_its_own(monkeypatch):
     seen: list[bool] = []
-    _helper_kernel(monkeypatch, lambda session, turn: seen.append(relay_module._SHORT_LIVED.get()))
+    ended = _helper_kernel(monkeypatch, lambda session, turn: seen.append(relay_module._SHORT_LIVED.get()))
     assert helper_module.main([SESSION_ID, TURN_ID]) == 0
     assert seen == [True]
+    assert ended == [0], "done: it ends at once"
 
 
 def test_the_helper_takes_only_a_chat_id_and_a_turn_id(monkeypatch):
@@ -801,22 +806,55 @@ def test_the_helper_takes_only_a_chat_id_and_a_turn_id(monkeypatch):
 
 
 def test_a_hung_helper_ends_at_its_lifetime(monkeypatch):
-    ended: list[int] = []
     released = threading.Event()
+    monkeypatch.setattr(helper_module, "lifetime", lambda settings: 0.2)
+    ended = _helper_kernel(monkeypatch, lambda session, turn: released.wait(10))  # a hung adapter, boot or answer turn
 
     def exit_(code: int) -> None:
         ended.append(code)
         released.set()
 
     monkeypatch.setattr(helper_module, "_exit", exit_)
-    monkeypatch.setattr(helper_module, "lifetime", lambda settings: 0.2)
-    _helper_kernel(monkeypatch, lambda session, turn: released.wait(10))  # a hung adapter, boot or answer turn
     started = time.monotonic()
     assert helper_module.main([SESSION_ID, TURN_ID]) == 0
-    assert ended == [helper_module.TIMED_OUT]
+    assert ended[0] == helper_module.TIMED_OUT
     assert time.monotonic() - started < 5
 
 
 def test_a_helpers_lifetime_is_its_wait_the_grace_one_answer_turn_and_a_margin():
     settings = QuestionSettings(chat_wait_minutes=7)
     assert relay_module.lifetime(settings) == 7 * 60 + relay_module.GRACE + MAX_TURN_SECONDS + relay_module.MARGIN
+
+
+def test_a_failing_helper_reports_it_and_ends_at_once(monkeypatch, capsys):
+    def broken(session: str, turn: str) -> None:
+        raise RuntimeError
+
+    ended = _helper_kernel(monkeypatch, broken)
+    assert helper_module.main([SESSION_ID, TURN_ID]) == 1
+    assert ended == [1]
+    assert "RuntimeError" in capsys.readouterr().err
+
+
+STRAY_THREAD = r"""
+import sys, threading
+from types import SimpleNamespace
+from heinzel.modules.heinzel import _self_chat_helper as h
+def run(session, turn):
+    threading.Thread(target=threading.Event().wait).start()  # a plugin's thread that never ends, not a daemon one
+relay = SimpleNamespace(run_detached=run)
+h.boot = lambda cwd=None: SimpleNamespace(resolve=lambda _c: SimpleNamespace(questions=relay))
+h.lifetime = lambda _s: 1.0
+sys.exit(h.main([sys.argv[1], sys.argv[2]]))
+"""
+
+
+def test_a_helper_ends_although_a_thread_it_started_never_does(tmp_path):
+    child = subprocess.Popen([sys.executable, "-c", STRAY_THREAD, SESSION_ID, TURN_ID], cwd=tmp_path)
+    try:
+        code = child.wait(3.5)
+    finally:
+        if child.poll() is None:  # only the process this test started
+            child.kill()
+            child.wait(10)
+    assert code == 0

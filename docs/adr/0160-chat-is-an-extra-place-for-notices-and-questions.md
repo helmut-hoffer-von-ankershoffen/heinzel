@@ -109,7 +109,10 @@ inherited locks or descriptors, starts in the relay's private directory and neve
 (`python -P`), and writes what it prints to a log file that starts afresh past 1 MB; it runs the same relay with the
 same switch, quiet mode, wait, caps and answer path. It is short-lived too, so a question its own answer turn asks gets
 a helper of its own. A watchdog ends it at the latest after its wait in chat, the 30 seconds' grace, one answer turn
-(120 seconds) and a minute's margin, whatever hangs (the adapter, booting, the turn). One ask is live per Heinzel chat across processes too: an ask whose chat another
+(120 seconds) and a minute's margin, whatever hangs (the adapter, booting, the turn), and once done it ends at once,
+never waiting for a thread a plugin left running. On Linux, until the tick's systemd unit lets its processes outlive it
+(a follow-up), systemd ends the helper with the tick: there a scheduled turn's question stays only in the app (if
+the helper had already asked, the next ask says "still open" in that thread). One ask is live per Heinzel chat across processes too: an ask whose chat another
 process now asks in is superseded. A helper asks only while fewer than three asks are live across all processes, by the
 ledger's live entries of running processes; over that cap the question is only in the app. A helper that crashes leaves
 its live entry, and the next ask says "still open". The web app, a long-lived process, keeps its worker thread.

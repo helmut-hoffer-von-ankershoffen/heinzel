@@ -7,7 +7,8 @@ the home directory) and runs the same relay, with the same switch, wait, caps an
 `self-chat` identity. It is a short-lived process too: a question its own answer turn asks gets a helper of its own.
 
 It never outlives `lifetime(settings)`: the wait in chat, the grace an adapter has, one answer turn and a margin; a
-watchdog ends it then, whatever hangs. A helper that ends that way or crashes leaves its live entry, which the next ask
+watchdog ends it then, whatever hangs, and when it is done it ends at once, never waiting for a thread a plugin or an
+adapter left running. A helper that ends that way or crashes leaves its live entry, which the next ask
 says is still open.
 """
 
@@ -15,6 +16,8 @@ import os
 import re
 import sys
 import threading
+import traceback
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
@@ -28,7 +31,7 @@ _SESSION = TypeAdapter(SessionId)
 _TURN = re.compile(r"interactive-[0-9a-f]{64}")
 TIMED_OUT = 124
 """The exit code of a helper its watchdog ended."""
-_exit = os._exit
+_exit: Callable[[int], object] = os._exit  # the end of the process; tests record it instead
 
 
 def _valid(session: str, turn: str) -> bool:
@@ -64,14 +67,21 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError):
         settings = QuestionSettings(chat_wait_minutes=60)  # the longest wait: unreadable settings never cut it short
     timer = watchdog(lifetime(settings))
+    code = 0
     try:
         relay = boot(cwd=Path.home()).resolve(UserChatService).questions  # the launchd tick's working directory
         if relay is not None:
             with short_lived_process():
                 relay.run_detached(session, turn)
+    except Exception:  # noqa: BLE001 - reported in the helpers' log; the process ends either way
+        traceback.print_exc()
+        code = 1
     finally:
         timer.cancel()
-    return 0
+        sys.stdout.flush()
+        sys.stderr.flush()
+        _exit(code)  # never waits at shutdown for a thread a plugin or an adapter left running
+    return code
 
 
 if __name__ == "__main__":
