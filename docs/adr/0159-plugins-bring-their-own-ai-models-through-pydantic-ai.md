@@ -126,7 +126,9 @@ Checkable statements:
 12. **Failures are clean and leave the chat usable.** A provider's error becomes a `HeinzelError` from its kind
     and status code only, never its body or text. A 401 or 403 gives "The provider refused the request (401):
     check the plugin's sign-in." A 429, 503 or 529 says the provider is busy, a 5xx that it failed, a connection
-    error that it couldn't be reached. A failure before the turn's first response (no tool ran) sets the person's
+    error that it couldn't be reached. A 400 or 413 whose body matches a fixed "too long" pattern (the body is
+    matched, never shown) says the conversation is longer than the model can read: start a new chat, or pick a model
+    with a larger context window. A failure before the turn's first response (no tool ran) sets the person's
     turn aside, so they can send the message again. Pydantic AI's own outcomes (limits, invalid output) keep their
     meaning in the engine.
 13. **Billing and usage.** A plugin's models report tokens, not dollars. A turn is recorded with `billing: api`,
@@ -163,8 +165,9 @@ Checkable statements:
     `ModelMessagesTypeAdapter`, in `<state_dir>/ai/engine-sessions/<chat>.json`: written atomically, mode 0600 in a
     0700 folder, never through a symbolic link, and kept across a restart. It is capped at 60 % of the offer's
     `context_window`, at four characters a token, by dropping whole turns, oldest first; the newest turn is always
-    kept. Without a known context window it keeps at most 200 messages; the built-in Model API option has none, so
-    it uses that cap. A chat that sends a transcript continues the stored history only when the transcript's last
+    kept. Without a known context window it keeps at most 200 messages within 60 % of a conservative 128k-token
+    window; the built-in Model API option has none, so it uses that cap. Chats on the interactive turn send at most
+    12 kB of earlier messages, far below any window, so they need no cap by window. A chat that sends a transcript continues the stored history only when the transcript's last
     answer matches it; otherwise the runner starts a fresh history from the whole transcript. A stopped reply keeps
     its partial answer, marked `[stopped: <why>]`.
 18. **Coding tools.** On the `engine` runner a coding session gets `read`, `grep` and `glob` (the read-only set of

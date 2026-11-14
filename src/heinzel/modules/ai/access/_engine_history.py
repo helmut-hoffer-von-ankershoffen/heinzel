@@ -10,7 +10,8 @@ read is a fresh start, never an error.
 
 It stays within what the model can read: with a known context window, whole turns are dropped from the start until
 the estimated size (four characters a token) fits `CONTEXT_SHARE` of it; without one, at most `MAX_MESSAGES`
-messages are kept. A turn that stopped (its timeout, or a cancel) keeps what it had said so far, marked stopped.
+messages within the same share of a conservative `DEFAULT_CONTEXT_WINDOW`. A turn that stopped (its timeout, or a
+cancel) keeps what it had said so far, marked stopped.
 """
 
 import contextlib
@@ -29,6 +30,8 @@ if TYPE_CHECKING:  # Pydantic AI loads only when a run uses the history, not whe
 
 MAX_MESSAGES = 200
 """The most messages kept for a model whose context window is unknown."""
+DEFAULT_CONTEXT_WINDOW = 128_000
+"""The context window assumed for a model that doesn't say: small enough for any current tool-calling model."""
 CONTEXT_SHARE = 0.6
 """The share of a known context window the history may fill; the rest is the new turn, its tools and the answer."""
 CHARS_PER_TOKEN = 4
@@ -68,10 +71,10 @@ def capped(messages: "list[ModelMessage]", context_window: int | None) -> "list[
 
     def fits() -> bool:
         kept = [m for turn in turns for m in turn]
-        if context_window is None:
-            return len(kept) <= MAX_MESSAGES
+        if context_window is None and len(kept) > MAX_MESSAGES:
+            return False
         size = len(ModelMessagesTypeAdapter.dump_json(kept)) / CHARS_PER_TOKEN
-        return size <= context_window * CONTEXT_SHARE
+        return size <= (context_window or DEFAULT_CONTEXT_WINDOW) * CONTEXT_SHARE
 
     while len(turns) > 1 and not fits():
         turns.pop(0)

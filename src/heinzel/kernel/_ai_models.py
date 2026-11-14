@@ -21,6 +21,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 import time
@@ -159,6 +160,12 @@ class AiModels(Protocol):
 
 
 UNAUTHORIZED = frozenset({401, 403})
+TOO_LONG_STATUS = frozenset({400, 413})
+TOO_LONG = re.compile(
+    r"prompt is too long|context[ _-]?(length|window)|maximum context|too many (input )?tokens|request too large",
+    re.IGNORECASE,
+)
+"""What a provider says when a request is longer than the model reads; matched, never shown."""
 BUSY = frozenset({429, 503, 529})
 
 
@@ -188,7 +195,12 @@ def model_failure(exc: Exception, model: str, *, before_response: bool = False) 
 
     status = exc.status_code if isinstance(exc, ModelHTTPError) else None
     code = f" ({status})" if status is not None else ""
-    if status in UNAUTHORIZED:
+    if status in TOO_LONG_STATUS and isinstance(exc, ModelHTTPError) and TOO_LONG.search(str(exc.body or "")):
+        message = (
+            f"The conversation is longer than the model can read{code}: start a new chat, or pick a model with a "
+            "larger context window."
+        )
+    elif status in UNAUTHORIZED:
         message = f"The provider refused the request{code}: check the plugin's sign-in."
     elif status == 404 or (isinstance(exc, ProviderUnavailableError) and status not in BUSY):  # noqa: PLR2004
         return ModelUnavailableError(model, [], "the provider doesn't know it or can't serve it now")

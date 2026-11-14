@@ -338,6 +338,33 @@ def test_a_provider_failure_is_a_clean_error_and_the_message_can_be_sent_again(t
     assert state == "abandoned", "nothing was answered and no tool ran: set aside, so the person can send it again"
 
 
+@pytest.mark.parametrize(
+    ("status", "said"),
+    [
+        (400, "prompt is too long: 250000 tokens > 200000 maximum; Bearer leaked-token"),
+        (413, "Request too large; Bearer leaked-token"),
+    ],
+)
+def test_a_too_long_prompt_says_so_without_the_provider_s_words(tmp_path, monkeypatch, status, said):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+
+    def proxy(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            status, json={"type": "error", "error": {"type": "invalid_request_error", "message": said}}
+        )
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        chat = service(crud, current, Plugin(model_factory=anthropic_model(proxy)), Settings(), [])
+        with pytest.raises(HeinzelError) as failed:
+            asyncio.run(chat.answer(session, "hello"))
+    assert str(failed.value) == (
+        f"The conversation is longer than the model can read ({status}): start a new chat, or pick a model with a "
+        "larger context window."
+    )
+
+
 def test_an_unknown_model_at_the_provider_names_it_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
 
