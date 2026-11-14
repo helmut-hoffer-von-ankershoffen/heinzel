@@ -534,6 +534,7 @@ async def _tool_names(client: Any) -> list[str]:  # noqa: ANN401 - mcp.Client
     names: list[str] = []
     cursor: str | None = None
     for _ in range(MAX_TOOL_PAGES):
+        # Serial on purpose: each page is asked for with the cursor the previous page returned.
         page = await client.list_tools(cursor=cursor)
         names.extend(tool.name for tool in page.tools)
         cursor = page.next_cursor
