@@ -178,11 +178,13 @@ struct ConnectionView: View {
             }
             #else
             .overlay(alignment: .bottomTrailing) {
-                Button("Connection", systemImage: "network") { showConnection = true }
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 30)
-                    .offset(y: -44)
-                    .padding(.trailing, 14)
+                if !loadingWorkspace {
+                    Button("Connection", systemImage: "network") { showConnection = true }
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 30)
+                        .offset(y: -44)
+                        .padding(.trailing, 14)
+                }
             }
             #endif
             .sheet(isPresented: $showConnection) {
@@ -225,19 +227,60 @@ struct ConnectionView: View {
     }
 
     private var startup: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
             Image("StartupIcon")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 92, height: 92)
+                .frame(width: 104, height: 104)
                 .accessibilityHidden(true)
-            Text("Heinzelmännchen").font(.largeTitle.bold())
-            ProgressView("Opening workspace…")
-                .foregroundStyle(.secondary)
+            Text("Heinzelmännchen")
+                .font(.system(.largeTitle, design: .serif, weight: .semibold))
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+                .foregroundStyle(Color(red: 0.149, green: 0.231, blue: 0.196))
+            Capsule()
+                .fill(Color(red: 0.68, green: 0.33, blue: 0.22).opacity(0.5))
+                .frame(width: 40, height: 1)
+                .accessibilityHidden(true)
+                .padding(.vertical, 4)
+            HStack(spacing: 9) {
+                ProgressView()
+                    .controlSize(.small)
+                    .environment(\.colorScheme, .light)
+                    .accessibilityHidden(true)
+                Text("Opening workspace…").font(.callout)
+            }
+            .foregroundStyle(Color(red: 0.337, green: 0.404, blue: 0.369))
+            .accessibilityElement(children: .combine)
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("StartupBackground"))
+        .background {
+            ZStack {
+                Color("StartupBackground")
+                RadialGradient(
+                    colors: [.white.opacity(0.7), Color(red: 0.81, green: 0.72, blue: 0.57).opacity(0.23)],
+                    center: .center, startRadius: 30, endRadius: 620
+                )
+                Canvas { context, size in
+                    var grain = Path()
+                    var seed: UInt64 = 67
+                    func sample() -> Double {
+                        seed = 1_664_525 &* seed &+ 1_013_904_223
+                        return Double(UInt32(truncatingIfNeeded: seed)) / 4_294_967_296
+                    }
+                    for _ in 0..<Int(size.width * size.height / 28) {
+                        let x = sample() * size.width
+                        let y = sample() * size.height
+                        grain.addEllipse(in: CGRect(x: x, y: y, width: 0.55 + sample() * 1.25, height: 0.65))
+                    }
+                    context.fill(grain, with: .color(Color(red: 0.43, green: 0.32, blue: 0.21).opacity(0.15)))
+                }
+                .accessibilityHidden(true)
+            }
+            .ignoresSafeArea()
+        }
     }
 
     private var setup: some View {
