@@ -19,6 +19,20 @@ function deviceChoice(device) {
   return { id, label: (label || id).slice(0, 80) };
 }
 
+/** Native message box options: one button per device, then Cancel; the response index is the device. */
+export function deviceDialog({ host, devices }) {
+  const site = typeof host === "string" && host ? host : "This website";
+  return {
+    type: "question",
+    message: `${site} wants to connect to a device`,
+    detail: "Choose the device to share with this website, or cancel. Only the device you choose is shared.",
+    buttons: [...devices.map((device) => device.label), "Cancel"],
+    cancelId: devices.length,
+    defaultId: devices.length,
+    noLink: true,
+  };
+}
+
 /**
  * A guest has no product preload, session, headers, cookies or native permissions. All guests share one persistent
  * partition, so sign-ins survive closing the panel and restarting the app until the person clears browsing data.
@@ -102,8 +116,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     // The partition keeps sign-ins; only "Clear browsing data" empties it.
     releaseNetwork();
   };
+  // The partition persists across restarts, so clearing opens it even before the first guest of this run.
   const clear = async () => {
-    if (!partition) return;
+    const partition = partitionFor();
     await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(), partition.clearAuthCache?.()]);
     for (const guest of guests.values()) {
       guest.notice = null;
@@ -122,7 +137,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { view, session: partition, network, status: "empty" };
+      const guest = { view, session: partition, network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
       const refuseCredentials = (event, ...args) => {
@@ -130,9 +145,36 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         args.at(-1)();
       };
       contents.on("select-client-certificate", refuseCredentials);
-      contents.on("select-bluetooth-device", (event, _devices, callback) => {
+      // Chromium repeats this event while it scans: ask once, with the devices found so far, answer the latest callback.
+      let scan = null;
+      contents.on("select-bluetooth-device", (event, devices, callback) => {
         event.preventDefault();
-        callback("");
+        scan ??= { asked: false, timer: null };
+        const current = scan;
+        current.callback = callback;
+        const answer = (id) => { clearTimeout(current.timer); if (scan === current) scan = null; current.callback(id ?? ""); };
+        if (current.asked) return;
+        if (Array.isArray(devices) && devices.some(deviceChoice)) {
+          current.asked = true;
+          void pick(devices, "no-device").then(answer);
+        } else current.timer ??= setTimeout(() => {
+          if (current.asked) return;
+          guest.notice = "no-device";
+          answer("");
+        }, 10_000);
+      });
+      // Electron has no platform passkey for third-party sites; the page only sees NotAllowedError. Say it may fail.
+      contents.on("console-message", (details, ...legacy) => {
+        const message = typeof details?.message === "string" ? details.message : legacy[1];
+        if (typeof message === "string" && PASSKEY_HINT.test(message)) guest.notice = "passkey";
+      });
+      const passkeyPage = (_event, url) => {
+        try { if (PASSKEY_PAGE.test(new URL(url).pathname)) guest.notice = "passkey"; } catch { /* not a URL */ }
+      };
+      contents.on("did-navigate", passkeyPage);
+      contents.on("did-navigate-in-page", passkeyPage);
+      contents.on("did-start-navigation", (details) => {
+        if (isNewDocument(details)) guest.notice = null;
       });
       contents.on("login", (event, _details, info, callback) => {
         event.preventDefault();
@@ -175,7 +217,6 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       window.webContents.on("did-start-navigation", onNavigation);
       return guest;
     } catch {
-      network.close();
       if (guests.has(window)) close(window);
       else if (view && !view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
       throw new Error("Browser network is unavailable.");
@@ -186,6 +227,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     url: guest.view.webContents.getURL(),
     canGoBack: guest.view.webContents.navigationHistory.canGoBack(),
     canGoForward: guest.view.webContents.navigationHistory.canGoForward(),
+    notice: guest.notice,
   });
   return {
     async handle(event, request) {
@@ -194,10 +236,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (!request || typeof request !== "object" || typeof request.action !== "string")
         throw new Error("Invalid browser command.");
       const fields = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-        state: ["action"], back: ["action"], forward: ["action"], reload: ["action"] };
+        state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"] };
       if (!Object.hasOwn(fields, request.action) || !hasExactKeys(request, fields[request.action]))
         throw new Error("Invalid browser command.");
       if (request.action === "close") { close(window); return { status: "closed" }; }
+      if (request.action === "clear") await clear();
       let guest = guests.get(window);
       if (request.action === "navigate") {
         const url = browserUrl(request.url, connection()?.origin);
@@ -210,7 +253,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
             if (stopped || navigated || (generations.get(window) ?? 0) !== generation)
               throw new Error("Browser surface is closed.");
             if (!guests.has(window)) {
-              if (!opening.has(window)) opening.set(window, open(window).finally(() => opening.delete(window)));
+              if (!opening.has(window)) opening.set(window, open(window).finally(() => { opening.delete(window); releaseNetwork(); }));
               guest = await opening.get(window);
             }
             if (navigated || stopped || (generations.get(window) ?? 0) !== generation) {
@@ -246,6 +289,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (request.action === "back" && history.canGoBack()) history.goBack();
       if (request.action === "forward" && history.canGoForward()) history.goForward();
       if (request.action === "reload") guest.view.webContents.reload();
+      // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
+      if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin));
       return state(guest);
     },
     closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },

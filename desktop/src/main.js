@@ -7,7 +7,7 @@ import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
-import { createMiniBrowser } from "./mini-browser.js";
+import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
@@ -98,6 +98,12 @@ const miniBrowser = createMiniBrowser({
   connection: () => (stopping || quitting ? null : instance.currentConnection()),
   createSession: (partition, options) => session.fromPartition(partition, options),
   createView: (options) => new WebContentsView(options),
+  // The person picks the device or cancels; nothing is granted without that choice.
+  chooseDevice: async ({ window, host, devices }) => {
+    const { response } = await dialog.showMessageBox(window, deviceDialog({ host, devices }));
+    return devices[response]?.id ?? null;
+  },
+  openExternal: (url) => shell.openExternal(url),
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
