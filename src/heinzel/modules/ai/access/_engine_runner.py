@@ -40,7 +40,8 @@ from heinzel import (
 )
 from heinzel.kernel import Effort, clean_text
 from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers
-from heinzel.modules.ai.access._file_tools import TOOL_NAMES, ConfinedFiles, FileToolError
+from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError
+from heinzel.modules.ai.access._file_tools import run as run_file_tool
 from heinzel.modules.ai.access._mcp_stdio import McpError, StdioMcp, tool_name
 from heinzel.modules.ai.access._models import AccessSettings, Bindings
 from heinzel.modules.ai.access._pydantic import NAME as MODEL_API
@@ -125,17 +126,21 @@ class _Session:
 
     def __init__(self, tools: ToolProfile, cwd: Path) -> None:
         self.calls: Counter[str] = Counter()
-        self.files = ConfinedFiles(cwd) if tools.read_files else None
+        self.deadline = time.monotonic() + TOOL_SECONDS  # the turn sets the run's own deadline
+        try:
+            self.files = ConfinedFiles(cwd) if tools.read_files else None
+        except FileToolError as exc:
+            raise HeinzelError(str(exc)) from None
         self.wanted = {TOOL_NAMES[t] for t in (tools.tools or list(TOOL_NAMES))} if tools.read_files else set()
         self.servers = [StdioMcp(name, s.command, s.env, cwd) for name, s in sorted(tools.mcp_servers.items())]
 
-    def _file_tool(self, name: str, run: Callable[..., str]) -> Callable[..., str]:
+    def _file_tool(self, files: ConfinedFiles, name: str) -> Callable[..., str]:
         def call(**arguments: Any) -> str:  # noqa: ANN401 - the model's arguments, validated by the schema
             self.calls[name] += 1
-            try:
-                return run(**arguments)
-            except FileToolError as exc:
-                return f"Refused: {exc}"
+            # In a child process with a deadline: a regular expression the model picks can't stall hz, and a call
+            # never outlives the run.
+            seconds = max(1.0, min(TOOL_SECONDS, self.deadline - time.monotonic()))
+            return run_file_tool(files, name, arguments, seconds)
 
         return call
 
@@ -145,15 +150,14 @@ class _Session:
 
         if self.files is None:
             return []
-        files = self.files
-        schemas: dict[str, tuple[Callable[..., str], str, dict[str, Any]]] = {
-            "read": (files.read, READ_DOC, READ_SCHEMA),
-            "grep": (files.grep, GREP_DOC, GREP_SCHEMA),
-            "glob": (files.glob, GLOB_DOC, GLOB_SCHEMA),
+        schemas: dict[str, tuple[str, dict[str, Any]]] = {
+            "read": (READ_DOC, READ_SCHEMA),
+            "grep": (GREP_DOC, GREP_SCHEMA),
+            "glob": (GLOB_DOC, GLOB_SCHEMA),
         }
         return [
-            Tool.from_schema(self._file_tool(name, run), name, doc, schema)
-            for name, (run, doc, schema) in schemas.items()
+            Tool.from_schema(self._file_tool(self.files, name), name, doc, schema)
+            for name, (doc, schema) in schemas.items()
             if name in self.wanted
         ]
 
@@ -190,6 +194,9 @@ class _Session:
     async def stop(self) -> None:
         for server in self.servers:
             await server.stop()
+        if self.files is not None:
+            self.files.close()
+            self.files = None
 
 
 READ_DOC = "Read a text file in the working directory: numbered lines from `offset` (1-based), at most `limit` lines."
@@ -293,6 +300,9 @@ class EngineRunner:
         if tools.working_dir is not None and not tools.working_dir.is_dir():
             msg = f"The run's working directory {tools.working_dir} does not exist or is not a directory."
             raise HeinzelError(msg)
+        if tools.working_dir is not None and tools.read_files and _too_wide(tools.working_dir):
+            msg = f"The run's working directory {tools.working_dir} is the whole disk or your home; pick a project."
+            raise HeinzelError(msg)
         chosen = self._models(model, effort)
         warnings = list(chosen.warnings)
         if budget.max_usd is not None:
@@ -353,12 +363,14 @@ class EngineRunner:
         history, prompt = self._continued(turn)
         stream = _Stream(emit)
         runs: list[Any] = []
-        seconds = turn.timeout.total_seconds()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + turn.timeout.total_seconds()  # one deadline for starting the servers and the turn
+        session.deadline = time.monotonic() + turn.timeout.total_seconds()
         try:
-            tools = session.file_tools() + await asyncio.wait_for(session.mcp_tools(), seconds)
+            tools = session.file_tools() + await asyncio.wait_for(session.mcp_tools(), deadline - loop.time())
             agent = pydantic_ai.Agent(chosen.model, instructions=turn.contract or None, tools=tools)
             work = self._stream(agent, prompt, history=history, chosen=chosen, stream=stream, runs=runs)
-            done = await asyncio.wait_for(work, seconds)
+            done = await asyncio.wait_for(work, max(0.0, deadline - loop.time()))
         except (TimeoutError, asyncio.CancelledError) as exc:
             why = f"the run's timeout of {turn.timeout}" if isinstance(exc, TimeoutError) else "cancelled"
             if runs:
@@ -437,6 +449,12 @@ class EngineRunner:
                             elif isinstance(event, FunctionToolResultEvent):
                                 stream.emit("tool_result", {"name": event.part.tool_name})
             return run.result
+
+
+def _too_wide(directory: Path) -> bool:
+    """Whether reading `directory` would expose everything: the filesystem's root or the home folder itself."""
+    real = directory.resolve()
+    return real == Path(real.anchor) or real == Path.home().resolve()
 
 
 def _chat_session(tools: ToolProfile) -> str | None:

@@ -1,7 +1,9 @@
 """The engine runner's read-only file tools stay inside the working directory and within their limits (ADR 0159)."""
 
 import os
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -146,15 +148,112 @@ def test_grep_finds_lines_with_paths_and_skips_git(tree: Path) -> None:
 def test_grep_and_glob_stop_at_their_caps(tree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_file_tools, "MAX_MATCHES", 3)
     monkeypatch.setattr(_file_tools, "MAX_ENTRIES", 2)
-    monkeypatch.setattr(_file_tools, "MAX_SCANNED_FILES", 2)
     (tree / "many.txt").write_text("hit\n" * 10, encoding="utf-8")
     for n in range(4):
         (tree / f"f{n}.txt").write_text("hit\n", encoding="utf-8")
     files = ConfinedFiles(tree)
 
     assert files.grep("hit", path="many.txt").endswith("(stopped at 3 matches)")
-    assert files.grep("hit").endswith("(stopped after 2 files)")
     assert files.glob("*.txt") == "f0.txt\nf1.txt\n(stopped at 2 files)"
+
+
+def test_every_entry_visited_counts_matching_or_not(tree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_file_tools, "MAX_VISITED", 10)
+    for n in range(200):
+        (tree / f"b{n}.bin").write_bytes(b"\x00")
+    opened: list[int] = []
+    real = os.open
+
+    def counting(*args: Any, **kwargs: Any) -> int:
+        opened.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(_file_tools.os, "open", counting)
+    files = ConfinedFiles(tree)
+    assert files.glob("*.nomatch") == "(no files match)\n(stopped after 10 entries)"
+    globbed = len(opened)
+    opened.clear()
+    assert files.grep("x").endswith("(stopped after 10 entries)")
+    assert globbed < 20
+    assert len(opened) < 20
+
+
+def test_a_huge_offset_stops_at_the_byte_budget(tree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_file_tools, "MAX_SCAN_BYTES", 1024 * 1024)
+    big = tree / "big.log"
+    with big.open("wb") as out:
+        out.write(b"text line\n" * 1000)
+        out.truncate(64 * 1024**3)  # sparse: the rest is one endless line of NUL bytes
+    started = time.monotonic()
+
+    with pytest.raises(FileToolError, match="read its limit of 1 MiB"):
+        ConfinedFiles(tree).read("big.log", offset=10**9)
+    assert time.monotonic() - started < 5
+
+
+def test_a_hard_link_is_refused_and_skipped(tree: Path) -> None:
+    os.link(tree.parent / "secret.txt", tree / "inner.txt")
+    files = ConfinedFiles(tree)
+
+    with pytest.raises(FileToolError, match="hard link"):
+        files.read("inner.txt")
+    assert "inner.txt" not in files.glob("*")
+    assert "secret" not in files.grep("hello")
+    assert "secret" not in files.grep("hello", path="inner.txt")
+
+
+def test_git_is_never_read(tree: Path) -> None:
+    with pytest.raises(FileToolError, match=r"\.git"):
+        ConfinedFiles(tree).read(".git/config")
+    with pytest.raises(FileToolError, match=r"\.git"):
+        ConfinedFiles(tree).grep("hello", path=".git")
+
+
+def test_an_absolute_path_may_use_the_root_as_given(tmp_path: Path, tree: Path) -> None:
+    alias = tmp_path / "alias"
+    alias.symlink_to(tree)
+
+    assert ConfinedFiles(alias).read(str(alias / "README.md")).startswith("     1\t# Title")
+    assert ConfinedFiles(alias).read(str(tree / "README.md")).startswith("     1\t# Title")
+
+
+def test_a_folder_swapped_for_a_symlink_after_the_check_is_refused(tree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    files = ConfinedFiles(tree)
+    checked = files._parts
+
+    def racing(path: str) -> list[str]:
+        parts = checked(path)
+        (tree / "src").rename(tree / "src.old")
+        (tree / "src").symlink_to(tree.parent)
+        return parts
+
+    monkeypatch.setattr(files, "_parts", racing)
+    with pytest.raises(FileToolError, match="symlink"):
+        files.read("src/secret.txt")
+
+
+def test_the_root_is_held_open_so_a_moved_folder_doesn_t_redirect(tmp_path: Path, tree: Path) -> None:
+    files = ConfinedFiles(tree)
+    tree.rename(tmp_path / "moved")
+    tree.mkdir()
+    (tree / "README.md").write_text("planted\n", encoding="utf-8")
+
+    assert files.read("README.md").startswith("     1\t# Title")
+
+
+def test_a_call_runs_in_a_child_that_is_stopped_at_its_deadline(tree: Path) -> None:
+    (tree / "evil.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    files = ConfinedFiles(tree)
+    started = time.monotonic()
+
+    answer = _file_tools.run(files, "grep", {"pattern": "(a+)+$", "path": "evil.txt"}, seconds=1)
+
+    assert answer.startswith("Refused: grep took longer than 1s")
+    assert time.monotonic() - started < 5
+    assert _file_tools.run(files, "grep", {"pattern": "hello"}) == "README.md:2: hello world"
+    assert _file_tools.run(files, "read", {"path": "../secret.txt"}).startswith("Refused: ../secret.txt goes up")
+    assert _file_tools.run(files, "write", {"path": "x"}) == "Refused: no tool write"
+    assert _file_tools.run(files, "read", {"nope": 1}) == "Refused: read doesn't take those arguments"
 
 
 def test_glob_matches_names_and_paths(tree: Path) -> None:

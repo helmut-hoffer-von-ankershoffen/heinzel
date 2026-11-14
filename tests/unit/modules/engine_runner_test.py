@@ -10,6 +10,7 @@ import json
 import stat
 import sys
 import textwrap
+import time
 from collections.abc import AsyncIterator, Callable
 from datetime import timedelta
 from pathlib import Path
@@ -441,3 +442,39 @@ def test_a_stopped_turn_keeps_its_partial_answer_marked_stopped(
     again = "User: tell me\n\nAssistant: (no answer: stopped after 0:00:01)\n\nUser: again"
     runner(streamed(respond)).run(again, contract="", tools=chat_tools(work, tmp_path), timeout=MINUTE, budget=Budget())
     assert prompts(seen[0]) == ["User: tell me", "User: again"]  # the stopped turn is part of the session
+
+
+def test_the_toolset_is_exactly_the_read_only_tools_and_the_mcp_servers(work: Path, tmp_path: Path) -> None:
+    seen: list[AgentInfo] = []
+    tools = chat_tools(work, tmp_path)
+    tools = tools.model_copy(update={"read_files": True})
+
+    runner(scripted("ok", seen=seen)).run("x", contract="", tools=tools, timeout=MINUTE, budget=Budget())
+
+    names = {t.name for t in seen[0].function_tools}
+    assert names - {n for n in names if n.startswith("mcp__")} == {"read", "grep", "glob"}
+    assert names == {"read", "grep", "glob", "mcp__heinzel__chat_search"}
+
+
+def test_a_model_chosen_regex_never_holds_the_run_past_its_timeout(work: Path) -> None:
+    (work / "evil.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    model = scripted([("grep", {"pattern": "(a+)+$", "path": "evil.txt"})], "done")
+    started = time.monotonic()
+
+    result = runner(model).run(
+        "go", contract="", tools=ToolProfile(working_dir=work), timeout=timedelta(seconds=2), budget=Budget()
+    )
+
+    assert result.status == "timeout"
+    assert time.monotonic() - started < 8
+
+
+def test_the_whole_disk_or_home_is_no_working_directory(tmp_path: Path) -> None:
+    for wide in (Path("/"), Path.home()):
+        with pytest.raises(HeinzelError, match="whole disk or your home"):
+            runner(TestModel()).run(
+                "x", contract="", tools=ToolProfile(working_dir=wide), timeout=MINUTE, budget=Budget()
+            )
+    runner(TestModel()).run(
+        "x", contract="", tools=ToolProfile(working_dir=Path.home(), read_files=False), timeout=MINUTE, budget=Budget()
+    )
