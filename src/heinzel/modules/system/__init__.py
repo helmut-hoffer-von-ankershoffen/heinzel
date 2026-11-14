@@ -160,7 +160,8 @@ def tools(
         Field(description="How to write the list; the CLI's own `--format json` wraps the whole result instead."),
     ] = "text",
     head: Annotated[
-        Literal["all", "cli", "mcp", "rest"], Field(description="Only what this head exposes; its input schemas too.")
+        Literal["all", "cli", "mcp", "rest", "web"],
+        Field(description="Only what this head exposes; its input schemas too."),
     ] = "all",
     module: Annotated[
         list[str] | None, Field(description="Only these modules and the ones under them, e.g. `system.config`.")

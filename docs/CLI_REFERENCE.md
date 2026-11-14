@@ -4346,7 +4346,7 @@ $ hz system tools [OPTIONS]
 **Options**:
 
 * `--output <text|markdown|yaml|json>`: How to write the list; the CLI&#x27;s own `--format json` wraps the whole result instead.  [default: text]
-* `--head <all|cli|mcp|rest>`: Only what this head exposes; its input schemas too.  [default: all]
+* `--head <all|cli|mcp|rest|web>`: Only what this head exposes; its input schemas too.  [default: all]
 * `--module <list[str]>`: Only these modules and the ones under them, e.g. `system.config`.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.

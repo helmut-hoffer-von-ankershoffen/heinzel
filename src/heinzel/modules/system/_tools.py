@@ -1,5 +1,6 @@
 """The reference of every operation and tool: one renderer for `hz system tools` and the generated documents."""
 
+import asyncio
 import json
 from collections.abc import Iterable
 from typing import Any, Literal
@@ -9,10 +10,10 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 from heinzel.heads._exposure import Exposed, exposed, input_schema
 from heinzel.heads.cli._chat import command_words
-from heinzel.kernel import Kernel
+from heinzel.kernel import HeinzelError, Kernel
 
 Format = Literal["text", "markdown", "yaml", "json"]
-HeadFilter = Literal["all", "cli", "mcp", "rest"]
+HeadFilter = Literal["all", "cli", "mcp", "rest", "web"]
 #: Our head names, by the name a person gives the head.
 HEADS = {"cli": "cli", "mcp": "mcp", "rest": "api", "web": "web"}
 
@@ -112,12 +113,27 @@ def _parameters(schema: dict[str, Any]) -> list[ParameterInfo]:
     ]
 
 
+def served_mcp_tools(kernel: Kernel) -> dict[str, Any]:
+    """The tools the stdio MCP server lists, by name: what a client sees, with its schemas, hints and aliases."""
+    from heinzel.heads.mcp import build as build_mcp  # noqa: PLC0415 - the MCP head is loaded only for a reference
+
+    return {tool.name: tool for tool in asyncio.run(build_mcp(kernel, "stdio").list_tools())}
+
+
 def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "all") -> list[ToolInfo]:
     """Every operation the kernel's modules expose in any head, in module order, optionally of some modules or one head.
 
     A module filter matches the module and the modules under it (`system` includes `system.config`).
+
+    Raises:
+        HeinzelError: If a module filter names no module.
     """
     wanted = tuple(modules)
+    known = {r.qualname for r in kernel.modules}
+    if unknown := [w for w in wanted if not any(q == w or q.startswith(f"{w}.") for q in known)]:
+        msg = f"No module {', '.join(unknown)}; `hz system modules` lists them"
+        raise HeinzelError(msg)
+    served = served_mcp_tools(kernel)
     surfaces = {
         key: {(i.record.qualname, i.operation.name): i for i in exposed(kernel, name)} for key, name in HEADS.items()
     }
@@ -135,7 +151,8 @@ def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "al
             continue
         verb = "GET" if item.operation.read_only else "POST"
         path = "/".join(item.path)
-        schema = input_schema(item)
+        in_mcp = key in surfaces["mcp"] and item.name in served
+        schema = dict(served[item.name].input_schema) if in_mcp else input_schema(item)
         result.append(
             ToolInfo(
                 module=qualname,
@@ -143,7 +160,7 @@ def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "al
                 summary=item.operation.summary,
                 heads=HeadInfo(
                     cli=f"hz {' '.join(command_words(item.path))}" if key in surfaces["cli"] else None,
-                    mcp=item.name if key in surfaces["mcp"] else None,
+                    mcp=item.name if in_mcp else None,
                     rest=f"{verb} /{path}" if key in surfaces["rest"] else None,
                     web=f"{verb} /api/{path}" if key in surfaces["web"] else None,
                 ),
@@ -237,24 +254,31 @@ MCP_HEADER = """\
 
 Generated from the code by `make docs`; CI fails when it is out of date. `hz system serve mcp` is an MCP server with one
 tool per operation below (`hz system tools --head mcp` lists the tools of what you have installed, plugins included).
-Over stdio every tool is served; streamable HTTP leaves out the tools marked *private* and the ones restricted to stdio.
+Over stdio every tool below is served (tools whose description starts with *Deprecated* are old names that still run the
+new tool); streamable HTTP leaves out the tools marked *private* and the ones restricted to stdio.
 Each tool lists its description and the JSON Schema of its input.
 """
 
 
-def mcp_reference(entries: list[ToolInfo]) -> str:
-    """Every MCP tool with its description, hints and JSON input schema, as Markdown."""
+def mcp_reference(entries: list[ToolInfo], served: dict[str, Any]) -> str:
+    """Every tool the stdio MCP server lists, as a client sees it: description, hints and JSON input schema."""
+    by_name = {e.heads.mcp: e for e in entries if e.heads.mcp}
     lines = [MCP_HEADER]
-    for e in (e for e in entries if e.heads.mcp):
+    for name, tool in served.items():
+        hints = tool.annotations
+        read_only = bool(hints and hints.read_only_hint)
+        entry = by_name.get(name)
+        origin = f"Module `{entry.module}`. " if entry else ""
+        result = f" Result: `{_cell(entry.result)}`." if entry else ""
         lines += [
-            f"## `{e.heads.mcp}`",
+            f"## `{name}`",
             "",
-            e.summary,
+            tool.description or "",
             "",
-            f"Module `{e.module}`. {_flag(e).capitalize()}. Result: `{_cell(e.result)}`.",
+            f"{origin}{'Read-only' if read_only else 'Changes state'}.{result}",
             "",
             "```json",
-            json.dumps(e.input_schema, indent=2, ensure_ascii=False),
+            json.dumps(tool.input_schema, indent=2, ensure_ascii=False),
             "```",
             "",
         ]

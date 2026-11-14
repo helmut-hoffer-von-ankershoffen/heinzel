@@ -2,14 +2,15 @@
 
 Generated from the code by `make docs`; CI fails when it is out of date. `hz system serve mcp` is an MCP server with one
 tool per operation below (`hz system tools --head mcp` lists the tools of what you have installed, plugins included).
-Over stdio every tool is served; streamable HTTP leaves out the tools marked *private* and the ones restricted to stdio.
+Over stdio every tool below is served (tools whose description starts with *Deprecated* are old names that still run the
+new tool); streamable HTTP leaves out the tools marked *private* and the ones restricted to stdio.
 Each tool lists its description and the JSON Schema of its input.
 
 ## `ai_usage`
 
 Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
 
-Module `ai`. Read-only, expert. Result: `UsageReport {period: 'today' \| 'week', by: 'access' \| 'model' \| 'heinzel' \| 'cause', today: UsageTotal, week: UsageTotal, budget_usd: number, level: number, tone: 'ok' \| 'warn' \| 'over', label: string, breakdowns: dict[string, list[UsageRow]]}`.
+Module `ai`. Read-only. Result: `UsageReport {period: 'today' \| 'week', by: 'access' \| 'model' \| 'heinzel' \| 'cause', today: UsageTotal, week: UsageTotal, budget_usd: number, level: number, tone: 'ok' \| 'warn' \| 'over', label: string, breakdowns: dict[string, list[UsageRow]]}`.
 
 ```json
 {
@@ -37,7 +38,7 @@ Module `ai`. Read-only, expert. Result: `UsageReport {period: 'today' \| 'week',
       "type": "string"
     }
   },
-  "title": "ai_usage",
+  "title": "ai_usageArguments",
   "type": "object"
 }
 ```
@@ -46,12 +47,12 @@ Module `ai`. Read-only, expert. Result: `UsageReport {period: 'today' \| 'week',
 
 List the models and efforts of the AI access in use, for the chat's model and effort picker.
 
-Module `ai`. Read-only, expert. Result: `ModelList {access: string \| null, title: string, billing: 'plan' \| 'api' \| null, models: list[ModelChoice], efforts: list[EffortChoice], note: string \| null}`.
+Module `ai`. Read-only. Result: `ModelList {access: string \| null, title: string, billing: 'plan' \| 'api' \| null, models: list[ModelChoice], efforts: list[EffortChoice], note: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "ai_models",
+  "title": "ai_modelsArguments",
   "type": "object"
 }
 ```
@@ -60,12 +61,12 @@ Module `ai`. Read-only, expert. Result: `ModelList {access: string \| null, titl
 
 List the AI access options, the one in use, whether each is signed in, and what runs each use.
 
-Module `ai.access`. Read-only, expert. Result: `AccessList {selected: string \| null, options: list[AccessOption], uses: list[AccessUse], note: string \| null, next: list[string]}`.
+Module `ai.access`. Read-only. Result: `AccessList {selected: string \| null, options: list[AccessOption], uses: list[AccessUse], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "ai_access_list",
+  "title": "ai_access_listArguments",
   "type": "object"
 }
 ```
@@ -74,7 +75,7 @@ Module `ai.access`. Read-only, expert. Result: `AccessList {selected: string \| 
 
 Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.
 
-Module `graph`. Read-only, everyday. Result: `TeamGraphDocument {graph: Graph}`.
+Module `graph`. Read-only. Result: `TeamGraphDocument {graph: Graph}`.
 
 ```json
 {
@@ -140,7 +141,83 @@ Module `graph`. Read-only, everyday. Result: `TeamGraphDocument {graph: Graph}`.
       "title": "At"
     }
   },
-  "title": "graph",
+  "title": "graphArguments",
+  "type": "object"
+}
+```
+
+## `heinzel_propose_skill_draft`
+
+Store a private skill draft; no file is published, executed or shared.
+
+Module `heinzel`. Changes state. Result: `SkillDraft {session_id: string, request_id: string, name: string, requested_scope: 'personal' \| 'team' \| 'org' \| 'site' \| 'company', scope_ref: string \| null, files: dict[string, string], status: 'draft', preview_sha256: string}`.
+
+```json
+{
+  "properties": {
+    "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
+      "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Proposed skill name.",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "requested_scope": {
+      "description": "Requested scope; no grant is created.",
+      "enum": [
+        "personal",
+        "team",
+        "org",
+        "site",
+        "company"
+      ],
+      "title": "Requested Scope",
+      "type": "string"
+    },
+    "files": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Exact SKILL.md, supporting text and optional Python script drafts.",
+      "title": "Files",
+      "type": "object"
+    },
+    "scope_ref": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Opaque target for a requested shared scope; not verified.",
+      "title": "Scope Ref"
+    }
+  },
+  "required": [
+    "session_id",
+    "request_id",
+    "name",
+    "requested_scope",
+    "files"
+  ],
+  "title": "heinzel_propose_skill_draftArguments",
   "type": "object"
 }
 ```
@@ -149,17 +226,19 @@ Module `graph`. Read-only, everyday. Result: `TeamGraphDocument {graph: Graph}`.
 
 Read exact private skill draft files and requested sharing scope.
 
-Module `heinzel`. Read-only, private, everyday. Result: `SkillDraft {session_id: string, request_id: string, name: string, requested_scope: 'personal' \| 'team' \| 'org' \| 'site' \| 'company', scope_ref: string \| null, files: dict[string, string], status: 'draft', preview_sha256: string}`.
+Module `heinzel`. Read-only. Result: `SkillDraft {session_id: string, request_id: string, name: string, requested_scope: 'personal' \| 'team' \| 'org' \| 'site' \| 'company', scope_ref: string \| null, files: dict[string, string], status: 'draft', preview_sha256: string}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -169,7 +248,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `SkillDraft {session_id:
     "session_id",
     "request_id"
   ],
-  "title": "heinzel_skill_draft",
+  "title": "heinzel_skill_draftArguments",
   "type": "object"
 }
 ```
@@ -178,12 +257,13 @@ Module `heinzel`. Read-only, private, everyday. Result: `SkillDraft {session_id:
 
 List private draft references without file contents.
 
-Module `heinzel`. Read-only, private, everyday. Result: `SkillDraftPage {items: list[SkillDraftReference], next_cursor: integer \| null}`.
+Module `heinzel`. Read-only. Result: `SkillDraftPage {items: list[SkillDraftReference], next_cursor: integer \| null}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
@@ -207,7 +287,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `SkillDraftPage {items: 
   "required": [
     "session_id"
   ],
-  "title": "heinzel_skill_drafts",
+  "title": "heinzel_skill_draftsArguments",
   "type": "object"
 }
 ```
@@ -216,7 +296,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `SkillDraftPage {items: 
 
 Create a durable personal Heinzel with an idempotent request, name and look.
 
-Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -333,6 +413,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
   },
   "properties": {
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -361,7 +442,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
   "required": [
     "request_id"
   ],
-  "title": "heinzel_new_chat",
+  "title": "heinzel_new_chatArguments",
   "type": "object"
 }
 ```
@@ -370,12 +451,12 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
 
 List your durable personal Heinzels, including new conversations without an approved contract.
 
-Module `heinzel`. Read-only, private, everyday. Result: `SessionList {sessions: list[SessionSummary]}`.
+Module `heinzel`. Read-only. Result: `SessionList {sessions: list[SessionSummary]}`.
 
 ```json
 {
   "properties": {},
-  "title": "heinzel_sessions",
+  "title": "heinzel_sessionsArguments",
   "type": "object"
 }
 ```
@@ -384,12 +465,13 @@ Module `heinzel`. Read-only, private, everyday. Result: `SessionList {sessions: 
 
 Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
 
-Module `heinzel`. Read-only, private, everyday. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
@@ -420,7 +502,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `SessionSnapshot {sessio
   "required": [
     "session_id"
   ],
-  "title": "heinzel_session",
+  "title": "heinzel_sessionArguments",
   "type": "object"
 }
 ```
@@ -429,7 +511,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `SessionSnapshot {sessio
 
 Save this Heinzel's name or look against the exact profile revision you saw.
 
-Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -546,11 +628,13 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
   },
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -594,7 +678,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
     "request_id",
     "expected_revision"
   ],
-  "title": "heinzel_profile",
+  "title": "heinzel_profileArguments",
   "type": "object"
 }
 ```
@@ -603,17 +687,19 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
 
 Propose local five-minute check-ins; the schedule stays inactive until activated.
 
-Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -631,7 +717,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
     "session_id",
     "request_id"
   ],
-  "title": "heinzel_propose_check_in",
+  "title": "heinzel_propose_check_inArguments",
   "type": "object"
 }
 ```
@@ -640,17 +726,19 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
 
 Associate a Google file locally; no access, provider ownership or permission is verified.
 
-Module `heinzel`. Changes state, private, everyday. Result: `PersonalArtifact {session_id: string, request_id: string, provider: 'google', kind: 'document' \| 'spreadsheet' \| 'presentation', ref: string, provenance: 'principal-submitted'}`.
+Module `heinzel`. Changes state. Result: `PersonalArtifact {session_id: string, request_id: string, provider: 'google', kind: 'document' \| 'spreadsheet' \| 'presentation', ref: string, provenance: 'principal-submitted'}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -678,7 +766,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `PersonalArtifact {s
     "kind",
     "ref"
   ],
-  "title": "heinzel_associate_artifact",
+  "title": "heinzel_associate_artifactArguments",
   "type": "object"
 }
 ```
@@ -687,12 +775,13 @@ Module `heinzel`. Changes state, private, everyday. Result: `PersonalArtifact {s
 
 List local principal-submitted file associations without accessing the provider.
 
-Module `heinzel`. Read-only, private, everyday. Result: `PersonalArtifacts {session_id: string, artifacts: list[PersonalArtifact]}`.
+Module `heinzel`. Read-only. Result: `PersonalArtifacts {session_id: string, artifacts: list[PersonalArtifact]}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
@@ -701,7 +790,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `PersonalArtifacts {sess
   "required": [
     "session_id"
   ],
-  "title": "heinzel_personal_artifacts",
+  "title": "heinzel_personal_artifactsArguments",
   "type": "object"
 }
 ```
@@ -710,17 +799,19 @@ Module `heinzel`. Read-only, private, everyday. Result: `PersonalArtifacts {sess
 
 Save an inert agent execution proposal; it neither approves nor starts a model turn.
 
-Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
+Module `heinzel`. Changes state. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -753,7 +844,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentPropo
     "max_usd",
     "timeout_seconds"
   ],
-  "title": "heinzel_propose_scheduled_agent",
+  "title": "heinzel_propose_scheduled_agentArguments",
   "type": "object"
 }
 ```
@@ -762,17 +853,19 @@ Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentPropo
 
 Propose revised terms; an independent human review and approval is still required.
 
-Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
+Module `heinzel`. Changes state. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -812,7 +905,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentPropo
     "max_usd",
     "timeout_seconds"
   ],
-  "title": "heinzel_amend_scheduled_agent",
+  "title": "heinzel_amend_scheduled_agentArguments",
   "type": "object"
 }
 ```
@@ -821,12 +914,13 @@ Module `heinzel`. Changes state, private, everyday. Result: `ScheduledAgentPropo
 
 Read the current inert proposal for the personal session, if one exists.
 
-Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal \| null`.
+Module `heinzel`. Read-only. Result: `ScheduledAgentProposal \| null`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
@@ -835,7 +929,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal 
   "required": [
     "session_id"
   ],
-  "title": "heinzel_latest_scheduled_agent_proposal",
+  "title": "heinzel_latest_scheduled_agent_proposalArguments",
   "type": "object"
 }
 ```
@@ -844,17 +938,19 @@ Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal 
 
 Inspect the exact inert proposal; a separate future human approval is required to run it.
 
-Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
+Module `heinzel`. Read-only. Result: `ScheduledAgentProposal {session_id: string, request_id: string, revision: integer, based_on_revision: integer, contract: string, permitted_tools: list[string], max_usd: number \| null, timeout_seconds: integer, status: 'proposed', preview_sha256: string}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -864,7 +960,7 @@ Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal 
     "session_id",
     "request_id"
   ],
-  "title": "heinzel_scheduled_agent_proposal",
+  "title": "heinzel_scheduled_agent_proposalArguments",
   "type": "object"
 }
 ```
@@ -873,17 +969,19 @@ Module `heinzel`. Read-only, private, everyday. Result: `ScheduledAgentProposal 
 
 Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
 
-Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -903,19 +1001,6 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
       ],
       "title": "Action",
       "type": "string"
-    },
-    "approval_proof": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.",
-      "title": "Approval Proof"
     },
     "expected_contract_version": {
       "default": 1,
@@ -946,7 +1031,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
     "expected_revision",
     "action"
   ],
-  "title": "heinzel_schedule_control",
+  "title": "heinzel_schedule_controlArguments",
   "type": "object"
 }
 ```
@@ -955,17 +1040,19 @@ Module `heinzel`. Changes state, private, everyday. Result: `SessionSnapshot {se
 
 Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
 
-Module `heinzel`. Changes state, private, everyday. Result: `MessageAccepted {request_id: string, session_id: string, disposition: 'started' \| 'queued' \| 'steered', turn_id: string \| null, inbox_position: integer}`.
+Module `heinzel`. Changes state. Result: `MessageAccepted {request_id: string, session_id: string, disposition: 'started' \| 'queued' \| 'steered', turn_id: string \| null, inbox_position: integer}`.
 
 ```json
 {
   "properties": {
     "session_id": {
+      "description": "The stable personal session id returned by new-chat or sessions.",
       "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
       "title": "Session Id",
       "type": "string"
     },
     "request_id": {
+      "description": "A stable client request id; reuse it only for an exact retry.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
       "title": "Request Id",
       "type": "string"
@@ -993,7 +1080,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `MessageAccepted {re
     "request_id",
     "message"
   ],
-  "title": "heinzel_chat",
+  "title": "heinzel_chatArguments",
   "type": "object"
 }
 ```
@@ -1002,7 +1089,7 @@ Module `heinzel`. Changes state, private, everyday. Result: `MessageAccepted {re
 
 List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
 
-Module `heinzel`. Read-only, everyday. Result: `HeinzelList {directories: list[Directory], heinzelmaennchen: list[HeinzelSummary], filtered: boolean, next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `HeinzelList {directories: list[Directory], heinzelmaennchen: list[HeinzelSummary], filtered: boolean, next: list[Step]}`.
 
 ```json
 {
@@ -1053,7 +1140,67 @@ Module `heinzel`. Read-only, everyday. Result: `HeinzelList {directories: list[D
       "title": "Artifact"
     }
   },
-  "title": "heinzel_list",
+  "title": "heinzel_listArguments",
+  "type": "object"
+}
+```
+
+## `workflow_list`
+
+Deprecated: use `heinzel_list`, which this runs; goes in the next minor release. List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "state": {
+      "anyOf": [
+        {
+          "enum": [
+            "scheduled",
+            "manual",
+            "blocked",
+            "broken"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only Heinzelmännchen in this state: scheduled, manual, blocked, broken.",
+      "title": "State"
+    },
+    "contract": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`.",
+      "title": "Contract"
+    },
+    "artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`.",
+      "title": "Artifact"
+    }
+  },
+  "title": "workflow_listArguments",
   "type": "object"
 }
 ```
@@ -1062,7 +1209,7 @@ Module `heinzel`. Read-only, everyday. Result: `HeinzelList {directories: list[D
 
 Write a starter contract, or a playbook's template (--template), into your contracts folder.
 
-Module `heinzel`. Changes state, everyday. Result: `NewContract {file: string, namespace: 'me' \| 'team' \| 'path', name: string, template: string \| null, unfilled: list[string], next: list[Step]}`.
+Module `heinzel`. Changes state. Result: `NewContract {file: string, namespace: 'me' \| 'team' \| 'path', name: string, template: string \| null, unfilled: list[string], next: list[Step]}`.
 
 ```json
 {
@@ -1111,7 +1258,65 @@ Module `heinzel`. Changes state, everyday. Result: `NewContract {file: string, n
   "required": [
     "name"
   ],
-  "title": "heinzel_new",
+  "title": "heinzel_newArguments",
+  "type": "object"
+}
+```
+
+## `workflow_new`
+
+Deprecated: use `heinzel_new`, which this runs; goes in the next minor release. Write a starter contract, or a playbook's template (--template), into your contracts folder.
+
+Changes state.
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "The contract's name: lowercase words joined by dashes, e.g. weekly-digest.",
+      "title": "Name",
+      "type": "string"
+    },
+    "team": {
+      "default": false,
+      "description": "Write it into the team repository's workflows/ instead of your own directory.",
+      "title": "Team",
+      "type": "boolean"
+    },
+    "template": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Start from a playbook's template contract, `<module>:<name>` (`hz heinzel playbooks` lists them), instead of the blank starter.",
+      "title": "Template"
+    },
+    "asset": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Fill a template's artifact placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.",
+      "title": "Asset"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "workflow_newArguments",
   "type": "object"
 }
 ```
@@ -1120,12 +1325,26 @@ Module `heinzel`. Changes state, everyday. Result: `NewContract {file: string, n
 
 List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
 
-Module `heinzel`. Read-only, expert. Result: `PlaybookList {playbooks: list[PlaybookView], next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `PlaybookList {playbooks: list[PlaybookView], next: list[Step]}`.
 
 ```json
 {
   "properties": {},
-  "title": "heinzel_playbooks",
+  "title": "heinzel_playbooksArguments",
+  "type": "object"
+}
+```
+
+## `workflow_playbooks`
+
+Deprecated: use `heinzel_playbooks`, which this runs; goes in the next minor release. List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
+
+Read-only.
+
+```json
+{
+  "properties": {},
+  "title": "workflow_playbooksArguments",
   "type": "object"
 }
 ```
@@ -1134,7 +1353,7 @@ Module `heinzel`. Read-only, expert. Result: `PlaybookList {playbooks: list[Play
 
 Find candidates for each playbook's artifact types through your bound capabilities; reads only.
 
-Module `heinzel`. Read-only, expert. Result: `Discovery {playbooks: list[string], candidates: list[Candidate], problems: list[HintProblem], next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `Discovery {playbooks: list[string], candidates: list[Candidate], problems: list[HintProblem], next: list[Step]}`.
 
 ```json
 {
@@ -1153,7 +1372,35 @@ Module `heinzel`. Read-only, expert. Result: `Discovery {playbooks: list[string]
       "title": "Playbook"
     }
   },
-  "title": "heinzel_discover",
+  "title": "heinzel_discoverArguments",
+  "type": "object"
+}
+```
+
+## `workflow_discover`
+
+Deprecated: use `heinzel_discover`, which this runs; goes in the next minor release. Find candidates for each playbook's artifact types through your bound capabilities; reads only.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "playbook": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only this module's playbook; every playbook's if omitted.",
+      "title": "Playbook"
+    }
+  },
+  "title": "workflow_discoverArguments",
   "type": "object"
 }
 ```
@@ -1162,7 +1409,7 @@ Module `heinzel`. Read-only, expert. Result: `Discovery {playbooks: list[string]
 
 Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
 
-Module `heinzel`. Read-only, everyday. Result: `CompiledContract {name: string, namespace: 'me' \| 'team' \| 'path', file: string, title: string \| null, description: string \| null, job: string \| null, schedule: string \| null, scheduled: boolean, why_not_scheduled: string \| null, requirements: list[RequirementStatus], unmet: list[string], inputs: dict[string, string], outputs: dict[string, string], publishes: list[PublishStatus], tools: list[string], timeout_seconds: number \| null, max_usd: number \| null, diagnostics: list[Diagnostic], sha256: string, approve: string \| null, drafts: string, draft_count: integer, ready: boolean, measurements: Measurements \| null, next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `CompiledContract {name: string, namespace: 'me' \| 'team' \| 'path', file: string, title: string \| null, description: string \| null, job: string \| null, schedule: string \| null, scheduled: boolean, why_not_scheduled: string \| null, requirements: list[RequirementStatus], unmet: list[string], inputs: dict[string, string], outputs: dict[string, string], publishes: list[PublishStatus], tools: list[string], timeout_seconds: number \| null, max_usd: number \| null, diagnostics: list[Diagnostic], sha256: string, approve: string \| null, drafts: string, draft_count: integer, ready: boolean, measurements: Measurements \| null, next: list[Step]}`.
 
 ```json
 {
@@ -1176,7 +1423,30 @@ Module `heinzel`. Read-only, everyday. Result: `CompiledContract {name: string, 
   "required": [
     "name"
   ],
-  "title": "heinzel_show",
+  "title": "heinzel_showArguments",
+  "type": "object"
+}
+```
+
+## `workflow_show`
+
+Deprecated: use `heinzel_show`, which this runs; goes in the next minor release. Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "workflow_showArguments",
   "type": "object"
 }
 ```
@@ -1185,7 +1455,7 @@ Module `heinzel`. Read-only, everyday. Result: `CompiledContract {name: string, 
 
 List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
 
-Module `heinzel`. Read-only, everyday. Result: `DraftList {directory: string, drafts: list[Draft], latest: string \| null, next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `DraftList {directory: string, drafts: list[Draft], latest: string \| null, next: list[Step]}`.
 
 ```json
 {
@@ -1210,7 +1480,41 @@ Module `heinzel`. Read-only, everyday. Result: `DraftList {directory: string, dr
       "type": "boolean"
     }
   },
-  "title": "heinzel_drafts",
+  "title": "heinzel_draftsArguments",
+  "type": "object"
+}
+```
+
+## `workflow_drafts`
+
+Deprecated: use `heinzel_drafts`, which this runs; goes in the next minor release. List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only this contract's drafts; every contract's if omitted.",
+      "title": "Name"
+    },
+    "latest": {
+      "default": false,
+      "description": "Print the newest draft instead of the list.",
+      "title": "Latest",
+      "type": "boolean"
+    }
+  },
+  "title": "workflow_draftsArguments",
   "type": "object"
 }
 ```
@@ -1219,7 +1523,7 @@ Module `heinzel`. Read-only, everyday. Result: `DraftList {directory: string, dr
 
 Record how much of a draft you changed before sending it; `hz heinzel show` reports it.
 
-Module `heinzel`. Changes state, expert. Result: `Sent {contract: string, draft: string, sent: string, sent_sha256: string, recorded_at: string, changed: number, draft_words: integer, sent_words: integer, edit_minutes: number \| null, record: string}`.
+Module `heinzel`. Changes state. Result: `Sent {contract: string, draft: string, sent: string, sent_sha256: string, recorded_at: string, changed: number, draft_words: integer, sent_words: integer, edit_minutes: number \| null, record: string}`.
 
 ```json
 {
@@ -1288,7 +1592,85 @@ Module `heinzel`. Changes state, expert. Result: `Sent {contract: string, draft:
   "required": [
     "name"
   ],
-  "title": "heinzel_sent",
+  "title": "heinzel_sentArguments",
+  "type": "object"
+}
+```
+
+## `workflow_sent`
+
+Deprecated: use `heinzel_sent`, which this runs; goes in the next minor release. Record how much of a draft you changed before sending it; `hz heinzel show` reports it.
+
+Changes state.
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+      "title": "Name",
+      "type": "string"
+    },
+    "file": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What you finally sent, saved as a text or Markdown file; or give --ref.",
+      "title": "File"
+    },
+    "ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The document the approved version lives in, read through the documents capability.",
+      "title": "Ref"
+    },
+    "draft": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The draft it was edited from; the contract's newest draft if omitted.",
+      "title": "Draft"
+    },
+    "edit_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Your own estimate of the minutes you spent editing; optional.",
+      "title": "Edit Minutes"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "workflow_sentArguments",
   "type": "object"
 }
 ```
@@ -1297,7 +1679,7 @@ Module `heinzel`. Changes state, expert. Result: `Sent {contract: string, draft:
 
 Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
 
-Module `heinzel`. Read-only, expert. Result: `ContractGraph {nodes: list[GraphNode], edges: list[GraphEdge], cycles: list[list[string]], unmaintained: list[Unmaintained], mermaid: string, next: list[Step]}`.
+Module `heinzel`. Read-only. Result: `ContractGraph {nodes: list[GraphNode], edges: list[GraphEdge], cycles: list[list[string]], unmaintained: list[Unmaintained], mermaid: string, next: list[Step]}`.
 
 ```json
 {
@@ -1309,7 +1691,28 @@ Module `heinzel`. Read-only, expert. Result: `ContractGraph {nodes: list[GraphNo
       "type": "boolean"
     }
   },
-  "title": "heinzel_graph",
+  "title": "heinzel_graphArguments",
+  "type": "object"
+}
+```
+
+## `workflow_graph`
+
+Deprecated: use `heinzel_graph`, which this runs; goes in the next minor release. Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "mermaid": {
+      "default": false,
+      "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
+      "title": "Mermaid",
+      "type": "boolean"
+    }
+  },
+  "title": "workflow_graphArguments",
   "type": "object"
 }
 ```
@@ -1318,7 +1721,7 @@ Module `heinzel`. Read-only, expert. Result: `ContractGraph {nodes: list[GraphNo
 
 Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
 
-Module `heinzel`. Read-only, expert. Result: `CheckReport {files: list[string], diagnostics: list[Diagnostic], searched: list[Directory]}`.
+Module `heinzel`. Read-only. Result: `CheckReport {files: list[string], diagnostics: list[Diagnostic], searched: list[Directory]}`.
 
 ```json
 {
@@ -1338,7 +1741,36 @@ Module `heinzel`. Read-only, expert. Result: `CheckReport {files: list[string], 
       "title": "Path"
     }
   },
-  "title": "heinzel_check",
+  "title": "heinzel_checkArguments",
+  "type": "object"
+}
+```
+
+## `workflow_check`
+
+Deprecated: use `heinzel_check`, which this runs; goes in the next minor release. Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+
+Read-only.
+
+```json
+{
+  "properties": {
+    "path": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
+      "title": "Path"
+    }
+  },
+  "title": "workflow_checkArguments",
   "type": "object"
 }
 ```
@@ -1347,7 +1779,7 @@ Module `heinzel`. Read-only, expert. Result: `CheckReport {files: list[string], 
 
 Wake a Heinzelmännchen now: fetch its inputs, run the agent, save the draft; nothing is published.
 
-Module `heinzel`. Changes state, everyday. Result: `RunResult {dry_run: boolean, packet: Packet \| null, rendered: Rendered \| null, note: string}`.
+Module `heinzel`. Changes state. Result: `RunResult {dry_run: boolean, packet: Packet \| null, rendered: Rendered \| null, note: string}`.
 
 ```json
 {
@@ -1367,7 +1799,36 @@ Module `heinzel`. Changes state, everyday. Result: `RunResult {dry_run: boolean,
   "required": [
     "name"
   ],
-  "title": "heinzel_wake",
+  "title": "heinzel_wakeArguments",
+  "type": "object"
+}
+```
+
+## `workflow_run`
+
+Deprecated: use `heinzel_wake`, which this runs; goes in the next minor release. Wake a Heinzelmännchen now: fetch its inputs, run the agent, save the draft; nothing is published.
+
+Changes state.
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+      "title": "Name",
+      "type": "string"
+    },
+    "dry_run": {
+      "default": false,
+      "description": "Only fetch the inputs and show the packet; run no agent.",
+      "title": "Dry Run",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "workflow_runArguments",
   "type": "object"
 }
 ```
@@ -1376,7 +1837,7 @@ Module `heinzel`. Changes state, everyday. Result: `RunResult {dry_run: boolean,
 
 Delete drafts and records older than `[heinzel] retention_days` (default 90); receipts are kept.
 
-Module `heinzel`. Changes state, expert. Result: `PruneReport {dry_run: boolean, retention_days: integer, cutoff: string \| null, directory: string, files: list[string], drafts: integer, records: integer, bytes: integer, problems: list[string], next: list[Step]}`.
+Module `heinzel`. Changes state. Result: `PruneReport {dry_run: boolean, retention_days: integer, cutoff: string \| null, directory: string, files: list[string], drafts: integer, records: integer, bytes: integer, problems: list[string], next: list[Step]}`.
 
 ```json
 {
@@ -1388,81 +1849,28 @@ Module `heinzel`. Changes state, expert. Result: `PruneReport {dry_run: boolean,
       "type": "boolean"
     }
   },
-  "title": "heinzel_prune",
+  "title": "heinzel_pruneArguments",
   "type": "object"
 }
 ```
 
-## `heinzel_propose_skill_draft`
+## `workflow_prune`
 
-Store a private skill draft; no file is published, executed or shared.
+Deprecated: use `heinzel_prune`, which this runs; goes in the next minor release. Delete drafts and records older than `[heinzel] retention_days` (default 90); receipts are kept.
 
-Module `heinzel`. Changes state, private, everyday. Result: `SkillDraft {session_id: string, request_id: string, name: string, requested_scope: 'personal' \| 'team' \| 'org' \| 'site' \| 'company', scope_ref: string \| null, files: dict[string, string], status: 'draft', preview_sha256: string}`.
+Changes state.
 
 ```json
 {
   "properties": {
-    "session_id": {
-      "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
-      "title": "Session Id",
-      "type": "string"
-    },
-    "request_id": {
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-      "title": "Request Id",
-      "type": "string"
-    },
-    "name": {
-      "description": "Proposed skill name.",
-      "maxLength": 64,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "requested_scope": {
-      "description": "Requested scope; no grant is created.",
-      "enum": [
-        "personal",
-        "team",
-        "org",
-        "site",
-        "company"
-      ],
-      "title": "Requested Scope",
-      "type": "string"
-    },
-    "files": {
-      "additionalProperties": {
-        "type": "string"
-      },
-      "description": "Exact SKILL.md, supporting text and optional Python script drafts.",
-      "title": "Files",
-      "type": "object"
-    },
-    "scope_ref": {
-      "anyOf": [
-        {
-          "maxLength": 128,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Opaque target for a requested shared scope; not verified.",
-      "title": "Scope Ref"
+    "dry_run": {
+      "default": false,
+      "description": "Only list what would be deleted; delete nothing.",
+      "title": "Dry Run",
+      "type": "boolean"
     }
   },
-  "required": [
-    "session_id",
-    "request_id",
-    "name",
-    "requested_scope",
-    "files"
-  ],
-  "title": "heinzel_propose_skill_draft",
+  "title": "workflow_pruneArguments",
   "type": "object"
 }
 ```
@@ -1471,12 +1879,12 @@ Module `heinzel`. Changes state, private, everyday. Result: `SkillDraft {session
 
 Show your profile: who you are, your role, time zone and working hours, and what is still missing.
 
-Module `org`. Read-only, everyday. Result: `Profile {handle: string \| null, role: string \| null, retired_role: string \| null, timezone: string \| null, working_hours: string, working_hours_set: boolean, github: string \| null, coding_agent: 'claude-code' \| 'command' \| 'none' \| null, name: string \| null, email: string \| null, complete: boolean, missing: list[string], fix: string}`.
+Module `org`. Read-only. Result: `Profile {handle: string \| null, role: string \| null, retired_role: string \| null, timezone: string \| null, working_hours: string, working_hours_set: boolean, github: string \| null, coding_agent: 'claude-code' \| 'command' \| 'none' \| null, name: string \| null, email: string \| null, complete: boolean, missing: list[string], fix: string}`.
 
 ```json
 {
   "properties": {},
-  "title": "org_show",
+  "title": "org_showArguments",
   "type": "object"
 }
 ```
@@ -1485,12 +1893,12 @@ Module `org`. Read-only, everyday. Result: `Profile {handle: string \| null, rol
 
 Show the meeting you are in now and your next one, from your calendar, or how to connect one.
 
-Module `org`. Read-only, expert. Result: `Agenda {now: string, timezone: string \| null, current: Event \| null, next: Event \| null, calendar: string \| null, problem: string \| null, fix: string \| null}`.
+Module `org`. Read-only. Result: `Agenda {now: string, timezone: string \| null, current: Event \| null, next: Event \| null, calendar: string \| null, problem: string \| null, fix: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "org_agenda",
+  "title": "org_agendaArguments",
   "type": "object"
 }
 ```
@@ -1499,7 +1907,7 @@ Module `org`. Read-only, expert. Result: `Agenda {now: string, timezone: string 
 
 Show a week from your connected calendar.
 
-Module `org`. Read-only, expert. Result: `CalendarWeek {timezone: string \| null, since: string, until: string, events: list[Event], problem: string \| null, fix: string \| null}`.
+Module `org`. Read-only. Result: `CalendarWeek {timezone: string \| null, since: string, until: string, events: list[Event], problem: string \| null, fix: string \| null}`.
 
 ```json
 {
@@ -1513,7 +1921,7 @@ Module `org`. Read-only, expert. Result: `CalendarWeek {timezone: string \| null
       "type": "integer"
     }
   },
-  "title": "org_calendar",
+  "title": "org_calendarArguments",
   "type": "object"
 }
 ```
@@ -1522,7 +1930,7 @@ Module `org`. Read-only, expert. Result: `CalendarWeek {timezone: string \| null
 
 Show what your team recommends beside what you have; apply only what you accept, to your user file.
 
-Module `org`. Changes state, everyday. Result: `SyncReport {team: boolean, items: list[SyncItem], next: list[string]}`.
+Module `org`. Changes state. Result: `SyncReport {team: boolean, items: list[SyncItem], next: list[string]}`.
 
 ```json
 {
@@ -1541,7 +1949,7 @@ Module `org`. Changes state, everyday. Result: `SyncReport {team: boolean, items
       "title": "Accept"
     }
   },
-  "title": "org_sync",
+  "title": "org_syncArguments",
   "type": "object"
 }
 ```
@@ -1550,7 +1958,7 @@ Module `org`. Changes state, everyday. Result: `SyncReport {team: boolean, items
 
 Log that a Heinzelmännchen read an artifact, which version, and by when its contract needs it.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -1643,7 +2051,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
     "heinzel",
     "target"
   ],
-  "title": "report_read",
+  "title": "report_readArguments",
   "type": "object"
 }
 ```
@@ -1652,7 +2060,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Log that a Heinzelmännchen put a draft where it will be approved, and from which contract version.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -1731,7 +2139,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
     "heinzel",
     "target"
   ],
-  "title": "report_drafted",
+  "title": "report_draftedArguments",
   "type": "object"
 }
 ```
@@ -1740,7 +2148,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Log that a Heinzelmännchen's draft was approved, by whom; the entry's time is when.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -1812,7 +2220,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
     "target",
     "by"
   ],
-  "title": "report_approved",
+  "title": "report_approvedArguments",
   "type": "object"
 }
 ```
@@ -1821,7 +2229,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Log where a Heinzelmännchen published: a document, an email address, a chat channel.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -1900,7 +2308,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
     "heinzel",
     "target"
   ],
-  "title": "report_published",
+  "title": "report_publishedArguments",
   "type": "object"
 }
 ```
@@ -1909,7 +2317,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Log that a Heinzelmännchen used a stale version of an input to keep its deadline.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -1981,7 +2389,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
     "target",
     "input"
   ],
-  "title": "report_fell_back",
+  "title": "report_fell_backArguments",
   "type": "object"
 }
 ```
@@ -1990,7 +2398,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Log that a Heinzelmännchen is alive; one a day is enough for the team to see it isn't offline.
 
-Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
+Module `report`. Changes state. Result: `Reported {entry: TelemetryEntry, log: string, entries: integer, next: list[string]}`.
 
 ```json
 {
@@ -2031,7 +2439,7 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
   "required": [
     "heinzel"
   ],
-  "title": "report_heartbeat",
+  "title": "report_heartbeatArguments",
   "type": "object"
 }
 ```
@@ -2040,12 +2448,12 @@ Module `report`. Changes state, everyday. Result: `Reported {entry: TelemetryEnt
 
 Copy your Heinzelmännchen's logs into your team repository's checkout, for you to commit and push.
 
-Module `report`. Changes state, expert. Result: `Synced {checkout: string, logs: list[SyncedLog], problems: list[string], next: list[string]}`.
+Module `report`. Changes state. Result: `Synced {checkout: string, logs: list[SyncedLog], problems: list[string], next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "report_sync",
+  "title": "report_syncArguments",
   "type": "object"
 }
 ```
@@ -2054,12 +2462,12 @@ Module `report`. Changes state, expert. Result: `Synced {checkout: string, logs:
 
 Show versions, interpreter, settings, modules and what modules report.
 
-Module `system`. Read-only, expert. Result: `SystemInfo {version: string, repository: string \| null, python_version: string, python_executable: string, platform: string, installed: string \| null, installation: 'uv tool' \| 'environment', settings: object, modules: list[ModuleInfo], plugins: list[InstalledPlugin], plugin_errors: dict[string, string], sections: object, latest_release: string \| null}`.
+Module `system`. Read-only. Result: `SystemInfo {version: string, repository: string \| null, python_version: string, python_executable: string, platform: string, installed: string \| null, installation: 'uv tool' \| 'environment', settings: object, modules: list[ModuleInfo], plugins: list[InstalledPlugin], plugin_errors: dict[string, string], sections: object, latest_release: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_info",
+  "title": "system_infoArguments",
   "type": "object"
 }
 ```
@@ -2068,12 +2476,12 @@ Module `system`. Read-only, expert. Result: `SystemInfo {version: string, reposi
 
 List every module and the lets it advertises.
 
-Module `system`. Read-only, expert. Result: `list[ModuleInfo] {qualname: string, summary: string, distribution: string, version: string, builtin: boolean, repository: string \| null, lets: dict[string, list[string]]}`.
+Module `system`. Read-only. Result: `list[ModuleInfo] {qualname: string, summary: string, distribution: string, version: string, builtin: boolean, repository: string \| null, lets: dict[string, list[string]]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_modules",
+  "title": "system_modulesArguments",
   "type": "object"
 }
 ```
@@ -2082,7 +2490,7 @@ Module `system`. Read-only, expert. Result: `list[ModuleInfo] {qualname: string,
 
 List every operation and tool with its heads, parameters and result, in four formats.
 
-Module `system`. Read-only, expert. Result: `ToolReference {format: 'text' \| 'markdown' \| 'yaml' \| 'json', count: integer, text: string}`.
+Module `system`. Read-only. Result: `ToolReference {format: 'text' \| 'markdown' \| 'yaml' \| 'json', count: integer, text: string}`.
 
 ```json
 {
@@ -2106,7 +2514,8 @@ Module `system`. Read-only, expert. Result: `ToolReference {format: 'text' \| 'm
         "all",
         "cli",
         "mcp",
-        "rest"
+        "rest",
+        "web"
       ],
       "title": "Head",
       "type": "string"
@@ -2128,7 +2537,7 @@ Module `system`. Read-only, expert. Result: `ToolReference {format: 'text' \| 'm
       "title": "Module"
     }
   },
-  "title": "system_tools",
+  "title": "system_toolsArguments",
   "type": "object"
 }
 ```
@@ -2137,12 +2546,12 @@ Module `system`. Read-only, expert. Result: `ToolReference {format: 'text' \| 'm
 
 Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
 
-Module `system`. Read-only, expert. Result: `ReleaseCheck {current: string, latest: string \| null, update_available: boolean, url: string \| null, source: string, warnings: list[string]}`.
+Module `system`. Read-only. Result: `ReleaseCheck {current: string, latest: string \| null, update_available: boolean, url: string \| null, source: string, warnings: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_release",
+  "title": "system_releaseArguments",
   "type": "object"
 }
 ```
@@ -2151,7 +2560,7 @@ Module `system`. Read-only, expert. Result: `ReleaseCheck {current: string, late
 
 Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
 
-Module `system`. Changes state, everyday. Result: `UpdateResult {before: string, after: string, latest: string \| null, pinned_to: string \| null, updated: boolean, message: string, next: list[string], plugins: list[PluginUpdate], automatic: AutomaticUpdates \| null, heads: list[HeadRefresh], plan: UpdatePlan \| null, previewed: boolean}`.
+Module `system`. Changes state. Result: `UpdateResult {before: string, after: string, latest: string \| null, pinned_to: string \| null, updated: boolean, message: string, next: list[string], plugins: list[PluginUpdate], automatic: AutomaticUpdates \| null, heads: list[HeadRefresh], plan: UpdatePlan \| null, previewed: boolean}`.
 
 ```json
 {
@@ -2233,7 +2642,7 @@ Module `system`. Changes state, everyday. Result: `UpdateResult {before: string,
       "title": "Desktop"
     }
   },
-  "title": "system_update",
+  "title": "system_updateArguments",
   "type": "object"
 }
 ```
@@ -2242,7 +2651,7 @@ Module `system`. Changes state, everyday. Result: `UpdateResult {before: string,
 
 Show the update channel, or say what switching changes and, with `--yes`, switch.
 
-Module `system`. Changes state, everyday. Result: `ChannelReport {channel: string, changed: boolean, statement: string}`.
+Module `system`. Changes state. Result: `ChannelReport {channel: string, changed: boolean, statement: string}`.
 
 ```json
 {
@@ -2272,7 +2681,7 @@ Module `system`. Changes state, everyday. Result: `ChannelReport {channel: strin
       "type": "boolean"
     }
   },
-  "title": "system_channel",
+  "title": "system_channelArguments",
   "type": "object"
 }
 ```
@@ -2281,12 +2690,12 @@ Module `system`. Changes state, everyday. Result: `ChannelReport {channel: strin
 
 List the Agent Skills that ship with Heinzelmännchen.
 
-Module `system.agent`. Read-only, expert. Result: `list[Skill] {name: string, description: string, path: string}`.
+Module `system.agent`. Read-only. Result: `list[Skill] {name: string, description: string, path: string}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_agent_skills",
+  "title": "system_agent_skillsArguments",
   "type": "object"
 }
 ```
@@ -2295,12 +2704,12 @@ Module `system.agent`. Read-only, expert. Result: `list[Skill] {name: string, de
 
 Copy Heinzelmännchen's skills into each configured agent skill directory.
 
-Module `system.agent`. Changes state, expert. Result: `list[InstalledSkill] {name: string, target: string}`.
+Module `system.agent`. Changes state. Result: `list[InstalledSkill] {name: string, target: string}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_agent_install",
+  "title": "system_agent_installArguments",
   "type": "object"
 }
 ```
@@ -2309,12 +2718,12 @@ Module `system.agent`. Changes state, expert. Result: `list[InstalledSkill] {nam
 
 Remove Heinzelmännchen's skills from each configured agent skill directory.
 
-Module `system.agent`. Changes state, expert. Result: `list[InstalledSkill] {name: string, target: string}`.
+Module `system.agent`. Changes state. Result: `list[InstalledSkill] {name: string, target: string}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_agent_uninstall",
+  "title": "system_agent_uninstallArguments",
   "type": "object"
 }
 ```
@@ -2323,12 +2732,12 @@ Module `system.agent`. Changes state, expert. Result: `list[InstalledSkill] {nam
 
 List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.
 
-Module `system.capability`. Read-only, expert. Result: `CapabilityReport {capabilities: list[CapabilityInfo], adapters: list[AdapterInfo], uses: list[CapabilityUse]}`.
+Module `system.capability`. Read-only. Result: `CapabilityReport {capabilities: list[CapabilityInfo], adapters: list[AdapterInfo], uses: list[CapabilityUse]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_capability_list",
+  "title": "system_capability_listArguments",
   "type": "object"
 }
 ```
@@ -2337,7 +2746,7 @@ Module `system.capability`. Read-only, expert. Result: `CapabilityReport {capabi
 
 Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
 
-Module `system.changelog`. Read-only, expert. Result: `string \| list[ReleaseNotes]`.
+Module `system.changelog`. Read-only. Result: `string \| list[ReleaseNotes]`.
 
 ```json
 {
@@ -2349,7 +2758,7 @@ Module `system.changelog`. Read-only, expert. Result: `string \| list[ReleaseNot
       "type": "boolean"
     }
   },
-  "title": "system_changelog",
+  "title": "system_changelogArguments",
   "type": "object"
 }
 ```
@@ -2358,12 +2767,12 @@ Module `system.changelog`. Read-only, expert. Result: `string \| list[ReleaseNot
 
 Count the MCP servers and skills found in Claude's configuration per source, without their names.
 
-Module `system.claude`. Read-only, expert. Result: `ClaudeSummary {servers: dict[string, integer], skills: dict[string, integer], connectors: integer, skipped: integer, enabled: integer}`.
+Module `system.claude`. Read-only. Result: `ClaudeSummary {servers: dict[string, integer], skills: dict[string, integer], connectors: integer, skipped: integer, enabled: integer}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_claude_summary",
+  "title": "system_claude_summaryArguments",
   "type": "object"
 }
 ```
@@ -2372,12 +2781,12 @@ Module `system.claude`. Read-only, expert. Result: `ClaudeSummary {servers: dict
 
 Show the configuration files Heinzelmännchen reads and every setting in effect.
 
-Module `system.config`. Read-only, expert. Result: `ConfigReport {files: list[ConfigFileInfo], settings: list[SettingInfo], can_reveal: boolean, file_manager: string}`.
+Module `system.config`. Read-only. Result: `ConfigReport {files: list[ConfigFileInfo], settings: list[SettingInfo], can_reveal: boolean, file_manager: string}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_config_show",
+  "title": "system_config_showArguments",
   "type": "object"
 }
 ```
@@ -2386,7 +2795,7 @@ Module `system.config`. Read-only, expert. Result: `ConfigReport {files: list[Co
 
 Write a configuration file with every setting commented out, ready to edit.
 
-Module `system.config`. Changes state, expert. Result: `string`.
+Module `system.config`. Changes state. Result: `string`.
 
 ```json
 {
@@ -2412,7 +2821,7 @@ Module `system.config`. Changes state, expert. Result: `string`.
       "type": "boolean"
     }
   },
-  "title": "system_config_init",
+  "title": "system_config_initArguments",
   "type": "object"
 }
 ```
@@ -2421,7 +2830,7 @@ Module `system.config`. Changes state, expert. Result: `string`.
 
 Show one setting in effect, with its environment variable.
 
-Module `system.config`. Read-only, expert. Result: `SettingInfo {section: string, key: string, value: any, env: string, description: string, section_title: string \| null, default: any, source: string, json_schema: object \| null}`.
+Module `system.config`. Read-only. Result: `SettingInfo {section: string, key: string, value: any, env: string, description: string, section_title: string \| null, default: any, source: string, json_schema: object \| null}`.
 
 ```json
 {
@@ -2435,7 +2844,7 @@ Module `system.config`. Read-only, expert. Result: `SettingInfo {section: string
   "required": [
     "key"
   ],
-  "title": "system_config_get",
+  "title": "system_config_getArguments",
   "type": "object"
 }
 ```
@@ -2444,7 +2853,7 @@ Module `system.config`. Read-only, expert. Result: `SettingInfo {section: string
 
 Change a setting in the user or project configuration file, after validating it.
 
-Module `system.config`. Changes state, expert. Result: `string`.
+Module `system.config`. Changes state. Result: `string`.
 
 ```json
 {
@@ -2474,7 +2883,7 @@ Module `system.config`. Changes state, expert. Result: `string`.
     "key",
     "value"
   ],
-  "title": "system_config_set",
+  "title": "system_config_setArguments",
   "type": "object"
 }
 ```
@@ -2483,7 +2892,7 @@ Module `system.config`. Changes state, expert. Result: `string`.
 
 Remove a setting from the user or project configuration file, so its default applies again.
 
-Module `system.config`. Changes state, expert. Result: `string`.
+Module `system.config`. Changes state. Result: `string`.
 
 ```json
 {
@@ -2507,7 +2916,7 @@ Module `system.config`. Changes state, expert. Result: `string`.
   "required": [
     "key"
   ],
-  "title": "system_config_unset",
+  "title": "system_config_unsetArguments",
   "type": "object"
 }
 ```
@@ -2516,12 +2925,12 @@ Module `system.config`. Changes state, expert. Result: `string`.
 
 List connectors with their sign-in, what they serve and their tools; offline.
 
-Module `system.connector`. Read-only, expert. Result: `ConnectorReport {connectors: list[Connector], capabilities: list[CapabilityChoice]}`.
+Module `system.connector`. Read-only. Result: `ConnectorReport {connectors: list[Connector], capabilities: list[CapabilityChoice]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_connector_list",
+  "title": "system_connector_listArguments",
   "type": "object"
 }
 ```
@@ -2530,7 +2939,7 @@ Module `system.connector`. Read-only, expert. Result: `ConnectorReport {connecto
 
 Test a connector live: one cheap read-only call through its tool, with a short timeout.
 
-Module `system.connector`. Read-only, expert. Result: `ConnectorTest {name: string, passed: boolean, latency_ms: integer, login: Login \| null, checks: list[Check]}`.
+Module `system.connector`. Read-only. Result: `ConnectorTest {name: string, passed: boolean, latency_ms: integer, login: Login \| null, checks: list[Check]}`.
 
 ```json
 {
@@ -2544,7 +2953,7 @@ Module `system.connector`. Read-only, expert. Result: `ConnectorTest {name: stri
   "required": [
     "name"
   ],
-  "title": "system_connector_test",
+  "title": "system_connector_testArguments",
   "type": "object"
 }
 ```
@@ -2553,12 +2962,12 @@ Module `system.connector`. Read-only, expert. Result: `ConnectorTest {name: stri
 
 List the credentials modules declare and whether each is stored, never their values.
 
-Module `system.credential`. Read-only, expert. Result: `list[CredentialInfo] {name: string, service: string, purpose: string, module: string, backend: string, present: boolean}`.
+Module `system.credential`. Read-only. Result: `list[CredentialInfo] {name: string, service: string, purpose: string, module: string, backend: string, present: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_credential_list",
+  "title": "system_credential_listArguments",
   "type": "object"
 }
 ```
@@ -2567,12 +2976,12 @@ Module `system.credential`. Read-only, expert. Result: `list[CredentialInfo] {na
 
 Restart the daemon so it runs with the installed hz.
 
-Module `system.daemon`. Changes state, expert. Result: `Restarted {restarted: boolean, version: string, interval_minutes: integer \| null}`.
+Module `system.daemon`. Changes state. Result: `Restarted {restarted: boolean, version: string, interval_minutes: integer \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_daemon_restart",
+  "title": "system_daemon_restartArguments",
   "type": "object"
 }
 ```
@@ -2581,12 +2990,12 @@ Module `system.daemon`. Changes state, expert. Result: `Restarted {restarted: bo
 
 Check-ins need a resumed daemon with 5m ticks and a matching service version.
 
-Module `system.daemon`. Read-only, expert. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
+Module `system.daemon`. Read-only. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_daemon_status",
+  "title": "system_daemon_statusArguments",
   "type": "object"
 }
 ```
@@ -2595,7 +3004,7 @@ Module `system.daemon`. Read-only, expert. Result: `DaemonStatus {platform: stri
 
 Show the latest lines of the daemon's log.
 
-Module `system.daemon`. Read-only, expert. Result: `list[LogLine] {at: string, level: string, message: string, tick: string \| null, job: string \| null, receipt: string \| null}`.
+Module `system.daemon`. Read-only. Result: `list[LogLine] {at: string, level: string, message: string, tick: string \| null, job: string \| null, receipt: string \| null}`.
 
 ```json
 {
@@ -2609,7 +3018,7 @@ Module `system.daemon`. Read-only, expert. Result: `list[LogLine] {at: string, l
       "type": "integer"
     }
   },
-  "title": "system_daemon_logs",
+  "title": "system_daemon_logsArguments",
   "type": "object"
 }
 ```
@@ -2618,7 +3027,7 @@ Module `system.daemon`. Read-only, expert. Result: `list[LogLine] {at: string, l
 
 Run the jobs that are due and write a receipt for each; exits with 1 if any job failed.
 
-Module `system.daemon`. Changes state, expert. Result: `TickReport {at: string, dry_run: boolean, paused: boolean, locked: boolean, runs: list[JobRun]}`.
+Module `system.daemon`. Changes state. Result: `TickReport {at: string, dry_run: boolean, paused: boolean, locked: boolean, runs: list[JobRun]}`.
 
 ```json
 {
@@ -2643,7 +3052,7 @@ Module `system.daemon`. Changes state, expert. Result: `TickReport {at: string, 
       "title": "Job"
     }
   },
-  "title": "system_daemon_tick",
+  "title": "system_daemon_tickArguments",
   "type": "object"
 }
 ```
@@ -2652,12 +3061,12 @@ Module `system.daemon`. Changes state, expert. Result: `TickReport {at: string, 
 
 Pause the daemon: ticks run no job until resumed.
 
-Module `system.daemon`. Changes state, expert. Result: `Toggled {paused: boolean}`.
+Module `system.daemon`. Changes state. Result: `Toggled {paused: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_daemon_pause",
+  "title": "system_daemon_pauseArguments",
   "type": "object"
 }
 ```
@@ -2666,12 +3075,12 @@ Module `system.daemon`. Changes state, expert. Result: `Toggled {paused: boolean
 
 Resume a paused daemon.
 
-Module `system.daemon`. Changes state, expert. Result: `Toggled {paused: boolean}`.
+Module `system.daemon`. Changes state. Result: `Toggled {paused: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_daemon_resume",
+  "title": "system_daemon_resumeArguments",
   "type": "object"
 }
 ```
@@ -2680,12 +3089,12 @@ Module `system.daemon`. Changes state, expert. Result: `Toggled {paused: boolean
 
 List every job with its schedule, next slot and last run.
 
-Module `system.daemon`. Read-only, expert. Result: `list[JobInfo] {job: string, summary: string, schedule: string, scope: string, timeout_seconds: number, retries: integer, catch_up: CatchUp, next_run: string \| null, last_disposition: Disposition \| null, last_as_of: string \| null, problem: string \| null}`.
+Module `system.daemon`. Read-only. Result: `list[JobInfo] {job: string, summary: string, schedule: string, scope: string, timeout_seconds: number, retries: integer, catch_up: CatchUp, next_run: string \| null, last_disposition: Disposition \| null, last_as_of: string \| null, problem: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_daemon_jobs",
+  "title": "system_daemon_jobsArguments",
   "type": "object"
 }
 ```
@@ -2694,12 +3103,12 @@ Module `system.daemon`. Read-only, expert. Result: `list[JobInfo] {job: string, 
 
 Run every module's health checks; exits with 1 if anything is down.
 
-Module `system.doctor`. Read-only, everyday. Result: `HealthReport {status: Status, checks: dict[string, list[Check]]}`.
+Module `system.doctor`. Read-only. Result: `HealthReport {status: Status, checks: dict[string, list[Check]]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_doctor",
+  "title": "system_doctorArguments",
   "type": "object"
 }
 ```
@@ -2708,12 +3117,12 @@ Module `system.doctor`. Read-only, everyday. Result: `HealthReport {status: Stat
 
 Show whether expert mode is on: `on` lists every command, `off` just the everyday ones.
 
-Module `system.expert`. Read-only, everyday. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
+Module `system.expert`. Read-only. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_expert",
+  "title": "system_expertArguments",
   "type": "object"
 }
 ```
@@ -2722,12 +3131,12 @@ Module `system.expert`. Read-only, everyday. Result: `ExpertMode {expert: boolea
 
 Turn expert mode on: help, completion and the web app list every command.
 
-Module `system.expert`. Changes state, everyday. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
+Module `system.expert`. Changes state. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_expert_on",
+  "title": "system_expert_onArguments",
   "type": "object"
 }
 ```
@@ -2736,12 +3145,12 @@ Module `system.expert`. Changes state, everyday. Result: `ExpertMode {expert: bo
 
 Turn expert mode off: help, completion and the web app list the everyday commands.
 
-Module `system.expert`. Changes state, everyday. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
+Module `system.expert`. Changes state. Result: `ExpertMode {expert: boolean, operations: list[OperationAudience], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_expert_off",
+  "title": "system_expert_offArguments",
   "type": "object"
 }
 ```
@@ -2750,12 +3159,12 @@ Module `system.expert`. Changes state, everyday. Result: `ExpertMode {expert: bo
 
 List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
 
-Module `system.layer`. Read-only, expert. Result: `LayerList {layers: list[LayerView], problems: list[LayerProblemView], next: list[string]}`.
+Module `system.layer`. Read-only. Result: `LayerList {layers: list[LayerView], problems: list[LayerProblemView], next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_layer_list",
+  "title": "system_layer_listArguments",
   "type": "object"
 }
 ```
@@ -2764,7 +3173,7 @@ Module `system.layer`. Read-only, expert. Result: `LayerList {layers: list[Layer
 
 Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
 
-Module `system.layer`. Read-only, expert. Result: `StackView {layer: string \| null, source: string, stack: string, layers: list[LayerView], roles: list[string], recommendations: list[RecommendationView], conflicts: list[ConflictView], problems: list[LayerProblemView], next: list[string]}`.
+Module `system.layer`. Read-only. Result: `StackView {layer: string \| null, source: string, stack: string, layers: list[LayerView], roles: list[string], recommendations: list[RecommendationView], conflicts: list[ConflictView], problems: list[LayerProblemView], next: list[string]}`.
 
 ```json
 {
@@ -2783,7 +3192,7 @@ Module `system.layer`. Read-only, expert. Result: `StackView {layer: string \| n
       "title": "Layer"
     }
   },
-  "title": "system_layer_show",
+  "title": "system_layer_showArguments",
   "type": "object"
 }
 ```
@@ -2792,7 +3201,7 @@ Module `system.layer`. Read-only, expert. Result: `StackView {layer: string \| n
 
 Show the latest notices, whether each popped up and who showed it, and how they reach you.
 
-Module `system.notify`. Read-only, expert. Result: `NoticeList {notices: list[Notice], waiting: integer, native: string}`.
+Module `system.notify`. Read-only. Result: `NoticeList {notices: list[Notice], waiting: integer, native: string}`.
 
 ```json
 {
@@ -2826,7 +3235,7 @@ Module `system.notify`. Read-only, expert. Result: `NoticeList {notices: list[No
       "type": "boolean"
     }
   },
-  "title": "system_notify_list",
+  "title": "system_notify_listArguments",
   "type": "object"
 }
 ```
@@ -2835,7 +3244,7 @@ Module `system.notify`. Read-only, expert. Result: `NoticeList {notices: list[No
 
 Mark notices as shown, so the daemon doesn't pop them up again.
 
-Module `system.notify`. Changes state, expert. Result: `Delivered {delivered: list[string]}`.
+Module `system.notify`. Changes state. Result: `Delivered {delivered: list[string]}`.
 
 ```json
 {
@@ -2851,7 +3260,7 @@ Module `system.notify`. Changes state, expert. Result: `Delivered {delivered: li
   "required": [
     "ids"
   ],
-  "title": "system_notify_ack",
+  "title": "system_notify_ackArguments",
   "type": "object"
 }
 ```
@@ -2860,7 +3269,7 @@ Module `system.notify`. Changes state, expert. Result: `Delivered {delivered: li
 
 List installed plugins, enabled or not, with their source and the modules and adapters they bring.
 
-Module `system.plugin`. Read-only, expert. Result: `list[PluginInfo] {distribution: string, version: string, modules: list[string], name: string, summary: string, source_kind: 'pypi' \| 'git' \| 'path' \| null, source_url: string \| null, revision: string \| null, homepage: string \| null, first_party: boolean, private_repository: boolean \| null, enabled: boolean, error: string \| null, layers: list[PluginLayer], capabilities: list[string], playbooks: list[string], themes: list[string], kinds: list['connector' \| 'theme' \| 'capability' \| 'playbook']}`.
+Module `system.plugin`. Read-only. Result: `list[PluginInfo] {distribution: string, version: string, modules: list[string], name: string, summary: string, source_kind: 'pypi' \| 'git' \| 'path' \| null, source_url: string \| null, revision: string \| null, homepage: string \| null, first_party: boolean, private_repository: boolean \| null, enabled: boolean, error: string \| null, layers: list[PluginLayer], capabilities: list[string], playbooks: list[string], themes: list[string], kinds: list['connector' \| 'theme' \| 'capability' \| 'playbook']}`.
 
 ```json
 {
@@ -2872,7 +3281,7 @@ Module `system.plugin`. Read-only, expert. Result: `list[PluginInfo] {distributi
       "type": "boolean"
     }
   },
-  "title": "system_plugin_list",
+  "title": "system_plugin_listArguments",
   "type": "object"
 }
 ```
@@ -2881,7 +3290,7 @@ Module `system.plugin`. Read-only, expert. Result: `list[PluginInfo] {distributi
 
 Preview an owning public plugin's UI and CLI screenshots without installing it.
 
-Module `system.plugin`. Read-only, expert. Result: `PluginShowcase {title: string, revision: string \| null, screenshots: list[PluginScreenshot], soundscapes: list[PluginSoundscape], notice: string}`.
+Module `system.plugin`. Read-only. Result: `PluginShowcase {title: string, revision: string \| null, screenshots: list[PluginScreenshot], soundscapes: list[PluginSoundscape], notice: string}`.
 
 ```json
 {
@@ -2895,7 +3304,7 @@ Module `system.plugin`. Read-only, expert. Result: `PluginShowcase {title: strin
   "required": [
     "spec"
   ],
-  "title": "system_plugin_showcase",
+  "title": "system_plugin_showcaseArguments",
   "type": "object"
 }
 ```
@@ -2904,7 +3313,7 @@ Module `system.plugin`. Read-only, expert. Result: `PluginShowcase {title: strin
 
 Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
 
-Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
+Module `system.plugin`. Changes state. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
 
 ```json
 {
@@ -2949,7 +3358,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
   "required": [
     "spec"
   ],
-  "title": "system_plugin_add",
+  "title": "system_plugin_addArguments",
   "type": "object"
 }
 ```
@@ -2958,7 +3367,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
 
 Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it.
 
-Module `system.plugin`. Changes state, expert. Result: `ExtraChange {extra: 'openai' \| 'anthropic', done: boolean, restart_required: boolean}`.
+Module `system.plugin`. Changes state. Result: `ExtraChange {extra: 'openai' \| 'anthropic', done: boolean, restart_required: boolean}`.
 
 ```json
 {
@@ -2976,7 +3385,7 @@ Module `system.plugin`. Changes state, expert. Result: `ExtraChange {extra: 'ope
   "required": [
     "extra"
   ],
-  "title": "system_plugin_add_extra",
+  "title": "system_plugin_add_extraArguments",
   "type": "object"
 }
 ```
@@ -2985,7 +3394,7 @@ Module `system.plugin`. Changes state, expert. Result: `ExtraChange {extra: 'ope
 
 Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
 
-Module `system.plugin`. Changes state, expert. Result: `PluginRepair {needs: list[PluginNeed], restart_required: boolean, bindings: list[PluginBinding], message: string}`.
+Module `system.plugin`. Changes state. Result: `PluginRepair {needs: list[PluginNeed], restart_required: boolean, bindings: list[PluginBinding], message: string}`.
 
 ```json
 {
@@ -2997,7 +3406,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginRepair {needs: lis
       "type": "boolean"
     }
   },
-  "title": "system_plugin_repair",
+  "title": "system_plugin_repairArguments",
   "type": "object"
 }
 ```
@@ -3006,12 +3415,12 @@ Module `system.plugin`. Changes state, expert. Result: `PluginRepair {needs: lis
 
 List plugins changed on this machine since this server started: what a restart would load.
 
-Module `system.plugin`. Read-only, expert. Result: `PluginPending {changes: list[PluginPendingChange], restart_required: boolean}`.
+Module `system.plugin`. Read-only. Result: `PluginPending {changes: list[PluginPendingChange], restart_required: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_plugin_pending",
+  "title": "system_plugin_pendingArguments",
   "type": "object"
 }
 ```
@@ -3020,7 +3429,7 @@ Module `system.plugin`. Read-only, expert. Result: `PluginPending {changes: list
 
 Read the status and result of a plugin add without repeating it.
 
-Module `system.plugin`. Read-only, expert. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null}`.
+Module `system.plugin`. Read-only. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null}`.
 
 ```json
 {
@@ -3034,7 +3443,7 @@ Module `system.plugin`. Read-only, expert. Result: `PluginOperation {operation_i
   "required": [
     "operation_id"
   ],
-  "title": "system_plugin_operation",
+  "title": "system_plugin_operationArguments",
   "type": "object"
 }
 ```
@@ -3043,7 +3452,7 @@ Module `system.plugin`. Read-only, expert. Result: `PluginOperation {operation_i
 
 Remove a plugin.
 
-Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
+Module `system.plugin`. Changes state. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
 
 ```json
 {
@@ -3057,7 +3466,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
   "required": [
     "distribution"
   ],
-  "title": "system_plugin_remove",
+  "title": "system_plugin_removeArguments",
   "type": "object"
 }
 ```
@@ -3066,7 +3475,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
 
 Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file.
 
-Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
+Module `system.plugin`. Changes state. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
 
 ```json
 {
@@ -3080,7 +3489,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
   "required": [
     "distribution"
   ],
-  "title": "system_plugin_disable",
+  "title": "system_plugin_disableArguments",
   "type": "object"
 }
 ```
@@ -3089,7 +3498,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
 
 Switch a disabled plugin on again.
 
-Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
+Module `system.plugin`. Changes state. Result: `PluginChange {action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable', done: boolean, distribution: string \| null, candidate: PluginCandidate \| null, plugins: list[PluginInfo], restart_required: boolean, next: list[string], previewed: boolean, operation_id: string \| null, needs: list[PluginNeed], bindings: list[PluginBinding]}`.
 
 ```json
 {
@@ -3103,7 +3512,7 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
   "required": [
     "distribution"
   ],
-  "title": "system_plugin_enable",
+  "title": "system_plugin_enableArguments",
   "type": "object"
 }
 ```
@@ -3112,12 +3521,12 @@ Module `system.plugin`. Changes state, expert. Result: `PluginChange {action: 'a
 
 List plugin changes made on this machine, oldest first: what was installed, from where, by whom.
 
-Module `system.plugin`. Read-only, expert. Result: `list[PluginEvent] {at: string, action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable' \| 'unpin', distribution: string \| null, requirement: string \| null, source: 'pypi' \| 'git' \| 'path' \| 'unknown' \| null, version: string \| null, publisher: string \| null, private_repository: boolean \| null}`.
+Module `system.plugin`. Read-only. Result: `list[PluginEvent] {at: string, action: 'add' \| 'develop' \| 'remove' \| 'enable' \| 'disable' \| 'unpin', distribution: string \| null, requirement: string \| null, source: 'pypi' \| 'git' \| 'path' \| 'unknown' \| null, version: string \| null, publisher: string \| null, private_repository: boolean \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_plugin_history",
+  "title": "system_plugin_historyArguments",
   "type": "object"
 }
 ```
@@ -3126,7 +3535,7 @@ Module `system.plugin`. Read-only, expert. Result: `list[PluginEvent] {at: strin
 
 Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
-Module `system.plugin`. Read-only, private, expert. Result: `PluginSearch {plugins: list[AvailablePlugin], warnings: list[string]}`.
+Module `system.plugin`. Read-only. Result: `PluginSearch {plugins: list[AvailablePlugin], warnings: list[string]}`.
 
 ```json
 {
@@ -3144,7 +3553,7 @@ Module `system.plugin`. Read-only, private, expert. Result: `PluginSearch {plugi
       "type": "boolean"
     }
   },
-  "title": "system_plugin_search",
+  "title": "system_plugin_searchArguments",
   "type": "object"
 }
 ```
@@ -3153,7 +3562,7 @@ Module `system.plugin`. Read-only, private, expert. Result: `PluginSearch {plugi
 
 List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.
 
-Module `system.plugin`. Read-only, expert. Result: `Checklist {module: string \| null, rows: list[ChecklistRow], done: boolean}`.
+Module `system.plugin`. Read-only. Result: `Checklist {module: string \| null, rows: list[ChecklistRow], done: boolean}`.
 
 ```json
 {
@@ -3172,7 +3581,7 @@ Module `system.plugin`. Read-only, expert. Result: `Checklist {module: string \|
       "title": "Module"
     }
   },
-  "title": "system_plugin_checklist",
+  "title": "system_plugin_checklistArguments",
   "type": "object"
 }
 ```
@@ -3181,7 +3590,7 @@ Module `system.plugin`. Read-only, expert. Result: `Checklist {module: string \|
 
 Write the connector bindings installed playbooks recommend; a binding you set is always kept.
 
-Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: list[BindingResult], message: string}`.
+Module `system.plugin`. Changes state. Result: `SetupBind {bindings: list[BindingResult], message: string}`.
 
 ```json
 {
@@ -3253,7 +3662,7 @@ Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: lis
       "type": "boolean"
     }
   },
-  "title": "system_plugin_bind",
+  "title": "system_plugin_bindArguments",
   "type": "object"
 }
 ```
@@ -3262,7 +3671,7 @@ Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: lis
 
 Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.
 
-Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: list[BindingResult], message: string}`.
+Module `system.plugin`. Changes state. Result: `SetupBind {bindings: list[BindingResult], message: string}`.
 
 ```json
 {
@@ -3276,7 +3685,7 @@ Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: lis
   "required": [
     "by"
   ],
-  "title": "system_plugin_unbind",
+  "title": "system_plugin_unbindArguments",
   "type": "object"
 }
 ```
@@ -3285,7 +3694,7 @@ Module `system.plugin`. Changes state, expert. Result: `SetupBind {bindings: lis
 
 Show what each installed plugin brings; `--json` is the full model its page is built from.
 
-Module `system.plugin.docs`. Read-only, private, expert. Result: `Documentation {pages: list[PluginPage], warnings: list[string]}`.
+Module `system.plugin.docs`. Read-only. Result: `Documentation {pages: list[PluginPage], warnings: list[string]}`.
 
 ```json
 {
@@ -3317,7 +3726,7 @@ Module `system.plugin.docs`. Read-only, private, expert. Result: `Documentation 
       "type": "boolean"
     }
   },
-  "title": "system_plugin_docs_show",
+  "title": "system_plugin_docs_showArguments",
   "type": "object"
 }
 ```
@@ -3326,7 +3735,7 @@ Module `system.plugin.docs`. Read-only, private, expert. Result: `Documentation 
 
 Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist.
 
-Module `system.plugin.docs`. Changes state, private, expert. Result: `BuildResult {directory: string, written: list[string], stale_pages: list[string], unchanged: integer, stale: boolean, next: list[string]}`.
+Module `system.plugin.docs`. Changes state. Result: `BuildResult {directory: string, written: list[string], stale_pages: list[string], unchanged: integer, stale: boolean, next: list[string]}`.
 
 ```json
 {
@@ -3377,7 +3786,7 @@ Module `system.plugin.docs`. Changes state, private, expert. Result: `BuildResul
       "type": "boolean"
     }
   },
-  "title": "system_plugin_docs_build",
+  "title": "system_plugin_docs_buildArguments",
   "type": "object"
 }
 ```
@@ -3386,7 +3795,7 @@ Module `system.plugin.docs`. Changes state, private, expert. Result: `BuildResul
 
 List the external tools modules declare and how each is installed, without checking this machine.
 
-Module `system.prerequisite`. Read-only, expert. Result: `list[PrerequisiteDefinition] {module: string, plugin: string \| null, name: string, title: string, purpose: string, when: 'install' \| 'setup' \| 'feature', condition: string, macos: Homebrew \| ManualInstall \| null, linux: ManualInstall, minimum_version: string \| null, requires_apple_developer_tools: boolean}`.
+Module `system.prerequisite`. Read-only. Result: `list[PrerequisiteDefinition] {module: string, plugin: string \| null, name: string, title: string, purpose: string, when: 'install' \| 'setup' \| 'feature', condition: string, macos: Homebrew \| ManualInstall \| null, linux: ManualInstall, minimum_version: string \| null, requires_apple_developer_tools: boolean}`.
 
 ```json
 {
@@ -3405,7 +3814,7 @@ Module `system.prerequisite`. Read-only, expert. Result: `list[PrerequisiteDefin
       "title": "Owner"
     }
   },
-  "title": "system_prerequisite_list",
+  "title": "system_prerequisite_listArguments",
   "type": "object"
 }
 ```
@@ -3414,7 +3823,7 @@ Module `system.prerequisite`. Read-only, expert. Result: `list[PrerequisiteDefin
 
 Check locally whether the declared tools are usable, without installing anything or signing in.
 
-Module `system.prerequisite`. Read-only, private, expert. Result: `PrerequisiteReport {ready: boolean, checks: list[PrerequisiteCheck]}`.
+Module `system.prerequisite`. Read-only. Result: `PrerequisiteReport {ready: boolean, checks: list[PrerequisiteCheck]}`.
 
 ```json
 {
@@ -3444,7 +3853,7 @@ Module `system.prerequisite`. Read-only, private, expert. Result: `PrerequisiteR
       "type": "string"
     }
   },
-  "title": "system_prerequisite_check",
+  "title": "system_prerequisite_checkArguments",
   "type": "object"
 }
 ```
@@ -3453,7 +3862,7 @@ Module `system.prerequisite`. Read-only, private, expert. Result: `PrerequisiteR
 
 Ask the bound agent runner, read-only and within a cost cap; this may cost money.
 
-Module `system.runner`. Changes state, expert. Result: `AgentResult {runner: string, model: string \| null, status: 'completed' \| 'timeout' \| 'budget' \| 'failed', draft: string, tool_calls: dict[string, integer], turns: integer \| null, usage: TokenUsage, duration_seconds: number, detail: string, fix: string, warnings: list[string], billing: 'plan' \| 'api' \| null}`.
+Module `system.runner`. Changes state. Result: `AgentResult {runner: string, model: string \| null, status: 'completed' \| 'timeout' \| 'budget' \| 'failed', draft: string, tool_calls: dict[string, integer], turns: integer \| null, usage: TokenUsage, duration_seconds: number, detail: string, fix: string, warnings: list[string], billing: 'plan' \| 'api' \| null}`.
 
 ```json
 {
@@ -3483,38 +3892,7 @@ Module `system.runner`. Changes state, expert. Result: `AgentResult {runner: str
   "required": [
     "prompt"
   ],
-  "title": "system_runner_ask",
-  "type": "object"
-}
-```
-
-## `system_runner_chat_confirm_authorized_mcp`
-
-Run a schedule action once after a person authorized it; accept no proof here.
-
-Module `system.runner.chat`. Changes state, everyday. Result: `ChatSession {id: string, title: string, created: string, updated: string, context: ChatContext \| null, personal_session_id: string \| null, personal_owner_id: string \| null, messages: list[ChatMessage], actions: list[ChatAction], costs: ChatCosts, model: string \| null, effort: 'low' \| 'medium' \| 'high' \| 'xhigh' \| 'max' \| null}`.
-
-```json
-{
-  "properties": {
-    "session": {
-      "description": "The chat session's id, from `hz chat list`.",
-      "pattern": "^[a-f0-9]{16}$",
-      "title": "Session",
-      "type": "string"
-    },
-    "action": {
-      "description": "The proposed action's id, e.g. `a1`.",
-      "pattern": "^a[0-9]{1,4}$",
-      "title": "Action",
-      "type": "string"
-    }
-  },
-  "required": [
-    "session",
-    "action"
-  ],
-  "title": "system_runner_chat_confirm_authorized_mcp",
+  "title": "system_runner_askArguments",
   "type": "object"
 }
 ```
@@ -3523,12 +3901,12 @@ Module `system.runner.chat`. Changes state, everyday. Result: `ChatSession {id: 
 
 List the soundscapes of the web app, where each comes from, which one is picked and which plays.
 
-Module `system.sound`. Read-only, expert. Result: `SoundList {selected: string, effective: string, soundscapes: list[SoundscapeView], signals: dict[string, string \| number], volume: integer, follow_theme: boolean, mute_in_meetings: boolean, duck_while_typing: boolean, conflicts: list[string], note: string \| null, next: list[string]}`.
+Module `system.sound`. Read-only. Result: `SoundList {selected: string, effective: string, soundscapes: list[SoundscapeView], signals: dict[string, string \| number], volume: integer, follow_theme: boolean, mute_in_meetings: boolean, duck_while_typing: boolean, conflicts: list[string], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_sound_list",
+  "title": "system_sound_listArguments",
   "type": "object"
 }
 ```
@@ -3537,7 +3915,7 @@ Module `system.sound`. Read-only, expert. Result: `SoundList {selected: string, 
 
 Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice.
 
-Module `system.sound`. Changes state, expert. Result: `SoundList {selected: string, effective: string, soundscapes: list[SoundscapeView], signals: dict[string, string \| number], volume: integer, follow_theme: boolean, mute_in_meetings: boolean, duck_while_typing: boolean, conflicts: list[string], note: string \| null, next: list[string]}`.
+Module `system.sound`. Changes state. Result: `SoundList {selected: string, effective: string, soundscapes: list[SoundscapeView], signals: dict[string, string \| number], volume: integer, follow_theme: boolean, mute_in_meetings: boolean, duck_while_typing: boolean, conflicts: list[string], note: string \| null, next: list[string]}`.
 
 ```json
 {
@@ -3551,7 +3929,7 @@ Module `system.sound`. Changes state, expert. Result: `SoundList {selected: stri
   "required": [
     "name"
   ],
-  "title": "system_sound_use",
+  "title": "system_sound_useArguments",
   "type": "object"
 }
 ```
@@ -3560,12 +3938,12 @@ Module `system.sound`. Changes state, expert. Result: `SoundList {selected: stri
 
 Show where this machine's state goes, what is still to push and how the last push went.
 
-Module `system.state`. Read-only, private, expert. Result: `StateStatus {repository: string \| null, branch: string \| null, machine: string, streams: list[StreamStatus], last_push: string \| null, last_attempt: string \| null, failures: integer, error: string \| null, refused: boolean, next: list[string]}`.
+Module `system.state`. Read-only. Result: `StateStatus {repository: string \| null, branch: string \| null, machine: string, streams: list[StreamStatus], last_push: string \| null, last_attempt: string \| null, failures: integer, error: string \| null, refused: boolean, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_state_status",
+  "title": "system_state_statusArguments",
   "type": "object"
 }
 ```
@@ -3574,12 +3952,12 @@ Module `system.state`. Read-only, private, expert. Result: `StateStatus {reposit
 
 Push this machine's new presence and adoption lines to your personal state repository now.
 
-Module `system.state`. Changes state, private, expert. Result: `Pushed {repository: string, branch: string, lines: integer, segments: integer, commit: string \| null, pushed: boolean}`.
+Module `system.state`. Changes state. Result: `Pushed {repository: string, branch: string, lines: integer, segments: integer, commit: string \| null, pushed: boolean}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_state_push",
+  "title": "system_state_pushArguments",
   "type": "object"
 }
 ```
@@ -3588,12 +3966,12 @@ Module `system.state`. Changes state, private, expert. Result: `Pushed {reposito
 
 Start this machine's clone of its branch afresh after a refused push; the old one is kept aside.
 
-Module `system.state`. Changes state, private, expert. Result: `StateStatus {repository: string \| null, branch: string \| null, machine: string, streams: list[StreamStatus], last_push: string \| null, last_attempt: string \| null, failures: integer, error: string \| null, refused: boolean, next: list[string]}`.
+Module `system.state`. Changes state. Result: `StateStatus {repository: string \| null, branch: string \| null, machine: string, streams: list[StreamStatus], last_push: string \| null, last_attempt: string \| null, failures: integer, error: string \| null, refused: boolean, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_state_reset",
+  "title": "system_state_resetArguments",
   "type": "object"
 }
 ```
@@ -3602,12 +3980,12 @@ Module `system.state`. Changes state, private, expert. Result: `StateStatus {rep
 
 List the themes of the web app, with every colour, font and size, and which one is in effect.
 
-Module `system.theme`. Read-only, expert. Result: `ThemeList {selected: string, themes: list[ThemeView], conflicts: list[string], note: string \| null, next: list[string]}`.
+Module `system.theme`. Read-only. Result: `ThemeList {selected: string, themes: list[ThemeView], conflicts: list[string], note: string \| null, next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_theme_list",
+  "title": "system_theme_listArguments",
   "type": "object"
 }
 ```
@@ -3616,12 +3994,12 @@ Module `system.theme`. Read-only, expert. Result: `ThemeList {selected: string, 
 
 Show the signals themes follow now: the time of day, and the weather when a plugin provides it.
 
-Module `system.theme`. Read-only, expert. Result: `ThemeSignalsView {daypart: 'dawn' \| 'morning' \| 'day' \| 'dusk' \| 'evening' \| 'night', weather: 'clear' \| 'clouds' \| 'rain' \| 'drizzle' \| 'thunder' \| 'snow' \| 'fog' \| 'wind' \| 'heat' \| 'cold' \| null, sunrise: string \| null, sunset: string \| null, timezone: string, sources: list[string], refresh: integer}`.
+Module `system.theme`. Read-only. Result: `ThemeSignalsView {daypart: 'dawn' \| 'morning' \| 'day' \| 'dusk' \| 'evening' \| 'night', weather: 'clear' \| 'clouds' \| 'rain' \| 'drizzle' \| 'thunder' \| 'snow' \| 'fog' \| 'wind' \| 'heat' \| 'cold' \| null, sunrise: string \| null, sunset: string \| null, timezone: string, sources: list[string], refresh: integer}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_theme_signals",
+  "title": "system_theme_signalsArguments",
   "type": "object"
 }
 ```
@@ -3630,7 +4008,7 @@ Module `system.theme`. Read-only, expert. Result: `ThemeSignalsView {daypart: 'd
 
 Use a theme in the web app: writes `[system.theme] name` to your configuration file.
 
-Module `system.theme`. Changes state, expert. Result: `ThemeList {selected: string, themes: list[ThemeView], conflicts: list[string], note: string \| null, next: list[string]}`.
+Module `system.theme`. Changes state. Result: `ThemeList {selected: string, themes: list[ThemeView], conflicts: list[string], note: string \| null, next: list[string]}`.
 
 ```json
 {
@@ -3644,7 +4022,7 @@ Module `system.theme`. Changes state, expert. Result: `ThemeList {selected: stri
   "required": [
     "name"
   ],
-  "title": "system_theme_use",
+  "title": "system_theme_useArguments",
   "type": "object"
 }
 ```
@@ -3653,7 +4031,7 @@ Module `system.theme`. Changes state, expert. Result: `ThemeList {selected: stri
 
 List the status items modules add to the web app's status bar, with what each shows now.
 
-Module `system.ui`. Read-only, expert. Result: `list[StatusEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, item: StatusItem \| null}`.
+Module `system.ui`. Read-only. Result: `list[StatusEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, item: StatusItem \| null}`.
 
 ```json
 {
@@ -3672,7 +4050,7 @@ Module `system.ui`. Read-only, expert. Result: `list[StatusEntry] {id: string, m
       "title": "Item"
     }
   },
-  "title": "system_ui_status",
+  "title": "system_ui_statusArguments",
   "type": "object"
 }
 ```
@@ -3681,7 +4059,7 @@ Module `system.ui`. Read-only, expert. Result: `list[StatusEntry] {id: string, m
 
 List the buttons modules add to the web app's header, with what each does and its badge.
 
-Module `system.ui`. Read-only, expert. Result: `list[ActionEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, label: string, icon: 'activity' \| 'alarm-clock' \| 'bell' \| 'bot' \| 'briefcase-business' \| 'calendar' \| 'calendar-clock' \| 'chart-line' \| 'circle-alert' \| 'circle-check' \| 'clock' \| 'cloud' \| 'cloud-drizzle' \| 'cloud-fog' \| 'cloud-lightning' \| 'cloud-rain' \| 'cloud-snow' \| 'cloud-sun' \| 'code' \| 'file-text' \| 'git-pull-request' \| 'globe' \| 'heart' \| 'inbox' \| 'info' \| 'link' \| 'list-checks' \| 'mail' \| 'message-square' \| 'moon' \| 'party-popper' \| 'play' \| 'rocket' \| 'star' \| 'sun' \| 'terminal' \| 'timer' \| 'users' \| 'video' \| 'wind' \| 'zap', effect: Navigate \| OpenUrl \| RunOperation \| RunCommand \| null, badge: integer \| string \| null}`.
+Module `system.ui`. Read-only. Result: `list[ActionEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, label: string, icon: 'activity' \| 'alarm-clock' \| 'bell' \| 'bot' \| 'briefcase-business' \| 'calendar' \| 'calendar-clock' \| 'chart-line' \| 'circle-alert' \| 'circle-check' \| 'clock' \| 'cloud' \| 'cloud-drizzle' \| 'cloud-fog' \| 'cloud-lightning' \| 'cloud-rain' \| 'cloud-snow' \| 'cloud-sun' \| 'code' \| 'file-text' \| 'git-pull-request' \| 'globe' \| 'heart' \| 'inbox' \| 'info' \| 'link' \| 'list-checks' \| 'mail' \| 'message-square' \| 'moon' \| 'party-popper' \| 'play' \| 'rocket' \| 'star' \| 'sun' \| 'terminal' \| 'timer' \| 'users' \| 'video' \| 'wind' \| 'zap', effect: Navigate \| OpenUrl \| RunOperation \| RunCommand \| null, badge: integer \| string \| null}`.
 
 ```json
 {
@@ -3700,7 +4078,7 @@ Module `system.ui`. Read-only, expert. Result: `list[ActionEntry] {id: string, m
       "title": "Item"
     }
   },
-  "title": "system_ui_actions",
+  "title": "system_ui_actionsArguments",
   "type": "object"
 }
 ```
@@ -3709,7 +4087,7 @@ Module `system.ui`. Read-only, expert. Result: `list[ActionEntry] {id: string, m
 
 List the widgets modules add to the web app's Today screen, with what each shows now.
 
-Module `system.ui`. Read-only, expert. Result: `list[WidgetEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, widget: CardWidget \| ListWidget \| MetricWidget \| ProgressWidget \| GraphicWidget \| ChartWidget \| null}`.
+Module `system.ui`. Read-only. Result: `list[WidgetEntry] {id: string, module: string, plugin: string \| null, order: integer, refresh: integer, slots: dict[string, boolean], problem: string \| null, widget: CardWidget \| ListWidget \| MetricWidget \| ProgressWidget \| GraphicWidget \| ChartWidget \| null}`.
 
 ```json
 {
@@ -3728,7 +4106,7 @@ Module `system.ui`. Read-only, expert. Result: `list[WidgetEntry] {id: string, m
       "title": "Item"
     }
   },
-  "title": "system_ui_widgets",
+  "title": "system_ui_widgetsArguments",
   "type": "object"
 }
 ```
@@ -3737,12 +4115,12 @@ Module `system.ui`. Read-only, expert. Result: `list[WidgetEntry] {id: string, m
 
 List active installed views, their compatible bundles and read-only operation calls.
 
-Module `system.ui`. Read-only, private, expert. Result: `list[ViewEntry] {id: string, module: string, plugin: string \| null, title: string, fallback: string, slot: 'page' \| 'panel' \| 'sidebar' \| 'settings' \| 'background', order: integer, refresh: integer, abi: integer, section: string \| null, route: string \| null, bundle: string \| null, styles: list[string], actions: dict[string, Navigate \| OpenUrl \| RunOperation \| RunCommand], source: OperationCall \| null, problem: string \| null}`.
+Module `system.ui`. Read-only. Result: `list[ViewEntry] {id: string, module: string, plugin: string \| null, title: string, fallback: string, slot: 'page' \| 'panel' \| 'sidebar' \| 'settings' \| 'background', order: integer, refresh: integer, abi: integer, section: string \| null, route: string \| null, bundle: string \| null, styles: list[string], actions: dict[string, Navigate \| OpenUrl \| RunOperation \| RunCommand], source: OperationCall \| null, problem: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_ui_views",
+  "title": "system_ui_viewsArguments",
   "type": "object"
 }
 ```
@@ -3751,12 +4129,12 @@ Module `system.ui`. Read-only, private, expert. Result: `list[ViewEntry] {id: st
 
 List active providers' navigation and owned Settings metadata without running their operations.
 
-Module `system.ui`. Read-only, private, expert. Result: `list[NavEntry] {id: string, module: string, declared: boolean, plugin: string \| null, title: string, icon: 'activity' \| 'alarm-clock' \| 'bell' \| 'bot' \| 'briefcase-business' \| 'calendar' \| 'calendar-clock' \| 'chart-line' \| 'circle-alert' \| 'circle-check' \| 'clock' \| 'cloud' \| 'cloud-drizzle' \| 'cloud-fog' \| 'cloud-lightning' \| 'cloud-rain' \| 'cloud-snow' \| 'cloud-sun' \| 'code' \| 'file-text' \| 'git-pull-request' \| 'globe' \| 'heart' \| 'inbox' \| 'info' \| 'link' \| 'list-checks' \| 'mail' \| 'message-square' \| 'moon' \| 'party-popper' \| 'play' \| 'rocket' \| 'star' \| 'sun' \| 'terminal' \| 'timer' \| 'users' \| 'video' \| 'wind' \| 'zap', order: integer, settings: NavSettings \| null, sidebar: Navigate \| OpenUrl \| RunOperation \| RunCommand \| null, problem: string \| null}`.
+Module `system.ui`. Read-only. Result: `list[NavEntry] {id: string, module: string, declared: boolean, plugin: string \| null, title: string, icon: 'activity' \| 'alarm-clock' \| 'bell' \| 'bot' \| 'briefcase-business' \| 'calendar' \| 'calendar-clock' \| 'chart-line' \| 'circle-alert' \| 'circle-check' \| 'clock' \| 'cloud' \| 'cloud-drizzle' \| 'cloud-fog' \| 'cloud-lightning' \| 'cloud-rain' \| 'cloud-snow' \| 'cloud-sun' \| 'code' \| 'file-text' \| 'git-pull-request' \| 'globe' \| 'heart' \| 'inbox' \| 'info' \| 'link' \| 'list-checks' \| 'mail' \| 'message-square' \| 'moon' \| 'party-popper' \| 'play' \| 'rocket' \| 'star' \| 'sun' \| 'terminal' \| 'timer' \| 'users' \| 'video' \| 'wind' \| 'zap', order: integer, settings: NavSettings \| null, sidebar: Navigate \| OpenUrl \| RunOperation \| RunCommand \| null, problem: string \| null}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_ui_navigation",
+  "title": "system_ui_navigationArguments",
   "type": "object"
 }
 ```
@@ -3765,12 +4143,12 @@ Module `system.ui`. Read-only, private, expert. Result: `list[NavEntry] {id: str
 
 List every contribution to the web app, where it may show and whether it does; nothing runs.
 
-Module `system.ui`. Read-only, expert. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
+Module `system.ui`. Read-only. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
 
 ```json
 {
   "properties": {},
-  "title": "system_ui_list",
+  "title": "system_ui_listArguments",
   "type": "object"
 }
 ```
@@ -3779,7 +4157,7 @@ Module `system.ui`. Read-only, expert. Result: `list[ContributionInfo] {id: stri
 
 Show a contribution in a slot of the web app, such as the clock in the sidebar.
 
-Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
+Module `system.ui`. Changes state. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
 
 ```json
 {
@@ -3806,7 +4184,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
   "required": [
     "item"
   ],
-  "title": "system_ui_show",
+  "title": "system_ui_showArguments",
   "type": "object"
 }
 ```
@@ -3815,7 +4193,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
 
 Hide a contribution from a slot of the web app, such as the clock from the footer.
 
-Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
+Module `system.ui`. Changes state. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
 
 ```json
 {
@@ -3842,7 +4220,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
   "required": [
     "item"
   ],
-  "title": "system_ui_hide",
+  "title": "system_ui_hideArguments",
   "type": "object"
 }
 ```
@@ -3851,7 +4229,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
 
 Bring back every contribution you hid from a slot, such as the widgets hidden from Today.
 
-Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
+Module `system.ui`. Changes state. Result: `list[ContributionInfo] {id: string, module: string, kind: 'status' \| 'action' \| 'widget', title: string, slots: dict[string, boolean], defaults: dict[string, boolean]}`.
 
 ```json
 {
@@ -3869,7 +4247,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
       "type": "string"
     }
   },
-  "title": "system_ui_restore",
+  "title": "system_ui_restoreArguments",
   "type": "object"
 }
 ```
@@ -3878,7 +4256,7 @@ Module `system.ui`. Changes state, expert. Result: `list[ContributionInfo] {id: 
 
 Create a team repository from the template: you its first owner, its roster drafted for review.
 
-Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
+Module `team`. Changes state. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
 
 ```json
 {
@@ -3956,7 +4334,7 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
   "required": [
     "name"
   ],
-  "title": "team_new",
+  "title": "team_newArguments",
   "type": "object"
 }
 ```
@@ -3965,7 +4343,7 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
 
 Clone a team repository with your own access, find you in its roster, and make it your team.
 
-Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
+Module `team`. Changes state. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
 
 ```json
 {
@@ -4023,7 +4401,7 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
   "required": [
     "url"
   ],
-  "title": "team_join",
+  "title": "team_joinArguments",
   "type": "object"
 }
 ```
@@ -4032,7 +4410,7 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
 
 Add someone to your team's roster, as one of its owners: a pull request the other owners see.
 
-Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
+Module `team`. Changes state. Result: `TeamPlan {operation: 'new' \| 'join' \| 'add' \| 'draft', team: string \| null, repository: string \| null, checkout: string \| null, handle: string, actions: list[Action], done: boolean, identities: list[string], member: MemberView \| null, candidates: list[string], drafted: list[MemberView], guesses: list[string], plugin: string \| null, pull_request: string \| null, next: list[string]}`.
 
 ```json
 {
@@ -4090,7 +4468,7 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
   "required": [
     "handle"
   ],
-  "title": "team_add",
+  "title": "team_addArguments",
   "type": "object"
 }
 ```
@@ -4099,12 +4477,12 @@ Module `team`. Changes state, everyday. Result: `TeamPlan {operation: 'new' \| '
 
 Show your team: its repository, checkout and members, and what is wrong with them.
 
-Module `team`. Read-only, everyday. Result: `TeamShow {repository: string \| null, checkout: string \| null, exists: boolean, name: string \| null, plugin: string \| null, members: list[MemberView], problems: list[string], next: list[string]}`.
+Module `team`. Read-only. Result: `TeamShow {repository: string \| null, checkout: string \| null, exists: boolean, name: string \| null, plugin: string \| null, members: list[MemberView], problems: list[string], next: list[string]}`.
 
 ```json
 {
   "properties": {},
-  "title": "team_show",
+  "title": "team_showArguments",
   "type": "object"
 }
 ```
@@ -4113,7 +4491,7 @@ Module `team`. Read-only, everyday. Result: `TeamShow {repository: string \| nul
 
 Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`.
 
-Module `team`. Changes state, expert. Result: `Adopted {repository: string \| null, checkout: string, written: list[string], next: list[string]}`.
+Module `team`. Changes state. Result: `Adopted {repository: string \| null, checkout: string, written: list[string], next: list[string]}`.
 
 ```json
 {
@@ -4128,7 +4506,7 @@ Module `team`. Changes state, expert. Result: `Adopted {repository: string \| nu
   "required": [
     "path"
   ],
-  "title": "team_adopt",
+  "title": "team_adoptArguments",
   "type": "object"
 }
 ```

@@ -486,7 +486,7 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
-| Run a schedule action once after a person authorized it; accept no proof here. | — | `system_runner_chat_confirm_authorized_mcp` | — | — | yes |  |
+| Run a schedule action once after a person authorized it; accept no proof here. | — | — | — | — | yes |  |
 | Stage the edited draft link for separate human confirmation. | — | — | — | `POST /api/system/runner/chat/propose-release-draft-share` | yes |  |
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).

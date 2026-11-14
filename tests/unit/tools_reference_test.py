@@ -1,14 +1,15 @@
 """`hz system tools` and the generated references share one renderer, and the committed Markdown matches it."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
-from heinzel import Config, Kernel, Settings
+from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import discover
-from heinzel.modules.system._tools import mcp_reference, render, tools
+from heinzel.modules.system._tools import mcp_reference, render, served_mcp_tools, tools
 
 pytestmark = pytest.mark.unit
 
@@ -73,21 +74,44 @@ def test_the_operation_runs_through_the_kernel(built_ins):
     assert result.count == len(yaml.safe_load(result.text))
 
 
-@pytest.mark.skipif(
-    not __import__("os").environ.get("HZ_CHECK_REFERENCES"),
-    reason="main's references lag a merge by one bot commit; the References workflow checks them there",
-)
 def test_committed_mcp_reference_is_current(built_ins):
-    assert (DOCS / "MCP_REFERENCE.md").read_text(encoding="utf-8") == mcp_reference(tools(built_ins, head="mcp"))
+    served = served_mcp_tools(built_ins)
+    text = mcp_reference(tools(built_ins, head="mcp"), served)
+    assert (DOCS / "MCP_REFERENCE.md").read_text(encoding="utf-8") == text
+
+
+def test_the_mcp_reference_is_what_the_served_server_lists(built_ins):
+    served = served_mcp_tools(built_ins)
+    text = mcp_reference(tools(built_ins, head="mcp"), served)
+    assert [m for m in re.findall(r"^## `([^`]+)`", text, re.MULTILINE) if m not in served] == []
+    assert re.findall(r"^## `([^`]+)`", text, re.MULTILINE) == list(served)
+    assert "system_runner_chat_confirm_authorized_mcp" not in served  # chat only, so not in the reference
+    assert "system_runner_chat_confirm_authorized_mcp" not in text
+    assert "approval_proof" not in json.dumps(served["heinzel_schedule_control"].input_schema)
+    assert "approval_proof" not in text.split("## `heinzel_schedule_control`")[1].split("\n## `")[0]
+    deprecated = [n for n, t in served.items() if (t.description or "").startswith("Deprecated")]
+    assert deprecated
+    assert all(f"## `{n}`" in text for n in deprecated)
+
+
+def test_an_unknown_module_is_an_error(built_ins):
+    with pytest.raises(HeinzelError, match="nosuch"):
+        tools(built_ins, modules=["nosuch"])
+
+
+def test_the_web_head_can_be_asked_for(built_ins):
+    web = tools(built_ins, head="web")
+    assert web
+    assert all(e.heads.web for e in web)
 
 
 def test_the_mcp_reference_lists_each_tool_with_its_input_schema(built_ins):
-    text = mcp_reference(tools(built_ins, head="mcp"))
+    text = mcp_reference(tools(built_ins, head="mcp"), served_mcp_tools(built_ins))
     assert "## `system_config_show`" in text
     assert '"properties"' in text
 
 
-def test_generate_docs_check_leaves_the_references_to_main_and_finds_nothing_else_stale():
+def test_generate_docs_check_finds_nothing_stale_including_the_references():
     import importlib.util
     import subprocess
     import sys
@@ -100,7 +124,6 @@ def test_generate_docs_check_leaves_the_references_to_main_and_finds_nothing_els
     )  # fmt: skip
     assert result.returncode == 0, result.stderr
     assert importlib.util.find_spec("heinzel")
-    assert "MCP_REFERENCE" not in result.stderr
 
 
 def test_a_pull_request_does_not_check_the_references(tmp_path):
