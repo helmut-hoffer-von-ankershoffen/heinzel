@@ -7,9 +7,13 @@ uv-managed interpreter of that version (installing it if needed) and verifies it
 it. Nothing here touches the tool environment: if no interpreter can be had, the update stops before uv installs.
 """
 
+import contextlib
+import json
+import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import cast
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
@@ -107,3 +111,62 @@ def managed_python(
         return _installation_continuity.external_python(path)
     except HeinzelError as exc:
         raise HeinzelError(unverified) from exc
+
+
+NEED_FILENAME = "python-need.json"
+
+
+class PythonNeed:
+    """What the last update found about a release that needs a newer Python, in the cache directory, for the doctor.
+
+    Losing it only loses the hint; it is never read to decide anything.
+    """
+
+    def __init__(self, cache_dir: Path) -> None:
+        """Keep the record in `cache_dir` (setting `cache_dir`)."""
+        self.path = cache_dir / NEED_FILENAME
+
+    def remember(self, release: str, python: str, held: str | None = None) -> None:
+        """Release `release` needs Python `python`; `held` says why the update stopped, None if it moved on."""
+        data = {"release": release, "python": python, "held": held}
+        partial = self.path.with_name(f".{NEED_FILENAME}.{os.getpid()}")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            partial.write_text(json.dumps(data), encoding="utf-8")
+            partial.replace(self.path)
+        except OSError:
+            return
+
+    def forget(self) -> None:
+        """The last update needed no other Python."""
+        with contextlib.suppress(OSError):
+            self.path.unlink()
+
+    def read(self) -> dict[str, str | None] | None:
+        """The last record, or None if there is none (or it can't be read)."""
+        try:
+            loaded: object = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(loaded, dict):
+            return None
+        data = cast("dict[str, object]", loaded)
+        release, python, held = data.get("release"), data.get("python"), data.get("held")
+        if not isinstance(release, str) or not isinstance(python, str):
+            return None
+        return {"release": release, "python": python, "held": held if isinstance(held, str) else None}
+
+
+def managed_root(executable: Path) -> Path | None:
+    """The uv-managed Python folder (`cpython-X.Y.Z-…`) `executable` runs from, or None for any other interpreter."""
+    try:
+        resolved = executable.resolve(strict=True)
+    except OSError:
+        return None
+    for parent in resolved.parents:
+        configured = os.environ.get("UV_PYTHON_INSTALL_DIR")
+        if parent.name.startswith(("cpython-", "pypy-")) and (
+            parent.parent.name == "python" or (configured is not None and parent.parent == Path(configured).resolve())
+        ):
+            return parent
+    return None

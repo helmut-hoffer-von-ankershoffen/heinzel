@@ -55,7 +55,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.kernel._logging import get_logger, log_event, step
-from heinzel.kernel._tool_python import newer_python
+from heinzel.kernel._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._announced import (
     Announcement,
     ToolSnapshot,
@@ -141,6 +141,21 @@ def _reason(output: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class _Before:
+    """The tool before an automatic update: its generation, and for a move to another interpreter its content."""
+
+    generation: str
+    content: str | None = None
+    """The fingerprint without the folder's own identity: uv recreates the folder for another interpreter."""
+    matched: bool = False
+    """Whether the continuity record matched before; only then is it renewed after a put-back."""
+
+
+_ORIGINALS: ContextVar[dict[str, _Before]] = ContextVar("update_originals", default={})  # noqa: B039 - never mutated
+"""Each generation captured before a move to another interpreter, with what a restore of it must match."""
+
+
+@dataclass(frozen=True, slots=True)
 class Installed:
     """A plugin as a fresh `hz` reports it: its version and, for git, the commit."""
 
@@ -166,15 +181,18 @@ class UpdateService:
         pinned: Callable[[float], PinnedPlugins] | None = None,
         newer: Callable[[float], dict[str, str]] | None = None,
         desktop: Callable[[], tuple[int, str]] | None = None,
+        need: PythonNeed | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
         `progress` hears the steps of `update` as they happen (`phase` events), so the app can show each one.
         `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
         plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
-        `hz app install` and returns its exit code and output. Tests replace all three.
+        `hz app install` and returns its exit code and output. Tests replace all three. `need` keeps what the last
+        update found about a release that needs a newer Python, for the doctor.
         """
         self._pinned_plugins = pinned
+        self._need = need
         self._newer_plugins = newer
         self._desktop = desktop or self._app_install
 
@@ -345,7 +363,7 @@ class UpdateService:
                     if scope is not None:
                         self._abort_or_leave_pending(scope)
                     raise
-                before = self._installation.startup_fingerprint()
+                before = self._fingerprints()
                 try:
                     generation = self._install_announced(
                         [core_requirement, *specs], (guards, constraints), expected, announced
@@ -401,6 +419,13 @@ class UpdateService:
             return highest if highest is not None and Version(highest) > _version(current) else None
         return _release_version(target)
 
+    def _fingerprints(self) -> "_Before":
+        """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
+        generation = self._installation.startup_fingerprint()
+        if not self._installation.changes_interpreter:
+            return _Before(generation)
+        return _Before(generation, self._installation.content_fingerprint(), self._installation.startup_state_matches())
+
     def needed_python(self, version: str | None) -> str | None:
         """The newer Python (`X.Y`) release `version` requires than this one runs on; None if this one will do.
 
@@ -425,13 +450,32 @@ class UpdateService:
         Raises:
             HeinzelError: If the newer Python can't be obtained; nothing was changed then.
         """
-        needed = self.needed_python(version)
+        try:
+            needed = self.needed_python(version)
+        except HeinzelError as exc:
+            if self._need is not None and version is not None:
+                self._need.remember(version, "", held=str(exc))
+            raise
         if needed is None:
+            if self._need is not None and version is not None:
+                self._need.forget()
             yield
             return
-        with self._installation.newer_interpreter(needed, subprocess_environment()):
-            log_event(log, "update.python.managed", version=version, python=needed)
-            yield
+        entered = False
+        token = _ORIGINALS.set({})  # what this update captured; none of it outlives it
+        try:
+            with self._installation.newer_interpreter(needed, subprocess_environment()) as path:
+                entered = True
+                log_event(log, "update.python.managed", version=version, python=needed, interpreter=path)
+                if self._need is not None and version is not None:
+                    self._need.remember(version, needed)
+                yield
+        except HeinzelError as exc:
+            if not entered and self._need is not None and version is not None:
+                self._need.remember(version, needed, held=str(exc))
+            raise
+        finally:
+            _ORIGINALS.reset(token)
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
@@ -603,7 +647,7 @@ class UpdateService:
         self,
         snapshot: ToolSnapshot,
         lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
-        before: str,
+        before: "_Before",
         current: str,
         why: str | None,
         *,
@@ -624,9 +668,14 @@ class UpdateService:
             )
             raise HeinzelError(msg) from exc
         generation = self._installation.startup_fingerprint()
-        if generation != before:
-            msg = "The installation isn't as it was after putting it back; explicit recovery is required."
-            raise HeinzelError(msg)
+        if generation != before.generation:
+            if before.content is None or self._installation.content_fingerprint() != before.content:
+                msg = "The installation isn't as it was after putting it back; explicit recovery is required."
+                raise HeinzelError(msg)
+            # The same files, in the folder uv made anew for the other interpreter: a record that held before
+            # holds again, so it is renewed for this folder.
+            if before.matched:
+                self._installation.record_startup_state(expected=generation)
         # A change that failed half way left the marker; the folder matches its record again. If it can't go, it stays
         # and says so: the next update or `hz ui restart` tries again.
         with suppress(OSError, HeinzelError):
@@ -1745,12 +1794,34 @@ class UpdateService:
 
     def _original_generation(self) -> str | None:
         try:
-            return self._installation.startup_fingerprint()
+            generation = self._installation.startup_fingerprint()
+            if self._installation.changes_interpreter:  # uv will recreate the folder: remember its content too
+                before = self._fingerprints()
+                _ORIGINALS.set({**_ORIGINALS.get(), generation: before})
         except HeinzelError:
             return None
+        return generation
 
     def _same_generation(self, expected: str | None) -> bool:
-        return expected is not None and self._original_generation() == expected
+        """Whether the tool is generation `expected` again; for a move between interpreters, its files in a new folder.
+
+        Then a continuity record that matched before is renewed for the new folder, as a put-back does.
+        """
+        try:
+            current = self._installation.startup_fingerprint() if expected is not None else None
+        except HeinzelError:
+            return False
+        if current is None or current == expected:
+            return current is not None
+        before = _ORIGINALS.get().get(expected or "")
+        try:
+            if before is None or before.content is None or self._installation.content_fingerprint() != before.content:
+                return False
+            if before.matched:
+                self._installation.record_startup_state(expected=current)
+        except (HeinzelError, OSError):
+            return False
+        return True
 
     def _latest(self, current: str) -> str:
         """The highest stable release: never a pre-release, even when one is installed (ADR 0116 amends ADR 0006).

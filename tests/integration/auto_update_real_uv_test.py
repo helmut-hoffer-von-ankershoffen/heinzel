@@ -210,6 +210,19 @@ def newer_release(tool, tmp_path, monkeypatch):
 
 
 def test_real_uv_moves_to_a_managed_newer_python_the_release_needs(newer_release, tmp_path):
+    managed_python_or_skip()
+    result = apply(newer_release, tmp_path, starts=True, releases=NeedsNewerPython())
+    assert result.updated, result.message
+    versions = environment_versions(newer_release.prefix)
+    assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("2.0.0", "2.0.0", "1.0.0")
+    python = (newer_release.prefix / "bin" / "python").resolve()
+    assert python.is_relative_to((tmp_path / "managed").resolve())
+    assert python.name.startswith(f"python{NEWER}")
+    assert not (tmp_path / "python-bin").exists() or not any((tmp_path / "python-bin").iterdir())
+
+
+def managed_python_or_skip() -> None:
+    """A uv-managed Python of the next minor version in the temporary folder, downloaded once if uv has one."""
     found = subprocess.run(
         [shutil.which("uv") or "uv", "python", "install", "--managed-python", "--no-bin", NEWER],
         capture_output=True,
@@ -221,14 +234,28 @@ def test_real_uv_moves_to_a_managed_newer_python_the_release_needs(newer_release
         if "no download" in found.stderr.lower():
             pytest.skip(f"uv has no Python {NEWER} to download yet")
         unavailable(f"uv couldn't install a managed Python {NEWER} here: {found.stderr}")
+
+
+def test_real_uv_puts_back_the_old_python_and_its_continuity_when_the_move_does_not_start(newer_release, tmp_path):
+    managed_python_or_skip()
+    receipt = (newer_release.prefix / "uv-receipt.toml").read_bytes()
+    python = (newer_release.prefix / "bin" / "python").resolve()
+    result = apply(newer_release, tmp_path, starts=False, releases=NeedsNewerPython())
+    assert (result.updated, result.restored) == (False, True), result.message
+    versions = environment_versions(newer_release.prefix)
+    assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("1.0.0", "1.0.0", "1.0.0")
+    assert (newer_release.prefix / "uv-receipt.toml").read_bytes() == receipt
+    assert (newer_release.prefix / "bin" / "python").resolve() == python
+    assert newer_release.startup_state_matches()  # uv recreated the folder; the record survived it
+
+
+def test_real_uv_keeps_the_continuity_record_across_a_successful_move(newer_release, tmp_path):
+    managed_python_or_skip()
+    record = (newer_release.prefix / ".heinzel-startup-state").read_bytes()
     result = apply(newer_release, tmp_path, starts=True, releases=NeedsNewerPython())
     assert result.updated, result.message
-    versions = environment_versions(newer_release.prefix)
-    assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("2.0.0", "2.0.0", "1.0.0")
-    python = (newer_release.prefix / "bin" / "python").resolve()
-    assert python.is_relative_to((tmp_path / "managed").resolve())
-    assert python.name.startswith(f"python{NEWER}")
-    assert not (tmp_path / "python-bin").exists() or not any((tmp_path / "python-bin").iterdir())
+    assert (newer_release.prefix / ".heinzel-startup-state").read_bytes() == record  # as after a same-Python update
+    assert not (newer_release.prefix / ".heinzel-startup-pending").exists()
 
 
 def test_real_uv_without_the_newer_python_stops_before_installing(newer_release, tmp_path, monkeypatch):

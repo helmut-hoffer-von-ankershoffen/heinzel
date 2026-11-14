@@ -731,6 +731,14 @@ class Installation:
         """
         return _installation_continuity.fingerprint(self.prefix, self._continuity_authority)
 
+    def content_fingerprint(self) -> str:
+        """The startup fingerprint without the tool folder's own identity, which a change of interpreter renews.
+
+        Raises:
+            HeinzelError: If the installation cannot be inspected safely.
+        """
+        return _installation_continuity.content_fingerprint(self.prefix, self._continuity_authority)
+
     def remove_tool_overrides(self, *, expected: str, overrides: Mapping[str, Path]) -> str:
         """Remove exactly the independently verified transient wheel overrides, without recording continuity.
 
@@ -1177,6 +1185,11 @@ class Installation:
             command += ["--with", plugin]
         return command
 
+    @property
+    def changes_interpreter(self) -> bool:
+        """Whether installs now go onto a newer interpreter (`newer_interpreter`), so uv recreates the tool folder."""
+        return self._target_python.get() is not None
+
     @contextmanager
     def newer_interpreter(self, version: str, environment: Mapping[str, str] | None = None) -> Generator[str]:
         """Install onto a verified uv-managed Python `version` (`X.Y`) for one update; yields its path.
@@ -1501,8 +1514,13 @@ class Installation:
             elif position >= len(command) or command[position] != python[0]:
                 msg = "The selected tool interpreter changed; reload before updating."
                 raise HeinzelError(msg)
+        kept = _installation_continuity.kept_records(self.prefix) if command[1:3] == ["tool", "install"] else {}
         with self._progress.task(activity):
-            return self._runner(command, environment) if environment else self._runner(command)
+            try:
+                return self._runner(command, environment) if environment else self._runner(command)
+            finally:
+                if kept:  # uv recreates the tool folder for another interpreter, deleting them
+                    _installation_continuity.put_back_records(self.prefix, kept)
 
     def hz(self, *args: str) -> str:
         """Run `hz` in a fresh interpreter and return its output; this process still has the old environment loaded.

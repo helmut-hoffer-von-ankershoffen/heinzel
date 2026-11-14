@@ -12,6 +12,7 @@ from rich.text import Text
 
 from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __version__
 from heinzel.kernel import ReleaseCache
+from heinzel.kernel._tool_python import PythonNeed, managed_root
 from heinzel.kernel._uv_locate import find_uv
 
 MINIMUM_PYTHON = (3, 12)
@@ -78,7 +79,7 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
     receipt = Path(sys.prefix) / "uv-receipt.toml"
     checks = [
         Check(name="hostname", status=Status.UP, detail=gethostname()),
-        Check(name="python", status=Status.UP, detail=python_detail(tool=receipt.is_file()))
+        python_check(settings, tool=receipt.is_file())
         if sys.version_info >= MINIMUM_PYTHON
         else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),
     ]
@@ -134,15 +135,36 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
     return checks
 
 
-def python_detail(*, tool: bool) -> str:
-    """The running Python and, for a uv tool, how `hz system update` handles a release that needs a newer one."""
+def python_check(settings: Settings, *, tool: bool) -> Check:
+    """The running Python, whether uv manages it, and what the last update found about a release needing a newer one.
+
+    Read from the record `hz system update` and automatic updates keep (`PythonNeed`); nothing is asked or run.
+    """
     version = sys.version.split()[0]
-    if not tool:
-        return version
-    return (
-        f"{version} (the uv tool's interpreter; a release that needs a newer Python is installed onto a uv-managed "
-        "one by hz system update, or the update stops and this one keeps working)"
-    )
+    root = managed_root(Path(sys.executable)) if tool else None
+    detail = f"{version}, uv-managed ({root.name})" if root is not None else version
+    need = PythonNeed(settings.cache_dir).read() if tool else None
+    if need is None:
+        return Check(name="python", status=Status.UP, detail=detail)
+    release, python, held = need["release"], need["python"] or "", need["held"]
+    if held is not None:
+        return Check(
+            name="python",
+            status=Status.DEGRADED,
+            detail=f"{detail}; hz {release} needs a newer Python, so its update is held: {held}",
+            fix=f"uv python install {python}, then: hz system update" if python else "hz system update",
+        )
+    if _below(sys.version_info[:2], python):
+        detail += f"; hz {release} needs Python {python}: the next update installs it onto a uv-managed Python {python}"
+    return Check(name="python", status=Status.UP, detail=detail)
+
+
+def _below(running: tuple[int, ...], python: str) -> bool:
+    try:
+        wanted = tuple(int(part) for part in python.split("."))
+    except ValueError:
+        return False
+    return running < wanted
 
 
 def release_check(settings: Settings) -> Check:

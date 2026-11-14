@@ -316,6 +316,29 @@ def test_a_newer_interpreter_is_named_for_the_install_and_never_for_a_restore(tm
     assert [c[3:] for c in calls if c[1] == "tool"] == [command[3:], restore[3:]]
 
 
+def test_a_tool_install_that_recreates_the_folder_keeps_its_continuity_files(tmp_path):
+    prefix, _bin = _target_fixture(tmp_path)
+    for name in (".heinzel-startup-state", ".heinzel-startup-pending"):
+        (prefix / name).write_bytes(name.encode())
+        (prefix / name).chmod(0o600)
+
+    def uv(command, environment=None):  # uv for another interpreter: a new folder, without the continuity files
+        aside = prefix.with_name("aside")
+        prefix.rename(aside)
+        prefix.mkdir()
+        for entry in aside.iterdir():
+            if not entry.name.startswith(".heinzel-startup"):
+                entry.rename(prefix / entry.name)
+        return subprocess.CompletedProcess(command, 1, "", "failed after recreating it")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=uv)
+    result = installation.attempt(installation.tool_install_command("heinzel", []), "recreating uv")
+    assert result.returncode == 1
+    for name in (".heinzel-startup-state", ".heinzel-startup-pending"):
+        assert (prefix / name).read_bytes() == name.encode()
+        assert (prefix / name).stat().st_mode & 0o777 == 0o600
+
+
 def test_without_a_newer_interpreter_nothing_is_installed(tmp_path):
     prefix, _bin = _target_fixture(tmp_path)
     calls = []
