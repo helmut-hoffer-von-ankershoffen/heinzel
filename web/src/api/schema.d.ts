@@ -2189,6 +2189,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/bookmark/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a bookmark; an address already in that folder is kept once.
+         * @description Add a bookmark; an address already in that folder is kept once.
+         */
+        post: operations["system_bookmark_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rename a bookmark or folder, or change a bookmark's address.
+         * @description Rename a bookmark or folder, or change a bookmark's address.
+         */
+        post: operations["system_bookmark_edit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/favicon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the small icon a bookmarked site showed, per origin.
+         * @description Keep the small icon a bookmarked site showed, per origin.
+         */
+        post: operations["system_bookmark_favicon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an empty bookmark folder.
+         * @description Add an empty bookmark folder.
+         */
+        post: operations["system_bookmark_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the bookmarks and folders in their order, with each entry's id and folder.
+         * @description List the bookmarks and folders in their order, with each entry's id and folder.
+         */
+        get: operations["system_bookmark_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a bookmark or folder into another folder or to another place in its own.
+         * @description Move a bookmark or folder into another folder or to another place in its own.
+         */
+        post: operations["system_bookmark_move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+         * @description Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+         */
+        post: operations["system_bookmark_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring back a removed bookmark or folder to where it was.
+         * @description Bring back a removed bookmark or folder to where it was.
+         */
+        post: operations["system_bookmark_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/capability/list": {
         parameters: {
             query?: never;
@@ -5294,6 +5454,70 @@ export interface components {
              * @enum {string}
              */
             state: "written" | "kept" | "skipped" | "conflict" | "removed";
+        };
+        /**
+         * Bookmark
+         * @description One entry of the tree: a bookmark with an address, or a folder holding entries.
+         */
+        Bookmark: {
+            /**
+             * Depth
+             * @description How deep it sits: 0 at the top level.
+             * @default 0
+             */
+            depth: number;
+            /**
+             * Id
+             * @description The entry's id, e.g. `b-1a2b3c4d`; the other operations take it.
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bookmark" | "folder";
+            /**
+             * Origin
+             * @description The address's origin, the key of its favicon.
+             */
+            origin?: string | null;
+            /**
+             * Parent
+             * @description The folder it is in; none at the top level.
+             */
+            parent?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Url
+             * @description The address; a folder has none.
+             */
+            url?: string | null;
+        };
+        /**
+         * BookmarkList
+         * @description The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.
+         */
+        BookmarkList: {
+            /** Bookmarks */
+            bookmarks?: components["schemas"]["Bookmark"][];
+            /**
+             * Changed
+             * @description The id of the entry this call added or changed.
+             */
+            changed?: string | null;
+            /**
+             * Favicons
+             * @description A small image per origin as a `data:` URL, where a page showed one.
+             */
+            favicons?: {
+                [key: string]: string;
+            };
+            /**
+             * Restorable
+             * @description Ids of removed entries `restore` can still bring back, latest first.
+             */
+            restorable?: string[];
         };
         /**
          * CalendarReminderStatus
@@ -17464,6 +17688,8 @@ export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
 export type SchemaBindingResult = components['schemas']['BindingResult'];
+export type SchemaBookmark = components['schemas']['Bookmark'];
+export type SchemaBookmarkList = components['schemas']['BookmarkList'];
 export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
 export type SchemaCandidate = components['schemas']['Candidate'];
@@ -21214,6 +21440,270 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstalledSkill"][];
+                };
+            };
+        };
+    };
+    system_bookmark_add: {
+        parameters: {
+            query: {
+                /** @description The page's https:// address. */
+                url: string;
+                /** @description The name shown; the host when left out. */
+                title?: string | null;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_edit: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+                /** @description The new name. */
+                title?: string | null;
+                /** @description The new https:// address of a bookmark. */
+                url?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_favicon: {
+        parameters: {
+            query: {
+                /** @description The origin the icon belongs to, e.g. `https://example.com`. */
+                origin: string;
+                /** @description The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO). */
+                image: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_folder: {
+        parameters: {
+            query: {
+                /** @description The folder's name. */
+                title: string;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+        };
+    };
+    system_bookmark_move: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_remove: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_restore: {
+        parameters: {
+            query?: {
+                /** @description The removed entry's id; the latest removal when left out. */
+                entry?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

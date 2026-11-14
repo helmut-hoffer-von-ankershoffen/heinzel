@@ -1538,6 +1538,119 @@
         "title": "BindingResult",
         "type": "object"
       },
+      "Bookmark": {
+        "description": "One entry of the tree: a bookmark with an address, or a folder holding entries.",
+        "properties": {
+          "depth": {
+            "default": 0,
+            "description": "How deep it sits: 0 at the top level.",
+            "title": "Depth",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The entry's id, e.g. `b-1a2b3c4d`; the other operations take it.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "bookmark",
+              "folder"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address's origin, the key of its favicon.",
+            "title": "Origin"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The folder it is in; none at the top level.",
+            "title": "Parent"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address; a folder has none.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ],
+        "title": "Bookmark",
+        "type": "object"
+      },
+      "BookmarkList": {
+        "description": "The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.",
+        "properties": {
+          "bookmarks": {
+            "items": {
+              "$ref": "#/components/schemas/Bookmark"
+            },
+            "title": "Bookmarks",
+            "type": "array"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the entry this call added or changed.",
+            "title": "Changed"
+          },
+          "favicons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "A small image per origin as a `data:` URL, where a page showed one.",
+            "title": "Favicons",
+            "type": "object"
+          },
+          "restorable": {
+            "description": "Ids of removed entries `restore` can still bring back, latest first.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Restorable",
+            "type": "array"
+          }
+        },
+        "title": "BookmarkList",
+        "type": "object"
+      },
       "CalendarReminderStatus": {
         "description": "Whether calendar reads are enabled and what the supervisor reports.",
         "properties": {
@@ -27637,6 +27750,523 @@
           }
         },
         "summary": "Remove Heinzelmännchen's skills from each configured agent skill directory.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/add": {
+      "post": {
+        "description": "Add a bookmark; an address already in that folder is kept once.",
+        "operationId": "system_bookmark_add",
+        "parameters": [
+          {
+            "description": "The page's https:// address.",
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "description": "The page's https:// address.",
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The name shown; the host when left out.",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The name shown; the host when left out.",
+              "title": "Title"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a bookmark; an address already in that folder is kept once.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/edit": {
+      "post": {
+        "description": "Rename a bookmark or folder, or change a bookmark's address.",
+        "operationId": "system_bookmark_edit",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The new name.",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The new name.",
+              "title": "Title"
+            }
+          },
+          {
+            "description": "The new https:// address of a bookmark.",
+            "in": "query",
+            "name": "url",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The new https:// address of a bookmark.",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename a bookmark or folder, or change a bookmark's address.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/favicon": {
+      "post": {
+        "description": "Keep the small icon a bookmarked site showed, per origin.",
+        "operationId": "system_bookmark_favicon",
+        "parameters": [
+          {
+            "description": "The origin the icon belongs to, e.g. `https://example.com`.",
+            "in": "query",
+            "name": "origin",
+            "required": true,
+            "schema": {
+              "description": "The origin the icon belongs to, e.g. `https://example.com`.",
+              "title": "Origin",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO).",
+            "in": "query",
+            "name": "image",
+            "required": true,
+            "schema": {
+              "description": "The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO).",
+              "title": "Image",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep the small icon a bookmarked site showed, per origin.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/folder": {
+      "post": {
+        "description": "Add an empty bookmark folder.",
+        "operationId": "system_bookmark_folder",
+        "parameters": [
+          {
+            "description": "The folder's name.",
+            "in": "query",
+            "name": "title",
+            "required": true,
+            "schema": {
+              "description": "The folder's name.",
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add an empty bookmark folder.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/list": {
+      "get": {
+        "description": "List the bookmarks and folders in their order, with each entry's id and folder.",
+        "operationId": "system_bookmark_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the bookmarks and folders in their order, with each entry's id and folder.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/move": {
+      "post": {
+        "description": "Move a bookmark or folder into another folder or to another place in its own.",
+        "operationId": "system_bookmark_move",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move a bookmark or folder into another folder or to another place in its own.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/remove": {
+      "post": {
+        "description": "Remove a bookmark, or a folder with everything in it; `restore` brings it back.",
+        "operationId": "system_bookmark_remove",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a bookmark, or a folder with everything in it; `restore` brings it back.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/restore": {
+      "post": {
+        "description": "Bring back a removed bookmark or folder to where it was.",
+        "operationId": "system_bookmark_restore",
+        "parameters": [
+          {
+            "description": "The removed entry's id; the latest removal when left out.",
+            "in": "query",
+            "name": "entry",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The removed entry's id; the latest removal when left out.",
+              "title": "Entry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring back a removed bookmark or folder to where it was.",
         "tags": [
           "system"
         ]

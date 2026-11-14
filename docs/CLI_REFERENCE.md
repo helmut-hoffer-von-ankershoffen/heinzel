@@ -2062,6 +2062,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `agent`: (expert) Install the Heinzelmännchen...
+* `bookmark`: (expert) Keep the built-in browser&#x27;s...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
 * `channel`: Show the update channel, or say what...
@@ -2153,6 +2154,172 @@ $ hz system agent uninstall [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system bookmark`
+
+(expert) Keep the built-in browser&#x27;s bookmarks: a tree of folders and bookmarks.
+
+**Usage**:
+
+```console
+$ hz system bookmark [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `add`: (expert) Add a bookmark; an address...
+* `edit`: (expert) Rename a bookmark or folder, or...
+* `folder`: (expert) Add an empty bookmark folder.
+* `list`: (expert) List the bookmarks and folders in...
+* `move`: (expert) Move a bookmark or folder into...
+* `remove`: (expert) Remove a bookmark, or a folder...
+* `restore`: (expert) Bring back a removed bookmark or...
+
+#### `hz system bookmark add`
+
+(expert) Add a bookmark; an address already in that folder is kept once.
+
+**Usage**:
+
+```console
+$ hz system bookmark add [OPTIONS] {url}
+```
+
+**Arguments**:
+
+* `url <str>`: The page&#x27;s https:// address.  [required]
+
+**Options**:
+
+* `--title <str>`: The name shown; the host when left out.
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark edit`
+
+(expert) Rename a bookmark or folder, or change a bookmark&#x27;s address.
+
+**Usage**:
+
+```console
+$ hz system bookmark edit [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--title <str>`: The new name.
+* `--url <str>`: The new https:// address of a bookmark.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark folder`
+
+(expert) Add an empty bookmark folder.
+
+**Usage**:
+
+```console
+$ hz system bookmark folder [OPTIONS] {title}
+```
+
+**Arguments**:
+
+* `title <str>`: The folder&#x27;s name.  [required]
+
+**Options**:
+
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark list`
+
+(expert) List the bookmarks and folders in their order, with each entry&#x27;s id and folder.
+
+**Usage**:
+
+```console
+$ hz system bookmark list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark move`
+
+(expert) Move a bookmark or folder into another folder or to another place in its own.
+
+**Usage**:
+
+```console
+$ hz system bookmark move [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark remove`
+
+(expert) Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+
+**Usage**:
+
+```console
+$ hz system bookmark remove [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark restore`
+
+(expert) Bring back a removed bookmark or folder to where it was.
+
+**Usage**:
+
+```console
+$ hz system bookmark restore [OPTIONS]
+```
+
+**Options**:
+
+* `--entry <str>`: The removed entry&#x27;s id; the latest removal when left out.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
