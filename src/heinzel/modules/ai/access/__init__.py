@@ -109,7 +109,7 @@ def render_test_all(result: AccessTestReport) -> RenderableType:
             Text(_tokens(row.input_tokens, row.output_tokens) or "-"),
             Text(row.detail),
         )
-    spent = _tokens(result.input_tokens, result.output_tokens) or "no tokens reported"
+    spent = f"tokens: {used}" if (used := _tokens(result.input_tokens, result.output_tokens)) else "no tokens reported"
     head = Text(f"{result.name}: {result.detail}; {spent}", style="green" if result.ok else "red")
     return Group(table, head)
 

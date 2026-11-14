@@ -241,3 +241,98 @@ def test_test_all_stops_on_ctrl_c_with_what_it_learned_recorded(tmp_path):
         access.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
     assert [e.model for e in usage.entries] == ["a"]
     assert [m for m, _ in fake.asked] == ["a", "b"]
+
+
+def _blocks(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    RELEASE.wait(30)
+    return ModelResponse(parts=[TextPart("late")])
+
+
+class Blocking(Models):
+    """Its model blocks the thread its request runs on, so even the event loop's timeout can't end it."""
+
+    def model(self, model_id: str) -> FunctionModel:
+        return FunctionModel(_blocks, model_name=model_id)
+
+
+class Own(Models):
+    """Its own live check answers."""
+
+    def test(self, model_id: str) -> AccessTest:
+        return AccessTest(ok=True, detail="pong", input_tokens=4, output_tokens=1)
+
+
+class Broken(Models):
+    """Builds something that isn't a Pydantic AI model."""
+
+    def model(self, model_id: str) -> object:  # type: ignore[override]
+        return object()
+
+
+def test_a_model_that_blocks_its_request_thread_is_cut_off(tmp_path):
+    RELEASE.clear()
+    access, found = option(tmp_path, Blocking())
+    try:
+        result = access.test_model("ok", 0.2)
+        assert (result.ok, result.detail, result.model) == (False, "no answer within 0.2s", "ok")
+        assert marked(found)["ok"] is False
+    finally:
+        RELEASE.set()
+
+
+def test_the_plugins_own_check_counts_and_a_model_it_cant_build_is_unanswered(tmp_path):
+    access, found = option(tmp_path, Own())
+    result = access.test_model("ok", 1.0)
+    assert (result.ok, result.detail, result.model, result.input_tokens) == (True, "pong", "ok", 4)
+    access, found = option(tmp_path / "broken", Broken())
+    result = access.test_model("ok", 1.0)
+    assert result.ok is False
+    assert "returned object for ok, not a Pydantic AI model" in result.detail
+    assert marked(found)["ok"] is False
+
+
+def test_a_plugin_that_cant_be_loaded_skips_its_test(tmp_path):
+    def gone() -> AiModelsSource:
+        msg = "the plugin isn't installed"
+        raise HeinzelError(msg)
+
+    result = PluginModelsAccess("acme", gone, AccessSettings).test_model("ok", 1.0)
+    assert (result.ok, result.skipped, result.detail) == (False, True, "the plugin isn't installed")
+
+
+def test_test_all_says_when_the_options_models_cant_be_listed(tmp_path):
+    class Failing(Fake):
+        def status(self) -> AccessStatus:
+            msg = "proxy down"
+            raise RuntimeError(msg)
+
+    fake = Failing({})
+    access, _ = service(tmp_path, {"acme": fake})
+    with pytest.raises(HeinzelError, match=r"Couldn't list the models of acme: its status failed \(RuntimeError"):
+        access.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
+
+
+def test_the_terminal_shows_each_model_and_the_tokens_spent(tmp_path):
+    from rich.console import Console
+
+    from heinzel.modules.ai.access import render_test
+
+    fake = Fake(
+        {
+            "a": AccessTest(ok=True, detail="OK", input_tokens=10, output_tokens=1, duration_seconds=0.5),
+            "b": AccessTest(ok=False, detail="no answer within 15s", duration_seconds=15),
+            "c": AccessTest(ok=False, detail="the plugin marks it unavailable; not tested", skipped=True),
+        }
+    )
+    access, _ = service(tmp_path, {"acme": fake})
+    report = access.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
+    console = Console(width=200, record=True)
+    console.print(render_test(report))
+    text = console.export_text()
+    rows = [line.split() for line in text.splitlines()]
+    assert ["a", "answered", "0.5s", "10", "in,", "1", "out", "OK"] in rows
+    assert ["b", "unanswered", "15.0s", "-", "no", "answer", "within", "15s"] in rows
+    assert ["c", "skipped", "0.0s", "-", "the", "plugin", "marks", "it", "unavailable;", "not", "tested"] in rows
+    assert text.splitlines()[-1] == (
+        "acme: 1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped; tokens: 10 in, 1 out"
+    )
