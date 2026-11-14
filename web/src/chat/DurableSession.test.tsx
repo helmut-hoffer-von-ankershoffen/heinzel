@@ -2010,7 +2010,7 @@ it("shows the Heinzel's chosen look in the header and before its replies, not be
   });
   const { container } = renderAt(`/?chat=${sessionId}`);
   // The face in the header sits in the switcher button, which carries the name.
-  const face = await screen.findByRole("button", { name: "Personal helper. Switch Heinzel" });
+  const face = await screen.findByRole("button", { name: /^Personal helper, .+\. Switch Heinzel$/ });
   const header = face.querySelector('svg[data-view="bust"]') as SVGElement;
   expect(header).not.toBeNull();
   expect(header.querySelector('[fill="#1E88E5"]')).not.toBeNull();

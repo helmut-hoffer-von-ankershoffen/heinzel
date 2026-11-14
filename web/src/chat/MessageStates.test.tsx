@@ -28,7 +28,7 @@ const paths = (calls: Request[], path: string) => calls.filter((request) => new 
 async function send(text: string) {
   const user = userEvent.setup();
   const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
-  await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
+  await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
   await user.type(chat.getByLabelText("Message Helmi"), text);
   await user.click(chat.getByRole("button", { name: "Send" }));
   return { chat, user };

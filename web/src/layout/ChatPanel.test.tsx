@@ -31,13 +31,15 @@ describe("ChatPanel", () => {
     renderAt(
       `/doctor?chat=${previous}&agent-chat=${oldChat.id}&approval-chat=${oldChat.id}&approval-request=old&agent-open-request=old`,
     );
-    await user.click(await screen.findByRole("button", { name: "Previous Heinzel. Switch Heinzel" }));
+    await user.click(await screen.findByRole("button", { name: /^Previous Heinzel, .+\. Switch Heinzel$/ }));
     await user.click(await screen.findByRole("button", { name: "New Heinzel" }));
     // The page's draft asks for the name first; saving it creates the Heinzel and opens its conversation.
     await user.type(await within(await screen.findByRole("main")).findByLabelText("Name"), "New personal Heinzel");
     await user.click(screen.getByRole("button", { name: "Save and chat" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await panel.findByRole("button", { name: "New personal Heinzel. Switch Heinzel" })).toBeInTheDocument();
+    expect(
+      await panel.findByRole("button", { name: /^New personal Heinzel, .+\. Switch Heinzel$/ }),
+    ).toBeInTheDocument();
     await user.type(await panel.findByLabelText("Message New personal Heinzel"), "Keep this in the new conversation");
     expect(panel.getByRole("button", { name: "Send" })).toBeEnabled();
     const created = calls.findIndex((request) => new URL(request.url).pathname.endsWith("/heinzel/new-chat"));

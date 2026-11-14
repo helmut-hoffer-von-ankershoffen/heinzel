@@ -49,23 +49,34 @@ function show(busy: boolean) {
 
 afterEach(() => vi.useRealTimers());
 
+describe("the header's switch button", () => {
+  it("has a name that starts with the text it shows: the name and the word (label in name)", async () => {
+    mockApi({ "/api/heinzel/sessions": { sessions: [row(id, { activity: "waiting_for_you" })] } });
+    show(false);
+    const face = await screen.findByRole("button", { name: /^Helmi, Waiting for you\. Switch Heinzel$/ });
+    const visible = [...face.querySelectorAll("span span")].map((span) => span.textContent?.trim()).join(", ");
+    expect(visible).toBe("Helmi, Waiting for you");
+    expect(face.getAttribute("aria-label")?.startsWith(visible)).toBe(true);
+  });
+});
+
 describe("the header's state", () => {
   it("says Working with the working face while a turn runs, even when the list says Idle", async () => {
     mockApi({ "/api/heinzel/sessions": { sessions: [row(id)] } });
     const { again } = show(false);
-    const face = await screen.findByRole("button", { name: "Helmi. Switch Heinzel" });
-    await waitFor(() => expect(face).toHaveAccessibleDescription("Idle"));
+    const face = await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
+    await waitFor(() => expect(face).toHaveAccessibleName("Helmi, Idle. Switch Heinzel"));
     expect(face.querySelector("svg")).toHaveAttribute("data-state", "idle");
     again(true);
-    expect(face).toHaveAccessibleDescription("Working");
+    expect(face).toHaveAccessibleName("Helmi, Working. Switch Heinzel");
     expect(face.querySelector("svg")).toHaveAttribute("data-state", "hammering");
   });
 
   it("keeps a stronger state while a turn runs", async () => {
     mockApi({ "/api/heinzel/sessions": { sessions: [row(id, { activity: "waiting_for_you" })] } });
     show(true);
-    const face = await screen.findByRole("button", { name: "Helmi. Switch Heinzel" });
-    await waitFor(() => expect(face).toHaveAccessibleDescription("Waiting for you"));
+    const face = await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
+    await waitFor(() => expect(face).toHaveAccessibleName("Helmi, Waiting for you. Switch Heinzel"));
   });
 
   it("follows the backend while the chat stays open", async () => {
@@ -73,11 +84,11 @@ describe("the header's state", () => {
     mockApi({ "/api/heinzel/sessions": () => ({ sessions: [row(id, { activity })] }) });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     show(false);
-    const face = await screen.findByRole("button", { name: "Helmi. Switch Heinzel" });
-    await waitFor(() => expect(face).toHaveAccessibleDescription("Working"));
+    const face = await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
+    await waitFor(() => expect(face).toHaveAccessibleName("Helmi, Working. Switch Heinzel"));
     activity = "waiting_for_you";
     await act(() => vi.advanceTimersByTimeAsync(21_000));
-    await waitFor(() => expect(face).toHaveAccessibleDescription("Waiting for you"));
+    await waitFor(() => expect(face).toHaveAccessibleName("Helmi, Waiting for you. Switch Heinzel"));
   });
 
   it("shows New for a proposal that is idle, and the activity once it has one", async () => {
@@ -88,7 +99,7 @@ describe("the header's state", () => {
     });
     const user = userEvent.setup();
     show(false);
-    await user.click(await screen.findByRole("button", { name: "Helmi. Switch Heinzel" }));
+    await user.click(await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }));
     const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
     const fritz = within(list).getByRole("button", { name: /Fritz/ });
     expect(within(fritz).getByText("New")).toBeInTheDocument();
@@ -102,7 +113,7 @@ describe("the header's state", () => {
     });
     const user = userEvent.setup();
     show(false);
-    await user.click(await screen.findByRole("button", { name: "Helmi. Switch Heinzel" }));
+    await user.click(await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }));
     const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
     expect(within(within(list).getByRole("button", { name: /Fritz/ })).getByText("Working")).toBeInTheDocument();
     expect(within(within(list).getByRole("button", { name: /Helmi/ })).getByText("Retired")).toBeInTheDocument();

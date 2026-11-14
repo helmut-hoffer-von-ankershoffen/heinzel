@@ -96,7 +96,7 @@ describe("Shell", () => {
       await user.click(await screen.findByRole("tab", { name: "Chat" }));
       await waitFor(() => expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true"));
       // Only the query changes (`?create=1` on /heinzel): the pathname alone used to decide the tab.
-      await user.click(await screen.findByRole("button", { name: "Helmi. Switch Heinzel" }));
+      await user.click(await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }));
       const switcher = await screen.findByRole("dialog", { name: "Your Heinzels" });
       await user.click(within(switcher).getByRole("button", { name: "New Heinzel" }));
       await waitFor(() => expect(screen.getByRole("tab", { name: "Page" })).toHaveAttribute("aria-selected", "true"));
@@ -273,7 +273,7 @@ describe("Desktop menu actions", () => {
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
     act(() => requestMenuAction("new-chat"));
     const reopened = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await reopened.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await reopened.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     // Closed, it opens the chat and focuses the composer once it is ready.
     await waitFor(() => expect(reopened.getByLabelText("Message Helmi")).toHaveFocus());
     // There is no general chat to start: New Chat never opens one.
@@ -287,13 +287,13 @@ describe("Desktop menu actions", () => {
       "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Personal Heinzel", messages: [] },
     });
     renderAt(`/doctor?chat=${id}`);
-    expect(await screen.findByRole("button", { name: "Personal Heinzel. Switch Heinzel" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Personal Heinzel, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     act(() => requestMenuAction("new-chat"));
     // No Heinzel is listed, so the default is the first start.
     expect(await screen.findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
     // The first start takes the cursor in its name field.
     await waitFor(() => expect(screen.getByLabelText("What do you call it?")).toHaveFocus());
-    expect(screen.queryByRole("button", { name: "Personal Heinzel. Switch Heinzel" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Personal Heinzel, .+\. Switch Heinzel$/ })).not.toBeInTheDocument();
     expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
   });
 

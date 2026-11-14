@@ -44,7 +44,7 @@ try {
   await page.getByLabel(/^Message /).waitFor();
   const header = page
     .getByRole("complementary", { name: "Chat" })
-    .getByRole("button", { name: "Draft helper. Switch Heinzel" })
+    .getByRole("button", { name: /^Draft helper, .+\. Switch Heinzel$/ })
     .locator('svg[data-view="bust"]');
   await header.waitFor();
   if ((await header.locator('[fill="#1F9488"]').count()) === 0)

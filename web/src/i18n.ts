@@ -13,7 +13,7 @@ const en = {
   "activity.proud": "Done and proud",
   "activity.asleep": "Asleep",
   "activity.idle": "Idle",
-  "oneChat.switch": "{name}. Switch Heinzel",
+  "oneChat.switch": "{name}, {word}. Switch Heinzel",
   "oneChat.heinzels": "Your Heinzels",
   "oneChat.new": "New Heinzel",
   "oneChat.today": "Today",

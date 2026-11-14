@@ -159,7 +159,7 @@ try {
 
   await page.goto(sessionUrlFor(secondSession));
   const secondComposer = page.getByLabel(/^Message /);
-  await page.getByRole("button", { name: "Second helper. Switch Heinzel" }).waitFor();
+  await page.getByRole("button", { name: /^Second helper, .+\. Switch Heinzel$/ }).waitFor();
   await secondComposer.waitFor();
   assert.equal(await secondComposer.inputValue(), "", "another durable session must not inherit the first draft");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);

@@ -64,7 +64,7 @@ describe("one kind of chat", () => {
     await user.clear(chat.getByLabelText("What do you call it?"));
     await user.type(chat.getByLabelText("What do you call it?"), "Helmi");
     await user.click(chat.getByRole("button", { name: "Start" }));
-    expect(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     expect(chat.getByLabelText("Message Helmi")).toBeInTheDocument();
     expect(chat.queryByRole("button", { name: "Back to chat" })).not.toBeInTheDocument();
     const created = calls.filter((request) => new URL(request.url).pathname === "/api/heinzel/new-chat");
@@ -97,11 +97,11 @@ describe("one kind of chat", () => {
   it("opens your first Heinzel without a link, and the one you talked to last after that", async () => {
     mockOneChat([summary(fritz), summary(helmi)]);
     const first = renderAt("/doctor");
-    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await (await panel()).findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     first.unmount();
     localStorage.setItem("hz.chat.heinzel", fritz);
     renderAt("/doctor");
-    expect(await (await panel()).findByRole("button", { name: "Fritz. Switch Heinzel" })).toBeInTheDocument();
+    expect(await (await panel()).findByRole("button", { name: /^Fritz, .+\. Switch Heinzel$/ })).toBeInTheDocument();
   });
 
   it("switches Heinzels from the name and offers New Heinzel, nothing else", async () => {
@@ -113,7 +113,7 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    const trigger = await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
+    const trigger = await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
     await user.click(trigger);
     const list = within(await screen.findByRole("dialog", { name: "Your Heinzels" }));
     expect(list.getAllByRole("button").map((button) => button.textContent)).toEqual([
@@ -129,7 +129,7 @@ describe("one kind of chat", () => {
     await user.click(
       within(await screen.findByRole("dialog", { name: "Your Heinzels" })).getByRole("button", { name: /Fritz/ }),
     );
-    expect(await chat.findByRole("button", { name: "Fritz. Switch Heinzel" })).toBeInTheDocument();
+    expect(await chat.findByRole("button", { name: /^Fritz, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     await waitFor(() => expect(localStorage.getItem("hz.chat.heinzel")).toBe(fritz));
   });
 
@@ -159,7 +159,9 @@ describe("one kind of chat", () => {
       within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }),
     );
     expect(chat.getByText("Details").closest("details")).toBeVisible();
-    await expectAccessible(inside(chat.getByRole("button", { name: "Helmi. Switch Heinzel" }), ".chat-panel-header"));
+    await expectAccessible(
+      inside(chat.getByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }), ".chat-panel-header"),
+    );
   });
 
   it("closes the chat from the header", async () => {
@@ -167,7 +169,10 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    const header = inside(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" }), ".chat-panel-header");
+    const header = inside(
+      await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }),
+      ".chat-panel-header",
+    );
     await user.click(within(header).getByRole("button", { name: "Close the chat" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument());
   });
@@ -175,7 +180,7 @@ describe("one kind of chat", () => {
   it("opens the default Heinzel for an old general-chat context link, and opens no general chat", async () => {
     const { calls } = mockOneChat([summary(helmi)]);
     renderAt("/doctor?chat-context=event:ev42");
-    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await (await panel()).findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("/runner/chat/open"))).toBe(false);
   });
@@ -183,7 +188,7 @@ describe("one kind of chat", () => {
   it("opens the default Heinzel for an old general chat's id, and never reads that chat", async () => {
     const { calls } = mockOneChat([summary(helmi)], { "/api/system/runner/chat/show": empty });
     renderAt(`/doctor?chat=${empty.id}`);
-    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await (await panel()).findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/runner/chat/show"))).toBe(false);
   });
@@ -192,7 +197,7 @@ describe("one kind of chat", () => {
     localStorage.setItem("hz.chat.first-heinzel", JSON.stringify({ id: "req-1", name: "Helmi" }));
     mockOneChat([summary(helmi)]);
     renderAt("/doctor");
-    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(await (await panel()).findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     await waitFor(() => expect(localStorage.getItem("hz.chat.first-heinzel")).toBeNull());
   });
 
@@ -201,7 +206,7 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    await user.click(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" }));
+    await user.click(await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }));
     const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
     await within(list).findByRole("button", { name: /Helmi/ });
     await user.tab();
@@ -215,7 +220,7 @@ describe("one kind of chat", () => {
     mockOneChat([], { "/api/heinzel/sessions": () => ({ sessions }) });
     const user = userEvent.setup();
     renderAt("/doctor");
-    const face = await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" });
+    const face = await (await panel()).findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
     sessions = [summary(fritz), summary(helmi)];
     await user.click(face);
     const list = within(await screen.findByRole("dialog", { name: "Your Heinzels" }));
@@ -231,8 +236,8 @@ describe("the state of each Heinzel in the header and the switcher", () => {
     const user = userEvent.setup();
     renderAt(`/doctor?chat=${helmi}`);
     const chat = await panel();
-    const face = await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
-    await waitFor(() => expect(face).toHaveAccessibleDescription("Working"));
+    const face = await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
+    await waitFor(() => expect(face).toHaveAccessibleName("Helmi, Working. Switch Heinzel"));
     expect(face.querySelector("svg")).toHaveAttribute("data-state", "hammering");
     await user.click(face);
     const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
@@ -247,7 +252,7 @@ describe("the state of each Heinzel in the header and the switcher", () => {
     const user = userEvent.setup();
     renderAt(`/doctor?chat=${helmi}`);
     const chat = await panel();
-    const face = await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
+    const face = await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
     expect(face.querySelector("svg")).toHaveAttribute("data-state", "idle");
     await user.click(face);
     const list = await screen.findByRole("dialog", { name: "Your Heinzels" });

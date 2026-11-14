@@ -129,6 +129,7 @@ export function HeinzelHeader({
   // A turn on its way is work: face and word say so together, whatever the list last said about a quiet Heinzel.
   const quiet = !current || ["idle", "asleep", "proud"].includes(current.activity);
   const shown = busy && quiet ? "working" : current?.activity;
+  const word = busy && quiet ? activityWord("working") : current ? sessionWord(current) : activityWord(undefined);
   const choose = (id: string) => {
     setSwitchOpen(false);
     switchTrigger.current?.focus();
@@ -162,8 +163,8 @@ export function HeinzelHeader({
             onClick={() => setSwitchOpen((value) => !value)}
             aria-haspopup="dialog"
             aria-expanded={switchOpen}
-            aria-label={t("oneChat.switch", { name })}
-            aria-describedby={`${sessionId}-activity`}
+            // The name starts with what the button shows, the name and the word (WCAG 2.5.3, label in name).
+            aria-label={t("oneChat.switch", { name, word })}
             data-activity={shown ?? "idle"}
             className="flex h-11 min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-accent/70 disabled:opacity-50"
           >
@@ -174,7 +175,7 @@ export function HeinzelHeader({
                 id={`${sessionId}-activity`}
                 className="block truncate text-ui-sm leading-tight text-muted-foreground"
               >
-                {busy && quiet ? activityWord("working") : current ? sessionWord(current) : activityWord(undefined)}
+                {word}
               </span>
             </span>
             <ChevronDown aria-hidden className="size-3.5 shrink-0 text-icon" />

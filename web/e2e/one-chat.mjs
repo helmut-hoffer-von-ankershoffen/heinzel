@@ -78,7 +78,7 @@ try {
   await chat.getByLabel("What do you call it?").fill("Helmi");
   await chat.getByRole("button", { name: "Start" }).click();
 
-  const face = chat.getByRole("button", { name: "Helmi. Switch Heinzel" });
+  const face = chat.getByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
   await face.waitFor({ timeout: 60_000 });
   await chat.getByLabel("Message Helmi").waitFor();
   assert.equal(await page.getByText("Back to chat", { exact: true }).count(), 0, "no Back to chat");
@@ -150,7 +150,7 @@ try {
     .or(page.getByRole("button", { name: /^(Open the chat|Chat)$/ }))
     .first()
     .click();
-  const phoneFace = chat.getByRole("button", { name: "Helmi. Switch Heinzel" });
+  const phoneFace = chat.getByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
   await phoneFace.waitFor({ timeout: 60_000 });
   await accessible('[aria-label="Chat"] .chat-panel-header');
   await phoneFace.click();
