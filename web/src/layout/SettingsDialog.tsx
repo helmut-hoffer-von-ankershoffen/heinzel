@@ -20,6 +20,7 @@ import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
+import { McpSettings } from "./McpSettings";
 import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
@@ -274,6 +275,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
             {current === "web-server" && <WebServerSettings />}
+            {current === "mcp" && <McpSettings />}
             {current === "daemon" && (
               <>
                 {header}
@@ -281,7 +283,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
               </>
             )}
             {(matching.length > 0 ||
-              !["appearance", "ai", "notifications", "daemon", "web-server"].includes(current)) && (
+              !["appearance", "ai", "notifications", "daemon", "web-server", "mcp"].includes(current)) && (
               <div className={current === "daemon" ? "mt-8" : undefined}>
                 <Sections
                   settings={matching}

@@ -20,6 +20,7 @@ import {
   UserRound,
   Users,
   WandSparkles,
+  Waypoints,
 } from "lucide-react";
 import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
 import { ICONS } from "@/components/Contributions";
@@ -188,6 +189,14 @@ export const PAGES: Page[] = [
     heading: "computer",
     owns: [],
     keywords: "restart reconnect browser ui service",
+  },
+  {
+    id: "mcp",
+    title: "MCP",
+    icon: Waypoints,
+    heading: "computer",
+    owns: ["hz.mcp_http"],
+    keywords: "agents claude code codex cursor tokens connect endpoint",
   },
   {
     id: "daemon",
