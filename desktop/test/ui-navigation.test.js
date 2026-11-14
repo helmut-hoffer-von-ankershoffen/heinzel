@@ -380,3 +380,33 @@ test("the window's own open (sidebar Open in browser) needs the person's gesture
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(opened, ["https://example.com/b"]);
 });
+
+test("links open in the built-in browser when the setting is on, in the system's browser when off, mailto always outside", async () => {
+  const contents = new EventEmitter();
+  let open;
+  contents.setWindowOpenHandler = (handler) => { open = handler; };
+  const system = [], inBrowser = [];
+  let on = true, clock = 0;
+  const activation = guardUiNavigation(contents, connection, (url) => { system.push(url); }, {
+    now: () => clock, log: () => {}, browserOn: () => on, browser: (url) => { inBrowser.push(url); },
+  });
+  const click = (url) => { clock += 5000; activation.grant(); open({ url }); };
+  click("https://heinzel.team/learn");
+  click("http://example.com/plain");
+  click("http://127.0.0.1:30124/private");
+  click("mailto:someone@example.com");
+  on = false;
+  click("https://heinzel.team/learn");
+  // Without the person's own input, nothing opens anywhere.
+  clock += 5000; on = true; open({ url: "https://example.com/scripted" });
+  // Two links inside half a second: the second is dropped.
+  clock += 5000; activation.grant(); open({ url: "https://a.example.com/" }); activation.grant(); open({ url: "https://b.example.com/" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(inBrowser, ["https://heinzel.team/learn", "http://example.com/plain", "http://127.0.0.1:30124/private", "https://a.example.com/"]);
+  assert.deepEqual(system, ["mailto:someone@example.com", "https://heinzel.team/learn"]);
+  // The window's own "Open in browser" always goes to the system.
+  clock += 5000; activation.grant();
+  assert.equal(activation.open("https://heinzel.team/out"), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(system.at(-1), "https://heinzel.team/out");
+});

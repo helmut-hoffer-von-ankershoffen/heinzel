@@ -1,16 +1,24 @@
-import { ArrowLeft, ArrowRight, CornerDownLeft, ExternalLink, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CornerDownLeft, ExternalLink, Plus, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { MENU_EVENT } from "@/about/menu";
 import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useNativeSurface } from "@/lib/nativeSurface";
 
+type BrowserTab = { id: string; owner: string; selected: boolean; status: string; url: string; title: string };
+/** The person's own tabs per window, as the desktop enforces. */
+const MAX_TABS = 8;
 type BrowserState = {
+  tabs?: BrowserTab[];
+  selected?: string | null;
   status: string;
   url?: string;
   canGoBack?: boolean;
   canGoForward?: boolean;
   notice?: "passkey" | "no-device" | "clear-failed" | null;
+  /** A link the desktop could not open in a tab: refused (not public HTTPS) or no free tab. */
+  link?: { url: string; reason: "refused" | "limit"; external?: boolean } | null;
 };
 const NOTICES = {
   passkey: "browser.passkeyNote",
@@ -25,6 +33,15 @@ function bridge(): BrowserBridge | undefined {
 /** Whether this window is the desktop app, the only place that owns an isolated browsing surface. */
 export function desktopBrowserAvailable(): boolean {
   return bridge() !== undefined;
+}
+/** A tab's label: its page title, else its host, else "New tab". */
+function tabLabel(tab: BrowserTab): string {
+  if (tab.title) return tab.title;
+  try {
+    return new URL(tab.url).host || t("browser.newTabTitle");
+  } catch {
+    return t("browser.newTabTitle");
+  }
 }
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 const SEARCH = "https://www.google.com/search";
@@ -69,13 +86,16 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
   const [state, setState] = useState<BrowserState>({ status: "empty" });
   const [refused, setRefused] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
+  const addressInput = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const native = bridge();
+  const tabs = state.tabs ?? [];
   const request = async (command: Record<string, unknown>) => {
     try {
       const result = await native?.browser(command);
       if (result) setState(result);
     } catch {
-      setState({ status: "unavailable" });
+      setState((previous) => ({ ...previous, status: "unavailable" }));
     }
   };
   // A failed wipe must stay visible, also when no page is open yet.
@@ -87,18 +107,77 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       setState((previous) => ({ ...previous, notice: "clear-failed" }));
     }
   };
+  // Tabs live in the desktop, not in this panel: closing the panel only hides them, and reopening shows them again.
+  useEffect(() => {
+    void native
+      ?.browser({ action: "tabs" })
+      .then((result) => {
+        setState(result);
+        const current = result.tabs?.find((tab) => tab.selected);
+        if (current?.url) setAddress(current.url);
+      })
+      .catch(() => {});
+  }, [native]);
   useNativeSurface(surface, active, native?.browser, () => {
     void native
       ?.browser({ action: "state" })
       .then(setState)
       .catch(() => {});
   });
-  useEffect(
-    () => () => {
-      void native?.browser({ action: "close" }).catch(() => {});
-    },
-    [native],
-  );
+  const selectedId = state.selected ?? null;
+  const [shownTab, setShownTab] = useState<string | null>(null);
+  // Showing another tab shows its own address; typing in the bar is never overwritten by the poll.
+  useEffect(() => {
+    if (selectedId === shownTab) return;
+    setShownTab(selectedId);
+    const current = (state.tabs ?? []).find((tab) => tab.id === selectedId);
+    if (current?.url) setAddress(current.url);
+  }, [selectedId, shownTab, state.tabs]);
+  const newTab = () => {
+    if (!native || tabs.length >= MAX_TABS) return;
+    setAddress("");
+    setRefused(false);
+    void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
+  };
+  const closeTab = (id: string) => void request({ action: "close-tab", tab: id });
+  // The listener is bound once per panel state and always calls the latest handler.
+  const shortcut = useRef<(event: KeyboardEvent) => void>(() => {});
+  shortcut.current = (event) => {
+    // On macOS the menu alone owns Cmd (Ctrl-T and Ctrl-W are text editing there); elsewhere Ctrl counts only when
+    // the focus is inside this panel, so another panel's terminal or editor keeps its keys.
+    if (/mac/i.test(navigator.platform) || !event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (!(event.target instanceof Node && panel.current?.contains(event.target))) return;
+    const key = event.key.toLowerCase();
+    if (key === "t") {
+      event.preventDefault();
+      newTab();
+    } else if (key === "w" && selectedId) {
+      event.preventDefault();
+      closeTab(selectedId);
+    }
+  };
+  // The Mac menu owns Cmd-T and Cmd-W; it asks the page, and an untaken Close Tab closes the window.
+  const menuTab = useRef<(action: string) => boolean>(() => false);
+  menuTab.current = (action) => {
+    if (action === "new-tab") newTab();
+    else if (selectedId) closeTab(selectedId);
+    else return false;
+    return true;
+  };
+  useEffect(() => {
+    if (!native || !active) return;
+    const keys = (event: KeyboardEvent) => shortcut.current(event);
+    const menu = (event: Event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if ((action === "new-tab" || action === "close-tab") && menuTab.current(action)) event.preventDefault();
+    };
+    document.addEventListener("keydown", keys);
+    window.addEventListener(MENU_EVENT, menu);
+    return () => {
+      document.removeEventListener("keydown", keys);
+      window.removeEventListener(MENU_EVENT, menu);
+    };
+  }, [native, active]);
   const target = addressUrl(address);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
@@ -109,7 +188,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       if (result) setState(result);
     } catch (error) {
       if (String(error).includes("public HTTPS")) setRefused(true);
-      else setState({ status: "unavailable" });
+      else setState((previous) => ({ ...previous, status: "unavailable" }));
     }
   };
   const status =
@@ -121,7 +200,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           ? t("browser.empty")
           : t("browser.unavailable");
   return (
-    <section aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
+    <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
       <form
         className="flex h-10 shrink-0 items-center gap-1 px-2"
         onSubmit={(event) => {
@@ -167,6 +246,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           </>
         )}
         <input
+          ref={addressInput}
           aria-label={t("browser.address")}
           // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
           type="text"
@@ -225,6 +305,49 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       </form>
       {native ? (
         <>
+          <div
+            role="tablist"
+            aria-label={t("browser.tabs")}
+            className="flex shrink-0 items-center gap-1 overflow-x-auto px-2"
+          >
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex max-w-40 shrink-0 items-center rounded-md border border-border text-xs ${tab.selected ? "bg-muted" : ""}`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.selected}
+                  title={tab.url || undefined}
+                  className="min-w-0 flex-1 truncate px-2 py-1 text-left"
+                  onClick={() => void request({ action: "select-tab", tab: tab.id })}
+                >
+                  {tabLabel(tab)}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`${t("browser.closeTab")} ${tabLabel(tab)}`}
+                  title={t("browser.closeTab")}
+                  className="px-1 py-1 text-muted-foreground"
+                  onClick={() => closeTab(tab.id)}
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t("browser.newTab")}
+              title={t("browser.newTab")}
+              disabled={tabs.length >= MAX_TABS}
+              onClick={newTab}
+            >
+              <Plus aria-hidden />
+            </Button>
+          </div>
           <p role="status" className="truncate px-3 pb-1 text-xs text-muted-foreground" title={state.url || undefined}>
             {state.url && (state.status === "ready" || state.status === "loading") ? (
               <>
@@ -239,6 +362,29 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t("browser.refusedNote")}
             </p>
+          )}
+          {state.link && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-2 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs"
+            >
+              <p className="min-w-0 flex-1">
+                {t(state.link.reason === "limit" ? "browser.linkLimit" : "browser.linkRefused")}
+              </p>
+              {state.link.external && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void request({ action: "link-external" })}
+                >
+                  {t("browser.linkOpenExternal")}
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={() => void request({ action: "link-dismiss" })}>
+                {t("browser.linkDismiss")}
+              </Button>
+            </div>
           )}
           {state.notice && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">

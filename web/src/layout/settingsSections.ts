@@ -4,6 +4,7 @@
 // is the daemon, the files, what comes from Claude and updates. A module gets its own entry only where it adds a page
 // of its own; installed providers declare their own pages and semantic icons.
 import {
+  AppWindow,
   Bell,
   Cpu,
   Download,
@@ -127,6 +128,14 @@ export const PAGES: Page[] = [
     heading: "preferences",
     owns: ["system.notify"],
     keywords: "notices alerts desktop browser",
+  },
+  {
+    id: "browser",
+    title: "Browser",
+    icon: AppWindow,
+    heading: "preferences",
+    owns: [],
+    keywords: "links open built-in browser default tabs",
   },
   {
     id: "ai",

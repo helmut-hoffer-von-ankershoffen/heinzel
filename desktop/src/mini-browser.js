@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
+import { builtInBrowserLink, classifyUiLink, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
 
 /** The one persistent partition for websites: never the product's session, so no hz cookie or token is in it. */
@@ -6,6 +8,15 @@ export const BROWSER_PARTITION = "persist:hz-browser";
 // Device APIs a site may ask for; the person then picks the device in a chooser. Camera, microphone, screen stay refused.
 const DEVICE_PERMISSIONS = new Set(["hid", "serial", "usb"]);
 const MAX_DEVICES = 8;
+/** The person's own tabs per window. Agent tabs (a later head) count against their own limits, tagged by `owner`. */
+export const MAX_PERSON_TABS = 8;
+const TAB_ID = /^t-[0-9a-f]{8}$/;
+// The shape of each command; a command may also carry one optional key (a tab id, or a first address).
+const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
+  state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
+  tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"],
+  "link-external": ["action"], "link-dismiss": ["action"] };
+const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", reload: "tab", external: "tab", "new-tab": "url" };
 // A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
 const PASSKEY_PAGE = /\/challenge\/pk(?:\/|$)|passkey|webauthn/i;
@@ -70,8 +81,9 @@ export function deviceDialog({ host, devices }) {
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
   createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false }) {
-  const guests = new Map();
-  const opening = new Map();
+  // window -> { tabs: Map(id -> guest), selected, bounds, shown, opening, pending }: every tab shares one partition.
+  const surfaces = new Map();
+  const opening = new Set();
   const generations = new WeakMap();
   let partition = null;
   let shared = null;
@@ -86,10 +98,14 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const originOf = (value) => { try { return new URL(value).origin; } catch { return ""; } };
   // The guest a prompt came from: its own contents, or the main frame above the requesting frame. A background
   // window never prompts, since only a focused window shows its guest and a site asks from a click in it.
-  const promptOwner = ({ contents, frame }) => [...guests].find(([window, guest]) => {
+  const everyGuest = () => [...surfaces].flatMap(([window, surface]) =>
+    [...surface.tabs.values()].map((guest) => [window, guest, surface]));
+  const tabCount = () => everyGuest().length;
+  // Only the selected tab may prompt: a background tab asking for a device is not something the person is looking at.
+  const promptOwner = ({ contents, frame }) => everyGuest().find(([window, guest, surface]) => {
     const own = guest.view.webContents;
     const top = own.mainFrame;
-    return !window.isDestroyed() && window.isFocused() &&
+    return !window.isDestroyed() && window.isFocused() && surface.selected === guest.id &&
       (own === contents || (frame && top && (frame === top || frame.top === top)));
   });
   /** Ask the person for one device; resolves to the picked id, recording the grant for `type`, or null. */
@@ -119,6 +135,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const { list, ...from } = source(args);
     void pick(list, { type, ...from }).then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
   };
+  const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
   const partitionFor = () => {
     if (partition) return partition;
     partition = createSession(BROWSER_PARTITION);
@@ -156,22 +173,71 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     return shared;
   };
   const releaseNetwork = () => {
-    if (guests.size || opening.size || leases || !shared) return;
+    if (tabCount() || opening.size || leases || !shared) return;
     const ending = shared;
     shared = null;
     void ending.then((network) => network.close(), () => {});
   };
-  const close = (window) => {
-    generations.set(window, (generations.get(window) ?? 0) + 1);
-    const guest = guests.get(window);
-    if (!guest) return;
-    guests.delete(window);
-    guest.detach();
+  const apply = (window, surface) => {
+    for (const guest of surface.tabs.values()) {
+      const visible = surface.shown && surface.selected === guest.id && !guest.blank && window.isFocused() &&
+        guest.status !== "unavailable";
+      if (!guest.view.webContents.isDestroyed()) guest.view.setVisible(Boolean(visible));
+    }
+  };
+  // A fresh id that no tab of this window holds, retried on a collision.
+  const newTabId = (window) => {
+    for (;;) {
+      const id = `t-${randomBytes(4).toString("hex")}`;
+      if (!surfaces.get(window)?.tabs.has(id)) return id;
+    }
+  };
+  const surfaceOf = (window) => {
+    let surface = surfaces.get(window);
+    if (surface) return surface;
+    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, link: null };
+    const onClosed = () => close(window);
+    const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
+    const onBlur = () => { for (const guest of surface.tabs.values()) guest.view.setVisible(false); };
+    surface.detach = () => {
+      window.off("closed", onClosed);
+      window.off("blur", onBlur);
+      window.webContents.off("did-start-navigation", onNavigation);
+    };
+    window.on("closed", onClosed);
+    window.on("blur", onBlur);
+    window.webContents.on("did-start-navigation", onNavigation);
+    surfaces.set(window, surface);
+    return surface;
+  };
+  const dispose = (window, guest) => {
     if (!window.isDestroyed()) window.contentView.removeChildView(guest.view);
     if (!guest.view.webContents.isDestroyed()) guest.view.webContents.close({ waitForBeforeUnload: false });
-    // The partition keeps sign-ins; only "Clear browsing data" empties it.
+  };
+  const closeTab = (window, id) => {
+    const surface = surfaces.get(window);
+    const guest = surface?.tabs.get(id);
+    if (!guest) return;
+    const ids = [...surface.tabs.keys()];
+    surface.tabs.delete(id);
+    if (surface.selected === id) {
+      const next = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1] ?? null;
+      surface.selected = next;
+    }
+    dispose(window, guest);
+    apply(window, surface);
     releaseNetwork();
   };
+  function close(window) {
+    generations.set(window, (generations.get(window) ?? 0) + 1);
+    const surface = surfaces.get(window);
+    if (!surface) return;
+    surfaces.delete(window);
+    surface.detach();
+    for (const guest of surface.tabs.values()) dispose(window, guest);
+    // The partition keeps sign-ins; only "Clear browsing data" empties it.
+    releaseNetwork();
+  }
   /**
    * The partition persists across restarts, so clearing opens it even before the first guest of this run. Pages are
    * taken off their sites first, so no running script writes cookies or storage back; then they load again.
@@ -181,7 +247,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     // A guest still opening would load its site after the pages left theirs: wait for it first.
     await Promise.allSettled([...opening.values()]);
     grants.clear();
-    const pages = [...guests.values()].map((guest) => [guest, guest.view.webContents.getURL()]);
+    const pages = everyGuest().map(([, guest]) => guest).map((guest) => [guest, guest.view.webContents.getURL()]);
     const others = [...leasedPages];
     await Promise.allSettled([...pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")),
       ...others.map((page) => page.blank())]);
@@ -198,7 +264,6 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     for (const page of others) if (leasedPages.has(page)) page.restore();
     if (failed) throw new Error("Browsing data could not be cleared.");
   };
-  const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
   const open = async (window) => {
     const partition = partitionFor();
     let view, network;
@@ -210,7 +275,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { view, session: partition, network, status: "empty", notice: null };
+      const guest = { id: newTabId(window), owner: "person", blank: true, view, session: partition,
+        network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
       const refuseCredentials = (event, ...args) => {
@@ -254,7 +320,19 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         network.authenticate(info, callback);
       });
       contents.on("will-prevent-unload", (event) => event.preventDefault());
-      contents.setWindowOpenHandler(() => { guest.status = "unsupported"; return { action: "deny" }; });
+      // target=_blank and window.open in a page open a new tab, but only right after the person's own input in this
+      // page, and not faster than one a half second: Electron's window-open details carry no gesture.
+      const activation = createUserActivation();
+      grantOnNativeInput(contents, activation);
+      let lastPopup = Number.NEGATIVE_INFINITY;
+      contents.setWindowOpenHandler((details) => {
+        const target = builtInBrowserLink(details?.url, connection()?.origin);
+        const time = Date.now();
+        if (!target || !activation.consume() || time - lastPopup < 500) { guest.status = "unsupported"; return { action: "deny" }; }
+        lastPopup = time;
+        void openLink(window, target).catch(() => {});
+        return { action: "deny" };
+      });
       const guard = (event) => {
         try { browserUrl(event.url, connection()?.origin); }
         catch { event.preventDefault(); guest.status = "unsupported"; }
@@ -274,97 +352,162 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       });
       window.contentView.addChildView(view);
       view.setVisible(false);
-      guests.set(window, guest);
-      const onClosed = () => close(window);
-      const onNavigation = (event) => {
-        if (isNewDocument(event)) close(window);
-      };
-      const onBlur = () => view.setVisible(false);
-      guest.detach = () => {
-        window.off("closed", onClosed);
-        window.off("blur", onBlur);
-        window.webContents.off("did-start-navigation", onNavigation);
-      };
-      window.on("closed", onClosed);
-      window.on("blur", onBlur);
-      window.webContents.on("did-start-navigation", onNavigation);
+      const surface = surfaceOf(window);
+      surface.tabs.set(guest.id, guest);
+      surface.selected = guest.id;
+      apply(window, surface);
       return guest;
     } catch {
-      if (guests.has(window)) close(window);
+      const registered = [...(surfaces.get(window)?.tabs.values() ?? [])].find((guest) => guest.view === view);
+      if (registered) closeTab(window, registered.id);
       else if (view && !view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
       throw new Error("Browser network is unavailable.");
     }
   };
-  const state = (guest) => ({
-    status: guest.status,
-    url: guest.view.webContents.getURL(),
-    canGoBack: guest.view.webContents.navigationHistory.canGoBack(),
-    canGoForward: guest.view.webContents.navigationHistory.canGoForward(),
-    notice: guest.clearFailed ? "clear-failed" : guest.notice,
-  });
+  const tabInfo = (guest, selected) => ({ id: guest.id, owner: guest.owner, selected, status: guest.status,
+    url: guest.view.webContents.getURL(), title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200) });
+  // The selected tab's state, plus the whole strip.
+  const state = (window, target) => {
+    const surface = surfaces.get(window);
+    const tabs = [...(surface?.tabs.values() ?? [])].map((guest) => tabInfo(guest, guest.id === surface.selected));
+    const guest = target ?? surface?.tabs.get(surface.selected);
+    const link = surface?.link ?? null;
+    if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs, selected: null, link };
+    return {
+      status: guest.status,
+      url: guest.view.webContents.getURL(),
+      canGoBack: guest.view.webContents.navigationHistory.canGoBack(),
+      canGoForward: guest.view.webContents.navigationHistory.canGoForward(),
+      notice: guest.clearFailed ? "clear-failed" : guest.notice,
+      tabs,
+      selected: surface?.selected ?? null,
+      link,
+    };
+  };
+  /** A new guest for this window, or the one already opening when a first page is asked twice. */
+  const create = async (event, window, { reuse = false } = {}) => {
+    const surface = surfaceOf(window);
+    if (reuse && surface.opening) return surface.opening;
+    const generation = generations.get(window) ?? 0;
+    let navigated = false;
+    const onNavigation = (details) => { if (isNewDocument(details)) navigated = true; };
+    event.sender.on("did-start-navigation", onNavigation);
+    try {
+      const changed = () => navigated || stopped || (generations.get(window) ?? 0) !== generation;
+      if (changed()) throw new Error("Browser surface is closed.");
+      const mine = [...surface.tabs.values()].filter((tab) => tab.owner === "person").length;
+      if (mine + surface.pending >= MAX_PERSON_TABS) throw new Error("Too many tabs.");
+      surface.pending += 1;
+      const pending = open(window).finally(() => { surface.pending -= 1; opening.delete(pending); if (surface.opening === pending) surface.opening = null; releaseNetwork(); });
+      opening.add(pending);
+      if (reuse) surface.opening = pending;
+      const guest = await pending;
+      if (changed()) {
+        close(window);
+        throw new Error("Browser surface is closed.");
+      }
+      return guest;
+    } finally {
+      event.sender.off("did-start-navigation", onNavigation);
+    }
+  };
+  /**
+   * A link from the product UI, an embed or a page: a new tab on the selected tab, under every rule of a typed address.
+   * A refused address or a full strip leaves a note with the link, which the person may open in the default browser.
+   */
+  async function openLink(window, target) {
+    if (stopped || window.isDestroyed()) return state(window);
+    const surface = surfaceOf(window);
+    const external = classifyUiLink(target, connection()).kind === "external";
+    let url;
+    try { url = browserUrl(target, connection()?.origin); }
+    catch { surface.link = { url: target.slice(0, 2048), reason: "refused", external }; return state(window); }
+    const mine = [...surface.tabs.values()].filter((tab) => tab.owner === "person").length;
+    if (mine + surface.pending >= MAX_PERSON_TABS) {
+      surface.link = { url, reason: "limit", external };
+      return state(window);
+    }
+    const guest = await create({ sender: window.webContents }, window);
+    surfaceOf(window).link = null;
+    guest.blank = false;
+    void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+    return state(window);
+  }
+  const tabOf = (surface, id) => {
+    if (typeof id !== "string" || !TAB_ID.test(id) || !surface?.tabs.has(id)) throw new Error("Unknown tab.");
+    return surface.tabs.get(id);
+  };
   return {
     async handle(event, request) {
       if (stopped) throw new Error("Browser surface is closed.");
       const window = browserOwner(event, { windows, fromWebContents, connection });
       if (!request || typeof request !== "object" || typeof request.action !== "string")
         throw new Error("Invalid browser command.");
-      const fields = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-        state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"] };
-      if (!Object.hasOwn(fields, request.action) || !hasExactKeys(request, fields[request.action]))
+      const { action } = request;
+      const keys = Object.hasOwn(FIELDS, action) ? FIELDS[action] : null;
+      const extra = OPTIONAL[action];
+      if (!keys || !(hasExactKeys(request, keys) || (extra && hasExactKeys(request, [...keys, extra]))))
         throw new Error("Invalid browser command.");
-      if (request.action === "close") { close(window); return { status: "closed" }; }
-      if (request.action === "clear") await clear();
-      let guest = guests.get(window);
-      if (request.action === "navigate") {
-        const url = browserUrl(request.url, connection()?.origin);
-        const generation = generations.get(window) ?? 0;
-        if (!guest) {
-          let navigated = false;
-          const onNavigation = (details) => { if (isNewDocument(details)) navigated = true; };
-          event.sender.on("did-start-navigation", onNavigation);
-          try {
-            if (stopped || navigated || (generations.get(window) ?? 0) !== generation)
-              throw new Error("Browser surface is closed.");
-            if (!guests.has(window)) {
-              if (!opening.has(window)) opening.set(window, open(window).finally(() => { opening.delete(window); releaseNetwork(); }));
-              guest = await opening.get(window);
-            }
-            if (navigated || stopped || (generations.get(window) ?? 0) !== generation) {
-              close(window);
-              throw new Error("Browser surface is closed.");
-            }
-          } finally {
-            event.sender.off("did-start-navigation", onNavigation);
-          }
-          if (navigated) throw new Error("Browser surface is closed.");
+      if (action === "close") { close(window); return { status: "closed" }; }
+      if (action === "clear") await clear();
+      let surface = surfaces.get(window);
+      if (action === "link-dismiss") { if (surface) surface.link = null; return state(window); }
+      if (action === "link-external") {
+        const link = surface?.link;
+        if (link?.external) {
+          surface.link = null;
+          await openExternal(link.url, window);
         }
+        return state(window);
+      }
+      if (action === "close-tab") { tabOf(surface, request.tab); closeTab(window, request.tab); return state(window); }
+      if (action === "select-tab") {
+        tabOf(surface, request.tab);
+        surface.selected = request.tab;
+        apply(window, surface);
+        return state(window);
+      }
+      let guest = request.tab === undefined ? surface?.tabs.get(surface.selected) : tabOf(surface, request.tab);
+      const generation = generations.get(window) ?? 0;
+      if (action === "new-tab" || action === "navigate") {
+        // Check the address before a tab is made for it.
+        const url = action === "navigate" ? browserUrl(request.url, connection()?.origin)
+          : request.url === undefined ? null : browserUrl(request.url, connection()?.origin);
+        if (action === "new-tab" || !guest) guest = await create(event, window, { reuse: action === "navigate" });
         if (stopped || (generations.get(window) ?? 0) !== generation) throw new Error("Browser surface is closed.");
         browserOwner(event, { windows, fromWebContents, connection });
-        guest = guests.get(window);
-        void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+        surface = surfaces.get(window);
+        if (url) {
+          guest.blank = false;
+          void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+        }
+        if (action === "new-tab") return state(window);
       }
-      if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false };
-      if (request.action === "layout") {
+      if (!guest) return state(window);
+      if (action === "layout") {
         try {
           const zoom = event.sender.getZoomFactor();
           const size = window.getContentSize();
           const css = browserBounds(request.bounds, size.map((dimension) => dimension / zoom));
           const bounds = Object.fromEntries(Object.entries(css).map(([key, value]) => [key, Math.round(value * zoom)]));
-          guest.view.setBounds(browserBounds(bounds, size));
+          surface.bounds = browserBounds(bounds, size);
+          for (const tab of surface.tabs.values()) tab.view.setBounds(surface.bounds);
         } catch (error) {
-          guest.view.setVisible(false);
+          surface.shown = false;
+          apply(window, surface);
           throw error;
         }
-        guest.view.setVisible(window.isFocused() && guest.status !== "unavailable");
+        surface.shown = true;
+        apply(window, surface);
       }
-      if (request.action === "hide") guest.view.setVisible(false);
+      if (action === "hide") { surface.shown = false; apply(window, surface); }
       const history = guest.view.webContents.navigationHistory;
-      if (request.action === "back" && history.canGoBack()) history.goBack();
-      if (request.action === "forward" && history.canGoForward()) history.goForward();
-      if (request.action === "reload") guest.view.webContents.reload();
+      if (action === "back" && history.canGoBack()) history.goBack();
+      if (action === "forward" && history.canGoForward()) history.goForward();
+      if (action === "reload") guest.view.webContents.reload();
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
-      if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
-      return state(guest);
+      if (action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
+      return state(window, guest);
     },
     /** The website partition with its configured broker for another guest; `release()` once that guest closes. */
     async lease(page) {
@@ -389,6 +532,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         return { session, network, release, attach };
       } catch (error) { release(); throw error; }
     },
-    closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },
+    openLink,
+    closeAll() { stopped = true; for (const window of [...surfaces.keys()]) close(window); },
   };
 }

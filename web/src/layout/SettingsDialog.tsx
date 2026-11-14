@@ -18,6 +18,7 @@ import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
+import { BrowserSettings } from "./BrowserSettings";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
@@ -277,6 +278,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
+            {current === "browser" && <BrowserSettings />}
             {current === "web-server" && <WebServerSettings />}
             {current === "mcp" && <McpSettings />}
             {current === "daemon" && (
@@ -286,12 +288,14 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
               </>
             )}
             {(matching.length > 0 ||
-              !["appearance", "ai", "notifications", "daemon", "web-server", "mcp"].includes(current)) && (
+              !["appearance", "ai", "notifications", "browser", "daemon", "web-server", "mcp"].includes(current)) && (
               <div className={current === "daemon" ? "mt-8" : undefined}>
                 <Sections
                   settings={matching}
                   heading={current === "daemon" ? t("daemon.configuration") : page.title}
-                  header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
+                  header={
+                    ["appearance", "ai", "notifications", "browser", "daemon"].includes(current) ? undefined : header
+                  }
                   summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
                 />
               </div>

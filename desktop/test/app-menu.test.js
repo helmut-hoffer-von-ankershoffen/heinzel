@@ -68,7 +68,8 @@ test("the menu bar runs App, File, Edit, View, Go, Window, Help", () => {
 test("File and Go carry the accelerators of the web app's own screens", () => {
   const [, file, , , go] = appMenuTemplate({ name: NAME, send() {}, open() {} });
   assert.deepEqual(file.submenu.filter((i) => i.accelerator).map((i) => [i.label, i.accelerator]), [
-    ["New Chat", "CommandOrControl+N"],
+    ["New Chat", "CommandOrControl+N"], ["New Tab", "CommandOrControl+T"], ["Close Tab", "CommandOrControl+W"],
+    ["Close Window", "CommandOrControl+Shift+W"],
   ]);
   assert.equal(file.submenu.at(-1).role, "close");
   assert.deepEqual(go.submenu.map((i) => [i.label, i.accelerator]), [
@@ -119,4 +120,18 @@ test("About opens the web dialog, never the native panel", async () => {
   const { readFile } = await import("node:fs/promises");
   const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
   assert.match(main, /setAboutPanelOptions\(\{ applicationName: app\.name, applicationVersion: app\.getVersion\(\), version: "" \}\)/);
+});
+
+test("New Tab and Close Tab ask the page, which may take them with a cancelable event", () => {
+  const sent = [];
+  const [, file] = appMenuTemplate({ name: NAME, send: (action) => sent.push(action), open() {} });
+  file.submenu.find((item) => item.label === "New Tab").click();
+  file.submenu.find((item) => item.label === "Close Tab").click();
+  assert.deepEqual(sent, ["new-tab", "close-tab"]);
+  assert.match(menuScript("close-tab"), /^!window\.dispatchEvent\(.*cancelable: true/);
+});
+
+test("the app may ask the page to show the browser panel, with no menu item for it", () => {
+  assert.match(menuScript("browser-show"), /"hz:menu".*"browser-show"/);
+  assert.equal(ACTIONS.includes("browser-show"), false);
 });

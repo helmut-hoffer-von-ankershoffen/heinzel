@@ -510,6 +510,7 @@ function Layout() {
           "sidebar",
           "terminal",
           "browser",
+          "browser-show",
           "chat",
           "notifications",
           "help",
@@ -519,7 +520,10 @@ function Layout() {
           if (action === "search") setSearchOpen(true);
           else if (action === "sidebar") setNavOpen((open) => !open);
           else if (action === "terminal") menu.current.toggleTerminal(true);
-          else if (action === "browser") {
+          else if (action === "browser-show") {
+            // A link opened a tab: show the panel without toggling it shut.
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(false);
+          } else if (action === "browser") {
             if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
           } else if (action === "chat") menu.current.toggleChat(true);
           else if (action === "notifications" || action === "help")

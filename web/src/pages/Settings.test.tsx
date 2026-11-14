@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { expert, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -68,5 +68,33 @@ describe("Settings dialog", () => {
     renderAt("/settings?q=ask_max_usd");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
+  });
+
+  it("has a Browser section whose link switch lives in the desktop app: on by default, live, read back from it", async () => {
+    mockApi(shell);
+    let stored = true;
+    const linkMode = vi.fn(async (value?: boolean) => {
+      if (typeof value === "boolean") stored = value;
+      return stored;
+    });
+    Object.defineProperty(window, "heinzelDesktop", { value: { linkMode }, configurable: true });
+    const user = userEvent.setup();
+    renderAt("/?settings=browser");
+    const toggle = await screen.findByRole("switch", { name: "Open links in the built-in browser" });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+    expect(linkMode).toHaveBeenLastCalledWith(false);
+    expect(localStorage.getItem("hz.links-in-browser")).toBeNull();
+    await user.click(toggle);
+    await waitFor(() => expect(linkMode).toHaveBeenLastCalledWith(true));
+    Reflect.deleteProperty(window, "heinzelDesktop");
+  });
+
+  it("says in the web app that the browser setting needs the desktop app", async () => {
+    mockApi(shell);
+    renderAt("/?settings=browser");
+    expect(await screen.findByText(/built-in browser is part of the desktop app/)).toBeVisible();
+    expect(screen.queryByRole("switch", { name: "Open links in the built-in browser" })).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import { createMediaPlayer } from "./media-player.js";
 import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
+import { createSettingsStore } from "./settings-store.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
@@ -87,12 +88,22 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url)));
+      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url), {
+        browserOn: () => settings().get("linksInBrowser"),
+        browser: async (url) => {
+          await miniBrowser.openLink(window, url);
+          // Show the panel on the new tab: the page opens it without toggling it shut.
+          if (!window.isDestroyed()) void window.webContents.executeJavaScript(menuScript("browser-show")).catch(() => {});
+        },
+      }));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
 });
 
+// Settings > Browser > "Open links in the built-in browser": a setting of the app itself, live and kept across restarts.
+let settingsStore;
+const settings = () => (settingsStore ??= createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") }));
 const miniBrowser = createMiniBrowser({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -121,6 +132,15 @@ const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : ()
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
+  ipcMain.handle("hz:link-mode", (event, inBrowser) => {
+    const owned = isOwnedMainFrame(event, {
+      windows,
+      fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+      connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    });
+    if (owned && typeof inBrowser === "boolean") settings().set("linksInBrowser", inBrowser);
+    return settings().get("linksInBrowser");
+  });
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -233,10 +253,19 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (allowed) void shell.openExternal(url);
       },
       send: (action) => {
-        const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        // Close Tab acts on the focused window only: with none focused it must never close a background window.
+        const window = action === "close-tab" ? BrowserWindow.getFocusedWindow()
+          : BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
         const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
         console.info(menuLogLine(action, ready ? "sent" : "no_window"));
-        if (ready) void window.webContents.executeJavaScript(menuScript(action));
+        if (!ready) return;
+        const sent = window.webContents.executeJavaScript(menuScript(action));
+        // Cmd+W closes the browser's selected tab when the page takes it, and otherwise the window as before.
+        if (action === "close-tab") void sent.then((taken) => {
+          console.info(menuLogLine(action, taken === true ? "taken" : "not_taken"));
+          if (taken !== true && !window.isDestroyed()) window.close();
+        }, () => {});
+        else void sent;
       },
     })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
