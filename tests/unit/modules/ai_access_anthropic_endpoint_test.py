@@ -144,8 +144,8 @@ def test_streaming_reads_server_sent_events(proxy: Proxy, tmp_path: Path) -> Non
     body = sse(
         {"type": "message_start", "message": start},
         {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hel"}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "lo"}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hi, "}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "there"}},
         {"type": "content_block_stop", "index": 0},
         {
             "type": "message_delta",
@@ -163,7 +163,7 @@ def test_streaming_reads_server_sent_events(proxy: Proxy, tmp_path: Path) -> Non
             return chunks, result.usage
 
     chunks, usage = asyncio.run(stream())
-    assert "".join(chunks) == "Hello"
+    assert "".join(chunks) == "Hi, there"
     assert proxy.body()["stream"] is True
     assert proxy.requests[0].headers["authorization"] == "Bearer sk-proxy"
     assert usage.output_tokens == 2

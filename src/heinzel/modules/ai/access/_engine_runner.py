@@ -39,7 +39,7 @@ from heinzel import (
     redact_emails,
 )
 from heinzel.kernel import Effort, clean_text
-from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers
+from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers, model_failure
 from heinzel.modules.ai.access._engine_history import SessionHistory, capped, session_of, stopped
 from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError
 from heinzel.modules.ai.access._file_tools import run as run_file_tool
@@ -377,8 +377,12 @@ class EngineRunner:
             if isinstance(exc, asyncio.CancelledError):
                 raise
             return failed.model_copy(update={"status": "timeout", "detail": f"stopped after {turn.timeout}"})
-        except Exception as exc:  # noqa: BLE001 - the model's, the plugin's or a server's error is a failed run
-            return failed.model_copy(update={"detail": clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]})
+        except (HeinzelError, McpError) as exc:  # hz's own words: safe to show
+            return failed.model_copy(update={"detail": clean_text(str(exc))[:DETAIL_LIMIT]})
+        except Exception as exc:  # noqa: BLE001 - the model's or the plugin's error is a failed run
+            # Its kind and HTTP status only, never its text: a proxy's error body may echo a token.
+            said = model_failure(exc, chosen.label, before_response=not stream.partial)
+            return failed.model_copy(update={"detail": str(said)[:DETAIL_LIMIT]})
         finally:
             await session.stop()
         draft = str(done.output)

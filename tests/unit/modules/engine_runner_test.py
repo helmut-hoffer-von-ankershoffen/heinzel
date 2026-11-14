@@ -200,7 +200,7 @@ def test_a_slow_or_failing_model_is_a_result(work: Path) -> None:
         return ModelResponse([TextPart("late")])
 
     def broken(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        msg = "the proxy said no"
+        msg = "the proxy said no, token sk-secret"
         raise RuntimeError(msg)
 
     timed = runner(streamed(slow)).run(
@@ -211,7 +211,8 @@ def test_a_slow_or_failing_model_is_a_result(work: Path) -> None:
     )
 
     assert (timed.status, timed.draft) == ("timeout", "")
-    assert (failed.status, failed.detail) == ("failed", "RuntimeError: the proxy said no")
+    assert failed.status == "failed"
+    assert failed.detail == "The plugin's model failed (RuntimeError)."  # never the error's own text
 
 
 SERVER = textwrap.dedent(
