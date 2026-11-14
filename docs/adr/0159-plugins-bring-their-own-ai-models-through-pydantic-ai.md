@@ -104,6 +104,9 @@ Checkable statements:
    after another, at most 24 per run and 15 s each, recorded as usage with cause `test`. A model that doesn't answer
    is marked unavailable for every head, kept as ids only in a private file in the profile's state, until a later
    test answers; a model the plugin marks unavailable is skipped, and a test never clears the plugin's own mark.
+   Any response counts as an answer, also one without text; only a provider or transport error, or no response in
+   time, marks. A failure shows its kind and HTTP status only, never the provider's text. One run at a time per
+   profile; the web asks for confirmation first and shows which model is being asked.
    The `ai-access` capability gains the optional method `test_model(model_id, timeout)` for it.
 9. **Effort is checked per model and mapped to its style.** An effort the offer doesn't list is refused before
    the turn. For `thinking: adaptive`, Core passes Anthropic's `thinking: {type: adaptive}` and

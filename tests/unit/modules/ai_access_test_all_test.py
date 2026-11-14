@@ -88,12 +88,12 @@ def test_each_model_answers_fails_or_times_out_and_is_kept_for_the_picker(tmp_pa
     assert answered.output_tokens
     failed = access.test_model("boom", 2.0)
     assert (failed.ok, failed.model) == (False, "boom")
-    assert failed.detail == "RuntimeError: proxy said no"
+    assert failed.detail == "RuntimeError"
     started = time.monotonic()
     hung = access.test_model("slow", 0.3)
     assert time.monotonic() - started < 2.5, "bounded by its timeout"
     assert (hung.ok, hung.model) == (False, "slow")
-    assert "TimeoutError" in hung.detail or "no answer within" in hung.detail
+    assert hung.detail == "no answer within 0.3s"
     assert marked(found) == {"ok": True, "boom": False, "slow": False, "gone": False}
     assert access.status().unavailable_models == ["boom", "slow", "gone"], "the picker marks them"
     assert access.status().model == "ok", "the default is one that answered"
@@ -198,7 +198,7 @@ def test_test_all_asks_each_model_in_turn_records_tokens_and_keeps_a_summary(tmp
         ("c", "unanswered"),
         ("d", "skipped"),
     ]
-    assert report.models[2].detail == "its test failed (RuntimeError: plugin broke)"
+    assert report.models[2].detail == "its test failed (RuntimeError)"
     assert (report.ok, report.input_tokens, report.output_tokens, report.duration_seconds) == (True, 10, 1, 0.75)
     assert report.detail == "1 of 3 models answered; 2 marked unavailable until a test answers; 1 skipped"
     assert [(e.cause, e.access, e.model, e.tokens, e.cost_usd) for e in usage.entries] == [
@@ -309,7 +309,7 @@ def test_test_all_says_when_the_options_models_cant_be_listed(tmp_path):
 
     fake = Failing({})
     access, _ = service(tmp_path, {"acme": fake})
-    with pytest.raises(HeinzelError, match=r"Couldn't list the models of acme: its status failed \(RuntimeError"):
+    with pytest.raises(HeinzelError, match=r"Couldn't list the models of acme: its status failed \(RuntimeError\)$"):
         access.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
 
 
@@ -349,7 +349,7 @@ def test_a_library_failure_before_the_request_is_a_failed_check(tmp_path, monkey
     monkeypatch.setattr(pydantic_ai, "Agent", refuse)
     access, found = option(tmp_path, Models())
     result = access.test_model("ok", 1.0)
-    assert (result.ok, result.detail, result.model) == (False, "TypeError: unsupported model", "ok")
+    assert (result.ok, result.detail, result.model) == (False, "TypeError", "ok")
     assert marked(found)["ok"] is False
 
 
@@ -383,7 +383,7 @@ def test_a_plugins_own_skip_marks_nothing_and_is_reported_skipped(tmp_path):
 def test_a_plugins_own_check_that_exits_is_a_failed_check_with_its_cause(tmp_path, capsys):
     access, found = option(tmp_path, OwnExits())
     result = access.test_model("ok", 1.0)
-    assert (result.ok, result.detail, result.model) == (False, "SystemExit: 3", "ok")
+    assert (result.ok, result.detail, result.model) == (False, "SystemExit", "ok")
     assert marked(found)["ok"] is False
     assert "Traceback" not in capsys.readouterr().err
 
@@ -457,3 +457,73 @@ def test_the_single_check_of_the_chosen_model_clears_its_mark_but_never_sets_one
 
 async def _plain(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     return ModelResponse(parts=[TextPart("OK")])
+
+
+SECRET = "Incorrect API key provided: sk-proj-SECRETabcd"
+
+
+async def _thinks(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    """A reasoning model that spent the probe's few tokens thinking: a response, but no text (the review's probe)."""
+    return ModelResponse(parts=[], finish_reason="length")
+
+
+async def _refuses_with_a_secret(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    from pydantic_ai.exceptions import ModelHTTPError
+
+    raise ModelHTTPError(401, "acme", {"error": SECRET})
+
+
+class Thinks(Models):
+    def model(self, model_id: str) -> FunctionModel:
+        return FunctionModel(_thinks, model_name=model_id)
+
+
+class Leaks(Models):
+    """Its provider's errors carry a secret; so does its own failing check."""
+
+    def model(self, model_id: str) -> FunctionModel:
+        return FunctionModel(_refuses_with_a_secret, model_name=model_id)
+
+
+class LeaksOwn(Models):
+    def test(self, model_id: str) -> AccessTest:
+        raise RuntimeError(SECRET)
+
+
+def test_a_model_that_answers_without_text_counts_as_answered_with_its_tokens(tmp_path):
+    access, found = option(tmp_path, Thinks())
+    result = access.test_model("ok", 2.0)
+    assert result.ok, result.detail
+    assert result.detail.startswith("it answered, without usable text (")
+    assert result.input_tokens is not None
+    assert result.input_tokens > 0
+    assert marked(found)["ok"] is True, "a reasoning model is never marked for thinking"
+
+
+def test_a_providers_error_text_never_reaches_the_detail_or_the_report(tmp_path):
+    access, found = option(tmp_path, Leaks())
+    result = access.test_model("ok", 2.0)
+    assert (result.ok, result.detail) == (False, "ModelHTTPError 401")
+    assert marked(found)["ok"] is False
+    own = option(tmp_path / "own", LeaksOwn())[0].test_model("ok", 2.0)
+    assert own.detail == "RuntimeError"
+    single = PluginModelsAccess("acme", lambda: found, lambda: AccessSettings(plugin_model="ok")).test()
+    assert single.detail == "ModelHTTPError 401"
+    fake = Fake({"a": RuntimeError(SECRET)})
+    report_service, _ = service(tmp_path, {"acme": fake})
+    report = report_service.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
+    assert "sk-proj" not in report.model_dump_json()
+    for leaked in (result, own, single):
+        assert "sk-proj" not in leaked.model_dump_json()
+
+
+def test_a_new_mark_is_kept_however_many_stale_ids_the_file_holds(tmp_path):
+    from heinzel.kernel._ai_models import MAX_OFFERS, mark_answered
+
+    access, found = option(tmp_path, Leaks())
+    for i in range(MAX_OFFERS):
+        mark_answered(found, f"a-stale-{i:04d}", answered=False)
+    access.test_model("slow", 2.0)
+    assert marked(found)["slow"] is False
+    assert found.unanswered is not None
+    assert json.loads(found.unanswered.read_text()) == ["slow"]

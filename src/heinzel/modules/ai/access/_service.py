@@ -42,6 +42,7 @@ from heinzel.modules.ai.access._models import (
     Outcome,
     Setup,
 )
+from heinzel.modules.ai.access._plugin_models import failure
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +138,14 @@ class ResultStore:
 
 
 def _isolated[T](name: str, what: str, call: Callable[[], T]) -> T | str:
-    """`call()`, or why it failed: a plugin's option never breaks the listing."""
+    """`call()`, or why it failed, by kind only: a plugin's option never breaks the listing."""
     try:
         return call()
     except Exception as exc:  # noqa: BLE001 - isolate plugins: one broken option leaves the others listed
         log_event(
             logger, "ai.access.option_failed", level=logging.WARNING, option=name, call=what, error=type(exc).__name__
         )
-        return clean_text(f"its {what} failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
+        return f"its {what} failed ({failure(exc)})"  # never the error's text: a provider's may echo a secret
 
 
 class AccessService:
@@ -444,7 +445,7 @@ class AccessService:
             msg = f"{title} can't test its models one by one; `hz ai access test --name {name}` checks the one in use."
             raise HeinzelError(msg) from None
         except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
-            detail = clean_text(f"its test failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
+            detail = f"its test failed ({failure(exc)})"
             result = AccessTest(ok=False, detail=detail, model=model_id)
         if not result.skipped or result.input_tokens or result.output_tokens:
             self._usage.record(

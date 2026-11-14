@@ -173,8 +173,9 @@ class PluginModelsAccess:
             found = own(model_id)
             result = AccessTest.model_validate(found.model_dump() if isinstance(found, AccessTest) else found)
         except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
-            detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
-            return AccessTest(ok=False, detail=detail, model=model_id, duration_seconds=time.monotonic() - started)
+            return AccessTest(
+                ok=False, detail=failure(exc), model=model_id, duration_seconds=time.monotonic() - started
+            )
         update: dict[str, object] = {
             "detail": clean_text(result.detail)[:DETAIL_LIMIT],
             "model": result.model or model_id,
@@ -214,8 +215,7 @@ def _bounded(call: Callable[[], AccessTest], timeout: float) -> AccessTest | Non
         except KeyboardInterrupt:
             raise
         except BaseException as exc:  # noqa: BLE001 - e.g. a plugin's SystemExit: a failed check, never a dead thread
-            detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
-            found.append(AccessTest(ok=False, detail=detail))
+            found.append(AccessTest(ok=False, detail=failure(exc)))
         finally:
             with _live_lock:
                 _live -= 1
@@ -243,27 +243,56 @@ def _ask(model: Any, model_id: str, extra: dict[str, Any], timeout: float, start
         # Its own thread and event loop: a head may call this from a thread whose loop is already running.
         result = _bounded(lambda: asyncio.run(_answer(run, timeout)), timeout + 1.0)
     except Exception as exc:  # noqa: BLE001 - the plugin's or the library's error is a failed check
-        result = AccessTest(ok=False, detail=clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT])
+        result = AccessTest(ok=False, detail=failure(exc))
     if result is None:
         result = AccessTest(ok=False, detail=f"no answer within {timeout:g}s")
     return result.model_copy(update={"model": model_id, "duration_seconds": time.monotonic() - started})
 
 
 async def _answer(run: Any, seconds: float) -> AccessTest:  # noqa: ANN401 - a Pydantic AI run coroutine
-    """Await `run` at most `seconds` and turn its answer, or its failure, into a result."""
-    try:
-        async with asyncio.timeout(seconds):
-            result = await run
-    except Exception as exc:  # noqa: BLE001 - the plugin's or the library's error is a failed check
-        return AccessTest(ok=False, detail=clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT])
+    """Await `run` at most `seconds` and turn its answer, or its failure, into a result.
+
+    Any response from the model counts as an answer, also one without text, e.g. a reasoning model that spent the
+    probe's few tokens thinking: only a provider or transport error, or no response in time, is a failure. Its tokens
+    are recorded either way.
+    """
+    from pydantic_ai import capture_run_messages  # noqa: PLC0415 - a heavy import, only on a test
+    from pydantic_ai.messages import ModelResponse  # noqa: PLC0415
+
+    with capture_run_messages() as messages:
+        try:
+            async with asyncio.timeout(seconds):
+                result = await run
+        except TimeoutError:
+            return AccessTest(ok=False, detail=f"no answer within {seconds:g}s")
+        except Exception as exc:  # noqa: BLE001 - the plugin's or the library's error is a failed check
+            responses = [m for m in messages if isinstance(m, ModelResponse)]
+            if not responses:
+                return AccessTest(ok=False, detail=failure(exc))
+            return AccessTest(
+                ok=True,
+                detail=f"it answered, without usable text ({failure(exc)})",
+                input_tokens=sum(r.usage.input_tokens for r in responses),
+                output_tokens=sum(r.usage.output_tokens for r in responses),
+            )
     answer = clean_text(str(result.output)).strip()
     used = result.usage
     return AccessTest(
-        ok=bool(answer),
-        detail=(answer or "the model returned nothing")[:DETAIL_LIMIT],
+        ok=True,
+        detail=(answer or "it answered without text")[:DETAIL_LIMIT],
         input_tokens=used.input_tokens,
         output_tokens=used.output_tokens,
     )
+
+
+def failure(exc: BaseException) -> str:
+    """What a failed check says: the exception's kind and HTTP status, never its text, which may echo a secret.
+
+    E.g. `ModelHTTPError 401` or `TimeoutError`; a provider's error body can carry a key or token (ADR 0159).
+    """
+    status = getattr(exc, "status_code", None)
+    code = f" {status}" if isinstance(status, int) and not isinstance(status, bool) else ""
+    return f"{type(exc).__name__}{code}"
 
 
 class PluginModelOptions(AiModelOptions):
