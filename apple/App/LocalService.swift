@@ -6,6 +6,8 @@ import Foundation
 final class LocalService: NSObject, NSApplicationDelegate {
     private var child: Process?
     private var installation: ManagedInstallation?
+    private var readyChild: Process?
+    private var quitting = false
     var onExit: (() -> Void)?
 
     func start() async throws -> Endpoint {
@@ -41,7 +43,8 @@ final class LocalService: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard self?.child === process else { return }
                 self?.child = nil
-                self?.onExit?()
+                self?.readyChild = nil
+                if self?.quitting == false { self?.onExit?() }
             }
         }
 
@@ -63,7 +66,7 @@ final class LocalService: NSObject, NSApplicationDelegate {
         defer { handle.readabilityHandler = nil }
 
         do {
-            return try await withThrowingTaskGroup(of: Endpoint.self) { group in
+            let endpoint = try await withThrowingTaskGroup(of: Endpoint.self) { group in
                 group.addTask {
                     try await Task.sleep(for: .seconds(90))
                     throw ConnectionError.startup
@@ -86,29 +89,62 @@ final class LocalService: NSObject, NSApplicationDelegate {
                 guard let endpoint = try await group.next() else { throw ConnectionError.startup }
                 return endpoint
             }
+            guard child.isRunning, !quitting else { throw ConnectionError.startup }
+            readyChild = child
+            return endpoint
         } catch {
             await stop()
             throw error
         }
     }
 
-    func stop() async {
-        guard let child, child.isRunning else { return }
+    @discardableResult
+    func stop() async -> Bool {
+        guard let child, child.isRunning else { return false }
+        readyChild = nil
         child.interrupt()
         for _ in 0..<80 {
-            if !child.isRunning { return }
+            if !child.isRunning {
+                return child.terminationReason == .exit && child.terminationStatus == 0
+            }
             try? await Task.sleep(for: .milliseconds(100))
         }
         if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+        for _ in 0..<20 {
+            if !child.isRunning { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard child?.isRunning == true else { return .terminateNow }
+        if quitting { return .terminateLater }
+        guard let child, child.isRunning else { return .terminateNow }
+        let refresh = readyChild === child ? installation?.executable : nil
+        quitting = true
         Task {
-            await stop()
+            let graceful = await stop()
+            guard !child.isRunning else {
+                quitting = false
+                sender.reply(toApplicationShouldTerminate: false)
+                return
+            }
+            installation = nil
+            if graceful, let refresh { requestRefresh(executable: refresh, environment: child.environment) }
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    private func requestRefresh(executable: String, environment: [String: String]?) {
+        let refresh = Process()
+        refresh.executableURL = URL(fileURLWithPath: executable)
+        refresh.arguments = ["app", "refresh"]
+        refresh.environment = environment
+        refresh.standardInput = FileHandle.nullDevice
+        refresh.standardOutput = FileHandle.nullDevice
+        refresh.standardError = FileHandle.nullDevice
+        try? refresh.run()
     }
 }
 /// Read the installer’s private binding while holding its exclusive desktop-use gate.
