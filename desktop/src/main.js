@@ -125,7 +125,8 @@ const mediaPlayer = createMediaPlayer({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
   connection: () => (stopping || quitting ? null : instance.currentConnection()),
-  lease: () => miniBrowser.lease(),
+  // The player hands its page, so Clear browsing data blanks and restores the YouTube player too.
+  lease: (page) => miniBrowser.lease(page),
   createView: (options) => new WebContentsView(options),
   openExternal: (url) => shell.openExternal(url),
 });
