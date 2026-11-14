@@ -85,7 +85,7 @@ test("device and security-key prompts show the person a chooser; only the picked
       { deviceId: "h1", name: "Security Key", vendorId: 4176, productId: 1031, serialNumber: "KEY1" },
       { deviceId: "h2", name: "Keyboard", vendorId: 1452, productId: 641, serialNumber: "KBD" }], frame: top }],
     "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }], frame: embed }],
-    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "0x2341", productId: "0x0043", serialNumber: "SER1" }], contents],
+    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "9025", productId: "67", serialNumber: "SER1" }], contents],
   };
   for (const [chooser, args] of Object.entries(lists)) {
     let prevented = false, picked = "unset";

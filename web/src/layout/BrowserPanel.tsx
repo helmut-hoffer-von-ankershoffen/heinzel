@@ -39,7 +39,7 @@ export function addressUrl(value: string): string | null {
   // "localhost:3000" or "example.com:8443/x" is a host with a port, not a scheme.
   const hostWithPort = /^[^\s/:]+:\d+(?:[/?#]|$)/.test(input);
   if (SCHEME.test(input) && !hostWithPort) return input;
-  const host = input.split(/[/?#]/, 1)[0];
+  const host = input.split(/[/?#]/, 1)[0] ?? "";
   const looksLikeHost =
     !/\s/.test(input) && (host.includes(".") || hostWithPort || /^localhost$/i.test(host) || host.startsWith("["));
   if (!looksLikeHost) {
