@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from heinzel import Config, CurrentUser, HeinzelError, SelfAnswer, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger
+from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger, process_alive
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest
 
@@ -153,7 +153,7 @@ class QuestionRelay:
     def _close_leftovers(self, channel: SelfChat) -> None:
         """Say "still open" in the threads of asks a process that ended (a restart) left waiting; once each."""
         with self.ledger.locked() as state:
-            ended = [(s, state["threads"].get(s)) for s, pid in state["live"].items() if not _alive(pid)]
+            ended = [(s, state["threads"].get(s)) for s, pid in state["live"].items() if not process_alive(pid)]
             for session, _thread in ended:
                 del state["live"][session]
         for session, thread in ended:
@@ -276,16 +276,3 @@ class QuestionRelay:
             log_event(
                 _EVENTS, "self_chat.note.failed", level=logging.WARNING, problem=type(exc).__name__, detail=detail
             )
-
-
-def _alive(pid: str) -> bool:
-    """Whether the process `pid` still runs; an unreadable entry counts as ended."""
-    if not pid.isdigit():
-        return False
-    try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True

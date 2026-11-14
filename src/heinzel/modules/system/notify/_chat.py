@@ -4,22 +4,28 @@ What pops up in the app (or natively) is also sent to your own direct messages t
 `notify_self`: the same notices, at the same time, under the same policy (kinds, quiet mode, working hours, the rate
 limit). It never replaces the app: the list keeps every notice, and a failure here never stops one from popping up.
 
-Each notice is sent at most once. It is claimed in a small ledger under a lock before the adapter is called, so the
-web app's process and the daemon's tick never both send it; a failed send is logged, not retried. A Heinzel's notices
+Each notice is sent once. It is claimed in a small ledger under a lock before the adapter is called, so the web
+app's process and the daemon's tick never both send it; a failed send is logged, not retried, and a claim whose process
+ended mid-send (a tick that finished first) is taken over by the next sender. A Heinzel's notices
 share one thread per Heinzel chat. Only notices that became due within `WINDOW` are sent, so switching it on doesn't
 replay a backlog.
 """
 
 import logging
+import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from heinzel import Notice, NoticeKind, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import SelfChat, SelfChatLedger
+from heinzel.kernel._self_chat import SelfChat, SelfChatLedger, process_alive
 
 _EVENTS = get_logger("system.notify")
+SENDING = "sending:"
+"""A notice claimed by the process whose id follows; if that process ended mid-send, the next sender takes it over."""
+FAILED = "failed"
+"""A notice the adapter refused: logged, not retried."""
 WINDOW = timedelta(hours=1)
 """Only notices that became due this recently go to chat."""
 KIND_LABEL: dict[NoticeKind, str] = {
@@ -67,6 +73,7 @@ def send(
     call, as the adapter would most likely refuse them too.
     """
     sent = 0
+    mine = SENDING + str(os.getpid())
     for notice in notices:
         if not (notice.popup and notice.resolved_at is None and now - WINDOW <= notice.due <= now):
             continue
@@ -74,13 +81,16 @@ def send(
             continue
         thread_key = notice.route if notice.helper is not None else None
         with ledger.locked() as state:
-            if notice.id in state["sent"]:
-                continue
-            state["sent"][notice.id] = now.isoformat()
+            claim = state["sent"].get(notice.id)
+            if claim is not None and not (claim.startswith(SENDING) and not process_alive(claim[len(SENDING) :])):
+                continue  # sent, failed, or being sent by a process that still runs
+            state["sent"][notice.id] = mine
             thread = state["threads"].get(thread_key) if thread_key else None
         try:
             message = channel.notify(chat_text(notice, url(notice)), thread=thread, context=chat_context(notice))
         except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs a notice
+            with ledger.locked() as state:
+                state["sent"][notice.id] = FAILED
             log_event(
                 _EVENTS,
                 "notify.chat.failed",
@@ -91,8 +101,9 @@ def send(
                 detail=" ".join(clean_text(str(exc)).split())[:200],
             )
             return sent
-        if thread_key and thread is None:
-            with ledger.locked() as state:
+        with ledger.locked() as state:
+            state["sent"][notice.id] = now.isoformat()
+            if thread_key and thread is None:
                 state["threads"].setdefault(thread_key, message.thread)
         sent += 1
     return sent

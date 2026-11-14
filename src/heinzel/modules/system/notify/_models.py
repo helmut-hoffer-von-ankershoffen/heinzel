@@ -99,7 +99,8 @@ class NotifySettings(ModuleSettings):
         default=False,
         title="Questions also in chat",
         description="Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it "
-        "can (ADR 0160). The first answer counts, in the app or in chat.",
+        "can (ADR 0160): its whole message, which may quote what it read. The first answer counts, in the app or in "
+        "chat.",
         json_schema_extra={"x-hidden": True, "x-live": True},
     )
     chat_wait_minutes: int = Field(

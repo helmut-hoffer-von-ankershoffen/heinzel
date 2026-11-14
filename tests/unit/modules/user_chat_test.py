@@ -12,6 +12,7 @@ from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
@@ -449,3 +450,28 @@ def test_only_the_self_chat_identity_runs_a_turn_for_a_chat_answer(tmp_path):
         assert answer.message.role == "assistant"
         with pytest.raises(HeinzelError, match="authenticated user"):  # no head runs it as its own
             asyncio.run(service.answer(session, "from-chat"))
+
+
+def test_a_stopped_turn_for_a_chat_answer_is_set_aside_from_the_app_like_a_typed_one(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        asyncio.run(service.answer(session, "hello"))
+    with current.local("self-chat"):
+        crud.accept(session, MessageRequest(request_id="from-chat", text="The work one"))
+        turn = interactive_turn_id("from-chat")
+        with crud.repository.control_writer(session) as writer:  # the process ended mid-turn
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "from-chat"})
+    web = CallIdentity(
+        current.owner(), "web-session", "browser", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(web):
+        assert service.turn_state(session, "from-chat").status == "unresolved"
+        service.abandon(session, "from-chat")
+        assert service.turn_state(session, "from-chat").status == "abandoned"
+    with current.local("self-chat"):
+        service._set_aside(session, "from-chat")  # idempotent: already resolved
+    with current.using(web):
+        assert service.turn_state(session, "from-chat").status == "abandoned"

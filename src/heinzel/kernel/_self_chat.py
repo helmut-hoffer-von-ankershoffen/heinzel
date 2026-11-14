@@ -45,6 +45,8 @@ STATE = "self-chat"
 MAX_LEDGER = 500
 """Most entries one part of a self-chat ledger keeps; the oldest go first."""
 MAX_TIMEOUT = 3600.0
+NOTIFY_WAIT = 15.0
+"""Longest hz waits for one `notify_self`: a chat that doesn't answer by then costs only that message."""
 """Longest a question waits in chat, in seconds."""
 
 
@@ -70,12 +72,13 @@ class SelfChat:
 
         Raises:
             NotSupportedError: If the adapter doesn't serve `notify_self`.
-            HeinzelError: If the adapter's answer isn't a `SelfMessage`.
+            HeinzelError: If the adapter's answer isn't a `SelfMessage`, or it doesn't answer in `NOTIFY_WAIT`.
         """
         if not self.notifies:
             raise NotSupportedError(CAPABILITY, "notify_self")
         adapter = cast("Chat", self.build())
-        sent: object = adapter.notify_self(self_text(text), thread=_handle(thread), context=self_context(context))
+        message, handle, label = self_text(text), _handle(thread), self_context(context)
+        sent = bounded(lambda: adapter.notify_self(message, thread=handle, context=label), NOTIFY_WAIT, self.adapter)
         if not isinstance(sent, SelfMessage):
             msg = f"The chat adapter {self.adapter} answered notify_self with something other than a SelfMessage."
             raise HeinzelError(msg)
@@ -240,3 +243,43 @@ class SelfChatLedger:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(bounded, handle)
         partial.replace(self.path)
+
+
+def bounded(call: Callable[[], object], seconds: float, adapter: str) -> object:
+    """`call()` in a worker thread, waited for at most `seconds`; a hung adapter keeps only that daemon thread.
+
+    Raises:
+        HeinzelError: If it doesn't return in time.
+        Exception: Whatever `call` raised.
+    """
+    outcome: list[object] = []
+    failure: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            outcome.append(call())
+        except BaseException as exc:  # noqa: BLE001 - handed to the caller below
+            failure.append(exc)
+
+    worker = threading.Thread(target=run, name="hz-self-chat-call", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if failure:
+        raise failure[0]
+    if not outcome:
+        msg = f"The chat adapter {adapter} didn't answer within {seconds:.0f} seconds."
+        raise HeinzelError(msg)
+    return outcome[0]
+
+
+def process_alive(pid: str) -> bool:
+    """Whether the process `pid` still runs; an entry that isn't a process id counts as ended."""
+    if not pid.isdigit():
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
