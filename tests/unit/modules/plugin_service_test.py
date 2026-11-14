@@ -2607,3 +2607,45 @@ def test_the_local_getter_answers_only_paths_inside_the_repository(tmp_path):
     ):
         with pytest.raises(LookupError):
             get(path)
+
+
+def test_a_crafted_catalog_name_cannot_route_an_install_to_a_local_path(make_kernel, tool_env, monkeypatch, tmp_path):
+    repository = tmp_path / "repo"
+    git_repository(repository, PLUGIN_FILES)
+    uri = repository.resolve().as_uri()
+    name = f'heinzel-x @ git+{uri} ;python_version>"0" and "'
+    assert not _service._catalog_entry_is_plain(name, '"=="a"', "")
+    assert not _service._catalog_entry_is_plain("heinzel-x", "../x", "")
+    assert _service._catalog_entry_is_plain("heinzel-x", "plugins/x", "")
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    spec = f'{name} @ git+https://github.com/e/r#subdirectory=plugins/"=="a"'
+    with pytest.raises(HeinzelError, match="only from what you type"):
+        service._read_candidate(spec, origin="catalog")
+    assert runs == []
+
+
+def test_a_local_source_whose_git_cannot_run_is_refused_not_installed_unpinned(
+    make_kernel, tool_env, monkeypatch, tmp_path
+):
+    repository = tmp_path / "heinzel-crm"
+    git_repository(repository, PLUGIN_FILES)
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+
+    def broken(*_args, **_kwargs):
+        message = "git is gone"
+        raise OSError(message)
+
+    monkeypatch.setattr(_sources.subprocess, "run", broken)
+    with pytest.raises(HeinzelError, match="git is gone"):
+        service.candidate(f"heinzel-crm @ git+{repository.resolve().as_uri()}@main")
+    assert runs == []
+
+
+def test_git_runs_without_the_callers_git_environment(tmp_path, monkeypatch):
+    repository = tmp_path / "heinzel-crm"
+    commit = git_repository(repository, PLUGIN_FILES)
+    other = tmp_path / "other"
+    git_repository(other, {"a.txt": "x"})
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    assert _sources.from_local(_sources.parse(str(repository), origin="user")).revision == commit

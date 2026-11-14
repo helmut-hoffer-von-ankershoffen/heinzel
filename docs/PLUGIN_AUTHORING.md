@@ -229,6 +229,8 @@ A private plugin you cloned needs no remote: `hz system plugin add ~/Code/heinze
 `~/...`), `file:///abs/path` or `git+file:///abs/path@v0.1.0#subdirectory=dir` previews the commit of the ref (else
 `HEAD`) and installs that commit as a normal, non-editable install, reading `pyproject.toml` with git. `hz system
 plugin list` shows the path; there is no link. A new commit or tag in the clone is installed by adding it again.
+A path that holds an `@` is ambiguous: write it as `git+file://` with `%40` for the `@`. Local paths come only from
+what you type, never from a catalog or from another plugin's needs.
 Use `hz system plugin develop .` for an editable checkout you are changing.
 
 ## Release one plugin

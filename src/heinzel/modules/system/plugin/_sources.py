@@ -113,11 +113,18 @@ def refused(spec: str, why: str) -> NoReturn:
     raise HeinzelError(msg)
 
 
-def parse(spec: str) -> PluginSource:
+Origin = Literal["user", "catalog"]
+"""Where a spec came from: typed by the person (`user`), or built from a catalog, a plugin's needs or an installed
+record (`catalog`). Only the person's own input may name a path on this machine; the default is the safe one."""
+
+
+def parse(spec: str, *, origin: Origin = "catalog") -> PluginSource:
     """Parse what `add` was given into a PyPI requirement or an https git repository.
 
+    A local path or file URL is accepted only when `origin` is `user`; from a catalog it is refused before any git runs.
+
     Raises:
-        HeinzelError: If the source is anything else, or a malformed one.
+        HeinzelError: If the source is anything else, a malformed one, or local and not from the person.
     """
     text = spec.strip()
     if not text:
@@ -125,15 +132,17 @@ def parse(spec: str) -> PluginSource:
     if text.startswith("-") or any(c in text for c in "\0\r\n\t"):
         refused(spec, "it looks like an option or holds control characters")
     if text.startswith(PATH_LIKE) or text.startswith("file:") or (len(text) > 1 and text[1] == ":"):
+        if origin != "user":
+            refused(spec, "a local path comes only from what you type, never from a catalog or another plugin")
         return _local_spec(spec, text)
     if text.startswith("https://") and " " not in text:
         text = f"git+{text}"
     if text.startswith("git+"):
-        return _git(spec, None, text)
-    return _requirement(spec, text)
+        return _git(spec, None, text, origin)
+    return _requirement(spec, text, origin)
 
 
-def _requirement(spec: str, text: str) -> PluginSource:
+def _requirement(spec: str, text: str, origin: Origin) -> PluginSource:
     """A PyPI requirement, or `name @ git+URL`.
 
     Raises:
@@ -150,10 +159,10 @@ def _requirement(spec: str, text: str) -> PluginSource:
     name = canonicalize_name(requirement.name)
     if requirement.url is not None:
         if requirement.url.startswith("file:"):
-            return _git(spec, name, f"git+{requirement.url}")
+            return _git(spec, name, f"git+{requirement.url}", origin)
         if not requirement.url.startswith("git+"):
             refused(spec, "only git repositories over https are accepted, not archives or other URLs")
-        return _git(spec, name, requirement.url)
+        return _git(spec, name, requirement.url, origin)
     if name == CORE_DISTRIBUTION:
         refused(spec, "Heinzelmännchen itself is updated with `hz system update`")
     if not name.startswith(PREFIX):
@@ -161,15 +170,26 @@ def _requirement(spec: str, text: str) -> PluginSource:
     return PluginSource(kind="pypi", name=name, requirement=requirement)
 
 
-def _git(spec: str, name: str | None, url: str) -> PluginSource:  # noqa: C901 - one rule per refusal reads best flat
-    """An https git repository from `git+https://host/path[@ref][#subdirectory=dir]`.
+def _git(spec: str, name: str | None, url: str, origin: Origin) -> PluginSource:
+    """A git repository from `git+https://host/path[@ref][#subdirectory=dir]`, or on this machine from the person.
+
+    Raises:
+        HeinzelError: If it isn't https (or a local path the person typed), or is otherwise unsafe.
+    """
+    parts = urlsplit(url.removeprefix("git+"))
+    if parts.scheme != "file":
+        return _https(spec, name, parts)
+    if origin != "user":
+        refused(spec, "a local path comes only from what you type, never from a catalog or another plugin")
+    return _local_url(spec, name, parts)
+
+
+def _https(spec: str, name: str | None, parts: SplitResult) -> PluginSource:  # noqa: C901 - one rule per refusal reads best flat
+    """An https git repository from its split URL.
 
     Raises:
         HeinzelError: If it isn't https, carries credentials, a query or an unsafe ref or subdirectory.
     """
-    parts = urlsplit(url.removeprefix("git+"))
-    if parts.scheme == "file":
-        return _local_url(spec, name, parts)
     if parts.scheme != "https":
         refused(spec, f"only git over https or file is accepted, not {parts.scheme or 'no scheme'}")
     if "@" in parts.netloc or not parts.hostname:
@@ -207,9 +227,11 @@ def _local_spec(spec: str, text: str) -> PluginSource:
         HeinzelError: If it is a relative or Windows path, or not a usable local repository.
     """
     if text.startswith(("/", "~")):
+        if "@" in text:
+            refused(spec, "a path holding @ is ambiguous; write it as `git+file:///abs/path@ref`")
         return _local(spec, None, Path(text).expanduser(), None, None)
     if text.startswith("file:"):
-        return _git(spec, None, f"git+{text}")
+        return _git(spec, None, f"git+{text}", "user")
     refused(spec, "a local repository is given as an absolute path (or `~/...`), `file://` or `git+file://` URL")
 
 
@@ -227,9 +249,12 @@ def _local_url(spec: str, name: str | None, parts: SplitResult) -> PluginSource:
         if key != "subdirectory" or not value:
             refused(spec, "the only fragment a git URL takes is #subdirectory=<dir>")
         subdirectory = value
-    path, ref = unquote(parts.path), None
-    if "@" in path and not Path(path).is_dir():
-        path, ref = path.rsplit("@", 1)
+    raw, ref = parts.path, None
+    if "@" in raw:  # a literal @ in a path is written %40, so this one starts the ref
+        raw, ref = raw.rsplit("@", 1)
+        if Path(unquote(parts.path)).exists():
+            refused(spec, f"{unquote(parts.path)} exists as a path and as {unquote(raw)} at ref {ref}; it is ambiguous")
+    path = unquote(raw)
     if not path.startswith("/"):
         refused(spec, "a file URL needs an absolute path")
     return _local(spec, name, Path(path), ref, subdirectory)
@@ -507,7 +532,7 @@ def _run_git(repository: Path, *arguments: str) -> bytes:
             capture_output=True,
             check=False,
             timeout=TIMEOUT,
-            env=subprocess_environment(),
+            env={k: v for k, v in subprocess_environment().items() if not k.startswith("GIT_")},
         )
     except subprocess.TimeoutExpired as exc:
         msg = f"git {arguments[0]} timed out"

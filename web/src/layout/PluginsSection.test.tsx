@@ -542,6 +542,16 @@ describe("PluginsSection", () => {
       calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/daemon/restart"),
     ).toHaveLength(1);
   });
+  it.each(["/Users/ada/Code/heinzel-crm", "file:///Users/ada/Code/heinzel-crm"])(
+    "shows a local repository %s as plain text, with no link and no crash",
+    (url) => {
+      render(<CandidateDetails candidate={{ ...candidate, source: "git", url }} />);
+      expect(screen.getByText(/Users\/ada\/Code\/heinzel-crm/)).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /heinzel-crm/ })).toBeNull();
+      expect(document.querySelector("a[href^='file:']")).toBeNull();
+    },
+  );
+
   it("says outright which installed version a plugin replaces, without opening the details", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
