@@ -190,7 +190,11 @@ test("navigation: only public HTTPS, checked before a tab is made", async () => 
   await f.call(HEINZEL, "navigate", { tab, to: "reload" });
   assert(methods(f.views[0]).includes("reload"));
   // A page of an agent tab opens no popup, and a redirect to a local address is still stopped by the guest's own guard.
+  // Not even right after input in the page, which opens a new tab from the person's own tab.
+  f.views[0].webContents.emit("before-input-event", {}, { type: "keyDown" });
   assert.deepEqual(f.views[0].webContents.popup({ url: "https://other.example.com/" }), { action: "deny" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.views.length, 1);
   let prevented = 0;
   f.views[0].webContents.emit("will-redirect", { url: "http://127.0.0.1:8737/api", preventDefault: () => { prevented += 1; } });
   assert.equal(prevented, 1);
@@ -262,7 +266,10 @@ test("never: passwords, one-time codes and card fields are typed by the person o
   const typed = () => view.sent.filter(([name]) => name === "Input.insertText" || name === "Input.dispatchKeyEvent");
   const secret = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_3" });
   assert.equal(secret.target.never, "password");
+  // Refused on the description alone, before the field is even focused, whatever has the focus now.
+  view.page.focused = FIELD;
   await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_3", text: "hunter2", expect: secret.fingerprint }), "never");
+  assert(!methods(view).includes("DOM.focus"));
   // An ordinary field takes text...
   const search = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_2" });
   view.page.onFocus = (node) => { view.page.focused = view.page.elements[node]; };
