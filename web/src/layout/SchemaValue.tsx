@@ -476,13 +476,8 @@ function AdapterChoices(props: InstalledProps) {
           ? t("settings.severalOn", { adapter: selected[0] ?? "" })
           : undefined
       }
-      warning={
-        props.control.multiple && overlaps.length > 0
-          ? t("settings.linkOverlap", {
-              hosts: overlaps.map(([host, names]) => `${host} (${names.join(", ")})`).join("; "),
-            })
-          : undefined
-      }
+      warning={props.control.multiple && overlaps.length > 0 ? t("settings.linkOverlap") : undefined}
+      warningTitle={overlaps.map(([host, names]) => `${host}: ${names.join(", ")}`).join("; ")}
     />
   );
 }
@@ -520,6 +515,7 @@ function InstalledChoices({
   unsetTitle,
   note,
   warning,
+  warningTitle,
 }: InstalledProps & {
   options: InstalledOption[];
   pending: boolean;
@@ -532,6 +528,8 @@ function InstalledChoices({
   note?: string;
   /** A problem with the choices as they are, e.g. two connectors that are on claim the same link host. */
   warning?: string;
+  /** The whole of `warning`, e.g. each shared host and its connectors, as a tooltip. */
+  warningTitle?: string;
 }) {
   const saved = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
   // A list of switches has no "None": a saved `none` is every switch off.
@@ -598,7 +596,11 @@ function InstalledChoices({
         </p>
       )}
       {note && !pending && <p className="text-xs text-muted-foreground">{note}</p>}
-      {warning && !pending && <p className="text-xs text-warn">{warning}</p>}
+      {warning && !pending && (
+        <p className="text-xs text-warn" title={warningTitle}>
+          {warning}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-bad">
           {error}

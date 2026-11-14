@@ -83,7 +83,7 @@ vi.mock("@/lifecycle/RestartAndApply", () => ({
       >
         Restart and apply: {changes.join(", ")}
       </button>
-      <button type="button" onClick={() => void onUnsupported()}>
+      <button type="button" onClick={() => void onUnsupported().catch(() => undefined)}>
         Unsupported restart
       </button>
     </>
@@ -242,10 +242,40 @@ describe("Schema setting metadata", () => {
     expect(screen.getByRole("button", { name: /Restart and apply: Enabled/ })).toBeInTheDocument();
     rerender(<Row setting={enabled(false)} />);
     expect(screen.queryByRole("button", { name: /Restart and apply: Enabled/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Changed elsewhere meanwhile/)).toHaveAttribute("role", "status");
+    const notice = screen.getByText(/Changed elsewhere/);
+    expect(notice).toHaveAttribute("role", "status");
+    expect(notice.textContent?.length).toBeLessThanOrEqual(60);
     expect(mutateAsync).not.toHaveBeenCalled();
     await user.click(screen.getByRole("switch", { name: "Enabled" }));
     expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+  });
+
+  it.each(["Unsupported restart", "Restart and apply: Enabled"])(
+    "never flags its own save as changed elsewhere, even when the refetch lands first (%s)",
+    async (button) => {
+      const { rerender } = render(<Row setting={enabled(true)} />);
+      mutateAsync.mockImplementation(async () => {
+        rerender(<Row setting={enabled(false)} />);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return {};
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("switch", { name: "Enabled" }));
+      await user.click(screen.getByRole("button", { name: button }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("watches for a change elsewhere again when its own save failed", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    mutateAsync.mockRejectedValue(new Error("refused"));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    await user.click(screen.getByRole("button", { name: "Unsupported restart" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.getByText(/Changed elsewhere/)).toBeInTheDocument();
   });
 
   it("keeps a change it saved itself staged until applied, not flagged as changed elsewhere", async () => {
@@ -425,7 +455,7 @@ describe("Declared installed choices", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/belong to more than one connector/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Links refused/)).not.toBeInTheDocument();
     rerender(
       <SchemaValue
         label="Documents"
@@ -435,11 +465,9 @@ describe("Declared installed choices", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(
-      screen.getByText(
-        "Links on drive.example.test (drive, plain) belong to more than one connector that is on, so they are refused. Switch one off.",
-      ),
-    ).toBeInTheDocument();
+    const warning = screen.getByText("Links refused: two connectors claim the same host");
+    expect(warning.textContent?.length).toBeLessThanOrEqual(60);
+    expect(warning).toHaveAttribute("title", "drive.example.test: drive, plain");
   });
 
   it("reads a saved none as every documents connector off", () => {

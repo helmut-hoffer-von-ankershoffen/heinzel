@@ -652,9 +652,8 @@ const en = {
   "settings.missing": "not there",
   "settings.notSet": "not set",
   "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
-  "settings.linkOverlap":
-    "Links on {hosts} belong to more than one connector that is on, so they are refused. Switch one off.",
-  "settings.stagedDropped": "Changed elsewhere meanwhile, so your unsaved change was dropped.",
+  "settings.linkOverlap": "Links refused: two connectors claim the same host",
+  "settings.stagedDropped": "Changed elsewhere: your unsaved change was dropped.",
   "settings.severalOn":
     "Links open in the connector they belong to, and a search asks each one. {adapter}, the first, is the default.",
   "profile.team": "Team",

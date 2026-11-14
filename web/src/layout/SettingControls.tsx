@@ -183,9 +183,17 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   );
   const serializedStaged =
     staged === null ? null : control.kind === "text" && typeof staged === "string" ? staged : toToml(staged);
+  // Our own save changes the server value too: stop watching before it, so its refetch is never "changed
+  // elsewhere"; a failed save watches again.
   const saveStaged = async () => {
-    await save.mutateAsync({ key, value: serializedStaged });
+    const over = stagedOver;
     setStagedOver(undefined);
+    try {
+      await save.mutateAsync({ key, value: serializedStaged });
+    } catch (error) {
+      setStagedOver(over);
+      throw error;
+    }
   };
   const persistStaged = saveStaged;
   return (
