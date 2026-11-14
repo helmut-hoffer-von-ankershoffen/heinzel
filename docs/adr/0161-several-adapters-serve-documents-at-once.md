@@ -88,6 +88,10 @@ when asked alone, and is reported as "can't search" in a fan-out.
 4. Otherwise Core refuses: "'4242' could be in google or atlassian: pass its link, or name the connector, e.g.
    google:4242."
 
+An id is opaque: one holding whitespace, a control character, a backslash or `://`, or starting with `//`, is refused.
+The contract for connectors: an id is never resolved as a URL or a path. A connector reads `file:/x`, `/%2Fhost` or
+`www.host` as its own id, or refuses it, and never fetches it.
+
 A write routes the same way. If the owning adapter can't write, Core says so, naming the adapter. A method that names
 no item, such as a future `create`, goes to the default.
 
