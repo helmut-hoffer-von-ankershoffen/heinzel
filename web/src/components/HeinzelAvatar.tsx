@@ -24,7 +24,16 @@ const STATE_LABEL = {
   waiting: "waiting for you",
   blocked: "blocked",
   done: "done",
+  hammering: "working",
+  overloaded: "overloaded",
+  watching: "waiting on others",
+  paused: "paused",
+  asleep: "asleep",
+  dozing: "",
 } as const;
+
+/** The states of one kind of chat: the badge holds still (only working moves), whatever the motion setting. */
+const STILL = new Set(["overloaded", "watching", "paused", "asleep", "hammering"]);
 
 type Props = HeinzelLook & {
   /** The whole figure, or head and shoulders for small slots. */
@@ -126,11 +135,17 @@ export function HeinzelAvatar({ view = "full", label, className, alive = false, 
       data-idle={move ?? undefined}
       className={cn(view !== "full" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
     >
-      <g className={state === "working" ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]" : undefined}>
+      <g
+        className={
+          state === "working" || state === "hammering"
+            ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]"
+            : undefined
+        }
+      >
         <Parts shapes={body} />
       </g>
       {badge.length > 0 && (
-        <g className="motion-safe:animate-[hz-breathe_2.4s_ease-in-out_infinite]">
+        <g className={STILL.has(state) ? undefined : "motion-safe:animate-[hz-breathe_2.4s_ease-in-out_infinite]"}>
           <Parts shapes={badge} />
         </g>
       )}

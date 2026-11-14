@@ -10,6 +10,7 @@ import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import type { HeinzelLook } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
+import { activityPose, activityWord } from "@/heinzel/activity";
 import { appearanceLook, stateLabel } from "@/heinzel/look";
 import { t } from "@/i18n";
 import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
@@ -105,7 +106,7 @@ export function HeinzelHeader({
   const [moreOpen, setMoreOpen] = useState(false);
   const switchTrigger = useRef<HTMLButtonElement>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
-  const sessions = useHeinzelSessions(switchOpen);
+  const sessions = useHeinzelSessions();
   const { refetch } = sessions;
   // Opening the list asks again: a Heinzel made elsewhere (the Heinzels page, the CLI) shows at once.
   useEffect(() => {
@@ -116,6 +117,7 @@ export function HeinzelHeader({
   const heinzels = (sessions.data?.sessions ?? []).filter(
     (item) => item.state !== "retired" || item.session_id === sessionId,
   );
+  const activity = (sessions.data?.sessions ?? []).find((item) => item.session_id === sessionId)?.activity;
   const choose = (id: string) => {
     setSwitchOpen(false);
     switchTrigger.current?.focus();
@@ -150,15 +152,25 @@ export function HeinzelHeader({
             aria-haspopup="dialog"
             aria-expanded={switchOpen}
             aria-label={t("oneChat.switch", { name })}
-            className="flex h-10 min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-accent/70 disabled:opacity-50"
+            aria-describedby={`${sessionId}-activity`}
+            data-activity={activity ?? "idle"}
+            className="flex h-11 min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-accent/70 disabled:opacity-50"
           >
             <HeinzelAvatar
               view="bust"
               {...look}
-              state={busy ? "thinking" : undefined}
+              state={busy ? "thinking" : activityPose(activity, true)}
               className="size-8 overflow-hidden"
             />
-            <span className="truncate text-[15px] font-medium">{name}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-[15px] leading-tight font-medium">{name}</span>
+              <span
+                id={`${sessionId}-activity`}
+                className="block truncate text-ui-sm leading-tight text-muted-foreground"
+              >
+                {activityWord(activity)}
+              </span>
+            </span>
             <ChevronDown aria-hidden className="size-3.5 shrink-0 text-icon" />
           </button>
         }
@@ -182,11 +194,14 @@ export function HeinzelHeader({
                 <HeinzelAvatar
                   view="bust"
                   {...appearanceLook(item.appearance)}
+                  state={activityPose(item.activity, item.session_id === sessionId)}
                   className="size-7 shrink-0 overflow-hidden"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{item.name}</span>
-                  <span className="block truncate text-ui-sm text-muted-foreground">{stateLabel(item.state)}</span>
+                  <span className="block truncate text-ui-sm text-muted-foreground">
+                    {item.state === "retired" ? stateLabel(item.state) : activityWord(item.activity)}
+                  </span>
                 </span>
               </button>
             </li>

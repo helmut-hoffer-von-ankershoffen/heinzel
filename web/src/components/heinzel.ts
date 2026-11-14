@@ -44,7 +44,23 @@ export const BEARDS = ["none", "short", "medium", "long"] as const;
 export type Beard = (typeof BEARDS)[number];
 export const BUILDS = ["slim", "regular", "round"] as const;
 export type Build = (typeof BUILDS)[number];
-export const STATES = ["idle", "sleeping", "working", "thinking", "waiting", "blocked", "done"] as const;
+export const STATES = [
+  "idle",
+  "sleeping",
+  "working",
+  "thinking",
+  "waiting",
+  "blocked",
+  "done",
+  // The states of one kind of chat (the backend's `activity`): each has its own pose and badge shape, never colour
+  // alone. Hammering is "working", watching is "waiting on others"; asleep has a Zz, dozing is idle where nobody looks.
+  "hammering",
+  "overloaded",
+  "watching",
+  "paused",
+  "asleep",
+  "dozing",
+] as const;
 export type HeinzelState = (typeof STATES)[number];
 /**
  * What a Heinzelmännchen can wear or carry beyond its five choices, in the order they are layered. A closed set:
@@ -238,6 +254,27 @@ function signs(age: Age, state: HeinzelState): Shape[] {
       return mark("#D9534F", [line("M440 52 L440 96", WHITE, 13), circle(440, 118, 8, WHITE)]);
     case "done":
       return mark("#2E9E5B", [line("M416 86 L434 104 L466 68", WHITE, 13)]);
+    case "hammering":
+      return mark("#00796B", [line("M424 112 L450 70", WHITE, 10), line("M430 60 L474 76", WHITE, 18)]);
+    case "overloaded":
+      return mark("#D84315", [
+        path("M414 62 H466 V108 H414 Z", WHITE),
+        line("M414 78 H466", "#D84315", 8),
+        line("M440 62 V78", "#D84315", 8),
+      ]);
+    case "watching":
+      return mark("#546E7A", [
+        circle(440, 84, 30, WHITE),
+        line("M440 84 V62", "#546E7A", 8),
+        line("M440 84 L456 94", "#546E7A", 8),
+      ]);
+    case "paused":
+      return mark("#8D6E00", [line("M424 62 V106", WHITE, 14), line("M456 62 V106", WHITE, 14)]);
+    case "asleep":
+      return mark("#5C6BC0", [
+        line("M410 70 H442 L410 106 H442", WHITE, 11),
+        line("M454 54 H474 L454 76 H474", WHITE, 8),
+      ]);
     default:
       return [];
   }
@@ -454,6 +491,8 @@ function arm(shoulder: number, x: number, y: number, sleeve: string): Shape[] {
 
 /** The arms for a state: down, holding a tray, a hand raised or at the chin, or together in a little bow. */
 function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: boolean): Shape[] {
+  const still = [...arm(256 - build.shoulder, 256 - build.belly - 12, 640, sleeve)];
+  const rightStill = (r: number) => arm(r, 256 + build.belly + 12, 640, sleeve);
   const [left, right] = [256 - build.shoulder, 256 + build.shoulder];
   const rightDown = holding ? arm(right, GRIP.x, GRIP.y, sleeve) : arm(right, 256 + build.belly + 12, 640, sleeve);
   // The right hand down is the one that waves in idle life.
@@ -471,6 +510,40 @@ function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: bo
         line("M284 518 Q308 518 308 538 Q308 556 284 556", "#C98A1E", 8),
         path("M222 512 Q222 490 242 494 Q252 480 266 490 Q290 486 288 512 Z", WHITE),
       ];
+    case "hammering": {
+      // A hammer raised in the right hand, the left hand down: at work on something.
+      const hammer = [
+        line("M352 560 L392 440", "#8D6E63", 14),
+        path("M356 420 L428 446 L418 474 L346 448 Z", "#9AA0A6"),
+      ];
+      return [...still, ...(holding ? rightStill(right) : [...arm(right, 342, 580, sleeve), ...hammer])];
+    }
+    case "overloaded": {
+      // Both arms round a stack of parcels that is too tall.
+      return [
+        ...arm(left, 170, 600, sleeve),
+        ...arm(right, 342, 600, sleeve),
+        path("M176 536 H336 V612 H176 Z", "#B07A45"),
+        path("M246 536 H266 V612 H246 Z", "#E8D3A8"),
+        path("M204 468 H308 V536 H204 Z", "#C99A5E"),
+        path("M246 468 H266 V536 H246 Z", "#E8D3A8"),
+        path("M228 436 H284 V468 H228 Z", "#B07A45"),
+      ];
+    }
+    case "watching": {
+      // A stop sign on a pole in the left hand, a look at the watch on the right wrist: held up until others answer.
+      const sign = [
+        line("M72 470 V330", "#8D6E63", 10),
+        path("M44 250 H92 L120 278 V326 L92 354 H44 L16 326 V278 Z", "#C62828"),
+        path("M34 296 H102 V310 H34 Z", WHITE),
+      ];
+      const watch = [circle(312, 560, 20, WHITE), line("M312 560 V546", INK, 5), line("M312 560 L322 566", INK, 5)];
+      return [
+        ...sign,
+        ...arm(left, 72, 470, sleeve),
+        ...(holding ? rightStill(right) : [...arm(right, 318, 552, sleeve), ...watch]),
+      ];
+    }
     case "waiting":
       // The right hand raised beside the head: "I need you".
       return [
@@ -527,6 +600,16 @@ function assetLayer(theme: ThemeLook | undefined, slot: string, head = false): S
   return { kind: "image", href, x: 0, y: head ? -240 : 0, width: 512, height: head ? 840 : 860 };
 }
 
+/** The face a state shows where it has no face of its own: the pose and the badge carry it. */
+const FACE_OF: Partial<Record<HeinzelState, HeinzelState>> = {
+  hammering: "idle",
+  watching: "idle",
+  paused: "idle",
+  overloaded: "blocked",
+  asleep: "sleeping",
+  dozing: "sleeping",
+};
+
 /** The whole Heinzelmännchen on the 512 by 860 canvas, back to front; the top 512 square is its bust. */
 export function heinzelShapes({
   age = "grown",
@@ -548,11 +631,12 @@ export function heinzelShapes({
   const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
   const [bl, br, hl, hr] = [256 - b.belly, 256 + b.belly, 256 - b.hem, 256 + b.hem];
   const scale = 0.75;
+  const face = FACE_OF[state] ?? state;
   const bow = state === "done" ? 18 : 0;
   const outfit = assetLayer(theme, `outfit-${age}`);
   const hatAsset = assetLayer(theme, `hat-${age}`, true);
   return [
-    ...legs(state === "sleeping", b.hem),
+    ...legs(state === "sleeping" || state === "asleep", b.hem),
     path(
       `M${sl} 500 C${sl} 472 ${256 - b.shoulder * 0.5} 462 256 462 C${256 + b.shoulder * 0.5} 462 ${sr} 472 ${sr} 500 ` +
         `C${br} 560 ${br} 640 ${hr} 690 Q256 708 ${hl} 690 C${bl} 640 ${bl} 560 ${sl} 500 Z`,
@@ -568,7 +652,7 @@ export function heinzelShapes({
       transform: `matrix(${+(scale * b.head).toFixed(4)} 0 0 ${scale} ${+(256 - 256 * scale * b.head).toFixed(2)} ${
         350 - 236 * scale + bow
       })`,
-      children: head(age, chin, capColour, state, worn.includes("sunglasses"), snow, hatAsset),
+      children: head(age, chin, capColour, face, worn.includes("sunglasses"), snow, hatAsset),
     },
     ...(outfit ? [group(`translate(256 0) scale(${b.shoulder / 108} 1) translate(-256 0)`, [outfit])] : []),
     ...(worn.includes("scarf") ? [scarf(b, theme?.palette?.scarf)] : []),

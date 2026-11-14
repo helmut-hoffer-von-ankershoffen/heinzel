@@ -4,6 +4,15 @@ const IOS_INSTALL =
   "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.";
 
 const en = {
+  "activity.paused": "Paused",
+  "activity.stuck": "Stuck",
+  "activity.waiting_for_you": "Waiting for you",
+  "activity.overloaded": "Overloaded",
+  "activity.working": "Working",
+  "activity.waiting_on_others": "Waiting on others",
+  "activity.proud": "Done and proud",
+  "activity.asleep": "Asleep",
+  "activity.idle": "Idle",
   "oneChat.switch": "{name}. Switch Heinzel",
   "oneChat.heinzels": "Your Heinzels",
   "oneChat.new": "New Heinzel",
