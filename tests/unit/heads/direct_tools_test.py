@@ -5,10 +5,12 @@ import json
 import re
 import subprocess
 from datetime import timedelta
+from typing import Annotated
 
 import anyio
 import pytest
 from mcp import Client
+from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -88,6 +90,12 @@ def notes(ran: list[str]) -> Module:
         ran.append("tag")
         return "tagged"
 
+    @module.operation(read_only=False, audience="everyday")
+    def note(text: Annotated[str, Field(description="The note's words.")]) -> str:
+        """Add a note."""
+        ran.append("note")
+        return "noted"
+
     @module.operation(private=True, audience="everyday")
     def personal() -> str:
         """Private data is never an ambient chat tool."""
@@ -127,6 +135,9 @@ CALLS = [
     ("notes_tag", {"tags": '["a", "b"]'}, "proposed"),  # a list sent as a JSON string, as some clients do
     (CONFIRM, {"session": "fedcba9876543210", "action": "a1"}, "refused"),  # another chat's
     (CONFIRM, {"session": SELF, "action": "a99"}, "refused"),  # this chat's, never authorized
+    ("notes_note", {"text": '["a"]'}, "proposed"),  # a string that is valid JSON stays the string it is
+    ("notes_note", {"text": '{"a": 1}'}, "proposed"),
+    ("notes_note", {"text": "null"}, "proposed"),
 ]
 """One table of calls; both paths must give each the outcome on the right, with the same text."""
 CHECKED_FIRST = {3, 4}
@@ -195,6 +206,7 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
         "hz notes publish --title 'Week 44' --pages 1",
     )
     assert proposals[2][1] == {"tags": ["a", "b"]}
+    assert [call[1] for call in proposals[3:]] == [{"text": '["a"]'}, {"text": '{"a": 1}'}, {"text": "null"}]
     assert direct[3][1].startswith("Invalid arguments for notes_publish: title")
     owner, who = direct[0][1], direct[7][1]
     assert json.loads(owner) == {"name": "Mira", "email": "[email]"}

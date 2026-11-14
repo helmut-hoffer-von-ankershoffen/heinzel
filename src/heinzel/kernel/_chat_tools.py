@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final, Literal
 
-from pydantic import ConfigDict, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
 from heinzel.kernel._agents import ChatToolSet, ToolProfile
@@ -163,7 +163,7 @@ class ChatTool:
             f"{self.name}_arguments", __config__=ConfigDict(extra="ignore", arbitrary_types_allowed=True), **fields
         )
         try:
-            checked = model.model_validate(_pre_parsed(dict(arguments), fields))
+            checked = model.model_validate(_pre_parsed(dict(arguments), model))
         except ValidationError as exc:
             problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'input'}: {e['msg']}" for e in exc.errors())
             msg = redact_emails(f"Invalid arguments for {self.name}: {problems}")
@@ -209,14 +209,16 @@ class ChatTool:
             raise ChatToolError(msg) from exc
 
 
-def _pre_parsed(arguments: dict[str, Any], fields: Mapping[str, tuple[Any, Any]]) -> dict[str, Any]:
+def _pre_parsed(arguments: dict[str, Any], model: type[BaseModel]) -> dict[str, Any]:
     """Parse a list or object an agent sent as a JSON string, as the MCP SDK does, so both paths read it alike.
 
-    Only for a parameter that is not a plain string, and never to a bare string or number: `"5"` stays as it came.
+    Decided on the model's field, as the SDK does, so `Annotated[str, Field(...)]` counts as a string and keeps its
+    value; never to a bare string or number either: `"5"` stays as it came.
     """
     parsed = dict(arguments)
     for name, value in arguments.items():
-        if name not in fields or not isinstance(value, str) or fields[name][0] is str:
+        field = model.model_fields.get(name)
+        if field is None or not isinstance(value, str) or field.annotation is str:
             continue
         try:
             decoded = json.loads(value)
