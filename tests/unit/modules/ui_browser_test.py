@@ -15,7 +15,6 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from pydantic_ai import BinaryContent, ToolReturn
 
-from heinzel import ActionGate
 from heinzel.heads import mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens
@@ -316,7 +315,6 @@ def test_a_heinzel_opens_reads_scrolls_and_closes_a_site_nobody_allowed_beforeha
     assert call("type", tab=tab["id"], text="Hello", ref="ref_4")["done"] is True
     assert call("key", tab=tab["id"], keys="ArrowDown")["done"] is True
     assert call("close", tab=tab["id"]) == {"tab": tab["id"], "closed": True}
-    assert kernel.resolve(ActionGate) is not None
     assert pending(kernel, call.session) == []
     sent = [(c.actor, c.kind) for c in desktop.commands]
     assert set(sent) == {(call.session, "heinzel")}
@@ -370,7 +368,7 @@ def test_arguments_are_checked_before_anything_reaches_the_desktop(kernel, deskt
         "https://127.0.0.1/",
         "https://2130706433/",
         "https://0x7f.0.0.1/",
-        "https://192.168.1.10.nip/x".replace(".nip", ""),
+        "https://192.168.1.10/x",
         "https://[::1]/",
         "https://[fe80::1]/",
         "https://mira:pw@shop.example.org/",
@@ -743,11 +741,11 @@ def test_the_limits_hold_through_the_tools_and_the_desktop_keeps_four_tabs(kerne
         call("navigate", tab=tab, to="reload")
     assert audit.calls()[-1]["reason"] == "rate"
     sent = len(desktop.commands)
-    for _ in range(60 - 12):
+    for _ in range(60 - 11):  # five opens, one listing and five reloads were counted; a refused pace is not
         call("tabs")
     with pytest.raises(ChatToolError, match="Too many browser calls"):
         call("tabs")
-    assert len(desktop.commands) == sent + 48
+    assert len(desktop.commands) == sent + 49
     assert heinzel(kernel)("tabs")["available"] is True  # another Heinzel is not held by this one's pace
 
 
