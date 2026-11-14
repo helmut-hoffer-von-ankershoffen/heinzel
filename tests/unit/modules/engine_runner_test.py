@@ -5,20 +5,24 @@ server over stdio.
 """
 
 import asyncio
+import inspect
 import json
+import stat
 import sys
 import textwrap
+from collections.abc import AsyncIterator, Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from heinzel import Budget, Config, Credentials, CurrentUser, HeinzelError, McpServer, Settings, ToolProfile
+from heinzel import Budget, Config, Credentials, CurrentUser, HeinzelError, McpServer, Progress, Settings, ToolProfile
 from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _claude_code
+from heinzel.modules.ai.access._engine_history import SessionHistory
 from heinzel.modules.ai.access._engine_runner import ENGINE, EngineModel, EngineRunner, SelectedModels
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
@@ -48,6 +52,28 @@ def work(tmp_path: Path) -> Path:
     return root
 
 
+def streamed(respond: Callable[[list[ModelMessage], AgentInfo], Any]) -> FunctionModel:
+    """A streaming model from a function returning whole responses: its text in two chunks, its tool calls whole."""
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        response = respond(messages, info)
+        if inspect.isawaitable(response):
+            response = await response
+        for part in response.parts:
+            if isinstance(part, TextPart):
+                half = len(part.content) // 2
+                yield part.content[:half]
+                yield part.content[half:]
+        calls = [p for p in response.parts if isinstance(p, ToolCallPart)]
+        if calls:
+            yield {
+                i: DeltaToolCall(name=c.tool_name, json_args=c.args_as_json_str(), tool_call_id=c.tool_call_id)
+                for i, c in enumerate(calls)
+            }
+
+    return FunctionModel(stream_function=stream)
+
+
 def scripted(*steps: list[Any], seen: list[AgentInfo] | None = None) -> FunctionModel:
     """A model that makes one response per step: tool calls (name, args) or a final text."""
     queue = list(steps)
@@ -60,11 +86,27 @@ def scripted(*steps: list[Any], seen: list[AgentInfo] | None = None) -> Function
             return ModelResponse([TextPart(step)])
         return ModelResponse([ToolCallPart(name, args, tool_call_id=f"c{i}") for i, (name, args) in enumerate(step)])
 
-    return FunctionModel(respond)
+    return streamed(respond)
 
 
-def runner(model: Any, **chosen: Any) -> EngineRunner:
-    return EngineRunner(None, None, models=lambda _m, _e: EngineModel(model, "example-model", **chosen))  # type: ignore[arg-type]
+HISTORY: list[SessionHistory] = []
+
+
+@pytest.fixture(autouse=True)
+def history(tmp_path: Path) -> SessionHistory:
+    """Each test keeps its chat histories in its own folder."""
+    HISTORY[:] = [SessionHistory(tmp_path / "engine-sessions")]
+    return HISTORY[0]
+
+
+def runner(model: Any, *, progress: Progress | None = None, **chosen: Any) -> EngineRunner:
+    return EngineRunner(
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        progress or Progress(),
+        models=lambda _m, _e: EngineModel(model, "example-model", **chosen),
+        history=HISTORY[0],
+    )
 
 
 def returns(messages: list[ModelMessage]) -> list[str]:
@@ -87,7 +129,7 @@ def test_a_session_reads_greps_and_globs_inside_the_working_directory(work: Path
             return ModelResponse([ToolCallPart(n, a, tool_call_id=f"c{i}") for i, (n, a) in enumerate(calls)])
         return ModelResponse([TextPart("done")])
 
-    result = runner(FunctionModel(respond)).run(
+    result = runner(streamed(respond)).run(
         "look", contract="Be brief.", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget()
     )
 
@@ -134,7 +176,7 @@ def test_limits_it_can_t_enforce_are_warnings_and_effort_reaches_the_model(work:
         settings.append(info.model_settings)
         return ModelResponse([TextPart("ok")])
 
-    result = runner(FunctionModel(respond), settings={"anthropic_effort": "high"}, warnings=["a note"]).run(
+    result = runner(streamed(respond), settings={"anthropic_effort": "high"}, warnings=["a note"]).run(
         "x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget(max_usd=2)
     )
 
@@ -151,10 +193,10 @@ def test_a_slow_or_failing_model_is_a_result(work: Path) -> None:
         msg = "the proxy said no"
         raise RuntimeError(msg)
 
-    timed = runner(FunctionModel(slow)).run(
+    timed = runner(streamed(slow)).run(
         "x", contract="", tools=ToolProfile(working_dir=work), timeout=timedelta(seconds=0.2), budget=Budget()
     )
-    failed = runner(FunctionModel(broken)).run(
+    failed = runner(streamed(broken)).run(
         "x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget()
     )
 
@@ -202,7 +244,7 @@ def test_mcp_servers_are_tools_named_as_claude_code_names_them(work: Path, tmp_p
     tools = ToolProfile(
         working_dir=work, read_files=False, mcp_servers={"chat": McpServer(command=[sys.executable, str(script)])}
     )
-    result = runner(FunctionModel(respond)).run("x", contract="", tools=tools, timeout=MINUTE, budget=Budget())
+    result = runner(streamed(respond)).run("x", contract="", tools=tools, timeout=MINUTE, budget=Budget())
 
     assert result.status == "completed", result.detail
     assert [t.name for t in seen[0].function_tools] == ["mcp__chat__chat_search"]
@@ -291,3 +333,111 @@ def test_an_option_with_an_agent_of_its_own_is_refused(tmp_path: Path) -> None:
     models = SelectedModels(FakeKernel(), CurrentUser(tmp_path / "identity"), lambda: config("claude-code"))  # type: ignore[arg-type]
     with pytest.raises(HeinzelError, match="selected AI access is claude-code"):
         models(None, None)
+
+
+# Streaming and the chat session's history
+
+
+class Recorded(Progress):
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def emitter(self) -> Any:
+        return lambda kind, data: self.events.append((kind, dict(data)))
+
+
+def test_text_tool_calls_and_results_stream_as_they_happen(work: Path) -> None:
+    progress = Recorded()
+    model = scripted([("glob", {"pattern": "*.py"})], "all done")
+
+    result = runner(model, progress=progress).run(
+        "x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget()
+    )
+
+    assert result.draft == "all done"
+    assert progress.events == [
+        ("tool", {"name": "glob"}),
+        ("tool_result", {"name": "glob"}),
+        ("text", {"text": "all "}),
+        ("text", {"text": "done"}),
+    ]
+    assert result.usage.output_tokens is not None  # from the streamed responses
+
+
+def chat_tools(work: Path, tmp_path: Path, session: str = "chat-1") -> ToolProfile:
+    script = tmp_path / "server.py"
+    script.write_text(SERVER, encoding="utf-8")
+    server = McpServer(command=[sys.executable, str(script), "--chat", session])
+    return ToolProfile(working_dir=work, read_files=False, mcp_servers={"heinzel": server})
+
+
+def prompts(messages: list[ModelMessage]) -> list[str]:
+    return [str(p.content) for m in messages for p in getattr(m, "parts", []) if isinstance(p, UserPromptPart)]
+
+
+def test_a_chat_session_continues_its_message_history(work: Path, tmp_path: Path, history: SessionHistory) -> None:
+    seen: list[list[ModelMessage]] = []
+    answers = iter(["Hi there, how can I help?", "Fine, thanks.", "Starting over."])
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        seen.append(messages)
+        return ModelResponse([TextPart(next(answers))])
+
+    tools = chat_tools(work, tmp_path)
+    first = "User: hello"
+    second = f"{first}\n\nAssistant: Hi there, how can I help?\n\nUser: how are you?"
+    edited = "User: hello\n\nAssistant: something else\n\nUser: and now?"
+    for prompt in (first, second, edited):
+        result = runner(streamed(respond)).run(prompt, contract="", tools=tools, timeout=MINUTE, budget=Budget())
+        assert result.status == "completed", result.detail
+
+    assert prompts(seen[0]) == [first]
+    assert prompts(seen[1]) == [first, "User: how are you?"]  # only what is new, after the stored history
+    assert [type(m).__name__ for m in seen[1]] == ["ModelRequest", "ModelResponse", "ModelRequest"]
+    assert prompts(seen[2]) == [edited]  # the chat no longer matches the history: start again
+    kept, notes = history.load("chat-1")
+    assert prompts(kept) == [edited]
+    assert notes == {"answer_start": "Starting over."}
+    folder = tmp_path / "engine-sessions"
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+    assert stat.S_IMODE((folder / "chat-1.json").stat().st_mode) == 0o600
+    assert [p.name for p in folder.iterdir()] == ["chat-1.json"]  # no temporary file left
+
+
+def test_a_run_without_a_chat_keeps_no_history(work: Path, tmp_path: Path) -> None:
+    runner(scripted("ok")).run("x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget())
+
+    assert not (tmp_path / "engine-sessions").exists()
+
+
+def test_a_stopped_turn_keeps_its_partial_answer_marked_stopped(
+    work: Path, tmp_path: Path, history: SessionHistory
+) -> None:
+    async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        yield "The answer is"
+        await asyncio.sleep(5)
+        yield " never finished"
+
+    progress = Recorded()
+    result = runner(FunctionModel(stream_function=stream), progress=progress).run(
+        "User: tell me", contract="", tools=chat_tools(work, tmp_path), timeout=timedelta(seconds=1), budget=Budget()
+    )
+
+    assert result.status == "timeout"
+    assert progress.events == [("text", {"text": "The answer is"})]
+    kept, _notes = history.load("chat-1")
+    last = kept[-1]
+    assert isinstance(last, ModelResponse)
+    assert [p.content for p in last.parts] == [  # type: ignore[union-attr]
+        "The answer is",
+        "[stopped: the run's timeout of 0:00:01]",
+    ]
+    seen: list[list[ModelMessage]] = []
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        seen.append(messages)
+        return ModelResponse([TextPart("Here it is.")])
+
+    again = "User: tell me\n\nAssistant: (no answer: stopped after 0:00:01)\n\nUser: again"
+    runner(streamed(respond)).run(again, contract="", tools=chat_tools(work, tmp_path), timeout=MINUTE, budget=Budget())
+    assert prompts(seen[0]) == ["User: tell me", "User: again"]  # the stopped turn is part of the session

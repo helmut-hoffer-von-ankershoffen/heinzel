@@ -23,9 +23,21 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from heinzel import AgentResult, Budget, Config, CurrentUser, HeinzelError, Kernel, Progress, TokenUsage, ToolProfile
+from heinzel import (
+    AgentResult,
+    Budget,
+    Config,
+    CurrentUser,
+    Emit,
+    HeinzelError,
+    Kernel,
+    Progress,
+    TokenUsage,
+    ToolProfile,
+    redact_emails,
+)
 from heinzel.kernel import Effort, clean_text
 from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers
 from heinzel.modules.ai.access._file_tools import TOOL_NAMES, ConfinedFiles, FileToolError
@@ -33,6 +45,11 @@ from heinzel.modules.ai.access._mcp_stdio import McpError, StdioMcp, tool_name
 from heinzel.modules.ai.access._models import AccessSettings, Bindings
 from heinzel.modules.ai.access._pydantic import NAME as MODEL_API
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess
+
+if TYPE_CHECKING:
+    from pydantic_ai.messages import ModelMessage
+
+    from heinzel.modules.ai.access._engine_history import SessionHistory
 
 ENGINE = "engine"
 MAX_REQUESTS = 50
@@ -53,6 +70,8 @@ class EngineModel:
     """Model settings for the effort, in the model's own style; empty when none applies."""
     warnings: list[str] = field(default_factory=list[str])
     """What the selected option couldn't honour, e.g. a model override."""
+    context_window: int | None = None
+    """How many tokens it reads at most, when known: the session's history is kept within it."""
 
 
 ModelSource = Callable[[str | None, Effort | None], EngineModel]
@@ -86,7 +105,8 @@ class SelectedModels:
             offers, _note = list_offers(source)
             offer = choose(offers, model or settings.plugin_model)
             chosen = effort or settings.plugin_effort
-            return EngineModel(build_model(source, offer), offer.id, effort_settings(offer, chosen))
+            extra = effort_settings(offer, chosen)
+            return EngineModel(build_model(source, offer), offer.id, extra, context_window=offer.context_window)
         if access == MODEL_API:
             option = self._kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
             configured = option.configured_model()
@@ -208,15 +228,44 @@ GLOB_SCHEMA: dict[str, Any] = {
 }
 
 
+class _Stream:
+    """What a turn has streamed: the answer being written, for the history when the turn stops."""
+
+    def __init__(self, emit: Emit) -> None:
+        self.emit = emit
+        self.partial = ""
+
+    def text(self, delta: str) -> None:
+        if delta:
+            self.partial += delta
+            self.emit("text", {"text": delta})
+
+
 class EngineRunner:
     """The `engine` agent runner: a read-only session on hz's own engine and the selected option's model."""
 
     def __init__(
-        self, kernel: Kernel, current: CurrentUser, progress: Progress = SILENT, models: ModelSource | None = None
+        self,
+        kernel: Kernel,
+        current: CurrentUser,
+        progress: Progress = SILENT,
+        models: ModelSource | None = None,
+        history: "SessionHistory | None" = None,
     ) -> None:
-        """Create the runner; the kernel and the owner are injected, `models` replaces the model in tests."""
+        """Create the runner; the kernel, the owner and progress are injected, `models` and `history` in tests."""
+        self._kernel = kernel
         self._models = models or SelectedModels(kernel, current)
+        self._given_history = history
         self._progress = progress
+
+    @property
+    def _history(self) -> "SessionHistory":
+        """The chat sessions' histories, in hz's state directory; loads Pydantic AI only when a run needs it."""
+        from heinzel.modules.ai.access._engine_history import SessionHistory  # noqa: PLC0415 - only during a run
+
+        if self._given_history is None:
+            self._given_history = SessionHistory(self._kernel.settings.state_dir / "ai" / "engine-sessions")
+        return self._given_history
 
     def run(  # noqa: PLR0913 - a run's whole contract, by keyword
         self,
@@ -229,7 +278,10 @@ class EngineRunner:
         model: str | None = None,
         effort: Effort | None = None,
     ) -> AgentResult:
-        """Run `prompt` under `contract` with read-only `tools`; stop at `timeout` or `MAX_REQUESTS` requests.
+        """Run `prompt` under `contract` with read-only `tools`, streaming; stop at `timeout` or `MAX_REQUESTS`.
+
+        Text, tool calls and tool results reach the head as they happen, through `Progress`, as `text`, `tool` and
+        `tool_result` events. A run for a chat session continues that session's message history.
 
         Raises:
             HeinzelError: If the selected option can't serve a session, a tool isn't read-only, or the working
@@ -249,48 +301,82 @@ class EngineRunner:
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:
             cwd = tools.working_dir or Path(directory)
             session = _Session(tools, cwd)
-            work = self._session(session, chosen, prompt, contract, timeout)
+            chat = _chat_session(tools)
+            # The emitter is taken here, on the operation's thread, where a head routes events by request.
+            work = self._turn(session, chosen, Turn(prompt, contract, timeout, chat), self._progress.emitter())
             # Its own thread and event loop: a head may call this from a thread whose loop is already running.
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 result = pool.submit(asyncio.run, work).result()
         duration = time.monotonic() - started
-        result = result.model_copy(
+        return result.model_copy(
             update={"duration_seconds": duration, "tool_calls": dict(session.calls), "warnings": warnings}
         )
-        if result.status == "completed":
-            self._progress.emitter()("text", {"text": result.draft})
-        return result
 
-    async def _session(
-        self, session: _Session, chosen: EngineModel, prompt: str, contract: str, allowed: timedelta
-    ) -> AgentResult:
+    def _continued(self, turn: "Turn") -> "tuple[list[ModelMessage], str]":
+        """The session's history and this turn's prompt: only what is new since the last answer, when it continues.
+
+        The chat sends the conversation as one transcript. When the stored history ends in the answer the transcript
+        shows last, the turn sends only what follows it; otherwise (a first turn, a failed one, an edited chat) the
+        history starts again from the whole transcript.
+        """
+        if turn.chat is None:
+            return [], turn.prompt
+        messages, notes = self._history.load(turn.chat)
+        start = notes.get("answer_start")
+        cut = turn.prompt.rfind(ANSWER)
+        if not messages or not isinstance(start, str) or cut < 0:
+            return [], turn.prompt
+        rest = turn.prompt[cut + len(ANSWER) :]
+        if not rest.startswith(start):
+            return [], turn.prompt
+        new = rest.find(BLOCK)
+        if new < 0:
+            return [], turn.prompt
+        return messages, rest[new + len(BLOCK) :]
+
+    def _keep(self, turn: "Turn", messages: "list[ModelMessage]", answer: str, context_window: int | None) -> None:
+        from heinzel.modules.ai.access._engine_history import capped  # noqa: PLC0415 - only during a run
+
+        if turn.chat is None:
+            return
+        # A stopped turn's answer is empty: the chat shows it as "(no answer: …)", and that is what continues it.
+        notes = {"answer_start": redact_emails(answer)[:ANSWER_START] if answer else NO_ANSWER}
+        self._history.save(turn.chat, capped(messages, context_window), notes)
+
+    async def _turn(self, session: _Session, chosen: EngineModel, turn: "Turn", emit: Emit) -> AgentResult:
         import pydantic_ai  # noqa: PLC0415 - a heavy import, only during a run
-        from pydantic_ai.usage import UsageLimits  # noqa: PLC0415
+
+        from heinzel.modules.ai.access._engine_history import stopped  # noqa: PLC0415
 
         pydantic_ai.BANNER_ENABLED = False  # hz owns its output: stdout may be the MCP head's protocol
         failed = AgentResult(runner=ENGINE, model=chosen.label, status="failed", duration_seconds=0, billing="api")
+        history, prompt = self._continued(turn)
+        stream = _Stream(emit)
+        runs: list[Any] = []
+        seconds = turn.timeout.total_seconds()
         try:
-            tools = session.file_tools() + await asyncio.wait_for(session.mcp_tools(), allowed.total_seconds())
-            agent = pydantic_ai.Agent(chosen.model, instructions=contract or None, tools=tools)
-            run = agent.run(
-                prompt,
-                model_settings=chosen.settings or None,  # type: ignore[arg-type]
-                usage_limits=UsageLimits(request_limit=MAX_REQUESTS),
-            )
-            done = await asyncio.wait_for(run, allowed.total_seconds())
-        except TimeoutError:
-            return failed.model_copy(
-                update={"status": "timeout", "detail": f"stopped after {allowed}, the run's timeout"}
-            )
+            tools = session.file_tools() + await asyncio.wait_for(session.mcp_tools(), seconds)
+            agent = pydantic_ai.Agent(chosen.model, instructions=turn.contract or None, tools=tools)
+            work = self._stream(agent, prompt, history=history, chosen=chosen, stream=stream, runs=runs)
+            done = await asyncio.wait_for(work, seconds)
+        except (TimeoutError, asyncio.CancelledError) as exc:
+            why = f"the run's timeout of {turn.timeout}" if isinstance(exc, TimeoutError) else "cancelled"
+            if runs:
+                self._keep(turn, stopped(runs[0].all_messages(), stream.partial, why), "", chosen.context_window)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            return failed.model_copy(update={"status": "timeout", "detail": f"stopped after {turn.timeout}"})
         except Exception as exc:  # noqa: BLE001 - the model's, the plugin's or a server's error is a failed run
             return failed.model_copy(update={"detail": clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]})
         finally:
             await session.stop()
+        draft = str(done.output)
+        self._keep(turn, done.all_messages(), draft, chosen.context_window)
         used = done.usage
         return failed.model_copy(
             update={
                 "status": "completed",
-                "draft": str(done.output),
+                "draft": draft,
                 "turns": used.requests,
                 "usage": TokenUsage(
                     input_tokens=used.input_tokens,
@@ -300,3 +386,79 @@ class EngineRunner:
                 ),
             }
         )
+
+    @staticmethod
+    async def _stream(  # noqa: PLR0913 - one turn's agent, input and outputs
+        agent: Any,  # noqa: ANN401 - a pydantic_ai Agent
+        prompt: str,
+        *,
+        history: "list[ModelMessage]",
+        chosen: EngineModel,
+        stream: _Stream,
+        runs: list[Any],
+    ) -> Any:  # noqa: ANN401 - a pydantic_ai AgentRunResult
+        """Drive the agent node by node, streaming each model response and each tool call and result as it happens.
+
+        `runs` receives the run as soon as it starts, so a stopped turn can still read the messages it had.
+        """
+        from pydantic_ai import Agent  # noqa: PLC0415 - only during a run
+        from pydantic_ai.messages import (  # noqa: PLC0415
+            FunctionToolCallEvent,
+            FunctionToolResultEvent,
+            PartDeltaEvent,
+            PartStartEvent,
+            TextPart,
+            TextPartDelta,
+        )
+        from pydantic_ai.usage import UsageLimits  # noqa: PLC0415
+
+        async with agent.iter(
+            prompt,
+            message_history=history or None,
+            model_settings=chosen.settings or None,
+            usage_limits=UsageLimits(request_limit=MAX_REQUESTS),
+        ) as run:
+            runs.append(run)
+            async for node in run:
+                if Agent.is_model_request_node(node):
+                    stream.partial = ""
+                    responses: Any  # the model's response events
+                    async with node.stream(run.ctx) as responses:
+                        async for event in responses:
+                            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+                                stream.text(event.part.content)
+                            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                                stream.text(event.delta.content_delta)
+                elif Agent.is_call_tools_node(node):
+                    async with node.stream(run.ctx) as handled:
+                        async for event in handled:
+                            if isinstance(event, FunctionToolCallEvent):
+                                stream.emit("tool", {"name": event.part.tool_name})
+                            elif isinstance(event, FunctionToolResultEvent):
+                                stream.emit("tool_result", {"name": event.part.tool_name})
+            return run.result
+
+
+def _chat_session(tools: ToolProfile) -> str | None:
+    from heinzel.modules.ai.access._engine_history import session_of  # noqa: PLC0415 - only during a run
+
+    return session_of([server.command for server in tools.mcp_servers.values()])
+
+
+@dataclass(frozen=True, slots=True)
+class Turn:
+    """One run's input: the prompt, the contract, the timeout and the chat session it continues, if any."""
+
+    prompt: str
+    contract: str
+    timeout: timedelta
+    chat: str | None
+
+
+ANSWER = "\n\nAssistant: "
+"""Where the chat's transcript shows an answer (`system.runner.chat`'s `transcript`)."""
+BLOCK = "\n\n"
+NO_ANSWER = "(no answer: "
+"""How the transcript shows a turn that gave no answer."""
+ANSWER_START = 40
+"""How much of the last answer's start, redacted as the transcript shows it, identifies it there."""
