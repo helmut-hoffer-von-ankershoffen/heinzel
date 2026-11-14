@@ -69,6 +69,11 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   const save = useSetSetting();
   const [staged, setStaged] = useState<unknown | undefined>(undefined);
   const [editorVersion, setEditorVersion] = useState(0);
+  // The server value a change was staged against: when it changes elsewhere meanwhile, the stage is dropped and
+  // says so, never saved over the newer value. Once saved, the server holds the change, so nothing is watched.
+  const [stagedOver, setStagedOver] = useState<string | undefined>(undefined);
+  const [dropped, setDropped] = useState(false);
+  const serverValue = JSON.stringify(setting.value ?? null);
   const key = `${setting.section}.${setting.key}`;
   const fromEnv = setting.source === "env";
   const ownValue = setting.source === "user";
@@ -90,8 +95,27 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   const disabled = fromEnv || featureOverride || managed !== null || save.isPending;
   // A live setting needs no restart: the server reads it again by itself, so a change is saved at once.
   const live = schema?.["x-live"] === true;
-  const commit = (next: unknown) =>
-    live ? save.mutate({ key, value: next === null ? null : asConfig(next) }) : setStaged(next);
+  const commit = (next: unknown) => {
+    setDropped(false);
+    if (live) {
+      save.mutate({ key, value: next === null ? null : asConfig(next) });
+      return;
+    }
+    setStaged(next);
+    setStagedOver((over) => over ?? serverValue);
+  };
+  useEffect(() => {
+    if (stagedOver === undefined || serverValue === stagedOver) return;
+    setStaged(undefined);
+    setStagedOver(undefined);
+    setEditorVersion((version) => version + 1);
+    setDropped(true);
+  }, [serverValue, stagedOver]);
+  const clearStage = () => {
+    setStaged(undefined);
+    setStagedOver(undefined);
+    setEditorVersion((version) => version + 1);
+  };
   const selection = staged === undefined ? value : staged;
   const selected = Array.isArray(selection) ? selection : [];
   const editor = catalog ? (
@@ -159,9 +183,19 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   );
   const serializedStaged =
     staged === null ? null : control.kind === "text" && typeof staged === "string" ? staged : toToml(staged);
-  const persistStaged = async () => {
-    await save.mutateAsync({ key, value: serializedStaged });
+  // Our own save changes the server value too: stop watching before it, so its refetch is never "changed
+  // elsewhere"; a failed save watches again.
+  const saveStaged = async () => {
+    const over = stagedOver;
+    setStagedOver(undefined);
+    try {
+      await save.mutateAsync({ key, value: serializedStaged });
+    } catch (error) {
+      setStagedOver(over);
+      throw error;
+    }
   };
+  const persistStaged = saveStaged;
   return (
     <li className="border-b border-border/70 py-4 last:border-b-0">
       <div className="flex flex-wrap items-start gap-x-6 gap-y-2 max-sm:flex-col">
@@ -179,6 +213,11 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
           {setting.key === "update_channel" && <ChannelStatement value={setting.value} />}
           {fromEnv && <p className="mt-1 text-xs text-warn">{t("settings.fromEnv", { env: setting.env })}</p>}
           {featureOverride && <p className="mt-1 text-xs text-warn">{t("settings.featureOverride")}</p>}
+          {dropped && (
+            <p role="status" className="mt-1 text-xs text-warn">
+              {t("settings.stagedDropped")}
+            </p>
+          )}
           {save.error && (
             <p role="alert" className="mt-1 text-xs text-bad">
               {save.error.message}
@@ -217,15 +256,12 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
                     ]
               }
               preserve={async () => {
-                await save.mutateAsync({ key, value: serializedStaged });
+                await saveStaged();
                 return true;
               }}
               onUnsupported={persistStaged}
               deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui serve\` in a terminal to apply this setting.`}
-              onApplied={() => {
-                setStaged(undefined);
-                setEditorVersion((version) => version + 1);
-              }}
+              onApplied={clearStage}
             />
           )}
           <Button
@@ -233,10 +269,7 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
             size="sm"
             variant="ghost"
             disabled={save.isPending}
-            onClick={() => {
-              setStaged(undefined);
-              setEditorVersion((version) => version + 1);
-            }}
+            onClick={clearStage}
             className="text-muted-foreground"
           >
             {t("lifecycle.cancel")}

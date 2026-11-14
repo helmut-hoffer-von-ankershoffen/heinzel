@@ -240,11 +240,16 @@ The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai a
 | `AiModels.model(model_id) -> Model` | A ready `pydantic_ai.models.Model`, built without calling it. Called only with a listed, available id, off the event loop, once per turn. Raise `ModelUnavailableError` for an id you can't serve. |
 | `AiModels.test(model_id) -> AccessTest` | Optional: your own live check. Without it, Heinzel sends one short request. |
 | `title`, `summary` | Optional attributes: what the option is called and one sentence about it. |
-| `ModelOffer` | `id` (required), and optional `title` (shown instead of the id), `description`, `aliases`, `context_window`, `efforts`, `tools` (default true), `thinking` (`"adaptive"` or `"budget"`: Anthropic's two effort styles, which Heinzel maps; leave unset to handle effort yourself) and `available` (default true; false keeps it visible, marked unavailable, and refused). |
+| `ModelOffer` | `id` (required), and optional `title` (shown instead of the id), `description`, `aliases`, `context_window`, `efforts`, `tools` (default true), `thinking` (`"adaptive"` or `"budget"`: Anthropic's two effort styles, which Heinzel maps; leave unset to handle effort yourself) `available` (default true; false keeps it visible, marked unavailable, and refused) and `level` (`"low"`, `"medium"` or `"high"`: the model Heinzel picks for that level; mark at most one offer per level). |
 | `ModelUnavailableError(model_id, others=None, reason="")` | The model can't be used now; the message names others to pick. |
 
 Within interface 1.x, changes are additive only: new optional fields and new optional methods. Never put a secret
 into an exception message: Heinzel shows failure messages, cut short.
+
+Heinzel sets each request's `max_tokens` itself: 16384 tokens of output, plus the thinking budget for a `budget`
+model. It also turns on Pydantic AI's Anthropic prompt
+caching of instructions and tool definitions; models of other APIs ignore it. The conformance kit only warns when
+`model()` accepts an unknown or unavailable id, since Heinzel never asks for one; refuse it anyway.
 
 ### Connectors
 
@@ -328,10 +333,10 @@ It builds each adapter your module provides as Heinzel does, and checks it again
   own capability and method. It must not write: calling one of your write methods, a write tool of an
   `McpConnector`, or changing your `writes` counter fails the check. The counter is the guard that really counts:
   the other two only see writes made through those paths on the calling thread.
-- **AI models.** `models()` answers within 5 seconds with valid `ModelOffer`s and unique ids. `model(id)` returns a
-  `pydantic_ai.models.Model`. An unknown or unavailable id should raise `ModelUnavailableError`; the kit warns
-  otherwise, since Heinzel refuses such an id before it calls `model()`. With `live_request=True`, one request
-  through your first model must answer.
+- **AI models.** `models()` answers within 5 seconds with valid `ModelOffer`s, unique ids and at most one offer per
+  `level`. `model(id)` returns a `pydantic_ai.models.Model`. An unknown or unavailable id should raise
+  `ModelUnavailableError`; the kit warns otherwise, since Heinzel refuses such an id before it calls `model()`. With
+  `live_request=True`, one request through your first model must answer.
 - **Sign-in and health.** A `@module.sign_in` provider's `status(live=False)` answers within 5 seconds without the
   network, with a `SignInStatus` that lists every declared grant, says `live=False`, and names the account, never a
   token. Offline `@module.health` checks run without the network and return a list of `Check`. Live checks and

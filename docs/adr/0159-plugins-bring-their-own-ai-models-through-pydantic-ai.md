@@ -59,19 +59,27 @@ Checkable statements:
      option. The docstrings in `heinzel/kernel/_ai_models.py` are the reference; the author guide quotes them.
 2. **`ModelOffer` needs only an id.** It is a frozen Pydantic model that ignores fields it doesn't know. The id
    matches `^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$`. Optional: `title`, `description`, `aliases`,
-   `context_window`, `efforts`, `tools` (default true), `thinking` (`adaptive`, `budget` or none) and `available`
-   (default true). The picker and a reply's header show `title` or else `id`. A reply's details also show the
-   `model_name` the Pydantic AI response reported.
+   `context_window`, `efforts`, `tools` (default true), `thinking` (`adaptive`, `budget` or none), `available`
+   (default true) and `level` (`low`, `medium`, `high` or none). The picker and a reply's header show `title` or
+   else `id`. A reply's details also show the `model_name` the Pydantic AI response reported. Core picks a model by
+   level with `model_for_level(source, level)`: the usable offer (calls tools, not marked unavailable) marked with
+   that level; with several marked, the first, and a warning is logged; with none marked, or no level asked, the
+   first usable offer; with no usable offer, `ModelUnavailableError`. The conformance kit fails a plugin that marks
+   more than one offer with the same level.
 3. **What Core guarantees the plugin.** It calls `models()` off the event loop, one call at a time per plugin, on a
    daemon thread, with a 5 s timeout, and reuses an answer for 3 s. When a call fails or times out it shows the
-   last good list and says so. A row that isn't a valid offer is skipped and logged, not the list. It calls
+   last good list and says so. It keeps the last good list's ids, with `level`, `available` and `tools`, in
+   `<state_dir>/ai/plugin-models/<adapter>.json` (mode 0600, replaced atomically, written only when it changed), so a
+   restart with a broken plugin still shows that list; a missing or corrupt file is ignored. A row that isn't a
+   valid offer is skipped and logged, not the list. It calls
    `model()` only with a listed, available id, off the event loop, with a 30 s timeout, once per turn.
 
 **Compatibility**
 
 4. **Within interface 1.x changes are additive only.** `ModelOffer` gains optional fields with defaults, and an
    unknown enum value in a newer plugin's row skips that row. The protocol gains optional methods only, which Core
-   detects before calling (like `test`). Required parameters are never added. A breaking change is interface 2.0,
+   detects before calling (like `test`). Required parameters are never added. `ModelOffer.level` came this way:
+   an optional field, so `AI_MODELS_INTERFACE` stays `1.0`. A breaking change is interface 2.0,
    follows [ADR 0026](0026-plugin-api-versioned-with-semver.md)'s deprecation rule, and Core keeps 1.x working for
    one minor release.
 5. **Pydantic AI is part of the contract.** Core pins `pydantic-ai-slim==2.61.0`. A Core release that moves to a
@@ -96,6 +104,9 @@ Checkable statements:
    the turn. For `thinking: adaptive`, Core passes Anthropic's `thinking: {type: adaptive}` and
    `output_config.effort`. For `budget`, it passes `thinking: {type: enabled, budget_tokens}`: 2k, 8k, 16k, 32k or
    64k tokens from low to max, with `max_tokens` above the budget. With `thinking` unset, Core passes no effort.
+   Every request also sets Pydantic AI's own `anthropic_cache_instructions` and `anthropic_cache_tool_definitions`,
+   so the requests of a multi-tool turn read instructions and tool definitions from Anthropic's prompt cache;
+   models of other APIs ignore `anthropic_*` settings. Core adds no cache layer of its own.
 10. **Chat, drafts and schedules run on the plugin's model through Core's engine.** Durable chats, drafts and
     schedules all go through `UserChatService.dispatch`, which runs the same `InteractiveTurn` as for Claude Code,
     with a Pydantic AI capability (`PluginTurnGuard`) instead of a model wrapper. Before each request, off the event
@@ -115,7 +126,9 @@ Checkable statements:
 12. **Failures are clean and leave the chat usable.** A provider's error becomes a `HeinzelError` from its kind
     and status code only, never its body or text. A 401 or 403 gives "The provider refused the request (401):
     check the plugin's sign-in." A 429, 503 or 529 says the provider is busy, a 5xx that it failed, a connection
-    error that it couldn't be reached. A failure before the turn's first response (no tool ran) sets the person's
+    error that it couldn't be reached. A 400 or 413 whose body matches a fixed "too long" pattern (the body is
+    matched, never shown) says the conversation is longer than the model can read: start a new chat, or pick a model
+    with a larger context window. A failure before the turn's first response (no tool ran) sets the person's
     turn aside, so they can send the message again. Pydantic AI's own outcomes (limits, invalid output) keep their
     meaning in the engine.
 13. **Billing and usage.** A plugin's models report tokens, not dollars. A turn is recorded with `billing: api`,
@@ -152,8 +165,9 @@ Checkable statements:
     `ModelMessagesTypeAdapter`, in `<state_dir>/ai/engine-sessions/<chat>.json`: written atomically, mode 0600 in a
     0700 folder, never through a symbolic link, and kept across a restart. It is capped at 60 % of the offer's
     `context_window`, at four characters a token, by dropping whole turns, oldest first; the newest turn is always
-    kept. Without a known context window it keeps at most 200 messages; the built-in Model API option has none, so
-    it uses that cap. A chat that sends a transcript continues the stored history only when the transcript's last
+    kept. Without a known context window it keeps at most 200 messages within 60 % of a conservative 128k-token
+    window; the built-in Model API option has none, so it uses that cap. Chats on the interactive turn send at most
+    12 kB of earlier messages, far below any window, so they need no cap by window. A chat that sends a transcript continues the stored history only when the transcript's last
     answer matches it; otherwise the runner starts a fresh history from the whole transcript. A stopped reply keeps
     its partial answer, marked `[stopped: <why>]`.
 18. **Coding tools.** On the `engine` runner a coding session gets `read`, `grep` and `glob` (the read-only set of
@@ -213,8 +227,8 @@ Checkable statements:
 - Bad: Core trusts the plugin's `Model` object. A plugin runs in-process with the person's rights anyway; this adds
   nothing a plugin couldn't already do, but a careless plugin could log its own headers.
 - Bad: no dollar caps on plugin models; owners who need caps keep `usd-cap` and can't use them.
-- Bad: the last good model list lives in memory only, so a fresh process with a broken plugin shows no models
-  until the plugin answers once.
+- Bad: across a restart only the last good list's ids survive, so a broken plugin's models show without titles
+  until it answers once.
 - Bad: a durable chat turn that fails after its first response stays uncertain, as on the Claude Code path.
 
 ### Confirmation

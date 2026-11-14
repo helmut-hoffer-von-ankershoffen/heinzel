@@ -33,6 +33,8 @@ def test_whole_turns_are_dropped_to_fit_the_window_or_the_message_cap(monkeypatc
     assert capped(huge, 10) == huge  # the newest turn always stays
     monkeypatch.setattr(_engine_history, "MAX_MESSAGES", 4)
     assert capped(messages, None) == messages[2:]
+    monkeypatch.setattr(_engine_history, "DEFAULT_CONTEXT_WINDOW", 2000)
+    assert capped(messages[2:], None) == messages[4:], "an unknown window is a conservative default, not unbounded"
 
 
 def test_a_tool_turn_is_dropped_whole() -> None:

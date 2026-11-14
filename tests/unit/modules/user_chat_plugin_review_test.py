@@ -172,6 +172,9 @@ def test_probe_r6_effort_reaches_the_wire_in_a_form_anthropic_accepts(tmp_path, 
     else:
         assert thinking.get("type") == "adaptive"
         assert (body.get("output_config") or {}).get("effort") == effort
+    system = body.get("system")
+    assert isinstance(system, list), "instructions go as blocks so the last one can carry cache_control"
+    assert system[-1].get("cache_control") == {"type": "ephemeral", "ttl": "5m"}
 
 
 # --- A: an effort the offer doesn't list is still sent ---------------------------------------------------------------

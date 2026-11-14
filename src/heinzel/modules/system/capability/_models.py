@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from heinzel.kernel import Mode
+from heinzel.kernel import How, Mode
 
 
 class CapabilityInfo(BaseModel):
@@ -19,6 +19,11 @@ class CapabilityInfo(BaseModel):
         description="Every adapter that serves it, the default first: several only where several may (ADR 0161).",
     )
     multiple: bool = Field(default=False, description="Whether several adapters may serve it at once (ADR 0161).")
+    how: How = Field(
+        default="unbound",
+        description="How it got its adapter: `configured`, `automatic` (the only one installed), the core's "
+        "`default`, `off` or `unbound` (ADR 0055).",
+    )
 
 
 class AdapterInfo(BaseModel):

@@ -16,15 +16,36 @@ vi.mock("@/api/queries", () => ({
       ? undefined
       : {
           capabilities: [
-            { name: "calendar", bound: null },
-            { name: "mail", bound: "oak" },
-            { name: "documents", bound: "drive", adapters: ["drive", "wiki"], multiple: true },
+            { name: "calendar", bound: null, how: "unbound" },
+            { name: "mail", bound: "oak", how: "automatic" },
+            { name: "tracker", bound: "core-tracker", how: "default" },
+            { name: "meetings", bound: "a-very-long-meetings-adapter-name", how: "automatic" },
+            { name: "documents", bound: "drive", adapters: ["drive", "wiki"], multiple: true, how: "configured" },
           ],
           adapters: [
             { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
             { adapter: "oak", capability: "mail", distribution: "sample-oak", module: "oak" },
-            { adapter: "drive", capability: "documents", distribution: "sample-drive", module: "drive" },
-            { adapter: "wiki", capability: "documents", distribution: "sample-wiki", module: "wiki" },
+            {
+              adapter: "drive",
+              capability: "documents",
+              distribution: "sample-drive",
+              module: "drive",
+              links: ["drive.example.test"],
+            },
+            {
+              adapter: "wiki",
+              capability: "documents",
+              distribution: "sample-wiki",
+              module: "wiki",
+              links: ["wiki.example.test"],
+            },
+            {
+              adapter: "plain",
+              capability: "documents",
+              distribution: "sample-plain",
+              module: "plain",
+              links: ["drive.example.test"],
+            },
           ],
         },
   }),
@@ -62,7 +83,7 @@ vi.mock("@/lifecycle/RestartAndApply", () => ({
       >
         Restart and apply: {changes.join(", ")}
       </button>
-      <button type="button" onClick={() => void onUnsupported()}>
+      <button type="button" onClick={() => void onUnsupported().catch(() => undefined)}>
         Unsupported restart
       </button>
     </>
@@ -83,6 +104,14 @@ const setting = (source: string): SchemaSettingInfo => ({
   value: 8,
   default: 3,
   json_schema: { type: "number" },
+});
+
+const enabled = (value: boolean): SchemaSettingInfo => ({
+  ...setting("user"),
+  key: "enabled",
+  value,
+  default: false,
+  json_schema: { type: "boolean" },
 });
 
 describe("Schema setting metadata", () => {
@@ -206,6 +235,59 @@ describe("Schema setting metadata", () => {
     expect(screen.getByRole("combobox", { name: "Calendar" })).toHaveValue("");
   });
 
+  it("drops a staged change and says so when the value changed elsewhere meanwhile", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    expect(screen.getByRole("button", { name: /Restart and apply: Enabled/ })).toBeInTheDocument();
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.queryByRole("button", { name: /Restart and apply: Enabled/ })).not.toBeInTheDocument();
+    const notice = screen.getByText(/Changed elsewhere/);
+    expect(notice).toHaveAttribute("role", "status");
+    expect(notice.textContent?.length).toBeLessThanOrEqual(60);
+    expect(mutateAsync).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+  });
+
+  it.each(["Unsupported restart", "Restart and apply: Enabled"])(
+    "never flags its own save as changed elsewhere, even when the refetch lands first (%s)",
+    async (button) => {
+      const { rerender } = render(<Row setting={enabled(true)} />);
+      mutateAsync.mockImplementation(async () => {
+        rerender(<Row setting={enabled(false)} />);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return {};
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("switch", { name: "Enabled" }));
+      await user.click(screen.getByRole("button", { name: button }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("watches for a change elsewhere again when its own save failed", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    mutateAsync.mockRejectedValue(new Error("refused"));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    await user.click(screen.getByRole("button", { name: "Unsupported restart" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.getByText(/Changed elsewhere/)).toBeInTheDocument();
+  });
+
+  it("keeps a change it saved itself staged until applied, not flagged as changed elsewhere", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    await user.click(screen.getByRole("button", { name: "Unsupported restart" }));
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Restart and apply: Enabled/ })).toBeInTheDocument();
+  });
+
   it("identifies hz ui and saves only after the shared unsupported confirmation", async () => {
     render(
       <Row
@@ -296,6 +378,39 @@ describe("Declared installed choices", () => {
     expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
   });
 
+  it("says the only one installed only when hz chose it automatically, not for a core default", () => {
+    render(
+      <SchemaValue
+        label="Tracker"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "tracker", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
+    expect(screen.queryByText(/the only one installed/)).not.toBeInTheDocument();
+  });
+
+  it("cuts a long adapter name short within the pane and shows it whole as a tooltip", () => {
+    render(
+      <SchemaValue
+        label="Meetings"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "meetings", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    const shown = "not set: a-very-long-meet… serves it, the only one installed";
+    expect(screen.getByRole("option", { name: shown })).toBeInTheDocument();
+    expect(shown.length).toBeLessThanOrEqual(60);
+    expect(screen.getByRole("combobox", { name: "Meetings" })).toHaveAttribute(
+      "title",
+      "not set: a-very-long-meetings-adapter-name serves it, the only one installed",
+    );
+  });
+
   const documents = {
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }, { type: "null" }],
     title: "Documents",
@@ -328,6 +443,31 @@ describe("Declared installed choices", () => {
     expect(screen.getByText(/drive, the first, is the default/)).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("checkbox", { name: /drive/ }));
     expect(onChange).toHaveBeenLastCalledWith(["wiki"]);
+  });
+
+  it("warns when connectors that are on open links on the same host, as doctor does", () => {
+    const { rerender } = render(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "wiki"]}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Links refused/)).not.toBeInTheDocument();
+    rerender(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "plain"]}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    const warning = screen.getByText("Links refused: two connectors claim the same host");
+    expect(warning.textContent?.length).toBeLessThanOrEqual(60);
+    expect(warning).toHaveAttribute("title", "drive.example.test: drive, plain");
   });
 
   it("reads a saved none as every documents connector off", () => {

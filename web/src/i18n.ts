@@ -652,6 +652,8 @@ const en = {
   "settings.missing": "not there",
   "settings.notSet": "not set",
   "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
+  "settings.linkOverlap": "Links refused: two connectors claim the same host",
+  "settings.stagedDropped": "Changed elsewhere: your unsaved change was dropped.",
   "settings.severalOn":
     "Links open in the connector they belong to, and a search asks each one. {adapter}, the first, is the default.",
   "profile.team": "Team",
@@ -930,6 +932,7 @@ const en = {
   "plugins.kind.capability": "Capability",
   "plugins.kind.playbook": "Playbook",
   "plugins.sourceUnknown": "source not reported yet",
+  "plugins.localRepository": "Local repository",
   "plugins.yoursIntro": "Installed on this machine. Their modules, themes and playbooks are part of hz now.",
   "plugins.discoverIntro":
     "Not installed yet: first-party plugins and community ones from GitHub. Add installs any other, e.g. your company's private plugin.",

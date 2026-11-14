@@ -276,6 +276,17 @@ def test_an_invalid_row_warns_as_core_skips_it_and_a_repeated_id_fails():
     assert failures(report) == ["a (ai-models) models: the id acme-large is offered twice; ids must be unique"]
 
 
+def test_more_than_one_offer_per_level_fails():
+    rows: list[object] = [
+        ModelOffer(id="a", level="high"),
+        ModelOffer(id="b", level="high"),
+        ModelOffer(id="c", level="low"),
+    ]
+    assert failures(check_adapter(Models(rows), "ai-models", name="a")) == [
+        "a (ai-models) models: 2 offers are marked level high (a, b); one at most"
+    ]
+
+
 def test_no_valid_offer_warns_that_model_was_not_checked():
     report = check_adapter(Models([]), "ai-models", name="a")
     assert report.failures == []

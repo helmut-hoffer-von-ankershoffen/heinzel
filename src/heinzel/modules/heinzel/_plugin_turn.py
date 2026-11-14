@@ -4,11 +4,12 @@ The plugin built a plain `pydantic_ai.models.Model`; hz's engine runs it with Py
 capability hooks each model request: before it, it checks (off the event loop, without calling the plugin) that what
 hz owns still holds: the owner, the access, the chosen model and effort, the budget mode and the plugin's version.
 It adds the chosen effort in the model's own style and hz's output cap. After a response it records the tokens the
-model reported, with no dollar cost. A failure becomes a clean `PluginModelError` that never repeats a provider's
-response body, an exception's text or a header.
+model reported, with no dollar cost; a usage log that fails is logged, never a failed answer. A failure becomes a
+clean `PluginModelError` that never repeats a provider's response body, an exception's text or a header.
 """
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -24,7 +25,10 @@ from pydantic_ai.settings import ModelSettings
 from heinzel import HeinzelError, UsageEntry
 from heinzel.kernel import ModelOffer, UsageCause
 from heinzel.kernel._ai_models import PluginModelError, effort_settings, model_failure
+from heinzel.kernel._logging import log_event
 from heinzel.modules.heinzel._engine import TurnDeps
+
+logger = logging.getLogger(__name__)
 
 
 def failure(exc: Exception, model: str, *, before_response: bool) -> HeinzelError:
@@ -80,19 +84,21 @@ class PluginTurnGuard(AbstractCapability[TurnDeps]):
             raise mapped from None
         self.responses += 1
         usage = response.usage
-        self.record(
-            UsageEntry(
-                at=datetime.now(UTC),
-                cause=self.cause,
-                access=self.access,
-                model=response.model_name or self.offer.id,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cache_read_tokens=usage.cache_read_tokens,
-                cache_write_tokens=usage.cache_write_tokens,
-                cost_usd=None,
-            )
+        entry = UsageEntry(
+            at=datetime.now(UTC),
+            cause=self.cause,
+            access=self.access,
+            model=response.model_name or self.offer.id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            cost_usd=None,
         )
+        try:
+            self.record(entry)
+        except Exception as exc:  # noqa: BLE001 - a failing usage log never fails a good answer
+            log_event(logger, "ai.usage.record_failed", level=logging.WARNING, error=type(exc).__name__)
         return response
 
 

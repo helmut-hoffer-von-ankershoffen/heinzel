@@ -1,5 +1,6 @@
 """A plugin's own AI models, the AI access option the kernel derives for them, and declared gaps (ADR 0159)."""
 
+import json
 import threading
 from typing import ClassVar
 
@@ -22,10 +23,12 @@ from heinzel.kernel import (
 from heinzel.kernel._ai_models import (
     EFFORT_BUDGETS,
     OUTPUT_TOKENS,
+    PROMPT_CACHE,
     build_model,
     choose,
     effort_settings,
     list_offers,
+    model_for_level,
 )
 from heinzel.kernel._capabilities import declared_unsupported
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -191,12 +194,14 @@ def test_effort_maps_to_anthropic_native_settings_and_leaves_room_for_thinking()
         "max_tokens": OUTPUT_TOKENS,
         "anthropic_thinking": {"type": "adaptive"},
         "anthropic_effort": "high",
+        **PROMPT_CACHE,
     }
     budgeted = effort_settings(budget, "max")
     assert budgeted["anthropic_thinking"] == {"type": "enabled", "budget_tokens": EFFORT_BUDGETS["max"]}
     assert budgeted["max_tokens"] > EFFORT_BUDGETS["max"], "Anthropic refuses budget_tokens >= max_tokens"
-    assert effort_settings(plain, "max") == {"max_tokens": OUTPUT_TOKENS}
-    assert effort_settings(adaptive, None) == {"max_tokens": OUTPUT_TOKENS}
+    assert budgeted["anthropic_cache_instructions"] is True
+    assert effort_settings(plain, "max") == {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
+    assert effort_settings(adaptive, None) == {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
 
 
 class Flaky:
@@ -249,6 +254,75 @@ def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkey
     offers, note = list_offers(_source(junk, name="never-good"))
     assert offers == []
     assert note == "its model list failed (TypeError: models() returned str, not a list of ModelOffer)"
+
+
+class Levels:
+    """A plugin that marks levels; `offers` is set per test."""
+
+    def __init__(self, offers: list[ModelOffer]) -> None:
+        self.offers = offers
+
+    def models(self) -> list[ModelOffer]:
+        return self.offers
+
+
+def test_model_for_level_picks_the_marked_usable_offer_else_the_first_usable(caplog):
+    offers = [
+        ModelOffer(id="mute", tools=False, level="high"),
+        ModelOffer(id="small", level="low"),
+        ModelOffer(id="gone", available=False, level="high"),
+        ModelOffer(id="big", level="high"),
+        ModelOffer(id="bigger", level="high"),
+    ]
+    source = _source(Levels(offers), name="levels-test")
+    assert model_for_level(source, "low").id == "small"
+    assert model_for_level(source, None).id == "small"
+    assert model_for_level(source, "medium").id == "small", "none marked: the first usable"
+    with caplog.at_level("WARNING"):
+        assert model_for_level(source, "high").id == "big", "the unusable are skipped; several marked: the first"
+    assert "ai.models.level_ambiguous" in caplog.text
+    assert ModelOffer.model_validate({"id": "x", "level": "high"}).level == "high"
+    with pytest.raises(ValidationError):
+        ModelOffer.model_validate({"id": "x", "level": "max"})
+    with pytest.raises(ModelUnavailableError):
+        model_for_level(_source(Levels([ModelOffer(id="mute", tools=False)]), name="levels-none"), "low")
+
+
+def test_the_last_good_ids_survive_a_restart_with_a_broken_plugin(tmp_path, monkeypatch):
+    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TTL", 0.0)
+    kept = tmp_path / "ai" / "plugin-models" / "acme.json"
+    good = Levels([ModelOffer(id="big", title="Big", level="high"), ModelOffer(id="gone", available=False)])
+    offers, _note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", good, kept))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["big", "gone"]
+    assert kept.stat().st_mode & 0o777 == 0o600
+    assert json.loads(kept.read_text()) == [
+        {"id": "big", "tools": True, "available": True, "level": "high"},
+        {"id": "gone", "tools": True, "available": False, "level": None},
+    ]
+    stamp = kept.stat().st_mtime_ns
+    list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", good, kept))  # type: ignore[arg-type]
+    assert kept.stat().st_mtime_ns == stamp, "an unchanged list isn't written again"
+    broken = Flaky()
+    broken.mode = "fail"
+    restarted = AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", broken, kept)  # type: ignore[arg-type]
+    offers, note = list_offers(restarted)
+    assert [(o.id, o.level, o.available, o.title) for o in offers] == [
+        ("big", "high", True, ""),
+        ("gone", None, False, ""),
+    ]
+    assert note == "its model list failed (RuntimeError: proxy down); showing the list kept from before the restart"
+    kept.write_text("{not json")
+    offers, note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", Flaky(), kept))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["one", "two"], "a working plugin overwrites a corrupt file"
+    kept.write_text("{not json")
+    other = Flaky()
+    other.mode = "fail"
+    offers, note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", other, kept))  # type: ignore[arg-type]
+    assert (offers, note) == ([], "its model list failed (RuntimeError: proxy down)"), "a corrupt file is ignored"
+    blocked = tmp_path / "file"
+    blocked.write_text("")
+    offers, _note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", Flaky(), blocked / "a.json"))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["one", "two"], "a failing write never fails the list"
 
 
 def test_one_bad_row_is_skipped_not_the_whole_list():

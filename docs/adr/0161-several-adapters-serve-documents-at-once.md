@@ -97,7 +97,8 @@ A write routes the same way. If the owning adapter can't write, Core says so, na
 no item, such as a future `create`, goes to the default.
 
 `hz system doctor` warns when connectors that are on declare the same link host: such links are refused, so one
-connector claiming another's host breaks its links.
+connector claiming another's host breaks its links. The Settings switch list says the same under the switches,
+naming each shared host and its connectors.
 
 **Fan-out.** Core asks each adapter at once, each in a daemon thread with the caller's context. Every adapter has
 `Capabilities.fan_out_timeout` (20 s). An adapter may have at most `fan_out_cap` (4) calls running; a hung one gets no

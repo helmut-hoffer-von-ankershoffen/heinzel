@@ -161,6 +161,8 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "team-graph": "hz-graph",
         "tracker": None,
     }
+    how = {c["name"]: c["how"] for c in report["capabilities"]}
+    assert (how["tracker"], how["documents"]) == ("unbound", "configured")
     assert [a for a in report["adapters"] if a["capability"] == "documents"] == [
         {
             "adapter": "notes",

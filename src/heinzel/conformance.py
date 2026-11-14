@@ -13,8 +13,8 @@ pins, and checks what Core relies on, for every adapter a module provides:
   an `McpConnector`, fails the check, and so does a change the test's own `writes` counter sees. Write methods are
   never called.
 - **AI models** (`ai-models`, interface `AI_MODELS_INTERFACE`). `models()` answers within Core's time limit with valid
-  `ModelOffer`s and unique ids; `model(id)` returns a `pydantic_ai.models.Model`; an unknown or unavailable id is
-  refused. With `live_request=True` one request through the model must answer.
+  `ModelOffer`s, unique ids and at most one offer per `level`; `model(id)` returns a `pydantic_ai.models.Model`; an
+  unknown or unavailable id is refused. With `live_request=True` one request through the model must answer.
 - **Sign-in and health** (ADR 0055, 0136). A `@module.sign_in` provider's `status(live=False)` answers quickly and
   without the network, with a valid `SignInStatus` naming every declared grant and an account that isn't a token.
   Offline `@module.health` checks run without the network and return `Check`s. Nothing live is called.
@@ -580,6 +580,11 @@ def _ai_models(adapter: object, label: str, *, live_request: bool, timeout: floa
     if not offers:
         findings.append(Finding(label, "models", "models() offered no valid model, so model() wasn't checked", "warn"))
         return findings
+    findings += [
+        Finding(label, "models", f"{len(ids)} offers are marked level {level} ({', '.join(ids[:3])}); one at most")
+        for level, ids in _levels(offers).items()
+        if len(ids) > 1
+    ]
     usable = [o for o in offers if o.available and o.tools]
     first = (usable or offers)[0]
     findings += _built(adapter, first.id, label, live_request=live_request, timeout=timeout)
@@ -588,6 +593,15 @@ def _ai_models(adapter: object, label: str, *, live_request: bool, timeout: floa
     ]:
         findings += _refused(adapter, model_id, why, label, timeout)
     return findings
+
+
+def _levels(offers: list[Any]) -> dict[str, list[str]]:
+    """The ids of the offers marked with each level, in the plugin's order."""
+    levels: dict[str, list[str]] = {}
+    for offer in offers:
+        if offer.level is not None:
+            levels.setdefault(offer.level, []).append(offer.id)
+    return levels
 
 
 def _missing() -> object:

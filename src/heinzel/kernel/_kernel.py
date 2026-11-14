@@ -811,6 +811,7 @@ class Kernel:
             distribution=record.origin.distribution,
             version=record.origin.version,
             adapter=cast("AiModels", instance),
+            kept=self.settings.state_dir.expanduser() / "ai" / "plugin-models" / f"{name}.json",
         )
 
     def self_chat(self) -> SelfChat | None:

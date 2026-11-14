@@ -17,12 +17,18 @@ and ignores fields it doesn't know. The protocol gains optional methods only, wh
 `AI_MODELS_INTERFACE` names the version a Core implements; a plugin may check it at import.
 """
 
+import contextlib
+import json
 import logging
+import os
+import re
+import tempfile
 import threading
 import time
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
@@ -49,6 +55,9 @@ Thinking = Literal["adaptive", "budget"]
 """How a model is asked to think harder, in Anthropic's Messages API: `adaptive` (`thinking: {type: adaptive}` plus
 `output_config: {effort}`, Pydantic AI's `anthropic_effort`) for newer models, `budget` (`thinking: {type: enabled,
 budget_tokens}`) for older ones. A plugin whose models speak another API leaves it unset and maps effort itself."""
+
+Level = Literal["low", "medium", "high"]
+"""A model's tier in its plugin's list: hz picks a model by level with `model_for_level` (ADR 0159)."""
 
 EFFORT_BUDGETS: dict[Effort, int] = {"low": 2048, "medium": 8192, "high": 16384, "xhigh": 32768, "max": 63999}
 """The thinking budget in tokens hz asks a `budget` model for at each effort."""
@@ -89,6 +98,11 @@ class ModelOffer(BaseModel):
         default=True,
         description="False when it didn't answer when the plugin last checked: hz keeps it in the picker, marked "
         "unavailable, and refuses a turn on it before starting, naming others to pick.",
+    )
+    level: Level | None = Field(
+        default=None,
+        description="Its tier, `low`, `medium` or `high`, when the plugin marks one: hz picks the model of a level "
+        "by it. At most one offer per level; none when unmarked.",
     )
 
     @property
@@ -146,6 +160,12 @@ class AiModels(Protocol):
 
 
 UNAUTHORIZED = frozenset({401, 403})
+TOO_LONG_STATUS = frozenset({400, 413})
+TOO_LONG = re.compile(
+    r"prompt is too long|context[ _-]?(length|window)|maximum context|too many (input )?tokens|request too large",
+    re.IGNORECASE,
+)
+"""What a provider says when a request is longer than the model reads; matched, never shown."""
 BUSY = frozenset({429, 503, 529})
 
 
@@ -175,7 +195,12 @@ def model_failure(exc: Exception, model: str, *, before_response: bool = False) 
 
     status = exc.status_code if isinstance(exc, ModelHTTPError) else None
     code = f" ({status})" if status is not None else ""
-    if status in UNAUTHORIZED:
+    if status in TOO_LONG_STATUS and isinstance(exc, ModelHTTPError) and TOO_LONG.search(str(exc.body or "")):
+        message = (
+            f"The conversation is longer than the model can read{code}: start a new chat, or pick a model with a "
+            "larger context window."
+        )
+    elif status in UNAUTHORIZED:
         message = f"The provider refused the request{code}: check the plugin's sign-in."
     elif status == 404 or (isinstance(exc, ProviderUnavailableError) and status not in BUSY):  # noqa: PLR2004
         return ModelUnavailableError(model, [], "the provider doesn't know it or can't serve it now")
@@ -196,19 +221,25 @@ OUTPUT_TOKENS = 16384
 """The most a plugin's model may write in one response besides its thinking, hz's cap on that path (ADR 0159)."""
 
 
+PROMPT_CACHE: dict[str, Any] = {"anthropic_cache_instructions": True, "anthropic_cache_tool_definitions": True}
+"""Pydantic AI's own Anthropic prompt-cache settings: a multi-request turn reads its instructions and tool definitions
+from the cache. Only Anthropic's models read `anthropic_*` settings; others ignore them."""
+
+
 def effort_settings(offer: ModelOffer, effort: Effort | None) -> dict[str, Any]:
-    """Model settings for one request on `offer`: hz's output cap, and Anthropic's native settings for `effort`.
+    """Model settings for one request on `offer`: hz's output cap, prompt caching, Anthropic's settings for `effort`.
 
     The output cap leaves room for a `budget` model's thinking, which Anthropic counts within `max_tokens`. With no
-    effort, or a model that takes none, only the cap: the plugin's model keeps its own thinking settings.
+    effort, or a model that takes none, no thinking settings: the plugin's model keeps its own.
     """
     if effort is None or offer.thinking is None:
-        return {"max_tokens": OUTPUT_TOKENS}
+        return {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
     if offer.thinking == "budget":
         budget = EFFORT_BUDGETS[effort]
         thinking = {"type": "enabled", "budget_tokens": budget}
-        return {"max_tokens": budget + OUTPUT_TOKENS, "anthropic_thinking": thinking}
-    return {"max_tokens": OUTPUT_TOKENS, "anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
+        return {"max_tokens": budget + OUTPUT_TOKENS, "anthropic_thinking": thinking, **PROMPT_CACHE}
+    adaptive = {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
+    return {"max_tokens": OUTPUT_TOKENS, **adaptive, **PROMPT_CACHE}
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +256,9 @@ class AiModelsSource:
     """The plugin's version: a change makes approved schedules ask again (their access fingerprint changes)."""
     adapter: AiModels
     """The adapter itself: only hz's trusted core code holds it, never a requester's handle."""
+    kept: Path | None = None
+    """Where the last good list's ids are kept across a restart, a private file in the profile's state; none: memory
+    only."""
 
 
 class AiModelOptions:
@@ -262,6 +296,7 @@ class _Listing:
     skipped: str = ""
     problem: str = ""
     done: threading.Event | None = None
+    saved: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -313,10 +348,50 @@ def _fetch(source: AiModelsSource, listing: _Listing, done: threading.Event) -> 
     else:
         with listing.lock:
             listing.offers, listing.skipped, listing.problem, listing.at = offers, skipped, "", time.monotonic()
+        if source.kept is not None:
+            _keep(source.kept, offers, listing)
     finally:
         with listing.lock:
             listing.done = None
         done.set()
+
+
+KEPT_FIELDS = frozenset({"id", "level", "available", "tools"})
+"""What hz keeps of a good list across a restart: ids and what picking a model needs, never titles or descriptions."""
+
+
+def _keep(path: Path, offers: list[ModelOffer], listing: _Listing) -> None:
+    """Keep `offers`' ids in `path`, mode 0600, replaced atomically when they changed; never raises."""
+    text = json.dumps([o.model_dump(include=set(KEPT_FIELDS)) for o in offers])
+    if text == listing.saved:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".json")  # mode 0600
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as file:
+                file.write(text)
+            Path(temporary).replace(path)
+        finally:
+            with contextlib.suppress(OSError):
+                Path(temporary).unlink(missing_ok=True)
+    except OSError as exc:
+        log_event(logger, "ai.models.keep_failed", level=logging.WARNING, error=type(exc).__name__)
+        return
+    listing.saved = text
+
+
+def _kept(path: Path | None) -> list[ModelOffer]:
+    """The list kept in `path` by an earlier process; none when missing, unreadable or corrupt."""
+    if path is None:
+        return []
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as file:
+            rows: object = json.loads(file.read(MAX_OFFERS * 400))
+        offers, _skipped = _validated(rows)
+    except (OSError, ValueError, TypeError):
+        return []
+    return offers
 
 
 def _listing_of(adapter: object) -> _Listing:
@@ -369,6 +444,8 @@ def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[
         problem = f"its model list took longer than {timeout:g}s"
     if not problem:
         return list(kept or []), skipped
+    if not kept and (earlier := _kept(source.kept)):
+        return earlier, f"{problem}; showing the list kept from before the restart"
     return (list(kept), f"{problem}; showing the last list") if kept else ([], problem)
 
 
@@ -399,6 +476,27 @@ def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None =
         msg = f"The model {wanted} doesn't take the effort {effort}; pick one of {allowed}, or none"
         raise HeinzelError(msg)
     return offer
+
+
+def model_for_level(source: AiModelsSource, level: Level | None) -> ModelOffer:
+    """The usable offer of `source` marked with `level`, else its first usable offer (ADR 0159).
+
+    Usable means it calls tools and isn't marked unavailable. With several usable offers marked with `level`, the
+    first, and a warning is logged; with none marked, or `level` None, the first usable offer.
+
+    Raises:
+        ModelUnavailableError: If the plugin offers no usable model.
+    """
+    offers, _note = list_offers(source)
+    usable = [o for o in offers if o.tools and o.available is not False]
+    if not usable:
+        raise ModelUnavailableError(NONE_CHOSEN, [], "the plugin offers no model that answers and calls tools")
+    marked = [o for o in usable if level is not None and o.level == level]
+    if len(marked) > 1:
+        log_event(
+            logger, "ai.models.level_ambiguous", level=logging.WARNING, adapter=source.name, tier=level, n=len(marked)
+        )
+    return (marked or usable)[0]
 
 
 def build_model(source: AiModelsSource, offer: ModelOffer) -> Any:  # noqa: ANN401 - a pydantic_ai Model

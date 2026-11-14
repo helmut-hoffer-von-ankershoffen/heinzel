@@ -44,6 +44,7 @@ class CapabilityService:
                     bound=self.capabilities.bound(spec.name),
                     adapters=list(self.capabilities.bindings(spec.name)[0]),
                     multiple=spec.multiple,
+                    how=self.capabilities.bindings(spec.name)[1],
                 )
                 for spec in sorted(CAPABILITIES.values(), key=lambda spec: spec.name)
             ],
