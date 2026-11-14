@@ -102,7 +102,7 @@ it("Open in browser and Clear browsing data send their own commands, and only on
   });
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
-  const open = screen.getByRole("button", { name: "Open this link in your browser" });
+  const open = screen.getByRole("button", { name: "Open in browser" });
   expect(open).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "clear" }));
@@ -130,7 +130,7 @@ it.each([
 
 it("web mode has no native browser controls", () => {
   render(<BrowserPanel active onClose={vi.fn()} />);
-  expect(screen.queryByRole("button", { name: "Open this link in your browser" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
 });
 
