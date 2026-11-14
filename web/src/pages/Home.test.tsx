@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today";
@@ -44,6 +44,46 @@ describe("Home", () => {
     expect(main).toHaveAttribute("data-focus-ring", "parent");
     expect(main).toHaveClass("outline-none");
     expect(await screen.findByRole("link", { name: "Open" })).not.toHaveAttribute("data-focus-ring");
+  });
+
+  it("asks the default Heinzel about a card: Ask <Name> types the question into its composer, never sends it", async () => {
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const { calls } = mockApi({
+      ...base,
+      "/api/heinzel/sessions": {
+        sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" }],
+      },
+      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
+      "li",
+    ) as HTMLElement;
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const composer = (await chat.findByLabelText("Message Helmi")) as HTMLTextAreaElement;
+    await user.type(composer, "Earlier words");
+    await user.click(await within(card).findByRole("button", { name: "Ask Helmi" }));
+    // The chat now links the default Heinzel (`?chat=`), so its composer is shown afresh: read it again.
+    const asked = () => chat.getByLabelText("Message Helmi") as HTMLTextAreaElement;
+    await waitFor(() => expect(asked().value).toMatch(/^Earlier words\n\nDoctor: 2 checks need attention/));
+    await waitFor(() => expect(asked()).toHaveFocus());
+    const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${helmi}`) ?? "{}");
+    expect(saved.text).toBe(asked().value);
+    // Typed, not sent: no message goes to the Heinzel.
+    expect(calls.some((request) => request.method === "POST" && /\/heinzel\/(chat|message)/.test(request.url))).toBe(
+      false,
+    );
+    assertActionStructure(card);
+  });
+
+  it("offers no Ask while no Heinzel is named yet", async () => {
+    mockApi(base);
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(card).queryByRole("button", { name: /^Ask/ })).not.toBeInTheDocument();
   });
 
   it("leads with Open and dismisses from the corner; there is no general chat to ask in", async () => {

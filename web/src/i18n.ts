@@ -587,6 +587,8 @@ const en = {
   "today.notifications.all": "All notifications",
   "today.quiet": "Nothing needs you right now. Ask anything below.",
   "today.open": "Open",
+  "today.askHeinzel": "Ask {name}",
+  "contrib.says": "Module {module} shows: {text}",
   "contrib.confirm": "This changes something. It runs exactly this:",
   "contrib.run": "Run it",
   "contrib.cancel": "Cancel",
@@ -1300,6 +1302,8 @@ const en = {
   "teamGraph.intro":
     "Who reads and writes what across the team, and whether each contract keeps its artifact true. Open an artifact where it lives, or a Heinzelmännchen's page.",
   "teamGraph.graph": "Team graph",
+  "teamGraph.askHeinzel": "Ask {name} about {label}",
+  "teamGraph.askAbout": "Tell me about {label}.",
   "teamGraph.minimap": "Team graph overview",
   "teamGraph.legend": "Legend",
   "teamGraph.legend.states": "Contract states",

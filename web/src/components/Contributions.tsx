@@ -63,6 +63,7 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import type { AskHeinzel } from "@/chat/askHeinzel";
 import { ChartBody } from "@/components/ChartBody";
 import { CommandDialog } from "@/components/CommandDialog";
 import { ContributionToggle } from "@/components/ContributionToggle";
@@ -782,7 +783,7 @@ export function HeaderActions() {
   );
 }
 
-/** The text of a widget, for "Ask about it". */
+/** The text of a widget, for "Ask <Name>" and the footer. */
 export function widgetText(widget: Widget): string {
   switch (widget.kind) {
     case "card":
@@ -909,11 +910,13 @@ function WidgetCard({
   entry,
   updatedAt,
   run,
+  ask,
   onHide,
 }: {
   entry: SchemaWidgetEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
+  ask?: AskHeinzel | null;
   onHide: (id: string, title: string) => void;
 }) {
   const current = useEntry("widgets", entry, updatedAt);
@@ -940,7 +943,7 @@ function WidgetCard({
       <div className="min-w-0 pr-10">
         <WidgetBody widget={widget} run={run} />
       </div>
-      {cardActions.length > 0 && (
+      {(cardActions.length > 0 || ask) && (
         <PaneActions className="mt-auto">
           {ordered(cardActions).map((action) => (
             <PaneAction
@@ -952,14 +955,23 @@ function WidgetCard({
               {action.label}
             </PaneAction>
           ))}
+          {ask && (
+            <PaneAction
+              key="ask"
+              icon={MessageSquare}
+              onClick={() => ask.ask(t("contrib.says", { module: current.module, text: widgetText(widget) }))}
+            >
+              {t("today.askHeinzel", { name: ask.name })}
+            </PaneAction>
+          )}
         </PaneActions>
       )}
     </li>
   );
 }
 
-/** The Today widgets modules add, as cards in the Today grid. */
-export function TodayWidgets() {
+/** The Today widgets modules add, as cards in the Today grid; "Ask <Name>" frames the text as the module's. */
+export function TodayWidgets({ ask }: { ask?: AskHeinzel | null }) {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
   const { hide, restore } = useWidgetVisibility();
@@ -973,7 +985,7 @@ export function TodayWidgets() {
   return (
     <>
       {unique.map((entry) => (
-        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onHide={onHide} />
+        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} ask={ask} onHide={onHide} />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}

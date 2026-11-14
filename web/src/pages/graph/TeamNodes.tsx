@@ -1,11 +1,12 @@
 // The team graph's nodes: an artifact or a Heinzelmännchen as a card, a group (a tracker and its rows) as a frame.
 // Each card is a link: an artifact opens where it lives, in a new tab; a Heinzelmännchen opens its page, and its
-// chat button opens the chat about it. The state is a word and a line style as well as a colour.
+// chat button asks your default Heinzel about it ("Ask <Name>": typed into its composer, never sent). The state is a word and a line style as well as a colour.
 
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { FileText, LayoutList, type LucideIcon } from "lucide-react";
+import { FileText, LayoutList, type LucideIcon, MessageSquare } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { Link } from "react-router";
+import { useAskHeinzel } from "@/chat/askHeinzel";
 import type { FlowTone } from "@/components/graph/FlowNode";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { t } from "@/i18n";
@@ -89,6 +90,7 @@ function StateBadge({ data }: { data: TeamFlowNode["data"] }) {
 function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
   const { node } = data;
   const Icon = kindIcon(node);
+  const ask = useAskHeinzel();
   return (
     <div
       className={cn(
@@ -120,6 +122,17 @@ function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
           </span>
         </span>
       </NodeLink>
+      {node.kind === "heinzel" && ask && (
+        <button
+          type="button"
+          onClick={() => ask.ask(t("teamGraph.askAbout", { label: node.label }))}
+          aria-label={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
+          title={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
+          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-icon outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
+          <MessageSquare aria-hidden className="size-4" />
+        </button>
+      )}
       <Handle type="source" position={Position.Right} isConnectable={false} className={handle} />
     </div>
   );

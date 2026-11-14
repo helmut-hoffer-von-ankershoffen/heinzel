@@ -391,7 +391,27 @@ describe("Contributions", () => {
     expect(await sent?.json()).toEqual(body);
   });
 
-  it("puts widgets on Today with dismiss, and no Ask about it: there is no general chat", async () => {
+  it("asks the default Heinzel about a widget, framed as the module's text, without sending it", async () => {
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    mockApi({
+      ...answers,
+      "/api/heinzel/sessions": {
+        sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" }],
+      },
+      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
+    await user.click(await within(card).findByRole("button", { name: "Ask Helmi" }));
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const composer = (await chat.findByLabelText("Message Helmi")) as HTMLTextAreaElement;
+    await waitFor(() => expect(composer.value).toMatch(/^Module \S+ shows: /));
+    assertActionStructure(card);
+    sessionStorage.clear();
+  });
+
+  it("puts widgets on Today with dismiss, and no Ask while no Heinzel is named", async () => {
     mockApi(answers);
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
