@@ -371,7 +371,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
-        python: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["3.15"]' || '["3.15"]') }}
+        python: ${{ fromJSON('["3.15"]') }}
         # One shard per level on Linux too: the whole suite ran 4m42-6m50 against the 420 s cap on 4 vCPU and hit it
         # under runner contention with every test passing (#585). Each shard keeps that same cap.
         levels: [unit, integration]
@@ -392,11 +392,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install wheel dependencies
-        if: matrix.python != '3.15'
-        run: uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}
       - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
-        if: matrix.python == '3.15'
         run: |
           uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"} --no-install-package pyyaml
           bash scripts/bootstrap-pyyaml.sh
@@ -438,7 +434,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - run: uv sync --frozen --no-build --no-dev --group test --group build
+      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --group build --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Select the locked wheel Node without executing it
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
@@ -480,7 +479,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - run: uv sync --frozen --no-build --no-dev --group test
+      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - run: make test-perf
 
   site-tests:
@@ -612,7 +614,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Install what the tests need, and no more
-        run: uv sync --frozen --no-build --no-dev --group test # exactly the lockfile, no setup scripts
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - run: make notifier # the real-launch tests skip without the built app
       # Serial on purpose (no -n): the notifier tests share one machine-wide bundle id, and contention must not hit them.
       - name: Tests that only exercise macOS behaviour (marker macos_specific)
@@ -644,7 +648,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: false # pull requests reuse main's cache
       - name: Install what the tests need, and no more
-        run: uv sync --frozen --no-build --no-dev --group test
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Build Heinzel Notifier for the real-launch tests
         run: make notifier
       - name: The CLI starts, and the tests that only exercise macOS behaviour pass (serially)

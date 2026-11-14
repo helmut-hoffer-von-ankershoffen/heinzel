@@ -83,7 +83,7 @@ described above. Stdlib-only publication checks select Python explicitly and loa
 Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.
 
 The policy is scoped to these installation paths: core's all-group developer setup still permits the locked
-watchdog source build required by macOS documentation tooling on Python 3.14. It does not have a global source-build
+watchdog source build required by macOS documentation tooling on Python 3.15. It does not have a global source-build
 ban. Recheck the actual main metrics after merging; these changes alone do not resolve unrelated runtime findings.
 
 ### Core findings reviewed individually

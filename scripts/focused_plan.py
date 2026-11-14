@@ -44,8 +44,6 @@ if TYPE_CHECKING:
 PATH = re.compile(r"[A-Za-z0-9_.@+-]+(?:/[A-Za-z0-9_.@+-]+)*")
 LANES = {
     "python": ("ubuntu-24.04", "3.15", "pytest"),
-    "python312": ("ubuntu-24.04", "3.12", "pytest"),
-    "python315": ("ubuntu-24.04", "3.15", "pytest"),
     "macos": ("macos-latest", "3.15", "pytest"),
     "macos-notifier": ("macos-latest", "3.15", "pytest"),
     "managed": ("ubuntu-24.04", "3.15", "managed"),

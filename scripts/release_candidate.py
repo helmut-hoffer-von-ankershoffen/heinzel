@@ -213,7 +213,7 @@ def record(root: Path) -> dict[str, Any]:
 
 
 def expected_jobs(event: str) -> dict[str, str]:
-    """Name the complete reviewed full-candidate workload, including all twelve Python and eight E2E cells."""
+    """Name the complete reviewed full-candidate workload: four Python 3.15 test cells and eight E2E cells."""
     require(event in ("pull_request", "workflow_dispatch"), "unsupported candidate event")
     success = {
         "Main batch admission",
@@ -234,9 +234,8 @@ def expected_jobs(event: str) -> dict[str, str]:
         "CI OK",
         *[f"make setup ({runner})" for runner in ("ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest")],
         *[
-            f"Test ({runner}, Python 3.{minor}, {level})"
+            f"Test ({runner}, Python 3.15, {level})"
             for runner in ("ubuntu-24.04", "macos-latest")
-            for minor in range(12, 16)
             for level in ("unit", "integration")
         ],
         *[

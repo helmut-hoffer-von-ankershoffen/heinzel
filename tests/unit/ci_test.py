@@ -1658,6 +1658,9 @@ def _oses(value: str | list[str], event: str, *, macos_full: bool = False, relea
     """The matrix values for an event, from a plain list or a pull-request conditional."""
     if isinstance(value, list):
         return value
+    constant = re.fullmatch(r"\$\{\{ fromJSON\('(?P<all>\[[^']*\])'\) \}\}", value)
+    if constant:
+        return json.loads(constant["all"])
     match = re.fullmatch(
         r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
         r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?"
@@ -1747,7 +1750,7 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
         ("workflow_dispatch", ["3.15"]),
     ],
 )
-def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
+def test_every_event_tests_only_python_3_15(event, expected):
     test = _ci_jobs()["test"]
     assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
@@ -1846,7 +1849,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "full_release" not in generated
     assert (
         "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
-        in (_ci_jobs()["test"]["strategy"]["matrix"]["python"])
+        in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
 
 
