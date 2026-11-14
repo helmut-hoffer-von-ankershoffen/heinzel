@@ -236,11 +236,12 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
     ]
 
 
-@pytest.mark.parametrize("case", [("python", 4096), ("python312", 10), ("macos", 10)])
+@pytest.mark.parametrize("case", [("python", "PYTHON_CI_MAX_IDS"), ("python312", "MAX_IDS"), ("macos", "MAX_IDS")])
 def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
     from dataclasses import replace
 
-    lane, expected = case
+    lane, name = case
+    expected = getattr(coverage.focused_job, name)
     scope = replace(scope, selection={lane: ("tests/unit/ci_test.py",)})
 
     class ObservedError(Exception):

@@ -77,7 +77,9 @@ MAX_SLOT_DECODED = 1024 * 1024
 MAX_SLOT_ENTRIES = 256
 REGISTRY_KEY = re.compile(r"(?:pull_request|push|push-tree):[0-9a-f]{40}")
 MAX_DIFF = 1024 * 1024
-MAX_COVERED_FILES = 100
+MAX_COVERED_FILES = 4096
+"""The limit on production files a plan covers: above any number of files, so it never binds (owner rule, 2026-11-14:
+focused tests for PRs of any size). The key stays until the steuermaschine stops reading it, then goes."""
 RAW_FIELDS = 5
 LS_TREE_FIELDS = 2
 MERGE_FIELDS = 3

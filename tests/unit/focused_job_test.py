@@ -41,16 +41,21 @@ def test_the_python_ci_limit_never_binds_a_real_selection():
     assert 2 * len(tests) < focused_job.PYTHON_CI_MAX_IDS, "the limit is above every test file this repository has"
 
 
+def test_every_other_limit_never_binds_a_real_selection():
+    files = [*(REPO / "tests").rglob("*_test.py"), *(REPO / "web").rglob("*.test.ts*")]
+    assert 2 * len(files) < focused_job.MAX_IDS
+
+
 def test_only_explicit_python_ci_plan_accepts_up_to_the_python_limit():
     limit = focused_job.PYTHON_CI_MAX_IDS
     ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(limit + 1)]
-    with pytest.raises(focused_job.SelectorError, match="at most 10"):
-        focused_job.plan("pytest", " ".join(ids[:11]), OUT)
+    with pytest.raises(focused_job.SelectorError, match=f"at most {focused_job.MAX_IDS}"):
+        focused_job.plan("pytest", " ".join(ids[: focused_job.MAX_IDS + 1]), OUT)
     assert focused_job.plan("pytest", " ".join(ids[:limit]), OUT, max_ids=limit)[-1][-limit:] == ids[:limit]
     with pytest.raises(focused_job.SelectorError, match=f"at most {limit}"):
         focused_job.plan("pytest", " ".join(ids), OUT, max_ids=limit)
     with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
-        focused_job.plan("vitest", "src/ci.test.ts", OUT, max_ids=limit)
+        focused_job.plan("vitest", "src/ci.test.ts", OUT, max_ids=limit + 1)
     with pytest.raises(focused_job.SelectorError, match="unsupported selection limit"):
         focused_job.plan("pytest", ids[0], OUT, max_ids=limit + 1)
     with pytest.raises(focused_job.SelectorError):
@@ -111,7 +116,7 @@ def test_the_whole_vitest_sentinel_is_exact_and_vitest_only(kind, selector):
         ("pytest", "tests/unit/ci_test.py;rm -rf ~"),
         ("pytest", "tests/unit/ci_test.py $(id)"),
         ("pytest", "tests/unit/does_not_exist_test.py"),
-        ("pytest", " ".join(["tests/unit/ci_test.py"] * 11)),
+        ("pytest", " ".join(["tests/unit/ci_test.py"] * (focused_job.MAX_IDS + 1))),
         ("vitest", "src/nope.test.tsx"),
         ("vitest", "--help"),
         ("vitest", "web/-option.test.ts"),
