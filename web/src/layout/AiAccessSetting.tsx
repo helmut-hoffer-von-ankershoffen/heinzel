@@ -285,6 +285,7 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
         {models.map((model) => {
           const down = unavailable.has(model);
           return (
+            // biome-ignore lint/a11y/useSemanticElements: a pickable row with an "unavailable" note, like the option cards
             <button
               key={model}
               type="button"

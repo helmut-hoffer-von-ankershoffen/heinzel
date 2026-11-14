@@ -668,7 +668,8 @@ const en = {
   "aiAccess.details": "Details",
   "aiAccess.setUpOne": "Set up {title}",
   "aiAccess.pickModel": "Pick a model of {title}",
-  "aiAccess.models.intro": "{title} brings its own models. Heinzel runs chat, drafts and schedules on the one you pick.",
+  "aiAccess.models.intro":
+    "{title} brings its own models. Heinzel runs chat, drafts and schedules on the one you pick.",
   "aiAccess.models.unavailable": "unavailable",
   "aiAccess.models.unavailableNote": "It didn't answer when {title} last checked; you can still pick it.",
   "aiAccess.models.none": "{title} offers no models right now.",

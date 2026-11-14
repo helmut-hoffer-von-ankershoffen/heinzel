@@ -32,8 +32,7 @@ try {
 
   await option.click();
   await page.waitForFunction(
-    () =>
-      document.querySelector('[data-option="demo-models"] [role="radio"]')?.getAttribute("aria-checked") === "true",
+    () => document.querySelector('[data-option="demo-models"] [role="radio"]')?.getAttribute("aria-checked") === "true",
   );
   const pick = card.getByRole("button", { name: "Pick a model of Demo models" });
   await pick.click();
