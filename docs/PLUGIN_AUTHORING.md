@@ -196,8 +196,9 @@ predicate) and `hz system prerequisite list --json`, against the released SDK; n
 ## Bring your own AI models and connectors
 
 A plugin can bring its own AI models and its own connectors. This needs Heinzelmännchen 0.9.43 or later, the first
-release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md). The public
-`heinzel-example-bridge` plugin in `heinzel-plugins` does all of it with made-up parts.
+release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md). See the public
+`heinzel-acme-bridge` plugin, in the `heinzel-acme` repository of the made-up reference company, for a worked
+example of all of it.
 
 ### AI models: the `ai-models` interface
 

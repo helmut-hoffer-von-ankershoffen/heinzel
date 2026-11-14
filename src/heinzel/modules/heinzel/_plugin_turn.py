@@ -100,10 +100,14 @@ class PluginTurnGuard(AbstractCapability[TurnDeps]):
         Raises:
             HeinzelError: If the turn's access, model or owner changed, or the request failed (`PluginModelError`,
                 `ModelUnavailableError`), never with the provider's own words.
+            PluginModelError: If the turn no longer holds, or the provider failed the request.
             AgentRunError: Pydantic AI's own outcomes, such as a limit or invalid output, for the engine to judge.
         """
         del ctx  # The keyword names are fixed by Pydantic's public protocol.
-        await asyncio.to_thread(self.verify)
+        try:
+            await asyncio.to_thread(self.verify)
+        except HeinzelError as exc:  # before the first response nothing ran: the turn can be set aside
+            raise PluginModelError(str(exc), before_response=self.responses == 0) from None
         try:
             response = await handler(request_context)
         except (HeinzelError, AgentRunError) as exc:

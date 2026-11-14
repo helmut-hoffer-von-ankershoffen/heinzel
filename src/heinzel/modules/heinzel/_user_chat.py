@@ -81,6 +81,8 @@ class PluginTurnChoice:
     effort: Effort | None
     setting: str | None = None
     """`[ai.access] plugin_model` as configured, which the offer was chosen by; none for the first usable one."""
+    configured_effort: Effort | None = None
+    """`[ai.access] plugin_effort` as configured; `effort` is none for a model that takes no effort."""
 
     def held(self) -> tuple[object, ...]:
         """What hz owns and checks before every request of a turn: never the plugin's list, which may change."""
@@ -88,7 +90,7 @@ class PluginTurnChoice:
             self.source.name,
             self.source.version,
             self.setting,
-            self.effort,
+            self.configured_effort,
             self.limits.subscription_budget_mode,
         )
 
@@ -230,7 +232,7 @@ class UserChatService:
         offers, _note = list_offers(source)
         offer = choose(offers, choice.plugin_model, choice.plugin_effort)
         effort = choice.plugin_effort if offer.thinking is not None else None
-        return PluginTurnChoice(limits, source, offer, effort, choice.plugin_model)
+        return PluginTurnChoice(limits, source, offer, effort, choice.plugin_model, choice.plugin_effort)
 
     def _plugin_held(self) -> tuple[object, ...] | None:
         """What `held` says now, read from the configuration only: no call to the plugin."""

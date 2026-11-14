@@ -47,7 +47,7 @@ contract is discovery only: `models()` and `model(id)`. Core wraps no models, st
 types of its own; it uses Pydantic AI's `Agent`, capabilities, streaming, message history and usage directly.**
 Checkable statements:
 
-### The interface (version `AI_MODELS_INTERFACE = "1.0"`)
+**The interface (version `AI_MODELS_INTERFACE = "1.0"`)**
 
 1. **`ai-models` is a kernel capability, imported from `heinzel`** like every other capability protocol:
    `AiModels`, `ModelOffer`, `ModelUnavailableError`, `AI_MODELS_INTERFACE`. A plugin provides it with
@@ -67,7 +67,7 @@ Checkable statements:
    last good list and says so. A row that isn't a valid offer is skipped and logged, not the list. It calls
    `model()` only with a listed, available id, off the event loop, with a 30 s timeout, once per turn.
 
-### Compatibility
+**Compatibility**
 
 4. **Within interface 1.x changes are additive only.** `ModelOffer` gains optional fields with defaults, and an
    unknown enum value in a newer plugin's row skips that row. The protocol gains optional methods only, which Core
@@ -79,7 +79,7 @@ Checkable statements:
    named in the changelog. Plugins should depend on the Pydantic AI range their Core supports, and pin `heinzel`
    to the release that ships this record and later ones below 1.0.
 
-### Choosing and running a model
+**Choosing and running a model**
 
 6. **Each `ai-models` adapter is an AI access option of the same name.** The kernel derives its `ai-access` adapter
    with the same hosts. An adapter named like another distribution's AI access option (such as `claude-code`) is
@@ -123,7 +123,7 @@ Checkable statements:
     unknown cost. A dollar-capped budget mode (`usd-cap`) refuses it before `model()` is called. `UsageCause` also
     takes a plugin's own causes, namespaced `<plugin>.<cause>`.
 
-### The trust boundary
+**The trust boundary**
 
 14. **What the plugin owns and what Core guarantees.** The plugin owns how it reaches its models: endpoint,
     sign-in, tokens, HTTP client, proxy, its list and cache, and what `available` means. Core provides no auth
@@ -137,7 +137,7 @@ Checkable statements:
     Core's untrusted framing, with a per-call nonce so content can't close its own frame. The `engine` runner holds
     read-only file tools confined to its working directory and the run's MCP servers, and no write or network tool.
 
-### Connectors that can't do everything
+**Connectors that can't do everything**
 
 16. **`NotSupportedError(capability, method, reason)`**, a `HeinzelError`, says a connector can't do one method.
     An adapter raises it, or lists the method in a class attribute `unsupported: frozenset[str]`. Then the kernel's
@@ -146,7 +146,7 @@ Checkable statements:
     "method"}`. In a chat on the engine, a connected read the connector can't do shows as unavailable to the model,
     like any failed read. Nothing retries it. The conformance kit accepts it for any method.
 
-### Hard-wiring found, and where each is answered
+**Hard-wiring found, and where each is answered**
 
 | Where | What was hard-wired | Answer |
 | --- | --- | --- |
@@ -192,11 +192,12 @@ Checkable statements:
 - `tests/e2e/plugin_models_ui_test.py`: the real Settings with Playwright on an isolated `hz ui serve` with that
   plugin installed: it picks the option, then a model (the unavailable one marked), and sees it answer.
 
-## Implementation
+## More Information
 
 Head A builds statements 1 to 10 and 12 to 16, and the refusal in 11. Head B adds the conformance kit, the MCP
 connector helper with untrusted markers, and public discovery of Claude Code's MCP servers. Head C opens the
 built-in `pydantic-ai` option to an Anthropic base address, opens `ConfiguredApiAccess` and the internal admission
-paths, and builds the `engine` runner of statement 11. The public `heinzel-example-bridge` plugin implements every
-connector capability and `ai-models` with made-up parts and runs the conformance kit. All ship in one release,
-0.9.43.
+paths, and builds the `engine` runner of statement 11. **Head A ships only together with Head C**, in one bundle
+and one release, 0.9.43: without the `engine` runner the chat with the picker can't serve a plugin's models. The
+public `heinzel-acme-bridge` plugin, in the `heinzel-acme` repository of the made-up reference company, implements
+every connector capability and `ai-models` with made-up parts and runs the conformance kit.

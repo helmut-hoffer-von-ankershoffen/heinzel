@@ -283,6 +283,8 @@ def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[
         if fresh:
             return list(listing.offers or []), listing.skipped
         done = listing.done
+        if done is not None and listing.offers is not None:  # a call in flight: the last good list, at once
+            return list(listing.offers), "its model list is being read again; showing the last list"
         if done is None:
             done = listing.done = threading.Event()
             name = f"ai-models-{source.name}"
