@@ -1109,7 +1109,7 @@ const en = {
   "browser.tabs": "Browser tabs",
   "browser.linkRefused": "This link cannot open here: the built-in browser opens public HTTPS websites only.",
   "browser.linkLimit": "All 8 tabs are in use. Close one, or open this link in your default browser.",
-  "browser.linkOpenExternal": "Open in browser",
+  "browser.linkOpenExternal": "Open this link in your browser",
   "browser.linkDismiss": "Dismiss",
   "settings.browserTitle": "Browser",
   "settings.browserWebOnly": "The built-in browser is part of the desktop app. Here, links open in a new browser tab.",

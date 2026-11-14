@@ -205,7 +205,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
   const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
-  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
   assert.deepEqual(opened, ["https://example.com/page?q=1"]);
@@ -512,10 +512,14 @@ test("links: a link opens a new selected tab; a refused address or a full strip 
   const refused = await f.controller.openLink(f.owner, "http://example.com/plain");
   assert.deepEqual(refused.link, { url: "http://example.com/plain", reason: "refused", external: true });
   assert.equal(refused.tabs.length, 2);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["http://example.com/plain"]);
+  opened.length = 0;
   const local = await f.controller.openLink(f.owner, "https://localhost/x");
   assert.equal(local.link.reason, "refused");
   assert.equal(local.link.external, false);
-  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  // Nothing is offered for a local target, so the command opens nothing.
+  assert.equal((await f.invoke({ action: "link-external" })).link.reason, "refused");
   assert.deepEqual(opened, []);
   for (let i = 2; i < 8; i++) await f.invoke({ action: "new-tab" });
   const full = await f.controller.openLink(f.owner, "https://late.example.com/");
