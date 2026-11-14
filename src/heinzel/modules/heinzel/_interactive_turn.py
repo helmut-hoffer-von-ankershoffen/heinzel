@@ -9,6 +9,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.models import Model
@@ -55,6 +56,11 @@ def _word_count(arguments: dict[str, JsonValue]) -> str:
 
 # Host-owned implementations only. External adapters require separately enforced grants before registration.
 _READ_TOOLS: dict[str, Callable[[dict[str, JsonValue]], str]] = {"text.word_count": _word_count}
+
+
+def _billing(binding: BackendBinding) -> Literal["plan", "api"]:
+    """A plugin's models (mode `api`) bill per token at no known price; a CLI model is a subscription plan."""
+    return "api" if binding.mode == "api" else "plan"
 
 
 class InteractiveTurn:
@@ -357,7 +363,10 @@ class InteractiveTurn:
                     "interactive.started",
                     key=turn,
                     turn=turn,
-                    data={"message_id": request_id, **({"billing": "plan"} if backend_binding else {})},
+                    data={
+                        "message_id": request_id,
+                        **({"billing": _billing(backend_binding)} if backend_binding else {}),
+                    },
                 )
 
             set_schema = (
@@ -643,7 +652,7 @@ class InteractiveTurn:
                 text=text,
                 at=datetime.now(UTC),
                 backend_binding=backend_binding,
-                billing="plan" if backend_binding else None,
+                billing=_billing(backend_binding) if backend_binding else None,
             )
             self._check_owner()
             with repo.control_writer(session_id) as writer:

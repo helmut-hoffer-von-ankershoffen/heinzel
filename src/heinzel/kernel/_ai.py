@@ -49,6 +49,9 @@ class AccessStatus(BaseModel):
         description="`plan`: a subscription login, so a cost shown is what it would cost at API prices, covered by "
         "the plan; `api`: billed per token; none when it can't tell.",
     )
+    model: str | None = Field(
+        default=None, description="The model it runs now, one of `models`, when it says; none when it doesn't."
+    )
     core_engine: bool = Field(
         default=False,
         description="Whether hz's own Pydantic AI engine runs chat, drafts and schedules on its models (a plugin's "

@@ -4494,6 +4494,12 @@ export interface components {
              */
             client?: string | null;
             /**
+             * Core Engine
+             * @description Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's).
+             * @default false
+             */
+            core_engine: boolean;
+            /**
              * Detail
              * @description What it found, e.g. the CLI's path.
              * @default
@@ -4517,6 +4523,11 @@ export interface components {
             in_use: boolean;
             /** @description The last `hz ai access test` of it, if any. */
             last_test?: components["schemas"]["LastTest"] | null;
+            /**
+             * Model
+             * @description The model it runs now, when it says.
+             */
+            model?: string | null;
             /**
              * Models
              * @description Models it offers or is configured with.
@@ -4552,7 +4563,7 @@ export interface components {
              * Setup
              * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
              */
-            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            setup?: ("model" | "gateway" | "sign-in" | "client" | "plugin-model") | null;
             /**
              * Status
              * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
@@ -4569,6 +4580,11 @@ export interface components {
              * @description What people pick it by, e.g. `Claude Code`.
              */
             title: string;
+            /**
+             * Unavailable Models
+             * @description Models it lists that didn't answer when last probed; still pickable.
+             */
+            unavailable_models?: string[];
         };
         /**
          * AccessTestReport
@@ -9902,6 +9918,12 @@ export interface components {
          */
         ModelChoice: {
             /**
+             * Available
+             * @description False when it didn't answer when its plugin last checked; still pickable.
+             * @default true
+             */
+            available: boolean;
+            /**
              * Name
              * @description What `hz chat send --model` takes, e.g. `sonnet`.
              */
@@ -12874,11 +12896,11 @@ export interface components {
         ScheduleBinding: {
             /**
              * Access
-             * @description Selected subscription access mode.
+             * @description Selected access mode: the Claude Code subscription, or a plugin's models on hz's engine.
              * @default claude-code-subscription
-             * @constant
+             * @enum {string}
              */
-            access: "claude-code-subscription";
+            access: "claude-code-subscription" | "plugin-models";
             /**
              * Access Fingerprint
              * @description Opaque selected-access continuity fingerprint.

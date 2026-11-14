@@ -1834,7 +1834,8 @@ class SessionCrud(ApprovalIssuer):
                 update={
                     "unknown_turns": costs.unknown_turns
                     + sum(
-                        event.kind == "interactive.started" and event.data.get("billing") == "plan" for event in events
+                        event.kind == "interactive.started" and event.data.get("billing") in {"plan", "api"}
+                        for event in events
                     ),
                 }
             ),

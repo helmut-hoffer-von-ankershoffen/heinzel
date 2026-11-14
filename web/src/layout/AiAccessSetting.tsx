@@ -165,7 +165,9 @@ function Option({ option, busy, testing, result, onSelect, onTest, onSetUp }: Op
       <PaneActions>
         {settable && (
           <PaneAction key="setup" icon={Settings2} onClick={onSetUp}>
-            {t("aiAccess.setUpOne", { title: option.title })}
+            {option.setup === "plugin-model"
+              ? t("aiAccess.pickModel", { title: option.title })
+              : t("aiAccess.setUpOne", { title: option.title })}
           </PaneAction>
         )}
         <PaneAction key="test" icon={FlaskConical} disabled={testing || !usable} onClick={onTest}>
@@ -242,11 +244,83 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
-  const title = t("aiAccess.setUpOne", { title: option.title });
+  const plugin = option.setup === "plugin-model";
+  const title = t(plugin ? "aiAccess.pickModel" : "aiAccess.setUpOne", { title: option.title });
+  let body: ReactNode = <FormSetup option={option} />;
+  if (option.setup === "sign-in") body = <SignInSetup option={option} />;
+  else if (plugin) body = <PluginModelSetup option={option} />;
   return (
     <Modal title={title} onClose={onClose}>
-      {option.setup === "sign-in" ? <SignInSetup option={option} /> : <FormSetup option={option} />}
+      {body}
     </Modal>
+  );
+}
+
+/** A plugin's own models (ADR 0159): one radio per model it lists, an unavailable one marked but still pickable. */
+function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
+  const client = useQueryClient();
+  const save = useSetSetting();
+  const check = useTestAiAccess();
+  const unavailable = new Set(option.unavailable_models ?? []);
+  const models = option.models ?? [];
+  const [chosen, setChosen] = useState(option.model ?? "");
+  const [saved, setSaved] = useState(false);
+  const labelId = useId();
+  const pick = async (model: string) => {
+    setChosen(model);
+    setSaved(false);
+    await save.mutateAsync({ key: "ai.access.plugin_model", value: model });
+    await client.invalidateQueries({ queryKey: ["ai", "access", "list"] });
+    setSaved(true);
+  };
+  if (!models.length) {
+    return <p className="text-sm text-muted-foreground">{t("aiAccess.models.none", { title: option.title })}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <p id={labelId} className="text-sm text-muted-foreground">
+        {t("aiAccess.models.intro", { title: option.title })}
+      </p>
+      <div role="radiogroup" aria-labelledby={labelId} className="flex flex-col gap-1">
+        {models.map((model) => {
+          const down = unavailable.has(model);
+          return (
+            <button
+              key={model}
+              type="button"
+              role="radio"
+              aria-checked={chosen === model}
+              data-model={model}
+              disabled={save.isPending}
+              title={down ? t("aiAccess.models.unavailableNote", { title: option.title }) : undefined}
+              onClick={() => void pick(model).catch(() => undefined)}
+              className={cn(
+                "flex items-center gap-2 rounded-md border border-border px-2 py-1 text-left font-mono text-ui-sm",
+                chosen === model && "border-primary bg-accent/40",
+              )}
+            >
+              <span className="flex-1 [overflow-wrap:anywhere]">{model}</span>
+              {down && <span className="font-sans text-warn">{t("aiAccess.models.unavailable")}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {save.error && <p className="text-sm text-bad">{save.error.message}</p>}
+      {saved && !save.error && <p className="text-sm text-ok">{t("aiAccess.models.saved")}</p>}
+      {check.data && <TestResult result={check.data} />}
+      {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
+      <PaneActions align="end" words="all">
+        <PaneAction
+          key="test"
+          icon={FlaskConical}
+          type="button"
+          disabled={!chosen || check.isPending}
+          onClick={() => check.mutate(option.name)}
+        >
+          {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
+        </PaneAction>
+      </PaneActions>
+    </div>
   );
 }
 

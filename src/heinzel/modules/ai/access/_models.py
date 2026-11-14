@@ -240,6 +240,7 @@ class AccessOption(BaseModel):
     fix: str = Field(default="", description="A command that makes it usable; often empty.")
     models: list[str] = Field(default_factory=list[str], description="Models it offers or is configured with.")
     runner: str | None = Field(default=None, description="The agent runner that serves its chat and coding uses.")
+    model: str | None = Field(default=None, description="The model it runs now, when it says.")
     core_engine: bool = Field(
         default=False, description="Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's)."
     )

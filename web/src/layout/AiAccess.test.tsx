@@ -41,6 +41,7 @@ function option(name: string, fields: Partial<SchemaAccessOption> = {}): SchemaA
     needs: "",
     setup: null,
     client: null,
+    core_engine: false,
     ...fields,
   };
 }
@@ -164,6 +165,37 @@ describe("AI access", () => {
     const model = container.querySelector('[data-option="pydantic-ai"] details');
     expect(model?.textContent).toContain("hz system config set ai.access.model");
     expect(container.textContent).not.toMatch(/restart `?hz ui serve/);
+  });
+
+  it("lets a plugin's own models be picked, an unavailable one marked but pickable (ADR 0159)", async () => {
+    const bridge = option("bridge", {
+      title: "Example bridge",
+      in_use: true,
+      status: "not tested",
+      setup: "plugin-model",
+      core_engine: true,
+      models: ["bridge-fast", "bridge-slow", "bridge-retired"],
+      unavailable_models: ["bridge-retired"],
+      model: "bridge-fast",
+    });
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": { selected: "bridge", options: [option("claude-code"), bridge], uses: [], next: [] },
+      "/api/system/config/set": "config.toml",
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Pick a model of Example bridge" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pick a model of Example bridge" });
+    expect(within(dialog).getByRole("radio", { name: "bridge-fast" })).toHaveAttribute("aria-checked", "true");
+    const retired = within(dialog).getByRole("radio", { name: /^bridge-retired/ });
+    expect(retired).toHaveTextContent("unavailable");
+    expect(retired).toBeEnabled();
+    await user.click(within(dialog).getByRole("radio", { name: "bridge-slow" }));
+    expect(await within(dialog).findByText("Saved. Test it to see it answer.")).toBeInTheDocument();
+    const set = calls.find((call) => call.url.includes("/system/config/set"));
+    expect(new URL(set?.url ?? "").searchParams.get("key")).toBe("ai.access.plugin_model");
+    expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("bridge-slow");
   });
 
   it("sets the Model API up in a dialog, then tests it there with the result inline", async () => {

@@ -119,6 +119,12 @@
             "description": "For `client`: the optional client of hz itself it needs, e.g. `openai` (`heinzel[openai]`).",
             "title": "Client"
           },
+          "core_engine": {
+            "default": false,
+            "description": "Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's).",
+            "title": "Core Engine",
+            "type": "boolean"
+          },
           "detail": {
             "default": "",
             "description": "What it found, e.g. the CLI's path.",
@@ -154,6 +160,18 @@
               }
             ],
             "description": "The last `hz ai access test` of it, if any."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model it runs now, when it says.",
+            "title": "Model"
           },
           "models": {
             "description": "Models it offers or is configured with.",
@@ -210,7 +228,8 @@
                   "model",
                   "gateway",
                   "sign-in",
-                  "client"
+                  "client",
+                  "plugin-model"
                 ],
                 "type": "string"
               },
@@ -244,6 +263,14 @@
             "description": "What people pick it by, e.g. `Claude Code`.",
             "title": "Title",
             "type": "string"
+          },
+          "unavailable_models": {
+            "description": "Models it lists that didn't answer when last probed; still pickable.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Models",
+            "type": "array"
           }
         },
         "required": [
@@ -9559,6 +9586,12 @@
       "ModelChoice": {
         "description": "A model the AI access in use offers.",
         "properties": {
+          "available": {
+            "default": true,
+            "description": "False when it didn't answer when its plugin last checked; still pickable.",
+            "title": "Available",
+            "type": "boolean"
+          },
           "name": {
             "description": "What `hz chat send --model` takes, e.g. `sonnet`.",
             "title": "Name",
@@ -14622,9 +14655,12 @@
         "description": "Exact reviewed private schedule; no external tools or account permissions are granted.",
         "properties": {
           "access": {
-            "const": "claude-code-subscription",
             "default": "claude-code-subscription",
-            "description": "Selected subscription access mode.",
+            "description": "Selected access mode: the Claude Code subscription, or a plugin's models on hz's engine.",
+            "enum": [
+              "claude-code-subscription",
+              "plugin-models"
+            ],
             "title": "Access",
             "type": "string"
           },

@@ -193,6 +193,7 @@ class AccessService:
                 "fix": status.fix,
                 "models": status.models,
                 "runner": status.runner,
+                "model": status.model,
                 "core_engine": status.core_engine,
                 "unavailable_models": status.unavailable_models,
             }

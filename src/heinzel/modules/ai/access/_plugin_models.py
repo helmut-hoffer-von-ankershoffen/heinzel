@@ -80,7 +80,7 @@ class PluginModelsAccess:
             fix = f"hz system config set ai.access.plugin_model {exc.others[0]}" if exc.others else ""
             return status.model_copy(update={"detail": str(exc), "fix": fix})
         detail = f"{offer.label}; {len(offers)} models" + (f"; {note}" if note else "")
-        return status.model_copy(update={"detail": detail})
+        return status.model_copy(update={"detail": detail, "model": offer.id})
 
     def test(self) -> AccessTest:
         """One short request to the chosen model through the plugin's own client; a failure is a result."""

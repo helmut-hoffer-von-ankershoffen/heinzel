@@ -16,8 +16,10 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from heinzel.token_auth import CommandTokenAuth
 
-auth = CommandTokenAuth(["example-sso", "token", "--audience", "ai-proxy"])
-provider = AnthropicProvider(base_url="https://ai-proxy.example.com", http_client=AsyncClient(auth=auth))
+# Anthropic's client wants a key; the proxy takes only the bearer token, so the placeholder key is dropped.
+auth = CommandTokenAuth(["example-sso", "token"], drop=["x-api-key"])
+client = AsyncClient(auth=auth)
+provider = AnthropicProvider(api_key="unused", base_url="https://ai-proxy.example.com", http_client=client)
 model = AnthropicModel("claude-sonnet-4-5", provider=provider)
 ```
 
@@ -85,6 +87,7 @@ class CommandTokenAuth(httpx2.Auth):
         env: Mapping[str, str] | None = None,
         header: str = "Authorization",
         scheme: str = "Bearer",
+        drop: Sequence[str] = (),
         run: Run = subprocess.run,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -97,6 +100,8 @@ class CommandTokenAuth(httpx2.Auth):
             env: The helper's environment; this process's when none.
             header: The header that carries the token.
             scheme: What goes before the token in the header; empty for the bare token.
+            drop: Headers to remove from every request, such as the `x-api-key` a vendor's client insists on
+                sending when the endpoint takes only the bearer token.
             run: Runs the command; tests replace it.
             clock: The time now, in seconds since the epoch; tests replace it.
 
@@ -115,6 +120,7 @@ class CommandTokenAuth(httpx2.Auth):
         self._env = dict(env) if env is not None else None
         self._header = header
         self._scheme = scheme
+        self._drop = tuple(drop)
         self._run = run
         self._clock = clock
         self._token: str | None = None
@@ -178,6 +184,8 @@ class CommandTokenAuth(httpx2.Auth):
             return self._token  # type: ignore[return-value]  # set just above or kept fresh
 
     def _authorize(self, request: httpx2.Request, token: str) -> None:
+        for name in self._drop:
+            request.headers.pop(name, None)
         request.headers[self._header] = f"{self._scheme} {token}" if self._scheme else token
 
     def sync_auth_flow(self, request: httpx2.Request) -> Generator[httpx2.Request, httpx2.Response, None]:
