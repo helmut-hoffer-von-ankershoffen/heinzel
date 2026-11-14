@@ -41,6 +41,16 @@ struct WorkspaceView: WebRepresentable {
         }
         #endif
         #if os(macOS)
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelWindow"
+        )
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .defaultClient, name: "heinzelDrag"
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: Self.windowDragScript, injectionTime: .atDocumentStart,
+            forMainFrameOnly: true, in: .defaultClient
+        ))
         let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen,"
         #else
         let chrome = ""
@@ -52,10 +62,23 @@ struct WorkspaceView: WebRepresentable {
                 const origin = \(Self.javascriptString(endpoint.origin.absoluteString));
                 if (location.origin !== new URL(origin).origin) return;
                 const onFullscreen = (callback) => {
-                    const notify = () => callback(window.innerHeight >= screen.height - 1);
+                    let active = true;
+                    let revision = 0;
+                    const notify = async () => {
+                        const request = ++revision;
+                        try {
+                            const full = await window.webkit.messageHandlers.heinzelWindow.postMessage("fullscreen");
+                            if (active && request === revision) callback(full === true);
+                        } catch {}
+                    };
                     window.addEventListener("resize", notify);
-                    notify();
-                    return () => window.removeEventListener("resize", notify);
+                    window.addEventListener("heinzel-window-change", notify);
+                    void notify();
+                    return () => {
+                        active = false;
+                        window.removeEventListener("resize", notify);
+                        window.removeEventListener("heinzel-window-change", notify);
+                    };
                 };
                 const audio = action => {
                     if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
@@ -85,6 +108,17 @@ struct WorkspaceView: WebRepresentable {
     }
 
     #if os(macOS)
+    private static let windowDragScript = """
+    addEventListener("mousedown", event => {
+        if (!event.isTrusted || event.button !== 0 || !document.documentElement.hasAttribute("data-desktop-titlebar")) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest("[data-titlebar], .workspace-topbar, [data-placement='beside'] > .workspace-tabs, [data-placement='beside']:not(:has(> .workspace-tabs)) .chat-panel-header")) return;
+        if (target.closest("a, button, input, select, textarea, [role='tab'], [role='menu'], [role='menuitem'], [tabindex], dialog, [role='dialog'], [aria-modal='true'], [role='listbox'], .viewport-popover, [data-pane], [data-sidebar-resizer]")) return;
+        window.webkit.messageHandlers.heinzelDrag.postMessage("drag").catch(() => {});
+    }, true);
+    """
+
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
     func updateNSView(_ view: WKWebView, context: Context) {}
     static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
@@ -93,8 +127,6 @@ struct WorkspaceView: WebRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {}
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
-
-
 }
 
 private extension WKWebViewConfiguration {
@@ -112,6 +144,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     weak var workspace: WKWebView?
     private let browser = IntegratedBrowser()
     private var nativeAudio: AnyObject?
+    #if os(macOS)
+    private weak var observedWindow: NSWindow?
+    #endif
     private let reportError: (String) -> Void
 
     init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (String) -> Void) {
@@ -143,6 +178,19 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
               let workspace, message.webView === workspace,
               workspace.url.map(endpoint.owns) == true else { return (nil, "Workspace command unavailable") }
+        #if os(macOS)
+        if message.name == "heinzelWindow", message.body as? String == "fullscreen" {
+            observeWindow(workspace.window)
+            return (workspace.window?.styleMask.contains(.fullScreen) == true, nil)
+        }
+        if message.name == "heinzelDrag", message.body as? String == "drag" {
+            guard let window = workspace.window, !window.styleMask.contains(.fullScreen),
+                  let event = NSApp.currentEvent, event.type == .leftMouseDown,
+                  event.window === window else { return (false, nil) }
+            window.performDrag(with: event)
+            return (true, nil)
+        }
+        #endif
         #if canImport(ScreenCaptureKit)
         if #available(iOS 27, *), message.name == "heinzelAudio" {
             switch message.body as? String {
@@ -174,7 +222,29 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         nativeAudio = nil
     }
 
+    #if os(macOS)
+    private func observeWindow(_ window: NSWindow?) {
+        guard observedWindow !== window else { return }
+        let center = NotificationCenter.default
+        center.removeObserver(self)
+        observedWindow = window
+        guard let window else { return }
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            center.addObserver(self, selector: #selector(windowChanged), name: name, object: window)
+        }
+    }
+
+    @objc private func windowChanged() {
+        workspace?.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-window-change'))")
+    }
+    #endif
+
     func close(_ view: WKWebView) {
+        #if os(macOS)
+        observeWindow(nil)
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
+        #endif
         stopAudio()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAudio", contentWorld: .page)
         browser.reset()
