@@ -16,6 +16,7 @@ exposure, so what a UI hides from beginners is still a tool here.
 
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import logging
@@ -25,6 +26,7 @@ import select
 import stat
 import time
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -33,6 +35,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.utilities.types import Image
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl
@@ -62,6 +65,7 @@ from heinzel.kernel import (
     boot,
 )
 from heinzel.kernel._approval import ApprovalIssuer
+from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
@@ -195,15 +199,36 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
         if not local:
             return _authorized_http_call(kernel, item, kwargs)
         try:
-            with user.local("mcp-stdio"):
+            # A browser tool runs for the agent that started hz over stdio: `local`, an outside agent (ADR 0162).
+            with user.local("mcp-stdio"), _browser_actor(item, "local"):
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, kwargs):
                     kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
-                return kernel.invoke(item.operation, **kwargs)
+                return _content(kernel.invoke(item.operation, **kwargs))
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
-    return _signed(run, item, item.returns)
+    return _signed(run, item, _returns(item))
+
+
+def _browser_actor(item: Exposed, actor: str) -> AbstractContextManager[None]:
+    """Name the outside agent a browser tool runs for; every other tool runs as before."""
+    if item.record.qualname != BROWSER_MODULE:
+        return nullcontext()
+    return browser_caller(BrowserCaller(actor=actor, kind="external"))
+
+
+def _returns(item: Exposed) -> object:
+    """The tool's return annotation; a picture has none, so the SDK takes the image content as it is."""
+    return inspect.Signature.empty if item.returns is PageImage else item.returns
+
+
+def _content(result: object) -> object:
+    """A picture of a browser tab as MCP image content beside its caption; anything else unchanged."""
+    if not isinstance(result, PageImage):
+        return result
+    caption = json.dumps(result.caption(), ensure_ascii=False)
+    return [caption, Image(data=base64.b64decode(result.data), format="png")]
 
 
 class TokenVerifier:
@@ -255,11 +280,11 @@ def _authorized_http_call(kernel: Kernel, item: Exposed, arguments: dict[str, An
             msg = f"`{item.name}` changes things and this token may only read; make a write token if this agent should"
             raise ToolError(msg)
         try:
-            with kernel.resolve(CurrentUser).using(None):
+            with kernel.resolve(CurrentUser).using(None), _browser_actor(item, access.subject or access.client_id):
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, arguments):
                     arguments = _authorize_mcp_schedule(kernel, item, arguments, local=False)
-                return kernel.invoke(item.operation, **arguments)
+                return _content(kernel.invoke(item.operation, **arguments))
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
@@ -421,11 +446,17 @@ def chat_tool(chat_item: ChatTool) -> Callable[..., Any]:
 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - the operation's own parameters
         try:
-            return chat_item.call(kwargs)
+            return _content(chat_item.call(kwargs))
         except ChatToolError as exc:
             raise ToolError(str(exc)) from exc
 
-    returns = chat_item.item.returns if chat_item.kind == "confirm-authorized" else str
+    returns = (
+        chat_item.item.returns
+        if chat_item.kind == "confirm-authorized"
+        else inspect.Signature.empty
+        if chat_item.item.returns is PageImage
+        else str
+    )
     return _signed(run, chat_item.item, returns)
 
 

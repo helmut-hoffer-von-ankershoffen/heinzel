@@ -7,6 +7,8 @@ from typing import Annotated, Any, get_args, get_origin
 from pydantic import Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
+from heinzel.kernel._browser import BROWSER_FEATURE, BROWSER_MODULE
+from heinzel.kernel._features import feature_enabled
 from heinzel.kernel._kernel import Kernel, ModuleRecord
 from heinzel.kernel._lets import OperationLet
 from heinzel.kernel._paths import operation_path, public_parameters
@@ -60,6 +62,8 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     for record, operation in kernel.lets(OperationLet):
         if operation.private and head in {"api", MCP_HTTP}:
             continue
+        if record.qualname == BROWSER_MODULE and not feature_enabled(kernel.settings, BROWSER_FEATURE):
+            continue  # dark until the journey of ADR 0162 is green: no head lists an agent path without its gate
         if not kernel.available(operation.func) or restricts(operation.heads, head):
             continue
         signature = operation.signature()
