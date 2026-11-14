@@ -4,7 +4,7 @@
 // applies at once: the running hz takes up the agent runner before its next call, so nothing asks for a restart.
 // Commands are for people who want them: only inside each card's Details.
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, LogIn, RotateCw, Settings2, Trash2, X } from "lucide-react";
+import { FlaskConical, ListChecks, LogIn, RotateCw, Settings2, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type {
   SchemaAccessOption,
@@ -21,6 +21,7 @@ import {
   useSetAiKey,
   useSetSetting,
   useTestAiAccess,
+  useTestAllAiModels,
 } from "@/api/queries";
 import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
 import { CopyCommand } from "@/components/common";
@@ -97,7 +98,7 @@ export function AiAccessSetting() {
           />
         ))}
       </div>
-      {setting && <SetUpDialog option={setting} onClose={() => setSetting(null)} />}
+      {setting && <SetUpDialog option={current(setting, options)} onClose={() => setSetting(null)} />}
     </div>
   );
 }
@@ -187,6 +188,35 @@ function TestResult({ result }: { result: SchemaAccessTestReport }) {
   );
 }
 
+/** The most models one check of every model asks, as `hz ai access test --all` caps it. */
+const MAX_MODELS_CHECKED = 24;
+const OUTCOME_TONE = { answered: "text-ok", unanswered: "text-bad", skipped: "text-muted-foreground" } as const;
+const OUTCOME_LABEL = {
+  answered: "aiAccess.models.answered",
+  unanswered: "aiAccess.models.unanswered",
+  skipped: "aiAccess.models.skipped",
+} as const satisfies Record<string, MessageKey>;
+
+/** What `hz ai access test --all` found: how many answered and the tokens it took, then one line per model. */
+function AllModelsResult({ result }: { result: SchemaAccessTestReport }) {
+  const tokens = (result.input_tokens ?? 0) + (result.output_tokens ?? 0);
+  return (
+    <div role="status" className="flex flex-col gap-1 text-sm">
+      <span className={result.ok ? "text-ok" : "text-bad"}>
+        {t("aiAccess.models.testedAll", { detail: result.detail, tokens })}
+      </span>
+      <ul className="flex flex-col gap-0.5 font-mono text-ui-sm">
+        {(result.models ?? []).map((row) => (
+          <li key={row.model} data-model-test={row.model} className="flex gap-2">
+            <span className="flex-1 [overflow-wrap:anywhere]">{row.model}</span>
+            <span className={cn("font-sans", OUTCOME_TONE[row.outcome])}>{t(OUTCOME_LABEL[row.outcome])}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The fields one option's set-up writes, as configuration keys; credentials never go here. */
 const FIELDS: Record<"model" | "gateway", { key: string; label: MessageKey; placeholder: string; list?: string }[]> = {
   model: [
@@ -244,6 +274,13 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
+/** The model picker shows the listing's current row, so what a test learns (a model that didn't answer) shows while it
+ * is open; any other set-up keeps the row it opened with, so finishing it never swaps the dialog's body. */
+function current(setting: SchemaAccessOption, options: SchemaAccessOption[]): SchemaAccessOption {
+  if (setting.setup !== "plugin-model") return setting;
+  return options.find((option) => option.name === setting.name && option.setup === "plugin-model") ?? setting;
+}
+
 function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
   const plugin = option.setup === "plugin-model";
   const title = t(plugin ? "aiAccess.pickModel" : "aiAccess.setUpOne", { title: option.title });
@@ -262,6 +299,9 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
   const client = useQueryClient();
   const save = useSetSetting();
   const check = useTestAiAccess();
+  const [step, setStep] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const all = useTestAllAiModels(setStep);
   const unavailable = new Set(option.unavailable_models ?? []);
   const models = option.models ?? [];
   const [chosen, setChosen] = useState(option.model ?? "");
@@ -313,12 +353,53 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
       {saved && !save.error && <p className="text-sm text-ok">{t("aiAccess.models.saved")}</p>}
       {check.data && <TestResult result={check.data} />}
       {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
+      {all.isPending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {step || t("aiAccess.models.testingAll")}
+        </p>
+      )}
+      {all.data && !all.isPending && <AllModelsResult result={all.data} />}
+      {all.error && <p className="text-sm text-bad">{all.error.message}</p>}
+      {confirming && (
+        <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+          <p className="text-sm">
+            {t("aiAccess.models.testAllCost", { count: Math.min(models.length, MAX_MODELS_CHECKED) })}
+          </p>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} type="button" onClick={() => setConfirming(false)}>
+              {t("aiAccess.models.testAllCancel")}
+            </PaneAction>
+            <PaneAction
+              key="confirm"
+              primary
+              icon={ListChecks}
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setStep("");
+                all.mutate(option.name);
+              }}
+            >
+              {t("aiAccess.models.testAllConfirm")}
+            </PaneAction>
+          </PaneActions>
+        </div>
+      )}
       <PaneActions align="end" words="all">
+        <PaneAction
+          key="test-all"
+          icon={ListChecks}
+          type="button"
+          disabled={all.isPending || check.isPending || confirming}
+          onClick={() => setConfirming(true)}
+        >
+          {all.isPending ? t("aiAccess.models.testingAll") : t("aiAccess.models.testAll")}
+        </PaneAction>
         <PaneAction
           key="test"
           icon={FlaskConical}
           type="button"
-          disabled={!chosen || check.isPending}
+          disabled={!chosen || check.isPending || all.isPending}
           onClick={() => check.mutate(option.name)}
         >
           {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}

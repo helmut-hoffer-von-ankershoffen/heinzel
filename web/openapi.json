@@ -318,6 +318,18 @@
             "title": "Fix",
             "type": "string"
           },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, when reported; with `--all`, in total.",
+            "title": "Input Tokens"
+          },
           "model": {
             "anyOf": [
               {
@@ -330,6 +342,14 @@
             "description": "The model that answered, when reported.",
             "title": "Model"
           },
+          "models": {
+            "description": "With `--all`: each model tested, in the option's order.",
+            "items": {
+              "$ref": "#/components/schemas/ModelTestResult"
+            },
+            "title": "Models",
+            "type": "array"
+          },
           "name": {
             "description": "The option tested.",
             "title": "Name",
@@ -339,6 +359,26 @@
             "description": "Whether it answered.",
             "title": "Ok",
             "type": "boolean"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, when reported; with `--all`, in total.",
+            "title": "Output Tokens"
+          },
+          "untested": {
+            "description": "With `--all`: models beyond the cap of one run, not asked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untested",
+            "type": "array"
           }
         },
         "required": [
@@ -9925,6 +9965,68 @@
           "proposal"
         ],
         "title": "ModelPolicyReview",
+        "type": "object"
+      },
+      "ModelTestResult": {
+        "description": "One model's tiny request in `hz ai access test --all`.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "The answer, or why it failed or was skipped.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "default": 0.0,
+            "description": "Wall-clock time of its request.",
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, when reported.",
+            "title": "Input Tokens"
+          },
+          "model": {
+            "description": "The model asked, e.g. `claude-sonnet-4-5`.",
+            "title": "Model",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "`answered`, `unanswered` (now marked unavailable) or `skipped`.",
+            "enum": [
+              "answered",
+              "unanswered",
+              "skipped"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, when reported.",
+            "title": "Output Tokens"
+          }
+        },
+        "required": [
+          "model",
+          "outcome"
+        ],
+        "title": "ModelTestResult",
         "type": "object"
       },
       "ModuleDoc": {
@@ -23161,7 +23263,7 @@
     },
     "/ai/access/test": {
       "post": {
-        "description": "Run one cheap live check of an AI access option and keep the result; this may cost a little.\n\nClaude Code answers one line within $0.05; the gateway runs its configured test command.",
+        "description": "Run one cheap live check of an AI access option and keep the result; this may cost a little.\n\nClaude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each\nmodel of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,\nCtrl-C stops it.",
         "operationId": "ai_access_test",
         "parameters": [
           {
@@ -23180,6 +23282,18 @@
               ],
               "description": "The option to test, e.g. `gateway`; the one in use when not given.",
               "title": "Name"
+            }
+          },
+          {
+            "description": "Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model.",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model.",
+              "title": "All",
+              "type": "boolean"
             }
           }
         ],

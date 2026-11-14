@@ -74,6 +74,10 @@ class AccessTest(BaseModel):
     duration_seconds: float = Field(default=0.0, description="Wall-clock time of the check.")
     input_tokens: int | None = Field(default=None, description="Tokens sent, when the option reports them.")
     output_tokens: int | None = Field(default=None, description="Tokens produced, when the option reports them.")
+    skipped: bool = Field(
+        default=False,
+        description="Whether no request was sent, e.g. a model its plugin marks unavailable: nothing was learned.",
+    )
 
 
 CoreUsageCause = Literal["chat", "ask", "scheduled", "render", "handoff", "test"]
@@ -178,6 +182,15 @@ class AiAccess(Protocol):
         """Run the smallest live check the option has; this may cost a little. Mode: read.
 
         A failing check is a result, not an error.
+        """
+        ...
+
+    def test_model(self, model_id: str) -> AccessTest:
+        """Optional: one tiny live request to `model_id`, one of `status().models`, bounded by the option. Mode: read.
+
+        Only when a person asks (`hz ai access test --all`), never on its own. The option remembers whether the model
+        answered, so the model picker marks one that didn't unavailable until a later test answers; a model its
+        provider marks unavailable is skipped. A failing request is a result, not an error.
         """
         ...
 

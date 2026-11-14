@@ -125,7 +125,9 @@ export interface paths {
          * Run one cheap live check of an AI access option and keep the result; this may cost a little.
          * @description Run one cheap live check of an AI access option and keep the result; this may cost a little.
          *
-         *     Claude Code answers one line within $0.05; the gateway runs its configured test command.
+         *     Claude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each
+         *     model of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,
+         *     Ctrl-C stops it.
          */
         post: operations["ai_access_test"];
         delete?: never;
@@ -4678,10 +4680,20 @@ export interface components {
              */
             fix: string;
             /**
+             * Input Tokens
+             * @description Tokens sent, when reported; with `--all`, in total.
+             */
+            input_tokens?: number | null;
+            /**
              * Model
              * @description The model that answered, when reported.
              */
             model?: string | null;
+            /**
+             * Models
+             * @description With `--all`: each model tested, in the option's order.
+             */
+            models?: components["schemas"]["ModelTestResult"][];
             /**
              * Name
              * @description The option tested.
@@ -4692,6 +4704,16 @@ export interface components {
              * @description Whether it answered.
              */
             ok: boolean;
+            /**
+             * Output Tokens
+             * @description Tokens produced, when reported; with `--all`, in total.
+             */
+            output_tokens?: number | null;
+            /**
+             * Untested
+             * @description With `--all`: models beyond the cap of one run, not asked.
+             */
+            untested?: string[];
         };
         /**
          * AccessUse
@@ -10180,6 +10202,45 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved";
+        };
+        /**
+         * ModelTestResult
+         * @description One model's tiny request in `hz ai access test --all`.
+         */
+        ModelTestResult: {
+            /**
+             * Detail
+             * @description The answer, or why it failed or was skipped.
+             * @default
+             */
+            detail: string;
+            /**
+             * Duration Seconds
+             * @description Wall-clock time of its request.
+             * @default 0
+             */
+            duration_seconds: number;
+            /**
+             * Input Tokens
+             * @description Tokens sent, when reported.
+             */
+            input_tokens?: number | null;
+            /**
+             * Model
+             * @description The model asked, e.g. `claude-sonnet-4-5`.
+             */
+            model: string;
+            /**
+             * Outcome
+             * @description `answered`, `unanswered` (now marked unavailable) or `skipped`.
+             * @enum {string}
+             */
+            outcome: "answered" | "unanswered" | "skipped";
+            /**
+             * Output Tokens
+             * @description Tokens produced, when reported.
+             */
+            output_tokens?: number | null;
         };
         /**
          * ModuleDoc
@@ -17868,6 +17929,7 @@ export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModelChoice = components['schemas']['ModelChoice'];
 export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModelPolicyReview = components['schemas']['ModelPolicyReview'];
+export type SchemaModelTestResult = components['schemas']['ModelTestResult'];
 export type SchemaModuleDoc = components['schemas']['ModuleDoc'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
 export type SchemaNavEntry = components['schemas']['NavEntry'];
@@ -18237,6 +18299,8 @@ export interface operations {
             query?: {
                 /** @description The option to test, e.g. `gateway`; the one in use when not given. */
                 name?: string | null;
+                /** @description Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model. */
+                all?: boolean;
             };
             header?: never;
             path?: never;

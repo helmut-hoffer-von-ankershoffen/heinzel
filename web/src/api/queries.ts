@@ -180,6 +180,19 @@ export const useTestAiAccess = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
   });
 };
+/** `hz ai access test --all --name <name>`: one tiny request per model of a plugin, only when asked; the ones that don't
+ * answer come back marked unavailable in the listing. Streamed, so `onStep` hears each model as it is asked, e.g.
+ * `Testing acme-fast (2/12)`; the server refuses a second run while one is going on. */
+export const useTestAllAiModels = (onStep: (step: string) => void) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      stream<components["schemas"]["AccessTestReport"]>("/ai/access/test", { name, all: true }, (event) => {
+        if (event.event === "task" && typeof event.data.text === "string") onStep(event.data.text);
+      }),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
 /** Whether a Model API key is kept in the credentials store; never the key. */
 export const useAiKey = () =>
   useQuery({ queryKey: ["ai", "access", "key"], queryFn: () => unwrap(api.GET("/ai/access/key")) });

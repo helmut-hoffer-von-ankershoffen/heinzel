@@ -99,7 +99,16 @@ Checkable statements:
    ones marked. Settings shows the same list and sets the default. `plugin_effort` sets the default effort.
 8. **Unavailable is a clear refusal.** A model that isn't listed, is marked unavailable or calls no tools is
    refused before the turn starts and before `model()` is called. `ModelUnavailableError` names the models to
-   pick instead. A model the provider answers 404 for gives the same error.
+   pick instead. A model the provider answers 404 for gives the same error. `hz ai access test --all` (and Check
+   every model in Settings' model dialog), only when a person starts it, sends each listed model one tiny request, one
+   after another, at most 24 per run and 15 s each, recorded as usage with cause `test`. A model that doesn't answer
+   is marked unavailable for every head, kept as ids only in a private file in the profile's state, until a later
+   test answers; a model the plugin marks unavailable is skipped, and a test never clears the plugin's own mark.
+   Any response counts as an answer, also one without text; only a provider or transport error, or no response in
+   time, marks. A failure shows its kind and HTTP status only, never the provider's text. One run at a time per
+   profile; the web asks for confirmation first and shows which model is being asked.
+   The `ai-access` capability gains the optional read method `test_model(model_id)` for it; the option bounds
+   each request itself.
 9. **Effort is checked per model and mapped to its style.** An effort the offer doesn't list is refused before
    the turn. For `thinking: adaptive`, Core passes Anthropic's `thinking: {type: adaptive}` and
    `output_config.effort`. For `budget`, it passes `thinking: {type: enabled, budget_tokens}`: 2k, 8k, 16k, 32k or
