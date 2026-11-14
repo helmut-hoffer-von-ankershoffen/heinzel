@@ -227,7 +227,8 @@ export function grantOnNativeInput(contents, activation) {
  * The window never leaves the owned origin and never opens a child window: target=_blank,
  * window.open() and middle-click on a public link, from the page or an embed, go to the default
  * browser only right after trusted user input, classified and rate-limited; scripted opens and
- * everything else are denied. Returns the window's user activation for the preload's input reports.
+ * everything else are denied. Returns the window's user activation for the preload's input reports, with `open`:
+ * the same gesture-checked, rate-limited external open for the window's own controls (the sidebar browser).
  */
 export function guardUiNavigation(contents, connection, openExternal, options = {}) {
   const { windowMs, ...openerOptions } = options;
@@ -258,7 +259,7 @@ export function guardUiNavigation(contents, connection, openExternal, options = 
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });
-  return activation;
+  return Object.assign(activation, { open });
 }
 
 /** Do not open or show a product window after shutdown began, including across asynchronous startup. */
