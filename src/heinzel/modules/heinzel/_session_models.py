@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from heinzel.kernel import Billing, Effort, skill_name_problem
+from heinzel.modules.heinzel._levels import TurnLevel
 
 SessionId = Annotated[str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$")]
 RequestId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
@@ -75,6 +76,11 @@ class BackendBinding(BaseModel):
     revision: int = Field(description="The binding revision pinned to this turn.", default=1, ge=1)
     capabilities: list[str] = Field(
         description="Capabilities the selected adapter has proved it supports.", default_factory=list
+    )
+    level: TurnLevel | None = Field(
+        default=None,
+        description="The Heinzel's level this turn asked for and ran as, when levels choose the model (ADR 0158).",
+        exclude_if=lambda value: value is None,
     )
 
 

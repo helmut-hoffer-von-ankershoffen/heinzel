@@ -1003,6 +1003,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now.
+         * @description Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now.
+         */
+        get: operations["heinzel_level"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/list": {
         parameters: {
             query?: never;
@@ -1820,6 +1840,26 @@ export interface paths {
         get: operations["heinzel_sessions"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/set-level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set this Heinzel's level, provider or exact model against the exact profile revision you saw.
+         * @description Set this Heinzel's level, provider or exact model against the exact profile revision you saw.
+         */
+        post: operations["heinzel_set_level"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5328,6 +5368,8 @@ export interface components {
              * @description The selected reasoning effort, when supported.
              */
             effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /** @description The Heinzel's level this turn asked for and ran as, when levels choose the model (ADR 0158). */
+            level?: components["schemas"]["TurnLevel"] | null;
             /**
              * Mode
              * @description Whether the turn uses direct API, a CLI model bridge or a native CLI loop.
@@ -9712,6 +9754,68 @@ export interface components {
              * @default
              */
             summary: string;
+        };
+        /**
+         * LevelRunsAs
+         * @description What a turn of this Heinzel would run on now: for its details, never shown in the chat.
+         */
+        LevelRunsAs: {
+            /**
+             * Effort
+             * @description The effort passed; none when the model takes none.
+             */
+            effort: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /** @description The level asked, the level it runs as, the rule and how it was chosen. */
+            level: components["schemas"]["TurnLevel"];
+            /**
+             * Model
+             * @description The model id; none when the provider runs its own default.
+             */
+            model: string | null;
+            /**
+             * Provider
+             * @description The plugin's AI access option; none for the configured AI access.
+             */
+            provider: string | null;
+        };
+        /**
+         * LevelView
+         * @description A Heinzel's level, provider and exact model, the profile revision they were read at, and what they run as.
+         */
+        LevelView: {
+            /**
+             * Level
+             * @description How hard this Heinzel thinks: auto, low, medium or high.
+             * @enum {string}
+             */
+            level: "auto" | "low" | "medium" | "high";
+            /**
+             * Model
+             * @description Its exact model, an advanced choice that wins over the level; none for none.
+             */
+            model: string | null;
+            /**
+             * Problem
+             * @description Why a turn couldn't start on this choice now; none when it can.
+             */
+            problem: string | null;
+            /**
+             * Profile Revision
+             * @description The profile revision to pass to set-level.
+             */
+            profile_revision: number;
+            /**
+             * Provider
+             * @description Its AI provider; none for the configured AI access.
+             */
+            provider: string | null;
+            /** @description What a turn runs on now; none while the level doesn't choose the model (flag one_chat off). */
+            runs_as: components["schemas"]["LevelRunsAs"] | null;
+            /**
+             * Session Id
+             * @description The owner's durable Heinzel.
+             */
+            session_id: string;
         };
         /**
          * Lifecycle
@@ -16151,6 +16255,36 @@ export interface components {
             turn_id: string;
         };
         /**
+         * TurnLevel
+         * @description What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen.
+         */
+        TurnLevel: {
+            /**
+             * Asked
+             * @description The level the Heinzel had when the turn started.
+             * @enum {string}
+             */
+            asked: "auto" | "low" | "medium" | "high";
+            /**
+             * Ran
+             * @description The level the turn ran as; Auto resolved by code.
+             * @enum {string}
+             */
+            ran: "low" | "medium" | "high";
+            /**
+             * Rule
+             * @description How Auto was resolved, or `fixed` for a level picked as is.
+             * @enum {string}
+             */
+            rule: "fixed" | "auto-fixed-medium";
+            /**
+             * Source
+             * @description How the model was chosen: exact, table, default or provider-default.
+             * @enum {string}
+             */
+            source: "exact" | "table" | "default" | "provider-default";
+        };
+        /**
          * Uninstalled
          * @description What `uninstall` removed.
          */
@@ -17564,6 +17698,39 @@ export interface components {
         heinzel_search_conversation_Input: {
             request: components["schemas"]["HistorySearchRequest"];
         };
+        /** heinzel_set_level_Input */
+        heinzel_set_level_Input: {
+            /**
+             * Expected Revision
+             * @description The exact profile_revision you last read.
+             */
+            expected_revision: number;
+            /**
+             * Level
+             * @description auto, low, medium or high; null leaves it unchanged.
+             */
+            level?: ("auto" | "low" | "medium" | "high") | null;
+            /**
+             * Model
+             * @description An exact model id; empty clears it; null leaves it unchanged.
+             */
+            model?: string | null;
+            /**
+             * Provider
+             * @description An AI access option's name; empty for the configured one; null leaves it.
+             */
+            provider?: string | null;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_share_draft_link_Input */
         heinzel_share_draft_link_Input: {
             /**
@@ -17844,6 +18011,8 @@ export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLetDoc = components['schemas']['LetDoc'];
+export type SchemaLevelRunsAs = components['schemas']['LevelRunsAs'];
+export type SchemaLevelView = components['schemas']['LevelView'];
 export type SchemaLifecycle = components['schemas']['Lifecycle'];
 export type SchemaLifecycleVerified = components['schemas']['LifecycleVerified'];
 export type SchemaListEntry = components['schemas']['ListEntry'];
@@ -18024,6 +18193,7 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaToolActivity = components['schemas']['ToolActivity'];
+export type SchemaTurnLevel = components['schemas']['TurnLevel'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdatePlan = components['schemas']['UpdatePlan'];
@@ -18085,6 +18255,7 @@ export type SchemaHeinzelRevokeReleaseWorkflowInput = components['schemas']['hei
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['heinzel_search_agent_conversations_Input'];
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
+export type SchemaHeinzelSetLevelInput = components['schemas']['heinzel_set_level_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
 export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
 export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
@@ -19649,6 +19820,37 @@ export interface operations {
             };
         };
     };
+    heinzel_level: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LevelView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_list: {
         parameters: {
             query?: {
@@ -20975,6 +21177,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionList"];
+                };
+            };
+        };
+    };
+    heinzel_set_level: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_set_level_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LevelView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

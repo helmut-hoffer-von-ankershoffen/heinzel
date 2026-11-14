@@ -845,6 +845,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `input-snapshot-history`: Show recent private exact-result...
 * `latest-profile-proposal`: Inspect the latest suggested name and...
 * `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
+* `level`: Read this Heinzel&#x27;s intelligence level,...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
@@ -863,6 +864,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
+* `set-level`: Set this Heinzel&#x27;s level, provider or...
 * `share-draft-link`: Deliver one document link for the exact...
 * `show`: Show a contract as the daemon runs it:...
 * `skill-draft`: Read exact private skill draft files and...
@@ -1146,6 +1148,26 @@ Read the current inert proposal for the personal session, if one exists.
 
 ```console
 $ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel level`
+
+Read this Heinzel&#x27;s intelligence level, provider and exact model, and what a turn runs on now.
+
+**Usage**:
+
+```console
+$ hz heinzel level [OPTIONS] {session_id}
 ```
 
 **Arguments**:
@@ -1535,6 +1557,31 @@ $ hz heinzel sessions [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel set-level`
+
+Set this Heinzel&#x27;s level, provider or exact model against the exact profile revision you saw.
+
+**Usage**:
+
+```console
+$ hz heinzel set-level [OPTIONS] {session_id} {request_id} {expected_revision}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `expected_revision <int>`: The exact profile_revision you last read.  [required]
+
+**Options**:
+
+* `--level <auto|low|medium|high>`: auto, low, medium or high; null leaves it unchanged.
+* `--provider <str>`: An AI access option&#x27;s name; empty for the configured one; null leaves it.
+* `--model <str>`: An exact model id; empty clears it; null leaves it unchanged.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
