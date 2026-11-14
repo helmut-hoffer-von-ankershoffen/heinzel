@@ -847,7 +847,10 @@ class Capabilities:
         head, colon, rest = text.partition(":")
         named = head if colon and head in names and rest else None
         target = rest if named else text
-        host = _link_host(target, capability)
+        # After a named connector, only an http or https link is a link; anything else is that connector's id.
+        scheme = _SCHEME.match(target)
+        is_id = named is not None and (scheme is None or scheme.group(1).lower() not in _WEB)
+        host = None if is_id else _link_host(target, capability)
         if host is not None:
             adapters = [a for name in names for a in self.adapters.get((capability, name), [])[:1]]
             matches = [a.let.adapter for a in adapters if host in self.links_of(a)]

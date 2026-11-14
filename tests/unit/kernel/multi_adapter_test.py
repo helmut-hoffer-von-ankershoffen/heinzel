@@ -500,3 +500,11 @@ def test_a_connector_answering_in_the_wrong_shape_is_reported_not_fatal(make_ker
     kernel = make(make_kernel, ["malformed", "wiki"])
     assert [hit.source for hit in call(kernel, "find", query="q")] == ["wiki", "wiki"]
     assert failures(kernel) == [("malformed", "answered in a shape search doesn't return")]
+
+
+def test_a_named_connector_takes_an_id_with_a_colon(two):
+    """Review R6: `wiki:PROJ:123` is wiki's id, as the refusal of `PROJ:123` alone advises."""
+    with pytest.raises(HeinzelError, match="Only http and https links open documents"):
+        call(two, "show", ref="PROJ:123")
+    document = call(two, "show", ref="wiki:PROJ:123")
+    assert (document.title, document.source) == ("wiki:PROJ:123", "wiki")
