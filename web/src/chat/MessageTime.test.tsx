@@ -1,107 +1,164 @@
-// Times on demand and day headings (flag `one_chat`): the time is in the page for screen readers, shows above the
-// message on hover, focus or tap, and day headings split the conversation at the person's day boundaries.
-import { render, screen, within } from "@testing-library/react";
+// Times on demand and day headings: the time is in the page for screen readers and shows above the message on hover,
+// keyboard focus or a tap; a conversation is one tab stop; day headings split it at the person's day boundaries. Time
+// is frozen and the zone given, so nothing here depends on the runner's clock, zone or ICU data.
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dayHeading, MessageTime, startsDay } from "@/chat/MessageTime";
+import { MessageTime } from "@/chat/MessageTime";
 import { base } from "@/test/chat";
 import { config } from "@/test/fixtures";
 import { mockApi, renderAt } from "@/test/render";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-const local = (day: number, hour = 9) => new Date(2026, 10, day, hour, 5).toISOString();
+const zone = "Europe/Berlin";
 
-describe("day headings", () => {
-  const now = new Date(2026, 10, 14, 15, 0);
-  it("names today, yesterday, then the weekday and date", () => {
-    expect(dayHeading(local(14, 0), now)).toBe("Today");
-    expect(dayHeading(local(13, 23), now)).toBe("Yesterday");
-    expect(dayHeading(local(12), now)).toBe("Thursday 12 November");
-    expect(dayHeading(new Date(2025, 11, 31, 10).toISOString(), now)).toBe("Wednesday 31 December 2025");
-  });
-  it("starts a day at the first message and at midnight, not within a day", () => {
-    expect(startsDay(local(14))).toBe(true);
-    expect(startsDay(local(14, 10), local(14, 8))).toBe(false);
-    expect(startsDay(local(14, 0), local(13, 23))).toBe(true);
-  });
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-14T15:00:00Z"));
 });
+afterEach(() => {
+  vi.useRealTimers();
+  sessionStorage.clear();
+  localStorage.clear();
+});
+
+const shownTime = (row: Element) => row.querySelector("[data-message-time]");
 
 describe("MessageTime", () => {
-  it("keeps the time for screen readers and shows it on focus, tap and hover only", async () => {
-    const user = userEvent.setup();
+  const at = "2026-11-13T08:05:00Z"; // 09:05 in Berlin
+
+  function one() {
     render(
-      <MessageTime at={local(13)} own={false}>
-        <p>Hello</p>
+      <MessageTime at={at} own={false} zone={zone}>
+        <p>
+          Hello <a href="#x">the invoice list</a>
+        </p>
       </MessageTime>,
     );
-    const row = document.querySelector("[data-message-time-row]") as HTMLElement;
-    expect(row.querySelector("time.sr-only")).toHaveAttribute("datetime", local(13));
-    expect(row.querySelector("time.sr-only")).toHaveTextContent(/Friday, November 13, 2026.*09:05/);
-    expect(row.querySelector("[data-message-time]")).toBeNull();
+    return document.querySelector("[data-message-time-row]") as HTMLElement;
+  }
+
+  it("keeps the time for screen readers and describes the message by it", () => {
+    const row = one();
+    const time = row.querySelector("time.sr-only") as HTMLElement;
+    expect(time).toHaveAttribute("datetime", at);
+    expect(time).toHaveTextContent("Friday 13 November 2026, 09:05");
+    expect(row).toHaveAccessibleDescription("Friday 13 November 2026, 09:05");
+    expect(shownTime(row)).toBeNull();
+  });
+
+  it("shows the time on keyboard focus and hides it on Escape", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const row = one();
     await user.tab();
     expect(row).toHaveFocus();
-    expect(row.querySelector("[data-message-time]")).toHaveTextContent("09:05");
+    expect(shownTime(row)).toHaveTextContent("09:05");
     await user.keyboard("{Escape}");
-    expect(row.querySelector("[data-message-time]")).toBeNull();
+    expect(shownTime(row)).toBeNull();
+  });
+
+  it("shows it on mouse hover only", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const row = one();
+    await user.hover(screen.getByText(/Hello/));
+    expect(shownTime(row)).not.toBeNull();
+    await user.unhover(screen.getByText(/Hello/));
+    expect(shownTime(row)).toBeNull();
+  });
+
+  it("shows it on a tap and hides it on the second tap, but not for a tap on a link", () => {
+    const row = one();
+    fireEvent.click(row);
+    expect(shownTime(row)).toHaveTextContent("09:05");
+    fireEvent.click(row);
+    expect(shownTime(row)).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "the invoice list" }));
+    expect(shownTime(row)).toBeNull();
+  });
+
+  it("does not let the focus of a press keep the time shown after the second tap", () => {
+    const row = one();
+    fireEvent.pointerDown(row);
+    row.focus(); // a press focuses the row as well
+    fireEvent.click(row);
+    expect(shownTime(row)).not.toBeNull();
+    fireEvent.pointerDown(row);
+    fireEvent.click(row);
+    expect(shownTime(row)).toBeNull();
+  });
+
+  it("is one tab stop in a list of thirty, and the arrow keys walk the rest", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <div>
+        {Array.from({ length: 30 }, (_, index) => `message-${index}`).map((name, index) => (
+          <div key={name} data-message-speaker="you">
+            <MessageTime at={at} own tabbable={index === 29} zone={zone}>
+              <p>{`Message ${index}`}</p>
+            </MessageTime>
+          </div>
+        ))}
+      </div>,
+    );
+    const rows = [...document.querySelectorAll("[data-message-time-row]")] as HTMLElement[];
+    expect(rows.filter((row) => row.tabIndex === 0)).toHaveLength(1);
     await user.tab();
-    await user.hover(screen.getByText("Hello"));
-    expect(row.querySelector("[data-message-time]")).not.toBeNull();
-    await user.unhover(screen.getByText("Hello"));
-    await user.click(screen.getByText("Hello"));
-    expect(row.querySelector("[data-message-time]")).not.toBeNull();
-    await user.click(screen.getByText("Hello"));
-    await user.unhover(screen.getByText("Hello"));
-    await user.tab();
-    expect(row.querySelector("[data-message-time]")).toBeNull();
+    expect(rows[29]).toHaveFocus();
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(rows[27]).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(rows[28]).toHaveFocus();
   });
 });
 
-const flagged = {
-  ...config,
-  settings: [
-    ...config.settings,
-    { section: "hz", key: "features", value: ["one_chat"], description: "", env: "HZ_FEATURES" },
-  ],
-};
+const flagless = config;
 
-function mount(on: boolean) {
-  const messages = [
-    { id: "m1", seq: 1, role: "user", text: "Earlier", status: "completed", at: local(10) },
-    { id: "m2", seq: 2, role: "assistant", text: "Reply", status: "completed", at: local(10, 9) },
-    { id: "m3", seq: 3, role: "user", text: "Later", status: "completed", at: new Date().toISOString() },
-  ];
+function mount(messages: Record<string, unknown>[]) {
   mockApi({
     ...base,
-    "/api/system/config/show": on ? flagged : config,
+    "/api/system/config/show": flagless,
     "/api/heinzel/sessions": {
-      sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 3, updated_at: messages[2]?.at }],
+      sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 3, updated_at: "2026-11-14T10:00:00Z" }],
     },
     "/api/heinzel/session": () => ({ session_id: helmi, heinzel_id: helmi, name: "Helmi", messages }),
   });
-  renderAt(on ? "/doctor" : `/doctor?chat=${helmi}`);
+  renderAt("/doctor");
 }
 
-describe("in the conversation", () => {
-  beforeEach(() => vi.useRealTimers());
-  afterEach(() => {
-    sessionStorage.clear();
-    localStorage.clear();
-  });
+const message = (seq: number, role: string, text: string, at?: string) => ({
+  id: `m${seq}`,
+  seq,
+  role,
+  text,
+  status: "completed",
+  ...(at ? { at } : {}),
+});
 
-  it("flag on: a heading per day and a time on every message", async () => {
-    mount(true);
+describe("in the conversation", () => {
+  it("draws one heading per day, a time for every message and one tab stop", async () => {
+    mount([
+      message(1, "user", "Earlier", "2026-11-12T09:00:00Z"),
+      message(2, "assistant", "Reply", "2026-11-12T09:01:00Z"),
+      message(3, "user", "Later", "2026-11-14T09:00:00Z"),
+    ]);
     const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
     await chat.findByText("Later");
-    const headings = [...document.querySelectorAll("[data-day-heading]")].map((h) => h.textContent);
-    expect(headings).toEqual(["Tuesday 10 November", "Today"]);
+    expect([...document.querySelectorAll("[data-day-heading]")].map((h) => h.textContent)).toEqual([
+      "Thursday 12 November",
+      "Today",
+    ]);
     expect(document.querySelectorAll("time.sr-only")).toHaveLength(3);
+    expect(document.querySelectorAll("[data-message-time-row][tabindex='0']")).toHaveLength(1);
   });
 
-  it("flag off: no headings, no time rows", async () => {
-    mount(false);
+  it("does not repeat a heading after a message that has no time", async () => {
+    mount([
+      message(1, "user", "First", "2026-11-14T09:00:00Z"),
+      message(2, "assistant", "Undated"),
+      message(3, "user", "Third", "2026-11-14T10:00:00Z"),
+    ]);
     const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
-    await chat.findByText("Later", {}, { timeout: 5000 });
-    expect(document.querySelector("[data-day-heading]")).toBeNull();
-    expect(document.querySelector("[data-message-time-row]")).toBeNull();
+    await chat.findByText("Third");
+    expect(document.querySelectorAll("[data-day-heading]")).toHaveLength(1);
   });
 });

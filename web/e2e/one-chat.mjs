@@ -109,12 +109,14 @@ try {
 
   // Times on demand: a day heading, the time kept for screen readers, and the time shown by keyboard alone.
   await chat.getByRole("heading", { level: 3, name: "Today" }).waitFor();
-  const row = chat.locator("[data-message-time-row]").first();
+  const row = chat.locator("[data-message-time-row]").last(); // the newest message is the one tab stop
   assert.match((await row.locator("time.sr-only").textContent()) ?? "", /\d{2}:\d{2}/, "the time is in the page");
   assert.equal(await chat.locator("[data-message-time]").count(), 0, "no time beside every message");
   await chat.getByLabel("Message Helmi").focus();
+  assert.equal(await chat.locator('[data-message-time-row][tabindex="0"]').count(), 1, "one tab stop");
   let reached = false;
-  for (let step = 0; step < 40 && !reached; step += 1) {
+  // Shift+Tab one step at a time: the order of the presses is the point, so they cannot run together.
+  for (let step = 0; step < 60 && !reached; step += 1) {
     await page.keyboard.press("Shift+Tab");
     reached = await row.evaluate((node) => node === document.activeElement);
   }
