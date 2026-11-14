@@ -135,7 +135,13 @@ def mcp_outcomes(kernel, session: str) -> list[tuple[str, str]]:
             for name, arguments, _ in CALLS:
                 before = len(kernel.resolve(ActionGate).calls)
                 result = await client.call_tool(name, arguments)
-                results.append(outcome(kernel, before, result.content[0].text, error=bool(result.is_error)))
+                text = result.content[0].text
+                if result.is_error:
+                    # The MCP SDK frames every tool error so; the words inside are the policy's own.
+                    frame = f"Error executing tool {name}: "
+                    assert text.startswith(frame), text
+                    text = text.removeprefix(frame)
+                results.append(outcome(kernel, before, text, error=bool(result.is_error)))
         return results
 
     return anyio.run(run)
