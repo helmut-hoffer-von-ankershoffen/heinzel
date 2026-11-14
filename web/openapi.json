@@ -15646,7 +15646,7 @@
           },
           "last_run_failed": {
             "default": false,
-            "description": "Whether the latest run outcome was a set-aside turn or a failed scheduled turn.",
+            "description": "Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed turn (started, never finished) reads failed, and so stuck, only after the 7200 s turn cap.",
             "title": "Last Run Failed",
             "type": "boolean"
           },

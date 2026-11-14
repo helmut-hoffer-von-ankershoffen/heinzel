@@ -32,6 +32,8 @@ PRECEDENCE: tuple[Activity, ...] = (
 # More than one run waiting behind the current one is a backlog the Heinzel is not keeping up with.
 OVERLOAD_QUEUE = 2
 RECENT = timedelta(hours=1)
+# The longest any turn may run under an approved grant; a turn still unfinished after it was interrupted.
+MAX_TURN_SECONDS = 7200
 
 _FINISHED = frozenset({"message.replied", "interactive.abandoned"})
 _FAILED = frozenset({"interactive.abandoned", "agent.schedule-failed"})
@@ -81,10 +83,15 @@ def open_write_drafts(events: Iterable[SessionEvent]) -> list[SessionEvent]:
 
 
 def run_counts(events: Iterable[SessionEvent], now: datetime) -> RunCounts:
-    """Project runs from envelopes: started, finished, queued, failed and the owner's latest approval."""
+    """Project runs from envelopes: started, finished, queued, failed and the owner's latest approval.
+
+    No liveness probe is taken: a turn started and unfinished for longer than the turn cap counts as failed.
+    """
     ordered = list(events)
-    started = {e.key for e in ordered if e.kind == "interactive.started" and e.key}
+    started = {e.key: e.ts for e in ordered if e.kind == "interactive.started" and e.key}
     finished = {e.key for e in ordered if e.kind in _FINISHED and e.key}
+    open_turns = [at for key, at in started.items() if key not in finished]
+    crashed = any(now - at > timedelta(seconds=MAX_TURN_SECONDS) for at in open_turns)
     queued = 0
     for event in ordered:
         message = event.data.get("message_id") if event.kind == "message.accepted" else None
@@ -96,8 +103,8 @@ def run_counts(events: Iterable[SessionEvent], now: datetime) -> RunCounts:
     return RunCounts(
         runs_last_hour=sum(e.kind == "interactive.started" and recently(e.ts, now) for e in ordered),
         queued_runs=queued,
-        running=bool(started - finished),
-        last_run_failed=outcome in _FAILED,
+        running=len(open_turns) > 0 and not crashed,
+        last_run_failed=crashed or outcome in _FAILED,
         last_approved_at=max(approvals, default=None),
     )
 

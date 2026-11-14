@@ -13461,7 +13461,7 @@ export interface components {
             last_approved_at?: string | null;
             /**
              * Last Run Failed
-             * @description Whether the latest run outcome was a set-aside turn or a failed scheduled turn.
+             * @description Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed turn (started, never finished) reads failed, and so stuck, only after the 7200 s turn cap.
              * @default false
              */
             last_run_failed: boolean;

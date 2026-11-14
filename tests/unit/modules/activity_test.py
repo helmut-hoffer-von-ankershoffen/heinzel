@@ -8,6 +8,7 @@ import pytest
 
 from heinzel import SessionEvent
 from heinzel.modules.heinzel._activity import (
+    MAX_TURN_SECONDS,
     PRECEDENCE,
     Activity,
     ActivityFacts,
@@ -179,3 +180,14 @@ def test_future_runs_are_not_in_the_last_hour():
     later = NOW + timedelta(minutes=5)
     counts = run_counts(_events(_accepted("a", later), _turn("interactive.started", "a", later)), NOW)
     assert counts.runs_last_hour == 0
+
+
+@pytest.mark.parametrize(
+    ("age", "running", "failed", "state"),
+    [(MAX_TURN_SECONDS - 1, True, False, "working"), (MAX_TURN_SECONDS + 1, False, True, "stuck")],
+)
+def test_an_unfinished_turn_is_working_until_the_cap_then_stuck(age, running, failed, state):
+    started = NOW - timedelta(seconds=age)
+    counts = run_counts(_events(_accepted("a", started), _turn("interactive.started", "a", started)), NOW)
+    assert (counts.running, counts.last_run_failed) == (running, failed)
+    assert activity(ActivityFacts(stuck=counts.last_run_failed, working=counts.running)) == state

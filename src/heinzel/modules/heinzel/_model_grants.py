@@ -21,6 +21,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._activity import MAX_TURN_SECONDS
 from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiSnapshot
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -42,7 +43,7 @@ class ModelGrant(BaseModel):
     requests: int = Field(ge=1, le=100)
     total_tokens: int = Field(ge=1, le=100_000_000)
     output_tokens: int = Field(ge=1, le=32_768)
-    timeout_seconds: float = Field(gt=0, le=7200, allow_inf_nan=False)
+    timeout_seconds: float = Field(gt=0, le=MAX_TURN_SECONDS, allow_inf_nan=False)
     message_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     session_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     owner_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
