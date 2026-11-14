@@ -487,7 +487,10 @@ def _main() -> None:
     """The child: one tool call from standard input, its answer to standard output."""
     request = json.loads(sys.stdin.read())
     files = ConfinedFiles(Path(request["root"]), root_fd=int(request["fd"]))
-    sys.stdout.write(call(files, request["tool"], request["arguments"]))
+    answer = call(files, request["tool"], request["arguments"])
+    # The answer goes to the parent's pipe, never a terminal: the parent started this child with captured output.
+    with open(1, "w", encoding="utf-8", closefd=False) as pipe:
+        pipe.write(answer)
 
 
 if __name__ == "__main__":
