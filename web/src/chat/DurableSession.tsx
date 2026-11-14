@@ -24,7 +24,9 @@ import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { ConversationSearch } from "@/chat/ConversationSearch";
+import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
+import { HeinzelHeader } from "@/chat/HeinzelHeader";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
 import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
@@ -151,19 +153,41 @@ function revealNewest(box: HTMLElement | null, marker: HTMLElement | null) {
   box.scrollTop += marker.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom + 12;
 }
 
-export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+/** The chat's own controls when every chat is with a Heinzel (flag `one_chat`): Close collapses the panel, and the old
+ * general chat stays reachable from More until its history moves into the default Heinzel. */
+export type OneChat = { onCollapse: () => void; onEarlier: () => void };
+
+export function DurableSession({
+  sessionId,
+  onClose,
+  oneChat,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  oneChat?: OneChat;
+}) {
   const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
-  return <DurableSessionView key={authority} authority={authority} sessionId={sessionId} onClose={onClose} />;
+  return (
+    <DurableSessionView
+      key={authority}
+      authority={authority}
+      sessionId={sessionId}
+      onClose={onClose}
+      oneChat={oneChat}
+    />
+  );
 }
 
 function DurableSessionView({
   authority,
   sessionId,
   onClose,
+  oneChat,
 }: {
   authority: number;
   sessionId: string;
   onClose: () => void;
+  oneChat?: OneChat;
 }) {
   const client = useQueryClient();
   const shareDecision = useRef<AbortController | null>(null);
@@ -207,6 +231,8 @@ function DurableSessionView({
   const [detailsInitiallyOpen] = useState(() =>
     [...params.keys()].some((key) => key.endsWith("-chat") && key !== "chat"),
   );
+  // With one kind of chat, Details shows among the messages only when More asks for it or a review link lands there.
+  const [detailsShown, setDetailsShown] = useState(detailsInitiallyOpen);
   useEffect(() => {
     if (!pendingSearchJump) return;
     setSearchJump(true);
@@ -864,40 +890,60 @@ function DurableSessionView({
     </>
   );
   const heinzelName = query.data?.name ?? t("durable.title");
+  const opened = query.data?.session_id === sessionId;
+  useEffect(() => {
+    if (oneChat && opened) rememberHeinzel(sessionId);
+  }, [oneChat, opened, sessionId]);
   const look = appearanceLook(query.data?.appearance);
   const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <HeinzelAvatar
-            view="bust"
-            label={heinzelName}
-            {...look}
-            state={busy ? "thinking" : undefined}
-            className="size-8 overflow-hidden"
-          />
-          <h2 className="min-w-0 truncate font-medium">{heinzelName}</h2>
+      {oneChat ? (
+        <HeinzelHeader
+          sessionId={sessionId}
+          name={heinzelName}
+          look={look}
+          busy={busy}
+          locked={busy || profileLocked}
+          searchOpen={searchOpen}
+          detailsOpen={detailsShown}
+          onSearch={() => setSearchOpen((open) => !open)}
+          onDetails={() => setDetailsShown((shown) => !shown)}
+          onEarlier={oneChat.onEarlier}
+          onClose={oneChat.onCollapse}
+        />
+      ) : (
+        <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <HeinzelAvatar
+              view="bust"
+              label={heinzelName}
+              {...look}
+              state={busy ? "thinking" : undefined}
+              className="size-8 overflow-hidden"
+            />
+            <h2 className="min-w-0 truncate font-medium">{heinzelName}</h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-icon"
+              aria-label={t("durable.search")}
+              title={t("durable.search")}
+              aria-expanded={searchOpen}
+              onClick={() => setSearchOpen((open) => !open)}
+            >
+              <Search aria-hidden />
+            </Button>
+            <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
+              {t("durable.close")}
+            </Button>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="text-icon"
-            aria-label={t("durable.search")}
-            title={t("durable.search")}
-            aria-expanded={searchOpen}
-            onClick={() => setSearchOpen((open) => !open)}
-          >
-            <Search aria-hidden />
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
-            {t("durable.close")}
-          </Button>
-        </div>
-      </div>
+      )}
       <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
@@ -999,7 +1045,12 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        <details className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
+        {/* With one kind of chat, Details stays mounted (its reviews keep their state) and shows when More asks. */}
+        <details
+          className="rounded-lg border border-border p-3"
+          open={detailsInitiallyOpen || !!oneChat}
+          hidden={!!oneChat && !detailsShown}
+        >
           <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
           <div className="mt-3 space-y-3">
             {query.data && (
@@ -1662,7 +1713,7 @@ function DurableSessionView({
         )}
         <div className="flex items-end gap-2">
           <label htmlFor={composerId} className="sr-only">
-            {t("durable.message")}
+            {oneChat ? t("oneChat.message", { name: heinzelName }) : t("durable.message")}
           </label>
           <textarea
             id={composerId}

@@ -2,14 +2,20 @@
 // it was started on. The session lives in hz, so it survives a reload and `hz chat --continue` picks it up in a
 // terminal. `?chat=<session>` opens a session (a notification's link); `?chat-context=<kind:ref>` opens one about it.
 // The header's switcher picks another session, the Workshop or a new chat.
+// With the flag `one_chat` every chat is with a Heinzel (bead agqz, canvas "Chat sidebar redesign"): the panel opens the
+// Heinzel in the link, else the last one you talked to, else your first; with none yet it asks for a name. The general
+// chat stays reachable from More → Earlier chats until its history moves into the default Heinzel.
 import { useQueryClient } from "@tanstack/react-query";
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { api, problem } from "@/api/client";
+import { useHeinzelSessions, usePreviewFeature } from "@/api/queries";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation } from "@/chat/Conversation";
-import { DurableSession } from "@/chat/DurableSession";
+import { DurableSession, type OneChat } from "@/chat/DurableSession";
+import { defaultHeinzel, rememberedHeinzel } from "@/chat/defaultHeinzel";
+import { FirstHeinzel } from "@/chat/FirstHeinzel";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
@@ -58,6 +64,27 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   });
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
+  const oneChat = usePreviewFeature("one_chat");
+  const heinzels = useHeinzelSessions(oneChat);
+  const [earlier, setEarlier] = useState(false);
+  const openHeinzel = (sessionId: string) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      clearChatLink(next);
+      next.set("chat", sessionId);
+      return next;
+    });
+  const controls: OneChat = {
+    onCollapse,
+    onEarlier: () => {
+      setEarlier(true);
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        clearChatLink(next);
+        return next;
+      });
+    },
+  };
   const { chat, inputRef, startNewChat } = useSharedChat();
   const context = chat.session?.context;
   const end = useRef<HTMLDivElement>(null);
@@ -155,6 +182,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       <DurableSession
         key={durableId}
         sessionId={durableId}
+        oneChat={oneChat ? controls : undefined}
         onClose={() =>
           setParams((current) => {
             const next = new URLSearchParams(current);
@@ -165,11 +193,38 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       />
     );
   }
+  const fallback = oneChat ? defaultHeinzel(heinzels.data?.sessions ?? [], rememberedHeinzel()) : null;
+  if (oneChat && !earlier) {
+    if (heinzels.isPending)
+      return (
+        <p role="status" className="p-3 text-sm text-muted-foreground">
+          {t("state.loading")}
+        </p>
+      );
+    if (heinzels.isError)
+      return (
+        <div role="alert" className="space-y-2 p-3 text-sm">
+          <p>{t("oneChat.loadError")}</p>
+          <Button type="button" variant="outline" onClick={() => void heinzels.refetch()}>
+            {t("oneChat.retry")}
+          </Button>
+        </div>
+      );
+    if (fallback) return <DurableSession key={fallback} sessionId={fallback} oneChat={controls} onClose={onCollapse} />;
+    return <FirstHeinzel onCreated={openHeinzel} onClose={onCollapse} />;
+  }
   return (
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate(createDraftPath(params))} />
+        {oneChat && fallback && (
+          <Button type="button" variant="ghost" size="sm" data-pane-action onClick={() => setEarlier(false)}>
+            {t("oneChat.backTo", {
+              name: heinzels.data?.sessions?.find((item) => item.session_id === fallback)?.name ?? "",
+            })}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"

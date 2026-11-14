@@ -12,6 +12,7 @@ FEATURES: dict[str, str] = {
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
     "durable_agents": "Durable agents that keep working between sessions, while they are being built.",
+    "one_chat": "One kind of chat: every chat is with a Heinzel, while the new chat is being built.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""
 

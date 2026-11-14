@@ -30,6 +30,14 @@ export function usePreviewFeature(name: string): boolean {
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
   return Array.isArray(features) && features.includes(name);
 }
+/** `hz heinzel sessions`: your durable Heinzels, newest first; the chat's header and default Heinzel read it. */
+export const useHeinzelSessions = (enabled = true) =>
+  useQuery({
+    queryKey: ["heinzel", "sessions"],
+    queryFn: () => unwrap(api.GET("/heinzel/sessions")),
+    enabled,
+    retry: false,
+  });
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {
   const config = useConfig();
