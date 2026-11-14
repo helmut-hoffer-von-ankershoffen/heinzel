@@ -537,7 +537,7 @@ class SessionSummary(BaseModel):
     waiting_count: int = Field(
         default=0,
         ge=0,
-        description="Items open for the owner: unsettled write drafts plus a contract awaiting approval.",
+        description="Items open for the owner: unsettled write drafts plus a pending check-in proposal.",
     )
     runs_last_hour: int = Field(default=0, ge=0, description="Runs (turns) started in the last hour.")
     queued_runs: int = Field(default=0, ge=0, description="Accepted messages whose run has not started yet.")

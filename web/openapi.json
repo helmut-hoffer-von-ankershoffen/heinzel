@@ -15702,7 +15702,7 @@
           },
           "waiting_count": {
             "default": 0,
-            "description": "Items open for the owner: unsettled write drafts plus a contract awaiting approval.",
+            "description": "Items open for the owner: unsettled write drafts plus a pending check-in proposal.",
             "minimum": 0.0,
             "title": "Waiting Count",
             "type": "integer"

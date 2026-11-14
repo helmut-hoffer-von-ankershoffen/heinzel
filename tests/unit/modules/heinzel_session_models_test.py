@@ -131,3 +131,10 @@ def test_a_summary_without_counts_is_idle_with_nothing_open():
     assert summary.last_approved_at is None
     with pytest.raises(ValidationError):
         SessionSummary.model_validate({**summary.model_dump(), "activity": "sulking"})
+
+
+def test_the_waiting_count_names_what_it_counts():
+    description = SessionSummary.model_fields["waiting_count"].description or ""
+    assert "write drafts" in description
+    assert "check-in proposal" in description
+    assert "contract" not in description

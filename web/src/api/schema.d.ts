@@ -13506,7 +13506,7 @@ export interface components {
             updated_at: string;
             /**
              * Waiting Count
-             * @description Items open for the owner: unsettled write drafts plus a contract awaiting approval.
+             * @description Items open for the owner: unsettled write drafts plus a pending check-in proposal.
              * @default 0
              */
             waiting_count: number;

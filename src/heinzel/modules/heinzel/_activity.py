@@ -94,7 +94,7 @@ def run_counts(events: Iterable[SessionEvent], now: datetime) -> RunCounts:
     outcome = next((e.kind for e in reversed(ordered) if e.kind in _FINISHED | _FAILED), None)
     approvals = [e.ts for e in ordered if e.kind in _OWNER_APPROVED]
     return RunCounts(
-        runs_last_hour=sum(e.kind == "interactive.started" and now - e.ts <= RECENT for e in ordered),
+        runs_last_hour=sum(e.kind == "interactive.started" and recently(e.ts, now) for e in ordered),
         queued_runs=queued,
         running=bool(started - finished),
         last_run_failed=outcome in _FAILED,

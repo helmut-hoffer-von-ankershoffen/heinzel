@@ -173,3 +173,9 @@ def test_open_write_drafts_exclude_discarded_and_attempted():
 )
 def test_recently_means_within_the_last_hour(moment, expected):
     assert recently(moment, NOW) is expected
+
+
+def test_future_runs_are_not_in_the_last_hour():
+    later = NOW + timedelta(minutes=5)
+    counts = run_counts(_events(_accepted("a", later), _turn("interactive.started", "a", later)), NOW)
+    assert counts.runs_last_hour == 0
