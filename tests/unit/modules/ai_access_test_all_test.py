@@ -68,12 +68,12 @@ class Stuck(Models):
         return AccessTest(ok=True, detail="late")
 
 
-def option(tmp_path, adapter: Models) -> tuple[PluginModelsAccess, AiModelsSource]:
+def option(tmp_path, adapter: Models, timeout: float = 2.0) -> tuple[PluginModelsAccess, AiModelsSource]:
     folder = tmp_path / "ai" / "plugin-models"
     found = AiModelsSource(
         "acme", "acme", "heinzel-acme", "1.0.0", adapter, folder / "acme.json", folder / "acme.unanswered.json"
     )  # type: ignore[arg-type]
-    return PluginModelsAccess("acme", lambda: found, AccessSettings), found
+    return PluginModelsAccess("acme", lambda: found, AccessSettings, model_timeout=timeout), found
 
 
 def marked(found: AiModelsSource) -> dict[str, bool]:
@@ -81,16 +81,17 @@ def marked(found: AiModelsSource) -> dict[str, bool]:
 
 
 def test_each_model_answers_fails_or_times_out_and_is_kept_for_the_picker(tmp_path):
-    access, found = option(tmp_path, Models())
-    answered = access.test_model("ok", 2.0)
+    adapter = Models()
+    access, found = option(tmp_path, adapter)
+    answered = access.test_model("ok")
     assert (answered.ok, answered.detail, answered.model, answered.skipped) == (True, "OK", "ok", False)
     assert answered.input_tokens
     assert answered.output_tokens
-    failed = access.test_model("boom", 2.0)
+    failed = access.test_model("boom")
     assert (failed.ok, failed.model) == (False, "boom")
     assert failed.detail == "RuntimeError"
     started = time.monotonic()
-    hung = access.test_model("slow", 0.3)
+    hung = option(tmp_path, adapter, timeout=0.3)[0].test_model("slow")
     assert time.monotonic() - started < 2.5, "bounded by its timeout"
     assert (hung.ok, hung.model) == (False, "slow")
     assert hung.detail == "no answer within 0.3s"
@@ -103,7 +104,7 @@ def test_a_model_the_plugin_marks_unavailable_or_no_longer_offers_is_skipped(tmp
     adapter = Models()
     access, found = option(tmp_path, adapter)
     for model_id, why in [("gone", "the plugin marks it unavailable"), ("nope", "the plugin doesn't offer it now")]:
-        result = access.test_model(model_id, 1.0)
+        result = access.test_model(model_id)
         assert (result.ok, result.skipped, result.detail) == (False, True, f"{why}; not tested")
     assert adapter.built == [], "no request, no model built"
     assert found.unanswered is not None
@@ -113,19 +114,19 @@ def test_a_model_the_plugin_marks_unavailable_or_no_longer_offers_is_skipped(tmp
 def test_a_later_answer_clears_the_mark(tmp_path, monkeypatch):
     adapter = Models()
     access, found = option(tmp_path, adapter)
-    access.test_model("boom", 1.0)
+    access.test_model("boom")
     assert marked(found)["boom"] is False
     monkeypatch.setattr(adapter, "model", lambda model_id: FunctionModel(_answers, model_name=model_id))
-    assert access.test_model("boom", 1.0).ok
+    assert access.test_model("boom").ok
     assert marked(found)["boom"] is True
 
 
 def test_a_plugins_own_test_that_blocks_its_thread_is_cut_off(tmp_path):
     RELEASE.clear()
-    access, found = option(tmp_path, Stuck())
+    access, found = option(tmp_path, Stuck(), timeout=0.2)
     try:
         started = time.monotonic()
-        result = access.test_model("ok", 0.2)
+        result = access.test_model("ok")
         assert time.monotonic() - started < 2.5
         assert (result.ok, result.detail) == (False, "no answer within 0.2s")
         assert marked(found)["ok"] is False
@@ -156,7 +157,7 @@ class Fake:
 
     def __init__(self, answers: dict[str, AccessTest | BaseException]) -> None:
         self.answers = answers
-        self.asked: list[tuple[str, float]] = []
+        self.asked: list[str] = []
 
     def status(self) -> AccessStatus:
         return AccessStatus(title="Acme", summary="", installed=True, models=list(self.answers))
@@ -164,8 +165,8 @@ class Fake:
     def test(self) -> AccessTest:
         raise AssertionError
 
-    def test_model(self, model_id: str, timeout: float) -> AccessTest:
-        self.asked.append((model_id, timeout))
+    def test_model(self, model_id: str) -> AccessTest:
+        self.asked.append(model_id)
         answer = self.answers[model_id]
         if isinstance(answer, BaseException):
             raise answer
@@ -191,7 +192,7 @@ def test_test_all_asks_each_model_in_turn_records_tokens_and_keeps_a_summary(tmp
     steps = Steps()
     report = access.test_all("acme", {"acme": fake}, steps)  # type: ignore[arg-type]
     assert steps.steps == ["Testing a (1/4)", "Testing b (2/4)", "Testing c (3/4)", "Testing d (4/4)"]
-    assert [t for _, t in fake.asked] == [15.0] * 4
+    assert fake.asked == ["a", "b", "c", "d"], "one model at a time; the option bounds each itself"
     assert [(r.model, r.outcome) for r in report.models] == [
         ("a", "answered"),
         ("b", "unanswered"),
@@ -241,7 +242,7 @@ def test_test_all_stops_on_ctrl_c_with_what_it_learned_recorded(tmp_path):
     with pytest.raises(KeyboardInterrupt):
         access.test_all("acme", {"acme": fake}, Progress())  # type: ignore[arg-type]
     assert [e.model for e in usage.entries] == ["a"]
-    assert [m for m, _ in fake.asked] == ["a", "b"]
+    assert fake.asked == ["a", "b"]
 
 
 def _blocks(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -272,9 +273,9 @@ class Broken(Models):
 
 def test_a_model_that_blocks_its_request_thread_is_cut_off(tmp_path):
     RELEASE.clear()
-    access, found = option(tmp_path, Blocking())
+    access, found = option(tmp_path, Blocking(), timeout=0.2)
     try:
-        result = access.test_model("ok", 0.2)
+        result = access.test_model("ok")
         assert (result.ok, result.detail, result.model) == (False, "no answer within 0.2s", "ok")
         assert marked(found)["ok"] is False
     finally:
@@ -283,10 +284,10 @@ def test_a_model_that_blocks_its_request_thread_is_cut_off(tmp_path):
 
 def test_the_plugins_own_check_counts_and_a_model_it_cant_build_is_unanswered(tmp_path):
     access, found = option(tmp_path, Own())
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert (result.ok, result.detail, result.model, result.input_tokens) == (True, "pong", "ok", 4)
     access, found = option(tmp_path / "broken", Broken())
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert result.ok is False
     assert "returned object for ok, not a Pydantic AI model" in result.detail
     assert marked(found)["ok"] is False
@@ -297,7 +298,7 @@ def test_a_plugin_that_cant_be_loaded_skips_its_test(tmp_path):
         msg = "the plugin isn't installed"
         raise HeinzelError(msg)
 
-    result = PluginModelsAccess("acme", gone, AccessSettings).test_model("ok", 1.0)
+    result = PluginModelsAccess("acme", gone, AccessSettings).test_model("ok")
     assert (result.ok, result.skipped, result.detail) == (False, True, "the plugin isn't installed")
 
 
@@ -348,7 +349,7 @@ def test_a_library_failure_before_the_request_is_a_failed_check(tmp_path, monkey
 
     monkeypatch.setattr(pydantic_ai, "Agent", refuse)
     access, found = option(tmp_path, Models())
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert (result.ok, result.detail, result.model) == (False, "TypeError", "ok")
     assert marked(found)["ok"] is False
 
@@ -369,7 +370,7 @@ class OwnExits(Models):
 
 def test_a_plugins_own_skip_marks_nothing_and_is_reported_skipped(tmp_path):
     access, found = option(tmp_path, OwnSkips())
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert (result.ok, result.skipped, len(result.detail), result.model) == (False, True, 300, "ok")
     assert marked(found)["ok"] is True, "nothing was learned, so nothing is marked"
     assert found.unanswered is not None
@@ -382,7 +383,7 @@ def test_a_plugins_own_skip_marks_nothing_and_is_reported_skipped(tmp_path):
 
 def test_a_plugins_own_check_that_exits_is_a_failed_check_with_its_cause(tmp_path, capsys):
     access, found = option(tmp_path, OwnExits())
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert (result.ok, result.detail, result.model) == (False, "SystemExit", "ok")
     assert marked(found)["ok"] is False
     assert "Traceback" not in capsys.readouterr().err
@@ -394,7 +395,7 @@ def test_marks_of_models_the_plugin_dropped_are_pruned_and_never_crowd_out_new_o
     access, found = option(tmp_path, Models())
     for i in range(600):
         mark_answered(found, f"a{i:04d}", answered=False)
-    access.test_model("boom", 1.0)
+    access.test_model("boom")
     assert found.unanswered is not None
     assert json.loads(found.unanswered.read_text()) == ["boom"], "only ids the plugin offers now are kept"
 
@@ -405,7 +406,7 @@ def test_cut_off_requests_are_bounded_across_runs(tmp_path, monkeypatch):
     adapter = Models()
     access, _found = option(tmp_path, adapter)
     monkeypatch.setattr(_plugin_models, "_lingering", lambda: _plugin_models.MAX_LINGERING)
-    result = access.test_model("ok", 1.0)
+    result = access.test_model("ok")
     assert (result.skipped, result.detail) == (
         True,
         "24 earlier requests still haven't returned; try again later; not tested",
@@ -417,7 +418,7 @@ def test_a_second_run_is_refused_while_one_is_going_on(tmp_path):
     started, release = threading.Event(), threading.Event()
 
     class Slow(Fake):
-        def test_model(self, model_id: str, timeout: float) -> AccessTest:
+        def test_model(self, model_id: str) -> AccessTest:
             started.set()
             release.wait(10)
             return AccessTest(ok=True, detail="OK")
@@ -492,7 +493,7 @@ class LeaksOwn(Models):
 
 def test_a_model_that_answers_without_text_counts_as_answered_with_its_tokens(tmp_path):
     access, found = option(tmp_path, Thinks())
-    result = access.test_model("ok", 2.0)
+    result = access.test_model("ok")
     assert result.ok, result.detail
     assert result.detail.startswith("it answered, without usable text (")
     assert result.input_tokens is not None
@@ -502,10 +503,10 @@ def test_a_model_that_answers_without_text_counts_as_answered_with_its_tokens(tm
 
 def test_a_providers_error_text_never_reaches_the_detail_or_the_report(tmp_path):
     access, found = option(tmp_path, Leaks())
-    result = access.test_model("ok", 2.0)
+    result = access.test_model("ok")
     assert (result.ok, result.detail) == (False, "ModelHTTPError 401")
     assert marked(found)["ok"] is False
-    own = option(tmp_path / "own", LeaksOwn())[0].test_model("ok", 2.0)
+    own = option(tmp_path / "own", LeaksOwn())[0].test_model("ok")
     assert own.detail == "RuntimeError"
     single = PluginModelsAccess("acme", lambda: found, lambda: AccessSettings(plugin_model="ok")).test()
     assert single.detail == "ModelHTTPError 401"
@@ -523,7 +524,7 @@ def test_a_new_mark_is_kept_however_many_stale_ids_the_file_holds(tmp_path):
     access, found = option(tmp_path, Leaks())
     for i in range(MAX_OFFERS):
         mark_answered(found, f"a-stale-{i:04d}", answered=False)
-    access.test_model("slow", 2.0)
+    access.test_model("slow")
     assert marked(found)["slow"] is False
     assert found.unanswered is not None
     assert json.loads(found.unanswered.read_text()) == ["slow"]

@@ -185,8 +185,8 @@ class AiAccess(Protocol):
         """
         ...
 
-    def test_model(self, model_id: str, timeout: float) -> AccessTest:
-        """Optional: one tiny live request to `model_id`, one of `status().models`, within `timeout`s. Mode: read.
+    def test_model(self, model_id: str) -> AccessTest:
+        """Optional: one tiny live request to `model_id`, one of `status().models`, bounded by the option. Mode: read.
 
         Only when a person asks (`hz ai access test --all`), never on its own. The option remembers whether the model
         answered, so the model picker marks one that didn't unavailable until a later test answers; a model its
