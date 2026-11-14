@@ -19,6 +19,8 @@ from heinzel import (
     Config,
     ConfigEditor,
     HeinzelError,
+    NotSupportedError,
+    Progress,
     Settings,
     Status,
     UsageEntry,
@@ -34,6 +36,8 @@ from heinzel.modules.ai.access._models import (
     AccessUse,
     Bindings,
     LastTest,
+    ModelTestResult,
+    Outcome,
     Setup,
 )
 
@@ -51,6 +55,10 @@ DEFAULT = "claude-code"
 TESTS_FILE = "tests.json"
 _TESTS = TypeAdapter(dict[str, LastTest])
 DETAIL_LIMIT = 300
+MAX_MODELS_TESTED = 24
+"""The most models one `hz ai access test --all` asks, so a long list never runs for long or spends much."""
+MODEL_TEST_TIMEOUT = 15.0
+"""How long one model has to answer in `hz ai access test --all` before it counts as unanswered."""
 
 
 _CLIENT = re.compile(r"heinzel\[([a-z0-9-]+)\]")
@@ -317,8 +325,8 @@ class AccessService:
             "outside these models."
         )
 
-    def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
-        """Run the live check of `name`, or of the option in use, and keep its result for the listing.
+    def _tested(self, name: str | None) -> str:
+        """`name`, or the option in use, once known to be installed.
 
         Raises:
             HeinzelError: If no installed option has that name, or none is in use and none was named.
@@ -329,17 +337,19 @@ class AccessService:
                 msg = f"No AI access is chosen; name one to test, e.g. `hz ai access test --name {DEFAULT}`."
                 raise HeinzelError(msg)
         self._known(name)
+        return name
+
+    def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
+        """Run the live check of `name`, or of the option in use, and keep its result for the listing.
+
+        Raises:
+            HeinzelError: If no installed option has that name, or none is in use and none was named.
+        """
+        name = self._tested(name)
         result = _isolated(name, "test", options[name].test)
         if isinstance(result, str):
             result = AccessTest(ok=False, detail=result)
-        last = LastTest(
-            at=datetime.now(UTC),
-            ok=result.ok,
-            detail=result.detail,
-            model=result.model,
-            cost_usd=result.cost_usd,
-            duration_seconds=result.duration_seconds,
-        )
+        last = self._keep(name, result)
         self._usage.record(
             UsageEntry(
                 at=last.at,
@@ -351,11 +361,105 @@ class AccessService:
                 cost_usd=result.cost_usd,
             )
         )
+        return AccessTestReport(name=name, **result.model_dump())
+
+    def _keep(self, name: str, result: AccessTest) -> LastTest:
+        """Keep `result` as the last test of `name` for the listing; a file that can't be written is only logged."""
+        last = LastTest(
+            at=datetime.now(UTC),
+            ok=result.ok,
+            detail=result.detail,
+            model=result.model,
+            cost_usd=result.cost_usd,
+            duration_seconds=result.duration_seconds,
+        )
         try:
             self._tests.keep(name, last)
         except OSError as exc:
             log_event(logger, "ai.access.keep_test_failed", level=logging.WARNING, option=name, error=str(exc))
-        return AccessTestReport(name=name, **result.model_dump())
+        return last
+
+    def test_all(self, name: str | None, options: Adapters[AiAccess], progress: Progress) -> AccessTestReport:
+        """Ask every model of `name`, or of the option in use, one tiny request each, one after another (ADR 0159).
+
+        Only when a person asks. At most `MAX_MODELS_TESTED` models, each within `MODEL_TEST_TIMEOUT`; the option
+        keeps which answered, so the picker marks the others unavailable until a later test answers. Each request is
+        recorded as usage, cause `test`. Ctrl-C stops between or during models; what was learned so far is kept.
+
+        Raises:
+            HeinzelError: If no installed option has that name, none is in use and none was named, its models can't
+                be listed, or it can't test its models one by one.
+        """
+        name = self._tested(name)
+        option = options[name]
+        status = self.status_of(name)
+        if isinstance(status, str):
+            msg = f"Couldn't list the models of {name}: {status}"
+            raise HeinzelError(msg)
+        if not status.models:
+            msg = f"{status.title} names no models to test; `hz ai access test --name {name}` checks it."
+            raise HeinzelError(msg)
+        asked, untested = status.models[:MAX_MODELS_TESTED], status.models[MAX_MODELS_TESTED:]
+        rows: list[ModelTestResult] = []
+        for index, model_id in enumerate(asked, 1):
+            with progress.task(f"Testing {model_id} ({index}/{len(asked)})"):
+                rows.append(self._test_model(name, option, model_id, status.title))
+        return self._summary(name, rows, untested)
+
+    def _test_model(self, name: str, option: AiAccess, model_id: str, title: str) -> ModelTestResult:
+        """One model's tiny request through `option`, recorded as usage when one was sent.
+
+        Raises:
+            HeinzelError: If the option can't test its models one by one.
+        """
+        try:
+            result = option.test_model(model_id, MODEL_TEST_TIMEOUT)
+        except NotSupportedError:
+            msg = f"{title} can't test its models one by one; `hz ai access test --name {name}` checks the one in use."
+            raise HeinzelError(msg) from None
+        except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
+            detail = clean_text(f"its test failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
+            result = AccessTest(ok=False, detail=detail, model=model_id)
+        if not result.skipped:
+            self._usage.record(
+                UsageEntry(
+                    at=datetime.now(UTC),
+                    cause="test",
+                    access=name,
+                    model=model_id,
+                    input_tokens=result.input_tokens or 0,
+                    output_tokens=result.output_tokens or 0,
+                )
+            )
+        outcome: Outcome = "skipped" if result.skipped else "answered" if result.ok else "unanswered"
+        return ModelTestResult(
+            model=model_id,
+            outcome=outcome,
+            detail=clean_text(result.detail)[:DETAIL_LIMIT],
+            duration_seconds=result.duration_seconds,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+        )
+
+    def _summary(self, name: str, rows: list[ModelTestResult], untested: list[str]) -> AccessTestReport:
+        """The report of a `--all` run, also kept as the option's last test."""
+        count = {o: sum(r.outcome == o for r in rows) for o in ("answered", "unanswered", "skipped")}
+        parts = [f"{count['answered']} of {count['answered'] + count['unanswered']} models answered"]
+        if count["unanswered"]:
+            parts.append(f"{count['unanswered']} marked unavailable until a test answers")
+        if count["skipped"]:
+            parts.append(f"{count['skipped']} skipped")
+        if untested:
+            parts.append(f"{len(untested)} not tested: at most {MAX_MODELS_TESTED} per run")
+        result = AccessTest(
+            ok=count["answered"] > 0,
+            detail="; ".join(parts),
+            duration_seconds=sum(r.duration_seconds for r in rows),
+            input_tokens=sum(r.input_tokens or 0 for r in rows),
+            output_tokens=sum(r.output_tokens or 0 for r in rows),
+        )
+        self._keep(name, result)
+        return AccessTestReport(name=name, models=rows, untested=untested, **result.model_dump())
 
     def checks(self) -> list[Check]:
         """Doctor: the AI access in use is installed and signed in, and the bound agent runner is the one it names."""

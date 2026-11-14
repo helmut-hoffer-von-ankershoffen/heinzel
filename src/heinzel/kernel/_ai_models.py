@@ -259,6 +259,9 @@ class AiModelsSource:
     kept: Path | None = None
     """Where the last good list's ids are kept across a restart, a private file in the profile's state; none: memory
     only."""
+    unanswered: Path | None = None
+    """Where hz keeps the ids of models that didn't answer `hz ai access test --all`, a private file in the profile's
+    state; none: nothing is kept and no model is marked."""
 
 
 class AiModelOptions:
@@ -417,13 +420,24 @@ def _forget(key: int) -> None:
             del _listings[key]
 
 
-def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[list[ModelOffer], str]:
+def list_offers(
+    source: AiModelsSource, timeout: float = LIST_TIMEOUT, *, raw: bool = False
+) -> tuple[list[ModelOffer], str]:
     """What `source` offers now, and a note on what was skipped, or that this is the last good list (ADR 0159).
 
     One call per plugin at a time, on a daemon thread, so a hung plugin holds one thread and never blocks exit; a
     second caller waits for that call, at most `timeout`. A list got in the last few seconds is reused. With no
-    good list yet, a failure is an empty list and the note says why.
+    good list yet, a failure is an empty list and the note says why. A model that didn't answer the last
+    `hz ai access test --all` is marked unavailable, unless `raw`: the plugin's own flags alone.
     """
+    offers, note = _listed(source, timeout)
+    if raw or source.unanswered is None or not (unanswered := _unanswered(source.unanswered)):
+        return offers, note
+    return [o.model_copy(update={"available": False}) if o.id in unanswered else o for o in offers], note
+
+
+def _listed(source: AiModelsSource, timeout: float) -> tuple[list[ModelOffer], str]:
+    """`list_offers` without the marks of `hz ai access test --all`."""
     with _listings_lock:
         listing = _listing_of(source.adapter)
     with listing.lock:
@@ -449,6 +463,60 @@ def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[
     return (list(kept), f"{problem}; showing the last list") if kept else ([], problem)
 
 
+_unanswered_cache: dict[Path, tuple[tuple[int, int, int], frozenset[str]]] = {}
+_unanswered_lock = threading.Lock()
+_mark_lock = threading.Lock()
+
+
+def _unanswered(path: Path) -> frozenset[str]:
+    """The ids kept in `path` as not answering, re-read only when the file changed; none when missing or corrupt."""
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as file:
+            stat = os.fstat(file.fileno())
+            stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)  # replaced atomically: a new file each time
+            with _unanswered_lock:
+                cached = _unanswered_cache.get(path)
+            if cached is not None and cached[0] == stamp:
+                return cached[1]
+            rows: object = json.loads(file.read(MAX_OFFERS * 210))
+    except (OSError, ValueError):
+        return frozenset()
+    found = frozenset(
+        row for row in cast("list[object]", rows if isinstance(rows, list) else []) if isinstance(row, str)
+    )
+    with _unanswered_lock:
+        _unanswered_cache[path] = (stamp, found)
+    return found
+
+
+def mark_answered(source: AiModelsSource, model_id: str, *, answered: bool) -> None:
+    """Keep whether `model_id` answered a test, so every head's picker marks it; never raises (ADR 0159).
+
+    Only a person's `hz ai access test --all` calls it. A model that didn't answer is marked unavailable until a later
+    test answers; the plugin's own `available=False` is never cleared by it. Ids only, mode 0600, replaced atomically.
+    """
+    path = source.unanswered
+    if path is None:
+        return
+    with _mark_lock:  # one writer at a time in this process; a later test wins
+        before = _unanswered(path)
+        after = (before - {model_id}) if answered else (before | {model_id})
+        if after == before:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".json")
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as file:
+                    file.write(json.dumps(sorted(after)[:MAX_OFFERS]))
+                Path(temporary).replace(path)
+            finally:
+                with contextlib.suppress(OSError):
+                    Path(temporary).unlink(missing_ok=True)
+        except OSError as exc:
+            log_event(logger, "ai.models.mark_failed", level=logging.WARNING, error=type(exc).__name__)
+
+
 def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None = None) -> ModelOffer:
     """The offer hz runs: `wanted` when given, else the first that calls tools and isn't known to be unavailable.
 
@@ -468,7 +536,7 @@ def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None =
     if offer is None:
         raise ModelUnavailableError(wanted, others, "the plugin doesn't offer it now")
     if offer.available is False:
-        raise ModelUnavailableError(wanted, others, "it didn't answer when the plugin last checked")
+        raise ModelUnavailableError(wanted, others, "it didn't answer when last checked")
     if not offer.tools:
         raise ModelUnavailableError(wanted, others, "it doesn't call tools, which chat and drafts need")
     if effort is not None and offer.thinking is not None and offer.efforts and effort not in offer.efforts:

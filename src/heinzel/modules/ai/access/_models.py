@@ -16,6 +16,9 @@ Setup = Literal["model", "gateway", "sign-in", "client", "plugin-model"]
 """What setting an option up takes: a model and key, a gateway command, a sign-in, an optional Python client, or a
 pick among a plugin's models."""
 Use = Literal["chat", "turns", "coding"]
+Outcome = Literal["answered", "unanswered", "skipped"]
+"""What `hz ai access test --all` learned of one model: it answered, it didn't (marked unavailable until a test
+answers), or no request was sent, e.g. its plugin marks it unavailable."""
 
 
 class AccessSettings(ModuleSettings):
@@ -261,6 +264,17 @@ class AccessList(BaseModel):
     next: list[str] = Field(default_factory=list[str], description="What to run next.")
 
 
+class ModelTestResult(BaseModel):
+    """One model's tiny request in `hz ai access test --all`."""
+
+    model: str = Field(description="The model asked, e.g. `claude-sonnet-4-5`.")
+    outcome: Outcome = Field(description="`answered`, `unanswered` (now marked unavailable) or `skipped`.")
+    detail: str = Field(default="", description="The answer, or why it failed or was skipped.")
+    duration_seconds: float = Field(default=0.0, description="Wall-clock time of its request.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, when reported.")
+    output_tokens: int | None = Field(default=None, description="Tokens produced, when reported.")
+
+
 class AccessTestReport(BaseModel):
     """The outcome of `hz ai access test`, also kept for the listing."""
 
@@ -271,3 +285,13 @@ class AccessTestReport(BaseModel):
     model: str | None = Field(default=None, description="The model that answered, when reported.")
     cost_usd: float | None = Field(default=None, description="What it cost in US dollars, when reported.")
     duration_seconds: float = Field(default=0.0, description="Wall-clock time of the check.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, when reported; with `--all`, in total.")
+    output_tokens: int | None = Field(
+        default=None, description="Tokens produced, when reported; with `--all`, in total."
+    )
+    models: list[ModelTestResult] = Field(
+        default_factory=list[ModelTestResult], description="With `--all`: each model tested, in the option's order."
+    )
+    untested: list[str] = Field(
+        default_factory=list[str], description="With `--all`: models beyond the cap of one run, not asked."
+    )
