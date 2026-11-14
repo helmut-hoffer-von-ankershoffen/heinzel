@@ -25,3 +25,6 @@ site/
 
 # The privacy plugin's download cache for external images (mkdocs.yml).
 /.cache/
+
+# Host maintenance locks a local lane or worker run creates next to the tool environment (ADR 0133).
+.heinzel-maintenance/

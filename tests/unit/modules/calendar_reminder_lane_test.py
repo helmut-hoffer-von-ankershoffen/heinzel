@@ -339,7 +339,11 @@ def daemon(*, installed=True, recorded="0.9.42", paused=False, lane_state=None, 
         (True, daemon(lane_state=ReminderLaneState(started=True)), "overdue"),
         (
             True,
-            daemon(lane_state=ReminderLaneState(started=True, beat_at=datetime(2026, 11, 13, 10, 3, tzinfo=UTC))),
+            daemon(
+                lane_state=ReminderLaneState(
+                    started=True, beat_at=datetime(2026, 11, 13, 10, 3, tzinfo=UTC), result="ok"
+                )
+            ),
             "on",
         ),
         (
@@ -534,3 +538,55 @@ def test_sigterm_cuts_a_wait_short_and_the_offset_widens_the_last_lookahead(sett
     finally:
         lane.run_lane = original
     assert [notice.title for notice in far.recent()] == ["Meeting starts soon"]
+
+
+def test_pausing_the_daemon_during_a_lane_means_no_reminder_after_the_pause(settings, tmp_path):
+    clock = Clock(datetime(2026, 11, 13, 10, 0, 10, tzinfo=BERLIN))
+    service = notify(settings, clock)
+    start = clock.at + timedelta(minutes=7)  # its reminder falls due two minutes into the lane
+    paused_at = clock.at + timedelta(minutes=1)
+
+    def gate():
+        if clock.at >= paused_at:
+            (tmp_path / "paused").write_text("")  # what `hz system daemon pause` writes
+        return lane.paused(tmp_path)
+
+    result, seen = run(clock, service, meeting(start), done_after=999, gate=gate)
+    assert result == "gate"
+    assert seen.beats[-1]["result"] == "gate"
+    assert clock.at < start - timedelta(minutes=5)
+    assert service.recent() == []
+
+
+def test_a_busy_fence_in_the_last_cycle_gets_one_retry(settings):
+    clock = Clock(datetime(2026, 11, 13, 10, 20, 5, tzinfo=BERLIN))
+    service = notify(settings, clock)
+    start = datetime(2026, 11, 13, 10, 30, tzinfo=BERLIN)  # due 10:25, the next slot
+    last_read = datetime(2026, 11, 13, 10, 24, 20, tzinfo=BERLIN)
+    busy = [True]
+
+    def guard():
+        if clock.at >= last_read and busy:
+            busy.pop()
+            msg = "busy"
+            raise HeinzelError(msg)
+        return nullcontext()
+
+    hooks = lane.LaneHooks(
+        read=lambda: meeting(start),
+        guard=guard,
+        gate=lambda: False,
+        wait=lambda seconds: clock.advance(seconds) or True,
+        beat=lambda _b: None,
+    )
+    clocks = lane.LaneClock(wall=clock.wall, monotonic=clock.monotonic, tzset=lambda: None)
+    assert lane.run_lane(hooks, service, interval=5, clock=clocks, startup=10) == "window"
+    assert [notice.title for notice in service.recent()] == ["Meeting starts soon"]
+    assert busy == []
+
+
+@pytest.mark.parametrize("result", ["disabled", "stopped", "gate"])
+def test_a_fresh_heartbeat_of_a_lane_that_ended_is_not_running(result):
+    beat = datetime(2026, 11, 13, 10, 3, tzinfo=UTC)
+    attestation = daemon(lane_state=ReminderLaneState(started=True, beat_at=beat, result=result))
+    assert lane.reminder_state(enabled=True, daemon=attestation, now=beat + timedelta(seconds=30)) == "starting"

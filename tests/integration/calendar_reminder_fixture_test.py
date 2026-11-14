@@ -177,3 +177,34 @@ def test_web_has_no_separate_reminder_setup_and_leftover_removal_is_confirmed_an
     uninstall.assert_called_once()
     public = TestClient(api.build(kernel), base_url="http://127.0.0.1")
     assert public.post("/org/calendar-reminders-uninstall?confirm=true").status_code == 404
+
+
+def test_native_validation_uses_the_lane_lookahead_through_the_real_wiring(make_kernel, monkeypatch):
+    """ADR 0147: an early-recorded reminder must validate at native post time, or it pops up late."""
+    from heinzel.kernel._calendar_reminders import agenda_plan
+    from heinzel.modules import org
+
+    now = datetime(2026, 11, 13, 10, 24, 40, tzinfo=UTC)
+    start = now + timedelta(minutes=5, seconds=60)  # due a minute after now
+
+    class Calendar:
+        def events(self, _window):
+            return [Event(id="next", title="Planning", start=start, end=start + timedelta(minutes=30))]
+
+        def free_busy(self, people, window):
+            return []
+
+    module = Module("fixturecalendar", "Test calendar")
+    module.provides("calendar", modes={"read"})(Calendar)
+    kernel = make_kernel(
+        builtins=True,
+        fixturecalendar=module,
+        config=Config(files=(), data={"capabilities": {"calendar": "fixturecalendar"}}),
+    )
+    monkeypatch.setattr(org, "local_now", lambda _settings: now)
+    service = NotifyService.for_user(kernel)
+    [reminder] = [item for item in agenda_plan(kernel.call(agenda), now) if item.kind == "start"]
+    assert service.calendar_valid is not None
+    assert reminder.key not in service.calendar_valid(now)
+    service.calendar_lookahead = timedelta(seconds=90)
+    assert reminder.key in service.calendar_valid(now)

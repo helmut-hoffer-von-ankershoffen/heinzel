@@ -56,7 +56,7 @@ def supervisor(tmp_path, children, clock=lambda: T0):
 
 
 def window(slot: datetime) -> dict:
-    return {"result": "window", "slot": slot.isoformat(), "profile": "p"}
+    return {"result": "window", "slot": slot.isoformat(), "profile": "p", "pid": 4242}
 
 
 def test_a_lane_that_ends_in_its_window_ends_the_tick_and_clears_its_marker(tmp_path):
@@ -143,7 +143,7 @@ def test_an_unreadable_heartbeat_ends_the_lane_quietly(tmp_path):
     (tmp_path / _lane.LANE_FILE).write_text("[]")
     lane, _, _ = supervisor(tmp_path, [child])
     lane.start()
-    assert lane.finish() == "ended"
+    assert lane.finish() == "duplicate"  # no heartbeat of its own: never restarted
     assert _lane._instant("not a time") is None
     assert _lane._instant("2026-11-13T10:00:00") is None
 
@@ -201,3 +201,19 @@ def test_a_process_birth_of_this_process_matches_its_current_birth():
 
     assert _process_birth.process_birth(sys.platform, os.getpid()) == _process_birth.current_birth(sys.platform)
     assert _process_birth.process_birth("win32", os.getpid()) is None
+
+
+def test_a_paused_daemon_never_restarts_its_lane(tmp_path):
+    lane, spawner, sleeps = supervisor(tmp_path, [Child(-9, tmp_path), Child(0, tmp_path)])
+    lane.start()
+    (tmp_path / "paused").write_text("")
+    assert lane.finish() == "paused"
+    assert (len(spawner.specs), sleeps) == (1, [])
+
+
+def test_a_duplicate_lane_ends_supervision_instead_of_spinning(tmp_path):
+    other = {"result": "window", "slot": T0.isoformat(), "profile": "p", "pid": 1}  # the older lane's, past its slot
+    lane, spawner, _ = supervisor(tmp_path, [Child(0, tmp_path, other), Child(0, tmp_path, other)])
+    lane.start()
+    assert lane.finish() == "duplicate"
+    assert len(spawner.specs) == 1

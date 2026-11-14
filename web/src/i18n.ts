@@ -1432,6 +1432,8 @@ const en = {
   "calendar.daemonElsewhere": "Reminders run for the profile this computer's Heinzel daemon uses.",
   "calendar.daemonPaused": "Background work is paused, so reminders are paused too.",
   "calendar.laneOverdue": "Reminders have not checked your calendar for a few minutes.",
+  "calendar.laneStarting": "Reminders start with the background service's next run.",
+  "calendar.resumeSummary": "Resume background work?",
   "calendar.providerUnavailable": "Reminders can't read your calendar right now.",
   "calendar.remindersOff": "Calendar reminders are off or unavailable.",
   "calendar.statusUnavailable": "Reminder status unavailable.",

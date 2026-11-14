@@ -60,6 +60,7 @@ it("resumes a paused daemon from the calendar, naming the action", async () => {
   expect(await screen.findByText("Background work is paused, so reminders are paused too.")).toBeInTheDocument();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Resume" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("Resume background work?");
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Resume" }));
   await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
   const request = calls.find((call) => call.method === "POST");
@@ -406,10 +407,16 @@ it("says the reminder state in one line with an icon and nothing to press", asyn
   expect(screen.getByRole("button", { name: "Turn on reminders" })).toBeInTheDocument();
 });
 
-it.each(["on", "starting"])("hides the band and offers no reminder action while the lane is %s", async (state) => {
-  agenda(agendaEvents, { state });
+it("hides the band and offers no reminder action while the lane runs", async () => {
+  agenda(agendaEvents, { state: "on" });
   await screen.findByText("Standup");
   expect(screen.queryByText(/Reminders|reminders|background/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /reminders|Resume/ })).not.toBeInTheDocument();
+});
+
+it("says reminders start with the next run, with nothing to press, until the first lane runs", async () => {
+  agenda(agendaEvents, { state: "starting" });
+  expect(await screen.findByText("Reminders start with the background service's next run.")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /reminders|Resume/ })).not.toBeInTheDocument();
 });
 

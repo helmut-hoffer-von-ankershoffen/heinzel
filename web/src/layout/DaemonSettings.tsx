@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Check, Download, Pause, Play, RefreshCw, RotateCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { api, unwrap } from "@/api/client";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
 import { useExpert } from "@/api/queries";
 import { Loaded } from "@/components/common";
@@ -19,7 +21,15 @@ export function DaemonSettings() {
   const operationBusy = operation.stage === "running" || operation.stage === "confirm";
   const restartUnconfirmed = restartOutcomeUnconfirmed(operation);
   const expert = useExpert();
+
   const [pending, setPending] = useState<Action | null>(null);
+  // Pausing also pauses calendar reminders (ADR 0147); say so only while they are on.
+  const reminders = useQuery({
+    queryKey: ["org", "calendar-reminders-status"],
+    queryFn: ({ signal }) => unwrap(api.GET("/org/calendar-reminders-status", { signal })),
+    enabled: pending === "pause",
+    retry: false,
+  });
   const label = (action: Action) => t(`daemon.${action}`);
   const ask = (action: Action) => {
     change.reset();
@@ -145,7 +155,7 @@ export function DaemonSettings() {
           <p>{t("daemon.confirm", { action: label(pending) })}</p>
           <code className="block break-all">hz system daemon {pending}</code>
           {(pending === "install" || pending === "uninstall") && <p>{t("daemon.persistenceHint")}</p>}
-          {pending === "pause" && <p>{t("daemon.pauseHint")}</p>}
+          {pending === "pause" && reminders.data?.enabled && <p>{t("daemon.pauseHint")}</p>}
           <PaneActions align="end" words="all">
             <PaneAction key="cancel" icon={X} autoFocus onClick={() => setPending(null)}>
               {t("contrib.cancel")}

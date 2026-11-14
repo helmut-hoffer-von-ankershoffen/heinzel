@@ -137,7 +137,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
       body: null,
       read_only: false,
       command: "",
-      summary: t(action === "install" ? "calendar.daemonNeeded" : "calendar.daemonPaused"),
+      summary: t(action === "install" ? "calendar.daemonNeeded" : "calendar.resumeSummary"),
     });
   return (
     <section aria-label={t("calendar.title")} className="flex h-full min-h-0 flex-col">
@@ -238,7 +238,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
 const BAND: Record<ReminderState, { icon: LucideIcon; local: MessageKey; remote: MessageKey } | null> = {
   off: { icon: Bell, local: "calendar.turnOnInSettings", remote: "calendar.remindersOff" },
   on: null,
-  starting: null,
+  starting: { icon: Bell, local: "calendar.laneStarting", remote: "calendar.laneStarting" },
   install: { icon: BellOff, local: "calendar.daemonNeeded", remote: "calendar.daemonRemote" },
   elsewhere: { icon: BellOff, local: "calendar.daemonElsewhere", remote: "calendar.daemonElsewhere" },
   resume: { icon: BellOff, local: "calendar.daemonPaused", remote: "calendar.daemonPaused" },

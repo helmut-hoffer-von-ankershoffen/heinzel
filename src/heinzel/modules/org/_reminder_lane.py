@@ -38,6 +38,8 @@ MARGIN = 15.0
 """Seconds `m` before a slot the end window opens; measured on macOS and Linux, a miss costs one dropped firing."""
 READ_TIMEOUT = 8.0
 """Hard limit for one agenda read; a read starts only while more than this is left before the window end."""
+LAST_READ_LEAD = 2 * READ_TIMEOUT + 2
+"""Seconds before the window end the last cycle starts: room for its read and one retry when the fence is busy."""
 STARTUP_CAP = 90.0
 """The most a lane's measured start-up time `H` counts for early delivery."""
 OFFSET_CAP = 60.0
@@ -178,8 +180,9 @@ def run_lane(  # noqa: PLR0913 - the lane's seams, all by keyword
     """Run reminder cycles until the slot window after the tick's jobs; the reason it ended.
 
     Returns `window` at a slot window, `disabled` when Calendar reminders were turned off, `gate` when maintenance
-    is pending (an update waits for the lane), or `stopped` after SIGTERM. `offset` is how long after its slot the
-    next tick starts (systemd's fixed delay): the last cycle delivers that much further ahead.
+    is pending (an update waits for the lane) or the daemon was paused, or `stopped` after SIGTERM. `offset` is how
+    long after its slot the next tick may start (systemd's timer delay): the last cycle delivers that much further
+    ahead.
     """
     clock = clock or LaneClock()
     beats = _Beats(hooks, clock, dict(identity or {}))
@@ -192,7 +195,7 @@ def run_lane(  # noqa: PLR0913 - the lane's seams, all by keyword
         end = slot - timedelta(seconds=MARGIN / 2)
         # The last cycle reads while more than the read timeout is left before the window end, then the lane waits
         # for the window and ends inside it.
-        last_read = end - timedelta(seconds=READ_TIMEOUT + 1)
+        last_read = end - timedelta(seconds=LAST_READ_LEAD)
         if hooks.stopped() or hooks.gate():
             ended = "stopped" if hooks.stopped() else "gate"
             beats(slot, ended, force=True)
@@ -223,15 +226,22 @@ def _last_cycle(  # noqa: PLR0913 - the lane's state at its end
     lookahead: datetime,
 ) -> str:
     """Deliver what falls due before the next lane can run, wait for the end window, end inside it (point 5)."""
-    now = clock.wall()
     start, end = slot - timedelta(seconds=MARGIN), slot - timedelta(seconds=MARGIN / 2)
     result = "window"
-    if (end - now).total_seconds() > READ_TIMEOUT:
+    for _attempt in range(2):  # a busy fence gets one retry, so early delivery is not lost to it
+        now = clock.wall()
+        if (end - now).total_seconds() <= READ_TIMEOUT or hooks.gate() or hooks.stopped():
+            break
         result, _ = _one_cycle(hooks, notifications, now, lookahead - now, clock)
+        if result != "gate":
+            break
+        hooks.wait(1.0)
     ended = "disabled" if result == "disabled" else "window"
     rest = (start - clock.wall()).total_seconds()
     if ended == "window" and rest > 0:
         hooks.wait(rest)
+    if hooks.stopped() or hooks.gate():
+        ended = "stopped" if hooks.stopped() else "gate"
     beats(slot, ended, force=True)
     return ended
 
@@ -338,6 +348,11 @@ def write_beat(directory: Path) -> Callable[[dict[str, str | int | None]], None]
     return beat
 
 
+def paused(directory: Path) -> bool:
+    """Whether the daemon of this lane is paused: pausing the daemon also pauses its reminders (ADR 0147, point 11)."""
+    return (directory / "paused").exists()
+
+
 def read_beat(directory: Path) -> dict[str, object]:
     """The last lane heartbeat in a daemon state directory, or empty."""
     try:
@@ -397,7 +412,7 @@ def main(kernel: Kernel, read: Callable[[], Agenda]) -> str:
         hooks = LaneHooks(
             read=read,
             guard=lambda: lifecycle(selected),
-            gate=lambda: installation_mutation_pending(prefix, state),
+            gate=lambda: installation_mutation_pending(prefix, state) or paused(spec.directory),
             wait=pipe_wait(spec.fd, stopped),
             beat=write_beat(spec.directory),
             stopped=stopped,
@@ -411,6 +426,9 @@ def main(kernel: Kernel, read: Callable[[], Agenda]) -> str:
             identity=lane_identity(spec, selected.identity),
         )
 
+
+RUNNING = frozenset({"ok", "provider-unavailable", "window"})
+"""Heartbeat results of a lane that is still running its cycles."""
 
 ReminderState = Literal["off", "on", "starting", "install", "elsewhere", "resume", "provider", "overdue"]
 
@@ -435,10 +453,12 @@ def reminder_state(enabled: bool, daemon: DaemonAttestation | None, now: datetim
         return "resume"
     lane = daemon.lane()
     fresh = lane.beat_at is not None and timedelta(0) <= now - lane.beat_at < FRESH
-    if fresh and lane.result == "provider-unavailable":
+    # A lane that ended (reminders were off, the daemon paused, maintenance, SIGTERM) runs nothing until the next tick.
+    running = fresh and lane.result in RUNNING
+    if running and lane.result == "provider-unavailable":
         return "provider"
     interval = getattr(status, "interval_minutes", None)
     slot = last_slot(now.astimezone(), interval) if isinstance(interval, int) and interval > 0 else None
     if lane.started and not fresh and (slot is None or now - slot > FRESH):
         return "overdue"
-    return "on" if fresh else "starting"
+    return "on" if running else "starting"

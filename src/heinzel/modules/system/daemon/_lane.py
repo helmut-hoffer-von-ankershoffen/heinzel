@@ -130,6 +130,8 @@ class LaneSupervisor:
         try:
             while self.child is not None:
                 code = self.child.wait()
+                if (self.directory / "paused").exists():
+                    return "paused"  # a paused daemon pauses its reminders: never restart the lane
                 if code != 0:
                     self.crashes += 1
                     self._record(f"crashed with {code}")
@@ -140,6 +142,8 @@ class LaneSupervisor:
                     self.start()
                     continue
                 beat = self._beat()
+                if beat.get("pid") != self.child.pid:
+                    return "duplicate"  # another lane holds the lock and wrote this heartbeat; never spin on it
                 slot = _instant(beat.get("slot"))
                 if beat.get("result") == "window" and slot is not None and self.clock() >= slot - SLOT_EPSILON:
                     self.overrun = self.clock().isoformat()

@@ -3315,14 +3315,58 @@ def test_a_failed_upgrade_is_logged_and_the_tick_goes_on(make, bin_dir, monkeypa
     assert "daemon units not upgraded: OSError: disk full" in log.write.call_args.args[1]
 
 
-@pytest.mark.parametrize(
-    ("platform", "second", "offset"), [("darwin", 40, 0.0), ("linux", 40, 40.0), ("linux", 0, 0.0)]
-)
-def test_the_lane_learns_how_long_after_its_slot_a_systemd_tick_starts(make, platform, second, offset):
-    clock = Clock(datetime(2026, 10, 5, 10, 5, second, tzinfo=BERLIN))
-    assert make(platform=platform, clock=clock)._timer_offset(5) == offset
-    late = Clock(datetime(2026, 10, 5, 10, 9, tzinfo=BERLIN))  # a catch-up after sleep counts at most the delay
-    assert make(platform="linux", clock=late)._timer_offset(5) == 60.0
+@pytest.mark.parametrize(("platform", "offset"), [("darwin", 0.0), ("linux", 60.0)])
+def test_the_lane_delivers_ahead_by_the_whole_systemd_timer_delay(make, platform, offset):
+    assert make(platform=platform)._timer_offset() == offset
+
+
+@pytest.mark.parametrize("minutes", [30, 60])
+def test_the_generated_linux_units_keep_a_lane_alive_at_long_intervals(make, bin_dir, minutes):
+    service = make(platform="linux")
+    files = {path.name: content for path, content in service._unit_files(bin_dir / "hz", minutes).items()}
+    assert "TimeoutStartSec=infinity\n" in files["hz-daemon.service"]
+    assert "Type=oneshot\n" in files["hz-daemon.service"]
+    timer = files["hz-daemon.timer"]
+    assert ("*:00" if minutes == 60 else "*:0/30") in timer
+    assert "FixedRandomDelay=true\nAccuracySec=1s\n" in timer
+    released = {path.name: c for path, c in service._unit_files(bin_dir / "hz", minutes, released=True).items()}
+    assert "TimeoutStartSec=30min\n" in released["hz-daemon.service"]
+
+
+def test_upgrading_released_units_twice_changes_nothing_the_second_time(make, bin_dir, monkeypatch):
+    service, runner = released_linux_install(make, bin_dir)
+    log = Mock()
+    service._upgrade_released_units(log)
+    upgraded = {path: path.read_bytes() for path in service._unit_paths()}
+    runner.commands.clear()
+    service._upgrade_released_units(log)
+    assert {path: path.read_bytes() for path in service._unit_paths()} == upgraded
+    assert runner.commands == []
+
+
+def test_pausing_ends_a_running_lane_at_once(make):
+    service = make()
+    stopped: list[Path] = []
+    service._lane_stop = lambda directory: stopped.append(directory) or True
+    service.pause()
+    assert stopped == [service.state_dir]
+    assert service.paused
+
+
+def test_a_tick_that_fails_after_its_jobs_still_stops_its_lane(make, jobs, monkeypatch):
+    service = make(jobs)
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    lanes = with_lane(service)
+
+    def broken(_log):
+        msg = "disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr(service, "_post_notices", broken)
+    with pytest.raises(OSError, match="disk full"):
+        service.tick()
+    assert lanes[0].events == ["start", "stop"]
 
 
 def test_a_handover_ends_a_lane_only_tick_before_its_kickstart(make, monkeypatch):

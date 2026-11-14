@@ -32,10 +32,12 @@ function show(
   restarted = true,
   expert = false,
   restartResponse: unknown = undefined,
+  reminders = false,
 ) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
     "/api/system/expert": { expert },
+    "/api/org/calendar-reminders-status": { enabled: reminders, state: reminders ? "on" : "off" },
     "/api/system/daemon/status": () => status,
     "/api/system/daemon/install": () => {
       status = { ...status, installed: true, loaded: true, version: "1.2.3" };
@@ -215,6 +217,17 @@ describe("Daemon Settings", () => {
     expect(screen.queryByText("Service folder")).not.toBeInTheDocument();
     expect(calls.every((request) => request.method === "GET")).toBe(true);
     await expectAccessible(container);
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])("says pausing also pauses calendar reminders only while they are on (%s)", async (reminders, shown) => {
+    const { user } = show({}, false, false, true, false, undefined, reminders);
+    await user.click(await screen.findByRole("button", { name: "Pause" }));
+    const paused = screen.getByRole("alertdialog", { name: "Pause the daemon?" });
+    if (shown) expect(await within(paused).findByText("This also pauses calendar reminders.")).toBeInTheDocument();
+    else expect(within(paused).queryByText("This also pauses calendar reminders.")).not.toBeInTheDocument();
   });
 
   it("confirms Pause and Resume and reconciles the status without replay or reload", async () => {

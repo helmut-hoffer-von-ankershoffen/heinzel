@@ -2324,8 +2324,9 @@ class DaemonService:
         return (self.state_dir / "paused").exists()
 
     def pause(self) -> Toggled:
-        """Turn the local kill switch on: ticks run no job until `resume`."""
+        """Turn the local kill switch on: ticks run no job until `resume`, and a running reminder lane ends now."""
         write_private(self.state_dir / "paused", "")
+        self._lane_stop(self.state_dir)
         return Toggled(paused=True)
 
     def resume(self) -> Toggled:
@@ -2394,32 +2395,45 @@ class DaemonService:
             lane = self._start_lane(log) if scheduled else None
             try:
                 runs = self._run(jobs, job, now, log)
+                self._record_tick(runs, job, now, handover, log, lane=lane is not None)
             except BaseException:
-                if lane is not None:
+                if lane is not None:  # never leave a lane running unsupervised (ADR 0147, point 2)
                     lane.stop()
                 raise
-            manager_pid = self._service_manager_pid()
-            manager_bound = manager_pid == os.getpid()
-            heartbeat: dict[str, str | int] = {
-                "last_tick": now.isoformat(),
-                "completed_at": self._clock().isoformat(),
-                "source": "scheduled" if manager_bound and job is None else "manual" if manager_pid else "unknown",
-                "outcome": "failed" if any(run.disposition is Disposition.FAILED for run in runs) else "completed",
-            }
-            recorded = self._read_state("install.json")
-            interval = recorded.get("interval_minutes")
-            if manager_bound and isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
-                heartbeat["interval_minutes"] = interval
-            if manager_bound:
-                heartbeat["version"] = __version__
-                heartbeat["lane"] = "started" if lane is not None else "off"
-                self._settle_handover_locked(handover, now)
-            self._write_state("heartbeat.json", heartbeat)
-            self._post_notices(log)
-            log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
         finally:
             log.close()
         return runs, lane
+
+    def _record_tick(  # noqa: PLR0913 - one tick's facts
+        self,
+        runs: list[JobRun],
+        job: str | None,
+        now: datetime,
+        handover: tuple[str, str, dict[str, int]] | None,
+        log: TickLog,
+        *,
+        lane: bool,
+    ) -> None:
+        """Write the heartbeat, settle a handover in a manager-bound tick, and post notices."""
+        manager_pid = self._service_manager_pid()
+        manager_bound = manager_pid == os.getpid()
+        heartbeat: dict[str, str | int] = {
+            "last_tick": now.isoformat(),
+            "completed_at": self._clock().isoformat(),
+            "source": "scheduled" if manager_bound and job is None else "manual" if manager_pid else "unknown",
+            "outcome": "failed" if any(run.disposition is Disposition.FAILED for run in runs) else "completed",
+        }
+        recorded = self._read_state("install.json")
+        interval = recorded.get("interval_minutes")
+        if manager_bound and isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
+            heartbeat["interval_minutes"] = interval
+        if manager_bound:
+            heartbeat["version"] = __version__
+            heartbeat["lane"] = "started" if lane else "off"
+            self._settle_handover_locked(handover, now)
+        self._write_state("heartbeat.json", heartbeat)
+        self._post_notices(log)
+        log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
 
     def _start_lane(self, log: TickLog) -> LaneSupervisor | None:
         """Start the calendar reminder lane of a manager-bound tick when Calendar reminders are on (ADR 0147)."""
@@ -2433,7 +2447,7 @@ class DaemonService:
                 return None
             executable = self._shim(dry_run=False)
             lane = self._lane_supervisor(self.state_dir, [str(executable), *LANE_COMMAND], recorded)
-            lane.offset = self._timer_offset(recorded)
+            lane.offset = self._timer_offset()
             lane.start()
         except Exception as exc:  # noqa: BLE001 - reminders must never keep the daemon's jobs from running
             log.write(logging.WARNING, f"calendar reminder lane not started: {describe(exc)}")
@@ -2441,16 +2455,13 @@ class DaemonService:
         log.write(logging.INFO, "calendar reminder lane started")
         return lane
 
-    def _timer_offset(self, minutes: int) -> float:
-        """Seconds this tick started after its slot: systemd's fixed per-machine delay, which the next tick shares.
+    def _timer_offset(self) -> float:
+        """How long after its slot the next tick may start: systemd's whole randomized delay, launchd none.
 
-        launchd has no delay. A catch-up after sleep counts at most the timer's randomized delay.
+        The lane's last cycle delivers that much further ahead, so a reminder at a slot boundary is never late,
+        even before systemd reloads a timer with a fixed delay (ADR 0147, points 5 and 7).
         """
-        if self._platform != "linux":
-            return 0.0
-        now = self._clock()
-        slot = now.replace(minute=now.minute // minutes * minutes, second=0, microsecond=0)
-        return min(max((now - slot).total_seconds(), 0.0), float(RANDOMIZED_DELAY))
+        return float(RANDOMIZED_DELAY) if self._platform == "linux" else 0.0
 
     def lane_state(self) -> ReminderLaneState:
         """The reminder lane as the last scheduled tick and the lane's heartbeat recorded it."""

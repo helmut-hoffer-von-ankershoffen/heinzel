@@ -15,12 +15,26 @@ from heinzel.modules.system.daemon import _lane
 
 pytestmark = pytest.mark.integration
 
-COMMAND = [sys.executable, "-m", "heinzel", *_lane.COMMAND]
+ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture
+def command(tmp_path: Path) -> list[str]:
+    """The lane from a throwaway environment under tmp: its maintenance locks live next to that, not the checkout."""
+    prefix = tmp_path / "tool" / "venv"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(prefix)], check=True, timeout=120)
+    return [str(prefix / "bin" / "python"), "-m", "heinzel", *_lane.COMMAND]
 
 
 def environment(tmp_path: Path) -> dict[str, str]:
     """This test's isolated HZ_* directories plus its own home; Calendar reminders on, nothing native."""
-    return {**os.environ, "HOME": str(tmp_path / "home"), "HZ_SYSTEM_NOTIFY__CALENDAR": "true"}
+    site = next(Path(sys.prefix).glob("lib/python*/site-packages"))
+    return {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "HZ_SYSTEM_NOTIFY__CALENDAR": "true",
+        "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(site)]),
+    }
 
 
 def until(condition, timeout: float = 60.0) -> None:
@@ -37,20 +51,22 @@ def beat(directory: Path) -> dict:
         return {}
 
 
-def test_hand_started_lane_refuses(tmp_path):
+def test_hand_started_lane_refuses(tmp_path, command):
     result = subprocess.run(
-        COMMAND, env=environment(tmp_path), capture_output=True, text=True, timeout=120, check=False
+        command, env=environment(tmp_path), capture_output=True, text=True, timeout=120, check=False
     )
     assert result.returncode != 0
     assert "Only a scheduled daemon tick starts the calendar reminder lane" in result.stdout + result.stderr
 
 
 @pytest.mark.timeout(240)
-def test_the_lane_survives_a_crash_stops_on_sigterm_and_a_restarted_daemon_gets_one_lane(tmp_path, monkeypatch):
+def test_the_lane_survives_a_crash_stops_on_sigterm_and_a_restarted_daemon_gets_one_lane(
+    tmp_path, monkeypatch, command
+):
     monkeypatch.setattr(_lane, "BACKOFF", (0.2, 0.2, 0.2))
     directory = tmp_path / "daemon"
     directory.mkdir()
-    supervisor = _lane.LaneSupervisor(directory, COMMAND, 5, environment=environment(tmp_path))
+    supervisor = _lane.LaneSupervisor(directory, command, 5, environment=environment(tmp_path))
     supervisor.start()
     first = supervisor.child
     assert first is not None
@@ -64,7 +80,7 @@ def test_the_lane_survives_a_crash_stops_on_sigterm_and_a_restarted_daemon_gets_
 
     # A daemon restart while this lane runs: the new tick's lane finds the lane lock held and leaves at once.
     second = subprocess.run(
-        COMMAND,
+        command,
         env=environment(tmp_path)
         | {_lane.ENVIRONMENT: json.dumps({"fd": 0, "dir": str(directory), "interval": 5, "spawned": time.time()})},
         capture_output=True,
@@ -84,3 +100,5 @@ def test_the_lane_survives_a_crash_stops_on_sigterm_and_a_restarted_daemon_gets_
     assert ended == ["stopped"]
     assert beat(directory)["result"] == "stopped"
     assert not (directory / _lane.MARKER).exists()
+    assert not (ROOT / ".heinzel-maintenance").exists()
+    assert (tmp_path / "tool" / ".heinzel-maintenance").exists()
