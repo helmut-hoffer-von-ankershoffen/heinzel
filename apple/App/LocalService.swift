@@ -19,11 +19,7 @@ final class LocalService: NSObject, NSApplicationDelegate {
             executable = binding.executable
             installation = binding
         } else {
-            let candidates = [home.appending(path: ".local/bin/hz").path, "/opt/homebrew/bin/hz", "/usr/local/bin/hz"]
-            guard let candidate = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) else {
-                throw ConnectionError.missingCLI
-            }
-            executable = candidate
+            executable = try developmentCLI(home: home)
         }
 
         let child = Process()
@@ -96,6 +92,22 @@ final class LocalService: NSObject, NSApplicationDelegate {
             await stop()
             throw error
         }
+    }
+
+    private func developmentCLI(home: URL) throws -> String {
+        #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["HZ_SPIKE_CLI"] {
+            guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else {
+                throw ConnectionError.missingCLI
+            }
+            return path
+        }
+        #endif
+        let candidates = [home.appending(path: ".local/bin/hz").path, "/opt/homebrew/bin/hz", "/usr/local/bin/hz"]
+        guard let executable = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) else {
+            throw ConnectionError.missingCLI
+        }
+        return executable
     }
 
     @discardableResult
