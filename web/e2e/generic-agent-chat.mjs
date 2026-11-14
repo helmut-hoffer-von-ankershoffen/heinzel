@@ -305,7 +305,12 @@ try {
   await page.getByLabel(/^Message /).fill("Continue after the interruption.");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText(/reported its subscription usage limit/).waitFor();
-  // An uncertain turn is never a plain retry (T2): no Try again under its bubble.
+  // An uncertain turn is never a plain retry (T2): its bubble stays in the conversation with no Try again under it.
+  const uncertain = page
+    .locator('[data-message-speaker="you"]')
+    .filter({ hasText: "Continue after the interruption." });
+  await uncertain.first().waitFor();
+  assert.equal(await uncertain.locator("[data-message-state]").count(), 0);
   assert.equal(await page.locator("[data-message-state]").getByRole("button", { name: "Try again" }).count(), 0);
   await page.reload();
   await revealChat(page);
