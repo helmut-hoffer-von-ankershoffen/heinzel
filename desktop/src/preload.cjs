@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   workspaceAudio: true,
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
+  // Settings: whether links open in the built-in browser (on) or the system's default browser (off).
+  linkMode: (inBrowser) => ipcRenderer.invoke("hz:link-mode", inBrowser === true),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
   about: () => ipcRenderer.invoke("hz:about"),
   // System loopback is offered only where Electron main reports it; a choice arms exactly one capture.

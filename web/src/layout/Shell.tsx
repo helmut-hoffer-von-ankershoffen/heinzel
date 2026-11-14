@@ -28,6 +28,7 @@ import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
+import { syncLinkMode } from "./linkMode";
 import { NotificationPanel } from "./NotificationCenter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
@@ -126,6 +127,10 @@ function Layout() {
   const [retainedViews, setRetainedViews] = useState<string[]>([]);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
   // A phone also fires resize for the browser's toolbars and keyboard, at the same width; those change nothing here.
+  // The desktop learns the stored "open links in the built-in browser" choice as soon as the page is up.
+  useEffect(() => {
+    syncLinkMode();
+  }, []);
   useEffect(() => {
     let width = window.innerWidth;
     const fold = () => {
@@ -507,6 +512,7 @@ function Layout() {
           "sidebar",
           "terminal",
           "browser",
+          "browser-show",
           "chat",
           "notifications",
           "help",
@@ -516,7 +522,10 @@ function Layout() {
           if (action === "search") setSearchOpen(true);
           else if (action === "sidebar") setNavOpen((open) => !open);
           else if (action === "terminal") menu.current.toggleTerminal(true);
-          else if (action === "browser") {
+          else if (action === "browser-show") {
+            // A link opened a tab: show the panel without toggling it shut.
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(false);
+          } else if (action === "browser") {
             if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
           } else if (action === "chat") menu.current.toggleChat(true);
           else if (action === "notifications" || action === "help")

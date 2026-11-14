@@ -13,6 +13,7 @@ export type MenuAction =
   | "sidebar"
   | "terminal"
   | "browser"
+  | "browser-show"
   | "chat"
   | "new-chat"
   | "new-tab"

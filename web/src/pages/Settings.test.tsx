@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { expert, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -68,5 +68,23 @@ describe("Settings dialog", () => {
     renderAt("/settings?q=ask_max_usd");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
+  });
+
+  it("offers the built-in browser link switch only in the desktop app, on by default and live", async () => {
+    mockApi(shell);
+    const linkMode = vi.fn(async () => true);
+    Object.defineProperty(window, "heinzelDesktop", { value: { linkMode }, configurable: true });
+    localStorage.removeItem("hz.links-in-browser");
+    const user = userEvent.setup();
+    renderAt("/?settings=notifications");
+    const toggle = await screen.findByRole("switch", { name: "Open links in the built-in browser" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(linkMode).toHaveBeenLastCalledWith(false);
+    expect(localStorage.getItem("hz.links-in-browser")).toBe("off");
+    await user.click(toggle);
+    expect(linkMode).toHaveBeenLastCalledWith(true);
+    Reflect.deleteProperty(window, "heinzelDesktop");
   });
 });

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
+import { builtInBrowserLink, classifyUiLink, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
 
 /** The one persistent partition for websites: never the product's session, so no hz cookie or token is in it. */
@@ -13,7 +14,8 @@ const TAB_ID = /^t-[0-9a-f]{8}$/;
 // The shape of each command; a command may also carry one optional key (a tab id, or a first address).
 const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
   state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
-  tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"] };
+  tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"],
+  "link-external": ["action"], "link-dismiss": ["action"] };
 const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", reload: "tab", external: "tab", "new-tab": "url" };
 // A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
@@ -189,7 +191,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const surfaceOf = (window) => {
     let surface = surfaces.get(window);
     if (surface) return surface;
-    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0 };
+    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, link: null };
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
     const onBlur = () => { for (const guest of surface.tabs.values()) guest.view.setVisible(false); };
@@ -311,7 +313,19 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         network.authenticate(info, callback);
       });
       contents.on("will-prevent-unload", (event) => event.preventDefault());
-      contents.setWindowOpenHandler(() => { guest.status = "unsupported"; return { action: "deny" }; });
+      // target=_blank and window.open in a page open a new tab, but only right after the person's own input in this
+      // page, and not faster than one a half second: Electron's window-open details carry no gesture.
+      const activation = createUserActivation();
+      grantOnNativeInput(contents, activation);
+      let lastPopup = Number.NEGATIVE_INFINITY;
+      contents.setWindowOpenHandler((details) => {
+        const target = builtInBrowserLink(details?.url, connection()?.origin);
+        const time = Date.now();
+        if (!target || !activation.consume() || time - lastPopup < 500) { guest.status = "unsupported"; return { action: "deny" }; }
+        lastPopup = time;
+        void openLink(window, target).catch(() => {});
+        return { action: "deny" };
+      });
       const guard = (event) => {
         try { browserUrl(event.url, connection()?.origin); }
         catch { event.preventDefault(); guest.status = "unsupported"; }
@@ -350,7 +364,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const surface = surfaces.get(window);
     const tabs = [...(surface?.tabs.values() ?? [])].map((guest) => tabInfo(guest, guest.id === surface.selected));
     const guest = target ?? surface?.tabs.get(surface.selected);
-    if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs, selected: null };
+    const link = surface?.link ?? null;
+    if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs, selected: null, link };
     return {
       status: guest.status,
       url: guest.view.webContents.getURL(),
@@ -359,6 +374,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       notice: guest.clearFailed ? "clear-failed" : guest.notice,
       tabs,
       selected: surface?.selected ?? null,
+      link,
     };
   };
   /** A new guest for this window, or the one already opening when a first page is asked twice. */
@@ -388,6 +404,28 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       event.sender.off("did-start-navigation", onNavigation);
     }
   };
+  /**
+   * A link from the product UI, an embed or a page: a new tab on the selected tab, under every rule of a typed address.
+   * A refused address or a full strip leaves a note with the link, which the person may open in the default browser.
+   */
+  async function openLink(window, target) {
+    if (stopped || window.isDestroyed()) return state(window);
+    const surface = surfaceOf(window);
+    const external = classifyUiLink(target, connection()).kind === "external";
+    let url;
+    try { url = browserUrl(target, connection()?.origin); }
+    catch { surface.link = { url: target.slice(0, 2048), reason: "refused", external }; return state(window); }
+    const mine = [...surface.tabs.values()].filter((tab) => tab.owner === "person").length;
+    if (mine + surface.pending >= MAX_PERSON_TABS) {
+      surface.link = { url, reason: "limit", external };
+      return state(window);
+    }
+    const guest = await create({ sender: window.webContents }, window);
+    surfaceOf(window).link = null;
+    guest.blank = false;
+    void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+    return state(window);
+  }
   const tabOf = (surface, id) => {
     if (typeof id !== "string" || !TAB_ID.test(id) || !surface?.tabs.has(id)) throw new Error("Unknown tab.");
     return surface.tabs.get(id);
@@ -406,6 +444,15 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "close") { close(window); return { status: "closed" }; }
       if (action === "clear") await clear();
       let surface = surfaces.get(window);
+      if (action === "link-dismiss") { if (surface) surface.link = null; return state(window); }
+      if (action === "link-external") {
+        const link = surface?.link;
+        if (link?.external) {
+          surface.link = null;
+          await openExternal(link.url, window);
+        }
+        return state(window);
+      }
       if (action === "close-tab") { tabOf(surface, request.tab); closeTab(window, request.tab); return state(window); }
       if (action === "select-tab") {
         tabOf(surface, request.tab);
@@ -455,6 +502,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
       return state(window, guest);
     },
+    openLink,
     closeAll() { stopped = true; for (const window of [...surfaces.keys()]) close(window); },
   };
 }

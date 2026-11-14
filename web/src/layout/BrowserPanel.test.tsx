@@ -278,3 +278,35 @@ it("the shortcuts do nothing while another panel is in front", async () => {
   fireEvent.keyDown(document, { key: "t", ctrlKey: true });
   expect(browser).not.toHaveBeenCalledWith({ action: "new-tab" });
 });
+
+it("a link the desktop could not open shows a note, offers Open in browser when allowed, and can be dismissed", async () => {
+  let link: { url: string; reason: string; external: boolean } | null = {
+    url: "https://late.example.com/",
+    reason: "limit",
+    external: true,
+  };
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "link-external" || action === "link-dismiss") link = null;
+    return { status: "empty", tabs: [], selected: null, link };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(await screen.findByText(/All 8 tabs are in use/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Open in browser" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "link-external" }));
+  await waitFor(() => expect(screen.queryByText(/All 8 tabs are in use/)).toBeNull());
+});
+
+it("a refused link without an external way out has only Dismiss", async () => {
+  const browser = vi.fn(async () => ({
+    status: "empty",
+    tabs: [],
+    selected: null,
+    link: { url: "https://localhost/", reason: "refused", external: false },
+  }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(await screen.findByText(/public HTTPS websites only/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Dismiss" })).toBeVisible();
+});

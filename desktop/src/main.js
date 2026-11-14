@@ -86,12 +86,21 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url)));
+      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url), {
+        browserOn: () => linksInBrowser,
+        browser: async (url) => {
+          await miniBrowser.openLink(window, url);
+          // Show the panel on the new tab: the page opens it without toggling it shut.
+          if (!window.isDestroyed()) void window.webContents.executeJavaScript(menuScript("browser-show")).catch(() => {});
+        },
+      }));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
 });
 
+// Settings > "Open links in the built-in browser": live, on until the page says otherwise.
+let linksInBrowser = true;
 const miniBrowser = createMiniBrowser({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -110,6 +119,15 @@ const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
+  ipcMain.handle("hz:link-mode", (event, inBrowser) => {
+    if (!isOwnedMainFrame(event, {
+      windows,
+      fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+      connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    })) return linksInBrowser;
+    linksInBrowser = inBrowser === true;
+    return linksInBrowser;
+  });
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),

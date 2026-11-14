@@ -17,6 +17,8 @@ type BrowserState = {
   canGoBack?: boolean;
   canGoForward?: boolean;
   notice?: "passkey" | "no-device" | "clear-failed" | null;
+  /** A link the desktop could not open in a tab: refused (not public HTTPS) or no free tab. */
+  link?: { url: string; reason: "refused" | "limit"; external?: boolean } | null;
 };
 const NOTICES = {
   passkey: "browser.passkeyNote",
@@ -425,6 +427,29 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t("browser.refusedNote")}
             </p>
+          )}
+          {state.link && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-2 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs"
+            >
+              <p className="min-w-0 flex-1">
+                {t(state.link.reason === "limit" ? "browser.linkLimit" : "browser.linkRefused")}
+              </p>
+              {state.link.external && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void request({ action: "link-external" })}
+                >
+                  {t("browser.linkOpenExternal")}
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={() => void request({ action: "link-dismiss" })}>
+                {t("browser.linkDismiss")}
+              </Button>
+            </div>
           )}
           {state.notice && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">

@@ -133,7 +133,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
 
 export const ACTIONS = [
   "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
-  "search", "sidebar", "terminal", "browser", "chat", "new-chat", "new-tab", "close-tab", "notifications", "help",
+  "search", "sidebar", "terminal", "browser", "browser-show", "chat", "new-chat", "new-tab", "close-tab", "notifications", "help",
   "go:today", "go:heinzel", "go:team", "go:plugins",
 ];
 

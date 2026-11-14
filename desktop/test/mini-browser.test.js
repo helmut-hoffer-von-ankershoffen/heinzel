@@ -499,3 +499,49 @@ test("tabs: the limit counts the person's own tabs, and a foreign-owner tab does
   for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
   await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
 });
+
+test("links: a link opens a new selected tab; a refused address or a full strip leaves a note with the link", async () => {
+  const opened = [];
+  const f = fixture(undefined, { openExternal: async (url) => { opened.push(url); return true; } });
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const first = await f.controller.openLink(f.owner, "https://two.example.com/page");
+  assert.equal(first.tabs.length, 2);
+  assert.equal(first.selected, first.tabs[1].id);
+  assert.equal(first.tabs[1].url, "https://two.example.com/page");
+  assert.equal(first.link, null);
+  const refused = await f.controller.openLink(f.owner, "http://example.com/plain");
+  assert.deepEqual(refused.link, { url: "http://example.com/plain", reason: "refused", external: true });
+  assert.equal(refused.tabs.length, 2);
+  const local = await f.controller.openLink(f.owner, "https://localhost/x");
+  assert.equal(local.link.reason, "refused");
+  assert.equal(local.link.external, false);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, []);
+  for (let i = 2; i < 8; i++) await f.invoke({ action: "new-tab" });
+  const full = await f.controller.openLink(f.owner, "https://late.example.com/");
+  assert.deepEqual(full.link, { url: "https://late.example.com/", reason: "limit", external: true });
+  assert.equal(full.tabs.length, 8);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["https://late.example.com/"]);
+  assert.equal((await f.controller.openLink(f.owner, "https://late.example.com/")).link.reason, "limit");
+  assert.equal((await f.invoke({ action: "link-dismiss" })).link, null);
+});
+
+test("links: a page's target=_blank opens a tab only right after the person's input", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const contents = f.views[0].webContents;
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  const after = await f.invoke({ action: "tabs" });
+  assert.equal(after.tabs.length, 2);
+  assert.equal(after.tabs[1].url, "https://pop.example.com/");
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  contents.popup({ url: "http://127.0.0.1:8737/" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+});

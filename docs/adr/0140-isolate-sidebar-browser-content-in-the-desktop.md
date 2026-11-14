@@ -78,6 +78,23 @@ It explains that browsing inside the panel needs the desktop application. No CSP
 permission changes are part of this feature. The former `sidebar_browser` preview flag is retired: the panel is always available in the desktop application
 (a setting that still names it is ignored). Every safety rule here stays in force.
 
+### Tabs and links (0.9.45)
+
+The panel has tabs: up to 8 of the person's own per window, opened with the plus button or Cmd/Ctrl-T and closed with
+Cmd/Ctrl-W. Every tab is its own guest in the one `persist:hz-browser` partition and keeps every rule above; each tab
+carries an `owner` (`person` today), so tabs of agents can be told apart later. Closing the panel only hides the tabs.
+The tabs end with the product window or its next document, and Clear browsing data covers all of them.
+
+In the desktop app, links open in the built-in browser by default, in a new tab that is selected, with the panel
+opened: links in the Heinzel UI (chat messages, cards, "Learn more"), `window.open` and target=_blank from embeds, and
+target=_blank from pages inside the browser itself. Only http and https links go there, and each still needs the
+person's own input just before it (the gesture rule of the external opener), at most one every half second. The
+rules of a typed address apply: a link to a non-public or non-HTTPS target is refused with a visible note. When all 8
+tabs are in use the link is not lost: the panel shows a note with the link and "Open in browser". `mailto:` and other
+schemes go to the system as before, and so does the "Open in browser" button. A switch in Settings, "Open links in the
+built-in browser" (on by default, no restart), turns the behaviour off: links then open in the default browser, as
+before. In the PWA nothing changes: a link opens a new browser tab.
+
 ### Consequences
 
 The desktop gets genuine browsing without using the workspace's authenticated session. Popups, downloads and platform
