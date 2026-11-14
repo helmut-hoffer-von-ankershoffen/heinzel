@@ -268,4 +268,15 @@ describe("one kind of chat", () => {
     expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
     expect(chat.queryByRole("button", { name: /Switch Heinzel/ })).not.toBeInTheDocument();
   });
+  it("asks for the list again when the switcher opens, so a Heinzel made elsewhere shows", async () => {
+    let sessions = [summary(helmi)];
+    mockOneChat([], { "/api/heinzel/sessions": () => ({ sessions }) });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const face = await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" });
+    sessions = [summary(fritz), summary(helmi)];
+    await user.click(face);
+    const list = within(await screen.findByRole("dialog", { name: "Your Heinzels" }));
+    expect(await list.findByRole("button", { name: /Fritz/ })).toBeInTheDocument();
+  });
 });

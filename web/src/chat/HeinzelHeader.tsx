@@ -108,6 +108,11 @@ export function HeinzelHeader({
   const switchTrigger = useRef<HTMLButtonElement>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const sessions = useHeinzelSessions(switchOpen);
+  const { refetch } = sessions;
+  // Opening the list asks again: a Heinzel made elsewhere (the Heinzels page, the CLI) shows at once.
+  useEffect(() => {
+    if (switchOpen) void refetch();
+  }, [switchOpen, refetch]);
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const heinzels = (sessions.data?.sessions ?? []).filter(
