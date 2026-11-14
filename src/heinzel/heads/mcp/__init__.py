@@ -38,7 +38,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.types import Image
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, TypeAdapter
 from pydantic_core import to_jsonable_python
 
 if TYPE_CHECKING:
@@ -65,7 +65,8 @@ from heinzel.kernel import (
     boot,
 )
 from heinzel.kernel._approval import ApprovalIssuer
-from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
+from heinzel.kernel._browser import BROWSER_MODULE, BrowserBridge, BrowserCaller, PageImage, browser_caller
+from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
@@ -204,11 +205,35 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, kwargs):
                     kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
+                if (relayed := _relayed_browser_call(kernel, item, kwargs)) is not None:
+                    return _content(relayed)
                 return _content(kernel.invoke(item.operation, **kwargs))
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
     return _signed(run, item, _returns(item))
+
+
+def _relayed_browser_call(kernel: Kernel, item: Exposed, arguments: dict[str, Any]) -> object | None:
+    """Run a browser tool where the desktop is connected, when it is not here (ADR 0162); None to run it here.
+
+    `hz system serve mcp` over stdio is its own process; the desktop's bridge is in the web server. The call goes
+    there as `local` with the tool's name and arguments, and that process gates, limits and logs it.
+
+    Raises:
+        HeinzelError: If the other process refused the call.
+    """
+    if item.record.qualname != BROWSER_MODULE or kernel.resolve(BrowserBridge).available:
+        return None
+    jsonable = to_jsonable_python(arguments, fallback=str)
+    answer = relay(kernel.settings.state_dir, "external", "", item.name, jsonable)
+    if answer is None:
+        return None
+    if "result" not in answer:
+        error = answer.get("error")
+        raise HeinzelError(error if isinstance(error, str) else "The browser call failed in hz.")
+    result: object = TypeAdapter(item.returns).validate_python(answer["result"])
+    return result
 
 
 def _browser_actor(item: Exposed, actor: str) -> AbstractContextManager[None]:

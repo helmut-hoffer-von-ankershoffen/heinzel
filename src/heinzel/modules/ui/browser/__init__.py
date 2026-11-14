@@ -7,31 +7,30 @@ payment-card field for the person. Only public https addresses open. Each agent 
 minute, and every call is logged without typed text or page content. What a page says is untrusted data.
 
 The tools are on the MCP head only, and each needs a caller a head names (`BrowserCaller`): the terminal and the
-REST API do not offer them. They stay dark behind the flag `agent_browser` until the journey is green.
+REST API do not offer them. A process without the desktop (a chat turn's private pipe, stdio MCP) passes its calls
+to the one that has it (`_relay.py`).
 """
 
 from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Module, Settings
-from heinzel.kernel._browser import BROWSER_FEATURE, BrowserBridge, BrowserError, PageImage
-from heinzel.kernel._features import feature_enabled
+from heinzel import Kernel, Module
+from heinzel.kernel._browser import BrowserBridge, BrowserError, PageImage
 from heinzel.modules.ui.browser._models import BrowserTab, BrowserTabs, InputDone, PageContent, TabClosed
+from heinzel.modules.ui.browser._relay import RelayHost
 from heinzel.modules.ui.browser._service import Browser
 
 module = Module("browser", "Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.")
-module.service(BrowserBridge)
 
 
-def _browser(settings: Settings, bridge: BrowserBridge) -> Browser:
-    if not feature_enabled(settings, BROWSER_FEATURE):  # exposure hides the tools; this holds without it
-        msg = "The browser tools are not switched on."
-        raise BrowserError(msg, code="refused")
-    return Browser(bridge)
+def _bridge(kernel: Kernel) -> BrowserBridge:
+    """The bridge of this process; while a desktop is connected to it, other processes can pass their calls here."""
+    return BrowserBridge(on_change=RelayHost(kernel).follow)
 
 
-module.service(Browser, _browser)
+module.service(BrowserBridge, _bridge)
+module.service(Browser)
 
 HEADS = {"mcp"}
 """Stdio and HTTP MCP, and so a Heinzel's chat tools, which follow the MCP head's exposure."""

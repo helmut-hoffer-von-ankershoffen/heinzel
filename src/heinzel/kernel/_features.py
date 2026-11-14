@@ -11,7 +11,6 @@ FEATURES: dict[str, str] = {
     "connected_frontdoor": "Create a durable helper from its first prompt while the connected journey is completed.",
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
-    "agent_browser": "Heinzels and outside agents use their own tabs in the desktop app's built-in browser.",
     "durable_agents": "Durable agents that keep working between sessions, while they are being built.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""

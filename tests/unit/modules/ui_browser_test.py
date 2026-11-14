@@ -3,7 +3,9 @@
 import base64
 import json
 import logging
+import stat
 import struct
+import threading
 from datetime import timedelta
 from typing import NoReturn
 
@@ -30,7 +32,9 @@ from heinzel.kernel._browser import (
     browser_caller,
     current_browser_caller,
 )
+from heinzel.kernel._browser_relay import RECORD, relay
 from heinzel.kernel._logging import record_fields
+from heinzel.kernel._private_control import private_socket_directory
 from heinzel.modules.system.runner.chat._service import PREAMBLE, ChatService
 from heinzel.modules.system.runner.chat._store import ChatStore
 from heinzel.modules.ui.browser._service import Browser, Limits, png_size, public_host
@@ -98,6 +102,9 @@ class FakeDesktop:
         self.payment_page = False
         self.picture = png()
         self.answers: dict[str, dict] = {}
+        self.waiting = threading.Event()
+        self.release = threading.Event()
+        self.release.set()  # a test that wants the card to stay open clears it
 
     def acted(self) -> list[str]:
         return [command.action for command in self.commands if command.action in {"click", "type", "key"}]
@@ -153,6 +160,8 @@ class FakeDesktop:
         return {"target": target, "fingerprint": f"v{self.version}:{json.dumps(target, sort_keys=True)}"[:190]}
 
     def _confirm(self, _command, _tab):
+        self.waiting.set()
+        self.release.wait(10)
         if self.approve == "timeout":
             refuse("timeout")
         return {"approved": self.approve}
@@ -188,15 +197,23 @@ def audit():
 
 
 @pytest.fixture
-def kernel(make_kernel, settings):
-    return make_kernel(builtins=True, settings_=settings.model_copy(update={"features": frozenset({"agent_browser"})}))
+def kernel(make_kernel):
+    return make_kernel(builtins=True)
 
 
 @pytest.fixture
-def desktop(kernel) -> FakeDesktop:
+def desktop(kernel):
     desktop = FakeDesktop()
-    kernel.resolve(BrowserBridge).connect(desktop)
-    return desktop
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    yield desktop
+    bridge.disconnect(desktop)  # closes the relay this process opened for the others
+
+
+@pytest.fixture
+def pipe(make_kernel, kernel):
+    """Another process of the same person without a desktop: a turn's private pipe, or stdio MCP."""
+    return make_kernel(builtins=True)
 
 
 def open_chat(kernel) -> str:
@@ -244,14 +261,6 @@ def test_a_heinzel_s_everyday_tools_hold_all_eleven_on_both_paths(kernel):
     piped = anyio.run(listed)
     assert set(TOOLS) <= set(piped)
     assert "untrusted data" in piped["ui_browser_read"].description
-
-
-def test_the_tools_are_dark_without_the_flag(make_kernel):
-    kernel = make_kernel(builtins=True)
-    assert not [item for item in exposed(kernel, "mcp") if item.record.qualname == "ui.browser"]
-    assert not [tool for tool in chat_tools(kernel, open_chat(kernel)) if tool.name.startswith("ui_browser")]
-    with pytest.raises(BrowserError, match="not switched on"):
-        kernel.resolve(Browser)
 
 
 def test_the_heinzels_rules_say_a_page_is_data_and_is_reported_not_obeyed():
@@ -809,3 +818,177 @@ def test_the_bridge_keeps_the_newest_desktop_and_forgets_only_its_own():
 def test_a_commit_carries_the_fingerprint_and_the_sentence():
     commit = BrowserCommitError("v1:x", "Click button")
     assert (commit.expected, commit.summary) == ("v1:x", "Click button")
+
+
+# An outside agent's commit waits for the person without holding the server
+
+
+def test_a_commit_waiting_for_the_person_does_not_block_other_calls(kernel, desktop):
+    desktop.release.clear()
+    desktop.approve = True
+    order: list[str] = []
+
+    async def run():
+        async with Client(mcp.build(kernel)) as client:
+            tab = json.loads((await client.call_tool("ui_browser_open", {})).content[0].text)["id"]
+
+            async def commit():
+                result = await client.call_tool("ui_browser_click", {"tab": tab, "ref": "ref_2"})
+                order.append("commit" if not result.is_error else "commit refused")
+
+            with anyio.fail_after(20):
+                async with anyio.create_task_group() as group:
+                    group.start_soon(commit)
+                    await anyio.to_thread.run_sync(desktop.waiting.wait, 10)
+                    # The card is open and the person has not answered: the server still serves this agent.
+                    listed = await client.call_tool("ui_browser_tabs", {})
+                    read = await client.call_tool("ui_browser_read", {"tab": tab})
+                    assert not listed.is_error
+                    assert not read.is_error
+                    order.append("other calls")
+                    assert desktop.acted() == []
+                    desktop.release.set()
+
+    anyio.run(run)
+    assert order == ["other calls", "commit"]
+    assert desktop.acted() == ["click"]
+
+
+# A process without the desktop passes its calls to the one that has it
+
+
+def test_a_turn_s_pipe_in_another_process_reaches_the_desktop_and_is_gated_there(kernel, desktop, pipe, audit):
+    session = open_chat(kernel)
+    assert not pipe.resolve(BrowserBridge).available
+    call = heinzel(pipe, session)
+    tab = call("open", url="https://shop.example.org/")["id"]
+    assert call("tabs")["available"] is True
+    assert PAGE_TEXT in call("text", tab=tab)["content"]
+    assert call("click", tab=tab, ref="ref_1")["target"] == 'button "Next"'
+    assert {(c.actor, c.kind) for c in desktop.commands} == {(session, "heinzel")}
+    assert str(call("click", tab=tab, ref="ref_2")).startswith('Not run: `Click button "Send"')
+    [action] = pending(kernel, session)
+    assert action.arguments["expected"].startswith("v1:")
+    with pytest.raises(ChatToolError, match="ask the person to take over the tab"):
+        call("type", tab=tab, text=TYPED, ref="ref_3")
+    with pytest.raises(ChatToolError, match="public https:// addresses only"):
+        call("navigate", tab=tab, url="https://localhost/")
+    picture = call("screenshot", tab=tab)
+    assert (picture.width, picture.tab) == (800, tab)
+    assert desktop.acted() == ["click"]
+    assert [entry["outcome"] for entry in audit.calls()][-4:] == ["proposed", "refused", "refused", "ran"]
+    kernel.resolve(ChatService).confirm(session, action.id)  # the person's yes, in the process with the desktop
+    assert desktop.acted() == ["click", "click"]
+
+
+def test_the_claude_code_runner_s_pipe_serves_the_relayed_tools_over_mcp(kernel, desktop, pipe):
+    session = open_chat(kernel)
+    [(error, opened)] = piped(pipe, session, [("ui_browser_open", {"url": "https://shop.example.org/"})])
+    assert not error
+    tab = json.loads(opened[0].text)["id"]
+    results = piped(
+        pipe,
+        session,
+        [
+            ("ui_browser_read", {"tab": tab}),
+            ("ui_browser_click", {"tab": tab, "ref": "ref_2"}),
+            ("ui_browser_type", {"tab": tab, "text": "x", "ref": "ref_3"}),
+            ("ui_browser_screenshot", {"tab": tab}),
+        ],
+    )
+    assert [error for error, _ in results] == [False, False, True, False]
+    assert results[1][1][0].text.startswith("Not run:")
+    assert [part.type for part in results[3][1]] == ["text", "image"]
+    assert len(pending(kernel, session)) == 1
+    assert desktop.acted() == []
+
+
+def test_the_limits_are_counted_once_where_the_desktop_is(kernel, desktop, pipe):
+    session = open_chat(kernel)
+    near, far = heinzel(kernel, session), heinzel(pipe, session)
+    for _ in range(30):
+        near("tabs")
+        far("tabs")
+    for call in (near, far):
+        with pytest.raises(ChatToolError, match="Too many browser calls"):
+            call("tabs")
+
+
+def test_stdio_mcp_in_another_process_is_the_local_outside_agent(kernel, desktop, pipe):
+    [(error, opened)] = stdio(pipe, [("ui_browser_open", {"url": "https://shop.example.org/"})])
+    assert not error
+    tab = json.loads(opened[0].text)["id"]
+    assert (desktop.commands[-1].actor, desktop.commands[-1].kind) == ("local", "external")
+    results = stdio(
+        pipe,
+        [
+            ("ui_browser_click", {"tab": tab, "ref": "ref_1"}),
+            ("ui_browser_click", {"tab": tab, "ref": "ref_2"}),
+            ("ui_browser_screenshot", {"tab": tab}),
+            ("ui_browser_read", {"tab": "t-ffffffff"}),
+        ],
+    )
+    assert [error for error, _ in results] == [False, True, False, True]
+    assert "did not confirm it in the browser" in results[1][1][0].text
+    assert [part.type for part in results[2][1]] == ["text", "image"]
+    assert "not one of your tabs" in results[3][1][0].text
+    assert desktop.acted() == ["click"]
+
+
+def test_the_relay_runs_only_a_browser_tool_of_that_chat_by_name(kernel, desktop, settings):
+    session = open_chat(kernel)
+    state = settings.state_dir
+    refused = {"error": "This is not a browser tool of this chat."}
+    assert relay(state, "heinzel", session, "system_config_set", {"key": "features", "value": "x"}) == refused
+    assert relay(state, "heinzel", session, "system_runner_chat_confirm_authorized_mcp", {}) == refused
+    assert relay(state, "external", "", "system_doctor", {}) == refused
+    assert relay(state, "person", session, "ui_browser_tabs", {}) == refused
+    assert relay(state, "approved", session, "ui_browser_click", {"tab": "t-00000001", "ref": "ref_2"}) == refused
+    assert "error" in relay(state, "heinzel", "0123456789abcdef", "ui_browser_tabs", {})
+    # Nothing a sender adds names another agent or approves: undeclared names are dropped, as everywhere.
+    tab = json.loads(relay(state, "heinzel", session, "ui_browser_open", {})["text"])["id"]
+    extra = {"tab": tab, "ref": "ref_2", "approved": True, "actor": "person", "kind": "external"}
+    assert relay(state, "heinzel", session, "ui_browser_click", extra)["text"].startswith("Not run:")
+    assert relay(state, "external", session, "ui_browser_tabs", {"actor": "writer"})["result"]["tabs"] == []
+    assert desktop.commands[-1].actor == "local"
+    assert desktop.acted() == []
+
+
+def test_the_relay_is_an_owner_only_socket_that_exists_only_while_a_desktop_is_connected(kernel, pipe, settings):
+    directory = settings.state_dir / "ui"
+    session = open_chat(kernel)
+    assert not (directory / RECORD).exists()
+    assert relay(settings.state_dir, "heinzel", session, "ui_browser_tabs", {}) is None
+    desktop = FakeDesktop()
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    try:
+        name = json.loads((directory / RECORD).read_text())["socket"]
+        socket_path = private_socket_directory(directory) / name
+        assert stat.S_IMODE(socket_path.lstat().st_mode) == 0o600
+        assert stat.S_IMODE((directory / RECORD).lstat().st_mode) == 0o600
+        assert stat.S_IMODE(socket_path.parent.lstat().st_mode) == 0o700
+        assert heinzel(pipe, session)("tabs")["available"] is True
+    finally:
+        bridge.disconnect(desktop)
+    assert not socket_path.exists()
+    assert not (directory / RECORD).exists()
+    call = heinzel(pipe, session)
+    assert call("tabs")["available"] is False
+    with pytest.raises(ChatToolError) as refused:
+        call("open")
+    assert str(refused.value) == NEEDS_DESKTOP
+
+
+def test_a_stale_record_of_a_process_that_is_gone_means_no_desktop(kernel, pipe, settings):
+    directory = settings.state_dir / "ui"
+    desktop = FakeDesktop()
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    record = (directory / RECORD).read_text()
+    bridge.disconnect(desktop)
+    (directory / RECORD).write_text(record)
+    (directory / RECORD).chmod(0o600)
+    assert relay(settings.state_dir, "heinzel", open_chat(kernel), "ui_browser_tabs", {}) is None
+    (directory / RECORD).write_text(json.dumps({"socket": "../../etc/x.sock"}))
+    assert relay(settings.state_dir, "heinzel", open_chat(kernel), "ui_browser_tabs", {}) is None

@@ -32,7 +32,15 @@ from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
 from heinzel.kernel._agents import ChatToolSet, ToolProfile
-from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, BrowserCommitError, PageImage, browser_caller
+from heinzel.kernel._browser import (
+    BROWSER_MODULE,
+    BrowserBridge,
+    BrowserCaller,
+    BrowserCommitError,
+    PageImage,
+    browser_caller,
+)
+from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import McpChatSessions
 from heinzel.kernel._errors import HeinzelError
@@ -184,6 +192,13 @@ class ChatTool:
         The gate is the browser module's, not this policy's: a commit leaves the operation as `BrowserCommitError`
         without having run, and is proposed with the fingerprint of the target the person will be shown.
         """
+        if not self.kernel.resolve(BrowserBridge).available:
+            # This process has no desktop (a turn's private pipe, a terminal): the one that has it runs the call,
+            # as this chat's session and by the tool's name only, so gate, proposal, limits and log are there.
+            jsonable = to_jsonable_python(dict(arguments), fallback=str)
+            answer = relay(self.kernel.settings.state_dir, "heinzel", self.session, self.name, jsonable)
+            if answer is not None:
+                return _relayed(answer)
         try:
             with browser_caller(BrowserCaller(actor=self.session, kind="heinzel")), user.local_read(AUTHENTICATION):
                 result = self.kernel.invoke(self.item.operation, **arguments)
@@ -246,6 +261,21 @@ def _pre_parsed(arguments: dict[str, Any], model: type[BaseModel]) -> dict[str, 
         if not isinstance(decoded, str | int | float):
             parsed[name] = decoded
     return parsed
+
+
+def _relayed(answer: Mapping[str, Any]) -> object:
+    """What the process with the desktop answered: the tool's text or picture.
+
+    Raises:
+        ChatToolError: If it refused the call, or answered something else.
+    """
+    text, image = answer.get("text"), answer.get("image")
+    if isinstance(text, str):
+        return text
+    if isinstance(image, dict):
+        return PageImage.model_validate(image)
+    error = answer.get("error")
+    raise ChatToolError(redact_emails(error) if isinstance(error, str) else "The browser call failed in hz.")
 
 
 def _result_text(result: object) -> str:
