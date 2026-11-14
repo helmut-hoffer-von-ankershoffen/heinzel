@@ -13,8 +13,9 @@ ours="$(uv version --color never | cut -d' ' -f1)"
 environment="$(mktemp -d)/licenses"
 trap 'rm -rf "$(dirname "$environment")"' EXIT
 uv venv --quiet "$environment"
-UV_PROJECT_ENVIRONMENT="$environment" bash "$(dirname "$0")/bootstrap-pyyaml.sh"
+# `uv sync` is exact and would remove a PyYAML installed before it, so sync first and build the reviewed one after.
 UV_PROJECT_ENVIRONMENT="$environment" uv sync --quiet --frozen --no-dev --no-install-package pyyaml
+UV_PROJECT_ENVIRONMENT="$environment" bash "$(dirname "$0")/bootstrap-pyyaml.sh"
 uv pip install --quiet --python "$environment/bin/python" "pip-licenses>=5,<6"
 # shellcheck disable=SC2086 # one package name per word
 "$environment/bin/pip-licenses" \

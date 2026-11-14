@@ -33,7 +33,8 @@ def test_e2e_test_ids_run_serially_with_a_report():
 def test_pytest_ids_install_the_test_group_first():
     commands = focused_job.plan("pytest", "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]", OUT)
     assert commands[0][:2] == ["uv", "sync"]
-    assert commands[1][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
+    assert commands[1] == ["bash", "scripts/bootstrap-pyyaml.sh"]  # after the exact sync, before the tests
+    assert commands[2][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
 
 
 def test_only_explicit_python_ci_plan_accepts_up_to_32_ids():

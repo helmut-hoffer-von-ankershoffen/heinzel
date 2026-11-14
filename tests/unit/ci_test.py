@@ -1867,6 +1867,8 @@ def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
     bootstrap = next(step for step in steps if "bootstrap-pyyaml.sh" in step.get("run", ""))
     assert steps[-1] is bootstrap  # after uv and Python are set up, before the caller's first sync
     assert "uv venv --allow-existing --python 3.15" in bootstrap["run"]
+    # the call itself, not only a guard that names the script
+    assert re.search(r"^\s*bash scripts/bootstrap-pyyaml\.sh$", bootstrap["run"], re.MULTILINE)
     assert 'requires-python = ">=3.15"' in bootstrap["run"]
     script = (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
     assert 'rm -f "$site"/pyyaml-6.0.3.dist-info/direct_url.json' in script
@@ -1951,3 +1953,29 @@ def test_end_to_end_installs_resolve_the_reviewed_pyyaml_wheel():
     assert '"UV_FIND_LINKS"' in conftest
     assert "autouse=True" in conftest
     assert "--wheel-dir" in (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
+
+
+def _flagged_then_bootstrapped(lines: list[str]) -> bool:
+    """`uv sync` is exact: a sync that leaves PyYAML out removes one installed before it, so the build must follow."""
+    last = max(
+        (i for i, line in enumerate(lines) if "uv " in line and "--no-install-package pyyaml" in line), default=-1
+    )
+    return last < 0 or any("bootstrap-pyyaml.sh" in line or "make pyyaml" in line for line in lines[last + 1 :])
+
+
+def test_the_reviewed_pyyaml_is_built_after_the_last_sync_that_leaves_it_out():
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        for name, job in yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {}).items():
+            lines = [line for step in job.get("steps", []) for line in step.get("run", "").splitlines()]
+            assert _flagged_then_bootstrapped(lines), f"{path.name}:{name} removes PyYAML and never builds it again"
+    for path in sorted((REPO / "scripts").glob("*.sh")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert _flagged_then_bootstrapped(lines), f"{path.name} removes PyYAML and never builds it again"
+    spec = importlib.util.spec_from_file_location("focused_job_order", REPO / "scripts" / "focused_job.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["focused_job_order"] = module
+    spec.loader.exec_module(module)
+    sync, bootstrap, tests = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))
+    assert sync[:2] == ["uv", "sync"]
+    assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
+    assert "pytest" in tests

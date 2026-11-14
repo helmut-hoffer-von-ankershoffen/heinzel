@@ -303,9 +303,8 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     )
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
-    if kind == "pytest":  # Python 3.15 has no PyYAML wheel, so every pytest lane builds the reviewed one
+    if kind == "pytest":  # the plan syncs, then builds the reviewed PyYAML (Python 3.15 has no wheel), on this Python
         env["UV_PYTHON"] = LANES[lane][1]
-        commands.insert(1, ["bash", "scripts/bootstrap-pyyaml.sh"])
     if lane == "macos-notifier":
         _execute(["make", "notifier"], env)
     for command in commands[:-1]:
