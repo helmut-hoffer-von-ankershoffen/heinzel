@@ -67,13 +67,16 @@ struct ConnectionView: View {
         }
         .onOpenURL { url in
             guard let target = Endpoint.sharedWorkspace(url) else { return }
-            sharedWorkspace = target
+            if endpoint?.owns(target.origin) != true { sharedWorkspace = target }
         }
         .alert("Open Heinzel workspace?", isPresented: Binding(
-            get: { sharedWorkspace != nil },
+            get: { sharedWorkspace != nil && !connecting && !showConnection },
             set: { if !$0 { sharedWorkspace = nil } }
         ), presenting: sharedWorkspace) { target in
-            Button("Open") { Task { await connect(target.origin.absoluteString) } }
+            Button("Open") {
+                sharedWorkspace = nil
+                Task { await connect(target.origin.absoluteString) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { target in
             Text(target.origin.absoluteString)
@@ -203,6 +206,9 @@ struct ConnectionView: View {
             error = "Enter a private HTTPS server address or Heinzel sign-in link."
             return
         }
+        // A shared address can refer to the active workspace, including a session
+        // opened with a sign-in fragment. Keep its WebKit view and in-memory state.
+        if target.token == nil, endpoint?.owns(target.origin) == true { return }
         connecting = true
         error = nil
         defer { connecting = false }
@@ -217,6 +223,7 @@ struct ConnectionView: View {
             #endif
         } catch {
             self.error = (error as? ConnectionError)?.errorDescription ?? "The server could not be reached."
+            if endpoint != nil { showConnection = true }
         }
     }
 
