@@ -55,8 +55,8 @@ def level_view(chat: UserChatService, crud: SessionCrud, session_id: str) -> Lev
             runs_as = LevelRunsAs(
                 provider=plugin.source.name, model=plugin.offer.id, effort=plugin.effort, level=plugin.level
             )
-        elif plugin is None and (record := chat.claude_level(session_id)) is not None:
-            runs_as = LevelRunsAs(provider=intelligence.provider, model=None, effort=None, level=record)
+        elif plugin is None and (choice := chat.claude_level(session_id)) is not None:
+            runs_as = LevelRunsAs(provider=intelligence.provider, model=choice.model, effort=None, level=choice.record)
     except HeinzelError as exc:
         problem = str(exc)
     return LevelView(

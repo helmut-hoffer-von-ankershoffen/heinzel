@@ -14,11 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from heinzel.kernel import Effort, HeinzelError
 from heinzel.kernel._ai_models import MODEL_ID_PATTERN, ModelOffer
+from heinzel.kernel._ai_models import Level as Tier
 
 Level = Literal["auto", "low", "medium", "high"]
 """What a person picks for a Heinzel: how hard it thinks, never a model name."""
-Tier = Literal["low", "medium", "high"]
-"""A level a provider marks a model for; Auto resolves to one of these by code."""
 Rule = Literal["fixed", "auto-fixed-medium"]
 """How the level asked for was decided: as picked, or Auto's fixed rule of this release."""
 Source = Literal["exact", "declared", "nearest", "provider-default"]
@@ -84,12 +83,14 @@ def effort_for(offer: ModelOffer, tier: Tier) -> Effort | None:
 
 
 def declared_levels(offers: list[ModelOffer]) -> dict[Tier, str]:
-    """The model a provider marks for each level: the first offer marked with it, in the provider's order."""
+    """The model a plugin marks for each level with `ModelOffer.level`: the first usable one, in the plugin's order.
+
+    The same pick as `model_for_level` for a marked level; for an unmarked one, `resolve` takes the nearest marked.
+    """
     declared: dict[Tier, str] = {}
     for offer in offers:
-        marked = getattr(offer, "level", None)
-        if marked in TIERS:
-            declared.setdefault(marked, offer.id)
+        if offer.level is not None and offer.tools and offer.available:
+            declared.setdefault(offer.level, offer.id)
     return declared
 
 
@@ -131,7 +132,7 @@ def resolve(  # noqa: PLR0913 - the provider's declaration and the Heinzel's cho
             offer.id, effort_for(offer, tier), TurnLevel(asked=level, ran=tier, rule=rule, source="exact")
         )
     by_id = {offer.id: offer for offer in offers}
-    runnable = {
+    runnable: dict[Tier, str] = {
         marked: model
         for marked, model in declared.items()
         if (not offers or (model in by_id and by_id[model].tools and by_id[model].available))
@@ -142,14 +143,14 @@ def resolve(  # noqa: PLR0913 - the provider's declaration and the Heinzel's cho
             why = (
                 "none of the models it marks for a level is covered by the grant"
                 if granted is not None
-                else ("none of the models it marks for a level answers and calls tools now")
+                else "none of the models it marks for a level answers and calls tools now"
             )
             msg = f"Couldn't pick a model for this Heinzel's level on the AI provider {provider}: {why}"
             raise HeinzelError(msg)
         return LevelChoice(None, None, TurnLevel(asked=level, ran=tier, rule=rule, source="provider-default"))
     ran = nearest(tier, set(runnable))
     model = runnable[ran]
-    effort = effort_for(by_id[model], ran) if model in by_id else LEVEL_EFFORT[ran]
+    effort = effort_for(by_id[model], ran) if model in by_id else None  # no list: no effort hz could check
     source: Source = "declared" if ran == tier else "nearest"
     return LevelChoice(model, effort, TurnLevel(asked=level, ran=ran, rule=rule, source=source))
 

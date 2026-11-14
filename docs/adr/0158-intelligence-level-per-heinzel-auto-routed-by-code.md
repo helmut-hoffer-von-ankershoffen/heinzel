@@ -57,15 +57,17 @@ Chosen option 1. Checkable statements:
 **The provider defines the levels**
 
 3. **A provider marks a model per level.** A plugin marks an offer with the optional `ModelOffer.level` (`low`,
-   `medium` or `high`); Core's `model_for_level` reads it. Built-in providers, such as Claude Code and the built-in
-   Model API option, declare their levels the same way. A provider may mark one, two or all three levels.
+   `medium` or `high`, ADR 0159); the first usable offer marked with a level is that level's model, as
+   `model_for_level` picks it. A built-in provider declares its levels in code: Claude Code's are its aliases
+   `haiku`, `sonnet` and `opus` (`LEVEL_MODELS` in `heinzel/kernel/_claude_code.py`); the built-in Model API option
+   runs one configured model and declares none. A provider may mark one, two or all three levels.
 4. **A level the provider doesn't mark runs on the nearest one it marks**, the lower on a tie, so a level never spends
    more than asked. The turn records the level asked and the level it ran as.
 5. **A provider that marks no level** runs its own default, as Settings pinned it (`[ai.access] plugin_model` for a
-   plugin, the runner's default for Claude Code). The turn records the level asked and `provider-default`.
+   plugin). The turn records the level asked and `provider-default`.
 6. **Effort follows the level** within what the marked model takes: Low, Medium and High ask for effort `low`,
    `medium` and `high`; a model without `thinking` takes none, and a model that lists `efforts` gets the nearest one
-   it lists, the lower on a tie.
+   it lists, the lower on a tie. A provider without a model list (Claude Code) gets no effort.
 7. **One pure resolver.** `resolve(provider, level, declared, offers, exact=None, granted=None)` in
    `heinzel/modules/heinzel/_levels.py` returns the model and effort, the level it ran as, and how it chose (`exact`,
    `declared`, `nearest` or `provider-default`). Same inputs, same answer; it calls nothing.
@@ -84,16 +86,24 @@ Chosen option 1. Checkable statements:
     exact model the grant doesn't cover is refused. A level changes neither caps, budget mode, tools nor approvals;
     the dollar-cap checks of ADR 0159 still run before the turn.
 
+**Claude Code**
+
+11. **Claude Code runs the level's alias.** A chat turn on Claude Code passes `--model` with the level's alias, and
+    only one of those three aliases: the bridge's flags are the verified flags plus `--model <alias>`, the turn's
+    admission policy holds the alias, and the verifier admits exactly those flags for it. `claude --help` of the
+    selected executable must list `--model`. A configured model override (`[system.runner] model`) is still refused,
+    and so is an exact model on the Heinzel's page, since any other name would bypass that check.
+
 **Where it applies and what the chat shows**
 
-11. **Always, for a turn of a Heinzel.** There is no feature flag. A chat turn of a Heinzel resolves its model through
+12. **Always, for a turn of a Heinzel.** There is no feature flag. A chat turn of a Heinzel resolves its model through
     its intelligence: the provider is the Heinzel's `provider`, or else the configured AI access. A provider that is
     neither the configured AI access nor an installed plugin's models refuses the turn, naming the Heinzel's page.
-12. **Recorded per turn.** The turn's backend binding records the level asked, the level it ran as, the rule and how
+13. **Recorded per turn.** The turn's backend binding records the level asked, the level it ran as, the rule and how
     the model was chosen, next to the model and effort. Before every request of a turn hz checks that the provider,
     plugin version, pinned default, intelligence and budget mode still hold, from the configuration and the profile
     only, without calling the plugin; a change ends the turn as a change of access does.
-13. **No model names in the chat, and no picker by the chat input.** Release 0.9.44 removes 0.9.43's picker. The
+14. **No model names in the chat, and no picker by the chat input.** Release 0.9.44 removes 0.9.43's picker. The
     level may be shown in the chat (the time line) and on the Heinzel's page; the exact model only on the Heinzel's
     page. `hz chat send --model` stays for the command line.
 
@@ -103,6 +113,7 @@ Chosen option 1. Checkable statements:
   person relearning names, and the provider stays the authority on its own models.
 - Good: what ran is decided before the turn and recorded with it, so cost reviews can explain every turn.
 - Bad: a plugin that marks no level gives every level the same model; only the effort differs.
+- Bad: on Claude Code, Auto now runs `sonnet`, where it ran Claude Code's own default before.
 - Neutral: Auto asks for Medium until the router ships; the turn record says so.
 
 ### Confirmation
@@ -111,10 +122,13 @@ Chosen option 1. Checkable statements:
   a provider that marks none, the exact model winning and refused, effort, and grant refusals.
 - `tests/unit/modules/levels_profile_test.py`: the stored profile (default left out, round trip, revision checks,
   idempotent retry), the two operations, and a turn's model chosen by the level.
+- `tests/integration/levels_claude_test.py`: a Claude Code turn passes exactly the verified flags plus the level's
+  alias, and no other name passes.
 
 ## More Information
 
 Built in slice 14 of the chat build: the schema, the resolver, the two operations, the turn's choice, and the removal
-of the picker by the chat input. `ModelOffer.level` and `model_for_level` come with the 0.9.43 follow-ups. Later: the
+of the picker by the chat input, and Claude Code's levels. `ModelOffer.level` and `model_for_level` come with the
+0.9.43 follow-ups. Later: the
 Auto router (its own slice), the Heinzel's page that shows and sets the level and the exact model (slice 7), and the
 level in the chat's time line.

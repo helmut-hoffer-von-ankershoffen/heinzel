@@ -35,7 +35,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
-from heinzel.modules.heinzel._levels import HeinzelIntelligence, TurnLevel, declared_levels, resolve
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, LevelChoice, TurnLevel, declared_levels, resolve
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -170,8 +170,8 @@ class _ClaudeVerifier:
     def verify(
         self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: "SubscriptionAdmission"
     ) -> bool:
+        from heinzel.kernel._claude_code import command_flags  # noqa: PLC0415 - model runtime only during an admitted turn
         from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model runtime only during an admitted turn
-            COMMAND_FLAGS,
             VERSION,
             in_supported_range,
         )
@@ -186,7 +186,7 @@ class _ClaudeVerifier:
             self._check()
             and executable == self._path
             and digest == self._digest
-            and flags == COMMAND_FLAGS
+            and flags == command_flags(policy.model)
             and policy == self._policy
         )
 
@@ -305,10 +305,8 @@ class UserChatService:
             raise HeinzelError(msg)
         return intelligence.provider
 
-    def claude_level(self, session: str) -> TurnLevel | None:
-        """What a Claude Code turn of the Heinzel records about its level (ADR 0158).
-
-        Claude Code lists no models and its chat takes no model override, so the level is recorded, not applied.
+    def claude_level(self, session: str) -> LevelChoice | None:
+        """The Claude Code model a turn of the Heinzel runs on, by Claude Code's own levels (ADR 0158).
 
         Raises:
             HeinzelError: If the Heinzel has an exact model, which Claude Code's chat can't be held to.
@@ -316,9 +314,11 @@ class UserChatService:
         intelligence = self._intelligence(session)
         if intelligence is None:
             return None
+        from heinzel.kernel._claude_code import LEVEL_MODELS  # noqa: PLC0415 - Claude Code's levels only on its path
+
         config = self._load()
         provider = self._access(config, intelligence) or "claude-code"
-        return resolve(provider, intelligence.level, {}, [], exact=intelligence.model).record
+        return resolve(provider, intelligence.level, LEVEL_MODELS, [], exact=intelligence.model)
 
     def binding_terms(self) -> dict[str, object]:
         """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.
@@ -581,7 +581,15 @@ class UserChatService:
             SubscriptionAdmission,
         )
 
-        policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
+        policy = SubscriptionAdmission(
+            self.current.principal().id,
+            session,
+            1,
+            max_requests,
+            duration,
+            _MAX_OUTPUT,
+            model=level.model if level is not None else None,
+        )
 
         def unchanged() -> bool:
             verify()
@@ -604,7 +612,14 @@ class UserChatService:
             turn_id=turn,
             execute=self._execute,
         )
-        return model, unchanged, BackendBinding(backend="claude-code", mode="cli-model", revision=1, level=level)
+        binding = BackendBinding(
+            backend="claude-code",
+            mode="cli-model",
+            revision=1,
+            model=level.model if level is not None else None,
+            level=level.record if level is not None else None,
+        )
+        return model, unchanged, binding
 
     async def _plugin_model(
         self, plugin: "PluginTurnChoice", verify: Callable[[], None], cause: UsageCause

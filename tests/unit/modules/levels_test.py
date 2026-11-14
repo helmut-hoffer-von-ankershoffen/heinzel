@@ -3,7 +3,14 @@
 import pytest
 
 from heinzel import HeinzelError, ModelOffer
-from heinzel.modules.heinzel._levels import AUTO_RUNS_AS, HeinzelIntelligence, effort_for, nearest, resolve
+from heinzel.modules.heinzel._levels import (
+    AUTO_RUNS_AS,
+    HeinzelIntelligence,
+    declared_levels,
+    effort_for,
+    nearest,
+    resolve,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -69,9 +76,10 @@ def test_a_provider_that_marks_no_level_runs_its_own_default(level):
         assert choice.record.asked == level
 
 
-def test_a_provider_without_a_list_runs_the_model_it_marks_with_the_levels_effort():
+def test_a_provider_without_a_list_runs_the_model_it_marks_and_no_effort():
     choice = resolve("claude-code", "high", {"low": "haiku", "high": "opus"}, [])
-    assert (choice.model, choice.effort, choice.record.source) == ("opus", "high", "declared")
+    assert (choice.model, choice.effort, choice.record.source) == ("opus", None, "declared")
+    assert resolve("claude-code", "medium", {"low": "haiku", "high": "opus"}, []).model == "haiku"
 
 
 def test_marked_models_that_cant_run_are_skipped_for_the_nearest():
@@ -133,6 +141,17 @@ def test_a_level_never_widens_a_grant():
 )
 def test_effort_is_the_nearest_the_offer_takes_the_lower_on_a_tie(efforts, thinking, tier, effort):
     assert effort_for(ModelOffer(id="m", efforts=efforts, thinking=thinking), tier) == effort
+
+
+def test_a_plugin_marks_its_levels_on_its_offers():
+    offers = [
+        ModelOffer(id="a", level="low", available=False),
+        ModelOffer(id="b", level="low"),
+        ModelOffer(id="c", level="low"),
+        ModelOffer(id="d", level="high", tools=False),
+        ModelOffer(id="e"),
+    ]
+    assert declared_levels(offers) == {"low": "b"}
 
 
 def test_the_stored_intelligence_defaults_to_auto_with_no_provider_or_model():

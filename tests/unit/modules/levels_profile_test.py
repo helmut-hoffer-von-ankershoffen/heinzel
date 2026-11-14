@@ -7,7 +7,6 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError, ModelOffer, UsageEntry
 from heinzel.kernel import OperationLet
-from heinzel.modules.heinzel import _user_chat
 from heinzel.modules.heinzel._level_operations import changed, level_view
 from heinzel.modules.heinzel._levels import HeinzelIntelligence
 from heinzel.modules.heinzel._user_chat import UserChatService
@@ -17,35 +16,26 @@ from tests.unit.modules.user_chat_test import setup_chat
 
 pytestmark = pytest.mark.unit
 
-MARKED = {"low": "house-small", "high": "house-big"}
-"""What the plugin marks per level; it marks no Medium, so Medium and Auto run on the nearest, Low."""
-
 
 @dataclass
 class HousePlugin(Plugin):
-    """A plugin with three models, the default first."""
+    """A plugin with three models, the default first; it marks Low and High, not Medium."""
 
     def models(self) -> list[ModelOffer]:
         return [
             ModelOffer(id="house-default", thinking="adaptive"),
-            ModelOffer(id="house-small", thinking="adaptive"),
-            ModelOffer(id="house-big", thinking="budget", efforts=["low", "medium", "high"]),
+            ModelOffer(id="house-small", thinking="adaptive", level="low"),
+            ModelOffer(id="house-big", thinking="budget", efforts=["low", "medium", "high"], level="high"),
         ]
 
 
-@pytest.fixture
-def marked(monkeypatch):
-    """The plugin marks Low and High, as `ModelOffer.level` will say."""
-    monkeypatch.setattr(_user_chat, "declared_levels", lambda _offers: dict(MARKED))
-
-
-def chat_service(crud, current, settings: Settings):
+def chat_service(crud, current, settings: Settings, plugin: Plugin | None = None):
     return UserChatService(
         crud,
         current,
         RunnerSnapshotService(),
         load=lambda: settings,  # type: ignore[arg-type, return-value]
-        models=Models(HousePlugin()),
+        models=Models(plugin or HousePlugin()),
         usage=list[UsageEntry]().append,
     )
 
@@ -120,7 +110,6 @@ def test_changed_sets_clears_and_refuses():
         ("auto", "house-small", "low", "low", "nearest"),
     ],
 )
-@pytest.mark.usefixtures("marked")
 def test_a_turn_runs_on_the_model_the_provider_marks_and_records_it(tmp_path, level, model, effort, ran, source):  # noqa: PLR0913, PLR0917 - one row of the table
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
@@ -140,15 +129,14 @@ def test_a_plugin_that_marks_no_level_runs_its_pinned_default_and_records_the_le
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         set_level(crud, session, "lvl-1", level="high")
-        chat = chat_service(crud, current, Settings(model="house-small", effort="medium"))
+        chat = chat_service(crud, current, Settings(model="slow", effort="medium"), Plugin())
         replied = asyncio.run(chat.answer(session, "hello"))
     binding = replied.message.backend_binding
-    assert (binding.model, binding.effort) == ("house-small", "medium")
+    assert (binding.model, binding.effort) == ("slow", "medium")
     assert binding.level is not None
     assert (binding.level.asked, binding.level.source) == ("high", "provider-default")
 
 
-@pytest.mark.usefixtures("marked")
 def test_the_heinzels_provider_overrides_the_configured_access(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
@@ -177,25 +165,25 @@ def test_a_level_change_during_a_turn_is_seen_without_calling_the_plugin(tmp_pat
     assert chat._plugin_held() == chat.plugin_selected().held()  # no Heinzel: as Settings say
 
 
-def test_claude_code_records_the_level_and_refuses_an_exact_model(tmp_path):
+def test_claude_code_runs_its_levels_alias_and_refuses_an_exact_model(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         chat = chat_service(crud, current, Settings(access="claude-code"))
-        record = chat.claude_level(session)
+        choice = chat.claude_level(session)
         set_level(crud, session, "lvl-1", model="claude-x")
         with pytest.raises(HeinzelError, match="lists no models"):
             chat.claude_level(session)
-    assert record is not None
-    assert (record.asked, record.ran, record.rule, record.source) == (
+    assert choice is not None
+    assert (choice.model, choice.effort) == ("sonnet", None)
+    assert (choice.record.asked, choice.record.ran, choice.record.rule, choice.record.source) == (
         "auto",
         "medium",
         "auto-fixed-medium",
-        "provider-default",
+        "declared",
     )
 
 
-@pytest.mark.usefixtures("marked")
 def test_the_level_view_previews_the_turn_and_says_why_it_cant_run(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
@@ -211,8 +199,8 @@ def test_the_level_view_previews_the_turn_and_says_why_it_cant_run(tmp_path):
     assert recorded.runs_as is not None
     assert (recorded.runs_as.provider, recorded.runs_as.model, recorded.runs_as.level.source) == (
         None,
-        None,
-        "provider-default",
+        "sonnet",
+        "declared",
     )
     assert refused.runs_as is None
     assert refused.problem is not None
@@ -236,7 +224,6 @@ def test_the_operations_are_private_and_never_on_mcp(make_kernel):
     assert not found["set-level"].read_only
 
 
-@pytest.mark.usefixtures("marked")
 def test_the_operations_read_and_set_the_level(tmp_path, make_kernel):
     kernel = make_kernel(builtins=True)
     operations = {
