@@ -1,7 +1,7 @@
 // The chat's header when every chat is with a Heinzel (flag `one_chat`, canvas boards ChatDefault and Switch): the
 // face, the name with ▾ that opens your Heinzels and New Heinzel, More (search, details, earlier chats) and Close.
 // There is no "Back to chat": switching Heinzels is the only way between chats. Both popovers keep the keyboard path of
-// the session switcher: Escape closes and focus returns to the button that opened them.
+// the session switcher: Escape closes and focus returns to the button that opened them; Tab out closes too.
 import { ChevronDown, Ellipsis, History, PanelRightClose, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -65,6 +65,10 @@ function Menu({
     <div
       ref={box}
       className="relative flex min-w-0 items-center"
+      // Tab out of the list closes it, as Escape does, so the keyboard never leaves a menu open behind it.
+      onBlur={(event) => {
+        if (open && event.relatedTarget && !box.current?.contains(event.relatedTarget as Node)) setOpen(false);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
           event.stopPropagation();

@@ -34,7 +34,8 @@ function requestId(name: string): string {
   }
 }
 
-function forgetRequest() {
+/** Forget the first-start request: hz confirmed it, or the list already shows a Heinzel. */
+export function settleFirstHeinzel() {
   try {
     localStorage.removeItem(REQUEST);
   } catch {
@@ -62,7 +63,7 @@ export function FirstHeinzel({ onCreated, onClose }: { onCreated: (sessionId: st
       });
       if (!response.ok || !data) throw problem(response.status, error);
       if (!SESSION.test(data.session_id)) throw new Error("Invalid creation acknowledgement");
-      forgetRequest();
+      settleFirstHeinzel();
       rememberHeinzel(data.session_id);
       client.setQueryData(["heinzel", "session", data.session_id], data);
       await client.invalidateQueries({ queryKey: ["heinzel", "sessions"] });

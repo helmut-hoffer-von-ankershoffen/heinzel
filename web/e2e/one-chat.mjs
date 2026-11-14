@@ -59,13 +59,29 @@ try {
   await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Search" }).click();
   await chat.getByRole("region", { name: "Search conversation" }).waitFor();
 
-  // The default Heinzel survives a reload without a link.
+  // The default Heinzel survives a reload without a link, and on a phone the same header and menus pass axe.
+  await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(url.href);
-  await chat.getByRole("button", { name: "Helmi. Switch Heinzel" }).waitFor({ timeout: 60_000 });
+  await page
+    .getByRole("tab", { name: /Chat/ })
+    .or(page.getByRole("button", { name: /^(Open the chat|Chat)$/ }))
+    .first()
+    .click();
+  const phoneFace = chat.getByRole("button", { name: "Helmi. Switch Heinzel" });
+  await phoneFace.waitFor({ timeout: 60_000 });
+  await accessible('[aria-label="Chat"] .chat-panel-header');
+  await phoneFace.click();
+  await page.getByRole("dialog", { name: "Your Heinzels" }).waitFor();
+  await accessible('[role="dialog"]');
+  await page.keyboard.press("Escape");
+  await chat.getByRole("button", { name: "More: search, details, earlier chats" }).click();
+  await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Earlier chats" }).click();
+  await chat.getByRole("button", { name: "Chat with Helmi" }).click();
+  await phoneFace.waitFor();
   assert.deepEqual(errors, []);
   process.stdout.write(`${JSON.stringify({ oneChat: "verified" })}\n`);
 } catch (error) {
-  const visible = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => "");
+  const visible = await page.evaluate(() => (document.body.textContent ?? "").slice(0, 2000)).catch(() => "");
   process.stderr.write(`${String(error)}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>"));
   process.exitCode = 1;
 } finally {

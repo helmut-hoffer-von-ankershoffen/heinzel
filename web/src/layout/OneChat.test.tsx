@@ -3,7 +3,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { base } from "@/test/chat";
+import { base, empty } from "@/test/chat";
 import { config } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -196,5 +196,76 @@ describe("one kind of chat", () => {
     const chat = await panel();
     expect(await chat.findByRole("button", { name: "Back to chat" })).toBeInTheDocument();
     expect(chat.queryByRole("button", { name: "Helmi. Switch Heinzel" })).not.toBeInTheDocument();
+  });
+  it("still opens the general chat a notification links to, and leads back to the Heinzel", async () => {
+    const about = { ...empty, context: { kind: "event" as const, ref: "ev42", detail: "" } };
+    mockOneChat([summary(helmi)], {
+      "/api/system/runner/chat/open": about,
+      "/api/system/runner/chat/show": about,
+    });
+    const user = userEvent.setup();
+    renderAt("/?chat-context=event:ev42");
+    const chat = await panel();
+    expect(await chat.findByText("About: event ev42")).toBeInTheDocument();
+    await user.click(await chat.findByRole("button", { name: "Chat with Helmi" }));
+    expect(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+  });
+
+  it("opens a general chat linked by its id", async () => {
+    mockOneChat([summary(helmi)], { "/api/system/runner/chat/show": empty });
+    renderAt(`/doctor?chat=${empty.id}`);
+    const chat = await panel();
+    expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
+    expect(chat.queryByRole("button", { name: "Helmi. Switch Heinzel" })).not.toBeInTheDocument();
+  });
+
+  it("shows neither chat until the settings say which one, so the old chat never flashes", async () => {
+    let seenOld = false;
+    const observer = new MutationObserver(() => {
+      // Laid out while the settings load is fine; shown is not.
+      const old = screen.queryByLabelText("Your message");
+      if (old && !old.closest(".invisible")) seenOld = true;
+    });
+    observer.observe(document.body, { subtree: true, childList: true });
+    mockOneChat([summary(helmi)], {
+      "/api/system/config/show": async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return flagged(["one_chat"]);
+      },
+    });
+    renderAt("/doctor");
+    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    observer.disconnect();
+    expect(seenOld).toBe(false);
+  });
+
+  it("settles a first-start request once the list shows a Heinzel, after a lost answer and a reload", async () => {
+    localStorage.setItem("hz.chat.first-heinzel", JSON.stringify({ id: "req-1", name: "Helmi" }));
+    mockOneChat([summary(helmi)]);
+    renderAt("/doctor");
+    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    await waitFor(() => expect(localStorage.getItem("hz.chat.first-heinzel")).toBeNull());
+  });
+
+  it("closes the switcher when Tab leaves it", async () => {
+    mockOneChat([summary(helmi)]);
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const chat = await panel();
+    await user.click(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" }));
+    const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
+    await within(list).findByRole("button", { name: /Helmi/ });
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Your Heinzels" })).not.toBeInTheDocument());
+  });
+
+  it("shows today's general chat without a link when the flag is off", async () => {
+    mockApi({ ...base, "/api/heinzel/sessions": { sessions: [summary(helmi)] }, "/api/heinzel/session": snapshot });
+    renderAt("/doctor");
+    const chat = await panel();
+    expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
+    expect(chat.queryByRole("button", { name: /Switch Heinzel/ })).not.toBeInTheDocument();
   });
 });
