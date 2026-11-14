@@ -8,15 +8,22 @@ import { controlFor, unwrap } from "./settingSchema";
 
 const mutate = vi.fn();
 const mutateAsync = vi.fn();
+const capabilities = vi.hoisted(() => ({ pending: false }));
 vi.mock("@/api/queries", () => ({
   useSetSetting: () => ({ mutate, mutateAsync, isPending: false }),
   useCapabilities: () => ({
-    data: {
-      adapters: [
-        { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
-        { adapter: "oak", capability: "mail", distribution: "sample-oak", module: "oak" },
-      ],
-    },
+    data: capabilities.pending
+      ? undefined
+      : {
+          capabilities: [
+            { name: "calendar", bound: null },
+            { name: "mail", bound: "oak" },
+          ],
+          adapters: [
+            { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
+            { adapter: "oak", capability: "mail", distribution: "sample-oak", module: "oak" },
+          ],
+        },
   }),
   useConfig: () => ({ data: { can_reveal: false } }),
   useInfo: () => ({ data: { modules: [{ qualname: "maple", summary: "Sample calendar" }] } }),
@@ -169,6 +176,33 @@ describe("Schema setting metadata", () => {
     expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({ key: "sample.enabled", value: "false" });
   });
 
+  it("shows a staged adapter choice as chosen until it is applied or cancelled", async () => {
+    render(
+      <Row
+        setting={{
+          ...setting("default"),
+          section: "capabilities",
+          key: "calendar",
+          description: "Calendar",
+          value: null,
+          default: null,
+          json_schema: {
+            type: "string",
+            title: "Calendar",
+            "x-options": { source: "adapters", capability: "calendar", none: "none" },
+          },
+        }}
+      />,
+    );
+    const user = userEvent.setup();
+    const choice = screen.getByRole("combobox", { name: "Calendar" });
+    await user.selectOptions(choice, "maple");
+    expect(choice).toHaveValue("maple");
+    expect(mutateAsync).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("combobox", { name: "Calendar" })).toHaveValue("");
+  });
+
   it("identifies hz ui and saves only after the shared unsupported confirmation", async () => {
     render(
       <Row
@@ -233,6 +267,50 @@ describe("Declared installed choices", () => {
     );
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("missing");
     expect(screen.getByRole("option", { name: /missing.*unavailable/i })).toBeInTheDocument();
+  });
+
+  it("says which adapter serves an unset capability, and not set when none does", () => {
+    const { unmount } = render(
+      <SchemaValue
+        label="Mail"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "mail", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("option", { name: "not set: oak serves it, the only one installed" })).toBeInTheDocument();
+    unmount();
+    render(
+      <SchemaValue
+        label="Calendar"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "calendar", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
+  });
+
+  it("never calls a saved adapter unavailable while the choices are still loading", () => {
+    capabilities.pending = true;
+    try {
+      render(
+        <SchemaValue
+          label="Provider"
+          schema={{ type: "string", "x-options": { source: "adapters", capability: "calendar" } }}
+          value="maple"
+          disabled={false}
+          onChange={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("maple");
+      expect(screen.getByRole("option", { name: "maple" })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /unavailable/i })).not.toBeInTheDocument();
+    } finally {
+      capabilities.pending = false;
+    }
   });
 
   it("selects modules from the runtime inventory while preserving unavailable selections", async () => {

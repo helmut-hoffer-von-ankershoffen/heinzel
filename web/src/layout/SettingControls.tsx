@@ -126,7 +126,8 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
       label={title}
       schema={schema}
       control={control}
-      value={value}
+      // A change waiting for "Restart and apply" shows as chosen, not the value still in effect.
+      value={selection}
       disabled={disabled}
       onChange={commit}
     />

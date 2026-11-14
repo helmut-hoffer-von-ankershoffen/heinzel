@@ -651,6 +651,7 @@ const en = {
   "settings.exists": "exists",
   "settings.missing": "not there",
   "settings.notSet": "not set",
+  "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
   "profile.team": "Team",
   "teamGraph.titled": "{name} · Team graph",
   "profile.retiredRole": 'Your saved role "{role}" is no longer offered. Choose one of the four roles in Settings.',

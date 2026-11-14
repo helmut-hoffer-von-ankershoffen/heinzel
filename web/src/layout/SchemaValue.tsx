@@ -401,7 +401,17 @@ function AdapterChoices(props: InstalledProps) {
     .filter((adapter) => adapter.capability === props.control.capability)
     .map((adapter) => ({ value: adapter.adapter, label: `${adapter.adapter} · ${adapter.distribution}` }));
   if (props.control.none !== undefined) options.unshift({ value: props.control.none, label: "None" });
-  return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
+  // Nothing configured, yet an adapter may serve it: hz binds the only installed one by itself (ADR 0055).
+  const serving = query.data?.capabilities?.find((capability) => capability.name === props.control.capability)?.bound;
+  return (
+    <InstalledChoices
+      {...props}
+      options={options}
+      pending={!query.data}
+      error={query.error?.message}
+      unset={serving ? t("settings.onlyInstalled", { adapter: serving }) : undefined}
+    />
+  );
 }
 
 function ModuleChoices(props: InstalledProps) {
@@ -422,16 +432,22 @@ function InstalledChoices({
   options,
   pending,
   error,
+  unset,
 }: InstalledProps & {
   options: InstalledOption[];
   pending: boolean;
   error?: string;
+  /** What the empty choice says instead of "not set": which adapter serves it while nothing is configured. */
+  unset?: string;
 }) {
   const selected = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
   const available = new Set(options.map((option) => option.value));
   const choices = [
     ...options,
-    ...selected.filter((item) => !available.has(item)).map((item) => ({ value: item, label: `${item} (unavailable)` })),
+    // While the choices load, a saved value is not known to be missing: show it plainly, never "(unavailable)".
+    ...selected
+      .filter((item) => !available.has(item))
+      .map((item) => ({ value: item, label: pending ? item : `${item} (unavailable)` })),
   ];
   const labels = unwrap(schema)?.["x-labels"];
   return (
@@ -467,7 +483,7 @@ function InstalledChoices({
         >
           {selected.length === 0 && (
             <option value="" disabled>
-              {t("settings.notSet")}
+              {unset ?? t("settings.notSet")}
             </option>
           )}
           {choices.map((option) => (
