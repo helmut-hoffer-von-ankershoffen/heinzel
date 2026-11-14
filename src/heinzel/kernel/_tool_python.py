@@ -80,7 +80,7 @@ def managed_python(
     found = _found(runner, uv, version, environment)
     detail = ""
     if found is None:
-        command: Sequence[str] = [uv, "python", "install", "--managed-python", version]
+        command: Sequence[str] = [uv, "python", "install", "--managed-python", "--no-bin", version]
         result = runner(list(command), environment) if environment else runner(list(command))
         if getattr(result, "returncode", 1) == 0:
             found = _found(runner, uv, version, environment)

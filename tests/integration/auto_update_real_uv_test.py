@@ -9,6 +9,7 @@ folder, its tool, executable and cache folders are temporary, and no uv configur
 import base64
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,7 @@ from typing import NoReturn
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, _installation_continuity
+from heinzel.kernel import Installation, ReleaseSource, _installation_continuity
 from heinzel.kernel._installation import _run
 from heinzel.modules.system._announced import Announcement, environment_versions
 from heinzel.modules.system._update import UpdateService
@@ -43,11 +44,21 @@ def needs_uv():
         unavailable("uv isn't installed, so there is no real uv to test with")
 
 
-def wheel(folder: Path, name: str, version: str, requires: tuple[str, ...] = (), script: str | None = None) -> None:
-    """A minimal pure-Python wheel of `name` at `version`."""
+def wheel(  # noqa: PLR0913 - the fields of a wheel a test varies
+    folder: Path,
+    name: str,
+    version: str,
+    requires: tuple[str, ...] = (),
+    script: str | None = None,
+    *,
+    python: str | None = None,
+) -> None:
+    """A minimal pure-Python wheel of `name` at `version`, needing Python `python` if given."""
     module, dist = name.replace("-", "_"), f"{name.replace('-', '_')}-{version}"
-    metadata = f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n" + "".join(
-        f"Requires-Dist: {item}\n" for item in requires
+    metadata = (
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+        + (f"Requires-Python: {python}\n" if python else "")
+        + "".join(f"Requires-Dist: {item}\n" for item in requires)
     )
     files = {
         f"{module}/__init__.py": f'VERSION = "{version}"\n\n\ndef main():\n    print("{name} {version}")\n',
@@ -141,7 +152,7 @@ def tool(tmp_path, monkeypatch):
     return installation
 
 
-def apply(installation, tmp_path, *, starts):
+def apply(installation, tmp_path, *, starts, releases=None):
     now = datetime.now(UTC)
     announced = Announcement(
         "2.0.0",
@@ -149,7 +160,7 @@ def apply(installation, tmp_path, *, starts):
         exclude_newer=now + timedelta(days=1),  # local wheels have no upload time; the flag must still go through uv
         exclude_newer_core=now + timedelta(days=1),
     )
-    service = UpdateService(installation, None)  # type: ignore[arg-type] - no release source is asked
+    service = UpdateService(installation, releases)  # type: ignore[arg-type] - None: no release source is asked
     return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts)
 
 
@@ -173,6 +184,65 @@ def test_real_uv_puts_everything_back_when_the_new_version_does_not_start(tool, 
     assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("1.0.0", "1.0.0", "1.0.0")
     assert (tool.prefix / "uv-receipt.toml").read_bytes() == receipt
     assert tool.startup_state_matches()
+
+
+# A release that needs a newer Python than the tool runs on ------------------------------------------------------------
+
+NEWER = f"{sys.version_info.major}.{sys.version_info.minor + 1}"
+
+
+class NeedsNewerPython(ReleaseSource):
+    """Release metadata as PyPI publishes it: 2.0.0 needs the next Python minor version."""
+
+    def requires_python(self, version, timeout):
+        del timeout
+        return f">={NEWER}" if version == "2.0.0" else None
+
+
+@pytest.fixture
+def newer_release(tool, tmp_path, monkeypatch):
+    """2.0.0 of hz needs the next Python; uv manages Pythons only in a temporary folder, with no executables linked."""
+    wheel(tmp_path / "wheels", "heinzel", "2.0.0", requires=("fakedep>=1",), script="hz", python=f">={NEWER}")
+    monkeypatch.setenv("UV_PYTHON_INSTALL_DIR", str(tmp_path / "managed"))
+    monkeypatch.setenv("UV_PYTHON_BIN_DIR", str(tmp_path / "python-bin"))
+    monkeypatch.delenv("UV_PYTHON_DOWNLOADS", raising=False)
+    return tool
+
+
+def test_real_uv_moves_to_a_managed_newer_python_the_release_needs(newer_release, tmp_path):
+    found = subprocess.run(
+        [shutil.which("uv") or "uv", "python", "install", "--managed-python", "--no-bin", NEWER],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,  # one download of a Python build, into the temporary folder
+    )
+    if found.returncode != 0:
+        if "no download" in found.stderr.lower():
+            pytest.skip(f"uv has no Python {NEWER} to download yet")
+        unavailable(f"uv couldn't install a managed Python {NEWER} here: {found.stderr}")
+    result = apply(newer_release, tmp_path, starts=True, releases=NeedsNewerPython())
+    assert result.updated, result.message
+    versions = environment_versions(newer_release.prefix)
+    assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("2.0.0", "2.0.0", "1.0.0")
+    python = (newer_release.prefix / "bin" / "python").resolve()
+    assert python.is_relative_to((tmp_path / "managed").resolve())
+    assert python.name.startswith(f"python{NEWER}")
+    assert not (tmp_path / "python-bin").exists() or not any((tmp_path / "python-bin").iterdir())
+
+
+def test_real_uv_without_the_newer_python_stops_before_installing(newer_release, tmp_path, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    receipt = (newer_release.prefix / "uv-receipt.toml").read_bytes()
+    python = (newer_release.prefix / "bin" / "python").resolve()
+    with pytest.raises(HeinzelError, match=rf"could not provide a uv-managed Python {re.escape(NEWER)}") as caught:
+        apply(newer_release, tmp_path, starts=True, releases=NeedsNewerPython())
+    assert "keeps working" in str(caught.value)
+    versions = environment_versions(newer_release.prefix)
+    assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("1.0.0", "1.0.0", "1.0.0")
+    assert (newer_release.prefix / "uv-receipt.toml").read_bytes() == receipt
+    assert (newer_release.prefix / "bin" / "python").resolve() == python
+    assert newer_release.startup_state_matches()
 
 
 @pytest.mark.parametrize(("environ", "outcome"), [({"CI": "true"}, pytest.fail.Exception), ({}, pytest.skip.Exception)])
