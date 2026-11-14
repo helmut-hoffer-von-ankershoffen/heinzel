@@ -23,6 +23,7 @@ from heinzel.modules.heinzel._self_chat_questions import (
     STILL_OPEN,
     QuestionRelay,
     QuestionSettings,
+    _Ask,
     short_lived_process,
 )
 from heinzel.modules.heinzel._service import HeinzelService
@@ -445,7 +446,7 @@ def test_a_deleted_chats_thread_is_forgotten_and_never_reused(world, monkeypatch
     current, crud, old = world
     forgotten: list[set[str]] = []
     relay = _relay(world, Inbox(), Chat())
-    relay._forget_notices = forgotten.append
+    relay._forget_notices = lambda listed: forgotten.append(listed())
     with relay.ledger.locked() as state:
         state["threads"][old] = "t-old"
         state["live"][old] = "999999999"
@@ -493,7 +494,7 @@ def test_tidying_that_fails_never_costs_the_question(world, caplog):
     inbox = Inbox(SelfAnswer(timed_out=True, thread="t-1"))
     relay = _relay(world, inbox, Chat())
 
-    def broken(chats: set[str]) -> None:
+    def broken(listed: object) -> None:
         msg = "no notify module"
         raise HeinzelError(msg)
 
@@ -661,3 +662,84 @@ def test_the_helper_process_starts_detached_with_its_output_in_the_log(tmp_path)
     session_id, pid = (log_dir / relay_module.HELPER_LOG).read_text().split()
     assert session_id == pid, "a session of its own: the tick's end never signals it"
     assert (log_dir / relay_module.HELPER_LOG).stat().st_mode & 0o777 == 0o600
+
+
+def test_a_chat_created_while_the_chats_are_listed_keeps_its_thread(world, monkeypatch):
+    current, crud, _session = world
+    relay = _relay(world, Inbox(), Chat())
+    with relay.ledger.locked() as state:
+        state["threads"]["hz-gone"] = "t-gone"
+    heads = crud.repository.heads
+    created: list[str] = []
+
+    def racing() -> list:
+        listed = heads()  # listed before another process creates a chat and keeps its thread
+        with current.local("cli"):
+            created.append(crud.new_chat("fresh").session_id)
+        with relay.ledger.locked() as state:
+            state["threads"][created[0]] = "t-fresh"
+        return listed
+
+    monkeypatch.setattr(crud.repository, "heads", racing)
+    with current.local("self-chat"):
+        relay.forget_gone()
+    with relay.ledger.locked() as state:
+        assert state["threads"] == {created[0]: "t-fresh"}, "only what was kept before the listing can go"
+
+
+def test_a_live_ask_of_another_owner_in_this_process_is_not_cancelled(world, tmp_path):
+    current, _crud, _session = world
+    foreign = _Ask("hz-of-another-profile", "q", 1, tmp_path / "elsewhere" / "questions.json")
+    QuestionRelay._live[foreign.ledger, foreign.session] = foreign
+    relay = _relay(world, Inbox(), Chat())
+    with current.local("self-chat"):
+        relay.forget_gone()
+    assert not foreign.cancel.is_set(), "another owner's live ask stays"
+    assert QuestionRelay._live == {(foreign.ledger, foreign.session): foreign}
+
+
+def test_with_the_switch_off_quiet_or_no_adapter_no_ledger_is_touched(world):
+    current, crud, session = world
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    notices: list[object] = []
+    for settings in ({"chat_questions": False}, {"quiet": True}, {"enabled": False}):
+        relay = _relay(world, Inbox(), Chat(), **settings)
+        relay._forget_notices = notices.append
+        _run(relay, session, "turn-1")
+    relay = _relay(world, Inbox(), Chat())
+    relay._forget_notices = notices.append
+    relay._self_chat = lambda: None
+    _run(relay, session, "turn-1")
+    assert not relay.ledger.path.exists(), "off is a no-op"
+    assert not relay.ledger.directory.exists()
+    assert notices == [], "nor are the notices' threads looked at"
+
+
+def test_tidying_with_nothing_kept_writes_nothing(world):
+    current, _crud, _session = world
+    relay = _relay(world, Inbox(), Chat())
+    with current.local("self-chat"):
+        relay.forget_gone()
+    assert not relay.ledger.path.exists()
+
+
+def test_an_older_ask_ending_keeps_the_newer_asks_live_entry(world):
+    current, crud, session = world
+    inbox = Inbox("wait", "wait")
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+        _ask(crud, session, "turn-2", "Which room?")
+    relay = _relay(world, inbox, Chat())
+    relay.asked(session, "turn-1")
+    assert inbox.waiting.wait(5)
+    inbox.waiting.clear()
+    relay.asked(session, "turn-2")  # supersedes the first in this process
+    relay.threads[0].join(10)
+    assert not relay.threads[0].is_alive()
+    with relay.ledger.locked() as state:
+        assert state["live"] == {session: str(os.getpid())}, "the newer ask still counts as live"
+    inbox.release.set()
+    relay.threads[1].join(10)
+    with relay.ledger.locked() as state:
+        assert state["live"] == {}

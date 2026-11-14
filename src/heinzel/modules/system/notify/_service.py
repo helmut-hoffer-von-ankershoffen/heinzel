@@ -355,10 +355,10 @@ class NotifyService(Notifications):
         """Remove a completed outbox receipt while preserving its display notice."""
         return self.forget_completed({key})
 
-    def forget_chats(self, chats: set[str]) -> int:
-        """Forget the chat threads of Heinzel chats that no longer exist; never raises for the ledger."""
+    def forget_chats(self, listed: Callable[[], set[str]]) -> int:
+        """Forget the chat threads of Heinzel chats `listed()` no longer lists; never raises for the ledger."""
         try:
-            return _chat.forget_chats(self.chat_ledger, chats)
+            return _chat.forget_chats(self.chat_ledger, listed)
         except OSError:
             return 0
 

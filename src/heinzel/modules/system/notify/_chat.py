@@ -50,12 +50,24 @@ CHAT_ROUTE = "/heinzel?chat="
 """How a Heinzel chat's notices are routed in the web app; the rest of the route is the chat's id."""
 
 
-def forget_chats(ledger: SelfChatLedger, chats: set[str]) -> int:
-    """Drop the threads of Heinzel chats not in `chats` (those that exist); other threads stay. How many went."""
+def forget_chats(ledger: SelfChatLedger, listed: Callable[[], set[str]]) -> int:
+    """Drop the threads of Heinzel chats `listed()` (those that exist) no longer lists; other threads stay.
+
+    Only threads kept before the chats are listed can go, so a chat another process creates meanwhile keeps its own;
+    nothing is written when nothing goes. How many went.
+    """
+    if not ledger.path.exists():
+        return 0
     with ledger.locked() as state:
-        gone = [k for k in state["threads"] if k.startswith(CHAT_ROUTE) and k[len(CHAT_ROUTE) :] not in chats]
-        for key in gone:
-            del state["threads"][key]
+        kept = {k for k in state["threads"] if k.startswith(CHAT_ROUTE)}
+    if not kept:
+        return 0
+    chats = listed()
+    gone = {k for k in kept if k[len(CHAT_ROUTE) :] not in chats}
+    if gone:
+        with ledger.locked() as state:
+            for key in gone:
+                state["threads"].pop(key, None)
     return len(gone)
 
 

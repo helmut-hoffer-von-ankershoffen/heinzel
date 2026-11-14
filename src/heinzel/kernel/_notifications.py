@@ -11,7 +11,7 @@ holds, the notice is resolved and disappears from the list, Today and the unread
 history. Resolution never marks anything read: only the person does that (ADR 0043, amendment 2026-11-07).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -223,8 +223,12 @@ class Notifications:
         """Compact a batch of completed outbox keys while preserving unresolved keys and visible notices."""
         raise NotImplementedError
 
-    def forget_chats(self, chats: set[str]) -> int:
-        """Forget what chat delivery keeps for Heinzel chats not in `chats` (those that exist); how many it forgot."""
+    def forget_chats(self, listed: Callable[[], set[str]]) -> int:
+        """Forget what chat delivery keeps for Heinzel chats `listed()` (those that exist) no longer lists.
+
+        `listed` is read only after what is kept was looked at, so a chat created meanwhile keeps its own; how many
+        it forgot.
+        """
         raise NotImplementedError
 
     def has_once(self, key: str) -> bool | None:
