@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Literal
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
@@ -192,9 +192,7 @@ def add_routes(app: FastAPI, kernel: Kernel, tokens: McpTokens, endpoint: McpEnd
         return JSONResponse(state())
 
     @app.post("/_web/mcp/tokens", include_in_schema=False)
-    async def create(request: Request, body: TokenRequest) -> JSONResponse:
-        if getattr(request.state, "auth", None) not in {"session", "device"}:
-            return JSONResponse({"error": "Refused: only your own signed-in app makes tokens."}, status_code=FORBIDDEN)
+    async def create(body: TokenRequest) -> JSONResponse:
         try:
             record, token = tokens.create(body.actor, body.scope, timedelta(days=body.days))
         except HeinzelError as exc:
