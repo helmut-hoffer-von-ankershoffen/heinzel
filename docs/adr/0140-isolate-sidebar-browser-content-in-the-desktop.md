@@ -26,18 +26,20 @@ Use an Electron WebContentsView with its own website session, sandbox, context i
 Node integration. The authenticated product main frame controls this surface through narrowly validated commands.
 Do not grant guest permissions, downloads, popups or external protocol dispatch. Keep ordinary certificate checks.
 
-Bluetooth, HID, serial and USB prompts open a native chooser: the person picks one listed device or cancels, and
-only a picked device is granted (no device permission handler, no automatic choice). A prompt from a background
-window or with no device grants nothing and shows a visible note. Camera, microphone, screen sharing and every other
+Bluetooth, HID, serial and USB prompts open a native chooser naming the requesting origin (an embed's own): the
+person picks one listed device, each labelled as a device, or cancels. The device permission handler grants only a
+picked device to the origin and device type that asked, never an automatic choice. A prompt from a background window,
+from no guest or with no device grants nothing and shows a visible note. Camera, microphone, screen sharing and every other
 permission stay refused. All guests share one persistent partition (`persist:hz-browser`), never the product's
-session, so website sign-ins survive closing the panel and restarting the app; "Clear browsing data" empties its
-cookies, storage, cache and authentication cache.
+session, so website sign-ins survive closing the panel and restarting the app. "Clear browsing data" takes open
+pages off their sites, then empties its cookies, storage, cache and authentication cache, revokes device grants and
+reloads the pages; a failed wipe is shown.
 
 WebAuthn is not refused. Electron serves no platform passkey (iCloud Keychain, Touch ID) for third-party sites: that
 needs a signed app whose identifier each relying party lists in its `apple-app-site-association`. The page then only
 sees `NotAllowedError`, so a passkey step or WebAuthn failure shows a visible note that passkeys may not work, with
 the choice of another sign-in option or "Open in browser", which hands the guest's current public HTTPS address to the
-default browser.
+default browser after the person's click, under the window's external-link rate limit.
 
 Owner decisions, 2026-11-14: allow device and security-key prompts with a user choice ("don't refuse device or
 security key prompts"), and keep website sign-ins ("we want to stay signed in"). They replace the earlier refusal of

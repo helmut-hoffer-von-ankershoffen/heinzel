@@ -26,7 +26,8 @@ export function deviceDialog({ host, devices }) {
     type: "question",
     message: `${site} wants to connect to a device`,
     detail: "Choose the device to share with this website, or cancel. Only the device you choose is shared.",
-    buttons: [...devices.map((device) => device.label), "Cancel"],
+    // Prefixed, so a device that names itself "Cancel" or "Allow" cannot pass for a dialog choice.
+    buttons: [...devices.map((device) => `Device: ${device.label}`), "Cancel"],
     cancelId: devices.length,
     defaultId: devices.length,
     noLink: true,
@@ -37,52 +38,72 @@ export function deviceDialog({ host, devices }) {
  * A guest has no product preload, session, headers, cookies or native permissions. All guests share one persistent
  * partition, so sign-ins survive closing the panel and restarting the app until the person clears browsing data.
  * `chooseDevice({ window, host, devices })` shows the person a native chooser and resolves to a device id or null.
+ * `openExternal(url, window)` applies the product window's gesture check and rate limit and returns whether it opened.
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
-  createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => {} }) {
+  createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false }) {
   const guests = new Map();
   const opening = new Map();
   const generations = new WeakMap();
   let partition = null;
   let shared = null;
   let stopped = false;
-  // The guest whose chooser this is: only a focused window shows its guest, and a site asks from a click in it.
-  const promptOwner = () => [...guests].find(([window]) => !window.isDestroyed() && window.isFocused());
-  const pick = async (list, notice) => {
-    const owner = promptOwner();
+  // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
+  const grants = new Set();
+  const grantKey = (origin, type, id) => JSON.stringify([origin, type, id]);
+  const originOf = (value) => { try { return new URL(value).origin; } catch { return ""; } };
+  // The guest a prompt came from: its own contents, or the main frame above the requesting frame. A background
+  // window never prompts, since only a focused window shows its guest and a site asks from a click in it.
+  const promptOwner = ({ contents, frame }) => [...guests].find(([window, guest]) => {
+    const own = guest.view.webContents;
+    const top = own.mainFrame;
+    return !window.isDestroyed() && window.isFocused() &&
+      (own === contents || (frame && top && (frame === top || frame.top === top)));
+  });
+  /** Ask the person for one device; resolves to the picked id, recording the grant for `type`, or null. */
+  const pick = async (list, { type, contents, frame, notice = "no-device" }) => {
+    const owner = promptOwner({ contents, frame });
     const devices = (Array.isArray(list) ? list : []).map(deviceChoice).filter(Boolean).slice(0, MAX_DEVICES);
     if (!owner) return null;
     const [window, guest] = owner;
     if (!devices.length) { guest.notice = notice; return null; }
-    let host = "";
-    try { host = new URL(guest.view.webContents.getURL()).host; } catch { /* no location yet */ }
+    // Name the requester: an embed's own origin, not only the page around it.
+    const origin = originOf(frame?.origin && frame.origin !== "null" ? frame.origin : frame?.url ?? guest.view.webContents.getURL());
     try {
-      const id = await chooseDevice({ window, host, devices });
-      return devices.some((device) => device.id === id) ? id : null;
+      const id = await chooseDevice({ window, host: origin ? new URL(origin).host : "", devices });
+      if (!devices.some((device) => device.id === id)) return null;
+      if (type && origin) grants.add(grantKey(origin, type, id));
+      return id;
     } catch { return null; }
   };
   // Electron cancels a HID/USB chooser with no device and a serial chooser with an empty port id.
-  const chooser = (listOf, cancel) => (event, ...args) => {
+  const chooser = (type, source, cancel) => (event, ...args) => {
     event.preventDefault();
     const callback = args.at(-1);
     if (typeof callback !== "function") return;
-    void pick(listOf(args), "no-device").then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
+    const { list, ...from } = source(args);
+    void pick(list, { type, ...from }).then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
   };
   const partitionFor = () => {
     if (partition) return partition;
     partition = createSession(BROWSER_PARTITION);
     partition.setPermissionCheckHandler((_contents, permission) => DEVICE_PERMISSIONS.has(permission));
     partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    // No device permission handler: only a device the person picked in a chooser is granted.
+    // Only a device the person picked for this origin is granted, until browsing data is cleared.
+    partition.setDevicePermissionHandler((details) => {
+      const id = deviceChoice(details?.device)?.id;
+      return Boolean(id) && grants.has(grantKey(originOf(details?.origin), details?.deviceType, id));
+    });
     partition.setBluetoothPairingHandler?.((details, callback) => {
       if (details?.pairingKind !== "confirm" && details?.pairingKind !== "confirmPin") { callback({ confirmed: false }); return; }
       const label = details.pairingKind === "confirmPin" ? `Pair with PIN ${String(details.pin ?? "").slice(0, 16)}` : "Pair";
-      void pick([{ deviceId: "pair", name: label }], "no-device").then((id) => callback({ confirmed: id === "pair" }));
+      void pick([{ deviceId: "pair", name: label }], { frame: details.frame })
+        .then((id) => callback({ confirmed: id === "pair" }));
     });
     partition.setDisplayMediaRequestHandler((_request, callback) => callback({}));
-    partition.on("select-hid-device", chooser(([details]) => details?.deviceList));
-    partition.on("select-usb-device", chooser(([details]) => details?.deviceList));
-    partition.on("select-serial-port", chooser(([portList]) => portList, ""));
+    partition.on("select-hid-device", chooser("hid", ([details]) => ({ list: details?.deviceList, frame: details?.frame })));
+    partition.on("select-usb-device", chooser("usb", ([details]) => ({ list: details?.deviceList, frame: details?.frame })));
+    partition.on("select-serial-port", chooser("serial", ([portList, contents]) => ({ list: portList, contents }), ""));
     partition.on("will-download", (event) => event.preventDefault());
     partition.webRequest.onBeforeRequest((details, callback) => {
       try { browserUrl(details.url, connection()?.origin); callback({ cancel: false }); }
@@ -116,14 +137,24 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     // The partition keeps sign-ins; only "Clear browsing data" empties it.
     releaseNetwork();
   };
-  // The partition persists across restarts, so clearing opens it even before the first guest of this run.
+  /**
+   * The partition persists across restarts, so clearing opens it even before the first guest of this run. Pages are
+   * taken off their sites first, so no running script writes cookies or storage back; then they load again.
+   */
   const clear = async () => {
     const partition = partitionFor();
-    await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(), partition.clearAuthCache?.()]);
-    for (const guest of guests.values()) {
-      guest.notice = null;
-      if (guest.view.webContents.getURL()) guest.view.webContents.reload();
+    grants.clear();
+    const pages = [...guests.values()].map((guest) => [guest, guest.view.webContents.getURL()]);
+    await Promise.allSettled(pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")));
+    const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
+      partition.clearAuthCache?.()]);
+    const failed = results.some((result) => result.status === "rejected");
+    for (const [guest, url] of pages) {
+      guest.notice = failed ? "clear-failed" : null;
+      if (url && !guest.view.webContents.isDestroyed())
+        void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
     }
+    if (failed) throw new Error("Browsing data could not be cleared.");
   };
   const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
   const open = async (window) => {
@@ -156,7 +187,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         if (current.asked) return;
         if (Array.isArray(devices) && devices.some(deviceChoice)) {
           current.asked = true;
-          void pick(devices, "no-device").then(answer);
+          void pick(devices, { contents }).then(answer);
         } else current.timer ??= setTimeout(() => {
           if (current.asked) return;
           guest.notice = "no-device";
@@ -290,7 +321,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (request.action === "forward" && history.canGoForward()) history.goForward();
       if (request.action === "reload") guest.view.webContents.reload();
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
-      if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin));
+      if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
       return state(guest);
     },
     closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },

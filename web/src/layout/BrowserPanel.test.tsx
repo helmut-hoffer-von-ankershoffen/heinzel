@@ -118,6 +118,7 @@ it("Open in browser and Clear browsing data send their own commands, and only on
 it.each([
   ["passkey", /Passkeys may not work in the built-in browser\. Choose another sign-in option/],
   ["no-device", /No device was found for this website/],
+  ["clear-failed", /Browsing data could not be cleared/],
 ] as const)("a %s notice from the desktop is shown as a visible alert", async (notice, text) => {
   const browser = vi.fn(async () => ({ status: "ready", url: "https://accounts.example.com/", notice }));
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
@@ -130,4 +131,15 @@ it("web mode has no native browser controls", () => {
   render(<BrowserPanel active onClose={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
+});
+
+it("a failed Clear browsing data is shown, not hidden", async () => {
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "clear") throw new Error("Browsing data could not be cleared.");
+    return { status: "empty" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/Browsing data could not be cleared/);
 });

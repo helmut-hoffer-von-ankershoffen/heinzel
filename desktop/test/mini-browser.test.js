@@ -22,7 +22,7 @@ function fixture(configure = async () => {}, extra = {}) {
       sessions.push(session); return session;
     }, createView: (preferences) => {
       options.push(preferences); let url = "", dead = false;
-      const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead,
+      const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
         close: (options) => { dead = true; calls.push(["close", options]); }, getURL: () => url,
         loadURL: async (target) => { url = target; calls.push(["load", target]); }, reload: () => calls.push(["reload"]),
         navigationHistory: { canGoBack: () => false, canGoForward: () => false },
@@ -71,14 +71,17 @@ test("device and security-key prompts show the person a chooser; only the picked
   const f = fixture(undefined, { chooseDevice: async (request) => { asked.push(request); return answer(request.devices); } });
   await f.invoke({ action: "navigate", url: "https://keys.example.com/login" });
   const session = f.sessions[0], contents = f.views[0].webContents;
-  // No device permission handler: Electron then grants only what a chooser returned.
-  assert.equal(session.device, undefined);
+  const top = contents.mainFrame;
+  Object.assign(top, { origin: "https://keys.example.com", url: "https://keys.example.com/login" });
+  // An embed asks from its own frame: the chooser names the embed, not only the page around it.
+  const embed = { top, origin: "https://embed.example.net", url: "https://embed.example.net/widget" };
+  assert.equal(session.device({ deviceType: "hid", origin: "https://keys.example.com", device: { deviceId: "h1" } }), false);
   for (const permission of ["hid", "usb", "serial"]) assert.equal(session.check(null, permission), true, permission);
   session.display({}, (result) => assert.deepEqual(result, {}));
   const lists = {
-    "select-hid-device": [{ deviceList: [{ deviceId: "h1", name: "Security Key" }, { deviceId: "h2", name: "Keyboard" }] }],
-    "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }] }],
-    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial" }], {}],
+    "select-hid-device": [{ deviceList: [{ deviceId: "h1", name: "Security Key" }, { deviceId: "h2", name: "Keyboard" }], frame: top }],
+    "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }], frame: embed }],
+    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial" }], contents],
   };
   for (const [chooser, args] of Object.entries(lists)) {
     let prevented = false, picked = "unset";
@@ -90,6 +93,17 @@ test("device and security-key prompts show the person a chooser; only the picked
   assert.equal(asked.length, 3);
   assert.equal(asked[0].window, f.owner);
   assert.equal(asked[0].host, "keys.example.com");
+  assert.equal(asked[1].host, "embed.example.net");
+  assert.equal(asked[2].host, "keys.example.com");
+  // Only the picked device, for the origin that asked, of that device type, is granted.
+  const check = (deviceType, origin, deviceId) => session.device({ deviceType, origin, device: { deviceId } });
+  assert.equal(check("hid", "https://keys.example.com", "h1"), true);
+  assert.equal(check("hid", "https://keys.example.com", "h2"), false);
+  assert.equal(check("hid", "https://other.example.com", "h1"), false);
+  assert.equal(check("usb", "https://keys.example.com", "h1"), false);
+  assert.equal(check("usb", "https://embed.example.net", "u1"), true);
+  assert.equal(session.device({ deviceType: "serial", origin: "https://keys.example.com", device: { portId: "s1" } }), true);
+  assert.equal(session.device(undefined), false);
   assert.deepEqual(asked[0].devices, [{ id: "h1", label: "Security Key" }, { id: "h2", label: "Keyboard" }]);
   assert.deepEqual(asked[1].devices, [{ id: "u1", label: "Token · Maker" }]);
   // Cancel, an unknown id or a failing dialog grant nothing; HID/USB cancel without an id, serial with "".
@@ -113,10 +127,10 @@ test("device and security-key prompts show the person a chooser; only the picked
   assert.deepEqual(answers, [["third", "b1"]]);
   answer = () => "pair";
   const paired = [];
-  session.pairing({ pairingKind: "confirm" }, (result) => paired.push(result));
-  session.pairing({ pairingKind: "providePin" }, (result) => paired.push(result));
+  session.pairing({ pairingKind: "confirm", frame: top }, (result) => paired.push(result));
+  session.pairing({ pairingKind: "providePin", frame: top }, (result) => paired.push(result));
   answer = () => null;
-  session.pairing({ pairingKind: "confirmPin", pin: "123456" }, (result) => paired.push(result));
+  session.pairing({ pairingKind: "confirmPin", pin: "123456", frame: top }, (result) => paired.push(result));
   await settle();
   assert.deepEqual(paired, [{ confirmed: false }, { confirmed: true }, { confirmed: false }]);
   assert.equal(asked.at(-1).devices[0].label, "Pair with PIN 123456");
@@ -128,15 +142,21 @@ test("a device prompt with no device, or from a background window, says so inste
   await f.invoke({ action: "navigate", url: "https://keys.example.com/" });
   const session = f.sessions[0];
   let picked = "unset";
-  session.emit("select-hid-device", { preventDefault: () => {} }, { deviceList: [] }, (id) => { picked = id; });
+  const frame = f.views[0].webContents.mainFrame;
+  session.emit("select-hid-device", { preventDefault: () => {} }, { deviceList: [], frame }, (id) => { picked = id; });
   await settle();
   assert.equal(picked, undefined);
   assert.equal((await f.invoke({ action: "state" })).notice, "no-device");
   f.sender.emit("did-start-navigation", { isMainFrame: false, isSameDocument: false });
   f.views[0].webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
   assert.equal((await f.invoke({ action: "state" })).notice, null);
+  // A frame of no guest (another session user) never prompts.
+  picked = "unset";
+  session.emit("select-usb-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "u1" }], frame: { top: {} } }, (id) => { picked = id; });
+  await settle();
+  assert.equal(picked, undefined);
   f.owner.isFocused = () => false;
-  session.emit("select-usb-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "u1" }] }, (id) => { picked = id; });
+  session.emit("select-usb-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "u1" }], frame }, (id) => { picked = id; });
   await settle();
   assert.equal(picked, undefined);
   assert.equal(asked.length, 0);
@@ -144,7 +164,9 @@ test("a device prompt with no device, or from a background window, says so inste
 
 test("the device dialog lists each device, then Cancel, and cancels by default", () => {
   const options = deviceDialog({ host: "keys.example.com", devices: [{ id: "a", label: "Key A" }, { id: "b", label: "Key B" }] });
-  assert.deepEqual(options.buttons, ["Key A", "Key B", "Cancel"]);
+  assert.deepEqual(options.buttons, ["Device: Key A", "Device: Key B", "Cancel"]);
+  // A device that names itself "Cancel" stays recognisable as a device.
+  assert.deepEqual(deviceDialog({ host: "x.example.com", devices: [{ id: "c", label: "Cancel" }] }).buttons, ["Device: Cancel", "Cancel"]);
   assert.equal(options.cancelId, 2);
   assert.equal(options.defaultId, 2);
   assert.match(options.message, /^keys\.example\.com wants to connect to a device$/);
@@ -174,7 +196,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
-  const f = fixture(undefined, { openExternal: async (url) => { opened.push(url); } });
+  const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
   assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
@@ -202,9 +224,16 @@ test("sign-ins persist across close and reopen; Clear browsing data empties the 
   session.clearCache = async () => cleared.push("cache");
   session.clearAuthCache = async () => cleared.push("auth");
   await f.invoke({ action: "clear" });
-  assert.ok(f.calls.some(([name]) => name === "clear"));
   assert.deepEqual(cleared.sort(), ["auth", "cache"]);
-  assert.deepEqual(f.calls.at(-1), ["reload"]);
+  // The page leaves its site before the wipe, so no running script writes data back; then it loads again.
+  const order = f.calls.map(([name, target]) => (name === "load" ? target : name)).filter((name) => name !== "webrtc");
+  const blank = order.lastIndexOf("about:blank"), wiped = order.lastIndexOf("clear");
+  assert.ok(blank >= 0 && blank < wiped, order.join(" "));
+  assert.equal(order.at(-1), "https://example.com/again");
+  // A failed wipe is reported, not hidden.
+  session.clearStorageData = async () => { throw new Error("disk"); };
+  await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
+  assert.equal((await f.invoke({ action: "state" })).notice, "clear-failed");
   // Clearing before any guest in this run still opens and empties the persisted partition.
   const cold = fixture();
   await cold.invoke({ action: "clear" });
@@ -322,4 +351,17 @@ test("proxy setup fails closed and close during setup never loads a late website
   assert(!f.calls.some(([name]) => name === "load"));
   assert(f.calls.some(([name]) => name === "network-close"));
   assert(f.views.every(view => view.webContents.isDestroyed()));
+});
+
+test("Clear browsing data also revokes every device the person picked", async () => {
+  const f = fixture(undefined, { chooseDevice: async ({ devices }) => devices[0].id });
+  await f.invoke({ action: "navigate", url: "https://keys.example.com/" });
+  const session = f.sessions[0], frame = f.views[0].webContents.mainFrame;
+  Object.assign(frame, { origin: "https://keys.example.com" });
+  session.emit("select-hid-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "h1" }], frame }, () => {});
+  await settle();
+  const granted = () => session.device({ deviceType: "hid", origin: "https://keys.example.com", device: { deviceId: "h1" } });
+  assert.equal(granted(), true);
+  await f.invoke({ action: "clear" });
+  assert.equal(granted(), false);
 });

@@ -103,7 +103,8 @@ const miniBrowser = createMiniBrowser({
     const { response } = await dialog.showMessageBox(window, deviceDialog({ host, devices }));
     return devices[response]?.id ?? null;
   },
-  openExternal: (url) => shell.openExternal(url),
+  // "Open in browser" needs the person's click in that window and shares its external-link rate limit.
+  openExternal: (url, window) => activations.get(window.webContents)?.open(url) ?? false,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });

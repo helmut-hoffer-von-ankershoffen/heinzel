@@ -362,3 +362,21 @@ test("failed UI load destroys its hidden native window", async () => {
     prepareWindow: () => {}, cancelled: () => false }), /Load failed/);
   assert.equal(destroyed, true);
 });
+
+test("the window's own open (sidebar Open in browser) needs the person's gesture and shares the rate limit", async () => {
+  const contents = new EventEmitter();
+  contents.setWindowOpenHandler = () => {};
+  const opened = [];
+  let clock = 10_000;
+  const activation = guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
+  assert.equal(activation.open("https://example.com/a"), false);
+  activation.grant();
+  assert.equal(activation.open("https://example.com/b"), true);
+  activation.grant();
+  assert.equal(activation.open("https://example.com/c"), false);
+  clock += 5000;
+  activation.grant();
+  assert.equal(activation.open("file:///etc/passwd"), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, ["https://example.com/b"]);
+});

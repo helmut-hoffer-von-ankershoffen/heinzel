@@ -10,8 +10,13 @@ type BrowserState = {
   url?: string;
   canGoBack?: boolean;
   canGoForward?: boolean;
-  notice?: "passkey" | "no-device" | null;
+  notice?: "passkey" | "no-device" | "clear-failed" | null;
 };
+const NOTICES = {
+  passkey: "browser.passkeyNote",
+  "no-device": "browser.noDeviceNote",
+  "clear-failed": "browser.clearFailedNote",
+} as const;
 type BrowserBridge = { browser: (request: Record<string, unknown>) => Promise<BrowserState> };
 function bridge(): BrowserBridge | undefined {
   const value = (window as Window & { heinzelDesktop?: Partial<BrowserBridge> }).heinzelDesktop;
@@ -46,6 +51,15 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       if (result) setState(result);
     } catch {
       setState({ status: "unavailable" });
+    }
+  };
+  // A failed wipe must stay visible, also when no page is open yet.
+  const clearData = async () => {
+    try {
+      const result = await native?.browser({ action: "clear" });
+      if (result) setState(result);
+    } catch {
+      setState((previous) => ({ ...previous, notice: "clear-failed" }));
     }
   };
   useEffect(() => {
@@ -243,13 +257,13 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           </p>
           {state.notice && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
-              {t(state.notice === "passkey" ? "browser.passkeyNote" : "browser.noDeviceNote")}
+              {t(NOTICES[state.notice])}
             </p>
           )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
           <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
             <p className="min-w-0 flex-1">{t("browser.private")}</p>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void request({ action: "clear" })}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void clearData()}>
               {t("browser.clearData")}
             </Button>
           </div>

@@ -1123,6 +1123,7 @@ const en = {
   "browser.clearData": "Clear browsing data",
   "browser.passkeyNote":
     "Passkeys may not work in the built-in browser. Choose another sign-in option, or open the page in your browser.",
+  "browser.clearFailedNote": "Browsing data could not be cleared. Try again, or quit and reopen the app.",
   "browser.noDeviceNote":
     "No device was found for this website. Connect it and try again, or open the page in your browser.",
   "browser.webOnly":
