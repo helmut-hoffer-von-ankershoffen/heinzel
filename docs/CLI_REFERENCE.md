@@ -213,6 +213,7 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 * `open`: Open the desktop app, installing it first...
 * `refresh`: Refresh the managed app after an orderly...
 * `uninstall`: Remove the managed desktop app and keep...
+* `update`: Install the desktop app for this version...
 
 ### `hz app doctor`
 
@@ -249,6 +250,7 @@ $ hz app install [OPTIONS]
 * `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
 * `--help`: Show this message and exit.
 
 ### `hz app open`
@@ -294,6 +296,28 @@ $ hz app uninstall [OPTIONS]
 **Options**:
 
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--help`: Show this message and exit.
+
+### `hz app update`
+
+Install the desktop app for this version of Heinzel.
+
+The app is unsigned and not notarized by Apple. Heinzel checks the download&#x27;s sha256 and build
+provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
+
+**Usage**:
+
+```console
+$ hz app update [OPTIONS]
+```
+
+**Options**:
+
+* `--keep-quarantine`: Mark the app as downloaded so macOS asks once before the first open (Open Anyway in System Settings, Privacy &amp; Security).
+* `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
+* `-y, --yes`: Forget an earlier install whose app is gone, without asking.
+* `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
 * `--help`: Show this message and exit.
 
 ## `hz chat`
