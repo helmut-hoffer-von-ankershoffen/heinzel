@@ -34,7 +34,7 @@ from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTool
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
+from heinzel.modules.heinzel._session_models import QUESTION_ASKED, BackendBinding, SessionMessage
 from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestionTools, source_set_suggestion_schemas
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
@@ -676,6 +676,8 @@ class InteractiveTurn:
                     turn=turn,
                     data={"message_id": reply.id, **body.model_dump(mode="json")},
                 )
+                if result.status == "waiting":  # it asks the owner: chat may ask too (ADR 0160)
+                    writer.append(QUESTION_ASKED, key=f"question-{turn}", turn=turn, data={"message_id": reply.id})
             return self._crud.read_message(session_id, event)
 
     def activity(self, session_id: str, *, limit: int = 30) -> list[ToolActivity]:

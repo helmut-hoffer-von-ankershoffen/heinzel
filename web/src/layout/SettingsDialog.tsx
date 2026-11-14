@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { ChatChannelSettings } from "@/notifications/ChatChannelSettings";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
@@ -291,6 +292,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 />
               </div>
             )}
+            {current === "notifications" && <ChatChannelSettings />}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
               <>

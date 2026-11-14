@@ -38,7 +38,13 @@ from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
+from heinzel.modules.heinzel._session_models import (
+    QUESTION_ASKED,
+    BackendBinding,
+    RequestId,
+    SessionId,
+    SessionMessage,
+)
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 
@@ -47,6 +53,7 @@ if TYPE_CHECKING:
 
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
     from heinzel.modules.heinzel._plugin_turn import PluginTurnGuard
+    from heinzel.modules.heinzel._self_chat_questions import QuestionRelay
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 # A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
@@ -198,6 +205,8 @@ class UserChatService:
         self._connected = connected
         self._notifications = notifications
         self._playbook_kernel = playbook_kernel
+        self.questions: QuestionRelay | None = None
+        """Asks a turn's question in chat too, when the owner switched that on (ADR 0160); None asks nothing."""
 
     def connected_grants(self) -> ConnectedReadGrants:
         """Resolve owner-bound connected grants only inside an authenticated host call.
@@ -432,6 +441,11 @@ class UserChatService:
             if exc.before_response:
                 await asyncio.to_thread(self._set_aside, session, request)
             raise
+        if self.questions is not None and any(
+            e.kind == QUESTION_ASKED and e.key == f"question-{turn}"
+            for e in self._crud.repository.control_read(session).events
+        ):
+            self.questions.asked(session, turn)
         return UserChatAnswer(session_id=session, request_id=request, message=message)
 
     def _set_aside(self, session: str, request: str) -> None:
@@ -458,6 +472,29 @@ class UserChatService:
                 turn=turn,
                 data={"message_id": request, "owner": repo.principal_id, "origin": origin},
             )
+
+    async def answer_from_chat(self, session: str, request: str) -> UserChatAnswer:
+        """Run the turn for an answer the owner gave in chat, as if typed (ADR 0160); only the relay calls it.
+
+        Raises:
+            HeinzelError: If the call isn't the owner's `self-chat` identity, or the message didn't come from chat.
+        """
+
+        def verify() -> None:
+            context = self.current.context()
+            events = self._crud.repository.control_read(session).events
+            accepted = [e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}"]
+            if (
+                context.authentication != "self-chat"
+                or PRIVATE_WRITE not in context.permissions
+                or context.principal != self.current.owner()
+                or len(accepted) != 1
+                or accepted[0].data.get("origin") != "self-chat"
+            ):
+                msg = "This message has no chat answer origin"
+                raise HeinzelError(msg)
+
+        return await self.dispatch(session, request, verify, _MAX_REQUESTS, MAX_TURN_SECONDS, user_proposals=True)
 
     async def _claude_model(
         self, session: str, turn: str, verify: Callable[[], None], max_requests: int, duration: int

@@ -26,7 +26,7 @@ PRIVATE_READ = "private:read"
 PRIVATE_WRITE = "private:write"
 LOCAL_PERMISSIONS = frozenset({PRIVATE_READ, PRIVATE_WRITE})
 LOCAL_READ_PERMISSIONS = frozenset({PRIVATE_READ})
-Authentication = Literal["cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
+Authentication = Literal["cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device", "self-chat"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +103,7 @@ class CurrentUser:
             self._context.reset(token)
 
     @contextlib.contextmanager
-    def local(self, authentication: Literal["cli", "mcp-stdio", "daemon"]) -> Generator[None]:
+    def local(self, authentication: Literal["cli", "mcp-stdio", "daemon", "self-chat"]) -> Generator[None]:
         """Authenticate trusted local head/daemon startup as the owner, without asserting human approval.
 
         Yields:

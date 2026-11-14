@@ -231,3 +231,19 @@ def test_repeated_isolation_never_shares_directories_and_restores_the_previous_e
             created.append(current)
         assert {name: os.environ[name] for name in OWN_DIRECTORIES} == before
     assert created[0].isdisjoint(created[1])
+
+
+def test_assert_adapter_skips_what_an_adapter_declares_unsupported_and_checks_self_methods():
+    from heinzel.testing import assert_adapter
+
+    class SelfOnly:
+        unsupported = ("messages", "post")
+
+        def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> object:
+            return (text, thread, context)
+
+        def ask_self(self, question: str, *, options=(), timeout: float) -> object:
+            return (question, options, timeout)
+
+    with pytest.raises(AssertionError, match=r"ask_self takes \(question, options=\(\), timeout\), the protocol"):
+        assert_adapter(SelfOnly, "chat", modes={"read", "write"})

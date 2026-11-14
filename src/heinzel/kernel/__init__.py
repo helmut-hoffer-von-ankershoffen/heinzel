@@ -39,7 +39,15 @@ from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, Capabil
 from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._captured_write import (
@@ -294,6 +302,9 @@ from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     RESPONSES,
+    SELF_CONTEXT_LENGTH,
+    SELF_OPTION_LENGTH,
+    SELF_OPTIONS,
     Attachment,
     Calendar,
     Chat,
@@ -324,6 +335,8 @@ from heinzel.kernel._protocols import (
     PullRequest,
     Relation,
     SectionReplacement,
+    SelfAnswer,
+    SelfMessage,
     SentMail,
     TeamGraph,
     TimeSpan,
@@ -474,6 +487,9 @@ __all__ = [
     "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
     "RESPONSES",
+    "SELF_CONTEXT_LENGTH",
+    "SELF_OPTIONS",
+    "SELF_OPTION_LENGTH",
     "SETUP_PHASES",
     "SIGNALS",
     "SOUND_CSP",
@@ -739,6 +755,8 @@ __all__ = [
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
+    "SelfAnswer",
+    "SelfMessage",
     "SentMail",
     "ServiceContract",
     "ServiceLet",
@@ -831,6 +849,7 @@ __all__ = [
     "clean_text",
     "collapses",
     "daypart",
+    "declared_unsupported",
     "discover",
     "draft_reporting_lines",
     "env_prefix",

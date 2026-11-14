@@ -43,7 +43,6 @@ from heinzel import Module
 
 module = Module("harbor", "Useful Harbor operations.")
 
-
 @module.operation
 def hello(name: str = "Ada") -> str:
     """Greet someone by name."""
@@ -137,20 +136,16 @@ without Core knowing your provider:
 ```python
 from heinzel import Homebrew, ManualInstall, Module, ModuleSettings
 
-
 class SharingSettings(ModuleSettings):
     """Whether to share the workspace."""
 
     enabled: bool = False
 
-
 module = Module("sharing", "Share the workspace.")
 module.settings(SharingSettings)
 
-
 def wanted(settings: SharingSettings) -> bool:
     return settings.enabled
-
 
 module.prerequisite(
     "vpn-tool",
@@ -212,12 +207,11 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from heinzel import ModelOffer, ModelUnavailableError, Module
 
-module = Module("acme-ai", "Acme's models.")
-
+module = Module("acme-ai", "ACME's models.")
 
 @module.provides("ai-models", modes={"read"}, hosts=["ai.acme.example"], name="acme")
 class AcmeModels:
-    title = "Acme AI"
+    title = "ACME AI"
 
     def models(self) -> list[ModelOffer]:
         # From your own cache: Heinzel waits 5 seconds at most.
@@ -230,7 +224,7 @@ class AcmeModels:
         return AnthropicModel(model_id, provider=provider)
 ```
 
-The option shows up as "Acme AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
+The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
 `hz ai access use acme`, then pick a model per chat in the chat's model picker. Reference
 (`from heinzel import ...`, interface `AI_MODELS_INTERFACE = "1.0"`):
 
@@ -253,6 +247,46 @@ method your system can't do raises `NotSupportedError(capability, method, reason
 attribute, `unsupported = frozenset({"replace_section"})`: then Heinzel refuses the call before it reaches you, and
 the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
 
+#### A chat that can message its owner
+
+A `chat` connector may also reach the person in their own direct messages
+([ADR 0160](adr/0160-chat-is-an-extra-place-for-notices-and-questions.md)). Implement either or both:
+
+```python
+import threading
+from collections.abc import Sequence
+
+from heinzel import SelfAnswer, SelfMessage
+
+class OwnChat:
+    unsupported = frozenset({"messages", "post"})  # this one talks only to its owner
+
+    def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+        ...  # send `text` to the owner, as a reply in `thread` if given; label it with `context`
+        return SelfMessage(id="m-1", thread=thread or "m-1")
+
+    def ask_self(
+        self,
+        question: str,
+        *,
+        options: Sequence[str] = (),
+        timeout: float,
+        thread: str | None = None,
+        context: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> SelfAnswer:
+        ...  # options as buttons; wait for a button or a reply in the thread, checking `cancel` every few seconds
+        return SelfAnswer(thread="m-1", timed_out=True)
+```
+
+Heinzel calls them itself, in a worker thread, when the person switches on "Notices also in chat" or "Questions also
+in chat" under Settings, Notifications; no operation, playbook or other plugin can. Return `SelfAnswer(option=label,
+text=label)` for a button, `SelfAnswer(text=reply)` for a typed reply, and `SelfAnswer(timed_out=True)` when the time
+ran out or `cancel` was set; never raise for those. Count only the owner's own answer. Neutralise mention syntax as
+for `post`, and pass every string you return through `clean_text`. These buttons answer a question, never approve a
+write: keep them apart from any approval buttons your plugin has. A connector written before these methods doesn't
+offer them.
+
 ## Check your adapters with the conformance kit
 
 Core can't test a private plugin, so your plugin's own CI runs Core's checks. The kit comes with Heinzelmännchen:
@@ -266,7 +300,6 @@ from acme_plugin import module
 from heinzel import Window
 
 pytestmark = pytest.mark.integration
-
 
 def test_conforms(hz_conformance, fake_acme):
     window = Window.model_validate({"since": "2026-11-01T00:00:00Z", "until": "2026-11-08T00:00:00Z"})
@@ -311,8 +344,7 @@ launcher and speaks MCP with it, so your plugin holds no secret:
 from heinzel import Message, Module, Window
 from heinzel.connectors.mcp import ENVELOPE_UNTRUSTED, INLINE_UNTRUSTED, McpConnector, McpTool
 
-module = Module("acme-chat", "Acme chat through the company MCP gateway.")
-
+module = Module("acme-chat", "ACME chat through the company MCP gateway.")
 
 @module.provides("chat", modes={"read"}, hosts=["mcp.acme.example"], name="acme-chat")
 class AcmeChat:

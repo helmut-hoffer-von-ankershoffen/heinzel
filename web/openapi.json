@@ -15181,6 +15181,71 @@
         "title": "ScheduledNotificationView",
         "type": "object"
       },
+      "SelfChatStatus": {
+        "description": "Whether notices and questions also reach you in chat, and through which connector (ADR 0160).",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The chat connector that would be used, such as `slack`; none when no bound one can message you.",
+            "title": "Adapter"
+          },
+          "detail": {
+            "description": "How it stands, in words, with what to do when nothing can carry it.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/SelfChatUse",
+            "description": "Notices also sent to your own direct messages."
+          },
+          "questions": {
+            "$ref": "#/components/schemas/SelfChatUse",
+            "description": "A Heinzel's questions also asked in your own direct messages."
+          },
+          "wait_minutes": {
+            "description": "How long a question waits for an answer in chat.",
+            "title": "Wait Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adapter",
+          "notifications",
+          "questions",
+          "wait_minutes",
+          "detail"
+        ],
+        "title": "SelfChatStatus",
+        "type": "object"
+      },
+      "SelfChatUse": {
+        "description": "One use of the self channel: whether the chat connector can carry it, and whether you switched it on.",
+        "properties": {
+          "on": {
+            "description": "Whether it is switched on in `[system.notify]`.",
+            "title": "On",
+            "type": "boolean"
+          },
+          "supported": {
+            "description": "Whether the bound chat connector serves the method this use needs.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "on"
+        ],
+        "title": "SelfChatUse",
+        "type": "object"
+      },
       "ServerSwitch": {
         "description": "`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.",
         "properties": {
@@ -15385,7 +15450,8 @@
               "daemon",
               "api-bearer",
               "web-session",
-              "web-device"
+              "web-device",
+              "self-chat"
             ],
             "title": "Origin",
             "type": "string"
@@ -29241,6 +29307,28 @@
           }
         },
         "summary": "Mark notices as shown, so the daemon doesn't pop them up again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/notify/chat": {
+      "get": {
+        "description": "Show whether notices and questions also reach you in chat, and through which connector.\n\nSwitch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it\nworks once a bound chat connector can message you (ADR 0160). The app keeps showing everything.",
+        "operationId": "system_notify_chat",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfChatStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show whether notices and questions also reach you in chat, and through which connector.",
         "tags": [
           "system"
         ]
