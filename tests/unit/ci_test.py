@@ -1979,3 +1979,18 @@ def test_the_reviewed_pyyaml_is_built_after_the_last_sync_that_leaves_it_out():
     assert sync[:2] == ["uv", "sync"]
     assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
     assert "pytest" in tests
+
+
+def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links():
+    """The e2e fixture exports UV_FIND_LINKS; an inherited one would become resolver policy in the managed tool."""
+    source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
+    assert 'if not key.startswith(("HZ_", "UV_"))' in source  # the docs environment drops every UV_ variable
+    assert "UV_FIND_LINKS" not in source.replace("inherited UV_FIND_LINKS", "")
+
+
+def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
+    lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
+    build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
+    launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
+    assert build < launch
+    assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
