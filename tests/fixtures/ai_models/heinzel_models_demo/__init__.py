@@ -4,8 +4,11 @@ Its models answer through a `FunctionModel`, so nothing leaves the machine; one 
 company proxy's model list overstates what answers.
 """
 
+import json
+from collections.abc import AsyncIterator
+
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 from heinzel import ModelOffer, Module
 
@@ -17,6 +20,21 @@ def _answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         reply = {"report": "Answered", "summary": "Hello from the demo models"}
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
     return ModelResponse(parts=[TextPart("OK")])
+
+
+STREAMED = "Hello from the demo models, word by word"
+
+
+async def _stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    """The same answers, streamed in small pieces, as a real provider streams them."""
+    if info.output_tools:
+        raw = json.dumps({"report": "Answered", "summary": STREAMED})
+        name = info.output_tools[0].name
+        for index in range(0, len(raw), 8):
+            yield {0: DeltaToolCall(name=name if index == 0 else None, json_args=raw[index : index + 8])}
+        return
+    for word in STREAMED.split(" "):
+        yield word + " "
 
 
 @module.provides("ai-models", modes={"read"}, hosts=["ai-proxy.example.invalid"], name="demo-models")
@@ -36,4 +54,4 @@ class DemoModels:
 
     def model(self, model_id: str) -> FunctionModel:
         """A model that answers locally."""
-        return FunctionModel(_answer, model_name=model_id)
+        return FunctionModel(_answer, stream_function=_stream, model_name=model_id)
