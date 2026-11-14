@@ -47,7 +47,15 @@ function fills(shapes: Shape[]): string[] {
 describe("Heinzelmännchen's drawing", () => {
   it("carries the chosen look as data, also when the face is decoration without a label", () => {
     const { container } = render(
-      <HeinzelAvatar view="bust" age="old" beard="long" hat="blue" shirt="rose" build="round" accessories={["scarf"]} />,
+      <HeinzelAvatar
+        view="bust"
+        age="old"
+        beard="long"
+        hat="blue"
+        shirt="rose"
+        build="round"
+        accessories={["scarf"]}
+      />,
     );
     const svg = container.querySelector("svg") as SVGSVGElement;
     expect(svg).toHaveAttribute("aria-hidden", "true");

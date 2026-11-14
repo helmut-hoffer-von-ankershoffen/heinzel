@@ -51,7 +51,9 @@ describe("Home", () => {
     const { calls } = mockApi({
       ...base,
       "/api/heinzel/sessions": {
-        sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" }],
+        sessions: [
+          { session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" },
+        ],
       },
       "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
     });
