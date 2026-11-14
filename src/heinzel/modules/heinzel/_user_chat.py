@@ -21,6 +21,7 @@ from heinzel.kernel import (
     AiModelsSource,
     CapabilitySettings,
     Effort,
+    Emit,
     ModelOffer,
     RunnerSnapshot,
     RunnerSnapshotProvider,
@@ -50,9 +51,11 @@ from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 
 if TYPE_CHECKING:
+    from pydantic_ai.capabilities import AbstractCapability
     from pydantic_ai.models import Model
 
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
+    from heinzel.modules.heinzel._engine import TurnDeps
     from heinzel.modules.heinzel._plugin_turn import PluginTurnGuard
     from heinzel.modules.heinzel._self_chat_questions import QuestionRelay
 
@@ -209,10 +212,12 @@ class UserChatService:
         execute: Callable[..., Outcome] = run_bounded,
         models: "PluginModels | None" = None,
         usage: Callable[[UsageEntry], None] | None = None,
+        emitter: Callable[[], Emit] | None = None,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._models = models
         self._usage = usage
+        self._emitter = emitter
         self._runner_settings = runner_settings
         self._connected = connected
         self._notifications = notifications
@@ -454,8 +459,9 @@ class UserChatService:
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
 
+        emit = self._emitter() if self._emitter is not None else None  # on the operation's thread, for its stream
         plugin = await asyncio.to_thread(self.plugin_selected, session)
-        hooks: list[PluginTurnGuard] = []
+        hooks: list[AbstractCapability[TurnDeps]] = []
         limits = TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration)
         if plugin is None:
             model, unchanged, binding = await self._claude_model(session, turn, verify, max_requests, duration)
@@ -464,6 +470,9 @@ class UserChatService:
             model, unchanged, binding, hook = await self._plugin_model(plugin, verify, cause)
             hooks.append(hook)
             limits = limits.model_copy(update={"total_tokens": PLUGIN_TURN_TOKENS})
+        from heinzel.modules.heinzel._reply_stream import reply_streams  # noqa: PLC0415 - model execution only during a turn
+
+        hooks.extend(reply_streams(emit, model))  # innermost: the guard checks and records a streamed request too
         scheduled_notice = None
         if notification_policy is not None:
             if (
