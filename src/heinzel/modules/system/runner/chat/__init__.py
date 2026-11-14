@@ -399,6 +399,21 @@ def show(store: ChatStore, session: Session) -> ChatSession:
     return store.load(session)
 
 
+@module.operation(heads=HEADS, audience="everyday")
+def heinzel_actions(
+    store: ChatStore,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The Heinzel's own chat.")
+    ],
+) -> list[ChatSession]:
+    """Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+
+    Raises:
+        HeinzelError: If no owner is signed in.
+    """
+    return store.heinzel_actions_chats(durable_session)
+
+
 @module.operation(name="list", heads=HEADS, audience="everyday")
 def sessions(store: ChatStore) -> list[ChatSummary]:
     """List chat sessions, most recent first; they are kept for system.runner.chat.keep_days."""

@@ -283,6 +283,9 @@ const en = {
     "A Heinzel prepared a five-minute schedule proposal. Confirm its action above to create an inactive proposal, then review activation separately.",
   "durable.scheduleReview": "Review activation in chat",
   "durable.scheduleActionTitle": "Review this schedule change",
+  "durable.heinzelActionsTitle": "Waiting for your Confirm",
+  "durable.heinzelActionsUnavailable": "What this Heinzel proposed couldn't be loaded. Reload to try again.",
+  "durable.heinzelActionFailed": "That didn't go through. Check the card's outcome before you try again.",
   "durable.pauseActionTitle": "Review pause of this schedule",
   "durable.resumeActionTitle": "Review resuming this schedule",
   "durable.scheduleReviewStale":

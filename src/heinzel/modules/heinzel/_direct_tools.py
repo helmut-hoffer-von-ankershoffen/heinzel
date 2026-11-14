@@ -5,8 +5,6 @@ MCP server: they get the tools as Pydantic AI tools, decided by the one tool pol
 (reads run; a write follows its `agents=` marker, budget and audit; a browser commit and every other change wait
 for the person). What waits lands in the Heinzel's actions chat, an owner-bound chat of `system.runner.chat`, and
 the person confirms it there with the chat's card.
-
-Dark behind the feature flag `heinzel_tools` until the 0.9.45 journey (head E) is green.
 """
 
 import contextlib
@@ -22,12 +20,10 @@ from heinzel.kernel import (
     McpChatSessions,
     TurnTool,
     chat_tools,
-    feature_enabled,
     found_tools,
     pydantic_ai_tools,
 )
 
-FLAG = "heinzel_tools"
 READS: Final = "mcp-stdio"
 """The identity the tool set is built with: the one every chat tool reads with (`kernel/_chat_tools.py`)."""
 REFUSED = "Error: "
@@ -97,14 +93,14 @@ def activity_name(name: str) -> str:
 
 
 def turn_toolbox(kernel: Kernel, session: str, owner: str, *, attended: bool) -> TurnToolbox | None:
-    """The direct tools of `session`'s turn, or None while the flag is off or the turn is not the owner's.
+    """The direct tools of `session`'s turn, or None when the turn is not the owner's or no chat module is loaded.
 
     The installation's owner is the one whose chats hold proposals; a Heinzel of anyone else gets no tools.
 
     Raises:
         HeinzelError: If the actions chat can't be made or read.
     """
-    if not feature_enabled(kernel.settings, FLAG) or not kernel.provides(McpChatSessions):
+    if not kernel.provides(McpChatSessions):
         return None
     user = kernel.resolve(CurrentUser)
     with user.using(None), user.local_read(READS):

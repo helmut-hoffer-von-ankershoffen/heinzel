@@ -50,9 +50,8 @@ def ran() -> list[str]:
 
 
 @pytest.fixture
-def kernel(make_kernel, settings, ran):
-    on = settings.model_copy(update={"features": frozenset({"heinzel_tools"})})
-    return make_kernel(builtins=True, settings_=on, desk=desk(ran))
+def kernel(make_kernel, ran):
+    return make_kernel(builtins=True, desk=desk(ran))
 
 
 @pytest.fixture
@@ -83,6 +82,8 @@ def test_the_actions_chat_is_bound_to_the_owner_made_once_and_never_the_check_in
         assert chats.heinzel_of(first) == HEINZEL
         assert chats.heinzel_of(kernel.resolve(ChatService).open(None).id) is None
         assert chats.find_personal_chat(HEINZEL) is None  # the check-in flow still finds only its own chat
+        assert [chat.id for chat in chats.heinzel_actions_chats(HEINZEL)] == [first]
+        assert chats.heinzel_actions_chats(OTHER) == []
         with pytest.raises(HeinzelError, match="not a Heinzel"):
             chats.heinzel_actions("../elsewhere")
 
@@ -133,10 +134,9 @@ def test_a_proposal_waits_in_the_actions_chat_and_runs_on_the_person_s_yes(kerne
     assert confirmed.actions[0].status == "done"
 
 
-def test_no_tools_while_the_flag_is_off_or_for_another_owner(make_kernel, ran, kernel, owner):
-    dark = make_kernel(builtins=True, desk=desk(ran))
-    assert turn_toolbox(dark, HEINZEL, owner, attended=True) is None
+def test_no_tools_for_another_owner_or_without_the_chat_module(make_kernel, ran, kernel, owner):
     assert turn_toolbox(kernel, HEINZEL, "u-" + "0" * 32, attended=True) is None
+    assert turn_toolbox(make_kernel(desk=desk(ran)), HEINZEL, owner, attended=True) is None
 
 
 def test_the_turn_records_each_call_by_name_and_outcome_and_holds_its_chat(kernel, owner, ran):

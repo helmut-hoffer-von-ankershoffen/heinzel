@@ -9,7 +9,6 @@ from heinzel.kernel._settings import Settings
 FEATURES: dict[str, str] = {
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
-    "heinzel_tools": "A Heinzel's turns call hz's tools, the browser and found MCP servers directly.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""
 

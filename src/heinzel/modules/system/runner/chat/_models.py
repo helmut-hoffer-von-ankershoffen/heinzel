@@ -61,7 +61,10 @@ class ChatSettings(ModuleSettings):
 class ChatContext(BaseModel):
     """What a chat was opened about: the screen, a contract, a draft or a notification event; it seeds the chat."""
 
-    kind: ContextKind = Field(description="The context kind; `check-in` is created only by the durable-session flow.")
+    kind: ContextKind = Field(
+        description="The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a "
+        "Heinzel's own proposals (ADR 0162)."
+    )
     ref: str = Field(
         default="",
         max_length=300,
