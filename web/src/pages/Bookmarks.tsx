@@ -60,7 +60,7 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-4">
-        <form onSubmit={addBookmark} className="flex min-w-0 flex-1 items-center gap-2">
+        <form onSubmit={addBookmark} className="flex min-w-0 flex-[1_1_16rem] items-center gap-2">
           <input
             aria-label={t("bookmarks.addAddress")}
             placeholder="https://"
@@ -78,7 +78,7 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
             {t("bookmarks.add")}
           </Button>
         </form>
-        <form onSubmit={addFolder} className="flex min-w-0 flex-1 items-center gap-2">
+        <form onSubmit={addFolder} className="flex min-w-0 flex-[1_1_16rem] items-center gap-2">
           <input
             aria-label={t("bookmarks.folderName")}
             placeholder={t("bookmarks.folderName")}
@@ -147,7 +147,7 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
                   <Favicon image={entry.origin ? list.favicons?.[entry.origin] : null} />
                 )}
                 {renaming?.id === entry.id ? (
-                  <form onSubmit={rename} className="flex min-w-0 flex-1 items-center gap-2">
+                  <form onSubmit={rename} className="flex min-w-0 flex-[1_1_10rem] items-center gap-2">
                     <input
                       aria-label={t("bookmarks.name")}
                       // biome-ignore lint/a11y/noAutofocus: the person just asked to rename this entry
@@ -166,12 +166,12 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
                     </Button>
                   </form>
                 ) : entry.kind === "folder" ? (
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{entry.title}</span>
+                  <span className="min-w-0 flex-[1_1_10rem] truncate text-sm font-medium">{entry.title}</span>
                 ) : (
                   <button
                     type="button"
                     title={entry.url ?? undefined}
-                    className="min-w-0 flex-1 truncate text-left text-sm"
+                    className="h-9 min-w-0 flex-[1_1_10rem] truncate text-left text-sm"
                     onClick={() => openBookmark(entry.url)}
                   >
                     {entry.title}
@@ -183,7 +183,7 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
                   onChange={(event) =>
                     move.mutate({ entry: entry.id, parent: event.target.value || null, before: null })
                   }
-                  className="max-w-32 rounded-lg border border-border bg-background px-1 py-1 text-xs"
+                  className="h-9 max-w-32 rounded-lg border border-border bg-background px-1 text-xs"
                 >
                   <option value="">{t("bookmarks.topLevel")}</option>
                   {folders(list)
