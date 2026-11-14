@@ -318,6 +318,18 @@ export function sortedWithinGroups<T extends { title: string; heading: Heading }
 }
 
 /**
+ * The installed plugins for `settingsNav`: undefined only while the list is still loading. A list that failed to load
+ * counts as none, so plugin pages fall back to Preferences and Connectors says none is installed, never "looking"
+ * forever.
+ */
+export function loadedPlugins(query: {
+  isPending: boolean;
+  data?: SchemaPluginInfo[];
+}): SchemaPluginInfo[] | undefined {
+  return query.isPending ? undefined : (query.data ?? []);
+}
+
+/**
  * Sorts the setting groups into pages, Connectors by the plugin that provides each module.
  *
  * `plugins` is undefined while the installed plugins load (`hz system plugin list` can take seconds). Until then a

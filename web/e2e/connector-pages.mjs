@@ -87,6 +87,17 @@ try {
     [],
   );
   if (shots) await page.screenshot({ path: `${shots}/connector-pages-${engine}.png` });
+
+  // A plugin list that fails to load (after the client's retries) counts as none: no endless "looking".
+  const failing = await context.newPage();
+  await failing.route("**/api/system/plugin/list**", (route) =>
+    route.fulfill({ status: 500, json: { detail: "boom" } }),
+  );
+  await failing.goto(connectors.href);
+  await failing.getByText("No connector installed yet").waitFor({ timeout: 60000 });
+  assert.equal(await failing.getByText("Looking for installed connectors…").count(), 0);
+  await failing.close();
+
   console.log(
     JSON.stringify({
       loading: "Looking for installed connectors…",

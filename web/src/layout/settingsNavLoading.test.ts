@@ -2,7 +2,7 @@
 // while the installed plugins still load and once they have: never in a wrong place first and moved later.
 import { describe, expect, it } from "vitest";
 import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
-import { settingsNav } from "./settingsSections";
+import { loadedPlugins, settingsNav } from "./settingsSections";
 
 const plugin = (overrides: Partial<SchemaPluginInfo>): SchemaPluginInfo =>
   ({
@@ -129,5 +129,18 @@ describe("Plugin settings pages once the installed plugins are known", () => {
   it("still gives a page whose plugin isn't installed a Preferences page", () => {
     const nav = settingsNav(["ghost"], [], [page("ghost")]);
     expect(where(nav, "ghost")).toBe("preferences");
+  });
+});
+
+describe("The plugin list's state", () => {
+  it("is loading only while the query is pending; a failed list counts as no plugins, never as loading", () => {
+    expect(loadedPlugins({ isPending: true, data: undefined })).toBeUndefined();
+    expect(loadedPlugins({ isPending: false, data: [google] })).toEqual([google]);
+    const failed = loadedPlugins({ isPending: false, data: undefined });
+    expect(failed).toEqual([]);
+    const nav = settingsNav(["google"], failed, [page("google")]);
+    expect(nav.loading).toBe(false);
+    expect(where(nav, "google")).toBe("preferences");
+    expect(nav.connectors).toEqual([]);
   });
 });
