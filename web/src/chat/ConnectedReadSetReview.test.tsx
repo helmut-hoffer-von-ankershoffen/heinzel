@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
@@ -17,6 +17,12 @@ function showSet() {
 }
 
 const session = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+/** The review sections wait behind Details in the chat header's More (ADR 0157). */
+async function showDetails() {
+  fireEvent.click(await screen.findByRole("button", { name: "More: search, details" }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }));
+}
 const entries = [
   { capability: "calendar", method: "events", fixed_arguments: { window: { since: "Monday", until: "Tuesday" } } },
   { capability: "documents", method: "read", fixed_arguments: { id: "fixture" } },
@@ -128,8 +134,9 @@ it("keeps a suggested set inert until a person reviews and confirms the exact se
       <RouterProvider router={router} />
     </Providers>,
   );
+  await showDetails();
   await user.click(await screen.findByRole("button", { name: "Ask about sources" }));
-  const composer = screen.getByLabelText("Message your Heinzel");
+  const composer = screen.getByLabelText(/^Message /);
   expect(composer).toHaveFocus();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/answer-chat"))).toBe(false);
   await user.type(composer, "Please suggest sources for my task.");
@@ -196,6 +203,7 @@ it.each(["done", "uncertain", "failed"])(
         <RouterProvider router={makeRouter()} />
       </Providers>,
     );
+    await showDetails();
     await user.click(await screen.findByRole("button", { name: /confirm/i }));
     expect(await screen.findByText(/decision outcome needs inspection/)).toBeInTheDocument();
     view.unmount();
@@ -204,6 +212,7 @@ it.each(["done", "uncertain", "failed"])(
         <RouterProvider router={makeRouter()} />
       </Providers>,
     );
+    await showDetails();
     expect(await screen.findByRole("button", { name: "Check decision outcome" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /confirm/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Check decision outcome" }));

@@ -100,7 +100,9 @@ describe("The durable Heinzel footer control", () => {
     renderAt("/doctor");
     const button = await screen.findByRole("button", { name: "… Heinzelmännchen, off" });
     fireEvent.click(button);
-    expect(await screen.findByText("Loading…")).toHaveAttribute("role", "status");
+    // The chat beside the screen is loading the same list; this placeholder is the footer panel's.
+    const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
+    expect(await within(panel).findByText("Loading…")).toHaveAttribute("role", "status");
     finish(Response.json({ sessions: [] }));
     expect(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
   });

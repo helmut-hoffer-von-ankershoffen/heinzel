@@ -112,10 +112,8 @@ const JUSTIFY_END: Record<string, number> = {};
 const UNNAMED_ICONS: Record<string, number> = {};
 // Raw `<button>`s per file: switches, tabs, menu rows and navigation, plus those PR b converts; only shrinks.
 const RAW: Record<string, number> = {
-  "../chat/Conversation.tsx": 1,
-  "../chat/MessageInfo.tsx": 1,
-  "../chat/ModelPicker.tsx": 2,
-  "../chat/SessionSwitcher.tsx": 2,
+  // The chat header's switcher trigger and the menu rows of Your Heinzels and More (they replace SessionSwitcher's).
+  "../chat/HeinzelHeader.tsx": 5,
   "../components/ContributionToggle.tsx": 1,
   "../components/Contributions.tsx": 4,
   "../components/FooterItem.tsx": 1,

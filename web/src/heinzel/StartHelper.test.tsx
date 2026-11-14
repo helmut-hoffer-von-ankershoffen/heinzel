@@ -54,6 +54,11 @@ it("sends one named first message and opens its durable chat with separate revie
   await userEvent.click(screen.getByRole("button", { name: "Send first message" }));
   const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
   expect(await chat.findByText("Private first message")).toBeInTheDocument();
+  // The review sections wait behind Details in the chat header's More (ADR 0157).
+  await userEvent.click(chat.getByRole("button", { name: "More: search, details" }));
+  await userEvent.click(
+    within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }),
+  );
   const review = within(chat.getByRole("region", { name: "Review your helper" }));
   expect(review.getByText("1. Agent terms")).toBeInTheDocument();
   expect(review.getByText("2. Source access and time window")).toBeInTheDocument();

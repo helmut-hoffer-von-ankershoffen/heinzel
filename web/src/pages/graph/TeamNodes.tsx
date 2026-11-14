@@ -3,7 +3,7 @@
 // chat button opens the chat about it. The state is a word and a line style as well as a colour.
 
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { FileText, LayoutList, type LucideIcon, MessageSquare } from "lucide-react";
+import { FileText, LayoutList, type LucideIcon } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { FlowTone } from "@/components/graph/FlowNode";
@@ -120,16 +120,6 @@ function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
           </span>
         </span>
       </NodeLink>
-      {node.kind === "heinzel" && (
-        <Link
-          to={`?chat-context=${encodeURIComponent(`heinzel:${heinzelId(node.id)}`)}`}
-          aria-label={t("teamGraph.ask", { label: node.label })}
-          title={t("teamGraph.ask", { label: node.label })}
-          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-icon outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
-          <MessageSquare aria-hidden className="size-4" />
-        </Link>
-      )}
       <Handle type="source" position={Position.Right} isConnectable={false} className={handle} />
     </div>
   );

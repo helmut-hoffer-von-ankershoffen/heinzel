@@ -1,6 +1,6 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
@@ -15,6 +15,7 @@ import {
 import { useDaemonStatus } from "@/api/daemon";
 import { useConfig, usePreviewFeature } from "@/api/queries";
 import { authorityEpoch, subscribeAuthority } from "@/api/token";
+import { ActionCard } from "@/chat/ActionCard";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
@@ -22,17 +23,18 @@ import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
-import { ActionCard } from "@/chat/Conversation";
 import { ConversationSearch } from "@/chat/ConversationSearch";
+import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
+import { HeinzelHeader } from "@/chat/HeinzelHeader";
+import { MessageState } from "@/chat/MessageState";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
 import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { ReleaseDraftActivity, ReleaseDraftReviewDetails, releaseDraftReview } from "@/chat/ReleaseDraftActivity";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
-import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
-import { isDurableSession } from "@/chat/useChat";
+import { UncertainTurnRecovery, useTurnState } from "@/chat/UncertainTurnRecovery";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
@@ -40,9 +42,11 @@ import { Button } from "@/components/ui/button";
 import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
+import { isDurableSession } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 import { AnsweredInChat } from "@/notifications/ChatChannelSettings";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
+import { typed } from "@/sound/store";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -152,6 +156,7 @@ function revealNewest(box: HTMLElement | null, marker: HTMLElement | null) {
   box.scrollTop += marker.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom + 12;
 }
 
+/** One Heinzel's chat (ADR 0157): every chat is with a Heinzel, and Close collapses the panel. */
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
   return <DurableSessionView key={authority} authority={authority} sessionId={sessionId} onClose={onClose} />;
@@ -202,10 +207,9 @@ function DurableSessionView({
   const searchTarget = useRef<HTMLDivElement>(null);
   const newest = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  // Review links (agent, approval, schedule, notification, connected read, contract) land on the sections they name.
-  // Only the first render sets Details open; afterwards the browser owns it, so React never writes the attribute back
-  // inside the toggle event of a press.
-  const [detailsInitiallyOpen] = useState(() =>
+  // Details shows among the messages only when More asks for it or a review link (agent, approval, schedule,
+  // notification, connected read, contract) lands on the sections it names.
+  const [detailsShown, setDetailsShown] = useState(() =>
     [...params.keys()].some((key) => key.endsWith("-chat") && key !== "chat"),
   );
   useEffect(() => {
@@ -343,6 +347,14 @@ function DurableSessionView({
       ? agentChatQuery.data
       : undefined;
   const agentChatUnavailable = agentChatId !== null && !agentChat;
+  // An uncertain turn (a usage limit after acceptance) is never a plain retry: it keeps its own notice (T2).
+  // The server's turn state decides, not the error kind: unresolved (crashed, still running) or abandoned turns have
+  // unknown effects, so they never get Try again. Only a turn known not to have started may be tried again.
+  const turnState = useTurnState(sessionId, pending?.request_id ?? "", !!pending?.accepted);
+  const uncertain =
+    pending?.outcome === "subscription_usage_limit" ||
+    (!!pending?.accepted && (turnState.data?.status === "unresolved" || turnState.data?.status === "abandoned"));
+  const turnStateLoading = !!pending?.accepted && turnState.isFetching;
   const approvalQuery = useQuery({
     queryKey: scopedChatKey(approvalChatId ?? ""),
     queryFn: ({ signal }) => readScopedChat(approvalChatId ?? "", signal),
@@ -865,40 +877,29 @@ function DurableSessionView({
     </>
   );
   const heinzelName = query.data?.name ?? t("durable.title");
+  const retryBlocked =
+    busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || uncertain || turnStateLoading;
+  const opened = query.data?.session_id === sessionId;
+  useEffect(() => {
+    if (opened) rememberHeinzel(sessionId);
+  }, [opened, sessionId]);
   const look = appearanceLook(query.data?.appearance);
   const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <HeinzelAvatar
-            view="bust"
-            label={heinzelName}
-            {...look}
-            state={busy ? "thinking" : undefined}
-            className="size-8 overflow-hidden"
-          />
-          <h2 className="min-w-0 truncate font-medium">{heinzelName}</h2>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="text-icon"
-            aria-label={t("durable.search")}
-            title={t("durable.search")}
-            aria-expanded={searchOpen}
-            onClick={() => setSearchOpen((open) => !open)}
-          >
-            <Search aria-hidden />
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
-            {t("durable.close")}
-          </Button>
-        </div>
-      </div>
+      <HeinzelHeader
+        sessionId={sessionId}
+        name={heinzelName}
+        look={look}
+        busy={busy}
+        locked={busy || profileLocked}
+        searchOpen={searchOpen}
+        detailsOpen={detailsShown}
+        onSearch={() => setSearchOpen((open) => !open)}
+        onDetails={() => setDetailsShown((shown) => !shown)}
+        onClose={onClose}
+      />
       <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
@@ -1000,7 +1001,8 @@ function DurableSessionView({
             </div>
           </nav>
         )}
-        <details className="rounded-lg border border-border p-3" open={detailsInitiallyOpen}>
+        {/* Details stays mounted (its reviews keep their state) and shows when More asks or a review link lands. */}
+        <details className="rounded-lg border border-border p-3" open hidden={!detailsShown}>
           <summary className="cursor-pointer text-sm font-medium">{t("durable.details")}</summary>
           <div className="mt-3 space-y-3">
             {query.data && (
@@ -1105,9 +1107,11 @@ function DurableSessionView({
                     {speakerLabel(speaker, heinzelName, message.role)}
                   </p>
                   <MessageText role={message.role} text={message.text} />
-                  {message.status && message.status !== "completed" && (
-                    <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
-                  )}
+                  {message.status &&
+                    message.status !== "completed" &&
+                    !(own && (message.status === "pending" || message.id === pending?.request_id)) && (
+                      <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
+                    )}
                   {message.billing === "plan" && (
                     <p className="text-xs text-muted-foreground">Subscription usage · cost unknown</p>
                   )}
@@ -1115,6 +1119,20 @@ function DurableSessionView({
                     <p className="text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</p>
                   )}
                 </div>
+                {own && message.id === pending?.request_id && !sending && !uncertain ? (
+                  <MessageState
+                    kind="not-answered"
+                    announce={error}
+                    onRetry={() => void send()}
+                    retryDisabled={retryBlocked}
+                  />
+                ) : own &&
+                  message.status === "pending" &&
+                  (query.data?.messages ?? []).some(
+                    (other) => other.seq < message.seq && other.role === "user" && other.status === "pending",
+                  ) ? (
+                  <MessageState kind="queued" />
+                ) : null}
                 {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
                 {message.role === "assistant" &&
                   message.turn_id &&
@@ -1139,15 +1157,26 @@ function DurableSessionView({
             </div>
           );
         })}
-        {sending && !query.data?.messages?.some((message) => message.id === pending?.request_id) && (
+        {pending && !query.data?.messages?.some((message) => message.id === pending.request_id) ? (
           <div data-message-speaker="you" className="flex min-w-0 text-sm">
-            <div className="ml-auto min-w-0 max-w-[85%] break-words rounded-lg bg-accent px-3 py-2 text-accent-foreground">
-              <p className="sr-only">{t("chat.you")}</p>
-              <p className="whitespace-pre-wrap">{pending?.message}</p>
-              <p className="text-xs text-muted-foreground">{t("durable.status.sending")}</p>
+            <div className="ml-auto min-w-0 max-w-[85%] space-y-1">
+              <div className="break-words rounded-lg bg-accent px-3 py-2 text-accent-foreground">
+                <p className="sr-only">{t("chat.you")}</p>
+                <p className="whitespace-pre-wrap">{pending.message}</p>
+              </div>
+              {sending ? (
+                <MessageState kind="sending" />
+              ) : uncertain ? null : (
+                <MessageState
+                  kind={pending.accepted ? "not-answered" : "not-sent"}
+                  announce={error}
+                  onRetry={() => void send()}
+                  retryDisabled={retryBlocked}
+                />
+              )}
             </div>
           </div>
-        )}
+        ) : null}
         {sending && (
           <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
             <HeinzelAvatar view="bust" {...look} state="thinking" className="size-6 shrink-0 overflow-hidden" />
@@ -1605,9 +1634,9 @@ function DurableSessionView({
             {t("durable.preservationFailed")}
           </p>
         ) : null}
-        {error && pending?.outcome !== "subscription_usage_limit" && (
-          <div className="space-y-1 text-sm" role="alert">
-            <p>{t("durable.failed")}</p>
+        {error && pending?.outcome !== "subscription_usage_limit" && (errorDetail || !pending) && (
+          <div className="space-y-1 text-sm" role={pending ? undefined : "alert"}>
+            {!pending && <p>{t("durable.failed")}</p>}
             {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
             {errorDetail && (
               <>
@@ -1664,7 +1693,7 @@ function DurableSessionView({
         )}
         <div className="flex items-end gap-2">
           <label htmlFor={composerId} className="sr-only">
-            {t("durable.message")}
+            {t("oneChat.message", { name: heinzelName })}
           </label>
           <textarea
             id={composerId}
@@ -1672,11 +1701,15 @@ function DurableSessionView({
             rows={2}
             className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
             // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.
-            value={sending ? "" : text}
+            // A message that did not go through waits in its bubble, not here as well.
+            value={sending || pending !== null ? "" : text}
             maxLength={4000}
             placeholder={t("durable.placeholder", { name: heinzelName })}
             disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
-            onChange={(event) => updateComposer({ text: event.target.value })}
+            onChange={(event) => {
+              updateComposer({ text: event.target.value });
+              typed(); // a soundscape plays softer while you type (ADR 0058)
+            }}
             onKeyDown={(event) => {
               // Enter sends, as in every chat of the app; Shift+Enter starts a new line.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -1688,16 +1721,13 @@ function DurableSessionView({
           <Button
             type="submit"
             disabled={
-              busy ||
-              storageError ||
-              recoveryBlocked ||
-              agentChatUnavailable ||
-              !query.data ||
-              pending?.outcome === "subscription_usage_limit" ||
+              retryBlocked ||
+              // A message that did not go through is retried under its bubble.
+              pending !== null ||
               (!pending && !agentPending && !text.trim())
             }
           >
-            {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
+            {busy ? t("durable.scheduleWorking") : agentPending ? t("durable.retry") : t("durable.send")}
           </Button>
         </div>
       </form>

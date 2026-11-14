@@ -1,12 +1,14 @@
 // A plugin's own AI models in the real Settings (ADR 0159): the made-up plugin's option sits next to Claude Code,
-// picking it makes it the AI access in use, and its model picker lists what the plugin offers with an unavailable one
-// marked. Picking a model saves it and the live check answers through the plugin's model. Real Chromium against a real
+// picking it makes it the AI access in use, and its model picker in Settings lists what the plugin offers with an
+// unavailable one marked. Picking a model saves it, the live check answers through the plugin's model, and a Heinzel's
+// chat, which has no model picker of its own, answers on it. Real Chromium against a real
 // isolated `hz ui serve` with the fixture plugin installed; nothing is mocked.
 // Usage: node e2e/plugin-models.mjs URL SCREENSHOT_DIR (prints one JSON object)
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { createHeinzelWith } from "./chat-ready.mjs";
 
 const [url, shots] = process.argv.slice(2);
 if (!url || !shots) throw new Error("Usage: node e2e/plugin-models.mjs URL SCREENSHOT_DIR");
@@ -53,21 +55,14 @@ try {
   const answer = (await dialog.getByText(/^Answered: /).textContent()) ?? "";
   await dialog.getByRole("button", { name: "Close" }).click();
   await dialog.waitFor({ state: "detached" });
-  // Back to the app without Settings: the chat's composer is in the side pane.
+  // Back to the app without Settings. Every chat is with a Heinzel (ADR 0157) and has no model picker (ADR 0158): the
+  // first start names the first Heinzel, whose turn runs on the model picked in Settings; watch the answer stream in.
   await page.goto(url);
   await page.locator("#splash").waitFor({ state: "hidden" });
-
-  // The chat's own model picker lists the plugin's models; pick one per chat, then watch the answer stream in.
-  const picker = page.getByRole("button", { name: /^Model and effort: / });
-  await picker.click();
-  const menu = page.getByRole("group", { name: "Models of Demo models" });
-  await menu.waitFor();
-  const retiredInChat = menu.getByRole("button", { name: /Demo Retired/ });
-  assert.match((await retiredInChat.textContent()) ?? "", /unavailable/);
-  await page.screenshot({ path: join(shots, "plugin-models-4-chat-picker.png") });
-  await menu.getByRole("button", { name: /^Demo Fast/ }).click();
-  await page.getByPlaceholder(/Ask about this screen/).fill("Hello, demo models");
-  await page.getByRole("button", { name: "Send" }).click();
+  await createHeinzelWith(page, "Hello, demo models");
+  const chat = page.getByRole("complementary", { name: "Chat" });
+  assert.equal(await chat.getByRole("button", { name: /^Model and effort: / }).count(), 0);
+  await chat.getByRole("button", { name: "Send" }).click();
   const reply = page.getByText(/Hello from the demo models/);
   await reply.first().waitFor({ timeout: 30_000 });
   const lengths = new Set();

@@ -41,8 +41,11 @@ try {
   if (!selected) throw new Error("The created profile was not selected");
   // Saving lands in the new Heinzel's conversation, which shows the chosen look.
   await page.waitForURL((url) => url.searchParams.get("chat") === selected);
-  await page.getByLabel("Message your Heinzel").waitFor();
-  const header = page.getByRole("img", { name: /^Draft helper/ });
+  await page.getByLabel(/^Message /).waitFor();
+  const header = page
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: "Draft helper. Switch Heinzel" })
+    .locator('svg[data-view="bust"]');
   await header.waitFor();
   if ((await header.locator('[fill="#1F9488"]').count()) === 0)
     throw new Error("The chat does not show the chosen hat");
@@ -78,7 +81,7 @@ try {
   // The conversation is already linked; the button still brings its tab forward on a phone.
   await own.getByRole("button", { name: "Chat with Mobile helper" }).click();
   await page.waitForURL((url) => url.searchParams.get("chat") === selected);
-  await page.getByLabel("Message your Heinzel").waitFor();
+  await page.getByLabel(/^Message /).waitFor();
   const readSchedule = async () =>
     await page.evaluate(async (expected) => {
       const session = new URLSearchParams(location.search).get("chat");

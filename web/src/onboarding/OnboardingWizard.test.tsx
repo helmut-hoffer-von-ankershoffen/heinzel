@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal, runInTerminal } from "@/lib/terminal";
 import { config, doctor, noTeam, profile, shell } from "@/test/fixtures";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
-import { contractName, loadProgress, setupIncomplete } from "./progress";
+import { loadProgress, setupIncomplete } from "./progress";
 
 const answers = {
   ...shell,
@@ -37,11 +37,10 @@ afterEach(() => {
 });
 
 describe("progress", () => {
-  it("asks while role or time zone is unknown, and names a contract from a sentence", () => {
+  it("asks while role or time zone is unknown", () => {
     expect(setupIncomplete(undefined)).toBe(false);
     expect(setupIncomplete(profile)).toBe(false);
     expect(setupIncomplete(newcomer)).toBe(true);
-    expect(contractName("Send the Wöchentliche status, to my team!")).toBe("send-the-wochentliche-status");
     localStorage.setItem("hz.onboarding", "{not json");
     expect(loadProgress()).toEqual({ step: "you", visited: [], closed: false });
     localStorage.setItem("hz.onboarding", JSON.stringify({ step: "nope", visited: ["look", "x"], closed: true }));
@@ -88,18 +87,15 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     expect(JSON.parse(localStorage.getItem("hz.onboarding") ?? "{}")).toMatchObject({ step: "team", closed: true });
   });
 
-  it("walks every step to the end, turning a sentence into hz heinzel new", async () => {
-    mockApi({ ...answers, "/api/org/show": newcomer });
+  it("walks every step to the end, meeting the first Heinzel at step 7", async () => {
+    mockApi({ ...answers, "/api/org/show": newcomer, "/api/heinzel/sessions": { sessions: [] } });
     const user = userEvent.setup();
     renderAt("/doctor");
     const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
     const steps = within(dialog).getByRole("navigation", { name: "Setup steps" });
-    await user.click(within(steps).getByRole("button", { name: /Your first Heinzelmännchen/ }));
+    await user.click(within(steps).getByRole("button", { name: /Meet your first Heinzelmännchen/ }));
     expect(within(dialog).getByText("Step 7 of 7")).toBeInTheDocument();
-    await user.type(within(dialog).getByLabelText("Or in one sentence"), "Weekly status for Acme");
-    expect(within(dialog).getByText("Its contract will be called weekly-status-for-acme.")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Create it" }));
-    expect(within(dialog).getByText("hz heinzel new weekly-status-for-acme")).toBeInTheDocument();
+    expect(await within(dialog).findByLabelText("What do you call it?")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByRole("heading", { name: "Notifications" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toBeInTheDocument();
@@ -332,5 +328,20 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
   it("says when the daemon is installed but not running", async () => {
     const { dialog } = await open({ "/api/system/daemon/status": { ...idle, installed: true } });
     expect(await within(dialog).findByText(/Installed, but not running yet/)).toBeInTheDocument();
+  });
+});
+
+describe("Onboarding step 7", { timeout: 20_000 }, () => {
+  it("is Meet your first Heinzelmännchen, one first start with the chat's form", async () => {
+    mockApi({ ...answers, "/api/org/show": newcomer, "/api/heinzel/sessions": { sessions: [] } });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    const steps = within(dialog).getByRole("navigation", { name: "Setup steps" });
+    await user.click(within(steps).getByRole("button", { name: /Meet your first Heinzelmännchen/ }));
+    expect(await within(dialog).findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("What do you call it?")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Surprise me" })).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Or in one sentence")).not.toBeInTheDocument();
   });
 });

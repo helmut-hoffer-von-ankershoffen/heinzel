@@ -12,7 +12,7 @@ amends-0038: lessons; hz drafts and hz approve
 amends-0045: the sidebar chat with a Heinzelmännchen is its session
 amends-0028: in the durable-turns amendment, fingerprints per facet
 amends-0052: in the durable-turns amendment, downstream wakes only when the approved output moved
-amended-by: 0052, 0081
+amended-by: 0052, 0081, 0157
 related: 0012, 0022, 0024, 0027, 0030, 0035, 0037, 0040, 0043, 0046, 0050, 0051
 implemented-by: 165, 167, 263
 ---

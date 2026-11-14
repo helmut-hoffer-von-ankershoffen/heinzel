@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { base, empty } from "@/test/chat";
+import { base } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { fitsBeside } from "./Shell";
 
@@ -102,11 +102,12 @@ describe("The search palette", () => {
 });
 
 describe("phone workspace entry and closing", () => {
-  it.each(["chat=0123456789abcdef", "chat-context=event:notice"])("selects chat for %s", async (query) => {
+  it("selects chat for a Heinzel's link", async () => {
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     widthOf(390);
-    mockApi({ ...base, "/api/system/runner/chat/show": empty, "/api/system/runner/chat/open": empty });
-    renderAt(`/doctor?${query}`);
-    expect(await screen.findByRole("textbox", { name: "Your message" })).toBeVisible();
+    mockApi({ ...base, "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] } });
+    renderAt(`/doctor?chat=${helmi}`);
+    expect(await screen.findByRole("textbox", { name: "Message Helmi" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Chat", selected: true })).toBeInTheDocument();
   });
 

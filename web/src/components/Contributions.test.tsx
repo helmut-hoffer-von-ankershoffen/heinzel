@@ -214,7 +214,8 @@ describe("Contributions", () => {
     await user.hover(await screen.findByRole("button", { name: /^Sharing/ }));
     const control = await screen.findByRole("switch", { name: "Share over Acme" });
     expect(control).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("status")).toHaveTextContent("Turning on…");
+    // The chat beside the screen has its own live region; this one is the switch's.
+    expect(screen.getByText("Turning on…")).toHaveAttribute("role", "status");
     expect(screen.getByText("A longer explanation that belongs on demand only.")).not.toBeVisible();
     await user.click(screen.getByText("Details"));
     expect(screen.getByText("Details").closest("details")).toHaveAttribute("open");
@@ -390,16 +391,15 @@ describe("Contributions", () => {
     expect(await sent?.json()).toEqual(body);
   });
 
-  it("puts widgets on Today, with Ask about it and dismiss", async () => {
+  it("puts widgets on Today with dismiss, and no Ask about it: there is no general chat", async () => {
     mockApi(answers);
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Weather" })).toBeInTheDocument();
-    const ask = within(card).getByRole("button", { name: "Ask about it" });
-    // A card with nothing else to offer leads with it: words in the bottom row; Dismiss is the corner's chrome.
-    expect(ask).toHaveTextContent("Ask about it");
-    expect(ask.closest("[data-pane-actions]")).not.toBeNull();
+    // A card with nothing else to offer has no bottom row; Dismiss is the corner's chrome.
+    expect(within(card).queryByRole("button", { name: "Ask about it" })).not.toBeInTheDocument();
+    expect(card.querySelector("[data-pane-actions]")).toBeNull();
     const dismiss = within(card).getByRole("button", { name: "Hide Zones at work now" });
     expect(dismiss.closest("[data-pane-chrome]")).toHaveClass("absolute", "top-1.5", "right-1.5");
     assertActionStructure(card);
@@ -448,8 +448,12 @@ describe("Contributions", () => {
     const hide = calls.find((call) => new URL(call.url).pathname === "/api/system/ui/hide");
     expect(hide?.method).toBe("POST");
     expect(new URL(hide?.url ?? "http://x").searchParams.get("slot")).toBe("today");
-    const toast = await screen.findByRole("status", { name: "" });
-    expect(toast).toHaveTextContent("Hidden.");
+    // The chat beside Today has its own live region; the toast is the one that says Hidden.
+    const toast = await waitFor(() => {
+      const found = screen.getAllByRole("status", { name: "" }).find((item) => item.textContent?.includes("Hidden."));
+      if (!found) throw new Error("no Hidden. toast yet");
+      return found;
+    });
     await user.click(within(toast).getByRole("button", { name: "Undo" }));
     expect(await screen.findByText("2/3")).toBeInTheDocument();
   });

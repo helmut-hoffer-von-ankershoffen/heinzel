@@ -9,7 +9,8 @@ import { ArrowLeft, ArrowRight, Check, ChevronsRight, Play, X } from "lucide-rea
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
-import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useSetting } from "@/api/queries";
+import { keys, useConfig, useHeinzelSessions, useProfile, useSetSetting, useSetting } from "@/api/queries";
+import { MeetHeinzel } from "@/chat/MeetHeinzel";
 import { runCommand } from "@/components/CommandActions";
 import { Gnome } from "@/components/Gnome";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -24,16 +25,7 @@ import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
-import {
-  contractName,
-  loadProgress,
-  type Progress,
-  ROLES,
-  STEPS,
-  type StepId,
-  saveProgress,
-  setupIncomplete,
-} from "./progress";
+import { loadProgress, type Progress, ROLES, STEPS, type StepId, saveProgress, setupIncomplete } from "./progress";
 
 /** The wizard where the Shell mounts it: open while `?onboarding` is in the URL, or by itself on a first run. */
 export function Onboarding() {
@@ -228,7 +220,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "notifications":
       return <Notifications onClose={onClose} />;
     case "first":
-      return <FirstHeinzel />;
+      return <MeetStep />;
   }
 }
 
@@ -565,54 +557,11 @@ function Item({ title, hint, children }: { title: string; hint: string; children
   );
 }
 
-function FirstHeinzel() {
-  const playbooks = usePlaybooks();
-  const templates = playbooks.data?.playbooks.flatMap((playbook) => playbook.templates) ?? [];
-  const [sentence, setSentence] = useState("");
-  const [template, setTemplate] = useState("");
-  const id = useId();
-  const group = useId();
-  const name = contractName(sentence);
-  const chosen = templates.find((entry) => entry.template === template);
-  const command = chosen?.command ?? (name ? `hz heinzel new ${name}` : "");
-  return (
-    <div className="flex max-w-lg flex-col gap-5">
-      {templates.length > 0 && (
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1 text-sm">{t("onboarding.first.template")}</legend>
-          {templates.map((entry) => (
-            <label key={entry.template} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={group}
-                checked={template === entry.template}
-                onChange={() => {
-                  setTemplate(entry.template);
-                  setSentence("");
-                }}
-              />
-              <code className="font-mono text-xs">{entry.template}</code>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      <div className="flex flex-col gap-1">
-        <label htmlFor={id} className="text-sm">
-          {t("onboarding.first.sentence")}
-        </label>
-        <input
-          id={id}
-          className={field}
-          value={sentence}
-          placeholder={t("onboarding.first.placeholder")}
-          onChange={(event) => {
-            setSentence(event.target.value);
-            setTemplate("");
-          }}
-        />
-        {name && !template && <p className="text-xs text-muted-foreground">{t("onboarding.first.name", { name })}</p>}
-      </div>
-      <Confirmed command={command} label={t("onboarding.first.create")} disabled={!command} />
-    </div>
-  );
+/** Step 7: the same "Meet your first Heinzelmännchen" as the chat's first start. */
+function MeetStep() {
+  const [created, setCreated] = useState(false);
+  const heinzels = useHeinzelSessions();
+  // A Heinzel that already exists is the first one: the wizard never asks for a second first start.
+  if (created || (heinzels.data?.sessions?.length ?? 0) > 0) return <p role="status">{t("meet.created")}</p>;
+  return <MeetHeinzel onCreated={() => setCreated(true)} />;
 }

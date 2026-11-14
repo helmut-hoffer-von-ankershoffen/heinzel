@@ -75,10 +75,11 @@ function soundList(selected: string, overrides: Partial<SchemaSoundList> = {}): 
 }
 
 /** The API with a sound list that follows `hz system sound use`. */
-function soundApi(initial: string, picked?: string) {
+function soundApi(initial: string, picked?: string, extra: Record<string, unknown> = {}) {
   let selected = initial;
   return mockApi({
     ...shell,
+    ...extra,
     get "/api/system/sound/list"() {
       return soundList(selected);
     },
@@ -482,11 +483,15 @@ describe("Sound", () => {
   });
 
   it("typing in the chat ducks a playing soundscape", async () => {
-    soundApi("fixture-radio");
+    // Every chat is with a Heinzel (ADR 0157): typing to it ducks the soundscape.
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    soundApi("fixture-radio", undefined, {
+      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+    });
     const user = userEvent.setup();
-    renderAt("/");
+    renderAt(`/?chat=${helmi}`);
     await playSound(user, "Fixture radio");
-    const input = await screen.findByRole("textbox", { name: /message/i });
+    const input = await screen.findByRole("textbox", { name: "Message Helmi" });
     await user.type(input, "hi");
     expect(soundState().typing).toBe(true);
   });

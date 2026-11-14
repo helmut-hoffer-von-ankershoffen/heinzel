@@ -52,10 +52,11 @@ describe("Heinzelmännchen in the empty moments", () => {
 
   it("stays away when the playful setting is off", async () => {
     mockApi({ ...quiet, "/api/team/show": noTeam });
-    const { container } = renderAt("/team");
+    renderAt("/team");
     expect(await screen.findByText("hz team new <name>")).toBeInTheDocument();
     await new Promise((done) => setTimeout(done, 50));
-    expect(container.querySelector('svg[data-view="full"]')).toBeNull();
+    // The chat's first start draws its figure on purpose; the playful one would be on the screen itself.
+    expect(screen.getByRole("main").querySelector('svg[data-view="full"]')).toBeNull();
   });
 });
 

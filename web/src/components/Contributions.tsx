@@ -909,13 +909,11 @@ function WidgetCard({
   entry,
   updatedAt,
   run,
-  onAsk,
   onHide,
 }: {
   entry: SchemaWidgetEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
-  onAsk?: (context: string, text: string) => void;
   onHide: (id: string, title: string) => void;
 }) {
   const current = useEntry("widgets", entry, updatedAt);
@@ -942,7 +940,7 @@ function WidgetCard({
       <div className="min-w-0 pr-10">
         <WidgetBody widget={widget} run={run} />
       </div>
-      {(cardActions.length > 0 || onAsk) && (
+      {cardActions.length > 0 && (
         <PaneActions className="mt-auto">
           {ordered(cardActions).map((action) => (
             <PaneAction
@@ -954,28 +952,14 @@ function WidgetCard({
               {action.label}
             </PaneAction>
           ))}
-          {onAsk && (
-            <PaneAction
-              key="ask"
-              icon={MessageSquare}
-              onClick={() =>
-                onAsk(
-                  `text:what module ${current.module} shows`,
-                  t("contrib.says", { module: current.module, text: widgetText(widget) }),
-                )
-              }
-            >
-              {t("today.ask")}
-            </PaneAction>
-          )}
         </PaneActions>
       )}
     </li>
   );
 }
 
-/** The Today widgets modules add, as cards in the Today grid; "Ask about it" frames the text as the module's. */
-export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string) => void }) {
+/** The Today widgets modules add, as cards in the Today grid. */
+export function TodayWidgets() {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
   const { hide, restore } = useWidgetVisibility();
@@ -989,7 +973,7 @@ export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string
   return (
     <>
       {unique.map((entry) => (
-        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onAsk={onAsk} onHide={onHide} />
+        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onHide={onHide} />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}

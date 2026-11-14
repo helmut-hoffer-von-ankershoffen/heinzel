@@ -16013,6 +16013,23 @@
       "SessionSummary": {
         "description": "Picker metadata, including proposed chats with no approved contract.",
         "properties": {
+          "activity": {
+            "default": "idle",
+            "description": "One of nine states, computed by code in fixed precedence: paused, stuck, waiting_for_you, overloaded, working, waiting_on_others, proud, asleep, idle.",
+            "enum": [
+              "paused",
+              "stuck",
+              "waiting_for_you",
+              "overloaded",
+              "working",
+              "waiting_on_others",
+              "proud",
+              "asleep",
+              "idle"
+            ],
+            "title": "Activity",
+            "type": "string"
+          },
           "appearance": {
             "$ref": "#/components/schemas/HeinzelAppearance",
             "description": "The persisted character overrides for the session picker."
@@ -16030,6 +16047,25 @@
             "description": "The approved contract version, when one exists.",
             "title": "Contract Version"
           },
+          "last_approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the owner last approved or published this Heinzel's work, if ever.",
+            "title": "Last Approved At"
+          },
+          "last_run_failed": {
+            "default": false,
+            "description": "Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed turn (started, never finished) reads failed, and so stuck, only after the 7200 s turn cap.",
+            "title": "Last Run Failed",
+            "type": "boolean"
+          },
           "last_seq": {
             "description": "The latest acknowledged control-journal sequence.",
             "minimum": 0.0,
@@ -16040,6 +16076,20 @@
             "description": "The persisted personal display name.",
             "title": "Name",
             "type": "string"
+          },
+          "queued_runs": {
+            "default": 0,
+            "description": "Accepted messages whose run has not started yet.",
+            "minimum": 0.0,
+            "title": "Queued Runs",
+            "type": "integer"
+          },
+          "runs_last_hour": {
+            "default": 0,
+            "description": "Runs (turns) started in the last hour.",
+            "minimum": 0.0,
+            "title": "Runs Last Hour",
+            "type": "integer"
           },
           "session_id": {
             "description": "The stable personal conversation identity.",
@@ -16065,6 +16115,13 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "waiting_count": {
+            "default": 0,
+            "description": "Items open for the owner: unsettled write drafts plus a pending check-in proposal.",
+            "minimum": 0.0,
+            "title": "Waiting Count",
+            "type": "integer"
           }
         },
         "required": [

@@ -168,6 +168,8 @@ export const shell = {
   "/api/org/show": profile,
   "/api/system/config/show": config,
   "/api/heinzel/playbooks": { playbooks: [], next: [] },
+  // No Heinzel yet: the chat panel shows the first start (ADR 0157).
+  "/api/heinzel/sessions": { sessions: [] },
 };
 
 const colours = (overrides: Partial<SchemaThemeColours> = {}): SchemaThemeColours => ({

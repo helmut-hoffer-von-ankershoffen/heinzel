@@ -46,7 +46,7 @@ if (latePage) {
 const trace = [];
 const began = Date.now();
 const watched = new Set([
-  "/api/heinzel/new-chat", // bead f67s: "Create a Heinzel and take this message" must show whether it answered
+  "/api/heinzel/new-chat", // bead f67s: the first start's Start must show whether it answered
   "/api/heinzel/chat",
   "/api/heinzel/answer-chat",
   "/api/heinzel/chat-turn-state",
@@ -71,7 +71,7 @@ try {
   const text = "Prepare a private draft and suggest an identity.";
   await createHeinzelWith(page, text);
   trace.push(`+${Date.now() - began}ms create pressed`);
-  const message = page.getByLabel("Message your Heinzel");
+  const message = page.getByLabel(/^Message /);
   await message.waitFor();
   assert.equal(await message.inputValue(), text);
   await page.getByRole("button", { name: "Send" }).click();
@@ -302,10 +302,11 @@ try {
       ["profile:propose", "completed"],
     ],
   );
-  await page.getByLabel("Message your Heinzel").fill("Continue after the interruption.");
+  await page.getByLabel(/^Message /).fill("Continue after the interruption.");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText(/reported its subscription usage limit/).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
+  // An uncertain turn is never a plain retry (T2): no Try again under its bubble.
+  assert.equal(await page.locator("[data-message-state]").getByRole("button", { name: "Try again" }).count(), 0);
   await page.reload();
   await revealChat(page);
   await page.getByText(/may still be running/).waitFor();
@@ -357,7 +358,7 @@ try {
       await page.evaluate(() => window.__hzReleasePageResize());
     }
   } else await continueConversation.click();
-  const composer = page.getByLabel("Message your Heinzel");
+  const composer = page.getByLabel(/^Message /);
   await composer.fill("Please continue with the draft.");
   const submit = page.getByRole("button", { name: "Send" });
   trace.push(`before-submit enabled=${await submit.isEnabled()} input=${(await composer.inputValue()).length}`);

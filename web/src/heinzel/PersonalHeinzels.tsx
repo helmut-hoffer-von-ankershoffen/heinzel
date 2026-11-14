@@ -360,6 +360,11 @@ function NewHeinzel({
                   last_seq: 0,
                   updated_at: new Date().toISOString(),
                   appearance: created.appearance,
+                  activity: "idle",
+                  last_run_failed: false,
+                  queued_runs: 0,
+                  runs_last_hour: 0,
+                  waiting_count: 0,
                 },
                 ...(list.sessions ?? []),
               ],
@@ -413,19 +418,19 @@ function NewHeinzel({
   );
 }
 
-const AGE_LABEL: Record<(typeof AGES)[number], MessageKey> = {
+export const AGE_LABEL: Record<(typeof AGES)[number], MessageKey> = {
   baby: "personal.age.baby",
   young: "personal.age.young",
   grown: "personal.age.grown",
   old: "personal.age.old",
 };
-const BEARD_LABEL: Record<(typeof BEARDS)[number], MessageKey> = {
+export const BEARD_LABEL: Record<(typeof BEARDS)[number], MessageKey> = {
   none: "personal.beard.none",
   short: "personal.beard.short",
   medium: "personal.beard.medium",
   long: "personal.beard.long",
 };
-const BUILD_LABEL: Record<(typeof BUILDS)[number], MessageKey> = {
+export const BUILD_LABEL: Record<(typeof BUILDS)[number], MessageKey> = {
   slim: "personal.build.slim",
   regular: "personal.build.regular",
   round: "personal.build.round",
@@ -444,7 +449,7 @@ const COLOUR_LABEL: Record<keyof typeof HATS | keyof typeof SHIRTS, MessageKey> 
 };
 
 /** One colour choice as swatches: the theme's own colour first, then the closed palette, each named for a reader. */
-function Swatches<Colour extends keyof typeof COLOUR_LABEL>({
+export function Swatches<Colour extends keyof typeof COLOUR_LABEL>({
   label,
   palette,
   value,

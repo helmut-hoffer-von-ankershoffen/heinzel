@@ -30,6 +30,14 @@ export function usePreviewFeature(name: string): boolean {
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
   return Array.isArray(features) && features.includes(name);
 }
+/** `hz heinzel sessions`: your durable Heinzels, newest first; the chat's header and default Heinzel read it. */
+export const useHeinzelSessions = (enabled = true) =>
+  useQuery({
+    queryKey: ["heinzel", "sessions"],
+    queryFn: () => unwrap(api.GET("/heinzel/sessions")),
+    enabled,
+    retry: false,
+  });
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {
   const config = useConfig();
@@ -214,10 +222,6 @@ export const useRemoveAiKey = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access"] }),
   });
 };
-
-/** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
-export const useAiModels = () =>
-  useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });
 
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>
