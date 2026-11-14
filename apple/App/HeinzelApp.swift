@@ -13,12 +13,25 @@ struct HeinzelApp: App {
                 .frame(minWidth: 550, minHeight: 440)
         }
         .defaultSize(width: 1100, height: 760)
+        .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .appSettings) {
+                Button("Connection…") {
+                    NotificationCenter.default.post(name: .showHeinzelConnection, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: [.command, .shift])
+            }
+        }
         #else
         WindowGroup {
-            NavigationStack { ConnectionView() }
+            ConnectionView()
         }
         #endif
     }
+}
+
+private extension Notification.Name {
+    static let showHeinzelConnection = Notification.Name("showHeinzelConnection")
 }
 
 struct ConnectionView: View {
@@ -31,8 +44,10 @@ struct ConnectionView: View {
     @State private var link = ""
     @State private var endpoint: Endpoint?
     @State private var connecting = false
+    @State private var loadingWorkspace = false
     @State private var error: String?
     @State private var showConnection = false
+    @State private var sharedWorkspace: Endpoint?
 
     var body: some View {
         content.task {
@@ -46,32 +61,61 @@ struct ConnectionView: View {
             #endif
             #if os(macOS)
             await startLocal()
+            #else
+            if !serverOrigin.isEmpty && sharedWorkspace == nil { await connect(serverOrigin) }
             #endif
+        }
+        .onOpenURL { url in
+            guard let target = Endpoint.sharedWorkspace(url) else { return }
+            sharedWorkspace = target
+        }
+        .alert("Open Heinzel workspace?", isPresented: Binding(
+            get: { sharedWorkspace != nil },
+            set: { if !$0 { sharedWorkspace = nil } }
+        ), presenting: sharedWorkspace) { target in
+            Button("Open") { Task { await connect(target.origin.absoluteString) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { target in
+            Text(target.origin.absoluteString)
         }
     }
 
     @ViewBuilder
     private var content: some View {
         if let endpoint {
-            WorkspaceView(endpoint: endpoint) { message in
+            WorkspaceView(endpoint: endpoint, ready: { loadingWorkspace = false }) { message in
                 error = message
                 showConnection = true
             }
-            .id(endpoint.origin)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Connection", systemImage: "network") { showConnection = true }
-                }
+            .id(endpoint.url)
+            .overlay { if loadingWorkspace { startup } }
+            #if os(macOS)
+            .ignoresSafeArea(edges: .top)
+            .onReceive(NotificationCenter.default.publisher(for: .showHeinzelConnection)) { _ in
+                showConnection = true
             }
+            #else
+            .overlay(alignment: .bottomTrailing) {
+                Button("Connection", systemImage: "network") { showConnection = true }
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 30)
+                    .offset(y: -44)
+                    .padding(.trailing, 14)
+            }
+            #endif
             .sheet(isPresented: $showConnection) {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Connection").font(.title2.bold())
                     Text(endpoint.origin.absoluteString).textSelection(.enabled)
+                    if let shareURL = endpoint.shareURL {
+                        ShareLink(item: shareURL) { Label("Share workspace link", systemImage: "square.and.arrow.up") }
+                    }
                     if let error { Text(error).foregroundStyle(.red) }
                     HStack {
                         Button("Disconnect", role: .destructive) {
                             showConnection = false
                             self.endpoint = nil
+                            serverOrigin = ""
                             #if os(macOS)
                             Task { await service.stop() }
                             #endif
@@ -83,10 +127,35 @@ struct ConnectionView: View {
                 .padding(24)
                 .presentationDetents([.medium])
             }
-            .navigationTitle("Heinzelmännchen")
+        } else if connecting || (!started && launchesAtStartup) {
+            startup
         } else {
             setup
         }
+    }
+
+    private var launchesAtStartup: Bool {
+        #if os(macOS)
+        true
+        #else
+        !serverOrigin.isEmpty
+        #endif
+    }
+
+    private var startup: some View {
+        VStack(spacing: 20) {
+            Image("StartupIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 92, height: 92)
+                .accessibilityHidden(true)
+            Text("Heinzelmännchen").font(.largeTitle.bold())
+            ProgressView("Opening workspace…")
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color("StartupBackground"))
     }
 
     private var setup: some View {
@@ -141,7 +210,11 @@ struct ConnectionView: View {
             try await target.verify()
             serverOrigin = target.origin.absoluteString
             link = ""
+            if endpoint != target { loadingWorkspace = true }
             endpoint = target
+            #if os(macOS)
+            await service.stop()
+            #endif
         } catch {
             self.error = (error as? ConnectionError)?.errorDescription ?? "The server could not be reached."
         }
@@ -159,7 +232,9 @@ struct ConnectionView: View {
             error = ConnectionError.stopped.errorDescription
         }
         do {
-            endpoint = try await service.start()
+            let target = try await service.start()
+            loadingWorkspace = true
+            endpoint = target
         } catch {
             self.error = (error as? ConnectionError)?.errorDescription ?? ConnectionError.startup.errorDescription
         }

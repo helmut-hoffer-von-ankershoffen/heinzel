@@ -34,6 +34,26 @@ struct Endpoint: Equatable {
         self.url = url
     }
 
+    /// Shared links identify a workspace. Authentication remains a separate in-app step.
+    static func sharedWorkspace(_ url: URL) -> Endpoint? {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme == "heinzel", parts.host == "connect", parts.path.isEmpty,
+              parts.user == nil, parts.password == nil, parts.port == nil, parts.fragment == nil,
+              let query = parts.queryItems, query.count == 1, query[0].name == "server",
+              let value = query[0].value, let endpoint = Endpoint(value),
+              endpoint.token == nil else { return nil }
+        return endpoint
+    }
+
+    var shareURL: URL? {
+        guard origin.scheme == "https" else { return nil }
+        var parts = URLComponents()
+        parts.scheme = "heinzel"
+        parts.host = "connect"
+        parts.queryItems = [URLQueryItem(name: "server", value: origin.absoluteString)]
+        return parts.url
+    }
+
     func owns(_ url: URL) -> Bool {
         guard url.user == nil, url.password == nil,
               url.scheme == origin.scheme,

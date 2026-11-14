@@ -8,4 +8,8 @@ Open `Heinzel.xcodeproj` in Xcode, select the **Heinzel** scheme and run on **My
 - On iPhone and iPad, use the authenticated sign-in link for the host's private HTTPS origin. See [private web sharing](../docs/PRIVATE_WEB_SHARING.md). Once paired inside the workspace, use the server address to reconnect.
 - Run `apple/scripts/package-macos VERSION` to build a local arm64 archive. The managed install and update commands require the official version-matched, attested release assets.
 
-Electron remains the release default during the spike. The embedded sidebar browser, trusted external link handoffs, native notification and audio parity, and managed runtime lifecycle still need implementation or acceptance coverage.
+Electron remains the release default during the spike. Trusted external link handoffs, native notification and audio parity, and managed runtime lifecycle still need implementation and acceptance coverage.
+
+Use **Connection → Share workspace link** to generate a `heinzel://connect?server=…` link. It carries the HTTPS address only. A new device signs in separately using the host's session link. Signed distribution and the website association are required to verify an HTTPS Universal Link from Messages.
+
+The Swift shell uses the same title-bar layout and Browser panel as Electron. The Browser panel uses a separate WebKit session. To exercise its layout in a debug build, run with `HZ_SPIKE_BROWSER=1` and enable the host’s `sidebar_browser` feature flag. Production browsing requires the network isolation in [ADR 0140](../docs/adr/0140-isolate-sidebar-browser-content-in-the-desktop.md).

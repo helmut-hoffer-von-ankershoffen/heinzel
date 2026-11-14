@@ -12,14 +12,53 @@ typealias WebRepresentable = UIViewRepresentable
 
 struct WorkspaceView: WebRepresentable {
     let endpoint: Endpoint
+    var ready: () -> Void
     var reportError: (String) -> Void
 
-    func makeCoordinator() -> Navigation { Navigation(endpoint: endpoint, reportError: reportError) }
+    func makeCoordinator() -> Navigation { Navigation(endpoint: endpoint, ready: ready, reportError: reportError) }
 
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlaybackIfSupported()
+        // ADR 0140 requires a public-only HTTPS broker before serving production browser traffic.
+        #if DEBUG
+        let browserEnabled = ProcessInfo.processInfo.environment["HZ_SPIKE_BROWSER"] == "1"
+        #else
+        let browserEnabled = false
+        #endif
+        if browserEnabled {
+            configuration.userContentController.addScriptMessageHandler(
+                context.coordinator, contentWorld: .page, name: "heinzelBrowser"
+            )
+        }
+        #if os(macOS)
+        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen,"
+        #else
+        let chrome = ""
+        #endif
+        let browserMember = browserEnabled ? "browser," : ""
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: """
+            (() => {
+                const origin = \(Self.javascriptString(endpoint.origin.absoluteString));
+                if (location.origin !== new URL(origin).origin) return;
+                const onFullscreen = (callback) => {
+                    const notify = () => callback(window.innerHeight >= screen.height - 1);
+                    window.addEventListener("resize", notify);
+                    notify();
+                    return () => window.removeEventListener("resize", notify);
+                };
+                const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
+                Object.defineProperty(window, "heinzelDesktop", {
+                    value: Object.freeze({ \(chrome) \(browserMember) })
+                });
+            })();
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         let view = WKWebView(frame: .zero, configuration: configuration)
+        context.coordinator.workspace = view
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.allowsBackForwardNavigationGestures = true
@@ -27,13 +66,25 @@ struct WorkspaceView: WebRepresentable {
         return view
     }
 
+    private static func javascriptString(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value) else { return "null" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     #if os(macOS)
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
     func updateNSView(_ view: WKWebView, context: Context) {}
+    static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { removeBridge(from: view) }
     #else
     func makeUIView(context: Context) -> WKWebView { makeWebView(context) }
     func updateUIView(_ view: WKWebView, context: Context) {}
+    static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { removeBridge(from: view) }
     #endif
+
+    private static func removeBridge(from view: WKWebView) {
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelBrowser", contentWorld: .page)
+        view.stopLoading()
+    }
 }
 
 private extension WKWebViewConfiguration {
@@ -45,12 +96,16 @@ private extension WKWebViewConfiguration {
 }
 
 @MainActor
-final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate {
+final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
     private let endpoint: Endpoint
+    private let ready: () -> Void
+    weak var workspace: WKWebView?
+    private let browser = IntegratedBrowser()
     private let reportError: (String) -> Void
 
-    init(endpoint: Endpoint, reportError: @escaping (String) -> Void) {
+    init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (String) -> Void) {
         self.endpoint = endpoint
+        self.ready = ready
         self.reportError = reportError
     }
 
@@ -73,8 +128,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate {
         return frame.isMainFrame && requestIsOwned && type == .microphone ? .prompt : .deny
     }
 
-    #if DEBUG
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) async -> (Any?, String?) {
+        guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
+              let workspace, let request = message.body as? [String: Any] else {
+            return (nil, "Browser command unavailable")
+        }
+        return (browser.handle(request, in: workspace, excluding: endpoint), nil)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        ready()
+        #if DEBUG
         Task {
             for _ in 0..<30 {
                 let ready = try? await webView.evaluateJavaScript(
@@ -87,8 +151,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+        #endif
     }
-    #endif
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         pageFailed(error)
@@ -104,6 +168,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func pageFailed(_ error: Error) {
         guard (error as NSError).code != NSURLErrorCancelled else { return }
+        ready()
         reportError("The workspace could not load. Check that the server is running and reachable.")
     }
 }
