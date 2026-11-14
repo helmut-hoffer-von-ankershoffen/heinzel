@@ -88,7 +88,7 @@ struct WorkspaceView: WebRepresentable {
                 };
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) browser, \(audioMember) })
+                    value: Object.freeze({ \(chrome) browser, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,

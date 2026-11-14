@@ -478,6 +478,37 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("uses native capture availability when the shell does not support workspace audio", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: false, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    try {
+      render(<AudioVisualizer />);
+      open();
+      const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+      expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Microphone"]);
+      expect(await pane().findByRole("button", { name: "Use system audio" })).toBeVisible();
+      expect(captureAudio).not.toHaveBeenCalled();
+      expect(captureMicrophone).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("describes system audio when it is the only source for an embedded player", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: false, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
+    try {
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      expect(await pane().findByText("Off. Music in a player frame shows once you pick System audio.")).toBeVisible();
+      expect(pane().getByText(/Heinzel listens to system audio/)).toBeVisible();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("never offers System audio in a browser or where the desktop app cannot loop it back", async () => {
     render(<AudioVisualizer />);
     open();

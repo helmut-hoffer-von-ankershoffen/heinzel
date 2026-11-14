@@ -108,11 +108,6 @@ function systemBroken(error: unknown) {
   return !(error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"));
 }
 
-/**
- * Whether this browser can share a tab's audio: feature detection, never the user agent. Every iPhone and iPad browser
- * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
- * remembered for the session, so the choice is not offered again.
- */
 /** Whether this device can listen with a microphone: getUserMedia exists, and only in a secure context (https or
  * localhost), where browsers offer it at all. */
 export function canListen(): boolean {
@@ -124,7 +119,12 @@ export function canDraw(): boolean {
   return typeof HTMLCanvasElement !== "undefined" && typeof HTMLCanvasElement.prototype.getContext === "function";
 }
 
+const workspaceAudioCapability = () =>
+  (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio;
+
+/** Offer only sources supported by the native shell or browser, accounting for earlier rejection by a browser. */
 export function canShareAudio(): boolean {
+  if (workspaceAudioCapability() === false) return false;
   if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
   try {
     return sessionStorage.getItem(UNSHARED_KEY) !== "1";
@@ -613,8 +613,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     };
   }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement, canvasGeneration, software]);
   if (!enabled) return null;
-  const workspaceAudio =
-    (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
+  const workspaceAudio = workspaceAudioCapability() === true;
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
   const looped = session?.label === "System audio";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
@@ -665,7 +664,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    const picks = [listenable && "Microphone", sharing && "Shared audio"].filter(Boolean).join(" or ");
+    const picks = [listenable && "Microphone", sharing && sharedWord, systemOffered && "System audio"]
+      .filter(Boolean)
+      .join(" or ");
     status = picks
       ? `Off. Music in a player frame shows once you pick ${picks}.`
       : "Music in a player frame cannot be seen in this browser; Heinzel's own sound still shows.";
@@ -787,7 +788,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
           <p className="text-xs text-muted-foreground">
             {t(
-              onSystem
+              onSystem || (systemOffered && !listenable && !sharing)
                 ? "audio.visualizerHelpSystem"
                 : sharing && listenable
                   ? "audio.visualizerHelp"

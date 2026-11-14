@@ -211,10 +211,7 @@ private final class AudioSamples: NSObject, SCStreamOutput, @unchecked Sendable 
 @MainActor
 final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDelegate {
     let sampleRate = 48_000.0
-    static var available: Bool {
-        if #available(macOS 27, *) { return SCContentSharingPicker.shared.isAvailable }
-        return true
-    }
+    static var available: Bool { SCContentSharingPicker.shared.isAvailable }
 
     private static weak var owner: SystemAudio?
     private let picker = SCContentSharingPicker.shared

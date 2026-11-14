@@ -322,7 +322,7 @@ const en = {
     "Nothing is recorded or uploaded. The microphone hears the room; sharing a tab shows your browser's sharing bar.",
   "audio.visualizerHelpMicrophone": "Nothing is recorded or uploaded. The microphone hears the room.",
   "audio.visualizerHelpSystem":
-    "Nothing is recorded or uploaded. Heinzel listens to the sound this computer plays, after you allow it each time.",
+    "Nothing is recorded or uploaded. Heinzel listens to system audio after you allow it each time.",
   "audio.visualizerHelpShared": "Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar.",
   "audio.visualizerHelpOwn": "Nothing is recorded or uploaded. This browser shows Heinzel's own sound only.",
   "proposal.intro":
