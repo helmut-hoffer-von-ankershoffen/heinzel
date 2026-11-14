@@ -23,6 +23,7 @@ from heinzel.kernel import (
 from heinzel.kernel._ai_models import (
     EFFORT_BUDGETS,
     OUTPUT_TOKENS,
+    PROMPT_CACHE,
     build_model,
     choose,
     effort_settings,
@@ -193,12 +194,14 @@ def test_effort_maps_to_anthropic_native_settings_and_leaves_room_for_thinking()
         "max_tokens": OUTPUT_TOKENS,
         "anthropic_thinking": {"type": "adaptive"},
         "anthropic_effort": "high",
+        **PROMPT_CACHE,
     }
     budgeted = effort_settings(budget, "max")
     assert budgeted["anthropic_thinking"] == {"type": "enabled", "budget_tokens": EFFORT_BUDGETS["max"]}
     assert budgeted["max_tokens"] > EFFORT_BUDGETS["max"], "Anthropic refuses budget_tokens >= max_tokens"
-    assert effort_settings(plain, "max") == {"max_tokens": OUTPUT_TOKENS}
-    assert effort_settings(adaptive, None) == {"max_tokens": OUTPUT_TOKENS}
+    assert budgeted["anthropic_cache_instructions"] is True
+    assert effort_settings(plain, "max") == {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
+    assert effort_settings(adaptive, None) == {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
 
 
 class Flaky:

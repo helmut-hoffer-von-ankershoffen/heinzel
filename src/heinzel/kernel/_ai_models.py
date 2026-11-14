@@ -209,19 +209,25 @@ OUTPUT_TOKENS = 16384
 """The most a plugin's model may write in one response besides its thinking, hz's cap on that path (ADR 0159)."""
 
 
+PROMPT_CACHE: dict[str, Any] = {"anthropic_cache_instructions": True, "anthropic_cache_tool_definitions": True}
+"""Pydantic AI's own Anthropic prompt-cache settings: a multi-request turn reads its instructions and tool definitions
+from the cache. Only Anthropic's models read `anthropic_*` settings; others ignore them."""
+
+
 def effort_settings(offer: ModelOffer, effort: Effort | None) -> dict[str, Any]:
-    """Model settings for one request on `offer`: hz's output cap, and Anthropic's native settings for `effort`.
+    """Model settings for one request on `offer`: hz's output cap, prompt caching, Anthropic's settings for `effort`.
 
     The output cap leaves room for a `budget` model's thinking, which Anthropic counts within `max_tokens`. With no
-    effort, or a model that takes none, only the cap: the plugin's model keeps its own thinking settings.
+    effort, or a model that takes none, no thinking settings: the plugin's model keeps its own.
     """
     if effort is None or offer.thinking is None:
-        return {"max_tokens": OUTPUT_TOKENS}
+        return {"max_tokens": OUTPUT_TOKENS, **PROMPT_CACHE}
     if offer.thinking == "budget":
         budget = EFFORT_BUDGETS[effort]
         thinking = {"type": "enabled", "budget_tokens": budget}
-        return {"max_tokens": budget + OUTPUT_TOKENS, "anthropic_thinking": thinking}
-    return {"max_tokens": OUTPUT_TOKENS, "anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
+        return {"max_tokens": budget + OUTPUT_TOKENS, "anthropic_thinking": thinking, **PROMPT_CACHE}
+    adaptive = {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
+    return {"max_tokens": OUTPUT_TOKENS, **adaptive, **PROMPT_CACHE}
 
 
 @dataclass(frozen=True, slots=True)

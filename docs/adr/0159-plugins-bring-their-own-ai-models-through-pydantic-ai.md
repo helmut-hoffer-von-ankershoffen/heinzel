@@ -104,6 +104,9 @@ Checkable statements:
    the turn. For `thinking: adaptive`, Core passes Anthropic's `thinking: {type: adaptive}` and
    `output_config.effort`. For `budget`, it passes `thinking: {type: enabled, budget_tokens}`: 2k, 8k, 16k, 32k or
    64k tokens from low to max, with `max_tokens` above the budget. With `thinking` unset, Core passes no effort.
+   Every request also sets Pydantic AI's own `anthropic_cache_instructions` and `anthropic_cache_tool_definitions`,
+   so the requests of a multi-tool turn read instructions and tool definitions from Anthropic's prompt cache;
+   models of other APIs ignore `anthropic_*` settings. Core adds no cache layer of its own.
 10. **Chat, drafts and schedules run on the plugin's model through Core's engine.** Durable chats, drafts and
     schedules all go through `UserChatService.dispatch`, which runs the same `InteractiveTurn` as for Claude Code,
     with a Pydantic AI capability (`PluginTurnGuard`) instead of a model wrapper. Before each request, off the event

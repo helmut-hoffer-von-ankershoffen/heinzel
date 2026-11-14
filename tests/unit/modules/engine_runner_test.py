@@ -23,7 +23,7 @@ from pydantic_ai.models.test import TestModel
 
 from heinzel import Budget, Config, Credentials, CurrentUser, HeinzelError, McpServer, Progress, Settings, ToolProfile
 from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models, _claude_code
-from heinzel.kernel._ai_models import OUTPUT_TOKENS
+from heinzel.kernel._ai_models import OUTPUT_TOKENS, PROMPT_CACHE
 from heinzel.modules.ai.access._engine_history import SessionHistory
 from heinzel.modules.ai.access._engine_runner import ENGINE, EngineModel, EngineRunner, SelectedModels
 from heinzel.modules.ai.access._models import AccessSettings
@@ -309,7 +309,12 @@ def test_a_plugin_s_chosen_model_and_effort(tmp_path: Path) -> None:
     chosen = models(None, None)
     assert (chosen.label, chosen.settings) == (
         "acme-large",
-        {"max_tokens": OUTPUT_TOKENS, "anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "high"},
+        {
+            "max_tokens": OUTPUT_TOKENS,
+            "anthropic_thinking": {"type": "adaptive"},
+            "anthropic_effort": "high",
+            **PROMPT_CACHE,
+        },
     )
     assert models("acme-small", "low").label == "acme-small"
     assert models(None, "low").settings["anthropic_effort"] == "low"
