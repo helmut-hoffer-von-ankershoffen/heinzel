@@ -89,6 +89,43 @@ class Document(BaseModel):
     text: str = Field(description="Content as plain text or Markdown.")
     url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
     revision: str | None = Field(default=None, description="Revision read, if the adapter tracks revisions.")
+    source: str | None = Field(
+        default=None,
+        description="The adapter it was read through, set by the core when several serve documents; adapters leave it.",
+    )
+
+
+class DocumentHit(BaseModel):
+    """A document a search found: enough to show it and to read it, not its text (ADR 0161)."""
+
+    ref: str = Field(description="What `Documents.read` takes for it: an id or URL in the adapter's notation.")
+    title: str = Field(description="Title of the document.")
+    url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
+    snippet: str | None = Field(default=None, description="A short excerpt around the match, as plain text.")
+    updated_at: AwareDatetime | None = Field(default=None, description="When it last changed; none if unknown.")
+    source: str | None = Field(
+        default=None, description="The adapter that found it, set by the core; adapters leave it empty."
+    )
+
+
+class SourceFailure(BaseModel):
+    """An adapter that couldn't answer a read asked of several at once, and why (ADR 0161)."""
+
+    source: str = Field(description="The adapter's name, e.g. `atlassian`.")
+    reason: str = Field(description="Why it gave nothing: its error, a timeout, or that it can't do this.")
+
+
+class Gathered[T](list[T]):
+    """What a read asked of several adapters at once returns: the merged results, with who failed (ADR 0161).
+
+    A plain list of the results, so code written for one adapter keeps working; `failures` names each adapter that
+    couldn't answer and why. A failing adapter never fails the whole read, unless every one of them failed.
+    """
+
+    def __init__(self, items: Iterable[T] = (), failures: Iterable[SourceFailure] = ()) -> None:
+        """Hold the merged results and the failures."""
+        super().__init__(items)
+        self.failures: list[SourceFailure] = list(failures)
 
 
 class SectionReplacement(BaseModel):
@@ -163,6 +200,14 @@ class Documents(Protocol):
         """Replace the section of `ref` marked by `marker` with `text`, leaving the rest alone. Mode: write.
 
         Only publish operations (`read_only=False`) get a handle on which this works (ADR 0028).
+        """
+        ...
+
+    def search(self, query: str, limit: int) -> list[DocumentHit]:
+        """Documents whose title or text match `query`, best match first, at most `limit`. Mode: read.
+
+        Optional (ADR 0161): an adapter that can't search leaves it out, and a search reports it as such. With
+        several adapters bound, the core asks each of them and merges what they find.
         """
         ...
 

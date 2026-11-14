@@ -367,6 +367,7 @@ class Module:
         modes: Iterable[Mode],
         hosts: Iterable[str] | Callable[..., Iterable[str]] = (),
         name: str | None = None,
+        links: Iterable[str] | Callable[..., Iterable[str]] = (),
     ) -> Callable[[F], F]:
         """Advertise a class (or factory) as an adapter of a capability (ADR 0028); usable as a class decorator.
 
@@ -384,10 +385,13 @@ class Module:
                 host, the hosts show as `unknown (configured)` and doctor says why. List a setting that decides
                 hosts in `ignored_in_project`, so a project `hz.toml` can't redirect data.
             name: Name bindings use (`[capabilities] tracker = "<name>"`); defaults to the module name.
+            links: Hosts of the web addresses people open the adapter's items at, such as `docs.example.com`, as
+                host names or a function of settings like `hosts`. When several adapters serve a capability, a link
+                on one of these hosts goes to this adapter (ADR 0161); without links, its `hosts` decide.
 
         Raises:
-            ValueError: If the capability, a mode or the name is unknown or malformed, a host is not a host name or
-                URL, or the hosts function takes anything but settings.
+            ValueError: If the capability, a mode or the name is unknown or malformed, a host or link is not a host
+                name or URL, or the hosts or links function takes anything but settings.
         """
         spec = CAPABILITIES.get(capability)
         if spec is None:
@@ -408,6 +412,8 @@ class Module:
             raise ValueError(msg)
         configured = hosts if callable(hosts) else None
         static = () if callable(hosts) else tuple(host_of(host) or host for host in hosts)
+        configured_links = links if callable(links) else None
+        static_links = () if callable(links) else tuple(host_of(host) or host for host in links)
 
         def decorate(factory: F) -> F:
             self.add(
@@ -419,6 +425,8 @@ class Module:
                     hosts=static,
                     factory=factory,
                     configured_hosts=configured,
+                    links=static_links,
+                    configured_links=configured_links,
                 )
             )
             return factory

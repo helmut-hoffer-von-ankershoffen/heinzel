@@ -71,12 +71,26 @@ class Capability:
     """Methods only hz itself calls, through its own trusted view (ADR 0160): no requester's handle offers them, in any
     mode, so no operation or playbook can talk to the user in their own direct messages or read their answers."""
 
+    multiple: bool = False
+    """Whether several adapters may serve it at once, bound as a list (ADR 0161): the first is the default."""
+    routes: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    """With several adapters: each method that acts on one item, with the parameter naming it. A call goes to the
+    adapter whose links match the item's URL, that returned the item before, or that the `adapter:id` form names."""
+    fan_out: frozenset[str] = frozenset()
+    """With several adapters: read methods that return a list, asked of every adapter at once and merged."""
+
     def __post_init__(self) -> None:
         if not (self.optional | self.core_only) <= set(self.methods):
             msg = f"Capability {self.name!r} optional and core-only methods must be declared methods"
             raise ValueError(msg)
         if any(self.methods.get(name) != "read" for name in self.inspection_methods):
             msg = f"Capability {self.name!r} inspection methods must be declared read methods"
+            raise ValueError(msg)
+        if any(self.methods.get(name) != "read" for name in self.fan_out):
+            msg = f"Capability {self.name!r} fan-out methods must be declared read methods"
+            raise ValueError(msg)
+        if not set(self.routes).isdisjoint(self.fan_out) or not set(self.routes) <= set(self.methods):
+            msg = f"Capability {self.name!r}: routed and fan-out methods must be distinct declared methods"
             raise ValueError(msg)
 
     @property
@@ -168,8 +182,13 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Documents",
                 purpose="the pages and docs you read and update",
                 protocol=Documents,
-                summary="Documents: read their text; replace a marked section through publish operations.",
-                methods=MappingProxyType({"read": "read", "replace_section": "write"}),
+                summary="Documents: read their text and search them; replace a marked section through publish "
+                "operations. Several connectors may serve it at once.",
+                methods=MappingProxyType({"read": "read", "replace_section": "write", "search": "read"}),
+                multiple=True,
+                routes=MappingProxyType({"read": "ref", "replace_section": "ref"}),
+                fan_out=frozenset({"search"}),
+                optional=frozenset({"search"}),
             ),
             Capability(
                 name="mail",
