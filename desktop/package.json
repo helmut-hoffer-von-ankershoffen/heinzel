@@ -13,7 +13,8 @@
     "build": "node ci/package.mjs",
     "verify:package": "node ci/verify-package.mjs",
     "test:real-backend": "node e2e/real-backend.mjs",
-    "test:real-backend-crash": "node e2e/real-backend.mjs --crash-test"
+    "test:real-backend-crash": "node e2e/real-backend.mjs --crash-test",
+    "test:browser-journey": "node e2e/browser-journey.mjs heinzel && node e2e/browser-journey.mjs mcp"
   },
   "devDependencies": {
     "@electron-internal/extract-zip": "1.0.6",

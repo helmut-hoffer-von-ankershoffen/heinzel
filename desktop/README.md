@@ -27,6 +27,15 @@ test-owned child after the UI loads. It checks that the shell reports the unexpe
 its temporary listener are gone. If launch or shutdown leaves the controller's state uncertain, the harness retains
 and reports the temporary profile for inspection. It does not simulate installation, update or background operation.
 
+`HZ_JOURNEY_PYTHON="$PWD/../.venv/bin/python" pnpm test:browser-journey` is the journey of ADR 0162
+(agents control the built-in browser): an agent drives the built-in browser of the real app, once as a chat turn on a scripted model that calls the tools directly and once as an outside agent over `/mcp`
+with a write token. It needs the built web app (`uv run --script scripts/web_build.py build`). The app stays hidden,
+and the only site is a fixture on loopback, served to the guest under two made-up public names through a test proxy,
+so nothing reaches the network. It checks reading with refs, typing, an ordinary click, a form submit that waits for
+the person, a click let go when the page swaps its target, refused password and card fields, refused non-public
+addresses, and Stop. It does not use the product's own CONNECT broker, and it confirms through the calls the
+confirmation cards make, not through their pixels.
+
 The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native
 preload exposes only lifecycle status, checks the owning main frame and exact loopback origin, and exposes no token
 or generic native operation. Main-document navigation and redirects stay on that owned origin; new windows remain
