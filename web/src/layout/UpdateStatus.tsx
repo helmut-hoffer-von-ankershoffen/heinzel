@@ -328,10 +328,8 @@ export function UpdateStatus() {
         ))}
         {planning && <p role="status">{t("updates.planning")}</p>}
         <Progress label={t("updates.progress")} segments={segments} />
-        {status && (
-          <p className="text-xs text-muted-foreground">
-            {installedDate ? t("updates.installedDate", { date: installedDate }) : t("updates.installedDateUnknown")}
-          </p>
+        {installedDate && (
+          <p className="text-xs text-muted-foreground">{t("updates.installedDate", { date: installedDate })}</p>
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
         <AutoUpdateToggle />

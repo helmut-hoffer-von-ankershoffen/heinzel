@@ -180,6 +180,21 @@ class UiService:
         self._editor.write(KEY, chosen, "user")
         return self.listing()
 
+    def restore(self, slot: Slot) -> list[ContributionInfo]:
+        """Bring back everything the person hid from a slot that shows there by default, in one write.
+
+        Raises:
+            HeinzelError: If the user file's table isn't valid, rather than overwriting what the person wrote.
+        """
+        chosen = self._in_user_file()
+        every = [c for let_type in KINDS.values() for c in self.contributions(let_type)]
+        hidden = [c.id for c in every if c.let.slots.get(slot) and chosen.get(c.id, {}).get(slot) is False]
+        if hidden:
+            for item in hidden:
+                chosen[item] = {**chosen[item], slot: True}
+            self._editor.write(KEY, chosen, "user")
+        return self.listing()
+
     def contributions[L: ContributionLet](self, kind: type[L]) -> list[Contribution]:
         """Every contribution of a kind, sorted by order, then id."""
         found = [Contribution(record, let) for record, let in self._kernel.lets(kind)]

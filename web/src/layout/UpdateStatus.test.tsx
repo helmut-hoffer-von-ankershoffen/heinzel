@@ -97,7 +97,7 @@ it("labels the explicit full updater as manual when no cached update is known", 
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates, off" }));
   expect(startUpdate).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Manually update…" }));
+  await user.click(screen.getByRole("button", { name: "Update anyway…" }));
   await agree(user);
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
@@ -161,7 +161,8 @@ it("does not claim to be up to date or invent an installation date when those fa
   const icon = await screen.findByRole("button", { name: "Updates, off" });
   await userEvent.setup().hover(icon);
   expect(await screen.findByText("Checking for updates…")).toBeInTheDocument();
-  expect(screen.getByText("Installation date unavailable.")).toBeInTheDocument();
+  // An unknown date is left out, not announced as "unavailable".
+  expect(screen.queryByText(/Installation date|Last installed|unavailable/)).not.toBeInTheDocument();
   expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
 });
 
@@ -280,9 +281,7 @@ it("names the plugins from git or a folder that are updated by hand", async () =
   const user = userEvent.setup();
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
-  expect(
-    await screen.findByText("heinzel-crm is installed from git and isn't followed for updates yet"),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("heinzel-crm from git isn't updated by Heinzel")).toBeInTheDocument();
 });
 
 const plan = {
@@ -337,7 +336,7 @@ it.each([
   await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
   expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-  const manual = screen.getByRole("button", { name: "Manually update…" });
+  const manual = screen.getByRole("button", { name: "Update anyway…" });
   // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
   expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
   for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();

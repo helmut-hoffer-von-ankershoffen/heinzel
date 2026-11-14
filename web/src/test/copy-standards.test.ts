@@ -39,19 +39,6 @@ const ALLOW: Record<string, string> = {
   "lifecycle.targetAction": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.question": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.phase.applied": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "lifecycle.unsupported": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "lifecycle.timeout": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "lifecycle.restartOutcomeUnknown": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "pluginsPending.intro": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "pluginsPending.theme": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "op.noStop": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
-  "op.lost": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
-  "op.daemon.install.consent": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
-  "op.daemon.uninstall.consent": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
-  "updates.bySource": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "updates.failed": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "autoUpdate.how": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "autoUpdate.reloadLater": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
 };
 
 function entries(): [string, string][] {

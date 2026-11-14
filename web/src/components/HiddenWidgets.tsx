@@ -1,5 +1,6 @@
 // Today widgets a person hid (the X on a card), and the way back: `hz system ui hide|show <id> --slot today` is the one
-// operation behind the X, Undo, Restore and the CLI, so every head shows the same list (ADR 0056).
+// operation behind the X, Undo, Restore and the CLI, so every head shows the same list (ADR 0056); `hz system ui
+// restore` is the terminal's Restore all. Hiding only takes the card off Today; the module behind it keeps running.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeOff, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -112,7 +113,8 @@ export function HiddenWidgets({
           focusFirst
           className="w-72"
         >
-          <h2 className="px-1.5 py-1 text-sm font-medium">{t("today.hiddenWidgets")}</h2>
+          <h2 className="px-1.5 pt-1 text-sm font-medium">{t("today.hiddenWidgets")}</h2>
+          <p className="px-1.5 pb-1 text-xs text-muted-foreground">{t("today.hiddenHelp")}</p>
           <ul>
             {hidden.map((widget) => (
               <li key={widget.id} className="flex items-center gap-2 px-1.5 py-1 text-sm">

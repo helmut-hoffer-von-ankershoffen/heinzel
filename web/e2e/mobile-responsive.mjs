@@ -336,7 +336,7 @@ async function updateActionTargets() {
       await page.locator("#splash").waitFor({ state: "hidden" });
       const pane = await openFooterPane(page, "@updates", "Updates", touch ? "tap" : "click");
       const row = pane.locator("[data-pane-actions]");
-      const manual = row.getByRole("button", { name: "Manually update…", exact: true });
+      const manual = row.getByRole("button", { name: "Update anyway…", exact: true });
       const retry = row.getByRole("button", { name: "Check for updates", exact: true });
       await manual.waitFor();
       await retry.waitFor();
@@ -821,7 +821,7 @@ try {
     const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
     await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
-    await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
+    await updatePane.getByRole("button", { name: "Update anyway…", exact: true }).waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);

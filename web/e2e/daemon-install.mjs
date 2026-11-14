@@ -56,7 +56,7 @@ try {
   await pane.getByRole("button", { name: "Install" }).click();
   const dialog = page.getByRole("dialog", { name: "Keep my Heinzelmännchen working while the app is closed." });
   await dialog.waitFor();
-  assert.match((await dialog.textContent()) ?? "", /registers a background service/);
+  assert.match((await dialog.textContent()) ?? "", /checks for due work/);
   await accessible(dialog);
   await noHorizontalScroll();
   const box = await dialog.boundingBox();

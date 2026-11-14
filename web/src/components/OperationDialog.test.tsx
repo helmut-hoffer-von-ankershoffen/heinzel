@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
-import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
+import { DAEMON_INSTALL, DAEMON_PAUSE, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
 import {
   dismissOperation,
   getRun,
@@ -100,14 +100,28 @@ describe("OperationDialog", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Keep my Heinzelmännchen working while the app is closed.",
     });
-    expect(dialog).toHaveTextContent("registers a background service that starts whenever you sign in");
-    expect(dialog).toHaveTextContent("hz system daemon install");
+    expect(dialog).toHaveTextContent("Starts at sign-in and checks for due work every 5 minutes.");
+    // The raw command is for Expert mode only.
+    expect(dialog).not.toHaveTextContent("hz system daemon install");
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(fetchMock).not.toHaveBeenCalled();
     await expectAccessible(container);
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("asks about a daemon pause in plain words, without the technical call", async () => {
+    const { fetchMock } = liveStream();
+    mount();
+    act(() => requestOperation(DAEMON_PAUSE));
+    const dialog = await screen.findByRole("dialog", { name: "Pause the background service?" });
+    expect(within(dialog).getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Run it" })).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent("Scheduled work waits until you resume it.");
+    expect(dialog).not.toHaveTextContent("This changes something");
+    expect(dialog).not.toHaveTextContent("hz system daemon pause");
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/daemon/pause"), expect.anything());
   });
 
   it("restarts the daemon at once, without the exact call, and says plainly how it ended", async () => {
@@ -233,11 +247,11 @@ describe("OperationDialog", () => {
     mount();
     act(() => requestOperation(DAEMON_UNINSTALL));
     const dialog = await screen.findByRole("dialog", { name: "Stop the background service?" });
-    expect(dialog).toHaveTextContent("Your receipts and logs stay");
+    expect(dialog).toHaveTextContent("Scheduled work stops; receipts and logs stay.");
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Uninstall" }));
     await live.close();
     expect(await screen.findByRole("alert")).toHaveTextContent("The stream ended without a result.");
-    expect(dialog).toHaveTextContent("the outcome is not certain");
+    expect(dialog).toHaveTextContent("the outcome is uncertain");
   });
 
   it("ignores a second request while one is being asked about or runs", async () => {
