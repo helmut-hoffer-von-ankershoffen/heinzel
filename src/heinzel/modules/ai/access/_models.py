@@ -121,14 +121,14 @@ class AccessSettings(ModuleSettings):
         title="Plugin model",
         description="The model hz runs chat, drafts and schedules on when your AI access is a plugin's models, one it "
         "lists; its first available one when not set.",
-        json_schema_extra={"x-expert": True},
+        json_schema_extra={"x-expert": True, "x-live": True},  # read again before every turn
     )
     plugin_effort: Effort | None = Field(
         default=None,
         title="Plugin model effort",
         description="How hard a plugin's model thinks, low to max, for a model that takes an effort; the model's own "
         "default when not set.",
-        json_schema_extra={"x-expert": True},
+        json_schema_extra={"x-expert": True, "x-live": True},  # read again before every turn
     )
 
     model: str | None = Field(

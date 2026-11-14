@@ -51,6 +51,9 @@ set of modules truly needs a restart.
 | `ai.access.gateway_hosts` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `ai.access.gateway_models` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `ai.access.gateway_env` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
+| `ai.access.api` | yes | The Model API option is built with its endpoint's API once, when the server starts; a restart rebuilds its client. |
+| `ai.access.plugin_model` | no | Read again from the configuration files before every turn, listing and test on a plugin's models (ADR 0159). |
+| `ai.access.plugin_effort` | no | Read again from the configuration files before every turn and test on a plugin's models (ADR 0159). |
 | `ai.access.chatgpt_model` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `ai.access.model` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `ai.access.base_url` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
@@ -84,6 +87,9 @@ set of modules truly needs a restart.
 | `system.notify.draft` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.notify.heinzel` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.notify.failed` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
+| `system.notify.chat_notifications` | no | Its own switch in Settings, Notifications writes it and the service reads its settings again before sending (ADR 0160). |
+| `system.notify.chat_questions` | no | Read again before each question is asked, so a change applies to the next one (ADR 0160). |
+| `system.notify.chat_wait_minutes` | no | Read again before each question is asked in chat, so a change applies to the next one (ADR 0160). |
 | `system.notify.doctor` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.notify.release` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.notify.plugin` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |

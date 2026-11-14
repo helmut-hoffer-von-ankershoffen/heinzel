@@ -92,14 +92,14 @@ class NotifySettings(ModuleSettings):
         default=False,
         title="Notices also in chat",
         description="Also send every notice that pops up to your own direct messages, through your chat connector, "
-        "if it can (ADR 0160). The app keeps showing them.",
+        "if it can. The app keeps showing them.",
         json_schema_extra={"x-hidden": True},
     )
     chat_questions: bool = Field(
         default=False,
         title="Questions also in chat",
         description="Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it "
-        "can (ADR 0160). The first answer counts, in the app or in chat.",
+        "can. The first answer counts, in the app or in chat.",
         json_schema_extra={"x-hidden": True, "x-live": True},
     )
     chat_wait_minutes: int = Field(
