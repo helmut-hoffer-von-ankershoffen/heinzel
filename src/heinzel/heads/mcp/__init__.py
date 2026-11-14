@@ -62,9 +62,9 @@ from heinzel.kernel import (
     Kernel,
     boot,
 )
-from heinzel.kernel._agent_writes import AgentWrites, Caller, audit_write, calling
+from heinzel.kernel._agent_writes import AgentWrites, Caller, calling
 from heinzel.kernel._approval import ApprovalIssuer
-from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write
+from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
 
@@ -223,7 +223,7 @@ def _run_for_agent(
     if operation.read_only:
         return kernel.invoke(operation, **arguments)
     policy: AgentWrites = "approve" if challenged else agent_write(kernel, item, arguments, caller)
-    note = functools.partial(audit_write, caller, item.record.qualname, operation.name, arguments, policy=policy)
+    note = functools.partial(note_write, kernel, caller, item, arguments, policy=policy)
     try:
         result = kernel.invoke(operation, **arguments)
     except Exception as exc:

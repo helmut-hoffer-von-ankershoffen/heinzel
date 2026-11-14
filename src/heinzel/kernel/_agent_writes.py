@@ -87,11 +87,20 @@ def declared_agent_writes(operation: "OperationLet") -> frozenset[AgentWrites]:
     return frozenset({marker})
 
 
-def agent_writes(operation: "OperationLet", arguments: Mapping[str, Any], *, builtin: bool) -> AgentWrites:
+def reaches_people(operation: "OperationLet") -> bool:
+    """Whether the operation writes a capability under the kernel's ceiling: mail, chat or a calendar."""
+    return any(r.capability in CEILING and "write" in r.modes for r in operation.requires)
+
+
+def agent_writes(
+    operation: "OperationLet", arguments: Mapping[str, Any], *, builtin: bool, acknowledged: bool = False
+) -> AgentWrites:
     """The policy for one call of a write operation by an agent.
 
-    `builtin` is the module record's own origin, set by discovery, never by the module. A marker that fails to
-    decide is the strictest it could have been.
+    `builtin` is the module record's own origin, set by discovery, never by the module. `acknowledged`: the owner
+    allowed this plugin operation to run directly; a plugin's `direct` without that is `propose`, so neither a new
+    plugin nor an update that turns an operation `direct` starts writing before the owner said yes. A marker that
+    fails to decide is the strictest it could have been.
     """
     marker = operation.agents
     if marker is None:
@@ -103,9 +112,10 @@ def agent_writes(operation: "OperationLet", arguments: Mapping[str, Any], *, bui
             policy = marker.stricter
     else:
         policy = marker
-    reaches_people = any(r.capability in CEILING and "write" in r.modes for r in operation.requires)
-    if not builtin and reaches_people:
+    if not builtin and reaches_people(operation):
         policy = stricter(policy, "approve")
+    if not builtin and policy == "direct" and not acknowledged:
+        policy = "propose"
     return policy
 
 
@@ -244,6 +254,30 @@ class WriteBudget:
                 )
                 raise HeinzelError(msg)
             writes.append(now)
+
+
+class AgentWriteLog:
+    """What the owner sees and allows of agents' writes; a module provides a subclass (`system.writes`).
+
+    A base class rather than a protocol, so the kernel injects it by type. Without a provider nothing is recorded
+    and no plugin write is acknowledged, which is the strict side.
+    """
+
+    def record(  # noqa: PLR0913 - one flat entry
+        self,
+        caller: "Caller | None",
+        module: str,
+        operation: str,
+        arguments: Mapping[str, Any],
+        *,
+        policy: AgentWrites,
+        outcome: WriteOutcome,
+    ) -> None:
+        """Keep one entry of a write an agent asked for, for the owner's list; never arguments, only their digest."""
+
+    def acknowledged(self, distribution: str, module: str, operation: str) -> bool:  # noqa: ARG002
+        """Whether the owner allowed this plugin's operation to run directly for agents; no by default."""
+        return False
 
 
 def arguments_digest(arguments: Mapping[str, Any]) -> str:

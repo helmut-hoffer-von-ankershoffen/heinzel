@@ -278,6 +278,7 @@ KERNEL = [
     "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AgentWriteLog",
     "AgentWrites",
     "AiAccess",
     "AiAccessWebAttempt",

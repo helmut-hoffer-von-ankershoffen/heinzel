@@ -190,6 +190,7 @@ def test_a_plugin_write_that_reaches_people_is_at_most_approve_whatever_it_decla
 
     send_let, forbid_let = module.lets
     assert agent_writes(send_let, {}, builtin=False) == "approve"
+    assert agent_writes(send_let, {}, builtin=False, acknowledged=True) == "approve"  # the owner's yes lifts no ceiling
     assert agent_writes(forbid_let, {}, builtin=False) == "never"  # a ceiling never loosens
     assert agent_writes(send_let, {}, builtin=True) == "direct"  # core's own are reviewed with core
 
@@ -201,7 +202,9 @@ def test_a_plugin_may_create_issues_directly():
     def create() -> None:
         """Create an issue."""
 
-    assert agent_writes(module.lets[0], {}, builtin=False) == "direct"
+    # Not before the owner allowed this plugin's direct writes: a new plugin or an update starts proposed.
+    assert agent_writes(module.lets[0], {}, builtin=False) == "propose"
+    assert agent_writes(module.lets[0], {}, builtin=False, acknowledged=True) == "direct"
 
 
 # --- every core write is decided ---
@@ -314,7 +317,7 @@ def test_each_head_offers_exactly_its_bookmark_operations(kernel):
     assert offered("cli") == every
     assert offered("mcp") == every
     assert offered("web") == every | {"favicon"}
-    assert offered("mcp-http") == set()  # until head F's token scopes cover it
+    assert offered("mcp-http") == every  # at /mcp behind a token: reads with any, writes with a write token
     assert offered("api") == set()
     session = kernel.resolve(ChatService).open(None).id
     chat = {item.name for item in chat_tools(kernel, session, "all") if item.name.startswith("system_bookmark")}

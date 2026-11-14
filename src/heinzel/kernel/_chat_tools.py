@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
 from heinzel.kernel._agent_writes import (
+    AgentWriteLog,
     AgentWrites,
     Caller,
     WriteBudget,
@@ -200,17 +201,17 @@ class ChatTool:
             ChatToolError: If the operation is the person's own (`never`).
             HeinzelError: If the write budget is used up or the operation refuses the call.
         """
-        record, operation = self.item.record, self.item.operation
+        operation = self.item.operation
         caller = Caller("heinzel", self.session, session=self.session, attended=self.attended)
-        declared = agent_writes(operation, arguments, builtin=record.origin.builtin)
+        declared = write_policy(self.kernel, self.item, arguments)
         try:
             policy = bound_to_caller(declared, caller, arguments)
         except HeinzelError:
-            audit_write(caller, record.qualname, operation.name, arguments, policy=declared, outcome="refused")
+            note_write(self.kernel, caller, self.item, arguments, policy=declared, outcome="refused")
             raise
 
         def note(outcome: WriteOutcome, error: str | None = None) -> None:
-            audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome=outcome, error=error)
+            note_write(self.kernel, caller, self.item, arguments, policy=policy, outcome=outcome, error=error)
 
         if policy == "never":
             note("refused")
@@ -289,6 +290,38 @@ def _pre_parsed(arguments: dict[str, Any], model: type[BaseModel]) -> dict[str, 
     return parsed
 
 
+def write_log(kernel: Kernel) -> AgentWriteLog:
+    """The owner's record of agents' writes, if a module keeps one; else one that records and allows nothing."""
+    return kernel.resolve(AgentWriteLog) if kernel.provides(AgentWriteLog) else AgentWriteLog()
+
+
+def write_policy(kernel: Kernel, item: Exposed, arguments: Mapping[str, Any]) -> AgentWrites:
+    """The operation's policy for this call, with the owner's word on a plugin's direct writes."""
+    record, operation = item.record, item.operation
+    builtin = record.origin.builtin
+    allowed = builtin or write_log(kernel).acknowledged(record.origin.distribution, record.qualname, operation.name)
+    return agent_writes(operation, arguments, builtin=builtin, acknowledged=allowed)
+
+
+def note_write(  # noqa: PLR0913 - one flat entry
+    kernel: Kernel,
+    caller: Caller,
+    item: Exposed,
+    arguments: Mapping[str, Any],
+    *,
+    policy: AgentWrites,
+    outcome: WriteOutcome,
+    error: str | None = None,
+) -> None:
+    """One audit line and one entry in the owner's record for a write an agent asked for."""
+    module, name = item.record.qualname, item.operation.name
+    audit_write(caller, module, name, arguments, policy=policy, outcome=outcome, error=error)
+    try:
+        write_log(kernel).record(caller, module, name, arguments, policy=policy, outcome=outcome)
+    except Exception:  # noqa: BLE001 - the record must never fail or undo the write it describes
+        log_event(log, "agent.write.record_failed", level=logging.ERROR, exc_info=True)
+
+
 _budgets: "weakref.WeakKeyDictionary[Kernel, WriteBudget]" = weakref.WeakKeyDictionary()
 
 
@@ -306,10 +339,9 @@ def agent_write(kernel: Kernel, item: Exposed, arguments: Mapping[str, Any], cal
     Raises:
         HeinzelError: If the operation is `never` or `approve` for agents, or the write budget is used up.
     """
-    record, operation = item.record, item.operation
-    policy = agent_writes(operation, arguments, builtin=record.origin.builtin)
+    policy = write_policy(kernel, item, arguments)
     if policy in {"never", "approve"}:
-        audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome="refused")
+        note_write(kernel, caller, item, arguments, policy=policy, outcome="refused")
         if policy == "never":
             msg = f"`{item.name}` is the person's own to do; no agent may call it"
             raise HeinzelError(msg)
@@ -322,7 +354,7 @@ def agent_write(kernel: Kernel, item: Exposed, arguments: Mapping[str, Any], cal
     try:
         write_budget(kernel).take(caller)
     except HeinzelError:
-        audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome="over-budget")
+        note_write(kernel, caller, item, arguments, policy=policy, outcome="over-budget")
         raise
     return policy
 
