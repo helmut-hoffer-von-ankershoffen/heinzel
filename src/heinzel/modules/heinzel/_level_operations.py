@@ -39,7 +39,7 @@ class LevelView(BaseModel):
     )
     profile_revision: int = Field(description="The profile revision to pass to set-level.", ge=1)
     runs_as: LevelRunsAs | None = Field(
-        description="What a turn runs on now; none while the level doesn't choose the model (flag one_chat off)."
+        description="What a turn runs on now; none when it can't start, and `problem` says why."
     )
     problem: str | None = Field(description="Why a turn couldn't start on this choice now; none when it can.")
 

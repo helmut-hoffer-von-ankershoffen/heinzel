@@ -909,7 +909,6 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         playbook_kernel=kernel,
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
-        levels=lambda: feature_enabled(kernel.settings, "one_chat"),
     )
     service.questions = QuestionRelay(service, crud, current, kernel.self_chat, kernel.settings.state_dir)
     return service

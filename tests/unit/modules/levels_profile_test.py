@@ -1,13 +1,13 @@
 """A Heinzel's level on its profile, its two operations, and a turn's model chosen by it (ADR 0158)."""
 
 import asyncio
-import json
 from dataclasses import dataclass
 
 import pytest
 
 from heinzel import CurrentUser, HeinzelError, ModelOffer, UsageEntry
 from heinzel.kernel import OperationLet
+from heinzel.modules.heinzel import _user_chat
 from heinzel.modules.heinzel._level_operations import changed, level_view
 from heinzel.modules.heinzel._levels import HeinzelIntelligence
 from heinzel.modules.heinzel._user_chat import UserChatService
@@ -17,28 +17,36 @@ from tests.unit.modules.user_chat_test import setup_chat
 
 pytestmark = pytest.mark.unit
 
+MARKED = {"low": "house-small", "high": "house-big"}
+"""What the plugin marks per level; it marks no Medium, so Medium and Auto run on the nearest, Low."""
+
 
 @dataclass
-class TieredPlugin(Plugin):
-    """A plugin whose models carry tier words, the default first."""
+class HousePlugin(Plugin):
+    """A plugin with three models, the default first."""
 
     def models(self) -> list[ModelOffer]:
         return [
-            ModelOffer(id="acme-sonnet", thinking="adaptive"),
-            ModelOffer(id="acme-haiku", thinking="adaptive"),
-            ModelOffer(id="acme-opus", thinking="budget", efforts=["low", "medium", "high"]),
+            ModelOffer(id="house-default", thinking="adaptive"),
+            ModelOffer(id="house-small", thinking="adaptive"),
+            ModelOffer(id="house-big", thinking="budget", efforts=["low", "medium", "high"]),
         ]
 
 
-def chat_service(crud, current, settings: Settings, *, one_chat: bool, plugin: Plugin | None = None):
+@pytest.fixture
+def marked(monkeypatch):
+    """The plugin marks Low and High, as `ModelOffer.level` will say."""
+    monkeypatch.setattr(_user_chat, "declared_levels", lambda _offers: dict(MARKED))
+
+
+def chat_service(crud, current, settings: Settings):
     return UserChatService(
         crud,
         current,
         RunnerSnapshotService(),
         load=lambda: settings,  # type: ignore[arg-type, return-value]
-        models=Models(plugin or TieredPlugin()),
+        models=Models(HousePlugin()),
         usage=list[UsageEntry]().append,
-        levels=lambda: one_chat,
     )
 
 
@@ -67,13 +75,13 @@ def test_the_level_is_sticky_and_survives_a_name_change(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         _current, crud, session = setup_chat(current)
-        set_level(crud, session, "lvl-1", level="high", provider="acme", model="acme-opus")
+        set_level(crud, session, "lvl-1", level="high", provider="acme", model="house-big")
         crud.profile(session, "name-1", 2, name="Helper")
         intelligence, revision = crud.intelligence(session)
         body = stored_profile(crud, session)
-    assert intelligence == HeinzelIntelligence(level="high", provider="acme", model="acme-opus")
+    assert intelligence == HeinzelIntelligence(level="high", provider="acme", model="house-big")
     assert revision == 3
-    assert body["intelligence"] == {"level": "high", "provider": "acme", "model": "acme-opus"}
+    assert body["intelligence"] == {"level": "high", "provider": "acme", "model": "house-big"}
     assert body["name"] == "Helper"
 
 
@@ -94,7 +102,7 @@ def test_setting_the_level_is_idempotent_and_checks_the_revision(tmp_path):
 
 
 def test_changed_sets_clears_and_refuses():
-    current = HeinzelIntelligence(level="high", provider="acme", model="acme-opus")
+    current = HeinzelIntelligence(level="high", provider="acme", model="house-big")
     assert changed(current, None, "", "") == HeinzelIntelligence(level="high")
     assert changed(current, "low", None, None) == current.model_copy(update={"level": "low"})
     with pytest.raises(HeinzelError, match="Couldn't set this Heinzel's level: give a level"):
@@ -103,65 +111,78 @@ def test_changed_sets_clears_and_refuses():
         changed(current, None, "Not A Name", None)
 
 
-@pytest.mark.parametrize(("level", "model", "effort"), [("low", "acme-haiku", "low"), ("high", "acme-opus", "high")])
-def test_with_one_chat_on_a_turn_runs_on_the_levels_model_and_records_it(tmp_path, level, model, effort):
+@pytest.mark.parametrize(
+    ("level", "model", "effort", "ran", "source"),
+    [
+        ("low", "house-small", "low", "low", "declared"),
+        ("high", "house-big", "high", "high", "declared"),
+        ("medium", "house-small", "low", "low", "nearest"),
+        ("auto", "house-small", "low", "low", "nearest"),
+    ],
+)
+@pytest.mark.usefixtures("marked")
+def test_a_turn_runs_on_the_model_the_provider_marks_and_records_it(tmp_path, level, model, effort, ran, source):  # noqa: PLR0913, PLR0917 - one row of the table
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        set_level(crud, session, "lvl-1", level=level)
-        chat = chat_service(crud, current, Settings(model="acme-sonnet", effort="medium"), one_chat=True)
+        if level != "auto":
+            set_level(crud, session, "lvl-1", level=level)
+        chat = chat_service(crud, current, Settings(model="house-default", effort="medium"))
         replied = asyncio.run(chat.answer(session, "hello"))
     binding = replied.message.backend_binding
     assert (binding.backend, binding.model, binding.effort) == ("acme", model, effort)
     assert binding.level is not None
-    assert (binding.level.asked, binding.level.ran, binding.level.source) == (level, level, "table")
+    assert (binding.level.asked, binding.level.ran, binding.level.source) == (level, ran, source)
 
 
-def test_with_one_chat_off_the_configured_model_runs_and_nothing_is_recorded(tmp_path):
+def test_a_plugin_that_marks_no_level_runs_its_pinned_default_and_records_the_level(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         set_level(crud, session, "lvl-1", level="high")
-        chat = chat_service(crud, current, Settings(model="acme-sonnet", effort="medium"), one_chat=False)
+        chat = chat_service(crud, current, Settings(model="house-small", effort="medium"))
         replied = asyncio.run(chat.answer(session, "hello"))
     binding = replied.message.backend_binding
-    assert (binding.model, binding.effort, binding.level) == ("acme-sonnet", "medium", None)
-    assert "level" not in json.loads(binding.model_dump_json(exclude_defaults=False))
+    assert (binding.model, binding.effort) == ("house-small", "medium")
+    assert binding.level is not None
+    assert (binding.level.asked, binding.level.source) == ("high", "provider-default")
 
 
+@pytest.mark.usefixtures("marked")
 def test_the_heinzels_provider_overrides_the_configured_access(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        set_level(crud, session, "lvl-1", provider="acme")
-        chat = chat_service(crud, current, Settings(access="claude-code"), one_chat=True)
+        set_level(crud, session, "lvl-1", provider="acme", level="high")
+        chat = chat_service(crud, current, Settings(access="claude-code"))
         plugin = chat.plugin_selected(session)
         set_level(crud, session, "lvl-2", provider="elsewhere")
         with pytest.raises(HeinzelError, match="its AI provider elsewhere is neither the configured AI access"):
             chat.plugin_selected(session)
     assert plugin is not None
-    assert (plugin.source.name, plugin.offer.id, plugin.level.ran) == ("acme", "acme-sonnet", "medium")
+    assert plugin.level is not None
+    assert (plugin.source.name, plugin.offer.id, plugin.level.ran) == ("acme", "house-big", "high")
 
 
 def test_a_level_change_during_a_turn_is_seen_without_calling_the_plugin(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        chat = chat_service(crud, current, Settings(), one_chat=True)
+        chat = chat_service(crud, current, Settings())
         plugin = chat.plugin_selected(session)
         assert plugin is not None
         assert chat._plugin_held(session) == plugin.held()
         set_level(crud, session, "lvl-1", level="low")
         assert chat._plugin_held(session) != plugin.held()
+    assert chat._plugin_held() == chat.plugin_selected().held()  # no Heinzel: as Settings say
 
 
 def test_claude_code_records_the_level_and_refuses_an_exact_model(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        chat = chat_service(crud, current, Settings(access="claude-code"), one_chat=True)
+        chat = chat_service(crud, current, Settings(access="claude-code"))
         record = chat.claude_level(session)
-        off = chat_service(crud, current, Settings(access="claude-code"), one_chat=False).claude_level(session)
         set_level(crud, session, "lvl-1", model="claude-x")
         with pytest.raises(HeinzelError, match="lists no models"):
             chat.claude_level(session)
@@ -172,25 +193,21 @@ def test_claude_code_records_the_level_and_refuses_an_exact_model(tmp_path):
         "auto-fixed-medium",
         "provider-default",
     )
-    assert off is None
 
 
+@pytest.mark.usefixtures("marked")
 def test_the_level_view_previews_the_turn_and_says_why_it_cant_run(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        on = chat_service(crud, current, Settings(), one_chat=True)
-        off = chat_service(crud, current, Settings(), one_chat=False)
-        shown, hidden = level_view(on, crud, session), level_view(off, crud, session)
-        claude_on = chat_service(crud, current, Settings(access="claude-code"), one_chat=True)
-        recorded = level_view(claude_on, crud, session)
+        plugin_chat = chat_service(crud, current, Settings())
+        claude_chat = chat_service(crud, current, Settings(access="claude-code"))
+        shown, recorded = level_view(plugin_chat, crud, session), level_view(claude_chat, crud, session)
         set_level(crud, session, "lvl-1", model="missing")
-        refused = level_view(on, crud, session)
-        claude = level_view(chat_service(crud, current, Settings(access="claude-code"), one_chat=True), crud, session)
+        refused, claude = level_view(plugin_chat, crud, session), level_view(claude_chat, crud, session)
     assert shown.runs_as is not None
-    assert (shown.runs_as.provider, shown.runs_as.model, shown.runs_as.effort) == ("acme", "acme-sonnet", "medium")
+    assert (shown.runs_as.provider, shown.runs_as.model, shown.runs_as.effort) == ("acme", "house-small", "low")
     assert (shown.level, shown.profile_revision, shown.problem) == ("auto", 1, None)
-    assert (hidden.runs_as, hidden.problem) == (None, None)
     assert recorded.runs_as is not None
     assert (recorded.runs_as.provider, recorded.runs_as.model, recorded.runs_as.level.source) == (
         None,
@@ -219,6 +236,7 @@ def test_the_operations_are_private_and_never_on_mcp(make_kernel):
     assert not found["set-level"].read_only
 
 
+@pytest.mark.usefixtures("marked")
 def test_the_operations_read_and_set_the_level(tmp_path, make_kernel):
     kernel = make_kernel(builtins=True)
     operations = {
@@ -229,12 +247,12 @@ def test_the_operations_read_and_set_the_level(tmp_path, make_kernel):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        chat = chat_service(crud, current, Settings(), one_chat=True)
+        chat = chat_service(crud, current, Settings())
         before = operations["level"](chat, crud, session)
         after = operations["set-level"](chat, crud, session, "lvl-1", 1, level="high", provider="acme")
         again = operations["set-level"](chat, crud, session, "lvl-1", 1, level="high", provider="acme")
     assert (before.level, before.profile_revision) == ("auto", 1)
     assert (after.level, after.provider, after.profile_revision) == ("high", "acme", 2)
     assert after.runs_as is not None
-    assert (after.runs_as.model, after.runs_as.effort) == ("acme-opus", "high")
+    assert (after.runs_as.model, after.runs_as.effort) == ("house-big", "high")
     assert again == after

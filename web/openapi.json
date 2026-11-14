@@ -9270,7 +9270,7 @@
                 "type": "null"
               }
             ],
-            "description": "What a turn runs on now; none while the level doesn't choose the model (flag one_chat off)."
+            "description": "What a turn runs on now; none when it can't start, and `problem` says why."
           },
           "session_id": {
             "description": "The owner's durable Heinzel.",
@@ -9955,7 +9955,7 @@
         "type": "object"
       },
       "ModelList": {
-        "description": "The models and efforts of the AI access in use, for the chat's picker.",
+        "description": "The models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "properties": {
           "access": {
             "anyOf": [
@@ -20278,7 +20278,7 @@
             "type": "string"
           },
           "ran": {
-            "description": "The level the turn ran as; Auto resolved by code.",
+            "description": "The level the turn ran as: Auto resolved by code, the nearest one the provider marks.",
             "enum": [
               "low",
               "medium",
@@ -20297,11 +20297,11 @@
             "type": "string"
           },
           "source": {
-            "description": "How the model was chosen: exact, table, default or provider-default.",
+            "description": "How the model was chosen: exact, declared, nearest or provider-default.",
             "enum": [
               "exact",
-              "table",
-              "default",
+              "declared",
+              "nearest",
               "provider-default"
             ],
             "title": "Source",
@@ -23531,7 +23531,7 @@
     },
     "/ai/models": {
       "get": {
-        "description": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "description": "List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "operationId": "ai_models",
         "responses": {
           "200": {
@@ -23545,7 +23545,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "summary": "List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "tags": [
           "ai"
         ]

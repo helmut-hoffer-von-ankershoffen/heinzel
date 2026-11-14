@@ -35,7 +35,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
-from heinzel.modules.heinzel._levels import HeinzelIntelligence, TurnLevel, resolve
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, TurnLevel, declared_levels, resolve
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -94,7 +94,7 @@ class PluginTurnChoice:
     configured_effort: Effort | None = None
     """`[ai.access] plugin_effort` as configured; `effort` is none for a model that takes no effort."""
     session: str | None = None
-    """The Heinzel whose level chose the model; none when `[ai.access]` chose it (flag `one_chat` off)."""
+    """The Heinzel whose level chose the model; none for a turn without one, which `[ai.access]` chooses."""
     intelligence: HeinzelIntelligence | None = None
     """That Heinzel's level, provider and exact model as the turn started (ADR 0158)."""
     level: TurnLevel | None = None
@@ -207,13 +207,10 @@ class UserChatService:
         execute: Callable[..., Outcome] = run_bounded,
         models: "PluginModels | None" = None,
         usage: Callable[[UsageEntry], None] | None = None,
-        levels: Callable[[], bool] = lambda: False,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._models = models
         self._usage = usage
-        self._levels = levels
-        """Whether a Heinzel's level chooses its model: flag `one_chat` (ADR 0158); off unless the host says on."""
         self._runner_settings = runner_settings
         self._connected = connected
         self._notifications = notifications
@@ -235,7 +232,7 @@ class UserChatService:
     def plugin_selected(self, session: str | None = None) -> PluginTurnChoice | None:
         """The plugin model the selected AI access runs on hz's engine, or None for Claude Code (ADR 0159).
 
-        With flag `one_chat` on and a `session`, the Heinzel's level and provider choose it (ADR 0158).
+        With a `session`, the Heinzel's level and provider choose it (ADR 0158).
 
         Raises:
             HeinzelError: If the plugin's models can't serve a turn now: the dollar caps can't be enforced, or the
@@ -255,14 +252,20 @@ class UserChatService:
         choice = config.settings(PluginModelChoice, "ai.access")
         source = self._models.source(access)
         offers, _note = list_offers(source)
+        level = None
         if intelligence is not None:
-            picked = resolve(access, intelligence.level, offers, exact=intelligence.model)
-            offer = choose(offers, picked.model, picked.effort)
+            picked = resolve(access, intelligence.level, declared_levels(offers), offers, exact=intelligence.model)
             level = picked.record
-            return PluginTurnChoice(limits, source, offer, picked.effort, None, None, session, intelligence, level)
+            if picked.model is not None:
+                offer = choose(offers, picked.model, picked.effort)
+                setting = (choice.plugin_model, choice.plugin_effort)
+                return PluginTurnChoice(limits, source, offer, picked.effort, *setting, session, intelligence, level)
+        # No Heinzel, or a plugin that marks no level: its pinned default runs, as Settings set it.
         offer = choose(offers, choice.plugin_model, choice.plugin_effort)
         effort = choice.plugin_effort if offer.thinking is not None else None
-        return PluginTurnChoice(limits, source, offer, effort, choice.plugin_model, choice.plugin_effort)
+        return PluginTurnChoice(
+            limits, source, offer, effort, choice.plugin_model, choice.plugin_effort, session, intelligence, level
+        )
 
     def _plugin_held(self, session: str | None = None) -> tuple[object, ...] | None:
         """What `held` says now, read from the configuration and the profile only: no call to the plugin."""
@@ -276,13 +279,12 @@ class UserChatService:
         choice = config.settings(PluginModelChoice, "ai.access")
         limits = config.settings(HeinzelSettings, "heinzel")
         source = self._models.source(access)
-        if intelligence is not None:
-            return (source.name, source.version, None, None, limits.subscription_budget_mode, intelligence)
-        return (source.name, source.version, choice.plugin_model, choice.plugin_effort, limits.subscription_budget_mode)
+        held = (source.name, source.version, choice.plugin_model, choice.plugin_effort, limits.subscription_budget_mode)
+        return held if intelligence is None else (*held, intelligence)
 
     def _intelligence(self, session: str | None) -> HeinzelIntelligence | None:
-        """The Heinzel's intelligence when its level chooses the model (flag `one_chat`), else None (ADR 0158)."""
-        if session is None or not self._levels():
+        """The Heinzel's intelligence, which chooses its model (ADR 0158); None without a Heinzel."""
+        if session is None:
             return None
         return self._crud.intelligence(session)[0]
 
@@ -298,13 +300,13 @@ class UserChatService:
         if self._models is None or not self._models.offers(intelligence.provider):
             msg = (
                 f"Couldn't start this Heinzel's turn: its AI provider {intelligence.provider} is neither the "
-                "configured AI access nor an installed plugin's models; pick another in the Heinzel's details"
+                "configured AI access nor an installed plugin's models; pick another on the Heinzel's page"
             )
             raise HeinzelError(msg)
         return intelligence.provider
 
     def claude_level(self, session: str) -> TurnLevel | None:
-        """What a Claude Code turn of the Heinzel records about its level; none with flag `one_chat` off (ADR 0158).
+        """What a Claude Code turn of the Heinzel records about its level (ADR 0158).
 
         Claude Code lists no models and its chat takes no model override, so the level is recorded, not applied.
 
@@ -316,7 +318,7 @@ class UserChatService:
             return None
         config = self._load()
         provider = self._access(config, intelligence) or "claude-code"
-        return resolve(provider, intelligence.level, [], exact=intelligence.model).record
+        return resolve(provider, intelligence.level, {}, [], exact=intelligence.model).record
 
     def binding_terms(self) -> dict[str, object]:
         """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.

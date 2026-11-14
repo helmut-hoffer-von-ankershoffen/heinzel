@@ -162,8 +162,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the models and efforts of the AI access in use, for the chat's model and effort picker.
-         * @description List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         * List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.
+         * @description List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.
          */
         get: operations["ai_models"];
         put?: never;
@@ -9809,7 +9809,7 @@ export interface components {
              * @description Its AI provider; none for the configured AI access.
              */
             provider: string | null;
-            /** @description What a turn runs on now; none while the level doesn't choose the model (flag one_chat off). */
+            /** @description What a turn runs on now; none when it can't start, and `problem` says why. */
             runs_as: components["schemas"]["LevelRunsAs"] | null;
             /**
              * Session Id
@@ -10212,7 +10212,7 @@ export interface components {
         };
         /**
          * ModelList
-         * @description The models and efforts of the AI access in use, for the chat's picker.
+         * @description The models and efforts of the AI access in use, to pick from with `hz chat send --model`.
          */
         ModelList: {
             /**
@@ -16267,7 +16267,7 @@ export interface components {
             asked: "auto" | "low" | "medium" | "high";
             /**
              * Ran
-             * @description The level the turn ran as; Auto resolved by code.
+             * @description The level the turn ran as: Auto resolved by code, the nearest one the provider marks.
              * @enum {string}
              */
             ran: "low" | "medium" | "high";
@@ -16279,10 +16279,10 @@ export interface components {
             rule: "fixed" | "auto-fixed-medium";
             /**
              * Source
-             * @description How the model was chosen: exact, table, default or provider-default.
+             * @description How the model was chosen: exact, declared, nearest or provider-default.
              * @enum {string}
              */
-            source: "exact" | "table" | "default" | "provider-default";
+            source: "exact" | "declared" | "nearest" | "provider-default";
         };
         /**
          * Uninstalled
