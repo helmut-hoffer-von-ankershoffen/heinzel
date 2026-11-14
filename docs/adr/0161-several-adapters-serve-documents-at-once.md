@@ -45,9 +45,10 @@ Chosen option 3.
 **Configuration.** `[capabilities] documents` takes one adapter name, as before, or a list:
 `documents = ["google", "atlassian"]`. A comma-separated string (`google,atlassian`) is the same list, which serves
 `HZ_CAPABILITIES__DOCUMENTS` and `hz system config set`. The first adapter is the default. An empty list, or
-`["none"]`, binds nothing; `none` can't be listed with adapters. Settings shows a switch per installed documents
-connector instead of one choice, says which one is the default, and counts every connector that is on as in use.
-Only capabilities with `Capability.multiple` take a list. The others refuse one, as before.
+`["none"]`, binds nothing; `none` can't be listed with adapters.
+
+Settings shows a switch per installed documents connector instead of one choice, says which one is the default, and
+counts every connector that is on as in use. Only capabilities with `Capability.multiple` take a list. The others refuse one, as before.
 
 **Declarations.** `Capability` gains:
 
