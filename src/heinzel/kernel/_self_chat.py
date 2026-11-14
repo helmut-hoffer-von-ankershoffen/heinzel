@@ -57,12 +57,16 @@ INERT_AT = "\uff20"
 
 logger = logging.getLogger(__name__)
 
-_BROADCAST = re.compile(r"(?<![\w@])@(here|channel|everyone|all)\b", re.IGNORECASE)
-"""A broadcast written out, such as `@here`: chats that turn typed names into pings would page everyone."""
-_ESCAPED = re.compile(r"<[@!#](?:[^<>\s|]{1,80})(?:\|([^<>]{0,80}))?>")
-"""A mention in angle brackets, such as `<!here>` or `<@U123>`, with an optional `|label`."""
-_TAGGED = re.compile(r"<at\b[^<>]{0,80}>([^<>]{0,80})</at>", re.IGNORECASE)
-"""A mention as a markup tag around a name."""
+_BROADCAST = re.compile(r"(?<!\w)@+(here|channel|everyone|all|room)\b", re.IGNORECASE)
+"""A broadcast written out, such as `@here` or `@@here`: chats that turn typed names into pings would page everyone."""
+_ESCAPED = re.compile(r"<\s*[@!#]([^<>\s|]*)(?:\|([^<>]*))?>")
+"""An innermost mention in angle brackets, such as `<!here>` or `<@U123>`, with an optional `|label`, of any length."""
+_TAGGED = re.compile(r"<\s*at\b[^<>]*>([^<>]*)<\s*/\s*at\s*>", re.IGNORECASE)
+"""An innermost mention tag around a name, of any length."""
+_OPENER = re.compile(r"<\s*[@!#]|<\s*/?\s*at\b[^<>]*>?", re.IGNORECASE)
+"""What is left of mention syntax once the whole mentions are gone: an opening token that a chat could still read."""
+_MENTION_DEPTH = 4
+"""How many levels of nested mentions become readable names; deeper ones only lose their opening tokens."""
 _BUSY: dict[str, threading.Thread] = {}
 """The call still running per chat adapter, so a hung adapter holds at most one thread (see `bounded`)."""
 _BUSY_LOCK = threading.Lock()
@@ -206,16 +210,23 @@ def inert_mentions(text: str) -> str:
 
     A broadcast such as `@here`, a mention in angle brackets such as `<!channel>` or `<@U123>`, and a mention tag
     around a name all become the name after a full-width at sign (`INERT_AT`): the reader still sees who was meant.
+    Nested mentions are undone from the inside out, and an opening token left over after that (one that never
+    closes) is made inert too, so no length or nesting gets one through.
     """
 
     def escaped(match: re.Match[str]) -> str:
-        whole = match.group(0)
-        label = (match.group(1) or "").lstrip("@").strip()
-        target = label or whole[2:-1].split("^")[-1].lstrip("&")
-        return INERT_AT + target
+        label = (match.group(2) or "").strip().lstrip("@" + INERT_AT)
+        return INERT_AT + (label or match.group(1).split("^")[-1].lstrip("&"))
 
-    text = _TAGGED.sub(lambda match: INERT_AT + match.group(1).strip(), text)
-    text = _ESCAPED.sub(escaped, text)
+    def tagged(match: re.Match[str]) -> str:
+        return INERT_AT + match.group(1).strip().lstrip("@" + INERT_AT)
+
+    for _ in range(_MENTION_DEPTH):  # readable names for a few levels; the opener pass below catches any deeper
+        undone = _ESCAPED.sub(escaped, _TAGGED.sub(tagged, text))
+        if undone == text:
+            break
+        text = undone
+    text = _OPENER.sub(INERT_AT, text)
     return _BROADCAST.sub(lambda match: INERT_AT + match.group(1), text)
 
 

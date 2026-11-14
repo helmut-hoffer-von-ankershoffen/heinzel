@@ -167,9 +167,9 @@ class Kernel:
             Prompter: Prompter(),
         }
         self._factory_instances: dict[type[Any], object] = {}
+        """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._self_chat: tuple[tuple[str | None, tuple[int, ...]], tuple[Adapter, ...], SelfChat | None] | None = None
         """The last `self_chat()` and the binding it was found for: settings show it often, the binding rarely moves."""
-        """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
             CurrentUser: _current_user,

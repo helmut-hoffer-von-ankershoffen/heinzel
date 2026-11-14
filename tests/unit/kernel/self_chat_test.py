@@ -1,5 +1,6 @@
 """The chat capability's self channel: optional methods, hz's trusted view and its bounds (ADR 0160)."""
 
+import re
 import threading
 import time
 from dataclasses import replace
@@ -264,6 +265,11 @@ def inert(text: str) -> str:
         ("hi <@U123ABC> and <!subteam^S99|@team>", "hi ~U123ABC and ~team"),
         ("<at id='1'>Ann</at> ok", "~Ann ok"),
         ("mail me at ann@example.com, @hereford stays", "mail me at ann@example.com, @hereford stays"),
+        ("<!here|<!channel>>", "~channel"),
+        ("<@U1|<@U2>>", "~U2"),
+        ("@@here and @room", "~here and ~room"),
+        ("<!here never closes", "~here never closes"),
+        ("<at>A</at> <!subteam^S9|@team>", "~A ~team"),
     ],
 )
 def test_mention_syntax_is_made_inert(raw, sent):
@@ -329,3 +335,27 @@ def test_self_chat_is_kept_until_the_binding_changes(make_kernel):
     providers = kernel._capabilities.adapters[("chat", "acmechat")]
     kernel._capabilities.adapters[("chat", "acmechat")] = [replace(providers[0])]
     assert kernel.self_chat() is not first, "a changed binding finds the channel again"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "<!here|<!channel>>",
+        "<@U1|<@U2>>",
+        "<!here|" + "a" * 81 + ">",
+        "<@" + "U" * 81 + ">",
+        "<at>" + "x" * 81 + "</at>",
+        "<at id='" + "x" * 90 + "'>A</at>",
+        "@@here",
+        "@room",
+        "< !here>",
+        "<!a|" * 2000 + ">" * 2000,
+        "<at>" * 2000 + "</at>" * 2000,
+    ],
+)
+def test_no_length_or_nesting_gets_a_mention_through(raw):
+    """Probes from review: nested, long and doubled mentions must all come out inert, in linear time."""
+    started = time.monotonic()
+    out = inert_mentions(raw).lower()
+    assert time.monotonic() - started < 1
+    assert not re.search(r"<\s*[@!#]|<\s*/?\s*at\b|(?<!\w)@+(here|channel|everyone|all|room)\b", out), out[:80]
