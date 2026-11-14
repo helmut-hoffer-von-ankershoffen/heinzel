@@ -22,7 +22,7 @@ and left again with "Back to chat". People had to know which one they were in, a
 chat had to be carried over into a new Heinzel.
 
 The chat redesign (bead agqz, canvas "Chat sidebar redesign") makes every chat a chat with a Heinzel. It was built in
-slices behind the flag `one_chat` ([ADR 0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md)). On 2026-11-14 the
+slices behind the flag `one_chat` ([ADR 0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md)). Then the
 maintainer decided: "We don't need this behind a feature flag", "And no need to migrate data", and 0.9.44 is the chat
 UI release: a complete, coherent new chat. This record states what that chat is.
 

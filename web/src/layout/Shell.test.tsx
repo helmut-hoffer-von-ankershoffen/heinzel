@@ -6,6 +6,15 @@ import { createDraftPath } from "@/lib/chatIntent";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
+/** One Heinzel, Helmi, so the chat opens on it (ADR 0157). */
+const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+const withHelmi = {
+  "/api/heinzel/sessions": {
+    sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" }],
+  },
+  "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+};
+
 const answers = {
   ...shell,
   "/api/system/doctor": doctor,
@@ -78,16 +87,7 @@ describe("Shell", () => {
   });
 
   it("opens the Page tab on a phone when the chat switcher asks for a new Heinzel on the same page", async () => {
-    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    mockApi({
-      ...answers,
-      "/api/heinzel/sessions": {
-        sessions: [
-          { session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" },
-        ],
-      },
-      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
-    });
+    mockApi({ ...answers, ...withHelmi });
     const initialWidth = window.innerWidth;
     try {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
@@ -259,16 +259,7 @@ describe("Desktop menu actions", () => {
   });
 
   it("opens the chat on the default Heinzel from the menu's New Chat, whether the chat is open or closed", async () => {
-    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    mockApi({
-      ...answers,
-      "/api/heinzel/sessions": {
-        sessions: [
-          { session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" },
-        ],
-      },
-      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
-    });
+    mockApi({ ...answers, ...withHelmi });
     const user = userEvent.setup();
     renderAt("/doctor");
     const panel = await screen.findByRole("complementary", { name: "Chat" });
