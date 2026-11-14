@@ -64,15 +64,16 @@ def _make(tmp_path, platform, levels, *, execute=False, fail_serial=False):
         check=False,
     )
     plan = json.loads(trace.read_text())
-    [step] = plan["steps"]
-    assert step.startswith("tests=")
-    tokens = list(shlex.shlex(step.removeprefix("tests="), posix=True, punctuation_chars="&"))
-    commands = [[]]
-    for token in tokens:
-        if token == "&&":
-            commands.append([])
-        else:
-            commands[-1].append(token)
+    commands = []
+    for step in plan["steps"]:  # one step, or the integration level's two sequential sessions
+        label, _, body = step.partition("=")
+        assert label in {"tests", "integration-1", "integration-2"}
+        commands.append([])
+        for token in shlex.shlex(body, posix=True, punctuation_chars="&"):
+            if token == "&&":
+                commands.append([])
+            else:
+                commands[-1].append(token)
     return result, plan["timeout"], commands, calls
 
 
@@ -102,6 +103,10 @@ def test_owning_commands_serialize_only_linux_unit_retirement(tmp_path, platform
     if split:
         parallel.append(f"--ignore={RETIREMENT}")
     parallel += ["-n", "4" if platform == "Linux" else "3", "-x", "-q", "--session-timeout=420", "--durations=20"]
+    if levels == "integration":  # two sequential sessions, each with its own cap, -n and -x
+        halves = [[*parallel[:5], f"--integration-half={half}", *parallel[5:]] for half in (1, 2)]
+        assert commands == halves
+        return
     assert commands == ([serial, parallel] if split else [parallel])
 
 
