@@ -10,7 +10,16 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from heinzel import Message, ModelOffer, ModelUnavailableError, Module, NotSupportedError, Participant, PostedMessage
+from heinzel import (
+    Message,
+    ModelOffer,
+    ModelUnavailableError,
+    Module,
+    ModuleSettings,
+    NotSupportedError,
+    Participant,
+    PostedMessage,
+)
 from heinzel.conformance import (
     UNKNOWN_MODEL_ID,
     ConformanceError,
@@ -384,3 +393,32 @@ def test_the_fixture_builds_through_the_kernel(hz_conformance):
 
 def test_versions_name_core_the_interface_pydantic_ai_and_httpx2():
     assert set(versions()) == {"heinzel", "ai-models interface", "pydantic-ai", "httpx2"}
+
+
+class ChatSettings(ModuleSettings):
+    api_url: str = "https://chat.acme.example/api"
+
+
+def good_hosts(settings: ChatSettings) -> list[str]:
+    return [settings.api_url]
+
+
+def bad_hosts(settings: ChatSettings) -> list[str]:
+    return ["not a host"] if settings else []
+
+
+def broken_hosts(settings: ChatSettings) -> list[str]:
+    raise KeyError(NO_CACHE if settings else "")
+
+
+def test_a_hosts_function_is_evaluated_through_the_kernel(make_kernel):
+    def hosts_of(function: object, *, with_kernel: bool = True) -> list[str]:
+        module = chat_module(GoodChat, hosts=function)
+        module.settings(ChatSettings)
+        kernel = make_kernel(acme_chat=module) if with_kernel else None
+        return [f.message for f in check_module(module, kernel=kernel).findings]
+
+    assert hosts_of(good_hosts) == []
+    assert hosts_of(bad_hosts) == ["its hosts function returned no valid host name or URL with default settings"]
+    assert hosts_of(broken_hosts) == ["its hosts function failed with default settings: KeyError: 'cache missing'"]
+    assert hosts_of(bad_hosts, with_kernel=False) == [], "without a kernel it isn't called"
