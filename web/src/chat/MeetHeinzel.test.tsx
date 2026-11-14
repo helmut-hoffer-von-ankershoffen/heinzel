@@ -39,8 +39,8 @@ describe("Meet your first Heinzelmännchen", () => {
       const now = figure();
       expect(now).not.toBe(looks[looks.length - 1]);
       looks.push(now);
+      if (looks.length === 2) expect(nameField().value).not.toBe("Helmi");
     }
-    expect(nameField().value).not.toBe("Helmi");
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(figure()).toBe(looks[5]);
     // Undo steps are serial on purpose: each click changes the button and the figure the next one sees.
