@@ -1,8 +1,10 @@
 """The acceptance harness's verdict logic, without network or installs (scripts/acceptance/)."""
 
 import argparse
+import ast
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import zipfile
@@ -551,6 +553,131 @@ def test_plugin_update_expectation_is_bound_independently_before_mutating(defect
             "clock_update_target": {"version": "0.9.6", "sha256": digest},
         }
         assert (tmp_path / "clock-update-target.whl").read_bytes() == payload
+
+
+@pytest.mark.parametrize(
+    ("version", "defect"),
+    [
+        ("0.5.2", None),
+        ("0.7.0", None),  # a newer example release needs no harness change
+        ("0.7.0rc1", "prerelease"),
+        (None, "no-version"),
+        ("0.7.0", "no-wheel"),
+        ("0.7.0", "extra-wheel"),
+        ("0.7.0", "yanked-wheel"),
+        ("0.7.0", "foreign-host"),
+    ],
+)
+def test_example_install_target_is_bound_from_the_index_before_any_change(version, defect, monkeypatch):
+    wheel = {
+        "packagetype": "bdist_wheel",
+        "digests": {"sha256": "e" * 64},
+        "url": "https://files.pythonhosted.org/heinzel_example.whl",
+    }
+    index = {"info": {"version": version}, "urls": [wheel, {"packagetype": "sdist", "digests": {"sha256": "f" * 64}}]}
+    if defect == "no-wheel":
+        index["urls"] = index["urls"][1:]
+    elif defect == "extra-wheel":
+        index["urls"].append(dict(wheel))
+    elif defect == "yanked-wheel":
+        wheel["yanked"] = True
+    elif defect == "foreign-host":
+        wheel["url"] = "https://example.invalid/heinzel_example.whl"
+    fetched = []
+
+    def metadata(url, _limit=None):
+        fetched.append(url)
+        return json.dumps(index).encode()
+
+    monkeypatch.setattr(harness, "fetch", metadata)
+    case = SimpleNamespace(notes={})
+    if defect:
+        with pytest.raises(harness.StepFailed):
+            harness.example_plugin_version(case)
+        assert case.notes == {}
+    else:
+        assert harness.example_plugin_version(case) == version
+        assert case.notes == {"example_install_target": {"version": version, "sha256": "e" * 64}}
+    assert fetched == ["https://pypi.org/pypi/heinzel-example/json"]
+
+
+@pytest.mark.parametrize(("listed", "passes"), [("0.7.0", True), ("0.5.2", False), (None, False)])
+def test_installed_example_must_be_at_the_bound_version(listed, passes, monkeypatch):
+    inventory = {"heinzel-resource": {"distribution": "heinzel-resource", "version": "1.0.0"}}
+    if listed:
+        inventory["heinzel-example"] = {"distribution": "heinzel-example", "version": listed}
+    monkeypatch.setattr(harness, "plugin_map", lambda _case, label: inventory if label == "example-add-list" else {})
+    case = SimpleNamespace(plugins_expected={}, notes={})
+    if passes:
+        harness.check_installed_version(case, "heinzel-example", "0.7.0", "example-add-list")
+    else:
+        with pytest.raises(harness.StepFailed, match=re.escape("not at the bound 0.7.0")):
+            harness.check_installed_version(case, "heinzel-example", "0.7.0", "example-add-list")
+    assert case.plugins_expected == {"heinzel-example": {"enabled": True, "version": "0.7.0"}}
+    # The version found is recorded whether or not it matches, so a failure names it.
+    assert case.notes == {
+        "installed_versions": {"example-add-list": {"plugin": "heinzel-example", "bound": "0.7.0", "found": listed}}
+    }
+
+
+VERSION = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
+VERSION_TABLES = {"FOREGROUND_UI", "UPGRADES_PLUGINS_ON_ADD"}  # Core versions, each keyed by what that Core does
+ALLOWED_VERSIONS = {"0.9.2", "heinzel-clock==0.9.2", "0.9.8"}  # the deliberate older clock pin; the default old app
+
+
+def written_versions(source):
+    """Every X.Y.Z string constant in the harness outside the Core version tables, docstrings and allowed pins."""
+    tree = ast.parse(source)
+    skip = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id in VERSION_TABLES for t in node.targets
+        ):
+            skip.update(id(n) for n in ast.walk(node))
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)) and ast.get_docstring(node) is not None:
+            skip.add(id(node.body[0].value))
+    return [
+        (n.lineno, n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Constant)
+        and isinstance(n.value, str)
+        and id(n) not in skip
+        and VERSION.search(n.value)
+        and n.value not in ALLOWED_VERSIONS
+    ]
+
+
+def test_no_plugin_version_is_written_into_the_harness_except_the_deliberate_older_clock_pin():
+    """A plugin the cases install unpinned is bound from the index in each run; a literal goes stale on release."""
+    assert written_versions((HARNESS / "run_acceptance.py").read_text()) == []
+
+
+INSTALL = 'case.step("install a plugin (CLI)", lambda: add(EXAMPLE_PLUGIN, "example-add", example_version))'
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (INSTALL, 'case.step("install a plugin (CLI)", lambda: add(EXAMPLE_PLUGIN, "example-add", "0.5.2"))'),
+        (
+            INSTALL,
+            (
+                'case.step(\n        "install a plugin (CLI)",\n        lambda: add(\n            "heinzel-example",\n'
+                '            "example-add",\n            "0.5.2",\n        ),\n    )'
+            ),
+        ),
+        ('EXAMPLE_PLUGIN = "heinzel-example"', 'EXAMPLE_PLUGIN = "heinzel-example"\nEXAMPLE_VERSION = "0.5.2"'),
+        (
+            'ui_apply(browser, "the install", row_has(EXAMPLE_PLUGIN, example_version))',
+            'ui_apply(browser, "the install", row_has(EXAMPLE_PLUGIN, "0.5.2"))',
+        ),
+    ],
+    ids=["constant-and-literal", "separate-lines", "module-constant", "page-row"],
+)
+def test_the_version_guard_finds_a_written_back_example_version(old, new):
+    source = (HARNESS / "run_acceptance.py").read_text()
+    assert old in source
+    assert "0.5.2" in {value for _, value in written_versions(source.replace(old, new))}
 
 
 @pytest.mark.parametrize("defect", [None, "installed-bytes", "registry-advanced"])

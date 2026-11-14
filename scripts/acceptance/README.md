@@ -27,8 +27,8 @@ inspection and never reused. Each full case downloads and installs about 300 MB.
 | 4 `versionless_reinstall` | Fresh install, uninstall, literal reinstall, config preserved |
 | 5 `reported_error_sequence` | The reported commands in order; all run even after a failure |
 | 6 `update_from_previous_app` | The previous published app installed by its explicit profile, then a user's state: an extra plugin, a disabled default, configuration. Then `hz system update` once a newer release is published, else `hz system update --source <candidate wheel>`. Core bytes identical to the target wheel, managed interpreter, configuration, inventory and choices kept, the updated app serves the target's identity and frontend, offline continuity, a second update is a no-op |
-| 7 `plugin_cli_lifecycle` | Preview installs nothing; add `heinzel-example`; pin `heinzel-clock==0.9.2` then re-add to replace it with the bound profile version, independently checked against the PyPI latest wheel hash; disable and enable a default; remove. Inventory, receipt, history and startup checkpoint after each |
-| 8 `plugin_ui_lifecycle` | A real headless Chrome (private profile, DevTools over a loopback socket, real mouse and key events): Tab to the fictional account menu, Enter, Settings, Plugins; preview `heinzel-example` in its receipt-bound operation dialog, check code/restart consent and unchanged inventory, confirm once, observe the new document and successful final check; replace Clock 0.9.2 then the independently bound latest version from the page; remove the example with removal/restart consent. Each change retains its 360-second budget and exact row/version and CLI postconditions |
+| 7 `plugin_cli_lifecycle` | Preview installs nothing; add `heinzel-example` at the newest final version the PyPI index serves, bound before the change (preview, inventory and CLI must show it); pin `heinzel-clock==0.9.2` then re-add to replace it with the bound profile version, independently checked against the PyPI latest wheel hash; disable and enable a default; remove. Inventory, receipt, history and startup checkpoint after each |
+| 8 `plugin_ui_lifecycle` | A real headless Chrome (private profile, DevTools over a loopback socket, real mouse and key events): Tab to the fictional account menu, Enter, Settings, Plugins; preview `heinzel-example` at its index-bound version in its receipt-bound operation dialog, check code/restart consent and unchanged inventory, confirm once, observe the new document and successful final check; replace Clock 0.9.2 then the independently bound latest version from the page; remove the example with removal/restart consent. Each change retains its 360-second budget and exact row/version and CLI postconditions |
 | 9 `uninstall_reinstall_retention` | Extra plugin, disabled default and configuration; `uv tool uninstall`; configuration and history retained; reinstall keeps the disabled choice; then the user wipes config, data and state and a reinstall is a fresh install |
 | 10 `update_with_stopped_unit` | An installed but stopped daemon unit (registration simulated, as in case 3) while the user updates; the unit and its markers must be byte-identical afterwards and not loaded. Linux: UNPROVABLE |
 | 11 `active_daemon_update` | Always UNPROVABLE. Records from the shipped Core that the daemon label and unit names are fixed constants, and what would be required |
@@ -61,8 +61,9 @@ The immutable app profile binds the installed Clock baseline, checked against th
 Before mutation, the live index independently binds the unpinned update target and its wheel hash. The CLI and UI
 must install that exact version, and its installed runtime files must match the downloaded wheel. If the registry
 advances and the updater selects a different version, the case fails and needs a fresh run. Installed results never
-choose the expected version. Account navigation uses real Tab and Enter events and the fictional profile's unique
-visible menu trigger.
+choose the expected version. The example plugin's install target is bound the same way to the newest final version
+the index serves; its wheel hash is recorded and its installed files are not compared. Account navigation uses real
+Tab and Enter events and the fictional profile's unique visible menu trigger.
 
 ## Candidates and verdicts
 
