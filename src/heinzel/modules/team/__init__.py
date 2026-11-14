@@ -63,7 +63,7 @@ Login = Annotated[
 ]
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday", agents="approve")
 def new(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     name: Annotated[str, Field(description="The team's name: lowercase words joined by dashes, e.g. payments.")],
@@ -84,7 +84,7 @@ def new(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.new(name, github=github, roster=roster, handle=handle, login=login, role=role, yes=yes)
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday", agents="approve")
 def join(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     url: Annotated[str, Field(description="The team repository's URL, the invite: https, ssh or a local path.")],
@@ -105,7 +105,7 @@ def join(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.join(url, propose=propose, handle=handle, login=login, role=role, yes=yes)
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday", agents="approve")
 def add(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     handle: Annotated[str, Field(description="Their handle: lowercase letters, digits, dashes.")],
@@ -125,7 +125,7 @@ def show(service: TeamService) -> TeamShow:
     return service.show()
 
 
-@module.operation(read_only=False, render=render_adopted, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_adopted, heads={"cli", "mcp"}, agents="approve")
 def adopt(
     service: TeamService,
     path: Annotated[Path, Field(description="A checkout of your team repository you already have.")],

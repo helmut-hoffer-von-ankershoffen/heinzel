@@ -215,10 +215,10 @@ Keep the built-in browser's bookmarks: a tree of folders and bookmarks.
 | List the bookmarks and folders in their order, with each entry's id and folder. | `hz system bookmark list` | `system_bookmark_list` | — | `GET /api/system/bookmark/list` |  | expert |
 | Add a bookmark; an address already in that folder is kept once. | `hz system bookmark add` | `system_bookmark_add` | — | `POST /api/system/bookmark/add` | yes | expert |
 | Add an empty bookmark folder. | `hz system bookmark folder` | `system_bookmark_folder` | — | `POST /api/system/bookmark/folder` | yes | expert |
-| Rename a bookmark or folder, or change a bookmark's address. | `hz system bookmark edit` | — | — | `POST /api/system/bookmark/edit` | yes | expert |
-| Move a bookmark or folder into another folder or to another place in its own. | `hz system bookmark move` | — | — | `POST /api/system/bookmark/move` | yes | expert |
-| Remove a bookmark, or a folder with everything in it; `restore` brings it back. | `hz system bookmark remove` | — | — | `POST /api/system/bookmark/remove` | yes | expert |
-| Bring back a removed bookmark or folder to where it was. | `hz system bookmark restore` | — | — | `POST /api/system/bookmark/restore` | yes | expert |
+| Rename a bookmark or folder, or change a bookmark's address. | `hz system bookmark edit` | `system_bookmark_edit` | — | `POST /api/system/bookmark/edit` | yes | expert |
+| Move a bookmark or folder into another folder or to another place in its own. | `hz system bookmark move` | `system_bookmark_move` | — | `POST /api/system/bookmark/move` | yes | expert |
+| Remove a bookmark, or a folder with everything in it; `restore` brings it back. | `hz system bookmark remove` | `system_bookmark_remove` | — | `POST /api/system/bookmark/remove` | yes | expert |
+| Bring back a removed bookmark or folder to where it was. | `hz system bookmark restore` | `system_bookmark_restore` | — | `POST /api/system/bookmark/restore` | yes | expert |
 
 ## `system.capability`
 

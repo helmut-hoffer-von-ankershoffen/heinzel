@@ -211,7 +211,7 @@ def list_(service: UiService) -> list[ContributionInfo]:
     return service.listing()
 
 
-@module.operation(read_only=False, render=render_listing, heads=HEADS)
+@module.operation(read_only=False, render=render_listing, heads=HEADS, agents="direct")
 def show(service: UiService, item: ItemId, slot: Slot = None) -> list[ContributionInfo]:
     """Show a contribution in a slot of the web app, such as the clock in the sidebar.
 
@@ -221,7 +221,7 @@ def show(service: UiService, item: ItemId, slot: Slot = None) -> list[Contributi
     return service.show(item, slot, shown=True)
 
 
-@module.operation(read_only=False, render=render_listing, heads=HEADS)
+@module.operation(read_only=False, render=render_listing, heads=HEADS, agents="direct")
 def hide(service: UiService, item: ItemId, slot: Slot = None) -> list[ContributionInfo]:
     """Hide a contribution from a slot of the web app, such as the clock from the footer.
 
@@ -238,7 +238,7 @@ RestoreSlot = Annotated[
 
 
 # The terminal and agents' Restore all; the web app restores its listed widgets one by one through `show`.
-@module.operation(read_only=False, render=render_listing, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_listing, heads={"cli", "mcp"}, agents="direct")
 def restore(service: UiService, slot: RestoreSlot = "today") -> list[ContributionInfo]:
     """Bring back every contribution you hid from a slot, such as the widgets hidden from Today.
 

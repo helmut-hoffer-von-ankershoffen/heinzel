@@ -155,7 +155,7 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     return service.release(requirements[0] if requirements else None)
 
 
-@module.operation(read_only=False, audience="everyday", render=render_update)
+@module.operation(read_only=False, audience="everyday", render=render_update, agents="approve")
 def update(  # noqa: PLR0913 - the services, where to install from, and each answer a person can give in advance
     service: UpdateService,
     kernel: Kernel,
@@ -390,7 +390,7 @@ def recover_announced(installation: Installation, kernel: Kernel) -> bool:
     return True
 
 
-@module.operation(read_only=False, audience="everyday", render=render_channel)
+@module.operation(read_only=False, audience="everyday", render=render_channel, agents="approve")
 def channel(
     service: UpdateService,
     config: ConfigService,
