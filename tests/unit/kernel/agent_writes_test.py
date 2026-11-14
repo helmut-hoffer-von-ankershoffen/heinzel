@@ -7,7 +7,7 @@ import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from heinzel import ActionGate, ByArguments, Caller, HeinzelError, Module
+from heinzel import ActionGate, ByArguments, Caller, HeinzelError, Kernel, Module, ModuleRecord
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
 from heinzel.kernel import (
@@ -19,6 +19,7 @@ from heinzel.kernel import (
     chat_tools,
     current_caller,
     declared_agent_writes,
+    discover,
     restricts,
 )
 from heinzel.kernel._agent_writes import (
@@ -103,9 +104,15 @@ def ran() -> list[tuple[str, object]]:
 
 
 @pytest.fixture
-def kernel(make_kernel, ran, settings, tmp_path):
-    owned = settings.model_copy(update={"data_dir": tmp_path / "data", "cache_dir": tmp_path / "cache"})
-    kernel = make_kernel(builtins=True, settings_=owned, desk=desk(ran))
+def kernel(ran, settings, tmp_path):
+    """The built-in modules plus `desk` as one of them: a module of a plugin is held to stricter rules."""
+    owned = settings.model_copy(
+        update={"data_dir": tmp_path / "data", "cache_dir": tmp_path / "cache", "state_dir": tmp_path / "state"}
+    )
+    records = discover(plugins=False)[0]
+    core = next(record.origin for record in records if record.origin.builtin)
+    records.append(ModuleRecord(qualname="desk", module=desk(ran), origin=core))
+    kernel = Kernel(owned, records, config=None)
     kernel.bind(ActionGate, Gate())
     return kernel
 

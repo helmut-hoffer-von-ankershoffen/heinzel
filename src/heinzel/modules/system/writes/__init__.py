@@ -13,7 +13,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Module
+from heinzel import Check, Module, Status
 from heinzel.kernel import AgentWriteLog
 from heinzel.modules.system.writes._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
 from heinzel.modules.system.writes._service import WriteLog
@@ -65,6 +65,32 @@ def render_plugins(result: PluginWrites) -> RenderableType:
     if result.next:
         parts.append(Text("Next:\n" + "\n".join(f"  {step}" for step in result.next)))
     return Group(*parts)
+
+
+@module.health
+def health(service: WriteLog) -> list[Check]:
+    """The owner's digest: what ran with nobody watching, and which plugin writes wait for a yes. Never a fault."""
+    checks = []
+    if count := service.listing(None, unattended=True, limit=1).unattended_ran:
+        checks.append(
+            Check(
+                name="unwatched writes",
+                status=Status.UP,
+                detail=f"{count} writes ran in the last 24 hours in turns nobody watched; "
+                "see them with `hz system writes list --unattended`.",
+            )
+        )
+    for step in service.plugin_writes().next:
+        plugin = step.rsplit(" ", 1)[-1]
+        checks.append(
+            Check(
+                name=f"direct writes of {plugin}",
+                status=Status.UP,
+                detail=f"{plugin} asks to run some writes for agents without asking you. Until you allow it they "
+                f"are proposed: `hz system writes plugins`, then `{step}`.",
+            )
+        )
+    return checks
 
 
 @module.operation(name="list", render=render_writes, heads=OWNER)
