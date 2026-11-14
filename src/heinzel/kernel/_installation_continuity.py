@@ -261,12 +261,15 @@ def _reusable(prefix: Path, target: object, metadata: tuple[str, int] | None) ->
     return settled[2]
 
 
-def _snapshot(prefix: Path, *, strict_identity: bool = False, receipt: bytes | None = None) -> str:
+def _snapshot(
+    prefix: Path, *, strict_identity: bool = False, receipt: bytes | None = None, folder_identity: bool = True
+) -> str:
     observation = _Observation(prefix, strict_identity=strict_identity, receipt=receipt)
     root = os.open(prefix, _DIRECTORY)
     try:
         info = os.fstat(root)
-        observation.digest.update(f"{info.st_dev}:{info.st_ino}\0".encode("ascii"))
+        if folder_identity:
+            observation.digest.update(f"{info.st_dev}:{info.st_ino}\0".encode("ascii"))
         if strict_identity:
             observation.digest.update(repr(_identity(info)).encode("ascii"))
         observation.visit(root, Path())
@@ -281,13 +284,14 @@ def _require_authority(authority: Callable[[], object], target: object) -> None:
         raise HeinzelError(msg)
 
 
-def _stable(
+def _stable(  # noqa: PLR0913 - one walk, its three observation modes
     prefix: Path,
     authority: Callable[[], object],
     target: object,
     *,
     strict_identity: bool = False,
     receipt: bytes | None = None,
+    folder_identity: bool = True,
 ) -> str:
     previous = None
     changed: _ChangedError | None = None
@@ -295,7 +299,9 @@ def _stable(
     for attempt in range(_ATTEMPTS):
         _require_authority(authority, target)
         try:
-            if receipt is not None:
+            if not folder_identity:
+                current = _snapshot(prefix, folder_identity=False)
+            elif receipt is not None:
                 current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
             else:
                 current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
@@ -354,6 +360,26 @@ def fingerprint(
     else:
         _settle(prefix, target, metadata, value)
         return value
+
+
+def content_fingerprint(prefix: Path, authority: Callable[[], object]) -> str:
+    """Like `fingerprint`, but blind to which directory holds the tool: the same files in a recreated folder match.
+
+    uv recreates the tool folder when the interpreter changes, so a folder put back from its copy has the old files
+    in a new directory. Only that is ignored; every entry, mode, link and byte still counts.
+
+    Raises:
+        HeinzelError: If the installation cannot be inspected safely.
+    """
+    try:
+        target = authority()
+        if prefix.resolve(strict=True) != prefix:
+            msg = "The installation prefix must be a physical path."
+            raise HeinzelError(msg)
+        return _stable(prefix, authority, target, folder_identity=False)
+    except (OSError, ValueError) as exc:
+        msg = "Cannot inspect the owned installation safely."
+        raise HeinzelError(msg) from exc
 
 
 def _pending_exists(directory: int) -> bool:
@@ -627,6 +653,64 @@ def _confirm_record(prefix: Path, authority: Callable[[], object], expected: obj
         raise HeinzelError(msg) from exc
     if not confirmed:
         raise HeinzelError(msg)
+
+
+def kept_records(prefix: Path) -> dict[str, bytes]:
+    """The continuity record and pending marker as they are, so an install that recreates the tool keeps them.
+
+    uv recreates the tool folder when the interpreter changes, which deletes both. Only private regular files of this
+    user are read; anything else is left out, so it is never written back.
+    """
+    kept: dict[str, bytes] = {}
+    try:
+        directory = os.open(prefix, _DIRECTORY)
+    except OSError:
+        return kept
+    try:
+        for name in (_RECORD, _PENDING):
+            try:
+                fd = os.open(name, _FLAGS, dir_fd=directory)
+            except OSError:
+                continue
+            try:
+                info = os.fstat(fd)
+                if stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and not info.st_mode & 0o077:
+                    kept[name] = os.read(fd, 4096)
+            finally:
+                os.close(fd)
+    finally:
+        os.close(directory)
+    return kept
+
+
+def put_back_records(prefix: Path, kept: dict[str, bytes]) -> None:
+    """Write back each kept record the install deleted, exactly as it was; an existing one is never replaced.
+
+    The bytes still name the generation recorded before the install, so they match only once that generation is
+    back (a restore), exactly as when the folder had been updated in place.
+
+    Raises:
+        OSError: If a record can't be written back.
+    """
+    if not kept:
+        return
+    directory = os.open(prefix, _DIRECTORY)
+    try:
+        for name in (_PENDING, _RECORD):  # the marker first: a record never stands alone without its marker
+            if name not in kept:
+                continue
+            try:
+                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+            except FileExistsError:
+                continue
+            try:
+                os.write(fd, kept[name])
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def external_python(path: Path) -> tuple[str, str, tuple[int, ...]]:
