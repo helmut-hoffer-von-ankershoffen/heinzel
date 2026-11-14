@@ -16,7 +16,7 @@ from typer.testing import CliRunner
 
 from heinzel import Config, Kernel, ModelOffer, Module
 from heinzel.heads.cli import build
-from heinzel.modules.ai.access._engine_runner import ENGINE, EngineRunner
+from heinzel.modules.ai.access._engine_runner import ENGINE
 from tests.integration.chat_test import AUTH, stream_events, web_client
 
 pytestmark = pytest.mark.integration
@@ -47,8 +47,6 @@ def streaming_models() -> Module:
 
             return FunctionModel(stream_function=stream, model_name=model_id)
 
-    # Head A registers the engine runner in ai/access; this test module does the same for an isolated kernel.
-    module.provides("agent-runner", modes={"read"}, name=ENGINE)(EngineRunner)
     return module
 
 

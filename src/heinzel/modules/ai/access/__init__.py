@@ -21,6 +21,7 @@ from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
 from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
 from heinzel.modules.ai.access._configured import TrustedConfiguredApiAccess
+from heinzel.modules.ai.access._engine_runner import ENGINE, EngineRunner
 from heinzel.modules.ai.access._gateway import NAME as GATEWAY
 from heinzel.modules.ai.access._gateway import GatewayAccess, configured_hosts
 from heinzel.modules.ai.access._models import (
@@ -57,6 +58,7 @@ module.provides("ai-access", modes={"read"}, hosts=CHATGPT_HOSTS, name=CHATGPT)(
 module.service(ChatGptAccess)  # `hz ai access login` signs in through it
 module.service(AiAccessWebSignIn, ChatGptAccess)
 module.service(AiModelOptions, PluginModelOptions)  # the option of each plugin's `ai-models` adapter (ADR 0159)
+module.provides("agent-runner", modes={"read"}, name=ENGINE)(EngineRunner)  # coding and chat on hz's engine (ADR 0159)
 
 STYLES = {"signed in": "green", "tested": "green", "not signed in": "yellow", "test failed": "red", "error": "red"}
 

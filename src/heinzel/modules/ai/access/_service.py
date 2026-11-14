@@ -237,7 +237,13 @@ class AccessService:
             uses = [
                 AccessUse(use="chat", access=selected, runs=engine),
                 AccessUse(use="turns", access=selected, runs=f"{engine}, for drafts and schedules"),
-                AccessUse(use="coding", access=selected, runs=f"not built yet (ADR 0050); handoffs will use {through}"),
+                AccessUse(
+                    use="coding",
+                    access=selected,
+                    runs=f"{engine}, with read-only file tools in the session's folder"
+                    if runner == "engine"
+                    else f"{through}, outside these models",
+                ),
             ]
             return AccessList(selected=selected, options=options, uses=uses, note=note, next=next_steps)
         uses = [

@@ -50,9 +50,10 @@ def test_use_test_and_pick_a_model_through_the_cli(make_kernel):
     code, used = hz(make_kernel(builtins=True, models_demo=demo), "ai", "access", "use", "demo-models")
     assert code == 0, used
     assert used["selected"] == "demo-models"
-    assert used["note"] == (
-        "Chat, drafts and schedules use Demo models; coding handoffs still run on the agent runner claude-code, "
-        "outside these models."
+    assert used["note"] is None, "the engine runner is bound for the chat with the picker and coding handoffs"
+    coding = next(use for use in used["uses"] if use["use"] == "coding")
+    assert (
+        coding["runs"] == "hz's own engine on Demo models's models, with read-only file tools in the session's folder"
     )
     pinned = tomllib.loads((user_config_dir() / "config.toml").read_text(encoding="utf-8"))
     assert pinned["ai"]["access"]["plugin_model"] == "demo-fast", "pinned: a new first row never changes the model"
