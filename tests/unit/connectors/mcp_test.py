@@ -276,6 +276,9 @@ def test_a_cut_never_keeps_part_of_a_marker():
         ('password="hunter 2" failed', '2"'),
         ("Authorization: token ghabc123", "ghabc123"),
         ("run --token abc123", "abc123"),
+        ("GET https://h/b?sv=2022&sig=abcDEF123%2Bxyz&se=1", "abcDEF123%2Bxyz"),
+        ("retry auth=abc123", "abc123"),
+        ("session=abc123def", "abc123def"),
     ],
 )
 def test_the_launchers_stderr_hint_redacts_token_like_strings(line, gone):
@@ -308,6 +311,7 @@ def test_the_stderr_hint_keeps_a_plain_message():
         "authentication: failed",
         "signal: killed",
         "keychain: locked",
+        "design: done",
     ],
 )
 def test_the_stderr_hint_keeps_paths_ids_and_plain_words(line):
@@ -316,6 +320,7 @@ def test_the_stderr_hint_keeps_paths_ids_and_plain_words(line):
     assert _redact(line) == line
 
 
+@pytest.mark.perf
 @pytest.mark.parametrize("line", ["token." * 700, "a." * 2048, "key=" * 1024, "token" + "x" * 4000, "a" * 1_000_000])
 def test_redaction_stays_fast_on_hostile_lines(line):
     import time

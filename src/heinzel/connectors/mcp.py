@@ -103,7 +103,7 @@ _AUTHORIZATION = re.compile(
 )
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+\S{1,256}")
 _SECRET_PAIR = re.compile(
-    rf"(?i)((?:token|key|secret|password|passwd|credential|signature)[\"']?\s{{0,4}}[=:]\s{{0,4}}){_VALUE}"
+    rf"(?i)((?:(?<![a-z])(?:auth|sig)|token|key|secret|password|passwd|credential|signature|session)[\"']?\s{{0,4}}[=:]\s{{0,4}}){_VALUE}"
 )
 _SECRET_FLAG = re.compile(r"(?i)(--[\w-]{0,32}(?:token|key|secret|password|passwd|credential)\s{1,4})\S{1,256}")
 _LONG_RUN = re.compile(r"[A-Za-z0-9+/_=-]{32,}")
