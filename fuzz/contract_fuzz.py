@@ -2,7 +2,7 @@
 
 Contract files are untrusted data (ADR 0021). `read_contract` turns any exception into the diagnostic "can't read
 the contract", an isolation boundary; this target fails when that boundary is needed, or when parsing hangs.
-Run it with `make fuzz` (Linux, Python 3.12 to 3.14, where atheris has wheels); CI runs it weekly (fuzz.yml).
+Run it with `make fuzz` (Linux, paused until atheris has Python 3.15 wheels); CI runs it weekly (fuzz.yml).
 The hypothesis properties in tests/unit/modules/heinzel_contracts_property_test.py check the same in every test run.
 """
 

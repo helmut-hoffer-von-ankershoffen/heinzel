@@ -307,7 +307,7 @@ docs: ## Regenerate the references (MODULES, CLI_REFERENCE, CONFIGURATION) and e
 attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text
 	uv run --quiet --script scripts/attributions.py
 
-fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
+fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, paused: no atheris wheel for Python 3.15)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
 demo: ## Render the README's intro, docs/assets/demo.{gif,webp,mp4}: the demo tape's CLI part, then the UI scenes of docs/scenes.toml
