@@ -1,4 +1,166 @@
-#if canImport(ScreenCaptureKit)
+#if os(macOS)
+
+import AppKit
+import CoreAudio
+import Foundation
+
+private final class TapSamples: @unchecked Sendable {
+    private let lock = NSLock()
+    private let capacity: Int
+    private let storage: UnsafeMutableRawPointer
+    private var offset = 0
+    private var buffered = 0
+
+    init(rate: Double) {
+        capacity = Int(rate / 4) * MemoryLayout<Float>.size
+        storage = .allocate(byteCount: capacity, alignment: MemoryLayout<Float>.alignment)
+    }
+
+    deinit { storage.deallocate() }
+
+    func append(_ input: UnsafePointer<AudioBufferList>) {
+        guard input.pointee.mNumberBuffers == 1 else { return }
+        let buffer = input.pointee.mBuffers
+        let size = Int(buffer.mDataByteSize)
+        guard buffer.mNumberChannels == 1,
+              size > 0, size.isMultiple(of: MemoryLayout<Float>.size),
+              let data = buffer.mData, lock.try() else { return }
+        defer { lock.unlock() }
+        // The Core Audio callback never waits for a reader or allocates a packet.
+        let count = min(size, capacity)
+        let start = data.advanced(by: size - count)
+        let first = min(count, capacity - offset)
+        storage.advanced(by: offset).copyMemory(from: start, byteCount: first)
+        storage.copyMemory(from: start.advanced(by: first), byteCount: count - first)
+        offset = (offset + count) % capacity
+        buffered = min(buffered + count, capacity)
+    }
+
+    func drain() -> String {
+        let packet = lock.withLock { () -> Data in
+            guard buffered > 0 else { return Data() }
+            let start = (offset - buffered + capacity) % capacity
+            let first = min(buffered, capacity - start)
+            var packet = Data(bytes: storage.advanced(by: start), count: first)
+            packet.append(storage.assumingMemoryBound(to: UInt8.self), count: buffered - first)
+            buffered = 0
+            return packet
+        }
+        return packet.base64EncodedString()
+    }
+}
+
+@MainActor
+final class SystemAudio {
+    static let available = true
+    private var tap = AudioObjectID(kAudioObjectUnknown)
+    private var device = AudioObjectID(kAudioObjectUnknown)
+    private var io: AudioDeviceIOProcID?
+    private var samples: TapSamples?
+    private weak var consentSheet: NSWindow?
+    private(set) var sampleRate = 48_000.0
+
+    func confirm(in window: NSWindow) async -> Bool {
+        guard window.attachedSheet == nil else { return false }
+        let alert = NSAlert()
+        alert.messageText = "Share system audio?"
+        alert.informativeText = "This includes sound from other apps. Heinzelmännchen uses it to animate the visualizer while sharing is on."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Share system audio")
+        consentSheet = alert.window
+        defer { consentSheet = nil }
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
+    }
+
+    func start() async -> Bool {
+        guard let description = tapDescription(), createTap(description), createDevice(description) else {
+            stop()
+            return false
+        }
+        let output = TapSamples(rate: sampleRate)
+        let status = AudioDeviceCreateIOProcIDWithBlock(&io, device, nil) { @Sendable _, input, _, _, _ in
+            output.append(input)
+        }
+        guard status == noErr, let io, AudioDeviceStart(device, io) == noErr else {
+            stop()
+            return false
+        }
+        samples = output
+        return true
+    }
+
+    func read() -> String? { samples?.drain() }
+
+    func stop() {
+        if let sheet = consentSheet, let parent = sheet.sheetParent {
+            parent.endSheet(sheet, returnCode: .alertFirstButtonReturn)
+        }
+        if let io {
+            AudioDeviceStop(device, io)
+            AudioDeviceDestroyIOProcID(device, io)
+            self.io = nil
+        }
+        if device != kAudioObjectUnknown {
+            AudioHardwareDestroyAggregateDevice(device)
+            device = kAudioObjectUnknown
+        }
+        if tap != kAudioObjectUnknown {
+            AudioHardwareDestroyProcessTap(tap)
+            tap = kAudioObjectUnknown
+        }
+        samples = nil
+    }
+
+    private func tapDescription() -> CATapDescription? {
+        #if DEBUG
+        // A live test can confine capture to its own sound source. An invalid target fails closed.
+        if let value = ProcessInfo.processInfo.environment["HZ_SPIKE_AUDIO_PID"] {
+            guard var pid = pid_t(value), pid > 0 else { return nil }
+            var address = property(kAudioHardwarePropertyTranslatePIDToProcessObject)
+            var process = AudioObjectID(kAudioObjectUnknown)
+            var size = UInt32(MemoryLayout<AudioObjectID>.size)
+            guard AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address, UInt32(MemoryLayout<pid_t>.size), &pid, &size, &process
+            ) == noErr, process != kAudioObjectUnknown else { return nil }
+            return CATapDescription(monoMixdownOfProcesses: [process])
+        }
+        #endif
+        return CATapDescription(monoGlobalTapButExcludeProcesses: [])
+    }
+
+    private func createTap(_ description: CATapDescription) -> Bool {
+        description.name = "Heinzelmännchen System Audio"
+        description.isPrivate = true
+        description.muteBehavior = .unmuted
+        guard AudioHardwareCreateProcessTap(description, &tap) == noErr else { return false }
+        var formatAddress = property(kAudioTapPropertyFormat)
+        var format = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard AudioObjectGetPropertyData(tap, &formatAddress, 0, nil, &size, &format) == noErr,
+              format.mFormatID == kAudioFormatLinearPCM,
+              format.mFormatFlags & kAudioFormatFlagIsFloat != 0,
+              format.mChannelsPerFrame == 1, format.mBytesPerFrame == MemoryLayout<Float>.size,
+              (8_000...192_000).contains(format.mSampleRate) else { return false }
+        sampleRate = format.mSampleRate
+        return true
+    }
+
+    private func createDevice(_ description: CATapDescription) -> Bool {
+        let settings: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Heinzelmännchen System Audio",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: description.uuid.uuidString]],
+        ]
+        return AudioHardwareCreateAggregateDevice(settings as CFDictionary, &device) == noErr
+    }
+
+    private func property(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    }
+}
+
+#elseif canImport(ScreenCaptureKit)
 
 import AudioToolbox
 import CoreMedia
@@ -48,6 +210,7 @@ private final class AudioSamples: NSObject, SCStreamOutput, @unchecked Sendable 
 @available(iOS 27.0, *)
 @MainActor
 final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDelegate {
+    let sampleRate = 48_000.0
     static var available: Bool {
         if #available(macOS 27, *) { return SCContentSharingPicker.shared.isAvailable }
         return true

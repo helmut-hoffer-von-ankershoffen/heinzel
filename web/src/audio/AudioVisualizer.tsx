@@ -640,7 +640,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       requesting === "mic" ? "microphone" : requesting === "system" ? "system audio" : sharedWord.toLowerCase();
     status = session
       ? `Listening to ${listeningTo}; waiting for ${requested}.`
-      : `Waiting for the browser to allow ${requested}.`;
+      : requesting === "system"
+        ? "Waiting for permission to use system audio."
+        : `Waiting for the browser to allow ${requested}.`;
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {

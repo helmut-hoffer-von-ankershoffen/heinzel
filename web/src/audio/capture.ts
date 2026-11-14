@@ -64,6 +64,7 @@ async function captureNativeAudio(
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let nextTime = 0;
+  let sampleRate = 48_000;
   const stop = () => {
     if (closed) return;
     closed = true;
@@ -89,7 +90,7 @@ async function captureNativeAudio(
       if (result) {
         const bytes = Uint8Array.from(atob(result), (char) => char.charCodeAt(0));
         const samples = new Float32Array(bytes.buffer);
-        const buffer = context.createBuffer(1, samples.length, 48_000);
+        const buffer = context.createBuffer(1, samples.length, sampleRate);
         buffer.copyToChannel(samples, 0);
         const source = context.createBufferSource();
         source.buffer = buffer;
@@ -114,8 +115,14 @@ async function captureNativeAudio(
       () => true,
       () => false,
     );
-    if ((await untilAborted(signal, capture("start"))) !== true || closed)
+    const started = await untilAborted(signal, capture("start"));
+    if (
+      closed ||
+      (started !== true &&
+        (typeof started !== "number" || started < 8_000 || started > 192_000 || !Number.isFinite(started)))
+    )
       throw new DOMException("System audio sharing was cancelled or unavailable.", "NotAllowedError");
+    if (typeof started === "number") sampleRate = started;
     if (!(await untilAborted(signal, resumed)) || closed) throw new Error("Audio could not start. Try again.");
     void poll();
     return { analyser, stream, label: "System audio", stop };

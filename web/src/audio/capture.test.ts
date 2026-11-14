@@ -236,37 +236,45 @@ describe("desktop system audio", () => {
     expect(await systemAudioAvailable()).toBe(false);
   });
 
-  it("feeds native system samples into the analyser and releases capture on stop", async () => {
-    const pcm = new Float32Array([0.25, -0.25]);
-    const nativeAudio = vi.fn((action: string) =>
-      Promise.resolve(action === "read" ? btoa(String.fromCharCode(...new Uint8Array(pcm.buffer))) : true),
-    );
-    const copyToChannel = vi.fn();
-    const play = { buffer: null, connect: vi.fn(), start: vi.fn() };
-    const output = track("audio");
-    vi.stubGlobal("heinzelDesktop", { nativeAudio });
-    vi.stubGlobal(
-      "AudioContext",
-      vi.fn(function nativeContext() {
-        return {
-          ...context,
-          currentTime: 0,
-          createAnalyser: () => ({ ...analyser, connect: vi.fn() }),
-          createMediaStreamDestination: () => ({ stream: { getTracks: () => [output] } }),
-          createBuffer: () => ({ copyToChannel, duration: pcm.length / 48_000 }),
-          createBufferSource: () => play,
-        };
-      }),
-    );
+  it.each([
+    [true, 48_000],
+    [44_100, 44_100],
+  ])(
+    "feeds native system samples from start response %s at %i Hz and releases capture on stop",
+    async (start, rate) => {
+      const pcm = new Float32Array([0.25, -0.25]);
+      const nativeAudio = vi.fn((action: string) =>
+        Promise.resolve(action === "read" ? btoa(String.fromCharCode(...new Uint8Array(pcm.buffer))) : start),
+      );
+      const copyToChannel = vi.fn();
+      const play = { buffer: null, connect: vi.fn(), start: vi.fn() };
+      const output = track("audio");
+      const createBuffer = vi.fn(() => ({ copyToChannel, duration: pcm.length / rate }));
+      vi.stubGlobal("heinzelDesktop", { nativeAudio });
+      vi.stubGlobal(
+        "AudioContext",
+        vi.fn(function nativeContext() {
+          return {
+            ...context,
+            currentTime: 0,
+            createAnalyser: () => ({ ...analyser, connect: vi.fn() }),
+            createMediaStreamDestination: () => ({ stream: { getTracks: () => [output] } }),
+            createBuffer,
+            createBufferSource: () => play,
+          };
+        }),
+      );
 
-    const captured = await captureAudio(new AbortController().signal, true);
-    await vi.waitFor(() => expect(copyToChannel).toHaveBeenCalledWith(pcm, 0));
-    expect(play.connect).toHaveBeenCalledWith(captured.analyser);
-    expect(choose).not.toHaveBeenCalled();
-    captured.stop();
-    expect(nativeAudio).toHaveBeenLastCalledWith("stop");
-    expect(output.stop).toHaveBeenCalledOnce();
-  });
+      const captured = await captureAudio(new AbortController().signal, true);
+      await vi.waitFor(() => expect(copyToChannel).toHaveBeenCalledWith(pcm, 0));
+      expect(createBuffer).toHaveBeenCalledWith(1, pcm.length, rate);
+      expect(play.connect).toHaveBeenCalledWith(captured.analyser);
+      expect(choose).not.toHaveBeenCalled();
+      captured.stop();
+      expect(nativeAudio).toHaveBeenLastCalledWith("stop");
+      expect(output.stop).toHaveBeenCalledOnce();
+    },
+  );
 
   it("settles Stop even if the native picker does not respond", async () => {
     let resolve!: (value: boolean) => void;

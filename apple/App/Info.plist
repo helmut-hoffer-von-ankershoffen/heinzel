@@ -30,4 +30,5 @@
     <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
     <key>NSLocalNetworkUsageDescription</key><string>Connect to the Heinzelmännchen server you choose on your private network.</string>
     <key>NSMicrophoneUsageDescription</key><string>Use your microphone when you enable audio input in the Heinzelmännchen workspace.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Show sound playing on this Mac in the Heinzelmännchen visualizer.</string>
 </dict></plist>

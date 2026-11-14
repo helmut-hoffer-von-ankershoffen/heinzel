@@ -214,7 +214,7 @@ describe("AudioVisualizer", () => {
       });
       fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
       const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
-      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow system audio");
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for permission to use system audio");
       fireEvent.click(pane().getByRole("button", { name: "Stop system audio" }));
       expect(signal?.aborted).toBe(true);
       expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");

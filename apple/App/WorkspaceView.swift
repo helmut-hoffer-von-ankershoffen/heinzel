@@ -31,8 +31,8 @@ struct WorkspaceView: WebRepresentable {
             context.coordinator, contentWorld: .page, name: "heinzelBrowser"
         )
         var audioMember = ""
-        #if canImport(ScreenCaptureKit)
-        if #available(iOS 27, *) {
+        #if os(macOS) || canImport(ScreenCaptureKit)
+        if #available(iOS 27, *), offersSystemAudio {
             configuration.userContentController.addScriptMessageHandler(
                 context.coordinator, contentWorld: .page, name: "heinzelAudio"
             )
@@ -102,6 +102,15 @@ struct WorkspaceView: WebRepresentable {
         view.allowsBackForwardNavigationGestures = true
         view.load(URLRequest(url: endpoint.url))
         return view
+    }
+
+    private var offersSystemAudio: Bool {
+        #if os(macOS)
+        // The Mac's system tap is only for the locally launched workspace.
+        endpoint.origin.scheme == "http"
+        #else
+        true
+        #endif
     }
 
     // An isolated listener can distinguish an actual input event from a page calling click().
@@ -305,17 +314,26 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             return (true, nil)
         }
         #endif
-        #if canImport(ScreenCaptureKit)
+        #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), message.name == "heinzelAudio" {
+            #if os(macOS)
+            guard endpoint.origin.scheme == "http" else { return (nil, "System audio unavailable") }
+            #endif
             switch message.body as? String {
             case "available": return (SystemAudio.available, nil)
             case "start":
                 guard SystemAudio.available, nativeAudio == nil else { return (false, nil) }
                 let capture = SystemAudio()
                 nativeAudio = capture
+                #if os(macOS)
+                guard let window = workspace.window, await capture.confirm(in: window), nativeAudio === capture else {
+                    if nativeAudio === capture { nativeAudio = nil }
+                    return (false, nil)
+                }
+                #endif
                 let started = await capture.start()
                 if !started, nativeAudio === capture { nativeAudio = nil }
-                return (started, nil)
+                return started ? (capture.sampleRate, nil) : (false, nil)
             case "read":
                 return ((nativeAudio as? SystemAudio)?.read() as Any? ?? NSNull(), nil)
             case "stop":
@@ -330,7 +348,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func stopAudio() {
-        #if canImport(ScreenCaptureKit)
+        #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *) { (nativeAudio as? SystemAudio)?.stop() }
         #endif
         nativeAudio = nil
