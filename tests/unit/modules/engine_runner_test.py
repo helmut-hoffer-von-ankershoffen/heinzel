@@ -22,13 +22,21 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.models.test import TestModel
 
 from heinzel import Budget, Config, Credentials, CurrentUser, HeinzelError, McpServer, Progress, Settings, ToolProfile
-from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _claude_code
+from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models, _claude_code
+from heinzel.kernel._ai_models import OUTPUT_TOKENS
 from heinzel.modules.ai.access._engine_history import SessionHistory
 from heinzel.modules.ai.access._engine_runner import ENGINE, EngineModel, EngineRunner, SelectedModels
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def fresh_model_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test reads the plugins' lists afresh: hz keeps a list per adapter for a few seconds."""
+    monkeypatch.setattr(_ai_models, "_listings", {})
+
 
 MINUTE = timedelta(minutes=1)
 
@@ -96,7 +104,8 @@ HISTORY: list[SessionHistory] = []
 @pytest.fixture(autouse=True)
 def history(tmp_path: Path) -> SessionHistory:
     """Each test keeps its chat histories in its own folder."""
-    HISTORY[:] = [SessionHistory(tmp_path / "engine-sessions")]
+    (tmp_path / "chats" / "chat-1").mkdir(parents=True)  # the chat's own folder, which the chat creates
+    HISTORY[:] = [SessionHistory(tmp_path / "chats")]
     return HISTORY[0]
 
 
@@ -299,7 +308,7 @@ def test_a_plugin_s_chosen_model_and_effort(tmp_path: Path) -> None:
     chosen = models(None, None)
     assert (chosen.label, chosen.settings) == (
         "acme-large",
-        {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "high"},
+        {"max_tokens": OUTPUT_TOKENS, "anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "high"},
     )
     assert models("acme-small", "low").label == "acme-small"
     assert models(None, "low").settings["anthropic_effort"] == "low"
@@ -399,16 +408,27 @@ def test_a_chat_session_continues_its_message_history(work: Path, tmp_path: Path
     kept, notes = history.load("chat-1")
     assert prompts(kept) == [edited]
     assert notes == {"answer_start": "Starting over."}
-    folder = tmp_path / "engine-sessions"
-    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
-    assert stat.S_IMODE((folder / "chat-1.json").stat().st_mode) == 0o600
-    assert [p.name for p in folder.iterdir()] == ["chat-1.json"]  # no temporary file left
+    folder = tmp_path / "chats" / "chat-1"
+    assert stat.S_IMODE((folder / "engine-history.json").stat().st_mode) == 0o600
+    assert [p.name for p in folder.iterdir()] == ["engine-history.json"]  # no temporary file left
 
 
 def test_a_run_without_a_chat_keeps_no_history(work: Path, tmp_path: Path) -> None:
     runner(scripted("ok")).run("x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget())
 
-    assert not (tmp_path / "engine-sessions").exists()
+    assert not any((tmp_path / "chats").rglob("*.json"))
+
+
+def test_a_deleted_chat_keeps_no_history_and_the_answer_stands(work: Path, tmp_path: Path) -> None:
+    (tmp_path / "chats" / "chat-1").rmdir()  # the chat was deleted while its turn ran
+
+    result = runner(scripted("ok")).run(
+        "User: hi", contract="", tools=chat_tools(work, tmp_path), timeout=MINUTE, budget=Budget()
+    )
+
+    assert (result.status, result.draft) == ("completed", "ok")
+    assert result.warnings == ["the chat's history wasn't kept (FileNotFoundError), so the next message starts afresh"]
+    assert not (tmp_path / "chats" / "chat-1").exists()
 
 
 def test_a_stopped_turn_keeps_its_partial_answer_marked_stopped(

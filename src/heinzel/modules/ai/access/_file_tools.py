@@ -136,7 +136,7 @@ class ConfinedFiles:
         if ".." in parts:
             msg = f"{path} goes up with '..'; give a path inside the working directory"
             raise FileToolError(msg)
-        if SKIPPED_DIRECTORIES.intersection(parts):
+        if any(part.casefold() in SKIPPED_DIRECTORIES for part in parts):  # case-blind, as macOS's disks are
             msg = f"{path} is inside .git, which the file tools don't read (it may hold credentials)"
             raise FileToolError(msg)
         return parts
@@ -329,7 +329,7 @@ class ConfinedFiles:
         if entry.is_symlink():
             return
         if entry.is_dir(follow_symlinks=False):
-            if entry.name in SKIPPED_DIRECTORIES:
+            if entry.name.casefold() in SKIPPED_DIRECTORIES:
                 return
             try:
                 child = os.open(entry.name, _DIRECTORY, dir_fd=directory)

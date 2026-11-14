@@ -79,6 +79,11 @@ def test_a_chat_on_a_plugins_model_answers_and_continues_its_session(kernel: Ker
     assert (model1, model2) == ("fast", "deep")
     assert asked1 == ["User: hi"]
     assert asked2 == ["User: hi", "User: and again"]  # the session's history, then only the new message
+    history = kernel.settings.state_dir / "chat" / session / "engine-history.json"
+    assert history.is_file()
+    removed = hz(kernel, "chat", "remove", session, "--json")
+    assert removed.exit_code == 0, removed.output
+    assert not history.exists()  # the history goes with its chat
     assert tools1
     assert all(name.startswith("mcp__hz__") for name in tools1)  # hz's own chat server, nothing else
 

@@ -207,6 +207,12 @@ def test_git_is_never_read(tree: Path) -> None:
         ConfinedFiles(tree).read(".git/config")
     with pytest.raises(FileToolError, match=r"\.git"):
         ConfinedFiles(tree).grep("hello", path=".git")
+    with pytest.raises(FileToolError, match=r"\.git"):
+        ConfinedFiles(tree).read(".GIT/config")  # macOS's disks ignore case
+    (tree / "sub").mkdir()
+    (tree / "sub" / ".Git").mkdir()
+    (tree / "sub" / ".Git" / "config").write_text("hello in Git\n", encoding="utf-8")
+    assert "Git" not in ConfinedFiles(tree).grep("hello")
 
 
 def test_an_absolute_path_may_use_the_root_as_given(tmp_path: Path, tree: Path) -> None:

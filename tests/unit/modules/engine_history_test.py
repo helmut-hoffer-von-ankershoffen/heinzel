@@ -67,24 +67,34 @@ def test_the_chat_session_is_the_chat_servers_argument() -> None:
     assert session_of([]) is None
 
 
-def test_histories_survive_and_bad_files_are_a_fresh_start(tmp_path: Path) -> None:
-    store = SessionHistory(tmp_path / "sessions")
+def test_histories_live_in_their_chat_s_folder_and_bad_files_are_a_fresh_start(tmp_path: Path) -> None:
+    chats = tmp_path / "chats"
+    for session in ("s1", "broken", "old", "linked"):
+        (chats / session).mkdir(parents=True)
+    store = SessionHistory(chats)
     saved = turn(1)
     store.save("s1", saved, {"answer_start": "a1"})
 
-    loaded, notes = SessionHistory(tmp_path / "sessions").load("s1")
+    loaded, notes = SessionHistory(chats).load("s1")
     assert ModelMessagesTypeAdapter.dump_json(loaded) == ModelMessagesTypeAdapter.dump_json(saved)
     assert notes == {"answer_start": "a1"}
+    assert (chats / "s1" / "engine-history.json").stat().st_mode & 0o777 == 0o600
     assert store.load("missing") == ([], {})
-    (tmp_path / "sessions" / "broken.json").write_text("{not json", encoding="utf-8")
+    (chats / "broken" / "engine-history.json").write_text("{not json", encoding="utf-8")
     assert store.load("broken") == ([], {})
-    (tmp_path / "sessions" / "old.json").write_text('{"format": 0, "messages": []}', encoding="utf-8")
+    (chats / "old" / "engine-history.json").write_text('{"format": 0, "messages": []}', encoding="utf-8")
     assert store.load("old") == ([], {})
-    (tmp_path / "elsewhere.json").write_text((tmp_path / "sessions" / "s1.json").read_text(), encoding="utf-8")
-    (tmp_path / "sessions" / "linked.json").symlink_to(tmp_path / "elsewhere.json")
+    (tmp_path / "elsewhere.json").write_text((chats / "s1" / "engine-history.json").read_text(), encoding="utf-8")
+    (chats / "linked" / "engine-history.json").symlink_to(tmp_path / "elsewhere.json")
     assert store.load("linked") == ([], {})
     with pytest.raises(ValueError, match="session id"):
         store.load("../s1")
+    with pytest.raises(FileNotFoundError):
+        store.save("gone", saved, {})  # a deleted chat: never a folder made for it
+    assert not (chats / "gone").exists()
+    (chats / "planted").symlink_to(tmp_path)
+    with pytest.raises(NotADirectoryError, match="has no folder"):
+        store.save("planted", saved, {})  # never through a symlinked chat folder
     store.drop("s1")
     store.drop("s1")
     assert store.load("s1") == ([], {})

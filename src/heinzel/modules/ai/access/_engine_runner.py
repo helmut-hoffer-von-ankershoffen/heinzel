@@ -99,8 +99,8 @@ class SelectedModels:
         if access is not None and self._kernel.offers_ai_models(access):
             source = self._kernel.ai_models(access)
             offers, _note = list_offers(source)
-            offer = choose(offers, model or settings.plugin_model)
             chosen = effort or settings.plugin_effort
+            offer = choose(offers, model or settings.plugin_model, chosen)
             extra = effort_settings(offer, chosen)
             return EngineModel(build_model(source, offer), offer.id, extra, context_window=offer.context_window)
         if access == MODEL_API:
@@ -264,7 +264,8 @@ class EngineRunner:
     def _history(self) -> SessionHistory:
         """The chat sessions' histories, in hz's state directory, made when a run first needs them."""
         if self._given_history is None:
-            self._given_history = SessionHistory(self._kernel.settings.state_dir / "ai" / "engine-sessions")
+            # In each chat's own folder, so the history goes when the chat does (`system.runner.chat`'s layout).
+            self._given_history = SessionHistory(self._kernel.settings.state_dir / "chat")
         return self._given_history
 
     def run(  # noqa: PLR0913 - a run's whole contract, by keyword
@@ -312,7 +313,11 @@ class EngineRunner:
                 result = pool.submit(asyncio.run, work).result()
         duration = time.monotonic() - started
         return result.model_copy(
-            update={"duration_seconds": duration, "tool_calls": dict(session.calls), "warnings": warnings}
+            update={
+                "duration_seconds": duration,
+                "tool_calls": dict(session.calls),
+                "warnings": [*warnings, *result.warnings],
+            }
         )
 
     def _continued(self, turn: "Turn") -> "tuple[list[ModelMessage], str]":
@@ -337,12 +342,17 @@ class EngineRunner:
             return [], turn.prompt
         return messages, rest[new + len(BLOCK) :]
 
-    def _keep(self, turn: "Turn", messages: "list[ModelMessage]", answer: str, context_window: int | None) -> None:
+    def _keep(self, turn: "Turn", messages: "list[ModelMessage]", answer: str, context_window: int | None) -> list[str]:
+        """Store the session's history; a failure to is a warning, never a failed turn (the turn was paid for)."""
         if turn.chat is None:
-            return
+            return []
         # A stopped turn's answer is empty: the chat shows it as "(no answer: …)", and that is what continues it.
         notes = {"answer_start": redact_emails(answer)[:ANSWER_START] if answer else NO_ANSWER}
-        self._history.save(turn.chat, capped(messages, context_window), notes)
+        try:
+            self._history.save(turn.chat, capped(messages, context_window), notes)
+        except OSError as exc:
+            return [f"the chat's history wasn't kept ({type(exc).__name__}), so the next message starts afresh"]
+        return []
 
     async def _turn(self, session: _Session, chosen: EngineModel, turn: "Turn", emit: Emit) -> AgentResult:
         import pydantic_ai  # noqa: PLC0415 - a heavy import, only during a run
@@ -372,12 +382,13 @@ class EngineRunner:
         finally:
             await session.stop()
         draft = str(done.output)
-        self._keep(turn, done.all_messages(), draft, chosen.context_window)
+        kept = self._keep(turn, done.all_messages(), draft, chosen.context_window)
         used = done.usage
         return failed.model_copy(
             update={
                 "status": "completed",
                 "draft": draft,
+                "warnings": kept,
                 "turns": used.requests,
                 "usage": TokenUsage(
                     input_tokens=used.input_tokens,

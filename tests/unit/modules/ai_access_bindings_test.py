@@ -24,7 +24,7 @@ from heinzel import (
     Principal,
     Settings,
 )
-from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer
+from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models
 from heinzel.modules.ai.access._configured import (
     ConfiguredApiBinding,
     EndpointApiBinding,
@@ -43,6 +43,13 @@ from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def fresh_model_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test reads the plugins' lists afresh: hz keeps a list per adapter for a few seconds."""
+    monkeypatch.setattr(_ai_models, "_listings", {})
+
 
 BASE = "https://ai-proxy.example.com"
 STRANGER = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset())
@@ -223,9 +230,10 @@ def test_a_plugin_binding_fingerprints_plugin_version_and_model(tmp_path):
         selected[0] = "acme"
         with current.using(STRANGER), pytest.raises(HeinzelError):
             binding.capture()
-        models.offers = [ModelOffer(id="acme-large", available=False)]
+        retired = Models()  # a new adapter: its own model list, not the one hz keeps for a few seconds
+        retired.offers = [ModelOffer(id="acme-large", available=False)]
         with pytest.raises(HeinzelError):
-            binding.capture()
+            plugin(retired, version, selected, wanted, current).capture()
 
 
 def test_connected_model_takes_a_plugin_factory_for_its_own_selection(tmp_path):

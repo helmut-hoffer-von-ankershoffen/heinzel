@@ -2,9 +2,11 @@
 
 A chat on hz's own engine continues its session the way Pydantic AI models one: each turn runs with the
 `message_history` of the turns before and adds its new messages. The history is kept per chat session, as
-`ModelMessagesTypeAdapter` JSON in hz's state directory: owner-only (folder 0700, file 0600), written atomically
-(a temporary file renamed into place), never followed through a symlink, and read back after a restart. A history
-that can't be read is a fresh start, never an error.
+`ModelMessagesTypeAdapter` JSON inside that chat's own private folder (`<state_dir>/chat/<session>/`, which the
+chat creates): so deleting or pruning the chat deletes its history too, and no history outlives its chat. It is
+owner-only (file 0600), written atomically (a temporary file renamed into place), never followed through a
+symlink, never written when the chat's folder is gone, and read back after a restart. A history that can't be
+read is a fresh start, never an error.
 
 It stays within what the model can read: with a known context window, whole turns are dropped from the start until
 the estimated size (four characters a token) fits `CONTEXT_SHARE` of it; without one, at most `MAX_MESSAGES`
@@ -98,18 +100,25 @@ def stopped(messages: "list[ModelMessage]", partial: str, why: str) -> "list[Mod
     return kept
 
 
+FILE = "engine-history.json"
+"""The history's file in a chat's folder."""
+
+
 class SessionHistory:
-    """The stored message histories of the engine's chat sessions, one file each."""
+    """The stored message histories of the engine's chat sessions, each in its chat's own folder."""
 
-    def __init__(self, directory: Path) -> None:
-        """Keep histories in `directory`, made owner-only on first save."""
-        self._directory = directory
+    def __init__(self, chats: Path) -> None:
+        """Keep each history in `chats/<session>/`, the chat's folder; never create one."""
+        self._chats = chats
 
-    def _path(self, session: str) -> Path:
+    def _folder(self, session: str) -> Path:
         if not SESSION_PATTERN.fullmatch(session):
             msg = f"not a session id: {session!r}"
             raise ValueError(msg)
-        return self._directory / f"{session}.json"
+        return self._chats / session
+
+    def _path(self, session: str) -> Path:
+        return self._folder(session) / FILE
 
     def load(self, session: str) -> "tuple[list[ModelMessage], dict[str, Any]]":
         """The session's messages and the notes kept with them; empty when there are none or they can't be read."""
@@ -135,16 +144,19 @@ class SessionHistory:
             return [], {}
 
     def save(self, session: str, messages: "list[ModelMessage]", notes: dict[str, Any]) -> None:
-        """Replace the session's history atomically, owner-only.
+        """Replace the session's history atomically, owner-only, in the chat's folder.
 
         Raises:
-            OSError: If the folder or the file can't be written.
+            NotADirectoryError: If the chat's folder is a symlink or not a folder.
+            OSError: If the chat's folder is gone, or the file can't be written.
         """
         from pydantic_ai.messages import ModelMessagesTypeAdapter  # noqa: PLC0415 - only during a run
 
-        path = self._path(session)
-        self._directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        Path(self._directory).chmod(0o700)
+        folder = self._folder(session)
+        if not stat.S_ISDIR(folder.lstat().st_mode):  # a deleted chat keeps no history; lstat raises when it's gone
+            msg = f"the chat {session} has no folder"
+            raise NotADirectoryError(msg)
+        path = folder / FILE
         body = json.dumps(
             {
                 "format": _FORMAT,
@@ -153,7 +165,7 @@ class SessionHistory:
             },
             separators=(",", ":"),
         ).encode()
-        temporary = self._directory / f".{session}.{secrets.token_hex(8)}.tmp"
+        temporary = folder / f".{FILE}.{secrets.token_hex(8)}.tmp"
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
             with os.fdopen(fd, "wb") as stream:
