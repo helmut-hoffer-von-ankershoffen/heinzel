@@ -66,15 +66,50 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         self.status = status
     }
 
+    /// WebKit may bypass even a non-failover proxy for loopback subresources.
+    static func requestRules(excluding host: String?) async throws -> WKContentRuleList {
+        // WebKit uses a restricted regular-expression grammar. Start denied and admit only
+        // conventional HTTPS DNS authorities. The proxy then validates resolved addresses.
+        var rules = [
+            ["trigger": ["url-filter": ".*"], "action": ["type": "block"]],
+            ["trigger": ["url-filter": #"^https://([a-z0-9-]+\.)+[a-z][a-z0-9-]*(:443)?/"#],
+             "action": ["type": "ignore-previous-rules"]],
+        ]
+        for suffix in BrowserAddress.localSuffixes {
+            let escaped = suffix.replacingOccurrences(of: ".", with: #"\."#)
+            rules.append([
+                "trigger": ["url-filter": "^https://([a-z0-9-]+\\.)*\(escaped)(:443)?/"],
+                "action": ["type": "block"],
+            ])
+        }
+        if let host, host.wholeMatch(of: /[a-zA-Z0-9.-]+/) != nil {
+            let escaped = host.replacingOccurrences(of: ".", with: #"\."#)
+            rules.append(["trigger": ["url-filter": "^https://\(escaped)(:443)?/"], "action": ["type": "block"]])
+        }
+        let data = try JSONEncoder().encode(rules)
+        guard let store = WKContentRuleListStore.default() else { throw URLError(.cannotLoadFromNetwork) }
+        let identifier = "heinzel-guest-" + UUID().uuidString
+        let compiled = try await store.compileContentRuleList(
+            forIdentifier: identifier, encodedContentRuleList: String(decoding: data, as: UTF8.self)
+        )
+        try? await store.removeContentRuleList(forIdentifier: identifier)
+        guard let compiled else { throw URLError(.cannotLoadFromNetwork) }
+        return compiled
+    }
+
     private func browser(in workspace: WKWebView, revision: Int) async throws -> WKWebView {
         if let surface { return surface }
-        let broker = try BrowserNetwork(deniedHost: endpoint?.origin.host()?.lowercased())
+        let host = endpoint?.origin.host()?.lowercased()
+        let rules = try await Self.requestRules(excluding: host)
+        guard revision == generation else { throw URLError(.cancelled) }
+        let broker = try BrowserNetwork(deniedHost: host)
         network = broker
         let proxy = try await broker.start()
         guard revision == generation else { throw URLError(.cancelled) }
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.websiteDataStore.proxyConfigurations = [proxy]
+        configuration.userContentController.add(rules)
         #if os(iOS)
         configuration.allowsInlineMediaPlayback = true
         #endif

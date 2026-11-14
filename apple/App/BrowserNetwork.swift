@@ -224,12 +224,13 @@ private final class BrowserTunnel: @unchecked Sendable {
 }
 
 enum BrowserAddress {
+    static let localSuffixes = ["localhost", "local", "internal", "test", "invalid", "lan", "corp", "intranet", "ts.net", "arpa"]
+
     static func host(_ authority: String) -> String? {
         guard authority.utf8.count <= 257,
               authority.wholeMatch(of: /(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?:443/) != nil else { return nil }
         let host = authority.dropLast(4).lowercased()
-        let local = ["localhost", "local", "internal", "test", "invalid", "lan", "corp", "intranet", "ts.net", "arpa"]
-        return local.contains(where: { host == $0 || host.hasSuffix("." + $0) }) ? nil : host
+        return localSuffixes.contains(where: { host == $0 || host.hasSuffix("." + $0) }) ? nil : host
     }
 
     static func resolve(_ host: String) -> NWEndpoint.Host? {
