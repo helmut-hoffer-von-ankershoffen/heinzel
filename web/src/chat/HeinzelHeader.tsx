@@ -145,7 +145,12 @@ export function HeinzelHeader({
             aria-label={t("oneChat.switch", { name })}
             className="flex h-10 min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-accent/70 disabled:opacity-50"
           >
-            <HeinzelAvatar view="bust" {...look} state={busy ? "thinking" : undefined} className="size-8" />
+            <HeinzelAvatar
+              view="bust"
+              {...look}
+              state={busy ? "thinking" : undefined}
+              className="size-8 overflow-hidden"
+            />
             <span className="truncate text-[15px] font-medium">{name}</span>
             <ChevronDown aria-hidden className="size-3.5 shrink-0 text-icon" />
           </button>
@@ -167,7 +172,11 @@ export function HeinzelHeader({
                 aria-current={item.session_id === sessionId || undefined}
                 className={cn(rowClass, item.session_id === sessionId && "bg-accent text-accent-foreground")}
               >
-                <HeinzelAvatar view="bust" {...appearanceLook(item.appearance)} className="size-7 shrink-0" />
+                <HeinzelAvatar
+                  view="bust"
+                  {...appearanceLook(item.appearance)}
+                  className="size-7 shrink-0 overflow-hidden"
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{item.name}</span>
                   <span className="block truncate text-ui-sm text-muted-foreground">{stateLabel(item.state)}</span>

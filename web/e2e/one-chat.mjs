@@ -1,0 +1,73 @@
+// One kind of chat (flag `one_chat`, bead agqz) against a real isolated `hz ui`: the first start names the first
+// Heinzel, its chat opens with the face, the name and its switcher, More and Close, and there is no "Back to chat".
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { chromium } from "playwright-core";
+
+const require = createRequire(import.meta.url);
+const url = new URL(process.argv[2] ?? "");
+const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
+url.pathname = "/doctor";
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
+const errors = [];
+page.on("pageerror", (error) => errors.push(String(error)));
+
+async function accessible(selector) {
+  await page.evaluate(axe);
+  const violations = await page.evaluate(async (selector) => {
+    const found = await window.axe.run(document.querySelector(selector), {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
+    });
+    return found.violations.map((violation) => `${violation.id}: ${violation.help}`);
+  }, selector);
+  assert.deepEqual(violations, [], `axe in ${selector}`);
+}
+
+try {
+  await page.goto(url.href);
+  // A fresh profile opens the setup first; it can be closed and comes back from the menu.
+  const setup = page.getByRole("dialog", { name: /Set up hz/ });
+  await setup.waitFor({ timeout: 15_000 }).catch(() => {});
+  if (await setup.isVisible()) {
+    await setup.getByRole("button", { name: "Close setup" }).click();
+    await setup.waitFor({ state: "hidden" });
+  }
+  const chat = page.getByRole("complementary", { name: "Chat" });
+  await chat.getByRole("heading", { name: "Meet your first Heinzelmännchen" }).waitFor({ timeout: 60_000 });
+  await accessible('[aria-label="Chat"] form');
+  await chat.getByLabel("What do you call it?").fill("Helmi");
+  await chat.getByRole("button", { name: "Start" }).click();
+
+  const face = chat.getByRole("button", { name: "Helmi. Switch Heinzel" });
+  await face.waitFor({ timeout: 60_000 });
+  await chat.getByLabel("Message Helmi").waitFor();
+  assert.equal(await page.getByText("Back to chat", { exact: true }).count(), 0, "no Back to chat");
+  await accessible('[aria-label="Chat"] .chat-panel-header');
+
+  await face.click();
+  const list = page.getByRole("dialog", { name: "Your Heinzels" });
+  await list.getByRole("button", { name: /Helmi/ }).waitFor();
+  await list.getByRole("button", { name: "New Heinzel" }).waitFor();
+  await page.keyboard.press("Escape");
+  assert.ok(await face.evaluate((node) => node === document.activeElement), "focus returns to the name");
+
+  const more = chat.getByRole("button", { name: "More: search, details, earlier chats" });
+  await more.click();
+  await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Search" }).click();
+  await chat.getByRole("region", { name: "Search conversation" }).waitFor();
+
+  // The default Heinzel survives a reload without a link.
+  await page.goto(url.href);
+  await chat.getByRole("button", { name: "Helmi. Switch Heinzel" }).waitFor({ timeout: 60_000 });
+  assert.deepEqual(errors, []);
+  process.stdout.write(`${JSON.stringify({ oneChat: "verified" })}\n`);
+} catch (error) {
+  const visible = await page.evaluate(() => document.body.innerText.slice(0, 2000)).catch(() => "");
+  process.stderr.write(`${String(error)}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>"));
+  process.exitCode = 1;
+} finally {
+  await browser.close();
+}
