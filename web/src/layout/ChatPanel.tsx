@@ -2,19 +2,26 @@
 // it was started on. The session lives in hz, so it survives a reload and `hz chat --continue` picks it up in a
 // terminal. `?chat=<session>` opens a session (a notification's link); `?chat-context=<kind:ref>` opens one about it.
 // The header's switcher picks another session, the Workshop or a new chat.
+// With the flag `one_chat` every chat is with a Heinzel (bead agqz, canvas "Chat sidebar redesign"): the panel opens the
+// Heinzel in the link, else the last one you talked to, else your first; with none yet it asks for a name. The general
+// chat stays reachable from More → Earlier chats until its history moves into the default Heinzel.
 import { useQueryClient } from "@tanstack/react-query";
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { api, problem } from "@/api/client";
+import { useConfig, useHeinzelSessions, usePreviewFeature } from "@/api/queries";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation } from "@/chat/Conversation";
-import { DurableSession } from "@/chat/DurableSession";
+import { DurableSession, type OneChat } from "@/chat/DurableSession";
+import { defaultHeinzel, rememberedHeinzel } from "@/chat/defaultHeinzel";
+import { FirstHeinzel, settleFirstHeinzel } from "@/chat/FirstHeinzel";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
+import { cn } from "@/lib/utils";
 
 const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
 type PersonalHandoff = { request_id: string; message: string };
@@ -43,6 +50,17 @@ function readPersonalHandoff(): PersonalHandoff | null {
 }
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
+  // Until the settings say which chat this is (flag `one_chat`), the panel is laid out but not shown, so the old chat
+  // never flashes before a Heinzel. It stays mounted: today's chat keeps its timing and focus once they are known.
+  const settling = useConfig().isPending;
+  return (
+    <div className={cn("h-full", settling && "invisible")} aria-busy={settling || undefined}>
+      <ChatPanelBody onCollapse={onCollapse} />
+    </div>
+  );
+}
+
+function ChatPanelBody({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -58,6 +76,25 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   });
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
+  const oneChat = usePreviewFeature("one_chat");
+  // A link into the general chat (a notification's `?chat-context=`, a general `?chat=`) still opens it; `useChat`
+  // then drops the parameter, so the choice is kept until the person goes back to their Heinzel.
+  const generalLink = params.has("chat-context") || (durableId !== null && !isDurableSession(durableId));
+  const [earlier, setEarlier] = useState(generalLink);
+  useEffect(() => {
+    if (generalLink) setEarlier(true);
+  }, [generalLink]);
+  const controls: OneChat = {
+    onCollapse,
+    onEarlier: () => {
+      setEarlier(true);
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        clearChatLink(next);
+        return next;
+      });
+    },
+  };
   const { chat, inputRef, startNewChat } = useSharedChat();
   const context = chat.session?.context;
   const end = useRef<HTMLDivElement>(null);
@@ -155,6 +192,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       <DurableSession
         key={durableId}
         sessionId={durableId}
+        oneChat={oneChat ? controls : undefined}
         onClose={() =>
           setParams((current) => {
             const next = new URLSearchParams(current);
@@ -165,11 +203,25 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       />
     );
   }
+  if (oneChat && !earlier && !generalLink) return <DefaultHeinzel controls={controls} />;
   return (
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate(createDraftPath(params))} />
+        {oneChat && (
+          <BackToHeinzel
+            onBack={() => {
+              setEarlier(false);
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                clearChatLink(next);
+                next.delete("chat-context");
+                return next;
+              });
+            }}
+          />
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -221,5 +273,61 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         />
       </div>
     </div>
+  );
+}
+
+/** The Heinzel the panel opens without a link (flag `one_chat`); with none yet, the first start names one. */
+function DefaultHeinzel({ controls }: { controls: OneChat }) {
+  const [, setParams] = useSearchParams();
+  const heinzels = useHeinzelSessions();
+  const listed = (heinzels.data?.sessions?.length ?? 0) > 0;
+  // Once any Heinzel is listed the first start is over: a request a lost answer left behind is settled here.
+  useEffect(() => {
+    if (listed) settleFirstHeinzel();
+  }, [listed]);
+  if (heinzels.isPending)
+    return (
+      <p role="status" className="p-3 text-sm text-muted-foreground">
+        {t("state.loading")}
+      </p>
+    );
+  if (heinzels.isError)
+    return (
+      <div role="alert" className="space-y-2 p-3 text-sm">
+        <p>{t("oneChat.loadError")}</p>
+        <Button type="button" variant="outline" onClick={() => void heinzels.refetch()}>
+          {t("oneChat.retry")}
+        </Button>
+      </div>
+    );
+  const fallback = defaultHeinzel(heinzels.data?.sessions ?? [], rememberedHeinzel());
+  if (fallback)
+    return <DurableSession key={fallback} sessionId={fallback} oneChat={controls} onClose={controls.onCollapse} />;
+  return (
+    <FirstHeinzel
+      onClose={controls.onCollapse}
+      onCreated={(sessionId) =>
+        setParams((current) => {
+          const next = new URLSearchParams(current);
+          clearChatLink(next);
+          next.set("chat", sessionId);
+          return next;
+        })
+      }
+    />
+  );
+}
+
+/** In the earlier general chats: the one way back to the default Heinzel. */
+function BackToHeinzel({ onBack }: { onBack: () => void }) {
+  const heinzels = useHeinzelSessions();
+  const sessions = heinzels.data?.sessions ?? [];
+  const id = defaultHeinzel(sessions, rememberedHeinzel());
+  const name = sessions.find((item) => item.session_id === id)?.name;
+  if (!name) return null;
+  return (
+    <Button type="button" variant="ghost" size="sm" data-pane-action onClick={onBack}>
+      {t("oneChat.backTo", { name })}
+    </Button>
   );
 }
