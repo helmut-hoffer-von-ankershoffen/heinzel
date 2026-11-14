@@ -1667,6 +1667,7 @@ function DurableSessionView({
           <textarea
             id={composerId}
             ref={composerInput}
+            data-hz-restorable=""
             rows={2}
             className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
             // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.

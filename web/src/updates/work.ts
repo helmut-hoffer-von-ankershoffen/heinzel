@@ -48,3 +48,64 @@ export function workRunning(): boolean {
   for (const isRunning of running) if (isRunning()) return true;
   return false;
 }
+
+// Unsent input nothing saves (heinzel-management-uke3): a reload drops it, so it holds an automatic reload in front and
+// in the background alike. A field counts once the person typed into it and while it still holds text, unless its
+// owner saves and restores it across a reload (`data-hz-restorable`: the chat composers). Editors the DOM can't tell
+// about (a canvas, a custom widget) register instead.
+const typed = new WeakSet<EventTarget>();
+if (typeof document !== "undefined") {
+  const note = (event: Event) => {
+    if (event.target) typed.add(event.target);
+  };
+  document.addEventListener("input", note, true);
+  document.addEventListener("change", note, true);
+}
+const editors = new Set<() => boolean>();
+
+export function registerUnsavedEditor(isDirty: () => boolean): () => void {
+  editors.add(isDirty);
+  return () => editors.delete(isDirty);
+}
+
+const UNCHECKED = new Set(["checkbox", "radio", "range", "color", "file", "hidden", "button", "submit", "reset"]);
+
+function holdsText(element: Element): boolean {
+  if (element instanceof HTMLTextAreaElement) return element.value.trim() !== "";
+  if (element instanceof HTMLInputElement) return !UNCHECKED.has(element.type) && element.value.trim() !== "";
+  const editable =
+    element instanceof HTMLElement &&
+    (element.isContentEditable ||
+      ["", "true", "plaintext-only"].includes(element.getAttribute("contenteditable") ?? "-"));
+  return editable && (element.textContent ?? "").trim() !== "";
+}
+
+/** Whether a field or editor holds text the person typed that a reload would lose. */
+export function unsavedInput(root: ParentNode = document): boolean {
+  for (const isDirty of editors) if (isDirty()) return true;
+  for (const element of root.querySelectorAll("input, textarea, [contenteditable]")) {
+    if (typed.has(element) && !element.closest("[data-hz-restorable]") && holdsText(element)) return true;
+  }
+  return false;
+}
+
+// A composer that brought back a saved draft says so, and only then may the page say the message is still there.
+let restored = false;
+const restoreListeners = new Set<() => void>();
+
+export function noteDraftRestored(): void {
+  restored = true;
+  for (const listener of restoreListeners) listener();
+}
+
+export const draftRestored = (): boolean => restored;
+
+/** A new page knows of no restore yet; tests start each case as a new page. */
+export function forgetDraftRestored(): void {
+  restored = false;
+}
+
+export function onDraftRestored(listener: () => void): () => void {
+  restoreListeners.add(listener);
+  return () => restoreListeners.delete(listener);
+}

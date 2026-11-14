@@ -30,8 +30,9 @@ def test_a_stale_page_reloads_itself_in_chromium_and_webkit():
         timeout=180,
     )
     assert result.returncode == 0, result.stderr
+    loads = {"idle": 2, "chat": 2, "field": 2, "flap": 3}  # one reload each; a flapping server gets two, no more
     assert json.loads(result.stdout.strip().splitlines()[-1]) == [
-        {"browser": engine, "scenario": scenario, "reloads": 1}
+        {"browser": engine, "scenario": scenario, "loads": count}
         for engine in ("chromium", "webkit")
-        for scenario in ("idle", "draft")
+        for scenario, count in loads.items()
     ]

@@ -3,15 +3,21 @@
 // page notices by asking for the served page (`GET /`, never a cached copy) and comparing its hashed entrypoints with
 // its own, and reloads itself when that is safe; AutoUpdate.tsx asks and shows the notices.
 //
-// Safe means: no chat turn or message on its way, no dialog, alert or terminal open, and no unsent text while the
-// window is in front. A window in the background with unsent text saves it first (the composers restore it after the
-// reload), so nobody's half-written message is lost and nobody waits for a window they don't look at. A reload that
-// did not bring the served build is not repeated for the same build: the window says to reload instead.
+// Safe means: no chat turn or message on its way, no dialog, alert or terminal open, no unsent input that nothing
+// saves (any field typed into, or a registered editor), and no unsent chat message while the window is in front. A
+// window in the background saves its chat composer drafts first (they restore after the reload), so nobody waits for
+// a window they don't look at; every other unsent input holds the reload there too. A reload that did not bring the
+// served build is not repeated for that build, and a window reloads by itself at most twice in ten minutes (a server
+// flapping between builds must not loop it): after that it says to reload.
 import { entrypointsOf, pageEntrypoints } from "./webBuild";
-import { reloadHeld, saveOpenWork, workOnScreen, workRunning } from "./work";
+import { reloadHeld, saveOpenWork, unsavedInput, workOnScreen, workRunning } from "./work";
 
 const TRIED = "hz.update.staleBuild";
 const NOTICE = "hz.update.reloaded";
+const RELOADS = "hz.update.autoReloads";
+/** At most this many automatic reloads per tab within `RELOAD_WINDOW_MS`. */
+export const MAX_AUTO_RELOADS = 2;
+export const RELOAD_WINDOW_MS = 10 * 60_000;
 const MAX_PAGE_BYTES = 1024 * 1024;
 
 /** The entrypoints of the page hz serves now; null when it can't be asked or serves no hashed build (a dev server). */
@@ -44,13 +50,42 @@ export function reloadedFor(served: readonly string[]): boolean {
   }
 }
 
-export type Blocker = "turn" | "screen" | "draft" | null;
+export type Blocker = "turn" | "screen" | "input" | "draft" | null;
 
-/** What holds the reload now: a turn or message on its way, open work on screen, or unsent text in front. */
+/**
+ * What holds the reload now: a turn or message on its way, open work on screen, unsent input nothing saves (in front
+ * and in the background), or an unsent chat message in front (in the background it is saved and restored).
+ */
 export function reloadBlocker(visible = document.visibilityState === "visible"): Blocker {
   if (workRunning()) return "turn";
   if (workOnScreen()) return "screen";
+  if (unsavedInput()) return "input";
   return visible && reloadHeld() ? "draft" : null;
+}
+
+function reloadTimes(now: number): number[] {
+  try {
+    const value: unknown = JSON.parse(sessionStorage.getItem(RELOADS) ?? "[]");
+    return Array.isArray(value)
+      ? value.filter((at): at is number => typeof at === "number" && now - at < RELOAD_WINDOW_MS)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether this tab may still reload by itself: fewer than `MAX_AUTO_RELOADS` within the last ten minutes. */
+export function autoReloadAllowed(now = Date.now()): boolean {
+  return reloadTimes(now).length < MAX_AUTO_RELOADS;
+}
+
+/** Count one automatic reload of this tab. */
+export function countAutoReload(now = Date.now()): void {
+  try {
+    sessionStorage.setItem(RELOADS, JSON.stringify([...reloadTimes(now), now]));
+  } catch {
+    // no storage: the per-build guard still stops a loop on one build
+  }
 }
 
 /**
@@ -58,29 +93,24 @@ export function reloadBlocker(visible = document.visibilityState === "visible"):
  * happened; false when the work can't be saved (then the window keeps its page).
  */
 export function prepareReload(served: readonly string[] | null): boolean {
-  const draft = reloadHeld();
   try {
     saveOpenWork();
     if (served) sessionStorage.setItem(TRIED, key(served));
-    sessionStorage.setItem(NOTICE, JSON.stringify({ draft }));
+    sessionStorage.setItem(NOTICE, "1");
   } catch {
     return false;
   }
   return true;
 }
 
-export type ReloadNotice = { draft: boolean };
-
-/** The notice the reload left for the page that came up, once; null after a reload nobody asked for. */
-export function takeReloadNotice(): ReloadNotice | null {
+/** Whether this page came up from an update reload; true once per reload, so the page says so once. */
+export function takeReloadNotice(): boolean {
   try {
-    const raw = sessionStorage.getItem(NOTICE);
+    const left = sessionStorage.getItem(NOTICE) !== null;
     sessionStorage.removeItem(NOTICE);
-    if (raw === null) return null;
-    const value: unknown = JSON.parse(raw);
-    return { draft: Boolean(value && typeof value === "object" && (value as ReloadNotice).draft === true) };
+    return left;
   } catch {
-    return null;
+    return false;
   }
 }
 

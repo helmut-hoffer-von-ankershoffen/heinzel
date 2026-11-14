@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
-import { registerReloadHold, registerRunningWork, registerUpdatePreparation } from "./work";
+import { noteDraftRestored, registerReloadHold, registerRunningWork, registerUpdatePreparation } from "./work";
 
 const KEY = "hz.update.composer";
 type Draft = { context: string; session: string | null; message: string; picked: ModelChoice | null };
@@ -34,7 +34,9 @@ export function useUpdateDraft(context: string, session: string | null, busy = f
   const [picked, setPicked] = useState<ModelChoice | null>(initial?.picked ?? null);
   const previous = useRef(session);
   useEffect(() => {
-    if (initial) sessionStorage.removeItem(KEY);
+    if (!initial) return;
+    sessionStorage.removeItem(KEY);
+    if (initial.message.trim()) noteDraftRestored(); // the page may now say the message is still here
   }, [initial]);
   useEffect(() => {
     if (previous.current !== session) {

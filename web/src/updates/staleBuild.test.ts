@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  autoReloadAllowed,
+  countAutoReload,
   forgetReload,
   isStale,
   prepareReload,
+  RELOAD_WINDOW_MS,
   reloadBlocker,
   reloadedFor,
   servedEntrypoints,
@@ -78,18 +81,18 @@ describe("a safe reload", () => {
 
   it("saves the unsent text, remembers the build it reloads for, and leaves one notice", () => {
     const prepare = vi.fn();
-    const releases = [registerUpdatePreparation(prepare), registerReloadHold(() => true)];
+    const release = registerUpdatePreparation(prepare);
     try {
       expect(prepareReload(NEW)).toBe(true);
       expect(prepare).toHaveBeenCalledOnce();
       expect(reloadedFor(NEW)).toBe(true);
       expect(reloadedFor(OLD)).toBe(false);
-      expect(takeReloadNotice()).toEqual({ draft: true });
-      expect(takeReloadNotice()).toBeNull(); // shown once
+      expect(takeReloadNotice()).toBe(true);
+      expect(takeReloadNotice()).toBe(false); // shown once
       forgetReload();
       expect(reloadedFor(NEW)).toBe(false);
     } finally {
-      for (const release of releases) release();
+      release();
     }
   });
 
@@ -100,20 +103,29 @@ describe("a safe reload", () => {
     try {
       expect(prepareReload(NEW)).toBe(false);
       expect(reloadedFor(NEW)).toBe(false);
-      expect(takeReloadNotice()).toBeNull();
+      expect(takeReloadNotice()).toBe(false);
     } finally {
       release();
     }
   });
 
-  it("reads a damaged notice as no draft, and none at all as no notice", () => {
-    expect(takeReloadNotice()).toBeNull();
-    sessionStorage.setItem("hz.update.reloaded", "not json");
-    expect(takeReloadNotice()).toBeNull();
-    sessionStorage.setItem("hz.update.reloaded", "null");
-    expect(takeReloadNotice()).toEqual({ draft: false });
-    expect(prepareReload(null)).toBe(true); // a reload a person asked for remembers no build
+  it("remembers no build for a reload a person asked for", () => {
+    expect(prepareReload(null)).toBe(true);
     expect(sessionStorage.getItem("hz.update.staleBuild")).toBeNull();
-    expect(takeReloadNotice()).toEqual({ draft: false });
+    expect(takeReloadNotice()).toBe(true);
+  });
+
+  it("reloads a tab by itself at most twice in ten minutes, so a flapping server can't loop it", () => {
+    const start = 1_000_000;
+    expect(autoReloadAllowed(start)).toBe(true);
+    countAutoReload(start);
+    expect(autoReloadAllowed(start + 1000)).toBe(true);
+    countAutoReload(start + 1000);
+    expect(autoReloadAllowed(start + 2000)).toBe(false);
+    expect(autoReloadAllowed(start + RELOAD_WINDOW_MS + 1000)).toBe(true); // the first one has aged out
+    sessionStorage.setItem("hz.update.autoReloads", "not json");
+    expect(autoReloadAllowed(start)).toBe(true);
+    sessionStorage.setItem("hz.update.autoReloads", JSON.stringify({ at: start }));
+    expect(autoReloadAllowed(start)).toBe(true);
   });
 });

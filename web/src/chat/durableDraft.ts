@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { registerReloadHold, registerRunningWork, registerUpdatePreparation } from "@/updates/work";
+import { noteDraftRestored, registerReloadHold, registerRunningWork, registerUpdatePreparation } from "@/updates/work";
 
 const PREFIX = "hz.durable.composer.";
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -90,6 +90,9 @@ export function useDurableDraft(sessionId: string) {
   const stateRef = useRef(state);
   const [storageError, setStorageError] = useState(initial.error);
   const [recoveryBlocked, setRecoveryBlocked] = useState(initial.error);
+  useEffect(() => {
+    if (!initial.error && initial.state.text.trim()) noteDraftRestored(); // unsent text came back from this tab
+  }, [initial]);
 
   const update = useCallback(
     (patch: Partial<DurableComposerState>): boolean => {

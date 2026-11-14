@@ -11,14 +11,26 @@ import { registerReloadHold } from "./work";
 /** A composer on the real hook the chat page uses, so the real reload hold is what is tested. */
 function UpdateComposer() {
   const { message, setMessage } = useUpdateDraft("route:/", null);
-  return <textarea aria-label="Message" value={message} onChange={(event) => setMessage(event.target.value)} />;
+  return (
+    <textarea
+      aria-label="Message"
+      data-hz-restorable=""
+      value={message}
+      onChange={(event) => setMessage(event.target.value)}
+    />
+  );
 }
 
 /** The same on the durable session composer's real hook. */
 function DurableComposer() {
   const { state, update } = useDurableDraft("session-1");
   return (
-    <textarea aria-label="Message" value={state.text} onChange={(event) => update({ text: event.target.value })} />
+    <textarea
+      aria-label="Message"
+      data-hz-restorable=""
+      value={state.text}
+      onChange={(event) => update({ text: event.target.value })}
+    />
   );
 }
 
@@ -64,8 +76,8 @@ describe("automatic updates", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { container } = show({ "/api/auto-update": base });
     const dialog = await screen.findByRole("alertdialog");
-    expect(dialog).toHaveTextContent("hz updates itself in 30 s");
-    expect(dialog).toHaveTextContent("Installing: hz 1.1.0, heinzel-example 2.0.0.");
+    expect(dialog).toHaveTextContent("Heinzel updates itself in 30 s");
+    expect(dialog).toHaveTextContent("Installing: Heinzel 1.1.0, heinzel-example 2.0.0.");
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Postpone 1 hour" })).toBeEnabled();
     await expectAccessible(container);
@@ -114,7 +126,7 @@ describe("automatic updates", () => {
         <AutoUpdate />
       </Providers>,
     );
-    expect(await screen.findByRole("status")).toHaveTextContent("Updating hz");
+    expect(await screen.findByRole("status")).toHaveTextContent("Updating Heinzel");
     version = "1.1.0";
     await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());

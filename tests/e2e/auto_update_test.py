@@ -105,7 +105,7 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
     assert result["footerEnabled"] is True
     assert result["settingsShowsFooterOff"] is True
     assert result["footerShowsSettingsOn"] is True
-    assert "hz updates itself in" in result["text"]
+    assert "Heinzel updates itself in" in result["text"]
     assert "hz 99.0.0, heinzel-example 9.0.0" in result["text"]
     assert result["buttons"] == ["Postpone 1 hour"]
     assert 26 <= result["first"] <= 30  # every window sees the countdown within seconds

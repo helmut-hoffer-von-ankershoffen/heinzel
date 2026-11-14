@@ -50,7 +50,7 @@ it("shows the countdown after the setting went off and on, though a poll saw it 
   server = { ...idle, phase: "countdown", core: "9.9.9", seconds_left: 30, apply_at: "2026-11-02T09:00:30Z" };
   config = setting(true);
   await act(() => client.invalidateQueries({ queryKey: keys.config }));
-  expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("hz updates itself in");
+  expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("Heinzel updates itself in");
 }, 15000);
 
 it("shows a countdown enabled in another window while this window still has the off setting cached", async () => {
@@ -68,7 +68,7 @@ it("shows a countdown enabled in another window while this window still has the 
   await vi.waitFor(() => expect(client.getQueryData(KEY)).toEqual(server));
   // Another window or the CLI enables updates. This window gets no config invalidation or focus event.
   server = { ...idle, phase: "countdown", core: "9.9.9", seconds_left: 30, apply_at: "2026-11-02T09:00:30Z" };
-  expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("hz updates itself in");
+  expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("Heinzel updates itself in");
   expect(client.getQueryData(keys.config)).toEqual(config);
 }, 10000);
 
@@ -140,7 +140,7 @@ it("shows a slow valid countdown even when the additional status read fails", as
       </Providers>,
     );
     await act(() => vi.advanceTimersByTimeAsync(7_500));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("Installing: hz 9.9.9.");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Installing: Heinzel 9.9.9.");
     expect(screen.getByRole("button", { name: "Postpone 1 hour" })).toBeEnabled();
   } finally {
     client.clear();

@@ -322,6 +322,7 @@ export function Composer({
         <textarea
           id={inputId}
           ref={inputRef}
+          data-hz-restorable=""
           rows={2}
           value={message}
           maxLength={MESSAGE_LIMIT}

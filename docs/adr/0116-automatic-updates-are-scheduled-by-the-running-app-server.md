@@ -111,11 +111,15 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   - Only then is the change recorded (continuity, ADR 0108), the daemon handed over, and the server restarts in
     place. If the restart itself fails, the new version stays installed, the old one keeps running, and every window
     says to restart hz ui to finish. Windows reconnect without signing in and reload once the version changed, but
-    not while a turn runs, a message is on its way, a dialog or terminal is open, or a composer in front has unsent
-    text: the window says "Reload to finish the update" and reloads by itself once they are idle. A window in the
-    background saves its unsent text first and gets it back after the reload. Every window also compares the web
-    build it runs with the one hz serves (when it comes to the front, back online, and every minute), so an update
-    made elsewhere reloads it too; after a reload it says so once, and it never reloads twice for the same build.
+    not while a turn runs, a message is on its way, a dialog or terminal is open, or input that nothing saves holds
+    text (any field typed into, or an editor that registers as unsaved), in front or in the background: the window
+    says why and reloads by itself once they are idle. Only the chat composers save their unsent message and get it
+    back after a reload, so an unsent chat message holds the reload while the window is in front and is saved first
+    when it is in the background. The reloaded page says once, when the person sees it, that it reloaded, and that
+    the message is still there only after a composer really restored it. Every window also compares the web build it
+    runs with the one hz serves (when it comes back online, every minute, on focus at most every ten seconds), so an
+    update made elsewhere reloads it too; it checks once more right before reloading, never reloads twice for the same
+    build and at most twice in ten minutes, then offers Reload.
 - **Rollback.** If uv fails, the metadata or the commit differ, or the trial start fails, nothing restarts. The tool
   folder itself is never replaced: first everything the update left moves aside, then each entry of the copy moves
   back into it, each an atomic rename. hz, every plugin and the receipt are byte for byte as they were, so the
