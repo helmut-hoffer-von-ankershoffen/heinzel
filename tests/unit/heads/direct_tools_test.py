@@ -260,7 +260,7 @@ class InProcessRunner:
             return ModelResponse(parts=[ToolCallPart(f"mcp__hz__{name}", args) for name, args in self.script])
 
         agent = Agent(FunctionModel(model), instructions=contract, tools=pydantic_ai_tools(hz, counted=called.append))
-        answer = agent.run_sync(prompt)
+        answer = asyncio.run(agent.run(prompt))  # closes its loop, unlike run_sync
         return AgentResult(
             runner="in-process",
             status="completed",
