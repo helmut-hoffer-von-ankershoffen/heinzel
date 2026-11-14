@@ -83,6 +83,32 @@ describe("Meet your first Heinzelmännchen", () => {
     expect(figure()).toContain("with a scarf".replace("with a ", "wearing a "));
   });
 
+  it("moves between the parts with the arrow keys, one tab stop per group", async () => {
+    const user = userEvent.setup();
+    show();
+    const list = within(
+      screen.getByRole("heading", { name: "Everything you can change" }).closest("section") as HTMLElement,
+    ).getByRole("radiogroup", { name: "Everything you can change" });
+    const parts = within(list).getAllByRole("radio");
+    expect(parts.map((radio) => radio.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
+    parts[0].focus();
+    await user.keyboard("{ArrowDown}");
+    const age = within(list).getByRole("radio", { name: /^Age/ });
+    expect(age).toHaveFocus();
+    expect(age).toHaveAttribute("aria-checked", "true");
+    expect(age.tabIndex).toBe(0);
+    expect(screen.getByRole("radio", { name: "Change the age" })).toHaveAttribute("aria-checked", "true");
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(within(list).getByRole("radio", { name: /^Accessories/ })).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(within(list).getByRole("radio", { name: /^Hat/ })).toHaveFocus();
+    const figureParts = screen.getByRole("radiogroup", { name: "The parts of the figure" });
+    within(figureParts).getByRole("radio", { name: "Change the hat" }).focus();
+    await user.keyboard("{End}");
+    expect(within(figureParts).getByRole("radio", { name: "Change the accessories" })).toHaveFocus();
+    expect(within(list).getByRole("radio", { name: /^Accessories/ })).toHaveAttribute("aria-checked", "true");
+  });
+
   it("offers the missions with one-line first-person jobs, Your day recommended", async () => {
     const user = userEvent.setup();
     show();

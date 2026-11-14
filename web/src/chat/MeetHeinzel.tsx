@@ -4,7 +4,7 @@
 // The request id is kept until hz confirms, so a lost answer recovers the same Heinzel instead of making a second.
 import { useQueryClient } from "@tanstack/react-query";
 import { Shuffle, Undo2 } from "lucide-react";
-import { type CSSProperties, type FormEvent, type ReactNode, useId, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, headTop, SHIRTS, viewBox } from "@/components/heinzel";
@@ -114,6 +114,7 @@ function PartRadio({
       variant="ghost"
       role="radio"
       aria-checked={checked}
+      tabIndex={checked ? 0 : -1}
       aria-label={label}
       title={label ? partLabel(id) : undefined}
       onClick={() => onPick(id)}
@@ -123,6 +124,25 @@ function PartRadio({
       {children}
     </Button>
   );
+}
+
+const NEXT_KEYS: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+
+/**
+ * The radio pattern for a group of parts: one tab stop (the chosen part), arrow keys move the choice and the focus,
+ * Home and End go to the first and the last part.
+ */
+function onPartKey(event: KeyboardEvent<HTMLDivElement>, part: PartId, setPart: (id: PartId) => void) {
+  const at = PARTS.indexOf(part);
+  const step = NEXT_KEYS[event.key];
+  let next: number;
+  if (step !== undefined) next = (at + step + PARTS.length) % PARTS.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = PARTS.length - 1;
+  else return;
+  event.preventDefault();
+  setPart(PARTS[next]);
+  event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
 }
 
 function Choices({ part, look, onLook }: { part: PartId; look: Look; onLook: (look: Look) => void }) {
@@ -287,7 +307,12 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
               className="h-full w-full"
             />
             {/* The part to change is one choice: the figure's parts are its radios, as the list below is. */}
-            <div role="radiogroup" aria-label={t("meet.figureParts")} className="absolute inset-0">
+            <div
+              role="radiogroup"
+              aria-label={t("meet.figureParts")}
+              className="absolute inset-0"
+              onKeyDown={(event) => onPartKey(event, part, setPart)}
+            >
               {PARTS.map((id) => (
                 <PartRadio
                   key={id}
@@ -339,7 +364,12 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
             <h3 id={`${group}-parts`} className="text-sm font-medium">
               {t("meet.parts")}
             </h3>
-            <div role="radiogroup" aria-labelledby={`${group}-parts`} className="flex flex-col gap-1">
+            <div
+              role="radiogroup"
+              aria-labelledby={`${group}-parts`}
+              className="flex flex-col gap-1"
+              onKeyDown={(event) => onPartKey(event, part, setPart)}
+            >
               {PARTS.map((id) => (
                 <PartRadio
                   key={id}
