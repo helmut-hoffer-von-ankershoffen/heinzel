@@ -1,7 +1,7 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
-import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import {
@@ -217,6 +217,14 @@ function DurableSessionView({
   const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
   const historyCursor = historyCursors.at(-1) ?? null;
   const [searchJump, setSearchJump] = useState(false);
+  // Each jump scrolls and focuses its message once; a refetch or poll never takes focus back from the composer.
+  const [jumpRequest, setJumpRequest] = useState(0);
+  const jumpDone = useRef(0);
+  const startJump = useCallback((cursor: string) => {
+    setSearchJump(true);
+    setJumpRequest((count) => count + 1);
+    setHistoryCursors([null, cursor]);
+  }, []);
   const searchTarget = useRef<HTMLDivElement>(null);
   const newest = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -227,10 +235,9 @@ function DurableSessionView({
   );
   useEffect(() => {
     if (!pendingSearchJump) return;
-    setSearchJump(true);
-    setHistoryCursors([null, pendingSearchJump]);
+    startJump(pendingSearchJump);
     setParams((current) => current, { replace: true, state: null });
-  }, [pendingSearchJump, setParams]);
+  }, [pendingSearchJump, setParams, startJump]);
   // Escape or Close in the search field returns focus to More, which opened it.
   const closeSearch = () => {
     setSearchOpen(false);
@@ -241,8 +248,7 @@ function DurableSessionView({
     if (!isDurableSession(target)) return;
     setSearchOpen(false);
     if (target === sessionId) {
-      setSearchJump(true);
-      setHistoryCursors([null, cursor]);
+      startJump(cursor);
       return;
     }
     setParams(
@@ -282,11 +288,19 @@ function DurableSessionView({
     placeholderData: (previous) => previous,
   });
   useEffect(() => {
-    if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError) {
+    if (
+      searchJump &&
+      jumpDone.current !== jumpRequest &&
+      query.data?.messages?.length &&
+      !query.isFetching &&
+      !query.isPlaceholderData &&
+      !query.isError
+    ) {
+      jumpDone.current = jumpRequest;
       searchTarget.current?.scrollIntoView?.({ block: "center" });
       searchTarget.current?.focus({ preventScroll: true });
     }
-  }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+  }, [searchJump, jumpRequest, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
   const dayStartAt = dayStarts((query.data?.messages ?? []).map((message) => message.at));
   const lastMessage = query.data?.messages?.at(-1);
   const newestKey = lastMessage ? `${lastMessage.seq}-${lastMessage.id}-${lastMessage.status}` : "";

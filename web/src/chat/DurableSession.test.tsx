@@ -2362,6 +2362,58 @@ it("opens and highlights a search match beyond the loaded conversation page", as
   expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "anchored-jump")).toBe(true);
 });
 
+it("focuses a jumped-to message once per jump, returns focus to More on Escape", async () => {
+  const client = queryClient();
+  mockApi({
+    ...shell,
+    "/api/system/config/show": historySearchConfig(),
+    "/api/heinzel/session": (request: Request) =>
+      new URL(request.url).searchParams.get("cursor") === "anchored-jump"
+        ? { ...snapshot, messages: [{ id: "old", seq: 154, role: "user", text: "Old matching message" }] }
+        : snapshot,
+    "/api/heinzel/indexed-conversation-search": () => ({
+      session_id: sessionId,
+      items: [{ id: "old", seq: 154, text: "Old matching message", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["anchored-jump"],
+      next_cursor: null,
+      mode: "trigram",
+      completeness: "unknown",
+    }),
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const router = createMemoryRouter(routes, { initialEntries: [`/heinzel?chat=${sessionId}`] });
+  render(
+    <Providers client={client}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  const more = panel.getByRole("button", { name: "More: search, details" });
+  await fromMore("Search");
+  fireEvent.keyDown(panel.getByLabelText("Search messages"), { key: "Escape" });
+  expect(panel.queryByRole("search")).not.toBeInTheDocument();
+  expect(more).toHaveFocus();
+  const jump = async () => {
+    await fromMore("Search");
+    fireEvent.change(panel.getByLabelText("Search messages"), { target: { value: "matching" } });
+    fireEvent.click(panel.getByRole("button", { name: "Search" }));
+    fireEvent.click(await panel.findByRole("button", { name: /Old matching message/ }));
+  };
+  await jump();
+  await waitFor(() => expect(document.getElementById("message-154")).toHaveFocus());
+  // A refresh of the conversation does not take focus away from the composer.
+  const composer = panel.getByLabelText(/^Message /);
+  composer.focus();
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["heinzel", "session"] });
+  });
+  expect(composer).toHaveFocus();
+  // Jumping to the same message again focuses it again.
+  await jump();
+  await waitFor(() => expect(document.getElementById("message-154")).toHaveFocus());
+});
+
 it("opens an owner-search match in its exact helper without confirming any action", async () => {
   const target = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
   const { calls } = mockApi({
