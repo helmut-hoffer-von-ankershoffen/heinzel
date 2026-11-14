@@ -33,7 +33,8 @@ describe("Meet your first Heinzelmännchen", () => {
     expect(nameField().value).toBe("Helmi");
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     const looks = [figure()];
-    for (let click = 0; click < 6; click++) {
+    for (const _ of [1, 2, 3, 4, 5, 6]) {
+      // Serial on purpose: each click must differ from the look the one before left.
       await user.click(screen.getByRole("button", { name: "Surprise me" }));
       const now = figure();
       expect(now).not.toBe(looks[looks.length - 1]);
@@ -42,7 +43,8 @@ describe("Meet your first Heinzelmännchen", () => {
     expect(nameField().value).not.toBe("Helmi");
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(figure()).toBe(looks[5]);
-    for (let back = 4; back >= 0; back--) await user.click(screen.getByRole("button", { name: "Undo" }));
+    // Undo steps are serial on purpose: each click changes the button and the figure the next one sees.
+    for (const _ of [4, 3, 2, 1, 0]) await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(figure()).toBe(looks[0]);
     expect(nameField().value).toBe("Helmi");
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
