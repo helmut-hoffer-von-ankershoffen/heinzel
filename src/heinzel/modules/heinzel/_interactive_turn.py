@@ -29,7 +29,7 @@ from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._playbook_adoption import PlaybookDraftTools, playbook_tool_schemas
-from heinzel.modules.heinzel._priced_model import ReservedModel
+from heinzel.modules.heinzel._priced_model import ReservedModel, priced
 from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTools, schedule_suggestion_schemas
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
@@ -157,12 +157,22 @@ class InteractiveTurn:
             timeout_seconds=grant.timeout_seconds,
         )
         self._check_owner()
-        if current.principal().id != self._owner or grant.access != "pydantic-ai":
+        if current.principal().id != self._owner:
             msg = "The reserved model binding cannot be verified"
             raise HeinzelError(msg)
         approved_binding = grant.binding
         if approved_binding is None:
             msg = "This model grant has no configured access binding"
+            raise HeinzelError(msg)
+        if (approved_binding.access, approved_binding.model) != (grant.access, grant.model):
+            msg = "The reserved model binding cannot be verified"
+            raise HeinzelError(msg)
+        if not priced(approved_binding.access, approved_binding.model, approved_binding.endpoint):
+            # A grant carries dollar caps: only a model with a pricing policy can hold them (ADR 0159).
+            msg = (
+                f"{approved_binding.access} reports no dollar cost for {approved_binding.model}, so this grant's "
+                "dollar caps can't be enforced; run it as a token-bounded turn instead"
+            )
             raise HeinzelError(msg)
         binding = kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
         lease = binding.lease()

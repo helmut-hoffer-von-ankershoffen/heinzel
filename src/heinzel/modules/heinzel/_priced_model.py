@@ -42,6 +42,17 @@ MAX_OUTPUT = 32_768
 MAX_REQUESTS = 100
 
 
+ENDPOINT = "https://api.openai.com/v1"
+
+
+def priced(access: str, model: str, endpoint: str) -> bool:
+    """Whether a pricing policy covers `model` through `access` at `endpoint`: only the pinned direct OpenAI model.
+
+    A plugin's models and other endpoints report no dollar cost, so a dollar-capped grant refuses them (ADR 0159).
+    """
+    return access == "pydantic-ai" and model == MODEL and endpoint.rstrip("/") == ENDPOINT
+
+
 def resolve_pricing(model: str, mode: str, now: datetime) -> tuple[Decimal, Decimal]:
     """Return a short-lived published standard text-rate snapshot for the one pinned model.
 
