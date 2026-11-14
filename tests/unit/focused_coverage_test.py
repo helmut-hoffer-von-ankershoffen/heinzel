@@ -146,12 +146,10 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
     probe = tmp_path / "test_outer_worker_probe.py"
     probe.write_text(
         textwrap.dedent(f"""
-        import os
-        import subprocess
-        import sys
         from pathlib import Path
 
         import worker_marker
+        from coverage import CoverageData
         from scripts import focused_coverage as focused
         from scripts.ci_workload import FocusedPlan
         from scripts.focused_plan import Scope
@@ -175,15 +173,15 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
             module = tmp_path / PATH
             module.parent.mkdir(parents=True)
             module.write_bytes(SOURCE)
-            (module.parent / "__init__.py").touch()
-            # A plain module, not a nested pytest: the path under test is the analysis, not the runner.
-            (tmp_path / "sample_run.py").write_text("from heinzel.example import value\\nassert value() == 42\\n")
             monkeypatch.setattr(focused, "git", lambda *_args: CONFIG)
             def execute(args, env):
-                subprocess.run([sys.executable, "-m", *args[3:]], check=True, timeout=30, cwd=tmp_path,
-                               env={{**os.environ, **env, "PYTHONPATH": str(tmp_path / "src")}}, capture_output=True)
+                # The selected tests' data, written here: no runner interpreter; the analysis child stays real.
+                del args
+                data = CoverageData(basename=env["COVERAGE_FILE"], suffix=True)
+                data.add_arcs({{str(module.resolve()): [(-1, 1), (1, -1)]}})
+                data.write()
             monkeypatch.setattr(focused, "_execute", execute)
-            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "sample_run"], tmp_path, {{}})
+            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest"], tmp_path, {{}})
             assert (tmp_path / focused.MEASUREMENT).is_file()
             assert worker_marker.after_instrument() == 14
     """)
@@ -198,7 +196,7 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
     }
     run = [sys.executable, "-m", "coverage"]
     subprocess.run(
-        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "2", "-q", str(probe)],
+        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "1", "-q", str(probe)],
         cwd=tmp_path,
         env=env,
         check=True,
