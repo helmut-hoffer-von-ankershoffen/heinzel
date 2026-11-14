@@ -124,6 +124,27 @@ def test_a_chat_turn_runs_on_the_plugins_model_without_claude_code(tmp_path):
     assert usage[0].input_tokens > 0
 
 
+class FullUsageLog(list[UsageEntry]):
+    """A usage log whose disk is full."""
+
+    def append(self, entry: UsageEntry) -> None:
+        msg = "disk full"
+        raise OSError(msg)
+
+
+def test_a_failing_usage_log_never_fails_a_good_answer_and_the_engine_prints_no_banner(tmp_path, caplog):
+    import pydantic_ai
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"), caplog.at_level("WARNING"):
+        current, crud, session = setup_chat(current)
+        chat = service(crud, current, Plugin(), Settings(), FullUsageLog())
+        replied = asyncio.run(chat.answer(session, "hello"))
+    assert replied.message.text == REPLY
+    assert "ai.usage.record_failed" in caplog.text
+    assert pydantic_ai.BANNER_ENABLED is False
+
+
 def test_the_chosen_model_and_effort_reach_the_plugin_model(tmp_path):
     seen: list[dict[str, object]] = []
 

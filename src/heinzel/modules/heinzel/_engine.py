@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from typing import Literal
 
+import pydantic_ai
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 from pydantic_ai import Agent, Conversation, ConversationTypeAdapter, ModelRequestContext, RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -21,6 +22,8 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRun
 from pydantic_ai.usage import RunUsage, UsageLimits
+
+pydantic_ai.BANNER_ENABLED = False  # once for every turn on this engine: stdout may be the MCP head's protocol
 
 
 class DoneCheck(BaseModel):

@@ -246,6 +246,11 @@ The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai a
 Within interface 1.x, changes are additive only: new optional fields and new optional methods. Never put a secret
 into an exception message: Heinzel shows failure messages, cut short.
 
+Heinzel sets each request's `max_tokens` itself: 16384 tokens of output, plus the thinking budget for a `budget`
+model. It also turns on Pydantic AI's Anthropic prompt
+caching of instructions and tool definitions; models of other APIs ignore it. The conformance kit only warns when
+`model()` accepts an unknown or unavailable id, since Heinzel never asks for one; refuse it anyway.
+
 ### Connectors
 
 Provide `mail`, `calendar`, `documents`, `tracker`, `chat`, `meetings` or `code-host` as for any connector. A
