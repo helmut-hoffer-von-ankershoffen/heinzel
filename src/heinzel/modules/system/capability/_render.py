@@ -14,7 +14,10 @@ def render_report(report: CapabilityReport) -> RenderableType:
         capabilities.add_column(column, overflow="fold")
     for capability in report.capabilities:
         capabilities.add_row(
-            capability.name, ",".join(capability.modes), Text(capability.bound or "-"), Text(capability.summary)
+            capability.name,
+            ",".join(capability.modes),
+            Text(", ".join(capability.adapters) or capability.bound or "-"),
+            Text(capability.summary),
         )
     adapters = Table(title="Adapters")
     for column in ("Adapter", "Capability", "Modes", "Hosts", "Module"):

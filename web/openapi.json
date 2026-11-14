@@ -901,6 +901,14 @@
             "title": "Hosts",
             "type": "array"
           },
+          "links": {
+            "description": "Hosts of the links it opens, which route a link to it when several serve its capability.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
           "modes": {
             "description": "The modes it serves.",
             "items": {
@@ -1794,6 +1802,14 @@
       "CapabilityInfo": {
         "description": "A capability the core defines and the adapter bound to it.",
         "properties": {
+          "adapters": {
+            "description": "Every adapter that serves it, the default first: several only where several may (ADR 0161).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Adapters",
+            "type": "array"
+          },
           "bound": {
             "anyOf": [
               {
@@ -1817,6 +1833,12 @@
             },
             "title": "Modes",
             "type": "array"
+          },
+          "multiple": {
+            "default": false,
+            "description": "Whether several adapters may serve it at once (ADR 0161).",
+            "title": "Multiple",
+            "type": "boolean"
           },
           "name": {
             "description": "Name in requirements and bindings, e.g. `tracker`.",
@@ -5978,6 +6000,171 @@
         ],
         "title": "Disposition",
         "type": "string"
+      },
+      "Document": {
+        "description": "The text of a document, for reading.",
+        "properties": {
+          "ref": {
+            "description": "The reference it was read by: an id or URL in the adapter's notation.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revision read, if the adapter tracks revisions.",
+            "title": "Revision"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter it was read through, set by the core when several serve documents; adapters leave it.",
+            "title": "Source"
+          },
+          "text": {
+            "description": "Content as plain text or Markdown.",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title of the document.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "text"
+        ],
+        "title": "Document",
+        "type": "object"
+      },
+      "DocumentHit": {
+        "description": "A document a search found: enough to show it and to read it, not its text (ADR 0161).",
+        "properties": {
+          "ref": {
+            "description": "What `Documents.read` takes for it: an id or URL in the adapter's notation.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A short excerpt around the match, as plain text.",
+            "title": "Snippet"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter that found it, set by the core; adapters leave it empty.",
+            "title": "Source"
+          },
+          "title": {
+            "description": "Title of the document.",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it last changed; none if unknown.",
+            "title": "Updated At"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "ref",
+          "title"
+        ],
+        "title": "DocumentHit",
+        "type": "object"
+      },
+      "DocumentSearch": {
+        "description": "What a search found in every documents connector that is on, and which couldn't answer.",
+        "properties": {
+          "failures": {
+            "description": "Connectors that couldn't answer, and why; the others' results are still listed.",
+            "items": {
+              "$ref": "#/components/schemas/SourceFailure"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "hits": {
+            "description": "What the connectors found, in turns, each labelled with its source.",
+            "items": {
+              "$ref": "#/components/schemas/DocumentHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "query": {
+            "description": "What was searched for.",
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "hits"
+        ],
+        "title": "DocumentSearch",
+        "type": "object"
       },
       "Documentation": {
         "description": "The documentation of every plugin installed, and the core's modules when asked for.",
@@ -17019,6 +17206,27 @@
         "title": "SoundscapeView",
         "type": "object"
       },
+      "SourceFailure": {
+        "description": "An adapter that couldn't answer a read asked of several at once, and why (ADR 0161).",
+        "properties": {
+          "reason": {
+            "description": "Why it gave nothing: its error, a timeout, or that it can't do this.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "description": "The adapter's name, e.g. `atlassian`.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "reason"
+        ],
+        "title": "SourceFailure",
+        "type": "object"
+      },
       "SourceSetItem": {
         "additionalProperties": false,
         "description": "One unverified model-suggested fixed read.",
@@ -23122,6 +23330,108 @@
         "summary": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
         "tags": [
           "ai"
+        ]
+      }
+    },
+    "/document/read": {
+      "get": {
+        "description": "Read a document's text through the connector it belongs to.",
+        "operationId": "document_read",
+        "parameters": [
+          {
+            "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
+            "in": "query",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
+              "title": "Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a document's text through the connector it belongs to.",
+        "tags": [
+          "document"
+        ]
+      }
+    },
+    "/document/search": {
+      "get": {
+        "description": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
+        "operationId": "document_search",
+        "parameters": [
+          {
+            "description": "What to look for in titles and text.",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "What to look for in titles and text.",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most this many results.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "At most this many results.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSearch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
+        "tags": [
+          "document"
         ]
       }
     },

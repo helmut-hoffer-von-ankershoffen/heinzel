@@ -18,10 +18,13 @@ vi.mock("@/api/queries", () => ({
           capabilities: [
             { name: "calendar", bound: null },
             { name: "mail", bound: "oak" },
+            { name: "documents", bound: "drive", adapters: ["drive", "wiki"], multiple: true },
           ],
           adapters: [
             { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
             { adapter: "oak", capability: "mail", distribution: "sample-oak", module: "oak" },
+            { adapter: "drive", capability: "documents", distribution: "sample-drive", module: "drive" },
+            { adapter: "wiki", capability: "documents", distribution: "sample-wiki", module: "wiki" },
           ],
         },
   }),
@@ -291,6 +294,55 @@ describe("Declared installed choices", () => {
       />,
     );
     expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
+  });
+
+  const documents = {
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }, { type: "null" }],
+    title: "Documents",
+    "x-options": { source: "adapters", capability: "documents", none: "none", multiple: true },
+  };
+
+  it("switches several documents connectors on at once and keeps the first as the default", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SchemaValue label="Documents" schema={documents} value="drive" disabled={false} onChange={onChange} />,
+    );
+    const group = screen.getByRole("group", { name: "Documents" });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /drive/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /wiki/ })).not.toBeChecked();
+    // A list of switches offers no "None": switching every one off is none.
+    expect(screen.queryByRole("checkbox", { name: "None" })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: /wiki/ }));
+    expect(onChange).toHaveBeenCalledWith(["drive", "wiki"]);
+    rerender(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "wiki"]}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: /wiki/ })).toBeChecked();
+    expect(screen.getByText(/drive, the first, is the default/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: /drive/ }));
+    expect(onChange).toHaveBeenLastCalledWith(["wiki"]);
+  });
+
+  it("reads a saved none as every documents connector off", () => {
+    render(<SchemaValue label="Documents" schema={documents} value="none" disabled={false} onChange={vi.fn()} />);
+    expect(screen.getByRole("checkbox", { name: /drive/ })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /wiki/ })).not.toBeChecked();
+    expect(screen.queryByText(/is the default/)).not.toBeInTheDocument();
+  });
+
+  it("chooses the multiple control from the declared options, not only from an array type", () => {
+    expect(controlFor(documents)).toMatchObject({ kind: "installed", multiple: true });
+    expect(controlFor({ type: "string", "x-options": { source: "adapters", capability: "calendar" } })).toMatchObject({
+      kind: "installed",
+      multiple: false,
+    });
   });
 
   it("never calls a saved adapter unavailable while the choices are still loading", () => {

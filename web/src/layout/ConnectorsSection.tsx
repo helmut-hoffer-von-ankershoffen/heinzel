@@ -40,7 +40,11 @@ export function ConnectorsSection({ connectors, loading = false, open, settings,
   const used = (connector: Connector) => {
     const adapters = new Set((connector.plugin.capabilities ?? []).map((capability) => capability.split(":")[0]));
     return (capabilities.data?.capabilities ?? [])
-      .filter((capability) => capability.bound && adapters.has(capability.bound))
+      .filter((capability) =>
+        (capability.adapters?.length ? capability.adapters : capability.bound ? [capability.bound] : []).some(
+          (adapter) => adapters.has(adapter),
+        ),
+      )
       .map((capability) => capability.name);
   };
   if (open) {
@@ -64,7 +68,9 @@ export function ConnectorsSection({ connectors, loading = false, open, settings,
         </Button>
         <p className="mb-1 text-sm text-muted-foreground">{open.plugin.summary}</p>
         <p className="mb-4 text-sm text-muted-foreground">
-          {t("connectors.connects", { what: connects(open).join(", ") })}
+          {t("connectors.connects", {
+            what: connects(open).join(", "),
+          })}
           {" · "}
           {bound.length ? t("connectors.usedFor", { what: bound.join(", ") }) : t("connectors.unused")}
         </p>
@@ -160,10 +166,16 @@ export function ConnectorsSection({ connectors, loading = false, open, settings,
                   </span>
                   <span className="line-clamp-2 text-ui-sm text-muted-foreground">{connector.plugin.summary}</span>
                   <span className="mt-auto text-ui-sm">
-                    {t("connectors.connects", { what: connects(connector).join(", ") })}
+                    {t("connectors.connects", {
+                      what: connects(connector).join(", "),
+                    })}
                   </span>
                   <span className={bound.length ? "text-ui-sm text-ok" : "text-ui-sm text-muted-foreground"}>
-                    {bound.length ? t("connectors.usedFor", { what: bound.join(", ") }) : t("connectors.unused")}
+                    {bound.length
+                      ? t("connectors.usedFor", {
+                          what: bound.join(", "),
+                        })
+                      : t("connectors.unused")}
                   </span>
                 </button>
               </li>

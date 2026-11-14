@@ -652,6 +652,8 @@ const en = {
   "settings.missing": "not there",
   "settings.notSet": "not set",
   "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
+  "settings.severalOn":
+    "Links open in the connector they belong to, and a search asks each one. {adapter}, the first, is the default.",
   "profile.team": "Team",
   "teamGraph.titled": "{name} · Team graph",
   "profile.retiredRole": 'Your saved role "{role}" is no longer offered. Choose one of the four roles in Settings.',
@@ -1486,8 +1488,16 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   return en[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in values ? String(values[name]) : match));
 }
 
-const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 4 });
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", hourCycle: "h23" });
+const usd = new Intl.NumberFormat("en", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 4,
+});
+const dateTime = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  hourCycle: "h23",
+});
 const date = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
 
 export const format = {

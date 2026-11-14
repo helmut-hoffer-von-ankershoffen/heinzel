@@ -247,6 +247,8 @@ def test_system_info_json(app):
         "example": {"greeting": "hi"},
         "system.capability": {
             "ai.access test → ai-access:read": "claude-code → api.anthropic.com",
+            "document read → documents:read": "optional: not connected: no adapter bound",
+            "document search → documents:read": "optional: not connected: no adapter bound",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "org calendar → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",

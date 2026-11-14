@@ -194,6 +194,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/document/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a document's text through the connector it belongs to.
+         * @description Read a document's text through the connector it belongs to.
+         */
+        get: operations["document_read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search every documents connector at once; one that fails or is slow is reported, not fatal.
+         * @description Search every documents connector at once; one that fails or is slow is reported, not fatal.
+         */
+        get: operations["document_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -4952,6 +4992,11 @@ export interface components {
              */
             hosts: string[];
             /**
+             * Links
+             * @description Hosts of the links it opens, which route a link to it when several serve its capability.
+             */
+            links?: string[];
+            /**
              * Modes
              * @description The modes it serves.
              */
@@ -5482,6 +5527,11 @@ export interface components {
          */
         CapabilityInfo: {
             /**
+             * Adapters
+             * @description Every adapter that serves it, the default first: several only where several may (ADR 0161).
+             */
+            adapters?: string[];
+            /**
              * Bound
              * @description The adapter bound in the `[capabilities]` table; none if unbound.
              */
@@ -5491,6 +5541,12 @@ export interface components {
              * @description The modes it has: read, and write if any method writes.
              */
             modes: ("read" | "write")[];
+            /**
+             * Multiple
+             * @description Whether several adapters may serve it at once (ADR 0161).
+             * @default false
+             */
+            multiple: boolean;
             /**
              * Name
              * @description Name in requirements and bindings, e.g. `tracker`.
@@ -7825,6 +7881,99 @@ export interface components {
          * @enum {string}
          */
         Disposition: "rendered" | "skipped" | "failed";
+        /**
+         * Document
+         * @description The text of a document, for reading.
+         */
+        Document: {
+            /**
+             * Ref
+             * @description The reference it was read by: an id or URL in the adapter's notation.
+             */
+            ref: string;
+            /**
+             * Revision
+             * @description Revision read, if the adapter tracks revisions.
+             */
+            revision?: string | null;
+            /**
+             * Source
+             * @description The adapter it was read through, set by the core when several serve documents; adapters leave it.
+             */
+            source?: string | null;
+            /**
+             * Text
+             * @description Content as plain text or Markdown.
+             */
+            text: string;
+            /**
+             * Title
+             * @description Title of the document.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * DocumentHit
+         * @description A document a search found: enough to show it and to read it, not its text (ADR 0161).
+         */
+        DocumentHit: {
+            /**
+             * Ref
+             * @description What `Documents.read` takes for it: an id or URL in the adapter's notation.
+             */
+            ref: string;
+            /**
+             * Snippet
+             * @description A short excerpt around the match, as plain text.
+             */
+            snippet?: string | null;
+            /**
+             * Source
+             * @description The adapter that found it, set by the core; adapters leave it empty.
+             */
+            source?: string | null;
+            /**
+             * Title
+             * @description Title of the document.
+             */
+            title: string;
+            /**
+             * Updated At
+             * @description When it last changed; none if unknown.
+             */
+            updated_at?: string | null;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * DocumentSearch
+         * @description What a search found in every documents connector that is on, and which couldn't answer.
+         */
+        DocumentSearch: {
+            /**
+             * Failures
+             * @description Connectors that couldn't answer, and why; the others' results are still listed.
+             */
+            failures?: components["schemas"]["SourceFailure"][];
+            /**
+             * Hits
+             * @description What the connectors found, in turns, each labelled with its source.
+             */
+            hits: components["schemas"]["DocumentHit"][];
+            /**
+             * Query
+             * @description What was searched for.
+             */
+            query: string;
+        };
         /**
          * Documentation
          * @description The documentation of every plugin installed, and the core's modules when asked for.
@@ -14394,6 +14543,22 @@ export interface components {
             title: string;
         };
         /**
+         * SourceFailure
+         * @description An adapter that couldn't answer a read asked of several at once, and why (ADR 0161).
+         */
+        SourceFailure: {
+            /**
+             * Reason
+             * @description Why it gave nothing: its error, a timeout, or that it can't do this.
+             */
+            reason: string;
+            /**
+             * Source
+             * @description The adapter's name, e.g. `atlassian`.
+             */
+            source: string;
+        };
+        /**
          * SourceSetItem
          * @description One unverified model-suggested fixed read.
          */
@@ -17625,6 +17790,9 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaDocument = components['schemas']['Document'];
+export type SchemaDocumentHit = components['schemas']['DocumentHit'];
+export type SchemaDocumentSearch = components['schemas']['DocumentSearch'];
 export type SchemaDocumentation = components['schemas']['Documentation'];
 export type SchemaDraftAppendTarget = components['schemas']['DraftAppendTarget'];
 export type SchemaDraftPublicationRequest = components['schemas']['DraftPublicationRequest'];
@@ -17815,6 +17983,7 @@ export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
 export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
+export type SchemaSourceFailure = components['schemas']['SourceFailure'];
 export type SchemaSourceSetItem = components['schemas']['SourceSetItem'];
 export type SchemaSourceSetSuggestion = components['schemas']['SourceSetSuggestion'];
 export type SchemaSourceSuggestion = components['schemas']['SourceSuggestion'];
@@ -18161,6 +18330,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_read: {
+        parameters: {
+            query: {
+                /** @description The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`. */
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_search: {
+        parameters: {
+            query: {
+                /** @description What to look for in titles and text. */
+                query: string;
+                /** @description At most this many results. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearch"];
                 };
             };
             /** @description Validation Error */

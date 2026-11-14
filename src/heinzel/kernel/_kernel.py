@@ -369,8 +369,12 @@ class Kernel:
             raise HeinzelError(msg)
         return self.resolve_registered_service(matches[0], record)
 
-    def selected_capability_service[T](self, contract: type[T], capability: str) -> tuple[ModuleRecord, T]:
+    def selected_capability_service[T](
+        self, contract: type[T], capability: str, adapter: str | None = None
+    ) -> tuple[ModuleRecord, T]:
         """Resolve an installed read service from the actual capability binding in this kernel.
+
+        `adapter` picks one of several bound adapters (ADR 0161), as `capability_route` chose it; None is the default.
 
         This identifies registered selection only. The caller must recheck current configuration, source and
         human authorization before use; it establishes neither approval nor publisher authentication.
@@ -378,16 +382,23 @@ class Kernel:
         Raises:
             HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
         """
-        record, _provider = self.selected_capability_provider(capability)
+        record, _provider = self.selected_capability_provider(capability, adapter)
         return record, self.resolve_selected_service(contract, record)
 
-    def selected_capability_provider(self, capability: str) -> tuple[ModuleRecord, ProviderLet]:
+    def selected_capability_provider(
+        self, capability: str, adapter: str | None = None
+    ) -> tuple[ModuleRecord, ProviderLet]:
         """Identify the actual uniquely selected provider with read mode; this is not an access grant.
 
+        `adapter` picks one of several bound adapters (ADR 0161); None, or one bound adapter, is the default.
+
         Raises:
-            HeinzelError: If the read adapter is unavailable or ambiguous.
+            HeinzelError: If the read adapter is unavailable or ambiguous, or `adapter` is not bound.
         """
-        selected = self._capabilities.bound(capability)
+        bound = self._capabilities.bindings(capability)[0]
+        selected = (bound[0] if bound else None) if adapter is None else adapter
+        if selected is not None and selected not in bound:
+            selected = None
         providers = self._capabilities.adapters.get((capability, selected), []) if selected is not None else []
         if len(providers) != 1 or "read" not in providers[0].let.modes:
             msg = "The selected read adapter is unavailable or ambiguous"
@@ -398,6 +409,14 @@ class Kernel:
             msg = "The selected read adapter registration changed"
             raise HeinzelError(msg)
         return record, provider.let
+
+    def capability_route(self, capability: str, method: str, arguments: Mapping[str, object]) -> str | None:
+        """The adapter a call goes to while several serve `capability`; None for the default (ADR 0161).
+
+        Raises:
+            HeinzelError: If the call's item names none or several of the bound adapters.
+        """
+        return self._capabilities.route(capability, method, arguments)
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
@@ -703,8 +722,10 @@ class Kernel:
                 problem = f"another module already provides {let.capability} as {let.adapter!r}"
             elif missing := _missing_methods(let):
                 problem = f"adapter {let.name} lacks {', '.join(missing)} of {let.capability}"
-            elif foreign := self._foreign_settings(let, record):
+            elif foreign := self._foreign_settings(let.configured_hosts, record):
                 problem = f"the hosts of adapter {let.name} read settings {record.qualname} doesn't declare: {foreign}"
+            elif foreign := self._foreign_settings(let.configured_links, record):
+                problem = f"the links of adapter {let.name} read settings {record.qualname} doesn't declare: {foreign}"
             if problem is None:
                 adapters.append(Adapter(module=record.qualname, distribution=record.origin.distribution, let=let))
             elif record.origin.builtin:
@@ -817,11 +838,11 @@ class Kernel:
         """Whether `name` is an installed `ai-models` adapter, so its AI access option runs on hz's own engine."""
         return name is not None and ("ai-models", name) in self._capabilities.adapters
 
-    def _foreign_settings(self, let: ProviderLet, record: ModuleRecord) -> str:
-        """Settings classes the adapter's hosts function reads that its own module doesn't declare, comma-separated."""
-        if let.configured_hosts is None:
+    def _foreign_settings(self, function: Callable[..., Any] | None, record: ModuleRecord) -> str:
+        """Settings classes a hosts or links function reads that the adapter's own module doesn't declare, joined."""
+        if function is None:
             return ""
-        models = settings_parameters(let.configured_hosts).values()
+        models = settings_parameters(function).values()
         return ", ".join(m.__name__ for m in models if self._providers.get(m) != record.qualname)
 
     def _requesters(self) -> tuple[list[Requester], dict[Callable[..., Any], Requester]]:

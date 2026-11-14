@@ -83,7 +83,7 @@ class SelectedWriteService(CapturedWriteService):
         original = self.kernel.capability_settings
         record, registration = self.kernel.selected_capability_provider("documents")
         if (
-            current.bound("documents") != original.bound("documents")
+            current.bound_all("documents") != original.bound_all("documents")
             or current.configured("documents") != original.configured("documents")
             or current.defaulted("documents") != original.defaulted("documents")
             or config.settings(Settings, "hz").disabled_modules != self.kernel.settings.disabled_modules

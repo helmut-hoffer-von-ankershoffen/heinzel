@@ -397,6 +397,12 @@ class ProviderLet(Let):
     configured_hosts: Callable[..., Iterable[str]] | None = None
     """When its settings decide the hosts: a function of the adapter module's settings, injected by type, returning
     host names or URLs. The kernel calls it when it builds the capability matrix and shows only host names."""
+    links: tuple[str, ...] = ()
+    """Hosts of the web addresses people open its items at, e.g. `docs.example.com` (ADR 0161): a link on one of
+    them is routed to this adapter when several serve the capability. Empty when settings decide them, or when its
+    `hosts` are those hosts too."""
+    configured_links: Callable[..., Iterable[str]] | None = None
+    """When its settings decide the link hosts: a function of the adapter module's settings, like `configured_hosts`."""
 
     def __post_init__(self) -> None:
         """Refuse hosts that aren't host names, and a hosts function that reads more than settings.
@@ -412,6 +418,14 @@ class ProviderLet(Let):
                 msg = f"Adapter {self.name!r}: give hosts as a list or as a function of settings, not both"
                 raise ValueError(msg)
             settings_parameters(self.configured_hosts)
+        if bad := [host for host in self.links if host_of(host) != host]:
+            msg = f"Adapter {self.name!r}: links must be host names such as docs.example.com, not {bad}"
+            raise ValueError(msg)
+        if self.configured_links is not None:
+            if self.links:
+                msg = f"Adapter {self.name!r}: give links as a list or as a function of settings, not both"
+                raise ValueError(msg)
+            settings_parameters(self.configured_links)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
