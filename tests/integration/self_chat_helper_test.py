@@ -16,7 +16,7 @@ pytestmark = pytest.mark.integration
 
 def _helper(home: Path, *arguments: str) -> int:
     environment = {**os.environ, "HOME": str(home)}
-    child = subprocess.Popen([sys.executable, "-m", HELPER, *arguments], cwd=home, env=environment)
+    child = subprocess.Popen([sys.executable, "-P", "-m", HELPER, *arguments], cwd=home, env=environment)
     try:
         return child.wait(120)
     finally:
@@ -28,11 +28,11 @@ def _helper(home: Path, *arguments: str) -> int:
 def test_the_helper_boots_with_the_ticks_profile_and_leaves_nothing_without_a_chat_adapter(tmp_path):
     config = Path(os.environ["HZ_CONFIG_HOME"]) / "config.toml"
     config.write_text("[system.notify]\nchat_questions = true\n")
-    assert _helper(tmp_path, "S-gone", "turn-1") == 0
+    assert _helper(tmp_path, "hz-" + "0" * 26, "interactive-" + "a" * 64) == 0
     ledger = Path(os.environ["HZ_STATE_DIR"]) / STATE / "questions.json"
     assert not ledger.exists() or json.loads(ledger.read_text()).get("live", {}) == {}, "no live ask: nothing was asked"
 
 
 def test_the_helper_refuses_arguments_that_are_not_two_ids(tmp_path):
     assert _helper(tmp_path) == 2
-    assert _helper(tmp_path, "S1", "--turn") == 2
+    assert _helper(tmp_path, "hz-" + "0" * 26, "--turn") == 2

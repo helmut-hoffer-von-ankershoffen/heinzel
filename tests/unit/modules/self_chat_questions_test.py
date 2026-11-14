@@ -13,6 +13,7 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError, SelfAnswer, SelfMessage
 from heinzel.kernel._self_chat import SelfChat
+from heinzel.modules.heinzel import _self_chat_helper as helper_module
 from heinzel.modules.heinzel import _self_chat_questions as relay_module
 from heinzel.modules.heinzel._self_chat_questions import (
     ANSWERED_HERE,
@@ -31,6 +32,7 @@ from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts, SessionMessage
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS
 
 pytestmark = pytest.mark.unit
 
@@ -508,10 +510,10 @@ class Launches:
     """Stands in for starting the detached helper: records each command and the log directory, starts nothing."""
 
     def __init__(self) -> None:
-        self.commands: list[tuple[list[str], object]] = []
+        self.commands: list[tuple[list[str], object, object]] = []
 
-    def __call__(self, command: list[str], log_dir: object) -> object:
-        self.commands.append((command, log_dir))
+    def __call__(self, command: list[str], log_dir: object, cwd: object) -> object:
+        self.commands.append((command, log_dir, cwd))
         return SimpleNamespace(pid=4242)
 
 
@@ -533,7 +535,9 @@ def test_in_a_short_lived_process_a_detached_helper_asks_and_the_caller_returns_
     with short_lived_process():
         relay.asked(session, "turn-1")
     assert time.monotonic() - started < 0.2
-    assert launches.commands == [([sys.executable, "-m", HELPER, session, "turn-1"], None)]
+    assert launches.commands == [
+        ([sys.executable, "-P", "-m", HELPER, session, "turn-1"], None, relay.ledger.directory)
+    ], "never imports from a working directory; starts in the relay's private one"
     assert relay.threads == [], "no thread that would die with the tick"
     assert inbox.asked == [], "the helper asks, not the tick"
     relay.asked(session, "turn-1")  # outside the tick (the web app): the worker thread as before
@@ -576,8 +580,8 @@ def test_no_helper_starts_when_nothing_would_be_asked(world, monkeypatch):
 def test_a_helper_that_cannot_start_costs_the_turn_nothing(world, monkeypatch, caplog):
     current, crud, session = world
 
-    def broken(command: list[str], log_dir: object) -> object:
-        del command, log_dir
+    def broken(command: list[str], log_dir: object, cwd: object) -> object:
+        del command, log_dir, cwd
         raise OSError
 
     monkeypatch.setattr(relay_module, "_launch", broken)
@@ -653,7 +657,7 @@ def test_an_ask_another_process_takes_over_is_superseded_silently(world):
 def test_the_helper_process_starts_detached_with_its_output_in_the_log(tmp_path):
     log_dir = tmp_path / "logs"
     code = "import os, sys; sys.stdout.write('out'); sys.stderr.write(f'{os.getsid(0)} {os.getpid()}')"
-    child = relay_module._launch([sys.executable, "-c", code], log_dir)
+    child = relay_module._launch([sys.executable, "-c", code], log_dir, tmp_path)
     try:
         assert child.wait(20) == 0
     finally:
@@ -743,3 +747,76 @@ def test_an_older_ask_ending_keeps_the_newer_asks_live_entry(world):
     relay.threads[1].join(10)
     with relay.ledger.locked() as state:
         assert state["live"] == {}
+
+
+def test_the_helper_never_imports_from_its_working_directory(tmp_path):
+    planted = tmp_path / "cwd" / "heinzel"
+    planted.mkdir(parents=True)
+    marker = tmp_path / "planted-ran"
+    (planted / "__init__.py").write_text(f"open({str(marker)!r}, 'w').write('x')\n")
+    child = relay_module._launch([sys.executable, "-P", "-m", HELPER], None, tmp_path / "cwd")
+    try:
+        child.wait(60)
+    finally:
+        if child.poll() is None:  # only the process this test started
+            child.kill()
+            child.wait(10)
+    assert not marker.exists(), "a heinzel package where the helper starts never runs"
+
+
+def test_the_helpers_log_starts_afresh_once_it_is_too_big(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay_module, "HELPER_LOG_MAX", 10)
+    log = tmp_path / relay_module.HELPER_LOG
+    log.write_text("x" * 11)
+    child = relay_module._launch([sys.executable, "-c", "import sys; sys.stderr.write('new')"], tmp_path, tmp_path)
+    try:
+        assert child.wait(20) == 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+    assert log.read_text() == "new"
+
+
+def _helper_kernel(monkeypatch, run_detached) -> None:
+    relay = SimpleNamespace(run_detached=run_detached)
+    kernel = SimpleNamespace(resolve=lambda _kind: SimpleNamespace(questions=relay))
+    monkeypatch.setattr(helper_module, "boot", lambda cwd: kernel)
+
+
+SESSION_ID = "hz-" + "0" * 26
+TURN_ID = "interactive-" + "a" * 64
+
+
+def test_a_question_the_helpers_own_answer_turn_asks_gets_a_helper_of_its_own(monkeypatch):
+    seen: list[bool] = []
+    _helper_kernel(monkeypatch, lambda session, turn: seen.append(relay_module._SHORT_LIVED.get()))
+    assert helper_module.main([SESSION_ID, TURN_ID]) == 0
+    assert seen == [True]
+
+
+def test_the_helper_takes_only_a_chat_id_and_a_turn_id(monkeypatch):
+    _helper_kernel(monkeypatch, lambda session, turn: pytest.fail("ran"))
+    for arguments in ([], [SESSION_ID], [SESSION_ID, "--x"], ["S1", TURN_ID], [SESSION_ID, "turn-1"]):
+        assert helper_module.main(arguments) == 2
+
+
+def test_a_hung_helper_ends_at_its_lifetime(monkeypatch):
+    ended: list[int] = []
+    released = threading.Event()
+
+    def exit_(code: int) -> None:
+        ended.append(code)
+        released.set()
+
+    monkeypatch.setattr(helper_module, "_exit", exit_)
+    monkeypatch.setattr(helper_module, "lifetime", lambda settings: 0.2)
+    _helper_kernel(monkeypatch, lambda session, turn: released.wait(10))  # a hung adapter, boot or answer turn
+    started = time.monotonic()
+    assert helper_module.main([SESSION_ID, TURN_ID]) == 0
+    assert ended == [helper_module.TIMED_OUT]
+    assert time.monotonic() - started < 5
+
+
+def test_a_helpers_lifetime_is_its_wait_the_grace_one_answer_turn_and_a_margin():
+    settings = QuestionSettings(chat_wait_minutes=7)
+    assert relay_module.lifetime(settings) == 7 * 60 + relay_module.GRACE + MAX_TURN_SECONDS + relay_module.MARGIN

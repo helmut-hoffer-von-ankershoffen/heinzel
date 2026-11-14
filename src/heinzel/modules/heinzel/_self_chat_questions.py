@@ -21,7 +21,9 @@ in the app. An adapter that ignores `cancel` frees its place `GRACE` seconds aft
 A scheduled turn runs in the daemon's tick, a short-lived process that would end the wait with it. There the daemon job
 says so (`short_lived_process`), and the relay hands the ask to a detached helper process of its own
 (`_self_chat_helper`) and returns at once. The helper runs the same relay: the same switch, wait, caps and answer path,
-and it asks only while fewer than `MAX_DETACHED` asks are live across all processes, by the ledger's live entries.
+and it asks only while fewer than `MAX_DETACHED` asks are live across all processes, by the ledger's live entries. It
+starts in the relay's private directory and never imports from a working directory (`-P`), and it ends by
+`lifetime(settings)` at the latest.
 
 A chat that no longer exists keeps nothing: before each question the relay drops the thread and any live ask of chats
 that are gone, here and in the notices' ledger.
@@ -48,6 +50,7 @@ from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger, process_alive
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest
+from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS
 
 if TYPE_CHECKING:
     from heinzel.modules.heinzel._user_chat import UserChatService
@@ -61,6 +64,10 @@ HELPER = "heinzel.modules.heinzel._self_chat_helper"
 """The module the detached helper runs: private, no command of its own."""
 HELPER_LOG = "self-chat-helper.err.log"
 """Where helpers write what they print, under the log directory."""
+HELPER_LOG_MAX = 1_000_000
+"""Bytes the helpers' log may reach before the next helper starts it afresh."""
+MARGIN = 60.0
+"""Seconds a helper has beyond its wait, an adapter's grace and one answer turn: booting, the notes, a slow disk."""
 GRACE = 30.0
 """Seconds an adapter may overrun its wait before the relay stops waiting for it."""
 POLL = 2.0
@@ -85,30 +92,27 @@ def short_lived_process() -> Generator[None]:
         _SHORT_LIVED.reset(token)
 
 
-def _launch(command: list[str], log_dir: Path | None) -> subprocess.Popen[bytes]:
-    """Start the helper in a session of its own with this process's environment; it outlives the caller."""
-    if log_dir is None:
-        return subprocess.Popen(  # noqa: S603 - this interpreter and a fixed module, arguments are ids, no shell
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-        )
-    log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor = os.open(log_dir / HELPER_LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+def _launch(command: list[str], log_dir: Path | None, cwd: Path) -> subprocess.Popen[bytes]:
+    """Start the helper in `cwd`, in a session of its own, with this process's environment; it outlives the caller."""
+    descriptor: int | None = None
+    if log_dir is not None:
+        log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path = log_dir / HELPER_LOG
+        fresh = path.exists() and path.stat().st_size > HELPER_LOG_MAX
+        descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | (os.O_TRUNC if fresh else 0), 0o600)
     try:
         return subprocess.Popen(  # noqa: S603 - this interpreter and a fixed module, arguments are ids, no shell
             command,
+            cwd=cwd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=descriptor,
+            stderr=subprocess.DEVNULL if descriptor is None else descriptor,
             start_new_session=True,
             close_fds=True,
         )
     finally:
-        os.close(descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 class QuestionSettings(BaseModel):
@@ -121,9 +125,14 @@ class QuestionSettings(BaseModel):
     chat_wait_minutes: int = Field(default=5, ge=1, le=60)
 
 
-def _user_settings() -> QuestionSettings:
+def user_settings() -> QuestionSettings:
     """The user's `[system.notify]`, as the notify module reads it: user scope only, never a project's."""
     return QuestionSettings.model_validate(Config.load(Path.home()).section("system.notify"))
+
+
+def lifetime(settings: QuestionSettings) -> float:
+    """The longest a helper may live: its wait in chat, an adapter's grace, one answer turn and a margin; seconds."""
+    return settings.chat_wait_minutes * 60.0 + GRACE + MAX_TURN_SECONDS + MARGIN
 
 
 @dataclass(eq=False)
@@ -154,7 +163,7 @@ class QuestionRelay:
         self_chat: Callable[[], SelfChat | None],
         state_dir: Path,
         *,
-        settings: Callable[[], QuestionSettings] = _user_settings,
+        settings: Callable[[], QuestionSettings] = user_settings,
         forget_notices: Callable[[Callable[[], set[str]]], object] | None = None,
         log_dir: Path | None = None,
     ) -> None:
@@ -198,7 +207,7 @@ class QuestionRelay:
         if full:
             log_event(_EVENTS, "self_chat.question.over_cap", level=logging.INFO, live=MAX_DETACHED)
             return
-        helper = _launch([sys.executable, "-m", HELPER, session, turn], self._log_dir)
+        helper = _launch([sys.executable, "-P", "-m", HELPER, session, turn], self._log_dir, self.ledger.directory)
         self.helpers.append(helper)
         log_event(_EVENTS, "self_chat.helper.started", level=logging.INFO, pid=helper.pid)
 
