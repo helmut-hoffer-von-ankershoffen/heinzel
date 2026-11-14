@@ -611,6 +611,7 @@ function Layout() {
               className={cn(
                 "workspace-panel flex flex-col bg-background",
                 flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
+                flowingWorkspace && selectedPanel === "browser" && "h-full",
                 full
                   ? "absolute inset-0"
                   : beside

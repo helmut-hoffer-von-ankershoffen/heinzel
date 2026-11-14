@@ -124,7 +124,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           ? t("browser.empty")
           : t("browser.unavailable");
   return (
-    <section aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
+    <section aria-label={t("browser.title")} className="flex h-full min-h-0 flex-col bg-background">
       <form
         className="flex h-10 shrink-0 items-center gap-1 px-2"
         onSubmit={(event) => {
