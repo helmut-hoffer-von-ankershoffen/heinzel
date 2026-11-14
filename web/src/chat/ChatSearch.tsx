@@ -167,12 +167,12 @@ export function ChatSearch({
         }
       }}
     >
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           ref={input}
           type="search"
           aria-label={t("chatSearch.field")}
-          className="block min-h-11 min-w-0 flex-1 rounded-lg border bg-background px-3"
+          className="block min-h-11 w-full min-w-0 rounded-lg border bg-background px-3"
           value={query}
           maxLength={200}
           onChange={(event) => {
