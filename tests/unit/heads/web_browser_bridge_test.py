@@ -1,6 +1,7 @@
 """The web head's end of the browser bridge: who may connect as the desktop, and what crosses it (ADR 0162)."""
 
 import json
+import re
 import threading
 
 import pytest
@@ -8,13 +9,16 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from heinzel.heads import api
+from heinzel.heads import api, web
 from heinzel.heads.web import _browser_bridge
 from heinzel.kernel._browser import NEEDS_DESKTOP, BrowserBridge, BrowserCommand, BrowserError
 
 pytestmark = pytest.mark.unit
 
-TOKEN = "t" * 43
+TOKEN = "b" * 43
+"""The bridge token: what only the desktop app's main process and the service it started know."""
+SESSION = "s" * 43
+"""The web app's session token, which every page of the app holds."""
 ORIGIN = "http://testserver"
 HELLO = {"hello": "hz-browser-bridge", "version": 1, "token": TOKEN}
 READY = {"ready": True, "version": 1}
@@ -90,6 +94,7 @@ def test_an_origin_shared_for_the_web_app_is_not_the_desktop(bridge, monkeypatch
     "hello",
     [
         {**HELLO, "token": "wrong"},
+        {**HELLO, "token": SESSION},
         {**HELLO, "token": TOKEN + "x"},
         {**HELLO, "token": None},
         {"token": TOKEN},
@@ -110,13 +115,48 @@ def test_closes_without_the_exact_hello_and_the_session_token(client, bridge, he
     assert not bridge.available
 
 
-def test_refuses_every_desktop_while_the_browser_tools_are_off(monkeypatch):
+@pytest.mark.parametrize(
+    ("token", "bridge"),
+    [(TOKEN, None), (None, BrowserBridge())],
+    ids=["the browser module is not loaded", "no desktop app started this service"],
+)
+def test_refuses_every_socket_without_a_bridge_or_a_bridge_token(monkeypatch, token, bridge):
     monkeypatch.setattr(api, "LOOPBACK", api.LOOPBACK | {"testserver"})
     app = FastAPI()
-    _browser_bridge.add_route(app, token=TOKEN, port=None, bridge=lambda: None)
+    _browser_bridge.add_route(app, token=token, port=None, bridge=lambda: bridge)
     with pytest.raises(WebSocketDisconnect) as refused, connect(TestClient(app)):
         pass
     assert refused.value.code == 1008
+
+
+def test_the_session_token_of_the_web_app_never_opens_the_bridge(make_kernel, monkeypatch):
+    # The whole web head: a page holds SESSION and passes Host and Origin, and is still not the desktop app.
+    monkeypatch.setattr(api, "LOOPBACK", api.LOOPBACK | {"testserver"})
+    kernel = make_kernel(builtins=True)
+    client = TestClient(web.build(kernel, port=None, token=SESSION, static=None, bridge_token=TOKEN))
+    bridge = _browser_bridge.kernel_bridge(kernel)
+    assert bridge is not None
+    with connect(client) as socket:
+        socket.send_text(json.dumps({**HELLO, "token": SESSION}))
+        with pytest.raises(WebSocketDisconnect) as closed:
+            socket.receive_text()
+    assert closed.value.code == 1008
+    assert not bridge.available
+    with connect(client) as socket:
+        socket.send_text(json.dumps(HELLO))
+        assert json.loads(socket.receive_text()) == READY
+        assert bridge.available
+    # Without a bridge token (hz ui serve in a terminal, no desktop app) nothing opens it, not even that token.
+    plain = TestClient(web.build(make_kernel(builtins=True), port=None, token=SESSION, static=None))
+    with pytest.raises(WebSocketDisconnect) as refused, connect(plain):
+        pass
+    assert refused.value.code == 1008
+
+
+def test_a_bridge_token_is_well_formed_and_never_the_session_token():
+    assert _browser_bridge.bridge_token(TOKEN, SESSION) == TOKEN
+    for given in (None, "", "short", "b" * 31, "b" * 257, "b" * 40 + " x", "b" * 40 + "\n", SESSION):
+        assert _browser_bridge.bridge_token(given, SESSION) is None
 
 
 def test_a_command_goes_to_the_desktop_and_its_answer_comes_back(client, bridge):
@@ -128,7 +168,7 @@ def test_a_command_goes_to_the_desktop_and_its_answer_comes_back(client, bridge)
     assert frame == {
         "id": frame["id"],
         "command": "read",
-        "agent": {"id": "chat-1", "name": "chat-1", "kind": "heinzel"},
+        "agent": {"id": "heinzel:chat-1", "name": "chat-1", "kind": "heinzel"},
         "args": {"filter": "all", "tab": "t-00000001"},
     }
     # Events and answers nobody waits for pass without harm.
@@ -211,16 +251,24 @@ def test_a_newer_desktop_replaces_the_older_one(client, bridge):
     second.close()
 
 
-def test_an_actor_name_outside_the_desktop_alphabet_gets_a_stable_id():
-    plain = _browser_bridge.wire_agent("ci-bot", "external")
-    assert plain == {"id": "ci-bot", "name": "ci-bot", "kind": "external"}
-    spaced = _browser_bridge.wire_agent("Release bot\n(2)", "external")
+def test_agent_ids_are_apart_by_kind_and_stable_for_any_name():
+    wire = _browser_bridge.wire_agent
+    assert wire("ci-bot", "external") == {"id": "external:ci-bot", "name": "ci-bot", "kind": "external"}
+    # A token named like a Heinzel's session, or like stdio's `local`, never shares that one's tabs.
+    assert wire("chat-1", "heinzel")["id"] != wire("chat-1", "external")["id"]
+    assert wire("local", "external")["id"] != wire("token:local", "external")["id"]
+    assert wire("token:local", "external")["id"] == "external:token:local"
+    spaced = wire("Release bot\n(2)", "external")
     assert spaced["name"] == "Release bot (2)"
-    assert spaced["id"].startswith("x-")
-    assert len(spaced["id"]) == 34
-    assert spaced == _browser_bridge.wire_agent("Release bot\n(2)", "external")
-    assert spaced["id"] != _browser_bridge.wire_agent("Release bot (2)", "external")["id"]
-    assert len(_browser_bridge.wire_agent("n" * 200, "heinzel")["name"]) == 60
+    assert re.fullmatch(r"external:x-[0-9a-f]{32}", spaced["id"])
+    assert spaced == wire("Release bot\n(2)", "external")
+    assert spaced["id"] != wire("Release bot (2)", "external")["id"]
+    long = wire("n" * 200, "heinzel")
+    assert len(long["name"]) == 60
+    assert re.fullmatch(r"heinzel:x-[0-9a-f]{32}", long["id"])
+    assert all(
+        re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", wire(actor, "external")["id"]) for actor in ("a" * 71, "a" * 72, "ü", "")
+    )
 
 
 def test_a_commit_card_may_wait_for_the_person_and_a_silent_desktop_times_out(client, bridge, monkeypatch):

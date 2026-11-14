@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BridgeError } from "../src/browser-agent.js";
-import { BRIDGE_PATH, createBrowserBridge } from "../src/browser-bridge.js";
+import { BRIDGE_PATH, BRIDGE_TOKEN_ENV, createBrowserBridge, newBridgeToken } from "../src/browser-bridge.js";
 
 const AGENT = { id: "chat-1", name: "Ada", kind: "heinzel" };
-const TOKEN = "s".repeat(40);
+const TOKEN = "b".repeat(43);
+const SESSION = "s".repeat(40);
 
-function fixture({ handle = async () => ({}), connection = () => ({ origin: "http://127.0.0.1:8737", token: TOKEN }) } = {}) {
+function fixture({ handle = async () => ({}), connection = () => ({ origin: "http://127.0.0.1:8737", token: SESSION }) } = {}) {
   const sockets = [], timers = [], handled = [];
   let listener = null;
   const bridge = createBrowserBridge({
     connection,
+    token: TOKEN,
     engine: { handle: (call) => { handled.push(call); return handle(call); } },
     listen: (added) => { listener = added; return () => { listener = null; }; },
     open: (url, origin) => {
@@ -32,7 +34,7 @@ function fixture({ handle = async () => ({}), connection = () => ({ origin: "htt
   return { bridge, sockets, timers, handled, settle, ready, emit: (event) => listener?.(event) };
 }
 
-test("the bridge dials the local web head and proves itself with the session token first", () => {
+test("the bridge dials the local web head and proves itself with the bridge token, never the session token", () => {
   const f = fixture();
   f.bridge.start();
   f.bridge.start();
@@ -43,7 +45,13 @@ test("the bridge dials the local web head and proves itself with the session tok
   assert.deepEqual(socket.sent, []);
   socket.open();
   assert.deepEqual(socket.sent, [{ hello: "hz-browser-bridge", version: 1, token: TOKEN }]);
+  assert(!JSON.stringify(socket.sent).includes(SESSION));
+  assert(!socket.url.includes(TOKEN));
   assert.equal(f.bridge.connected(), false);
+  // A token of its own each start, in the alphabet and length the web head takes.
+  assert.match(newBridgeToken(), /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(newBridgeToken(), newBridgeToken());
+  assert.equal(BRIDGE_TOKEN_ENV, "HEINZEL_UI_BROWSER_BRIDGE");
 });
 
 test("nothing runs before the daemon's exact ready answer", async () => {
@@ -168,7 +176,7 @@ test("without a local service there is no dial, only a later try", () => {
   const f = fixture({ connection: () => current });
   f.bridge.start();
   assert.equal(f.sockets.length, 0);
-  current = { origin: "http://127.0.0.1:9000", token: TOKEN };
+  current = { origin: "http://127.0.0.1:9000", token: SESSION };
   f.timers.shift().run();
   assert.equal(f.sockets[0].url, "ws://127.0.0.1:9000/api/browser-bridge");
 });

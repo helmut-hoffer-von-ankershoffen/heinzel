@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell,
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createBrowserAgent } from "./browser-agent.js";
-import { createBrowserBridge } from "./browser-bridge.js";
+import { BRIDGE_TOKEN_ENV, createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMediaPlayer } from "./media-player.js";
@@ -135,8 +135,11 @@ const mediaPlayer = createMediaPlayer({
 // Agents drive their own tabs through the daemon (ADR 0162): one socket to the local service, and an engine that only
 // ever gets guests of the browser's tab table.
 const ownedWindows = () => BrowserWindow.getAllWindows().filter((window) => windows.has(window) && !window.isDestroyed());
+// Known to this process and to the service it starts, and to no window: the product page holds the session token only.
+const bridgeToken = newBridgeToken();
 const browserBridge = createBrowserBridge({
   connection: () => (stopping || quitting ? null : instance.currentConnection()),
+  token: bridgeToken,
   engine: createBrowserAgent({
     tabs: miniBrowser.agents,
     window: () => {
@@ -147,7 +150,7 @@ const browserBridge = createBrowserBridge({
   listen: miniBrowser.agents.listen,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
-const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
+const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));

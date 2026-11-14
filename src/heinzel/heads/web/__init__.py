@@ -135,6 +135,9 @@ RESUME = "HEINZEL_UI_RESUME"
 """How a restarting `hz ui serve` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
 variable of this process only, read and removed at start; never a setting, so no file can set it."""
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,}$")
+BROWSER_BRIDGE = "HEINZEL_UI_BROWSER_BRIDGE"
+"""The bridge token the desktop app hands the service it starts, for its browser socket (ADR 0162). Like `RESUME`, a
+variable of this process only, read and removed at start, so no shell, agent or page under it ever sees it."""
 Execute = Callable[[str, list[str], dict[str, str]], object]
 """Replaces the process: `os.execve`, or a fake in tests."""
 
@@ -194,6 +197,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     restart: Callable[[], None] | None = None,
     stopping: Stopping | None = None,
     mcp_tokens: McpTokens | None = None,
+    bridge_token: str | None = None,
 ) -> FastAPI:
     """The app `hz ui serve` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
 
@@ -206,6 +210,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         restart: Restarts the server for `POST /api/restart`; None where it can't.
         stopping: Ends the notice stream and the terminals when the server stops; None where nothing stops it.
         mcp_tokens: The tokens of outside agents for `/mcp` (ADR 0162); the user's by default.
+        bridge_token: What the desktop app's browser socket must present (ADR 0162); None refuses every such socket.
 
     Raises:
         HeinzelError: If `static` holds no built app.
@@ -259,7 +264,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )  # before the mount, which takes /api
     _browser_bridge.add_route(
         app,
-        token=token,
+        token=bridge_token,
         port=port,
         bridge=lambda: _browser_bridge.kernel_bridge(kernel),
         stopping=stopping,
@@ -570,6 +575,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         raise HeinzelError(NOT_BUILT)  # before binding a port, so nothing is left open
     # Read and removed at once, so nothing this process starts inherits the token.
     sock, token, resumed = _session(os.environ.pop(RESUME, None), port, waiting)
+    bridge_token = _browser_bridge.bridge_token(os.environ.pop(BROWSER_BRIDGE, None), token)
     browser = browser and not resumed
     bound = int(sock.getsockname()[1])
     handover: list[int] = []
@@ -598,6 +604,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
             static=static,
             restart=restart_server if restartable else None,
             stopping=stopping,
+            bridge_token=bridge_token,
         )
     except BaseException:
         sock.close()
@@ -641,7 +648,9 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         sock.close()
     if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]
-        execute(sys.executable, command, {**os.environ, RESUME: f"{handover[0]}:{token}"})
+        # The desktop app does not start the new process, so its bridge token travels with the socket and the token.
+        resume = {RESUME: f"{handover[0]}:{token}"} | ({BROWSER_BRIDGE: bridge_token} if bridge_token else {})
+        execute(sys.executable, command, {**os.environ, **resume})
 
 
 def _listening_on_loopback(sock: socket.socket) -> bool:

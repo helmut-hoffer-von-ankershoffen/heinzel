@@ -4,11 +4,16 @@ The desktop app's main process dials this socket once it started the local servi
 the browser operations and waits for its answers; the web page is not on this path. While a desktop is connected, it
 is the link of the kernel's `BrowserBridge`; without one every browser operation says it needs the desktop app.
 
-Who may connect: only a client on this computer. The handshake passes the same checks as every API request (a
-loopback Host on our port, our own Origin, no cross-site `Sec-Fetch-Site`), and an origin shared for the web app
-(ADR 0084) is not enough here. The first frame must be exactly
-`{"hello": "hz-browser-bridge", "version": 1, "token": <the session token>}`; a paired device's token (ADR 0046) is
-not accepted, so a phone that may open the app cannot pose as the browser. hz answers
+Who may connect: only the desktop app that started this service. The handshake passes the same checks as every API
+request (a loopback Host on our port, our own Origin, no cross-site `Sec-Fetch-Site`), and an origin shared for the
+web app (ADR 0084) is not enough here. The first frame must be exactly
+`{"hello": "hz-browser-bridge", "version": 1, "token": <the bridge token>}`.
+
+The bridge token is not the session token. The desktop app's main process makes it and hands it to the service it
+starts in the variable `HEINZEL_UI_BROWSER_BRIDGE`, which `hz ui serve` reads and removes at start (and passes on
+when it restarts itself). It is in no page, no URL, no file and no API answer, so a script in the web app, which
+holds the session token, cannot pose as the browser; neither can a paired device (ADR 0046). A service that was not
+started by the desktop app has no bridge token, and this route then refuses everyone. hz answers
 `{"ready": true, "version": 1}`. A newer desktop replaces an older one, whose socket is closed.
 
 Frames after that, bridge protocol v1 (`desktop/src/browser-bridge.js`), exact keys both ways:
@@ -41,8 +46,7 @@ from pydantic import JsonValue
 from heinzel.heads import api
 from heinzel.heads.web._shutdown import Stopping
 from heinzel.kernel import HeinzelError, Kernel
-from heinzel.kernel._browser import BROWSER_FEATURE, NEEDS_DESKTOP, BrowserBridge, BrowserCommand, BrowserError
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel._browser import NEEDS_DESKTOP, BrowserBridge, BrowserCommand, BrowserError
 
 PATH: Final = "/api/browser-bridge"
 VERSION: Final = 1
@@ -75,31 +79,39 @@ CODES: Final = frozenset(
     }
 )
 _AGENT_ID: Final = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+_TOKEN: Final = re.compile(r"[A-Za-z0-9_-]{32,256}")
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f]")
 _NAME_LENGTH: Final = 60
 _MESSAGE_LENGTH: Final = 500
 
 
 def kernel_bridge(kernel: Kernel) -> BrowserBridge | None:
-    """The bridge the browser operations use, or None while they are switched off or their module is not loaded."""
-    if not feature_enabled(kernel.settings, BROWSER_FEATURE):
-        return None
+    """The bridge the browser operations use, or None while their module is not loaded."""
     try:
         return kernel.resolve(BrowserBridge)
     except HeinzelError:
         return None
 
 
+def bridge_token(given: str | None, session_token: str) -> str | None:
+    """The bridge token the desktop app handed over, or None: absent, malformed, or the session token itself."""
+    if given is None or not _TOKEN.fullmatch(given) or hmac.compare_digest(given.encode(), session_token.encode()):
+        return None
+    return given
+
+
 def wire_agent(actor: str, kind: str) -> dict[str, JsonValue]:
     """The agent as the desktop takes it: an id in its alphabet and the name its tabs show.
 
-    An actor name outside the id's alphabet (an MCP token's actor may hold spaces) gets a stable id made from it, so
-    two actors never share tabs and none is refused for its name.
+    The id starts with the kind, so a Heinzel's session and an outside agent never share tabs whatever they are
+    called. An actor name outside the id's alphabet or too long for it gets a stable id made from it, so no two
+    actors share tabs and none is refused for its name.
     """
     name = _CONTROL.sub(" ", actor).strip()[:_NAME_LENGTH] or kind
-    if _AGENT_ID.fullmatch(actor):
-        return {"id": actor, "name": name, "kind": kind}
-    return {"id": f"x-{hashlib.sha256(actor.encode()).hexdigest()[:32]}", "name": name, "kind": kind}
+    identifier = f"{kind}:{actor}"
+    if not _AGENT_ID.fullmatch(identifier):
+        identifier = f"{kind}:x-{hashlib.sha256(actor.encode()).hexdigest()[:32]}"
+    return {"id": identifier, "name": name, "kind": kind}
 
 
 def wire_command(identifier: str, command: BrowserCommand) -> dict[str, JsonValue]:
@@ -214,12 +226,16 @@ def _outcome(message: dict[str, object]) -> dict[str, JsonValue] | BrowserError 
 def add_route(
     app: FastAPI,
     *,
-    token: str,
+    token: str | None,
     port: int | None,
     bridge: Callable[[], BrowserBridge | None],
     stopping: Stopping | None = None,
 ) -> None:
-    """Add `/api/browser-bridge` to `app`. `bridge()` is the kernel's bridge, or None while the tools are off."""
+    """Add `/api/browser-bridge` to `app`.
+
+    `token` is the bridge token, or None when no desktop app started this service. `bridge()` is the kernel's bridge,
+    or None while the browser module is not loaded.
+    """
     current: list[_Desktop] = []
 
     @app.websocket(PATH)
@@ -230,7 +246,7 @@ def add_route(
 async def session(  # noqa: PLR0913 - the socket plus explicit authentication, the bridge and shutdown policy
     websocket: WebSocket,
     *,
-    token: str,
+    token: str | None,
     port: int | None,
     bridge: BrowserBridge | None,
     stopping: Stopping | None = None,
@@ -242,12 +258,12 @@ async def session(  # noqa: PLR0913 - the socket plus explicit authentication, t
     """
     headers = websocket.headers
     problem = api.request_refusal(headers, api.LOOPBACK, port, host_help=api.WEB_HOST_HELP)
-    if bridge is None or problem or headers.get("origin") is None:
+    if token is None or bridge is None or problem or headers.get("origin") is None:
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: only the desktop app on this computer connects.")
         return
     await websocket.accept()
     if not await _hello(websocket, token):
-        await websocket.close(code=POLICY_VIOLATION, reason="Refused: the hello frame or the session token is wrong.")
+        await websocket.close(code=POLICY_VIOLATION, reason="Refused: the hello frame or the bridge token is wrong.")
         return
     desktop = _Desktop(websocket)
     holder = current if current is not None else []
