@@ -57,12 +57,25 @@ from heinzel.kernel._channels import (
 )
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
+    FOUND_MODULE,
     CheckInChatContext,
     CheckInChatContextSource,
     CheckInHistoryMessage,
+    FoundMcpServers,
+    FoundMcpTool,
     McpChatSessions,
 )
-from heinzel.kernel._chat_tools import ChatTool, ChatToolError, chat_tools, direct_tools, pydantic_ai_tools
+from heinzel.kernel._chat_tools import (
+    ChatTool,
+    ChatToolError,
+    FoundTool,
+    TurnTool,
+    chat_tools,
+    direct_tools,
+    found_tools,
+    pydantic_ai_tools,
+    untrusted,
+)
 from heinzel.kernel._config import (
     FILENAME,
     KERNEL_SECTION,
@@ -447,6 +460,7 @@ __all__ = [
     "FILENAME",
     "FLOW_ENDED",
     "FONT_ROUTE",
+    "FOUND_MODULE",
     "GIT_HARDENING",
     "HEINZEL_ID",
     "HOWS",
@@ -595,6 +609,9 @@ __all__ = [
     "Exposed",
     "FinishOn",
     "FlowState",
+    "FoundMcpServers",
+    "FoundMcpTool",
+    "FoundTool",
     "FreeBusy",
     "GitRunner",
     "Grant",
@@ -797,6 +814,7 @@ __all__ = [
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "TurnTool",
     "UninstallResult",
     "UsageCause",
     "UsageEntry",
@@ -832,6 +850,7 @@ __all__ = [
     "feature_enabled",
     "font_stack_problem",
     "format_duration",
+    "found_tools",
     "free_busy_people",
     "git_command",
     "host_maintenance_directory",
@@ -874,6 +893,7 @@ __all__ = [
     "subprocess_environment",
     "tick_interval",
     "toml_value",
+    "untrusted",
     "user_config_dir",
     "using_tick_interval",
     "verify_integration_directory",

@@ -1,6 +1,7 @@
 """Public service contracts for heads that bridge runner chats to other Heinzel modules."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -40,4 +41,51 @@ class McpChatSessions:
 
     def is_check_in(self, session_id: str) -> bool:
         """Whether the existing session is scoped to a personal check-in."""
+        raise NotImplementedError
+
+
+FOUND_MODULE = "mcp:"
+"""How a proposed call of a found MCP server's tool names its source in `ProposedCall.module`: `mcp:<server id>`.
+
+No module's qualified name holds a colon, so a confirmation can never mistake it for one of hz's operations.
+"""
+
+
+@dataclass(frozen=True)
+class FoundMcpTool:
+    """One tool of a found MCP server that is switched on (ADR 0146, 0162), as its server lists it.
+
+    `description` and `schema` are the server's own words: untrusted, like a web page.
+    """
+
+    server: str
+    """The server's id, as `hz system claude list --json` shows it; what a confirmation calls it by."""
+    namespace: str
+    """The server's name in tool names, `mcp__<namespace>__<tool>`; unique among the turn's sources."""
+    name: str
+    """The tool's name on its server."""
+    title: str
+    """The tool's name as the agent calls it: `mcp__<namespace>__<tool>`."""
+    description: str
+    schema: dict[str, Any]
+    read_only: bool
+    """Whether the server marks the tool read-only (`readOnlyHint`); any other or unknown tool is proposed."""
+
+
+class FoundMcpServers:
+    """hz as the MCP client of every found MCP server that is switched on; a module provides it (ADR 0162).
+
+    A base class rather than a protocol, so the kernel injects it by type like any other service.
+    """
+
+    def tools(self) -> list[FoundMcpTool]:
+        """The tools of every usable switched-on server; a server is started the first time its tools are needed."""
+        raise NotImplementedError
+
+    def call(self, server: str, tool: str, arguments: dict[str, Any]) -> str:
+        """Call `tool` of the server `server` and return its text, which is untrusted data.
+
+        Raises:
+            HeinzelError: If the server is off, not usable, fails, times out or the tool reports an error.
+        """
         raise NotImplementedError
