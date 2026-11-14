@@ -175,6 +175,32 @@ def caller_or_none() -> Caller | None:
     return _caller.get()
 
 
+SESSION_ARGUMENTS: Final = ("session", "session_id")
+"""Arguments that name a session as plain data: a Heinzel's turn may name only its own."""
+
+
+def bound_to_caller(policy: AgentWrites, caller: Caller, arguments: Mapping[str, Any]) -> AgentWrites:
+    """Hold a Heinzel's direct write to its own identity: what it names as plain data must be itself.
+
+    A session other than the turn's own is refused. A `heinzel` it names (who did something, in the team's
+    telemetry) cannot be checked against a chat, so that write waits for the person, who sees the name.
+
+    Raises:
+        HeinzelError: If a Heinzel's turn names another session.
+    """
+    if caller.kind != "heinzel":
+        return policy
+    for name in SESSION_ARGUMENTS:
+        value = arguments.get(name)
+        if value is not None and value != caller.session:
+            msg = "This turn can act only for its own session; it named another one"
+            raise HeinzelError(msg)
+    named = arguments.get("heinzel")
+    if policy == "direct" and named is not None and named != caller.id:
+        return "approve"
+    return policy
+
+
 @dataclass(frozen=True, slots=True)
 class Budget:
     """How many direct writes one caller may make: per minute and per day."""

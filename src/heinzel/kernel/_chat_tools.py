@@ -38,6 +38,7 @@ from heinzel.kernel._agent_writes import (
     WriteOutcome,
     agent_writes,
     audit_write,
+    bound_to_caller,
     calling,
 )
 from heinzel.kernel._agents import ChatToolSet, ToolProfile
@@ -200,8 +201,13 @@ class ChatTool:
             HeinzelError: If the write budget is used up or the operation refuses the call.
         """
         record, operation = self.item.record, self.item.operation
-        policy = agent_writes(operation, arguments, builtin=record.origin.builtin)
         caller = Caller("heinzel", self.session, session=self.session, attended=self.attended)
+        declared = agent_writes(operation, arguments, builtin=record.origin.builtin)
+        try:
+            policy = bound_to_caller(declared, caller, arguments)
+        except HeinzelError:
+            audit_write(caller, record.qualname, operation.name, arguments, policy=declared, outcome="refused")
+            raise
 
         def note(outcome: WriteOutcome, error: str | None = None) -> None:
             audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome=outcome, error=error)

@@ -26,6 +26,7 @@ from heinzel.kernel._agent_writes import (
     HUMAN_AUTHENTICATIONS,
     UNATTENDED,
     arguments_digest,
+    bound_to_caller,
     person_caller,
     stricter,
     target_of,
@@ -467,6 +468,27 @@ def test_the_arguments_decide_between_running_and_proposing(kernel, ran):
     assert ran == [("rename", "b-1")]
     assert "waits for the person's confirmation" in rename.call({"entry": "b-1", "url": "https://example.com/"})
     assert ran == [("rename", "b-1")]
+
+
+def test_a_heinzel_names_only_its_own_session_and_cannot_speak_for_another_heinzel(kernel, ran, caplog):
+    session = kernel.resolve(ChatService).open(None).id
+    own = Caller("heinzel", session, session=session)
+    assert bound_to_caller("direct", own, {"session": session, "text": "x"}) == "direct"
+    assert bound_to_caller("direct", own, {"heinzel": session}) == "direct"
+    assert bound_to_caller("direct", own, {"heinzel": "team:weekly-digest"}) == "approve"
+    assert bound_to_caller("approve", own, {"heinzel": "team:weekly-digest"}) == "approve"
+    for name in ("session", "session_id"):
+        with pytest.raises(HeinzelError, match="only for its own session"):
+            bound_to_caller("direct", own, {name: "another-session"})
+    # An outside agent and the person are not a chat: their arguments are theirs.
+    assert bound_to_caller("direct", Caller("local-agent", "mcp-stdio"), {"session": "any", "heinzel": "x"}) == "direct"
+    assert bound_to_caller("direct", Caller("person", "cli"), {"session_id": "any"}) == "direct"
+    # On the path itself: telemetry in another Heinzel's name waits for the person, and nothing is logged as run.
+    drafted, _ = tool(kernel, "report_drafted")
+    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+        answer = drafted.call({"heinzel": "team:weekly-digest", "target": "https://example.com/doc"})
+    assert "waits for the person's confirmation" in answer
+    assert [(line["policy"], line["outcome"]) for line in audit_lines(caplog)] == [("approve", "proposed")]
 
 
 def test_a_failed_direct_write_is_audited_without_its_message(kernel, caplog):
