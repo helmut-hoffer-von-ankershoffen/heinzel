@@ -176,7 +176,7 @@ export function OperationDialog() {
   const stage = run.stage;
   // The exact daemon call is for experts alone. Expert mode as the app already loaded it (the sidebar reads it); the
   // dialog never asks the server itself, so an unknown mode keeps the plain words.
-  const expert = useExpert(false).data?.expert === true;
+  const expert = useExpert(true).data?.expert === true;
   const driven = run.stage !== "idle" && run.driven !== undefined;
   // Focus is never lost when a stage swaps the buttons: a driven run's progress lands on its title, its outcome on
   // the primary button (autoFocus); any other write's outcome on the dialog, the confirmation on Cancel.
