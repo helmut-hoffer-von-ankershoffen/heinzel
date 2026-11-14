@@ -634,3 +634,60 @@ def test_a_process_that_cannot_start_is_unavailable_without_errno_or_path(tmp_pa
 def test_a_cli_error_says_what_to_do():
     words = str(SubscriptionDeniedError("cli-error"))
     assert words.endswith("then send the message again if it is still needed.")
+
+
+def test_requests_the_bridge_cannot_carry_are_refused_before_any_process(tmp_path):
+    from pydantic_ai.messages import ImageUrl
+
+    policy = admission()
+    executable = fake_cli(tmp_path)
+    twice = ModelRequestParameters(function_tools=[ToolDefinition(name="a"), ToolDefinition(name="a")])
+    image = [ModelRequest(parts=[UserPromptPart(content=[ImageUrl(url="https://example.com/a.png")])])]
+    huge = [ModelRequest(parts=[UserPromptPart(content="x" * (97 * 1024))])]
+    for messages, params in ((_message(), twice), (image, parameters()), (huge, parameters())):
+        verifier = FixtureVerifier()
+        model = fixture_model(executable, policy, verifier, lambda: policy)
+        with pytest.raises(SubscriptionDeniedError) as error:
+            asyncio.run(model.request(messages, None, params))
+        assert error.value.reason == "refused"
+        assert verifier.seen == []
+
+
+def test_changes_after_admission_or_between_requests_stop_the_turn(tmp_path):
+    from heinzel.modules.system.runner._process import Outcome
+
+    executable = fake_cli(tmp_path)
+    policy = admission()
+
+    def answering(command, **_kwargs):
+        if command[-1] == "--version":
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        if command[-1] == "--help":
+            return Outcome(0, HELP, "")
+        wire = {"kind": "text", "name": None, "arguments": None, "text": "fine"}
+        return Outcome(0, _result(structured_output=wire), "")
+
+    model = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=answering)
+    asyncio.run(model.request(_message(), None, parameters()))
+    model._blocked = False  # a second request of the same turn, after the executable was replaced
+    executable.write_text(executable.read_text(encoding="utf-8") + "\n# updated\n", encoding="utf-8")
+    with pytest.raises(SubscriptionDeniedError) as error:
+        asyncio.run(model.request(_message(), None, parameters()))
+    assert error.value.reason == "executable-changed"
+
+    class SecondCallRefuses(FixtureVerifier):
+        def verify(self, *args):
+            super().verify(*args)
+            return len(self.seen) < 2
+
+    checks = iter([policy, policy, replace(policy, revision=2)])
+    for verifier, current, reason in (
+        (SecondCallRefuses(), lambda: policy, "access-changed"),
+        (FixtureVerifier(), lambda: next(checks), "access-changed"),
+    ):
+        home = tmp_path / type(verifier).__name__
+        home.mkdir()
+        fresh = fixture_model(fake_cli(home), policy, verifier, current, execute=answering)
+        with pytest.raises(SubscriptionDeniedError) as error:
+            asyncio.run(fresh.request(_message(), None, parameters()))
+        assert error.value.reason == reason
