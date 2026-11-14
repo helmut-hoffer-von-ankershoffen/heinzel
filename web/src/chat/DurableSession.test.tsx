@@ -2162,7 +2162,7 @@ it("does not display another session's action or request its associations", asyn
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });
 
-it.each([false, true])("holds source review while the reply is unsettled (%s)", async (grouped) => {
+it("holds source review while the reply is unsettled", async () => {
   let finishAnswer: (() => void) | undefined;
   let answerStarted = false;
   let displayed = { ...snapshot, messages: [...snapshot.messages] };
@@ -2175,7 +2175,7 @@ it.each([false, true])("holds source review while the reply is unsettled (%s)", 
         {
           section: "hz",
           key: "features",
-          value: grouped ? ["connected_frontdoor"] : [],
+          value: [],
           description: "",
           env: "HZ_FEATURES",
         },
@@ -2231,7 +2231,6 @@ it.each([false, true])("holds source review while the reply is unsettled (%s)", 
     </Providers>,
   );
   fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
-  if (grouped) expect(await screen.findByRole("region", { name: "Review your Heinzel" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText(/^Message /), { target: { value: "Suggest an interval" } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -2351,7 +2350,7 @@ it("opens an owner-search match in its exact helper without confirming any actio
   const target = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
   const { calls } = mockApi({
     ...shell,
-    "/api/system/config/show": historySearchConfig("connected_frontdoor"),
+    "/api/system/config/show": historySearchConfig(),
     "/api/heinzel/session": (request: Request) => {
       const terms = new URL(request.url).searchParams;
       return terms.get("session_id") === target
@@ -2394,7 +2393,6 @@ it("opens an owner-search match in its exact helper without confirming any actio
   await waitFor(() => expect(panel.getByText("Search result").parentElement).toHaveTextContent("Other private match"));
   // The old review links landed on the first Heinzel's page; the jump keeps no review link of it.
   expect(router.state.location.pathname).toBe(`/heinzel/${sessionId}`);
-  expect(screen.getByRole("region", { name: "Review your Heinzel" })).toBeInTheDocument();
   expect([...new URLSearchParams(router.state.location.search)]).toEqual([["chat", target]]);
   expect(router.state.location.state).toBeNull();
   expect(

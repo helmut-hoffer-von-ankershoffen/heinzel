@@ -26,7 +26,6 @@ from heinzel.kernel import (
     record_usage,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
-from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel._autonomous_schedule import (
     AutonomousSchedules,
     ScheduleBinding,
@@ -818,7 +817,6 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
 
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
-    _register_frontdoor_operations(module)
     register_level_operations(module)
     _register_lifecycle_operations(module)
 
@@ -1022,37 +1020,6 @@ def _register_history_search(module: Module) -> None:
     def indexed_conversation_search(service: SessionCrud, request: HistorySearchRequest) -> IndexedHistoryPage:
         """Search a disposable private text index; its coverage is not a completeness guarantee."""
         return indexed_search(service, request)
-
-
-def _register_frontdoor_operations(module: Module) -> None:
-    """Register the bounded prompt frontdoor without changing the CLI parser or granting runtime authority."""
-
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
-    def start_helper(  # noqa: PLR0913, PLR0917 - exact prompt and independent injected services
-        kernel: Kernel,
-        service: SessionCrud,
-        chat: UserChatService,
-        request_id: Request,
-        name: Annotated[str, Field(description="Your Heinzel's display name.", min_length=1, max_length=100)],
-        prompt: Annotated[
-            str,
-            Field(
-                description="The exact first chat message; grants no connected access or schedule.",
-                min_length=1,
-                max_length=32000,
-            ),
-        ],
-    ) -> UserChatAnswer:
-        """Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-
-        Raises:
-            HeinzelError: If the feature is off, request changed or selected model access is unavailable.
-        """
-        if not feature_enabled(kernel.settings, "connected_frontdoor"):
-            msg = "The connected Heinzel frontdoor is not enabled"
-            raise HeinzelError(msg)
-        created = service.new_chat(request_id, name, initial_message=prompt)
-        return asyncio.run(chat.answer(created.session_id, request_id))
 
 
 _HUMAN_ORIGINS = frozenset({"cli", "api-bearer", "web-session", "web-device"})

@@ -43,7 +43,6 @@ function Records({ snapshot }: { snapshot: Snapshot }) {
 function Reviews({ snapshot, busy }: { snapshot: Snapshot; busy: boolean }) {
   const sessionId = snapshot.session_id;
   const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
-  const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const capturedWrites = usePreviewFeature("captured_writes");
   const [, setParams] = useSearchParams();
   const [showProposal, setShowProposal] = useState(false);
@@ -84,31 +83,14 @@ function Reviews({ snapshot, busy }: { snapshot: Snapshot; busy: boolean }) {
   return (
     <section aria-label={t("page.reviews")} className="flex flex-col gap-3">
       <h2 className="text-base font-semibold">{t("page.reviews")}</h2>
-      {connectedFrontdoor && (
-        <section
-          aria-label={t("page.reviews.grouped")}
-          className="space-y-3 rounded-lg border border-border p-3 text-sm"
-        >
-          <h3 className="font-medium">{t("page.reviews.grouped")}</h3>
-          <p>{t("page.reviews.separately")}</p>
-          <p className="font-medium">{t("page.reviews.part1")}</p>
-          {terms}
-          {termsSummary}
-          <p className="font-medium">{t("page.reviews.part2")}</p>
-          {sourceReview}
-          <p className="font-medium">{t("page.reviews.part3")}</p>
-          {schedules}
-          <p>{t("page.reviews.own")}</p>
-        </section>
-      )}
-      {!connectedFrontdoor && terms}
+      {terms}
       <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
-      {!connectedFrontdoor && termsSummary}
+      {termsSummary}
       <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
-      {!connectedFrontdoor && sourceReview}
+      {sourceReview}
       <ContractHistory contracts={snapshot.contracts ?? []} />
       <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />
-      {!connectedFrontdoor && schedules}
+      {schedules}
       {capturedWrites && (
         <CapturedWriteActivity key={sessionId} sessionId={sessionId} conversationBusy={busy} onReview={openChat} />
       )}

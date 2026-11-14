@@ -104,7 +104,6 @@ Your Heinzelmännchen: durable Heinzels that draft your team's recurring work fo
 | Revoke future recurring draft and notice effects under the shared document fence. | `hz heinzel revoke-release-workflow` | — | — | `POST /api/heinzel/revoke-release-workflow` | yes |  |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
-| Create a Heinzel, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
 | Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now. | `hz heinzel level` | — | — | `GET /api/heinzel/level` |  |  |
 | Set this Heinzel's level, provider or exact model against the exact profile revision you saw. | `hz heinzel set-level` | — | — | `POST /api/heinzel/set-level` | yes |  |
 | Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it. | `hz heinzel retire` | — | — | `POST /api/heinzel/retire` | yes |  |
