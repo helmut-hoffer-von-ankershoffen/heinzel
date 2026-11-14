@@ -27,17 +27,9 @@ struct WorkspaceView: WebRepresentable {
             source: Self.externalLinkScript, injectionTime: .atDocumentStart,
             forMainFrameOnly: true, in: .defaultClient
         ))
-        // Keep the native browser in debug builds until WebKit egress probes pass.
-        #if DEBUG
-        let browserEnabled = ProcessInfo.processInfo.environment["HZ_SPIKE_BROWSER"] == "1"
-        #else
-        let browserEnabled = false
-        #endif
-        if browserEnabled {
-            configuration.userContentController.addScriptMessageHandler(
-                context.coordinator, contentWorld: .page, name: "heinzelBrowser"
-            )
-        }
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelBrowser"
+        )
         var audioMember = ""
         #if canImport(ScreenCaptureKit)
         if #available(iOS 27, *) {
@@ -62,7 +54,6 @@ struct WorkspaceView: WebRepresentable {
         #else
         let chrome = ""
         #endif
-        let browserMember = browserEnabled ? "browser," : ""
         configuration.userContentController.addUserScript(WKUserScript(
             source: """
             (() => {
@@ -93,7 +84,7 @@ struct WorkspaceView: WebRepresentable {
                 };
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) \(browserMember) \(audioMember) })
+                    value: Object.freeze({ \(chrome) browser, \(audioMember) })
                 });
             })();
             """,
