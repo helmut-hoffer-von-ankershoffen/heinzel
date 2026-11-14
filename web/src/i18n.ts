@@ -1364,6 +1364,7 @@ const en = {
   "browser.commitAsk": "{name} asks for your yes:",
   "browser.commitApprove": "Approve",
   "browser.commitDecline": "Decline",
+  "browser.commitNotice": "{name} waits for your OK in the browser",
   "browser.commitWaiting": "waiting for your answer",
   "browser.agentsActive": "an agent is using a tab",
   "browser.agentsWaiting": "an agent is waiting for your answer",

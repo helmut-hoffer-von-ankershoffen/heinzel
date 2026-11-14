@@ -23,7 +23,7 @@ import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
-import { useBrowserAgents } from "./browserAgents";
+import { useBrowserAgents, useCommitAttention } from "./browserAgents";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -492,6 +492,11 @@ function Layout() {
       selectPanel("browser");
     }
   };
+  // An agent's commit waits at most two minutes: the card comes to the person, not the other way round.
+  useCommitAttention(browserAgents.waiting, browserEnabled && browserOpen && selectedPanel === "browser", () => {
+    setBrowserOpen(true);
+    selectPanel("browser");
+  });
   const toggleTerminal = (canClose: boolean) => {
     if (canClose && terminalOpen && selectedPanel === "terminal") {
       setTerminalOpen(false);
@@ -747,7 +752,7 @@ function Layout() {
             onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
             onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
-            browserAgents={browserAgents}
+            browserAgents={browserAgents.mark}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => toggleTerminal(beside)}
           />,
