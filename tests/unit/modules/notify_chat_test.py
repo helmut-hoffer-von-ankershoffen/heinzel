@@ -183,7 +183,7 @@ def test_the_daemon_tick_sends_too(make):
     service.settings = service.settings.model_copy(update={"chat_notifications": True})
     service._refresh_settings = lambda: service.settings
     assert service.post_native() == 0
-    assert len(inbox.sent) == 1
+    _wait_for(lambda: len(inbox.sent) == 1)  # in the background, after the pop-ups
 
 
 def test_two_senders_never_send_one_notice_twice(make):
@@ -240,3 +240,47 @@ def test_chat_status_names_the_connector_and_what_it_can_carry(make):
 
     service.self_chat = broken
     assert service.chat_status().detail == "The chat connector can't start."
+
+
+class Hung(Inbox):
+    """A chat adapter that never answers."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = threading.Event()
+
+    def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+        self.release.wait(30)
+        return super().notify_self(text, thread=thread, context=context)
+
+
+def test_a_hung_chat_never_holds_the_pop_ups_or_the_tick(make, monkeypatch):
+    from heinzel.kernel import _self_chat
+
+    monkeypatch.setattr(_self_chat, "NOTIFY_WAIT", 0.2)
+    hung = Hung()
+    service = make(hung)
+    _emit(service)
+    service.settings = service.settings.model_copy(update={"chat_notifications": True})
+    service._refresh_settings = lambda: service.settings
+    started = time.monotonic()
+    service.post_native()
+    assert time.monotonic() - started < 1
+    _wait_for(lambda: not service._chat_busy.locked())
+    with service.chat_ledger.locked() as state:
+        assert list(state["sent"].values()) == ["failed"], "a chat that didn't answer in time costs that message"
+    hung.release.set()
+
+
+def test_a_send_a_finished_process_left_claimed_is_taken_over(make):
+    inbox = Inbox()
+    service = make(inbox)
+    notice = _emit(service)
+    assert notice is not None
+    service.settings = service.settings.model_copy(update={"chat_notifications": True})
+    with service.chat_ledger.locked() as state:
+        state["sent"][notice.id] = "sending:999999999"  # a tick that ended mid-send
+    assert service.post_chat() == 1
+    with service.chat_ledger.locked() as state:
+        state["sent"][notice.id] = f"sending:{__import__('os').getpid()}"  # this process is still at it
+    assert service.post_chat() == 0

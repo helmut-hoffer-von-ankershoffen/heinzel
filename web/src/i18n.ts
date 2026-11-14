@@ -974,7 +974,7 @@ const en = {
     "Each notice that pops up also goes to {connector}: its title and text, at the same time, under the same rules.",
   "selfChat.questions": "Questions also in chat",
   "selfChat.questionsHelp":
-    "A Heinzel's question also goes to {connector}. The first answer counts, here or there; after {minutes} min it stays open here.",
+    "A Heinzel's message that asks you something goes to {connector} as written, also quoting what it read. The first answer counts; after {minutes} min it stays open here.",
   "selfChat.answeredIn": "Answered in {connector}",
   "selfChat.answeredInChat": "Answered in chat",
   "notify.open": "Notifications",

@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from heinzel.modules.heinzel._self_chat_questions import QuestionRelay
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
+_ANSWERED = _HEADS | {"self-chat"}
+"""Who a person's own turn comes from: a head, or the owner's answer in chat (ADR 0160); never the daemon."""
 # A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
 _MAX_REQUESTS = 12
 MAX_TURN_SECONDS = 120
@@ -309,7 +311,7 @@ class UserChatService:
         matches = [event for event in events if event.kind == "message.accepted" and event.key == f"message-{request}"]
         allowed_origins = _HEADS
         if allow_daemon_origin:
-            allowed_origins = _HEADS | frozenset(["daemon"])
+            allowed_origins = _ANSWERED | frozenset(["daemon"])
         if len(matches) != 1 or matches[0].data.get("origin") not in allowed_origins:
             msg = "This message has no authenticated user-chat origin"
             raise HeinzelError(msg)
@@ -457,7 +459,7 @@ class UserChatService:
         context = self.current.context()
         origin = context.authentication
         repo = self._crud.repository
-        if origin not in _HEADS or context.principal.id != repo.principal_id:
+        if origin not in _ANSWERED or context.principal.id != repo.principal_id:
             return  # only the turn's own owner's request sets it aside
         turn = interactive_turn_id(request)
         with repo.control_writer(session) as writer:
@@ -640,7 +642,7 @@ class UserChatService:
                 )
                 or event.data.get("message_id") != request
                 or event.data.get("owner") != repo.principal_id
-                or event.data.get("origin") not in _HEADS
+                or event.data.get("origin") not in _ANSWERED
             ):
                 msg = "This turn has an invalid resolution record"
                 raise HeinzelError(msg)
@@ -683,7 +685,7 @@ class UserChatService:
                         len(resolutions) != 1
                         or resolutions[0].data.get("message_id") != request
                         or resolutions[0].data.get("owner") != repo.principal_id
-                        or resolutions[0].data.get("origin") not in _HEADS
+                        or resolutions[0].data.get("origin") not in _ANSWERED
                         or resolutions[0].data.get("unstarted", False) != unstarted
                         or resolutions[0].seq <= accepted.seq
                         or (not unstarted and resolutions[0].seq <= starts[0].seq)

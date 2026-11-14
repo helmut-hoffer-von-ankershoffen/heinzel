@@ -72,8 +72,10 @@ off and the rate limit apply. Recording a notice starts a background sender and 
 sends too.
 
 Each notice is claimed in a private ledger (`self-chat/notices.json` under the state directory, 0600) before
-the adapter is called, so two processes never send it twice; a failed send is logged, not retried. Only notices that
-became due in the last hour are sent, so switching it on replays no backlog. A Heinzel's notices share one thread per
+the adapter is called, so two processes never send it twice; a failed send is logged, not retried, and a claim left by a
+process that ended mid-send is taken over by the next sender. Every call to the adapter waits at most 15 seconds; the
+daemon's tick sends after its pop-ups, in the background. Only notices that became due in the last hour are sent, so
+switching it on replays no backlog. A Heinzel's notices share one thread per
 Heinzel chat; the context is the Heinzel's name, else the notice's kind.
 
 **Questions also in chat.** `[system.notify] chat_questions` (off by default) and `chat_wait_minutes` (5 by default, 1
@@ -108,8 +110,9 @@ approved in the app like any other. Approving through `ask_self` would be a late
 review.
 
 **What leaves the machine, and only when switched on.** The bound chat connector receives: a notice's title, its text
-(which may repeat what a plugin or a Heinzel wrote) and the web app's local link or a command; a question's text; the
-context label (a Heinzel's name or a notice's kind); and short follow-up notes. No file contents, tool output,
+(which may repeat what a plugin or a Heinzel wrote) and the web app's local link or a command; the whole reply that
+asks a question, as the app shows it, up to 3000 characters, which may quote what the Heinzel read from connected
+sources; the context label (a Heinzel's name or a notice's kind); and short follow-up notes. No file contents, tool output,
 credentials or approval previews. The switch descriptions say the text goes to the connector.
 
 ### Consequences

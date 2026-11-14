@@ -167,7 +167,7 @@ does not inherit it.
 | `repeat_hours` | `HZ_SYSTEM_NOTIFY__REPEAT_HOURS` | `24` | The same notice again within this many hours is dropped. Never read from a project's hz.toml. |
 | `native` | `HZ_SYSTEM_NOTIFY__NATIVE` | `True` | Let the daemon show system notifications (Heinzel Notifier on macOS, notify-send on Linux) when no web app is open. Never read from a project's hz.toml. |
 | `chat_notifications` | `HZ_SYSTEM_NOTIFY__CHAT_NOTIFICATIONS` | `False` | Also send every notice that pops up to your own direct messages, through your chat connector, if it can. The app keeps showing them. Never read from a project's hz.toml. |
-| `chat_questions` | `HZ_SYSTEM_NOTIFY__CHAT_QUESTIONS` | `False` | Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it can. The first answer counts, in the app or in chat. Never read from a project's hz.toml. |
+| `chat_questions` | `HZ_SYSTEM_NOTIFY__CHAT_QUESTIONS` | `False` | Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it can: its whole message, which may quote what it read. The first answer counts, in the app or in chat. Never read from a project's hz.toml. |
 | `chat_wait_minutes` | `HZ_SYSTEM_NOTIFY__CHAT_WAIT_MINUTES` | `5` | How long a question waits for your answer in chat; then it stays open in the app. Never read from a project's hz.toml. |
 
 ## `[system.plugin]`

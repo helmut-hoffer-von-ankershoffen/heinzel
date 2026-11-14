@@ -572,7 +572,12 @@ class NotifyService(Notifications):
         if check_health:
             self._health_resolved_at = now
         self.resolve(check_health=check_health)
-        self.post_chat()
+        try:
+            return self._post_due_natively()
+        finally:
+            self.kick_chat()  # after the pop-ups, in the background: a slow chat never holds them or the tick
+
+    def _post_due_natively(self) -> int:
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
         # Claimed before they pop up, under the store's lock, so a web app can't show the same ones meanwhile.
