@@ -181,7 +181,8 @@ Your configuration files stay; `hz system config show` lists them before you uni
 
 `hz --command-tree` prints every enabled command, argument, option and operation input/output schema as JSON,
 including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
-The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
+The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree, and the [MCP reference](docs/MCP_REFERENCE.md) lists every MCP tool with its input schema; CI checks both for drift.
+`hz system tools` prints every operation with its CLI command, MCP tool, REST endpoint, parameters and result (`--output text|markdown|yaml|json`, `--head cli|mcp|rest`, `--module NAME`).
 
 <img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints the pixel-art swarm of three Heinzelmännchen above the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 

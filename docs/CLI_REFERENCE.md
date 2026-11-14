@@ -2085,6 +2085,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `sound`: (expert) Pick the web app&#x27;s soundscape:...
 * `state`: (expert) Note how hz is used on this...
 * `theme`: (expert) Pick how the web app looks: the...
+* `tools`: (expert) List every operation and tool...
 * `ui`: (expert) List what modules add to the web...
 * `uninstall`: Uninstall the verified Heinzel tool...
 * `update`: Update Heinzelmännchen, every plugin and...
@@ -4328,6 +4329,25 @@ $ hz system theme use [OPTIONS] {name}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system tools`
+
+(expert) List every operation and tool with its heads, parameters and result, in four formats.
+
+**Usage**:
+
+```console
+$ hz system tools [OPTIONS]
+```
+
+**Options**:
+
+* `--output <text|markdown|yaml|json>`: How to write the list; the CLI&#x27;s own `--format json` wraps the whole result instead.  [default: text]
+* `--head <all|cli|mcp|rest>`: Only what this head exposes; its input schemas too.  [default: all]
+* `--module <list[str]>`: Only these modules and the ones under them, e.g. `system.config`.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

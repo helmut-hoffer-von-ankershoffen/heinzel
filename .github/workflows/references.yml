@@ -1,0 +1,54 @@
+name: References
+
+# MODULES.md, CLI_REFERENCE.md, MCP_REFERENCE.md and CONFIGURATION.md are generated from the code and stay in the repository, where
+# GitHub and the site show them. A pull request never edits them (they would conflict in every PR that adds an
+# operation): after each merge this workflow regenerates them on main and commits them as one bot commit, then checks
+# that nothing lags behind.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - scripts/generate_docs.py
+      - .github/workflows/references.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: references
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    name: Regenerate the references
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # A commit of this workflow changes only docs/, which the paths above leave out: no loop.
+    permissions:
+      contents: write # push one commit of the regenerated references to main
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: true # the push below; this job runs no pull-request code
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false # this job pushes a commit, and a poisoned cache must not be able to reach it
+      - name: Regenerate
+        run: uv run --quiet --frozen --no-build python scripts/generate_docs.py --references
+        env:
+          HZ_SYSTEM_AGENT__SKILL_DIRS: ""
+      - name: Commit the changes as one bot commit
+        run: |
+          if git diff --quiet -- docs/MODULES.md docs/CLI_REFERENCE.md docs/MCP_REFERENCE.md docs/CONFIGURATION.md; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/MODULES.md docs/CLI_REFERENCE.md docs/MCP_REFERENCE.md docs/CONFIGURATION.md
+          git commit -m "docs: regenerate the module, CLI and MCP references"
+          git push origin HEAD:main
+      - name: Check that none lags behind
+        run: uv run --quiet --frozen --no-build python scripts/generate_docs.py --check --references
+        env:
+          HZ_SYSTEM_AGENT__SKILL_DIRS: ""

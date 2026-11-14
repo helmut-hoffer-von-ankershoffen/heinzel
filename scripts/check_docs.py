@@ -30,6 +30,7 @@ BASELINE = Path("docs/.docs-check-baseline.txt")
 ROOT_DOCUMENTS = ("README.md", "INTENT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "PYPI.md")
 GENERATED = (
     "docs/CLI_REFERENCE.md",
+    "docs/MCP_REFERENCE.md",
     "docs/MODULES.md",
     "docs/CONFIGURATION.md",
     "docs/catalog/*",

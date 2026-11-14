@@ -2,6 +2,8 @@
 
 - docs/MODULES.md: every module with its operations in every head (CLI, MCP, REST, web), settings and health checks.
 - docs/CLI_REFERENCE.md: Typer's own `utils docs` output for the CLI built from the built-in modules.
+- docs/MCP_REFERENCE.md: every MCP tool with its description and JSON input schema, from the renderer of
+  `hz system tools` (heinzel.modules.system._tools), which also writes the head columns of MODULES.md.
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
@@ -10,7 +12,12 @@
 - docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
   `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
 
-Usage: uv run python scripts/generate_docs.py [--check]
+The four references (MODULES, CLI_REFERENCE, MCP_REFERENCE, CONFIGURATION) are written by the References workflow
+on main after each merge, as one bot commit, so no pull request touches them and they cannot conflict. `--check`
+therefore leaves them out (a pull request is not stale because main's references lag); `--check --references` checks
+only them, which the workflow does after it commits and the drift test does on main.
+
+Usage: uv run python scripts/generate_docs.py [--check] [--references]
 """
 
 # Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
@@ -30,12 +37,11 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry
-from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
-from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import discover, env_prefix
 from heinzel.modules.graph import TeamGraphDocument
 from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
+from heinzel.modules.system._tools import mcp_reference, tools
 from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +57,8 @@ REPO_URL = f"https://github.com/{OWNER}/{REPOSITORY}"
 BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
 SCENES = DOCS / "scenes.toml"
+#: Written on main by .github/workflows/references.yml, never by a pull request.
+REFERENCE_FILES = ("MODULES.md", "CLI_REFERENCE.md", "MCP_REFERENCE.md", "CONFIGURATION.md")
 
 MODULES_HEADER = """\
 # Modules
@@ -148,7 +156,7 @@ def _anchor(qualname: str) -> str:
 def module_catalog() -> str:
     """A section per module: summary, operations in every head, settings and health checks."""
     k = kernel()
-    surfaces = {head: exposed(k, head) for head in ("cli", "mcp", "api", "web")}
+    entries = tools(k)
     lines = [MODULES_HEADER, "| Module | What it does |", "| --- | --- |"]
     lines += [f"| [`{r.qualname}`](#{_anchor(r.qualname)}) | {r.module.summary} |" for r in k.modules]
     lines.append("")
@@ -162,25 +170,19 @@ def module_catalog() -> str:
                 ),
                 "",
             ]
-        operations = [item for item in surfaces["cli"] if item.record.qualname == record.qualname]
+        operations = [e for e in entries if e.module == record.qualname]
         if operations:
             lines += [
                 "| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |",
                 "| --- | --- | --- | --- | --- | --- | --- |",
             ]
-            for item in operations:
-                in_mcp = any(o.operation is item.operation for o in surfaces["mcp"])
-                in_api = any(o.operation is item.operation for o in surfaces["api"])
-                in_web = any(o.operation is item.operation for o in surfaces["web"])
-                verb = "GET" if item.operation.read_only else "POST"
-                path = "/".join(item.path)
+            for e in operations:
                 lines.append(
-                    f"| {item.operation.summary} | `hz {' '.join(command_words(item.path))}` | "
-                    f"{f'`{item.name}`' if in_mcp else '—'} | "
-                    f"{f'`{verb} /{path}`' if in_api else '—'} | "
-                    f"{f'`{verb} /api/{path}`' if in_web else '—'} | "
-                    f"{'' if item.operation.read_only else 'yes'} | "
-                    f"{'expert' if item.operation.audience == 'expert' else ''} |"
+                    f"| {e.summary} | {f'`{e.heads.cli}`' if e.heads.cli else '—'} | "
+                    f"{f'`{e.heads.mcp}`' if e.heads.mcp else '—'} | "
+                    f"{f'`{e.heads.rest}`' if e.heads.rest else '—'} | "
+                    f"{f'`{e.heads.web}`' if e.heads.web else '—'} | "
+                    f"{'' if e.read_only else 'yes'} | {'expert' if e.audience == 'expert' else ''} |"
                 )
             lines.append("")
         settings = [let for owner, let in k.lets(SettingsLet) if owner.qualname == record.qualname]
@@ -352,6 +354,7 @@ def main() -> int:
     outputs = {
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
+        DOCS / "MCP_REFERENCE.md": mcp_reference(tools(kernel(), head="mcp")),
         DOCS / "CONFIGURATION.md": configuration_reference(),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
         DOCS / "schemas" / "team-graph-1.json": model_schema(
@@ -382,6 +385,11 @@ def main() -> int:
     readme = TEMPLATE / "README.md.jinja"
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()
+    references = {DOCS / name for name in REFERENCE_FILES}
+    if "--references" in sys.argv:
+        outputs = {path: content for path, content in outputs.items() if path in references}
+    elif check:
+        outputs = {path: content for path, content in outputs.items() if path not in references}
     stale = [path for path, content in outputs.items() if not path.exists() or path.read_text("utf-8") != content]
     if check:
         if stale:

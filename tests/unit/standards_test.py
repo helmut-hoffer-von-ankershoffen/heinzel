@@ -106,6 +106,7 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    ".github/workflows/references.yml": "regenerates core's references on main; plugins build theirs",
     "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/ubuntu_browser_mirror.mk": "runs the Core browser CI mirror helper; plugin workflows omit that setup",
@@ -140,7 +141,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".claude/skills/scaffold-plugin/SKILL.md": "creates plugins; a plugin updates itself with update-template",
     "scripts/attributions.py": "writes ATTRIBUTIONS.md of the core and its web app; plugins bundle nothing",
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
-    "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
+    "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, MCP, module and configuration reference",
     "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
     "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
