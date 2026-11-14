@@ -5,19 +5,19 @@ import { type StreamEvent, stream } from "./stream";
 
 export const chatKey = (id: string) => ["system", "runner", "chat", "show", id] as const;
 
-/** The model and effort a turn asks for; kept by the session for its later messages too. */
-export type ModelChoice = { model?: string | null; effort?: string | null };
-
+/**
+ * Send one message. The web chat has no model picker (ADR 0158): every message asks for the default model and
+ * effort, which also clears a per-chat model an earlier release's picker left on the session.
+ */
 export async function sendChat(
   session: string,
   message: string,
   onEvent: (event: StreamEvent) => void,
-  choice: ModelChoice = {},
   requestId?: string,
 ): Promise<SchemaChatSession> {
   return stream<SchemaChatSession>(
     "/system/runner/chat/send",
-    { session, message, model: choice.model, effort: choice.effort, request_id: requestId },
+    { session, message, model: "", effort: "", request_id: requestId },
     onEvent,
   );
 }

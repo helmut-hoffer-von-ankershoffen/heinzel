@@ -516,7 +516,7 @@ function DurableSessionView({
           },
           { replace: true },
         );
-        const answered = await sendChat(opened.id, requestedMessage, () => {}, {}, stableRequestId);
+        const answered = await sendChat(opened.id, requestedMessage, () => {}, stableRequestId);
         rememberChat(answered, opened.id);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {
@@ -563,7 +563,7 @@ function DurableSessionView({
         if (!agentPending && !updateComposer({ agentPending: request })) {
           throw new Error("The message could not be preserved in this tab.");
         }
-        const answered = await sendChat(agentChatId, request.message, () => {}, {}, request.request_id);
+        const answered = await sendChat(agentChatId, request.message, () => {}, request.request_id);
         rememberChat(answered, agentChatId);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {

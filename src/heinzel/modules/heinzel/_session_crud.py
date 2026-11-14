@@ -39,7 +39,7 @@ from heinzel.modules.heinzel._activity import (
     recently,
     run_counts,
 )
-from heinzel.modules.heinzel._levels import HeinzelIntelligence
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, LevelChange
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
     ContractVersion,
@@ -630,7 +630,7 @@ class SessionCrud(ApprovalIssuer):
         *,
         name: str | None = None,
         appearance: HeinzelAppearance | None = None,
-        intelligence: HeinzelIntelligence | None = None,
+        level: LevelChange | None = None,
     ) -> SessionSnapshot:
         """Replace explicit personal fields against the exact version the user saw, including default inheritance.
 
@@ -646,8 +646,9 @@ class SessionCrud(ApprovalIssuer):
             "name": name,
             "appearance": appearance.model_dump(mode="json") if appearance is not None else None,
         }
-        if intelligence is not None:  # only then, so an older retry's request hash is unchanged
-            request["intelligence"] = intelligence.model_dump(mode="json")
+        if level is not None:  # only then, so an older retry's request hash is unchanged
+            # The change as asked, not the merged result, so an exact retry replays after later changes.
+            request["level"] = level.model_dump(mode="json")
         digest = _digest(request)
         with self.repository.control_writer(session_id) as writer:
             events = self.repository.control_read(session_id).events
@@ -659,13 +660,13 @@ class SessionCrud(ApprovalIssuer):
             else:
                 current, revision = self._profile(session_id, events)
                 if type(expected_revision) is not int or expected_revision != revision:
-                    what = "saving your appearance" if intelligence is None else "setting its level"
+                    what = "saving your appearance" if level is None else "setting its level"
                     msg = f"This Heinzel's profile changed; reload before {what}"
                     raise HeinzelError(msg)
                 profile = PersonalProfile(
                     name=current.name if name is None else name,
                     appearance=current.appearance if appearance is None else appearance,
-                    intelligence=current.intelligence if intelligence is None else intelligence,
+                    intelligence=current.intelligence if level is None else level.applied(current.intelligence),
                 )
                 body = immutable_body(writer, "profile", profile.model_dump(mode="json"), control=True)
                 writer.append(

@@ -169,13 +169,15 @@ class ScheduleReviewPage(BaseModel):
     next_cursor: int | None = Field(default=None, ge=0, description="Cursor for the next page, if present.")
 
 
-def model_binding_fingerprint(chat: UserChatService) -> str:
+def model_binding_fingerprint(chat: UserChatService, session: str | None = None) -> str:
     """Observe selected CLI/settings or plugin model, not provider account identity or publisher authenticity.
+
+    With `session`, the model the Heinzel's level chooses (ADR 0158).
 
     Raises:
         HeinzelError: If selected access cannot be observed.
     """
-    terms = chat.binding_terms()
+    terms = chat.binding_terms(session)
     return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -212,7 +214,7 @@ class AutonomousSchedules:
             or latest.revision != binding.contract_revision
             or latest.preview_sha256 != binding.contract_sha256
             or not ContractReview(self.crud).applied(session, binding.contract_request_id)
-            or binding.access_fingerprint != model_binding_fingerprint(self.chat)
+            or binding.access_fingerprint != model_binding_fingerprint(self.chat, session)
             or latest.max_usd is not None
             or binding.timeout_seconds > latest.timeout_seconds
         ):
@@ -269,8 +271,8 @@ class AutonomousSchedules:
             cadence_seconds=cadence_seconds,
             max_requests=max_requests,
             timeout_seconds=timeout_seconds,
-            access="plugin-models" if self.chat.plugin_selected() is not None else "claude-code-subscription",
-            access_fingerprint=model_binding_fingerprint(self.chat),
+            access="plugin-models" if self.chat.plugin_selected(session) is not None else "claude-code-subscription",
+            access_fingerprint=model_binding_fingerprint(self.chat, session),
             connected_grant=connected_grant,
             notification_policy=notification_policy,
             quiet_hours=quiet_hours,

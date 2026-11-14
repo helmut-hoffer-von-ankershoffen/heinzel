@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, Module
 from heinzel.kernel import Effort
-from heinzel.modules.heinzel._levels import HeinzelIntelligence, Level, TurnLevel
+from heinzel.modules.heinzel._levels import Level, LevelChange, TurnLevel
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
-from heinzel.modules.heinzel._user_chat import UserChatService
+from heinzel.modules.heinzel._user_chat import NO_CHAT_ACCESS, UserChatService
 
 Request = Annotated[RequestId, Field(description="A stable client request id; reuse it only for an exact retry.")]
 Identity = Annotated[SessionId, Field(description="The stable personal session id returned by new-chat or sessions.")]
@@ -57,6 +57,8 @@ def level_view(chat: UserChatService, crud: SessionCrud, session_id: str) -> Lev
             )
         elif plugin is None and (choice := chat.claude_level(session_id)) is not None:
             runs_as = LevelRunsAs(provider=intelligence.provider, model=choice.model, effort=None, level=choice.record)
+        elif plugin is None:
+            problem = NO_CHAT_ACCESS
     except HeinzelError as exc:
         problem = str(exc)
     return LevelView(
@@ -68,31 +70,6 @@ def level_view(chat: UserChatService, crud: SessionCrud, session_id: str) -> Lev
         runs_as=runs_as,
         problem=problem,
     )
-
-
-def changed(
-    current: HeinzelIntelligence, level: Level | None = None, provider: str | None = None, model: str | None = None
-) -> HeinzelIntelligence:
-    """`current` with the given fields set; an empty provider or model clears it.
-
-    Raises:
-        HeinzelError: If nothing is given, or a provider or model isn't a valid name.
-    """
-    if level is None and provider is None and model is None:
-        msg = "Couldn't set this Heinzel's level: give a level, a provider or an exact model"
-        raise HeinzelError(msg)
-    fields = current.model_dump()
-    if level is not None:
-        fields["level"] = level
-    if provider is not None:
-        fields["provider"] = provider or None
-    if model is not None:
-        fields["model"] = model or None
-    try:
-        return HeinzelIntelligence.model_validate(fields)
-    except ValueError:
-        msg = "Couldn't set this Heinzel's level: the provider or model isn't a valid name"
-        raise HeinzelError(msg) from None
 
 
 def register_level_operations(module: Module) -> None:
@@ -127,7 +104,6 @@ def register_level_operations(module: Module) -> None:
         ] = None,
     ) -> LevelView:
         """Set this Heinzel's level, provider or exact model against the exact profile revision you saw."""
-        current, _revision = service.intelligence(session_id)
-        wanted = changed(current, level, provider, model)
-        service.profile(session_id, request_id, expected_revision, intelligence=wanted)
+        change = LevelChange(level=level, provider=provider, model=model)
+        service.profile(session_id, request_id, expected_revision, level=change)
         return level_view(chat, service, session_id)

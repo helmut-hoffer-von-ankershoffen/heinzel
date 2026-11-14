@@ -65,6 +65,8 @@ MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
 PLUGIN_TURN_TOKENS = 1_000_000
 """The most tokens one turn on a plugin's model may move, input and output, across its requests (ADR 0159)."""
+NO_CHAT_ACCESS = "The selected AI access is not the supported Claude Code subscription"
+"""Why a turn can't start on an access that is neither Claude Code nor a plugin's models."""
 BUILD_TIMEOUT = 30.0
 """How long a plugin may take to build its model; building must not call it."""
 
@@ -308,6 +310,8 @@ class UserChatService:
     def claude_level(self, session: str) -> LevelChoice | None:
         """The Claude Code model a turn of the Heinzel runs on, by Claude Code's own levels (ADR 0158).
 
+        None without a Heinzel, or when the access isn't Claude Code.
+
         Raises:
             HeinzelError: If the Heinzel has an exact model, which Claude Code's chat can't be held to.
         """
@@ -317,18 +321,24 @@ class UserChatService:
         from heinzel.kernel._claude_code import LEVEL_MODELS  # noqa: PLC0415 - Claude Code's levels only on its path
 
         config = self._load()
-        provider = self._access(config, intelligence) or "claude-code"
+        provider = self._access(config, intelligence)
+        if provider != "claude-code":  # not Claude Code: its levels don't apply, and `selected` refuses the turn
+            return None
         return resolve(provider, intelligence.level, LEVEL_MODELS, [], exact=intelligence.model)
 
-    def binding_terms(self) -> dict[str, object]:
-        """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.
+    def binding_terms(self, session: str | None = None) -> dict[str, object]:
+        """What an approved schedule or draft is bound to: the access and model it runs on now, never a credential.
+
+        With `session`, the Heinzel's level chooses the model as its turns do (ADR 0158), so a level or provider
+        change after approval changes the terms whenever it changes the model.
 
         Raises:
             HeinzelError: If the selected access cannot be observed.
         """
-        plugin = self.plugin_selected()
+        plugin = self.plugin_selected(session)
         if plugin is not None:
             return plugin.terms()
+        level = self.claude_level(session) if session is not None else None
         limits, runner = self.selected()
         path = self.which(runner.claude_executable)
         if path is None:
@@ -341,6 +351,7 @@ class UserChatService:
             "budget_mode": limits.subscription_budget_mode,
             "model": runner.model,
             "runner_revision": runner.revision,
+            **({"level_model": level.model} if level is not None and level.model is not None else {}),
         }
 
     def selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
@@ -349,7 +360,7 @@ class UserChatService:
         runner = self._runner_settings.snapshot(config)
         limits = config.settings(HeinzelSettings, "heinzel")
         if choices.ai_access != "claude-code" or choices.agent_runner != "claude-code":
-            msg = "The selected AI access is not the supported Claude Code subscription"
+            msg = NO_CHAT_ACCESS
             raise HeinzelError(msg)
         if limits.subscription_budget_mode != "plan-unknown":
             msg = "Claude subscription usage has unknown dollar cost and cannot enforce the configured USD caps"
@@ -568,6 +579,7 @@ class UserChatService:
         Raises:
             HeinzelError: If the selected executable is unavailable or not signed in.
         """
+        intelligence = await asyncio.to_thread(self._intelligence, session)
         level = await asyncio.to_thread(self.claude_level, session)
         initial, runner = self.selected()
         found = self.which(runner.claude_executable)
@@ -600,6 +612,7 @@ class UserChatService:
                 and selected == runner
                 and resolved is not None
                 and Path(resolved).resolve() == executable
+                and self._intelligence(session) == intelligence  # a level or provider change ends the turn
             )
 
         verifier = _ClaudeVerifier(unchanged, executable, digest, policy)

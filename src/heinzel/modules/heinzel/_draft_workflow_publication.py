@@ -245,7 +245,7 @@ class DraftWorkflowPublication:
             channel_target=ChannelTarget.model_validate_json(target.model_dump_json()),
             notice_binding=ports.notice.digest,
             notice_target=OwnerNoticeTarget.model_validate_json(notice.model_dump_json()),
-            model_binding=model_binding_fingerprint(self.chat),
+            model_binding=model_binding_fingerprint(self.chat, session),
         )
         self.journal.record(
             session,
@@ -275,7 +275,7 @@ class DraftWorkflowPublication:
             or identity != terms.feed_baseline.identity
             or ports.notice.call(lambda service: service.owner_target()) != terms.notice_target
             or ports.share.call(lambda service: service.delivery_target()) != terms.channel_target
-            or model_binding_fingerprint(self.chat) != terms.model_binding
+            or model_binding_fingerprint(self.chat, terms.session_id) != terms.model_binding
         ):
             msg = "The reviewed draft workflow source, account or exact scope changed"
             raise HeinzelError(msg)
