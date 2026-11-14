@@ -281,7 +281,7 @@ def test_python_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, mon
     sync, bootstrap, tests = [command for command, _python in calls]
     assert sync[:2] == ["uv", "sync"]
     assert "--no-build" in sync
-    assert "--no-install-package=pyyaml" in sync
+    assert sync[-2:] == ["--no-install-package", "pyyaml"]
     assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
     assert tests[-1] == "tests/unit/focused_coverage_test.py"
     assert {python for _, python in calls} == {"3.15"}

@@ -2,13 +2,20 @@
 # Python 3.15 has no upstream PyYAML wheel. Build its hash-pinned pure-Python distribution explicitly,
 # without credentials, in a disposable environment whose backend wheels are also hash-pinned.
 set -euo pipefail
+# `bootstrap-pyyaml.sh --wheel-dir DIR` only builds the wheel into DIR (for UV_FIND_LINKS); it installs nothing.
+wheel_dir=""
+if [ "${1:-}" = "--wheel-dir" ]; then
+  wheel_dir="${2:?--wheel-dir needs a directory}"
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 source_url=https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
 source_sha=d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
 project_python="${UV_PROJECT_ENVIRONMENT:-.venv}/bin/python"
+checker="$project_python"
+[ -z "$wheel_dir" ] || checker=python3
 # A newly generated project resolves its own lock. Never replace that selection with a different reviewed version.
-"$project_python" -I -S - "$source_url" "$source_sha" <<'PY'
+"$checker" -I -S - "$source_url" "$source_sha" <<'PY'
 import sys
 import tomllib
 from pathlib import Path
@@ -32,6 +39,11 @@ uv pip install --python "$work/backend/bin/python" --no-build --require-hashes \
 unset PYYAML_FORCE_CYTHON
 PYYAML_FORCE_LIBYAML=0 uv build --wheel --no-build-isolation --python "$work/backend/bin/python" \
   --out-dir "$work/dist" "$work/pyyaml-6.0.3.tar.gz"
+if [ -n "$wheel_dir" ]; then
+  mkdir -p "$wheel_dir"
+  cp "$work"/dist/*.whl "$wheel_dir"/
+  exit 0
+fi
 uv pip install --python "$project_python" --no-build --no-deps "$work"/dist/*.whl
 # The wheel was installed from a file, so uv would see the lock's registry package as changed and rebuild it from the
 # source distribution on the next `uv sync` or `uv run`. Recording it as the registry package it was built from keeps

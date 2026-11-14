@@ -115,7 +115,7 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int =
         return [["make", "e2e-prepare"], [*pytest, junit, *ids]]
     if kind == "pytest":
         ids = _paths(selector, "tests/", kind, max_ids)
-        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
+        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test", "--no-install-package", "pyyaml"]
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
         return [sync, [*pytest, junit, *ids]]
     if kind == "vitest":

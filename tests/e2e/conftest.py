@@ -46,3 +46,30 @@ def fixture_managed_python(tmp_path_factory):
         pytest.fail("uv did not select the private managed fixture interpreter")
     external_python(python)
     return directory, python
+
+
+@pytest.fixture(scope="session", autouse=True)
+def reviewed_pyyaml(tmp_path_factory):
+    """Python 3.15 has no PyYAML wheel: uv installs in these tests find the reviewed build, not a source build."""
+    import fcntl
+
+    shared = tmp_path_factory.getbasetemp().parent
+    wheels = shared / "reviewed-pyyaml"
+    with (shared / "reviewed-pyyaml.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not (wheels / "complete").exists():
+            root = Path(__file__).resolve().parents[2]
+            subprocess.run(
+                ["bash", str(root / "scripts/bootstrap-pyyaml.sh"), "--wheel-dir", str(wheels)],
+                cwd=root,
+                check=True,
+                timeout=300,
+            )
+            (wheels / "complete").touch()
+    previous = os.environ.get("UV_FIND_LINKS")
+    os.environ["UV_FIND_LINKS"] = str(wheels)
+    yield
+    if previous is None:
+        os.environ.pop("UV_FIND_LINKS", None)
+    else:
+        os.environ["UV_FIND_LINKS"] = previous

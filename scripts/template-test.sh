@@ -29,6 +29,11 @@ PY
 
 unset VIRTUAL_ENV UV_FROZEN # the rendered plugin has no lockfile yet, and is not this project
 [[ ! -e uv.lock ]] # a fresh project: the documented `make setup` creates the lock itself, then syncs frozen
+# Python 3.15 has no PyYAML wheel: lock first (what `make setup` does when there is no lock) and install the reviewed,
+# hash-pinned build before the sync, so nothing builds PyYAML from source with an unpinned backend.
+uv lock --quiet
+uv venv --quiet --allow-existing
+bash "$repo_root/scripts/bootstrap-pyyaml.sh"
 make setup
 [[ -f uv.lock ]]
 make fix

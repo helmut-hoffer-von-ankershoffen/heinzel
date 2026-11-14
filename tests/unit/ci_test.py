@@ -113,7 +113,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "docs.yml": {
         "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
-        "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
+        "uv run --quiet --frozen --no-build --no-install-package pyyaml --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
         ),
     },
@@ -1874,3 +1874,80 @@ def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
         for step in job.get("steps", []):
             if "uv sync" in step.get("run", ""):
                 assert "--no-install-package pyyaml" in step["run"], f"{name}: syncs PyYAML from source"
+
+
+def _project_syncing(command: str) -> bool:
+    """Whether a `uv sync` or `uv run --no-build` line installs the project's locked dependencies."""
+    if not re.search(r"\buv (sync|run)\b", command) or "uvx" in command:
+        return False
+    if any(flag in command for flag in ("--no-project", "--script", "--no-sync", "UV_NO_SYNC")):
+        return False
+    return "uv sync" in command or "--no-build" in command
+
+
+def _commands_that_sync_the_project() -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
+        for name, job in jobs.items():
+            if str(job.get("env", {}).get("UV_NO_SYNC")) == "1":
+                continue
+            for step in job.get("steps", []):
+                lines = step.get("run", "").replace("\\\n", " ").splitlines()
+                found.extend((f"{path.name}:{name}", line) for line in lines)
+    for path in [REPO / "Makefile", *sorted((REPO / "scripts").glob("*.sh")), *sorted((REPO / "scripts").glob("*.mk"))]:
+        lines = path.read_text(encoding="utf-8").replace("\\\n", " ").splitlines()
+        found.extend((f"{path.name}:{number}", line) for number, line in enumerate(lines, 1))
+    return [(where, line) for where, line in found if _project_syncing(line)]
+
+
+def test_no_project_sync_on_python_3_15_builds_or_requires_a_pyyaml_source_build():
+    """`--no-build` fails to resolve PyYAML (no 3.15 wheel) even when it is installed; each sync must leave it out."""
+    offenders = [(where, line) for where, line in _commands_that_sync_the_project() if "--no-build" in line]
+    assert [(w, line) for w, line in offenders if "--no-install-package" not in line or "pyyaml" not in line] == []
+    from importlib import util
+
+    spec = util.spec_from_file_location("focused_job", REPO / "scripts" / "focused_job.py")
+    module = util.module_from_spec(spec)
+    sys.modules["focused_job"] = module
+    spec.loader.exec_module(module)
+    sync = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))[0]
+    assert sync[-2:] == ["--no-install-package", "pyyaml"]
+
+
+def test_every_job_with_its_own_uv_setup_builds_the_reviewed_pyyaml_before_it_syncs():
+    """The composite action does it for its callers; a workflow that sets uv up itself must do it explicitly."""
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
+        for name, job in jobs.items():
+            steps = job.get("steps", [])
+            direct = [i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")]
+            runs = [step.get("run", "") for step in steps]
+            if not direct or job.get("if") is False or not any(_project_syncing(run) or "make " in run for run in runs):
+                continue
+            bootstrap = [i for i, run in enumerate(runs) if "bootstrap-pyyaml.sh" in run or "make pyyaml" in run]
+            where = f"{path.name}:{name} syncs without the reviewed PyYAML"
+            assert bootstrap, where
+            assert bootstrap[0] > direct[0], where
+
+
+def test_no_script_or_workflow_resolves_a_fresh_environment_that_would_build_pyyaml():
+    """A fresh environment (`uv run --isolated`) resolves from the index: PyYAML would build from source."""
+    texts = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in [*(REPO / ".github" / "workflows").glob("*.yml"), *(REPO / "scripts").glob("*.sh")]
+    }
+    for name, text in texts.items():
+        assert "--isolated" not in text, f"{name}: use a throwaway environment with the reviewed PyYAML"
+    # the local multi-Python target is the one exception, and CI never calls it
+    assert not any("test-all-pythons" in text for text in texts.values())
+    rendered = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
+    assert rendered.index('bash "$repo_root/scripts/bootstrap-pyyaml.sh"') < rendered.index("\nmake setup")
+
+
+def test_end_to_end_installs_resolve_the_reviewed_pyyaml_wheel():
+    conftest = (REPO / "tests" / "e2e" / "conftest.py").read_text(encoding="utf-8")
+    assert "def reviewed_pyyaml(" in conftest
+    assert '"UV_FIND_LINKS"' in conftest
+    assert "autouse=True" in conftest
+    assert "--wheel-dir" in (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")

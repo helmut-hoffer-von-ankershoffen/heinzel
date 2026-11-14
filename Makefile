@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -51,6 +51,10 @@ MANAGED_TYPES := "&managed-types=$(MANAGED) exec tsc --noEmit --project ."
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+pyyaml: ## Build the reviewed PyYAML into .venv (Python 3.15 has no wheel), so no later sync builds it from source
+	@uv venv --quiet --allow-existing --python 3.15
+	@bash scripts/bootstrap-pyyaml.sh
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet

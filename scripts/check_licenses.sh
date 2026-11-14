@@ -8,8 +8,16 @@ set -euo pipefail
 allowed="$(grep -v '^\s*#' .license-allowlist | grep -v '^\s*$' | paste -sd ';' -)"
 # The owning project is MIT. Concrete plugins are checked in their own projects.
 ours="$(uv version --color never | cut -d' ' -f1)"
+# A throwaway environment instead of an isolated `uv run`: Python 3.15 has no PyYAML wheel, and this one gets the
+# reviewed, hash-pinned PyYAML build instead of a source build with an unpinned backend.
+environment="$(mktemp -d)/licenses"
+trap 'rm -rf "$(dirname "$environment")"' EXIT
+uv venv --quiet "$environment"
+UV_PROJECT_ENVIRONMENT="$environment" bash "$(dirname "$0")/bootstrap-pyyaml.sh"
+UV_PROJECT_ENVIRONMENT="$environment" uv sync --quiet --frozen --no-dev --no-install-package pyyaml
+uv pip install --quiet --python "$environment/bin/python" "pip-licenses>=5,<6"
 # shellcheck disable=SC2086 # one package name per word
-uv run --quiet --no-dev --isolated --with "pip-licenses>=5,<6" pip-licenses \
+"$environment/bin/pip-licenses" \
   --from=mixed --partial-match --allow-only="$allowed" \
   --ignore-packages $ours pip-licenses prettytable wcwidth \
   --format=plain >/dev/null
