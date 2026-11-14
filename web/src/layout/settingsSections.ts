@@ -284,6 +284,8 @@ export type SettingsNav = {
     plugin: SchemaPluginInfo;
     groups: string[];
   })[];
+  /** Whether the installed plugins are still loading: connectors and undeclared plugin pages aren't known yet. */
+  loading: boolean;
 };
 
 /** A section id from a link (`?settings=`), as the page it opens: a page's id, a section it owns, or an old name. */
@@ -315,12 +317,19 @@ export function sortedWithinGroups<T extends { title: string; heading: Heading }
   );
 }
 
-/** Sorts the setting groups into pages, Connectors by the plugin that provides each module. */
+/**
+ * Sorts the setting groups into pages, Connectors by the plugin that provides each module.
+ *
+ * `plugins` is undefined while the installed plugins load (`hz system plugin list` can take seconds). Until then a
+ * plugin page the server didn't declare isn't placed: whether it belongs under Connectors, Organisation (a layer) or
+ * Preferences depends on its plugin, so guessing would show it in the wrong place and then move it.
+ */
 export function settingsNav(
   groups: string[],
-  plugins: SchemaPluginInfo[],
+  loaded: SchemaPluginInfo[] | undefined,
   navigation: SchemaNavEntry[] = [],
 ): SettingsNav {
+  const plugins = loaded ?? [];
   const owner = new Map<string, SchemaPluginInfo>();
   for (const plugin of plugins) for (const module of plugin.modules) owner.set(group(module), plugin);
   const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
@@ -331,6 +340,7 @@ export function settingsNav(
     if (!entry.settings || entry.problem) return [];
     const plugin = plugins.find((item) => item.distribution === entry.plugin || item.name === entry.plugin);
     if (plugin && (!plugin.enabled || plugin.error)) return [];
+    if (!entry.declared && loaded === undefined) return [];
     const layer = plugin?.layers?.[0];
     // Legacy provider metadata must not move host settings out of their existing conceptual pages.
     if (
@@ -367,6 +377,7 @@ export function settingsNav(
         groups: of(plugin).filter((section) => !extra.some((page) => owns(page, section))),
       }))
       .sort(byTitle),
+    loading: loaded === undefined,
   };
 }
 

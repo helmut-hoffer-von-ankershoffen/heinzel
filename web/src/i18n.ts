@@ -943,6 +943,7 @@ const en = {
   "connectors.title": "Connectors",
   "connectors.intro": "Plugins that connect hz to your tools. Open one for its settings.",
   "connectors.none": "No connector installed yet. Find some under Plugins → Discover.",
+  "connectors.loading": "Looking for installed connectors…",
   "connectors.connects": "Connects: {what}",
   "connectors.usedFor": "In use for {what}",
   "connectors.signIn": "Sign-in",
