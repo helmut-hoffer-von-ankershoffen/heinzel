@@ -40,6 +40,7 @@ from heinzel import (
 )
 from heinzel.kernel import Effort, clean_text
 from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers
+from heinzel.modules.ai.access._engine_history import SessionHistory, capped, session_of, stopped
 from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError
 from heinzel.modules.ai.access._file_tools import run as run_file_tool
 from heinzel.modules.ai.access._mcp_stdio import McpError, StdioMcp, tool_name
@@ -49,8 +50,6 @@ from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
-
-    from heinzel.modules.ai.access._engine_history import SessionHistory
 
 ENGINE = "engine"
 MAX_REQUESTS = 50
@@ -79,18 +78,14 @@ ModelSource = Callable[[str | None, Effort | None], EngineModel]
 """Gives the session's model for an optional model override and effort; tests pass their own."""
 
 
-def _load() -> Config:
-    return Config.load()
-
-
 class SelectedModels:
     """The model of the selected AI access option, as hz's engine runs it."""
 
-    def __init__(self, kernel: Kernel, current: CurrentUser, load: Callable[[], Config] = _load) -> None:
-        """Resolve from `kernel` for the owner `current`, reading the selection afresh through `load`."""
+    def __init__(self, kernel: Kernel, current: CurrentUser, load: Callable[[], Config] | None = None) -> None:
+        """Resolve from `kernel` for the owner `current`, reading the selection afresh: the kernel's files again."""
         self._kernel = kernel
         self._current = current
-        self._load = load
+        self._load = load or kernel.config.reread
 
     def __call__(self, model: str | None, effort: Effort | None) -> EngineModel:
         """The session's model: a plugin's chosen one, or the Model API option's configured one.
@@ -257,7 +252,7 @@ class EngineRunner:
         current: CurrentUser,
         progress: Progress = SILENT,
         models: ModelSource | None = None,
-        history: "SessionHistory | None" = None,
+        history: SessionHistory | None = None,
     ) -> None:
         """Create the runner; the kernel, the owner and progress are injected, `models` and `history` in tests."""
         self._kernel = kernel
@@ -266,10 +261,8 @@ class EngineRunner:
         self._progress = progress
 
     @property
-    def _history(self) -> "SessionHistory":
-        """The chat sessions' histories, in hz's state directory; loads Pydantic AI only when a run needs it."""
-        from heinzel.modules.ai.access._engine_history import SessionHistory  # noqa: PLC0415 - only during a run
-
+    def _history(self) -> SessionHistory:
+        """The chat sessions' histories, in hz's state directory, made when a run first needs them."""
         if self._given_history is None:
             self._given_history = SessionHistory(self._kernel.settings.state_dir / "ai" / "engine-sessions")
         return self._given_history
@@ -345,8 +338,6 @@ class EngineRunner:
         return messages, rest[new + len(BLOCK) :]
 
     def _keep(self, turn: "Turn", messages: "list[ModelMessage]", answer: str, context_window: int | None) -> None:
-        from heinzel.modules.ai.access._engine_history import capped  # noqa: PLC0415 - only during a run
-
         if turn.chat is None:
             return
         # A stopped turn's answer is empty: the chat shows it as "(no answer: …)", and that is what continues it.
@@ -355,8 +346,6 @@ class EngineRunner:
 
     async def _turn(self, session: _Session, chosen: EngineModel, turn: "Turn", emit: Emit) -> AgentResult:
         import pydantic_ai  # noqa: PLC0415 - a heavy import, only during a run
-
-        from heinzel.modules.ai.access._engine_history import stopped  # noqa: PLC0415
 
         pydantic_ai.BANNER_ENABLED = False  # hz owns its output: stdout may be the MCP head's protocol
         failed = AgentResult(runner=ENGINE, model=chosen.label, status="failed", duration_seconds=0, billing="api")
@@ -458,8 +447,6 @@ def _too_wide(directory: Path) -> bool:
 
 
 def _chat_session(tools: ToolProfile) -> str | None:
-    from heinzel.modules.ai.access._engine_history import session_of  # noqa: PLC0415 - only during a run
-
     return session_of([server.command for server in tools.mcp_servers.values()])
 
 

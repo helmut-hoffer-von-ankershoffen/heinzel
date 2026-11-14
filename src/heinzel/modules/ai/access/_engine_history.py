@@ -20,17 +20,10 @@ import re
 import secrets
 import stat
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelMessagesTypeAdapter,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    ToolCallPart,
-    UserPromptPart,
-)
+if TYPE_CHECKING:  # Pydantic AI loads only when a run uses the history, not when hz starts
+    from pydantic_ai.messages import ModelMessage
 
 MAX_MESSAGES = 200
 """The most messages kept for a model whose context window is unknown."""
@@ -52,8 +45,10 @@ def session_of(commands: list[list[str]]) -> str | None:
     return None
 
 
-def _turns(messages: list[ModelMessage]) -> list[list[ModelMessage]]:
+def _turns(messages: "list[ModelMessage]") -> "list[list[ModelMessage]]":
     """The messages split into turns, each starting at a request that carries a user prompt."""
+    from pydantic_ai.messages import ModelRequest, UserPromptPart  # noqa: PLC0415 - only during a run
+
     turns: list[list[ModelMessage]] = []
     for message in messages:
         starts = isinstance(message, ModelRequest) and any(isinstance(p, UserPromptPart) for p in message.parts)
@@ -63,8 +58,10 @@ def _turns(messages: list[ModelMessage]) -> list[list[ModelMessage]]:
     return turns
 
 
-def capped(messages: list[ModelMessage], context_window: int | None) -> list[ModelMessage]:
+def capped(messages: "list[ModelMessage]", context_window: int | None) -> "list[ModelMessage]":
     """`messages` without their oldest whole turns, until they fit the window's share or `MAX_MESSAGES`."""
+    from pydantic_ai.messages import ModelMessagesTypeAdapter  # noqa: PLC0415 - only during a run
+
     turns = _turns(messages)
 
     def fits() -> bool:
@@ -79,13 +76,15 @@ def capped(messages: list[ModelMessage], context_window: int | None) -> list[Mod
     return [m for turn in turns for m in turn]
 
 
-def stopped(messages: list[ModelMessage], partial: str, why: str) -> list[ModelMessage]:
+def stopped(messages: "list[ModelMessage]", partial: str, why: str) -> "list[ModelMessage]":
     """The history of a turn that stopped: what it had, ending in what it had answered so far, marked stopped.
 
     A trailing response with tool calls that never got their results is dropped, so the history stays one a model
     accepts. The response being written when the turn stopped is kept with the marker after it; when the stop came
     before any of it was recorded, the streamed `partial` text answers the last request instead.
     """
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart  # noqa: PLC0415 - only during a run
+
     kept = list(messages)
     while kept and isinstance(kept[-1], ModelResponse):
         if not any(isinstance(p, ToolCallPart) for p in kept[-1].parts):
@@ -112,8 +111,10 @@ class SessionHistory:
             raise ValueError(msg)
         return self._directory / f"{session}.json"
 
-    def load(self, session: str) -> tuple[list[ModelMessage], dict[str, Any]]:
+    def load(self, session: str) -> "tuple[list[ModelMessage], dict[str, Any]]":
         """The session's messages and the notes kept with them; empty when there are none or they can't be read."""
+        from pydantic_ai.messages import ModelMessagesTypeAdapter  # noqa: PLC0415 - only during a run
+
         path = self._path(session)
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
@@ -133,12 +134,14 @@ class SessionHistory:
         except (ValueError, KeyError, TypeError, AttributeError):
             return [], {}
 
-    def save(self, session: str, messages: list[ModelMessage], notes: dict[str, Any]) -> None:
+    def save(self, session: str, messages: "list[ModelMessage]", notes: dict[str, Any]) -> None:
         """Replace the session's history atomically, owner-only.
 
         Raises:
             OSError: If the folder or the file can't be written.
         """
+        from pydantic_ai.messages import ModelMessagesTypeAdapter  # noqa: PLC0415 - only during a run
+
         path = self._path(session)
         self._directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         Path(self._directory).chmod(0o700)
