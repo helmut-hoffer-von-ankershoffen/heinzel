@@ -133,7 +133,7 @@ jobs:
           vars.APPLE_APPLICATION_IDENTIFIER_PREFIX != ''
         env:
           APPLE_APPLICATION_IDENTIFIER_PREFIX: ${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}
-        run: python3 apple/scripts/association-file "$APPLE_APPLICATION_IDENTIFIER_PREFIX" --site-dir site
+        run: make docs-stage-apple-association
       - name: Keep browser evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

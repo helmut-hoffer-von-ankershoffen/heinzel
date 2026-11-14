@@ -17,13 +17,15 @@ The Swift shell uses the same title-bar layout and Browser panel as Electron. Th
 
 In the local macOS workspace, system audio uses a private Core Audio tap and macOS audio recording permission. On iOS/iPadOS 27 or later, it uses the system ScreenCaptureKit picker where available. iOS Simulator builds omit system audio because their SDK does not expose ScreenCaptureKit. The microphone uses WebKit’s permission prompt in the workspace.
 
+Electron also offers **Workspace audio**. That source still needs an implementation for the Apple app. The iPhone and iPad ScreenCaptureKit picker filters audio at application scope, so it cannot isolate the workspace from the Browser panel. See [Apple’s capture-filter guidance](https://developer.apple.com/videos/play/wwdc2022/10155/).
+
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
 Set the `APPLE_APPLICATION_IDENTIFIER_PREFIX` repository variable to the prefix
 from the app's signed `application-identifier` entitlement. The Docs workflow
 then generates `/.well-known/apple-app-site-association` alongside `/open/`.
 To stage the same files locally, run `make docs-site` and then
-`python3 apple/scripts/association-file APPLICATION_IDENTIFIER_PREFIX --site-dir site`.
+`APPLE_APPLICATION_IDENTIFIER_PREFIX=APPLICATION_IDENTIFIER_PREFIX make docs-stage-apple-association`.
 
 After publication, check that the association URL responds directly with HTTP 200
 and `Content-Type: application/json`. Verify the expected app ID and `/open/`

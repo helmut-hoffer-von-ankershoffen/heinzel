@@ -544,6 +544,7 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][3]["with"] == {"node-version": "24.19.0", "package-manager-cache": False}
     assert desktop["steps"][4]["with"] == {"version": "12.15.0", "run_install": False}
     assert desktop["steps"][5]["run"] == "make desktop-electron-package"
+    assert desktop["steps"][-2]["run"] == "make desktop-swift-package"
     assert "desktop" in publish["needs"]
     assert "needs.desktop.result == 'success'" in publish["if"]
     steps = publish["steps"]
@@ -552,7 +553,10 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][-1]["with"]["name"] == download["with"]["name"]
     assert bind["if"] == desktop["if"]
     assert bind["env"]["SOURCE_COMMIT"] == "${{ steps.source.outputs.commit }}"
-    assert 'mv -- "$manifest" "desktop-release/$archive" dist/' in bind["run"]
+    assert bind["run"] == "make desktop-bind-release-assets"
+    recipe = (ROOT / "Makefile").read_text().split("\ndesktop-bind-release-assets:", 1)[1].split("\n\n", 1)[0]
+    assert 'for suffix in "" "-swift"' in recipe
+    assert recipe.index("jq -e") < recipe.index('mv -- "$$manifest" "desktop-release/$$archive" dist/')
     assert attest["with"]["subject-path"] == "dist/*"
 
 

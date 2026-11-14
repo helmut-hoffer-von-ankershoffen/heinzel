@@ -105,8 +105,10 @@ def makefile() -> str:
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
     # Public product catalog and its browser suite are core website tooling, not plugin template dependencies.
-    text = text.replace(" docs-catalog docs-site-check", "").replace(" design-check", "")  # design: core app only
-    text = re.sub(r"\n(docs-catalog|docs-site-check|design-check):.*?\n(?:\t.*\n)+", "\n", text)
+    text = text.replace(" docs-stage-apple-association docs-catalog docs-site-check", "").replace(" design-check", "")
+    text = re.sub(
+        r"\n(docs-stage-apple-association|docs-catalog|docs-site-check|design-check):.*?\n(?:\t.*\n)+", "\n", text
+    )
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
     text = text.replace(" web-build web-dev test-web test-site", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
@@ -135,8 +137,10 @@ def makefile() -> str:
     text = re.sub(
         r"\n(managed-backend-setup|managed-backend-static|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text
     )
-    # The native application is core-only; plugins do not carry the Electron window or Linux sandbox setup.
-    electron_targets = {
+    # Desktop apps and their release recipes belong to Core.
+    desktop_targets = {
+        "desktop-bind-release-assets",
+        "desktop-swift-package",
         "desktop-electron-test",
         "desktop-electron-sandbox",
         "desktop-electron-native",
@@ -146,10 +150,14 @@ def makefile() -> str:
     }
     text = re.sub(
         r"(?m)^\.PHONY:.*$",
-        lambda match: " ".join(name for name in match.group(0).split() if name not in electron_targets),
+        lambda match: " ".join(name for name in match.group(0).split() if name not in desktop_targets),
         text,
     )
-    text = re.sub(r"(?m)^desktop-electron-(?:test|sandbox|native|package):[^\n]*\n(?:\t[^\n]*\n)*", "", text)
+    text = re.sub(
+        r"(?m)^desktop-(?:electron-(?:test|sandbox|native|package)|swift-package|bind-release-assets):[^\n]*\n(?:\t[^\n]*\n)*\n?",
+        "",
+        text,
+    )
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
