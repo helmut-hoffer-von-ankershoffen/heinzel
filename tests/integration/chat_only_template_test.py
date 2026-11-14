@@ -11,6 +11,7 @@ from heinzel.modules.heinzel._playbooks import find_template
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._user_chat import UserChatService
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH, activation_arguments, stage_schedule, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig
 
@@ -87,14 +88,7 @@ def test_chat_only_template_asks_for_context_and_only_proposes_draft(make_kernel
     executable.write_text(f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
-if sys.argv[1:] == ['--help']:
- print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
- print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
- print('--allowed-tools --json-schema'); raise SystemExit
+{CLAUDE_PRELUDE}
 marker=Path({str(calls)!r})
 n=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(n+1))

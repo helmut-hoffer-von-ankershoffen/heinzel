@@ -9,6 +9,7 @@ import pytest
 from heinzel import CurrentUser
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.playbook_adoption_test import TEXT, plugin
 from tests.unit.modules.user_chat_test import FixtureConfig
@@ -31,14 +32,7 @@ def test_registered_chat_factory_previews_then_proposes_without_activation(make_
     executable.write_text(f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
-if sys.argv[1:] == ['--help']:
- print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
- print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
- print('--allowed-tools --json-schema'); raise SystemExit
+{CLAUDE_PRELUDE}
 marker=Path({str(counter)!r})
 count=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(count+1))

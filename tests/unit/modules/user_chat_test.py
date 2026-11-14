@@ -15,6 +15,7 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
+from tests._fake_claude import CLAUDE_PRELUDE
 
 pytestmark = pytest.mark.integration
 
@@ -28,14 +29,7 @@ def fake_claude(
     path.write_text(
         f"""#!{sys.executable}
 import json,sys,time
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
-if sys.argv[1:] == ['--help']:
- print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
- print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
- print('--allowed-tools --json-schema'); raise SystemExit
+{CLAUDE_PRELUDE}
 assert '--safe-mode' in sys.argv and '--restricted' in sys.argv and '--strict-mcp-config' in sys.argv
 assert sys.argv[sys.argv.index('--tools')+1] == '' and sys.argv[sys.argv.index('--allowed-tools')+1] == ''
 open({str(marker)!r},'a').write('x')

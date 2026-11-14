@@ -16,6 +16,7 @@ from heinzel import ChatDraftTemplate, CurrentUser, Module
 from heinzel.heads import web
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.e2e._browser_result import check_browser, require_browser, wait_browser
 from tests.e2e.docs_test import GuardedCommand
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, web_build
@@ -64,14 +65,7 @@ def test_mounted_workshop_discovers_chat_draft_without_grant(make_kernel, tmp_pa
     executable.write_text(f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
-if sys.argv[1:] == ['--help']:
- print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
- print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
- print('--allowed-tools --json-schema'); raise SystemExit
+{CLAUDE_PRELUDE}
 marker=Path({str(calls)!r})
 n=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(n+1))

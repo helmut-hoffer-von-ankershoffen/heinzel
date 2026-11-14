@@ -5,6 +5,7 @@ import pytest
 from heinzel import AssetType, ContractTemplate, HeinzelError, Module
 from heinzel.modules.heinzel import _playbook_adoption
 from heinzel.modules.heinzel._playbook_adoption import adopt_playbook_draft, preview_playbook_draft
+from tests._fake_claude import CLAUDE_PRELUDE
 
 pytestmark = pytest.mark.unit
 
@@ -177,14 +178,7 @@ def test_user_chat_fake_cli_produces_owner_reviewable_playbook_draft(make_kernel
     counter = tmp_path / "model-calls"
     executable.write_text(f"""#!{sys.executable}
 import json,sys
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
-if sys.argv[1:] == ['--help']:
- print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
- print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
- print('--allowed-tools --json-schema'); raise SystemExit
+{CLAUDE_PRELUDE}
 from pathlib import Path
 marker=Path({str(counter)!r})
 count=len(marker.read_text()) if marker.exists() else 0
