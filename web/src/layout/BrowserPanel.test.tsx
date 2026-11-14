@@ -237,10 +237,10 @@ it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the sele
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
   expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("");
-  fireEvent.keyDown(document, { key: "w", ctrlKey: true });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "w", ctrlKey: true });
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000003" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
-  fireEvent.keyDown(document, { key: "t", metaKey: true });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "t", ctrlKey: true });
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
 });
 
@@ -257,6 +257,19 @@ it("the Mac menu's New Tab and Close Tab are taken by the panel, and Close Tab i
   expect(ask("close-tab")).toBe(true);
   expect(ask("search")).toBe(false);
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000003" }));
+});
+
+it("Ctrl-T and Ctrl-W outside the panel, with Cmd, or on macOS are left to their owners", async () => {
+  const browser = tabBridge();
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  fireEvent.keyDown(document.body, { key: "t", ctrlKey: true });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "t", metaKey: true });
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "w", ctrlKey: true });
+  platform.mockRestore();
+  expect(browser).not.toHaveBeenCalledWith({ action: "new-tab" });
+  expect(browser).not.toHaveBeenCalledWith(expect.objectContaining({ action: "close-tab" }));
 });
 
 it("the shortcuts do nothing while another panel is in front", async () => {

@@ -492,3 +492,10 @@ test("tabs: the product page navigating or the panel hiding keeps tabs; only a n
   f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
   assert(f.views.every((view) => view.webContents.isDestroyed()));
 });
+
+test("tabs: the limit counts the person's own tabs, and a foreign-owner tab does not use it", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+});

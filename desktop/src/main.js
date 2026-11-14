@@ -221,13 +221,18 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (allowed) void shell.openExternal(url);
       },
       send: (action) => {
-        const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        // Close Tab acts on the focused window only: with none focused it must never close a background window.
+        const window = action === "close-tab" ? BrowserWindow.getFocusedWindow()
+          : BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
         const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
         console.info(menuLogLine(action, ready ? "sent" : "no_window"));
         if (!ready) return;
         const sent = window.webContents.executeJavaScript(menuScript(action));
         // Cmd+W closes the browser's selected tab when the page takes it, and otherwise the window as before.
-        if (action === "close-tab") void sent.then((taken) => { if (taken !== true && !window.isDestroyed()) window.close(); }, () => {});
+        if (action === "close-tab") void sent.then((taken) => {
+          console.info(menuLogLine(action, taken === true ? "taken" : "not_taken"));
+          if (taken !== true && !window.isDestroyed()) window.close();
+        }, () => {});
         else void sent;
       },
     })));

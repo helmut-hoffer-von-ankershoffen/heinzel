@@ -179,6 +179,13 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (!guest.view.webContents.isDestroyed()) guest.view.setVisible(Boolean(visible));
     }
   };
+  // A fresh id that no tab of this window holds, retried on a collision.
+  const newTabId = (window) => {
+    for (;;) {
+      const id = `t-${randomBytes(4).toString("hex")}`;
+      if (!surfaces.get(window)?.tabs.has(id)) return id;
+    }
+  };
   const surfaceOf = (window) => {
     let surface = surfaces.get(window);
     if (surface) return surface;
@@ -259,7 +266,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { id: `t-${randomBytes(4).toString("hex")}`, owner: "person", blank: true, view, session: partition,
+      const guest = { id: newTabId(window), owner: "person", blank: true, view, session: partition,
         network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
@@ -365,7 +372,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     try {
       const changed = () => navigated || stopped || (generations.get(window) ?? 0) !== generation;
       if (changed()) throw new Error("Browser surface is closed.");
-      if (surface.tabs.size + surface.pending >= MAX_PERSON_TABS) throw new Error("Too many tabs.");
+      const mine = [...surface.tabs.values()].filter((tab) => tab.owner === "person").length;
+      if (mine + surface.pending >= MAX_PERSON_TABS) throw new Error("Too many tabs.");
       surface.pending += 1;
       const pending = open(window).finally(() => { surface.pending -= 1; opening.delete(pending); if (surface.opening === pending) surface.opening = null; releaseNetwork(); });
       opening.add(pending);

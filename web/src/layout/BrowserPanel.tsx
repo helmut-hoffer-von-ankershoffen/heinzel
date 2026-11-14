@@ -85,6 +85,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
   const [refused, setRefused] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const native = bridge();
   const tabs = state.tabs ?? [];
   const request = async (command: Record<string, unknown>) => {
@@ -205,7 +206,10 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
   // The listener is bound once per panel state and always calls the latest handler.
   const shortcut = useRef<(event: KeyboardEvent) => void>(() => {});
   shortcut.current = (event) => {
-    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+    // On macOS the menu alone owns Cmd (Ctrl-T and Ctrl-W are text editing there); elsewhere Ctrl counts only when
+    // the focus is inside this panel, so another panel's terminal or editor keeps its keys.
+    if (/mac/i.test(navigator.platform) || !event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (!(event.target instanceof Node && panel.current?.contains(event.target))) return;
     const key = event.key.toLowerCase();
     if (key === "t") {
       event.preventDefault();
@@ -259,7 +263,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           ? t("browser.empty")
           : t("browser.unavailable");
   return (
-    <section aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
+    <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
       <form
         className="flex h-10 shrink-0 items-center gap-1 px-2"
         onSubmit={(event) => {
