@@ -60,10 +60,8 @@ _TESTS = TypeAdapter(dict[str, LastTest])
 DETAIL_LIMIT = 300
 MAX_MODELS_TESTED = 24
 """The most models one `hz ai access test --all` asks, so a long list never runs for long or spends much."""
-MODEL_TEST_TIMEOUT = 15.0
 RUN_LOCK = ".test-all.lock"
 """Held while `hz ai access test --all` runs, so a second run, from any head, is refused instead of spending twice."""
-"""How long one model has to answer in `hz ai access test --all` before it counts as unanswered."""
 
 
 _CLIENT = re.compile(r"heinzel\[([a-z0-9-]+)\]")
@@ -387,7 +385,7 @@ class AccessService:
     def test_all(self, name: str | None, options: Adapters[AiAccess], progress: Progress) -> AccessTestReport:
         """Ask every model of `name`, or of the option in use, one tiny request each, one after another (ADR 0159).
 
-        Only when a person asks. At most `MAX_MODELS_TESTED` models, each within `MODEL_TEST_TIMEOUT`; the option
+        Only when a person asks. At most `MAX_MODELS_TESTED` models, each bounded by the option itself; the option
         keeps which answered, so the picker marks the others unavailable until a later test answers. Each request is
         recorded as usage, cause `test`. Ctrl-C stops between or during models; what was learned so far is kept. One
         run at a time per profile, whichever head starts it.
@@ -440,7 +438,7 @@ class AccessService:
             HeinzelError: If the option can't test its models one by one.
         """
         try:
-            result = option.test_model(model_id, MODEL_TEST_TIMEOUT)
+            result = option.test_model(model_id)
         except NotSupportedError:
             msg = f"{title} can't test its models one by one; `hz ai access test --name {name}` checks the one in use."
             raise HeinzelError(msg) from None

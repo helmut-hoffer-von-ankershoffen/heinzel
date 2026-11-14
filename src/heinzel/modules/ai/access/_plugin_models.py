@@ -29,6 +29,8 @@ TEST_INSTRUCTIONS = "Reply with the single word OK."
 TEST_TIMEOUT = 60.0
 PROBE_TOKENS = 16
 """The most a model may write answering `hz ai access test --all`: one word is asked for."""
+MODEL_TEST_TIMEOUT = 15.0
+"""How long one model has to answer in `hz ai access test --all` before it counts as unanswered."""
 DETAIL_LIMIT = 300
 SET_MODEL = "hz system config set ai.access.plugin_model <model>"
 ENGINE_RUNNER = "engine"
@@ -53,11 +55,16 @@ class PluginModelsAccess:
         name: str,
         source: Callable[[], AiModelsSource],
         settings: Callable[[], AccessSettings] = _current_settings,
+        model_timeout: float = MODEL_TEST_TIMEOUT,
     ) -> None:
-        """Create the option of the adapter `name`, which `source` builds on first use."""
+        """Create the option of the adapter `name`, which `source` builds on first use.
+
+        `model_timeout` bounds each model's request in `test_model`, in seconds.
+        """
         self._name = name
         self._source = source
         self._settings = settings
+        self._model_timeout = model_timeout
 
     def status(self) -> AccessStatus:
         """The plugin's models, the one hz uses and whether it can; asks the plugin's cache, calls no model."""
@@ -123,12 +130,15 @@ class PluginModelsAccess:
             mark_answered(source, result.model, answered=True)
         return result
 
-    def test_model(self, model_id: str, timeout: float) -> AccessTest:
-        """One tiny request to `model_id`, within `timeout` seconds, and keep whether it answered for the picker.
+    def test_model(self, model_id: str) -> AccessTest:
+        """One tiny request to `model_id`, within the option's model timeout, and keep whether it answered.
+
+        The bound is the option's own, not the caller's: a read method takes only what a contract could name.
 
         A model the plugin marks unavailable, or no longer lists, is skipped: no request, nothing kept. A model that
         answers clears an earlier mark; one that fails or takes too long is marked unavailable (ADR 0159).
         """
+        timeout = self._model_timeout
         started = time.monotonic()
         try:
             source = self._source()

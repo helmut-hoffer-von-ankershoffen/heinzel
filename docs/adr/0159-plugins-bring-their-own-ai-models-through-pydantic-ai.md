@@ -107,7 +107,8 @@ Checkable statements:
    Any response counts as an answer, also one without text; only a provider or transport error, or no response in
    time, marks. A failure shows its kind and HTTP status only, never the provider's text. One run at a time per
    profile; the web asks for confirmation first and shows which model is being asked.
-   The `ai-access` capability gains the optional method `test_model(model_id, timeout)` for it.
+   The `ai-access` capability gains the optional read method `test_model(model_id)` for it; the option bounds
+   each request itself.
 9. **Effort is checked per model and mapped to its style.** An effort the offer doesn't list is refused before
    the turn. For `thinking: adaptive`, Core passes Anthropic's `thinking: {type: adaptive}` and
    `output_config.effort`. For `budget`, it passes `thinking: {type: enabled, budget_tokens}`: 2k, 8k, 16k, 32k or
