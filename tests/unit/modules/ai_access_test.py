@@ -1,5 +1,6 @@
 """The AI access options and their status words (ADR 0057): gateway, Pydantic AI and Claude Code, without a model."""
 
+import json
 import logging
 import os
 import sys
@@ -19,6 +20,7 @@ from heinzel.modules.ai.access._gateway import Finished, GatewayAccess, environm
 from heinzel.modules.ai.access._models import AccessSettings, Bindings, LastTest
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, endpoint_model, model_hosts
 from heinzel.modules.ai.access._service import AccessService, ResultStore, setup_of, state
+from heinzel.modules.heinzel._claude_subscription_model import CONTRACT_OPTIONS
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
@@ -233,14 +235,22 @@ def test_the_model_hosts_follow_the_vendor():
 # Claude Code
 
 
-def claude(tmp_path: Path, logged_in: str, answer: str = "OK") -> ClaudeCodeAccess:
+def claude(tmp_path: Path, logged_in: str, answer: str = "OK", version: str = "2.1.321") -> ClaudeCodeAccess:
+    executable = tmp_path / "claude"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+
     def execute(command, **_):
         if command[1:3] == ["auth", "status"]:
             return Outcome(0, f'{{"loggedIn": {logged_in}}}', "")
-        result = f'{{"type": "result", "subtype": "success", "result": "{answer}", "total_cost_usd": 0.002}}'
-        return Outcome(0, result + "\n", "")
+        if command[1:] == ["--version"]:
+            return Outcome(0, f"{version} (Claude Code)\n", "")
+        if command[1:] == ["--help"]:
+            return Outcome(0, " ".join(CONTRACT_OPTIONS), "")
+        wire = {"kind": "text", "name": None, "arguments": None, "text": answer}
+        result = {"type": "result", "subtype": "success", "is_error": False, "structured_output": wire}
+        return Outcome(0, json.dumps(result) + "\n", "")
 
-    return ClaudeCodeAccess(RunnerSettings(), execute=execute, which=lambda _: str(tmp_path / "claude"))
+    return ClaudeCodeAccess(RunnerSettings(), execute=execute, which=lambda _: str(executable))
 
 
 def test_claude_code_is_signed_in_from_auth_status_and_names_its_runner(tmp_path):
@@ -255,9 +265,15 @@ def test_claude_code_missing_is_not_installed():
     assert not ClaudeCodeAccess(RunnerSettings(), which=lambda _: None).test().ok
 
 
-def test_a_claude_code_test_is_one_short_answer_with_its_cost(tmp_path):
+def test_a_claude_code_test_answers_through_the_chat_admission_and_names_the_release(tmp_path):
     result = claude(tmp_path, "true").test()
-    assert (result.ok, result.detail, result.cost_usd) == (True, "OK", 0.002)
+    assert (result.ok, result.detail) == (True, "OK (Claude Code 2.1.321)")
+
+
+def test_a_claude_code_test_refuses_a_release_chat_would_refuse(tmp_path):
+    result = claude(tmp_path, "true", version="2.2.0").test()
+    assert not result.ok
+    assert result.detail.startswith("Claude Code 2.2.0 is newer than Heinzel has checked")
 
 
 def test_a_project_file_can_set_nothing_that_decides_what_runs():

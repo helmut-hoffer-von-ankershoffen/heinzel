@@ -3,6 +3,7 @@
 import pytest
 
 from heinzel import CurrentUser
+from heinzel.modules.heinzel._claude_subscription_model import CONTRACT_OPTIONS
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
@@ -100,6 +101,8 @@ def test_subscription_quota_error_has_safe_code_and_is_not_replayed(make_kernel,
             )
         if command[1:] == ["--version"]:
             return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        if command[1:] == ["--help"]:
+            return Outcome(0, " ".join(CONTRACT_OPTIONS), "")
         calls.append(1)
         return Outcome(
             1,

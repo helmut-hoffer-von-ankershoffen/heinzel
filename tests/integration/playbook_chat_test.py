@@ -35,6 +35,10 @@ if sys.argv[1:] == ['auth','status','--json']:
  print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
 if sys.argv[1:] == ['--version']:
  print('2.1.312 (Claude Code)'); raise SystemExit
+if sys.argv[1:] == ['--help']:
+ print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
+ print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
+ print('--allowed-tools --json-schema'); raise SystemExit
 marker=Path({str(counter)!r})
 count=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(count+1))

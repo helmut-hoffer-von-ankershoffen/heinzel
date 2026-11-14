@@ -138,6 +138,10 @@ if sys.argv[1:] == ['auth','status','--json']:
  print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
 if sys.argv[1:] == ['--version']:
  print('2.1.312 (Claude Code)'); raise SystemExit
+if sys.argv[1:] == ['--help']:
+ print('-p --output-format --safe-mode --restricted --strict-mcp-config --setting-sources')
+ print('--disable-slash-commands --no-session-persistence --permission-mode --tools')
+ print('--allowed-tools --json-schema'); raise SystemExit
 marker=Path({str(counter)!r}); n=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(n+1)); payload=json.load(sys.stdin)
 parts=[p for m in payload['messages'] for p in m['parts'] if p.get('part_kind') == 'tool-return']
