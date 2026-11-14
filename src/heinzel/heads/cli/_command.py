@@ -97,7 +97,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
             identity: Literal["daemon", "cli"] = (
                 "daemon" if module == "system.daemon" and operation.name == "tick" else "cli"
             )
-            caller = Caller("daemon", "tick") if identity == "daemon" else Caller("person", "cli")
+            caller = Caller("daemon", "tick") if identity == "daemon" else Caller("person", "cli", attended=True)
             with kernel.resolve(CurrentUser).local(identity), calling(caller):
                 mark_presence(kernel, module)
                 try:

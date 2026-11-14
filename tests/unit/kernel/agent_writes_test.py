@@ -7,7 +7,7 @@ import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from heinzel import ActionGate, ByArguments, Caller, HeinzelError, Module
+from heinzel import ActionGate, ByArguments, Caller, HeinzelError, Kernel, Module, ModuleRecord
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
 from heinzel.kernel import (
@@ -19,6 +19,7 @@ from heinzel.kernel import (
     chat_tools,
     current_caller,
     declared_agent_writes,
+    discover,
     restricts,
 )
 from heinzel.kernel._agent_writes import (
@@ -103,9 +104,15 @@ def ran() -> list[tuple[str, object]]:
 
 
 @pytest.fixture
-def kernel(make_kernel, ran, settings, tmp_path):
-    owned = settings.model_copy(update={"data_dir": tmp_path / "data", "cache_dir": tmp_path / "cache"})
-    kernel = make_kernel(builtins=True, settings_=owned, desk=desk(ran))
+def kernel(ran, settings, tmp_path):
+    """The built-in modules plus `desk` as one of them: a module of a plugin is held to stricter rules."""
+    owned = settings.model_copy(
+        update={"data_dir": tmp_path / "data", "cache_dir": tmp_path / "cache", "state_dir": tmp_path / "state"}
+    )
+    records = discover(plugins=False)[0]
+    core = next(record.origin for record in records if record.origin.builtin)
+    records.append(ModuleRecord(qualname="desk", module=desk(ran), origin=core))
+    kernel = Kernel(owned, records, config=None)
     kernel.bind(ActionGate, Gate())
     return kernel
 
@@ -190,6 +197,7 @@ def test_a_plugin_write_that_reaches_people_is_at_most_approve_whatever_it_decla
 
     send_let, forbid_let = module.lets
     assert agent_writes(send_let, {}, builtin=False) == "approve"
+    assert agent_writes(send_let, {}, builtin=False, acknowledged=True) == "approve"  # the owner's yes lifts no ceiling
     assert agent_writes(forbid_let, {}, builtin=False) == "never"  # a ceiling never loosens
     assert agent_writes(send_let, {}, builtin=True) == "direct"  # core's own are reviewed with core
 
@@ -201,7 +209,9 @@ def test_a_plugin_may_create_issues_directly():
     def create() -> None:
         """Create an issue."""
 
-    assert agent_writes(module.lets[0], {}, builtin=False) == "direct"
+    # Not before the owner allowed this plugin's direct writes: a new plugin or an update starts proposed.
+    assert agent_writes(module.lets[0], {}, builtin=False) == "propose"
+    assert agent_writes(module.lets[0], {}, builtin=False, acknowledged=True) == "direct"
 
 
 # --- every core write is decided ---
@@ -300,7 +310,10 @@ def test_no_agent_authentication_is_a_human_one():
     assert person_caller("mcp-stdio") is None
     assert person_caller("daemon") is None
     assert person_caller(None) is None
-    assert person_caller("web-session") == Caller("person", "web-session")
+    assert person_caller("web-session") == Caller("person", "web-session", attended=True)
+    # Unknown is unwatched: a token and an agent over stdio never get the watched budget or leave the digest.
+    assert Caller("token", "k1").attended is False
+    assert Caller("local-agent", "mcp-stdio").attended is False
 
 
 # --- which head offers which bookmark operation ---
@@ -314,7 +327,7 @@ def test_each_head_offers_exactly_its_bookmark_operations(kernel):
     assert offered("cli") == every
     assert offered("mcp") == every
     assert offered("web") == every | {"favicon"}
-    assert offered("mcp-http") == set()  # until head F's token scopes cover it
+    assert offered("mcp-http") == every  # at /mcp behind a token: reads with any, writes with a write token
     assert offered("api") == set()
     session = kernel.resolve(ChatService).open(None).id
     chat = {item.name for item in chat_tools(kernel, session, "all") if item.name.startswith("system_bookmark")}
@@ -359,7 +372,7 @@ def test_callers_say_what_they_are():
 def test_the_write_budget_counts_per_caller_minute_and_day():
     now = [0.0]
     budget = WriteBudget(clock=lambda: now[0])
-    watched, unwatched = Caller("heinzel", "a"), Caller("heinzel", "b", attended=False)
+    watched, unwatched = Caller("heinzel", "a", attended=True), Caller("heinzel", "b")
     for _ in range(UNATTENDED.minute):
         budget.take(unwatched)
     with pytest.raises(HeinzelError, match="write budget for the minute"):
@@ -388,10 +401,15 @@ def test_audit_names_the_target_and_only_a_digest_of_the_arguments():
     assert target_of(arguments) == "b-1a2b3c4d"
     assert target_of({"title": "free text with spaces"}) is None
     assert target_of({"name": "x" * 200}) is None
+    assert target_of({"id": "mira.sato@example.org"}) is None  # an address is no id
+    assert target_of({"name": "weekly-digest"}) == "weekly-digest"
     digest = arguments_digest(arguments)
     assert len(digest) == 16
     assert digest == arguments_digest(dict(reversed(arguments.items())))
     assert digest != arguments_digest({**arguments, "title": "Other"})
+    # Keyed per installation: the same arguments under another salt give another digest.
+    assert arguments_digest(arguments, b"a" * 16) != arguments_digest(arguments, b"b" * 16)
+    assert arguments_digest(arguments, b"a" * 16) == arguments_digest(arguments, b"a" * 16)
 
 
 # --- a Heinzel's turn ---
@@ -563,7 +581,7 @@ def test_stdio_refuses_approve_with_the_persons_command_and_never_outright(kerne
 
 def test_stdio_writes_share_the_budget(kernel, ran):
     jot = stdio(kernel, ("desk", "jot"))
-    for _ in range(ATTENDED.minute):
+    for _ in range(UNATTENDED.minute):  # nobody is known to watch an outside agent
         jot(text="x")
     with pytest.raises(ToolError, match="write budget"):
         jot(text="x")

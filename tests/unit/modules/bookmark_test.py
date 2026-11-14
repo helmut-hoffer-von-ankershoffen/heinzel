@@ -324,13 +324,13 @@ def test_a_tampered_cache_file_is_not_served(service, tmp_path):
     assert service.listing().favicons == {}
 
 
-def test_every_operation_is_a_command_and_a_local_mcp_tool_and_none_is_unauthenticated():
+def test_every_operation_is_a_command_and_an_mcp_tool_on_both_transports_and_none_is_unauthenticated():
     heads = {let.name: let.heads for let in bookmark.module.lets if isinstance(let, OperationLet)}
     assert set(heads) == {"list", "add", "folder", "edit", "move", "remove", "restore", "favicon"}
     for name in set(heads) - {"favicon"}:
         assert not restricts(heads[name], "cli")
         assert not restricts(heads[name], "mcp")
-        assert restricts(heads[name], "mcp-http")  # no bookmark over HTTP until token scopes cover it
+        assert not restricts(heads[name], "mcp-http")  # at /mcp too, behind a token and its scope
     assert heads["favicon"] == {"web"}
     assert all(restricts(found, "api") for found in heads.values())
 

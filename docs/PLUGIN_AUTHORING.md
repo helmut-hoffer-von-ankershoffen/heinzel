@@ -88,6 +88,10 @@ some calls stricter, for example a rename that can also change an address. Whate
 that requires `mail:write`, `chat:write` or `calendar:write` waits for the person. An operation that needs to know
 who calls it asks for `caller: Caller`; hz fills it in, and no argument can.
 
+A plugin's `direct` write is still proposed until the person allowed your plugin with
+`hz system writes allow <plugin>`; `hz system writes plugins` and `hz system doctor` show what waits. The yes names
+the operations of the installed version, so a later version that marks another operation `direct` waits again.
+
 ## Show the useful feature
 
 Use the [screenshot playbook](SCREENSHOT_PLAYBOOK.md) to plan real UI and CLI scenes with fictional data, review

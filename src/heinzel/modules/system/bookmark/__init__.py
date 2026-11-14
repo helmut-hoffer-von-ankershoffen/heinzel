@@ -2,8 +2,9 @@
 
 One ordered tree of folders and bookmarks per owner, kept as owner data and never in the browser's own storage, so
 clearing browsing data keeps it. The web app stars pages into it, manages it and shows it in its navigation.
-Every operation is a CLI command and an MCP tool over stdio. An agent's `add`, `folder`, `move`, `restore` and a
-rename run at once; removing an entry and changing a bookmark's address wait for the person (`agents=`).
+Every operation is a CLI command and an MCP tool, over stdio and at `/mcp`. An agent's `add`, `folder`, `move`,
+`restore` and a rename run at once; removing an entry and changing a bookmark's address wait for the person
+(`agents=`).
 """
 
 from collections.abc import Mapping
@@ -15,15 +16,16 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import ByArguments, Module
-from heinzel.kernel import MCP_STDIO
 from heinzel.modules.system.bookmark._models import Bookmark, BookmarkList
 from heinzel.modules.system.bookmark._service import BookmarkService
 
 module = Module("bookmark", "Keep the built-in browser's bookmarks: a tree of folders and bookmarks.")
 module.service(BookmarkService)
 
-# Bookmarks are as private as a browsing habit: the unauthenticated REST and HTTP MCP heads get none of it.
-HEADS = {"cli", MCP_STDIO, "web"}
+# Bookmarks are as private as a browsing habit: the unauthenticated REST head gets none of it. MCP has them on
+# both transports: over stdio for an agent you started, and at `/mcp` for a token (reads with any token, writes
+# with a write token; removing or repointing still waits for you).
+HEADS = {"cli", "mcp", "web"}
 # The favicon cache is the web app's own: the desktop hands over what a page showed.
 WEB = {"web"}
 

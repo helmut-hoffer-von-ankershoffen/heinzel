@@ -20,8 +20,11 @@ and injected by type. It is never built from arguments, and an operation asking 
 
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
+import re
+import secrets
 import threading
 import time
 from collections import deque
@@ -87,11 +90,20 @@ def declared_agent_writes(operation: "OperationLet") -> frozenset[AgentWrites]:
     return frozenset({marker})
 
 
-def agent_writes(operation: "OperationLet", arguments: Mapping[str, Any], *, builtin: bool) -> AgentWrites:
+def reaches_people(operation: "OperationLet") -> bool:
+    """Whether the operation writes a capability under the kernel's ceiling: mail, chat or a calendar."""
+    return any(r.capability in CEILING and "write" in r.modes for r in operation.requires)
+
+
+def agent_writes(
+    operation: "OperationLet", arguments: Mapping[str, Any], *, builtin: bool, acknowledged: bool = False
+) -> AgentWrites:
     """The policy for one call of a write operation by an agent.
 
-    `builtin` is the module record's own origin, set by discovery, never by the module. A marker that fails to
-    decide is the strictest it could have been.
+    `builtin` is the module record's own origin, set by discovery, never by the module. `acknowledged`: the owner
+    allowed this plugin operation to run directly; a plugin's `direct` without that is `propose`, so neither a new
+    plugin nor an update that turns an operation `direct` starts writing before the owner said yes. A marker that
+    fails to decide is the strictest it could have been.
     """
     marker = operation.agents
     if marker is None:
@@ -103,9 +115,10 @@ def agent_writes(operation: "OperationLet", arguments: Mapping[str, Any], *, bui
             policy = marker.stricter
     else:
         policy = marker
-    reaches_people = any(r.capability in CEILING and "write" in r.modes for r in operation.requires)
-    if not builtin and reaches_people:
+    if not builtin and reaches_people(operation):
         policy = stricter(policy, "approve")
+    if not builtin and policy == "direct" and not acknowledged:
+        policy = "propose"
     return policy
 
 
@@ -118,8 +131,9 @@ class Caller:
     """The Heinzel's chat session, the token's key id, or the head's name for a person, a local agent, the daemon."""
     session: str | None = None
     """The chat session of a Heinzel's turn; operations taking a session id compare it with this."""
-    attended: bool = True
-    """Whether a person started the turn and is there to see it; a scheduled turn is unattended."""
+    attended: bool = False
+    """Whether a person started the turn and is there to see it. Unknown counts as not: a scheduled turn, a token
+    and an agent over stdio are unattended, and only the head that knows a person watches says otherwise."""
 
     @property
     def agent(self) -> bool:
@@ -167,7 +181,7 @@ HUMAN_AUTHENTICATIONS: Final = frozenset({"cli", "api-bearer", "web-session", "w
 
 def person_caller(authentication: str | None) -> Caller | None:
     """The person as caller for a call a human head authenticated; None for any other, which then has no caller."""
-    return Caller("person", authentication) if authentication in HUMAN_AUTHENTICATIONS else None
+    return Caller("person", authentication, attended=True) if authentication in HUMAN_AUTHENTICATIONS else None
 
 
 def caller_or_none() -> Caller | None:
@@ -246,17 +260,57 @@ class WriteBudget:
             writes.append(now)
 
 
-def arguments_digest(arguments: Mapping[str, Any]) -> str:
-    """A short digest of a call's arguments: enough to tell two calls apart, nothing to read."""
+_PROCESS_SALT: Final = secrets.token_bytes(16)
+"""The salt where no installation salt is kept: digests then compare within one process only."""
+
+
+class AgentWriteLog:
+    """What the owner sees and allows of agents' writes; a module provides a subclass (`system.writes`).
+
+    A base class rather than a protocol, so the kernel injects it by type. Without a provider nothing is recorded
+    and no plugin write is acknowledged, which is the strict side.
+    """
+
+    def record(  # noqa: PLR0913 - one flat entry
+        self,
+        caller: "Caller | None",
+        module: str,
+        operation: str,
+        arguments: Mapping[str, Any],
+        *,
+        policy: AgentWrites,
+        outcome: WriteOutcome,
+    ) -> None:
+        """Keep one entry of a write an agent asked for, for the owner's list; never arguments, only their digest."""
+
+    def acknowledged(self, distribution: str, module: str, operation: str) -> bool:  # noqa: ARG002
+        """Whether the owner allowed this plugin's operation to run directly for agents; no by default."""
+        return False
+
+    def salt(self) -> bytes:
+        """The installation's key for argument digests; without a provider, one of this process."""
+        return _PROCESS_SALT
+
+
+def arguments_digest(arguments: Mapping[str, Any], salt: bytes = _PROCESS_SALT) -> str:
+    """A short keyed digest of a call's arguments: enough to tell two calls apart, nothing to read.
+
+    Keyed with a salt of this installation, so a guessed argument (a short title, an address) cannot be confirmed
+    from a log line by someone who does not hold the salt.
+    """
     text = json.dumps(arguments, sort_keys=True, default=str, ensure_ascii=False)
-    return hashlib.sha256(text.encode()).hexdigest()[:16]
+    return hmac.new(salt, text.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,79}")
+"""What counts as an id in the record: no spaces and no `@`, so neither free text nor an email address is kept."""
 
 
 def target_of(arguments: Mapping[str, Any]) -> str | None:
-    """The id of what the call changes, where its arguments name one; never free text."""
+    """The id of what the call changes, where its arguments name one; never free text or an address."""
     for name in ("entry", "id", "name", "issue", "session", "session_id"):
         value = arguments.get(name)
-        if isinstance(value, str) and value and len(value) <= 80 and not any(char.isspace() for char in value):  # noqa: PLR2004
+        if isinstance(value, str) and _ID.fullmatch(value):
             return value
     return None
 
@@ -270,6 +324,7 @@ def audit_write(  # noqa: PLR0913 - one flat audit line
     policy: AgentWrites,
     outcome: WriteOutcome,
     error: str | None = None,
+    salt: bytes = _PROCESS_SALT,
 ) -> None:
     """One `agent.write` line for every write an agent asked for, on every path; arguments only as a digest."""
     log_event(
@@ -281,7 +336,7 @@ def audit_write(  # noqa: PLR0913 - one flat audit line
         module=module,
         operation=operation,
         target=target_of(arguments),
-        arguments=arguments_digest(arguments),
+        arguments=arguments_digest(arguments, salt),
         policy=policy,
         outcome=outcome,
         error=error,

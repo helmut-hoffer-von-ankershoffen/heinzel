@@ -4,6 +4,7 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agent_writes import (
+    AgentWriteLog,
     AgentWrites,
     ByArguments,
     Caller,
@@ -536,6 +537,7 @@ __all__ = [
     "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AgentWriteLog",
     "AgentWrites",
     "AiAccess",
     "AiAccessWebAttempt",
