@@ -171,6 +171,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         self.endpoint = endpoint
         self.ready = ready
         self.reportError = reportError
+        super.init()
+        #if os(macOS)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(menuAction), name: WorkspaceMenuAction.notification, object: nil
+        )
+        #endif
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
@@ -262,7 +268,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private func observeWindow(_ window: NSWindow?) {
         guard observedWindow !== window else { return }
         let center = NotificationCenter.default
-        center.removeObserver(self)
+        if let observedWindow { center.removeObserver(self, name: nil, object: observedWindow) }
         observedWindow = window
         guard let window else { return }
         for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
@@ -273,6 +279,20 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     @objc private func windowChanged() {
         workspace?.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-window-change'))")
     }
+
+    @objc private func menuAction(_ notification: Notification) {
+        guard let action = notification.object as? WorkspaceMenuAction,
+              let workspace, workspace.window?.isKeyWindow == true,
+              workspace.url.map(endpoint.owns) == true else { return }
+        switch action {
+        case .reload: workspace.reload()
+        case .zoomIn: workspace.pageZoom = min(workspace.pageZoom * 1.2, 3)
+        case .zoomOut: workspace.pageZoom = max(workspace.pageZoom / 1.2, 0.5)
+        case .resetZoom: workspace.pageZoom = 1
+        default:
+            workspace.evaluateJavaScript("window.dispatchEvent(new CustomEvent('hz:menu', { detail: '\(action.rawValue)' }))")
+        }
+    }
     #endif
 
     func close(_ view: WKWebView) {
@@ -281,6 +301,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         )
         #if os(macOS)
         observeWindow(nil)
+        NotificationCenter.default.removeObserver(self, name: WorkspaceMenuAction.notification, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #endif

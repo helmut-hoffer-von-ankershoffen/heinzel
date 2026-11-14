@@ -15,12 +15,7 @@ struct HeinzelApp: App {
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
         .commands {
-            CommandGroup(after: .appSettings) {
-                Button("Connection…") {
-                    NotificationCenter.default.post(name: .showHeinzelConnection, object: nil)
-                }
-                .keyboardShortcut(",", modifiers: [.command, .shift])
-            }
+            WorkspaceCommands()
         }
         #else
         WindowGroup {
@@ -33,6 +28,90 @@ struct HeinzelApp: App {
 private extension Notification.Name {
     static let showHeinzelConnection = Notification.Name("showHeinzelConnection")
 }
+
+#if os(macOS)
+enum WorkspaceMenuAction: String {
+    case about, settings, updates, search, sidebar, terminal, browser, chat, notifications
+    case newChat = "new-chat"
+    case today = "go:today", heinzel = "go:heinzel", team = "go:team", plugins = "go:plugins"
+    case help, changelog, doctor, copy, daemon
+    case reload, zoomIn, zoomOut, resetZoom
+
+    static let notification = Notification.Name("heinzelWorkspaceMenuAction")
+}
+
+private struct WorkspaceCommands: Commands {
+    private let website = "https://heinzel.team"
+    private let repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
+
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            command("About Heinzelmännchen", .about)
+        }
+        CommandGroup(replacing: .appSettings) {
+            command("Settings…", .settings).keyboardShortcut(",")
+            command("Check for Updates…", .updates)
+            Button("Connection…") {
+                NotificationCenter.default.post(name: .showHeinzelConnection, object: nil)
+            }
+            .keyboardShortcut(",", modifiers: [.command, .shift])
+        }
+        CommandGroup(replacing: .newItem) {
+            command("New Chat", .newChat).keyboardShortcut("n")
+        }
+        CommandGroup(before: .toolbar) {
+            command("Search…", .search).keyboardShortcut("k")
+            command("Toggle Sidebar", .sidebar).keyboardShortcut("b")
+            Divider()
+            command("Toggle Terminal", .terminal).keyboardShortcut("j")
+            command("Toggle Browser", .browser).keyboardShortcut("b", modifiers: [.command, .shift])
+            command("Toggle Side Chat", .chat).keyboardShortcut(";")
+            command("Show Notifications", .notifications).keyboardShortcut("n", modifiers: [.command, .shift])
+            Divider()
+            command("Actual Size", .resetZoom).keyboardShortcut("0")
+            command("Zoom In", .zoomIn).keyboardShortcut("=")
+            command("Zoom Out", .zoomOut).keyboardShortcut("-")
+            command("Reload", .reload).keyboardShortcut("r")
+        }
+        CommandMenu("Go") {
+            command("Today", .today).keyboardShortcut("1")
+            command("Heinzelmännchen", .heinzel).keyboardShortcut("2")
+            command("Team", .team).keyboardShortcut("3")
+            command("Plugins", .plugins).keyboardShortcut("4")
+        }
+        CommandGroup(replacing: .help) {
+            external("Heinzelmännchen Help", website + "/")
+            external("Getting Started", website + "/guides/install/")
+            external("Product Tour", website + "/guides/tour/")
+            command("In-App Help", .help)
+            external("Plugin Catalog", website + "/CATALOG/")
+            command("View Release Notes", .changelog)
+            Menu("Troubleshooting") {
+                command("Run Doctor", .doctor)
+                command("Copy Diagnostics", .copy)
+                command("Restart Daemon…", .daemon)
+            }
+            Divider()
+            external("Get Support", repository + "/issues")
+            external("Report an Issue…", repository + "/issues/new")
+            external("Heinzelmännchen on GitHub", repository)
+            Divider()
+            external("Privacy Policy", website + "/privacy/")
+            external("Imprint", website + "/imprint/")
+        }
+    }
+
+    private func command(_ title: String, _ action: WorkspaceMenuAction) -> some View {
+        Button(title) { NotificationCenter.default.post(name: WorkspaceMenuAction.notification, object: action) }
+    }
+
+    private func external(_ title: String, _ address: String) -> some View {
+        Button(title) {
+            if let url = URL(string: address) { NSWorkspace.shared.open(url) }
+        }
+    }
+}
+#endif
 
 struct ConnectionView: View {
     #if os(macOS)
