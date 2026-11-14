@@ -64,15 +64,19 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
     func start() async -> Bool {
         guard Self.owner == nil else { return false }
         Self.owner = self
-        return await withCheckedContinuation { continuation in
-            pending = continuation
-            picker.add(self)
-            picker.isActive = true
-            picker.present()
-            pickerTimeout = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
-                self?.stop()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                pending = continuation
+                picker.add(self)
+                picker.isActive = true
+                pickerTimeout = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    self?.stop()
+                }
+                picker.present()
             }
+        } onCancel: {
+            Task { @MainActor in self.stop() }
         }
     }
 
@@ -105,11 +109,15 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
     }
 
     nonisolated func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
-        Task { @MainActor in self.finishPicker(false) }
+        Task { @MainActor in
+            if self.stream == nil { self.finishPicker(false) }
+        }
     }
 
     nonisolated func contentSharingPickerStartDidFailWithError(_ error: any Error) {
-        Task { @MainActor in self.finishPicker(false) }
+        Task { @MainActor in
+            if self.stream == nil { self.finishPicker(false) }
+        }
     }
 
     nonisolated func contentSharingPicker(
@@ -129,6 +137,7 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
         self.stream = capture
         let attempt = revision
         Task {
+            guard attempt == revision else { return }
             do {
                 try capture.addStreamOutput(samples, type: .audio, sampleHandlerQueue: DispatchQueue(label: "team.heinzel.audio"))
                 try await capture.startCapture()
