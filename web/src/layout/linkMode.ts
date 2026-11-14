@@ -1,36 +1,15 @@
-// Settings > "Open links in the built-in browser": a switch in the desktop app, on by default. The page keeps the
-// choice and tells the desktop, which applies it to the next link with no restart. Outside the desktop app a link
-// opens a new browser tab as it always did.
-const KEY = "hz.links-in-browser";
-
-type LinkBridge = { linkMode?: (inBrowser: boolean) => Promise<boolean> };
+// "Open links in the built-in browser": a setting of the desktop app itself, kept by its main process (on by default),
+// so a reset of the page's storage or a changed port never turns it back on. The page only reads and writes it
+// through the desktop bridge; outside the desktop app a link opens a new browser tab as it always did.
+type LinkBridge = { linkMode?: (inBrowser?: boolean) => Promise<boolean> };
 const bridge = () => (window as Window & { heinzelDesktop?: LinkBridge }).heinzelDesktop;
 
 /** Whether this window is the desktop app, the only place the switch means anything. */
 export const linkModeAvailable = (): boolean => typeof bridge()?.linkMode === "function";
 
-export function linksInBuiltInBrowser(): boolean {
-  try {
-    return localStorage.getItem(KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
+/** The stored choice; it applies to the next link at once, with no restart. */
+export const readLinkMode = (): Promise<boolean> => bridge()?.linkMode?.() ?? Promise.resolve(true);
 
-/** Tell the desktop the stored choice, once the page is up and after every change. */
-export function syncLinkMode(): void {
-  void bridge()
-    ?.linkMode?.(linksInBuiltInBrowser())
-    .catch(() => {});
-}
-
-export function setLinksInBuiltInBrowser(on: boolean): void {
-  try {
-    localStorage.setItem(KEY, on ? "on" : "off");
-  } catch {
-    // The choice then lasts until the page reloads; the desktop still applies it now.
-  }
-  void bridge()
-    ?.linkMode?.(on)
-    .catch(() => {});
-}
+/** Store the choice and return what the desktop now holds, which is the old value if it could not be applied. */
+export const writeLinkMode = (inBrowser: boolean): Promise<boolean> =>
+  bridge()?.linkMode?.(inBrowser) ?? Promise.resolve(inBrowser);

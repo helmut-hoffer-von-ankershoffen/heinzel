@@ -213,6 +213,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const nav = await screen.findByRole("navigation", { name: "Settings" });
     for (const name of [
       "Appearance",
+      "Browser",
       "World clock",
       "Notifications",
       "AI",
@@ -233,7 +234,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World clock"]);
+    expect(names.slice(0, 3)).toEqual(["Appearance", "Browser", "Notifications"]);
     // Every entry has its own icon, never a shared generic one, and AI is only under Customize.
     expect(names.filter((name) => name === "AI")).toHaveLength(1);
     expect(within(nav).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
@@ -923,6 +924,7 @@ describe("Where settings live", () => {
     expect(nav.pages.filter((page) => page.heading === "preferences").map((page) => page.title)).toEqual([
       "ACME Lisbon",
       "Appearance",
+      "Browser",
       "Example",
       "Notifications",
       "Slack",

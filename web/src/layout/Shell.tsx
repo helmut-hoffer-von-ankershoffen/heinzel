@@ -28,7 +28,6 @@ import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
-import { syncLinkMode } from "./linkMode";
 import { NotificationPanel } from "./NotificationCenter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
@@ -127,10 +126,6 @@ function Layout() {
   const [retainedViews, setRetainedViews] = useState<string[]>([]);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
   // A phone also fires resize for the browser's toolbars and keyboard, at the same width; those change nothing here.
-  // The desktop learns the stored "open links in the built-in browser" choice as soon as the page is up.
-  useEffect(() => {
-    syncLinkMode();
-  }, []);
   useEffect(() => {
     let width = window.innerWidth;
     const fold = () => {

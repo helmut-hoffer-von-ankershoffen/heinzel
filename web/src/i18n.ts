@@ -1111,6 +1111,8 @@ const en = {
   "browser.linkLimit": "All 8 tabs are in use. Close one, or open this link in your default browser.",
   "browser.linkOpenExternal": "Open in browser",
   "browser.linkDismiss": "Dismiss",
+  "settings.browserTitle": "Browser",
+  "settings.browserWebOnly": "The built-in browser is part of the desktop app. Here, links open in a new browser tab.",
   "settings.linksInBrowser": "Open links in the built-in browser",
   "settings.linksInBrowserHelp":
     "On: links in Heinzel, in embeds and in pages open in a new tab of the built-in browser. Off: they open in your default browser.",

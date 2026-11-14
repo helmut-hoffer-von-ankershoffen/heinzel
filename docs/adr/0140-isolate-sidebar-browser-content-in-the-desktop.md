@@ -91,9 +91,10 @@ target=_blank from pages inside the browser itself. Only http and https links go
 person's own input just before it (the gesture rule of the external opener), at most one every half second. The
 rules of a typed address apply: a link to a non-public or non-HTTPS target is refused with a visible note. When all 8
 tabs are in use the link is not lost: the panel shows a note with the link and "Open in browser". `mailto:` and other
-schemes go to the system as before, and so does the "Open in browser" button. A switch in Settings, "Open links in the
+schemes go to the system as before, and so does the "Open in browser" button. A switch in Settings > Browser, "Open links in the
 built-in browser" (on by default, no restart), turns the behaviour off: links then open in the default browser, as
-before. In the PWA nothing changes: a link opens a new browser tab.
+before. The choice is a setting of the desktop app itself, kept in a small file in its own data folder by the main
+process and read by the page through the bridge, so a reset of the page's storage cannot turn it on again. In the PWA nothing changes: a link opens a new browser tab.
 
 ### Consequences
 

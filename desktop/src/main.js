@@ -10,6 +10,7 @@ import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } fr
 import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
+import { createSettingsStore } from "./settings-store.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
@@ -87,7 +88,7 @@ const instance = createInstanceLifecycle({
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
       activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url), {
-        browserOn: () => linksInBrowser,
+        browserOn: () => settings.get("linksInBrowser"),
         browser: async (url) => {
           await miniBrowser.openLink(window, url);
           // Show the panel on the new tab: the page opens it without toggling it shut.
@@ -99,8 +100,8 @@ const instance = createInstanceLifecycle({
   }),
 });
 
-// Settings > "Open links in the built-in browser": live, on until the page says otherwise.
-let linksInBrowser = true;
+// Settings > Browser > "Open links in the built-in browser": a setting of the app itself, live and kept across restarts.
+const settings = createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") });
 const miniBrowser = createMiniBrowser({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -120,13 +121,13 @@ const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : ()
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:link-mode", (event, inBrowser) => {
-    if (!isOwnedMainFrame(event, {
+    const owned = isOwnedMainFrame(event, {
       windows,
       fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
       connection: () => (stopping || quitting ? null : instance.currentConnection()),
-    })) return linksInBrowser;
-    linksInBrowser = inBrowser === true;
-    return linksInBrowser;
+    });
+    if (owned && typeof inBrowser === "boolean") settings.set("linksInBrowser", inBrowser);
+    return settings.get("linksInBrowser");
   });
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,

@@ -5,7 +5,6 @@ import { forgetDevice } from "@/api/device";
 import { deviceToken } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { linkModeAvailable, linksInBuiltInBrowser, setLinksInBuiltInBrowser } from "@/layout/linkMode";
 import { InstallApp } from "@/pwa/InstallApp";
 import { setDesktop, useDesktopState } from "./desktop";
 import { NotificationTest } from "./NotificationTest";
@@ -19,8 +18,6 @@ export function NotificationSettings() {
   const [soundOn, setSoundOn] = useState(notificationSoundEnabled);
   const [soundProblem, setSoundProblem] = useState("");
   const soundId = useId();
-  const linksId = useId();
-  const [linksOn, setLinksOn] = useState(linksInBuiltInBrowser);
 
   useEffect(() => {
     const syncSound = (event: StorageEvent) => {
@@ -83,25 +80,6 @@ export function NotificationSettings() {
           {soundProblem || t(notificationSoundAvailable() ? "notify.sound.help" : "notify.sound.unsupported")}
         </p>
       </div>
-      {linkModeAvailable() && (
-        <div className="flex flex-col gap-1">
-          <label htmlFor={linksId} className="flex items-center gap-2 text-sm">
-            <input
-              id={linksId}
-              type="checkbox"
-              role="switch"
-              aria-checked={linksOn}
-              checked={linksOn}
-              onChange={(event) => {
-                setLinksInBuiltInBrowser(event.target.checked);
-                setLinksOn(event.target.checked);
-              }}
-            />
-            {t("settings.linksInBrowser")}
-          </label>
-          <p className="text-xs text-muted-foreground">{t("settings.linksInBrowserHelp")}</p>
-        </div>
-      )}
       <NotificationTest />
       {paired && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

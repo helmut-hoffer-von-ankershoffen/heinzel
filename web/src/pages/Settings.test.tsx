@@ -70,21 +70,31 @@ describe("Settings dialog", () => {
     expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
   });
 
-  it("offers the built-in browser link switch only in the desktop app, on by default and live", async () => {
+  it("has a Browser section whose link switch lives in the desktop app: on by default, live, read back from it", async () => {
     mockApi(shell);
-    const linkMode = vi.fn(async () => true);
+    let stored = true;
+    const linkMode = vi.fn(async (value?: boolean) => {
+      if (typeof value === "boolean") stored = value;
+      return stored;
+    });
     Object.defineProperty(window, "heinzelDesktop", { value: { linkMode }, configurable: true });
-    localStorage.removeItem("hz.links-in-browser");
     const user = userEvent.setup();
-    renderAt("/?settings=notifications");
+    renderAt("/?settings=browser");
     const toggle = await screen.findByRole("switch", { name: "Open links in the built-in browser" });
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
     await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-checked", "false");
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
     expect(linkMode).toHaveBeenLastCalledWith(false);
-    expect(localStorage.getItem("hz.links-in-browser")).toBe("off");
+    expect(localStorage.getItem("hz.links-in-browser")).toBeNull();
     await user.click(toggle);
-    expect(linkMode).toHaveBeenLastCalledWith(true);
+    await waitFor(() => expect(linkMode).toHaveBeenLastCalledWith(true));
     Reflect.deleteProperty(window, "heinzelDesktop");
+  });
+
+  it("says in the web app that the browser setting needs the desktop app", async () => {
+    mockApi(shell);
+    renderAt("/?settings=browser");
+    expect(await screen.findByText(/built-in browser is part of the desktop app/)).toBeVisible();
+    expect(screen.queryByRole("switch", { name: "Open links in the built-in browser" })).toBeNull();
   });
 });
