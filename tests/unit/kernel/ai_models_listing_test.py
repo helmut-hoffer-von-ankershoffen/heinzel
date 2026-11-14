@@ -1,7 +1,5 @@
 """Model lists are kept per adapter object, never per id, so a rebuilt adapter never gets a freed one's (ADR 0159)."""
 
-import gc
-
 import pytest
 
 from heinzel import ModelOffer
@@ -32,13 +30,15 @@ def _source(adapter: object) -> AiModelsSource:
 
 
 def test_probe_d3_a_new_adapter_never_gets_another_adapters_list():
+    import time
+
+    started = time.monotonic()
     reused = 0
     for _ in range(50):
         first = A()
         list_offers(_source(first))
         old = id(first)
-        del first
-        gc.collect()
+        del first  # refcounting frees it at once (no cycle), so no gc.collect(): that took >5 s under xdist
         second = B()
         if id(second) != old:
             continue
@@ -46,3 +46,4 @@ def test_probe_d3_a_new_adapter_never_gets_another_adapters_list():
         offers, _note = list_offers(_source(second))
         assert [o.id for o in offers] == ["new-model"], "a rebuilt adapter got the previous adapter's cached list"
     assert reused, "no id reuse happened; rerun"
+    assert time.monotonic() - started < 2.0

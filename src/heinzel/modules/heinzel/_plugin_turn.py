@@ -17,59 +17,19 @@ from typing import Any, cast
 from pydantic_ai import ModelRequestContext, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.capabilities.abstract import WrapModelRequestHandler
-from pydantic_ai.exceptions import (
-    AgentRunError,
-    ModelAPIError,
-    ModelConnectionError,
-    ModelHTTPError,
-    ModelRateLimitError,
-    ModelServerError,
-)
-from pydantic_ai.exceptions import ModelUnavailableError as ProviderUnavailableError
+from pydantic_ai.exceptions import AgentRunError, ModelAPIError
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.settings import ModelSettings
 
 from heinzel import HeinzelError, UsageEntry
 from heinzel.kernel import ModelOffer, UsageCause
-from heinzel.kernel._ai_models import ModelUnavailableError, effort_settings
+from heinzel.kernel._ai_models import PluginModelError, effort_settings, model_failure
 from heinzel.modules.heinzel._engine import TurnDeps
-
-UNAUTHORIZED = frozenset({401, 403})
-BUSY = frozenset({429, 503, 529})
-
-
-class PluginModelError(HeinzelError):
-    """A plugin's model failed a request; the message says what kind of failure, never the provider's words."""
-
-    def __init__(self, message: str, *, before_response: bool) -> None:
-        """Keep whether it failed before any response of the turn: then nothing was answered and no tool ran."""
-        super().__init__(message)
-        self.before_response = before_response
-
-
-def _status(exc: BaseException) -> int | None:
-    return exc.status_code if isinstance(exc, ModelHTTPError) else None
 
 
 def failure(exc: Exception, model: str, *, before_response: bool) -> HeinzelError:
-    """What hz says about a failed request on a plugin's model, from its kind and status code only."""
-    status = _status(exc)
-    code = f" ({status})" if status is not None else ""
-    if status in UNAUTHORIZED:
-        message = f"The provider refused the request{code}: check the plugin's sign-in."
-    elif status == 404 or (isinstance(exc, ProviderUnavailableError) and status not in BUSY):  # noqa: PLR2004
-        return ModelUnavailableError(model, [], "the provider doesn't know it or can't serve it now")
-    elif status in BUSY or isinstance(exc, ModelRateLimitError):
-        message = f"The provider is busy or rate-limited{code}; try again shortly."
-    elif isinstance(exc, ModelConnectionError):
-        message = "Couldn't reach the plugin's model; check the network and the plugin's endpoint."
-    elif isinstance(exc, ModelServerError) or (status is not None and status >= 500):  # noqa: PLR2004
-        message = f"The provider failed the request{code}; try again later."
-    elif isinstance(exc, ModelAPIError):
-        message = f"The provider rejected the request{code}."
-    else:
-        message = f"The plugin's model failed ({type(exc).__name__})."
-    return PluginModelError(message, before_response=before_response)
+    """What hz says about a failed request on a plugin's model: `model_failure`, kept for this turn."""
+    return model_failure(exc, model, before_response=before_response)
 
 
 @dataclass

@@ -28,7 +28,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
-from heinzel.kernel._ai_models import PluginModelChoice, build_model, choose, list_offers
+from heinzel.kernel._ai_models import PluginModelChoice, PluginModelError, build_model, choose, list_offers
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
@@ -369,7 +369,6 @@ class UserChatService:
             raise HeinzelError(msg)
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
-        from heinzel.modules.heinzel._plugin_turn import PluginModelError  # noqa: PLC0415 - model execution only during a turn
 
         plugin = await asyncio.to_thread(self.plugin_selected)
         hooks: list[PluginTurnGuard] = []

@@ -145,6 +145,53 @@ class AiModels(Protocol):
         ...
 
 
+UNAUTHORIZED = frozenset({401, 403})
+BUSY = frozenset({429, 503, 529})
+
+
+class PluginModelError(HeinzelError):
+    """A plugin's model failed a request; the message says what kind of failure, never the provider's words."""
+
+    def __init__(self, message: str, *, before_response: bool = False) -> None:
+        """Keep whether it failed before any response of the turn: then nothing was answered and no tool ran."""
+        super().__init__(message)
+        self.before_response = before_response
+
+
+def model_failure(exc: Exception, model: str, *, before_response: bool = False) -> HeinzelError:
+    """What hz says about a failed request on a plugin's model, from its kind and HTTP status only (ADR 0159).
+
+    Never the provider's response body, the exception's text or a header: a proxy's error may echo a token. For hz's
+    engine on every path: chat, drafts, schedules and the engine runner.
+    """
+    from pydantic_ai.exceptions import (  # noqa: PLC0415 - only when a request failed
+        ModelAPIError,
+        ModelConnectionError,
+        ModelHTTPError,
+        ModelRateLimitError,
+        ModelServerError,
+    )
+    from pydantic_ai.exceptions import ModelUnavailableError as ProviderUnavailableError  # noqa: PLC0415
+
+    status = exc.status_code if isinstance(exc, ModelHTTPError) else None
+    code = f" ({status})" if status is not None else ""
+    if status in UNAUTHORIZED:
+        message = f"The provider refused the request{code}: check the plugin's sign-in."
+    elif status == 404 or (isinstance(exc, ProviderUnavailableError) and status not in BUSY):  # noqa: PLR2004
+        return ModelUnavailableError(model, [], "the provider doesn't know it or can't serve it now")
+    elif status in BUSY or isinstance(exc, ModelRateLimitError):
+        message = f"The provider is busy or rate-limited{code}; try again shortly."
+    elif isinstance(exc, ModelConnectionError):
+        message = "Couldn't reach the plugin's model; check the network and the plugin's endpoint."
+    elif isinstance(exc, ModelServerError) or (status is not None and status >= 500):  # noqa: PLR2004
+        message = f"The provider failed the request{code}; try again later."
+    elif isinstance(exc, ModelAPIError):
+        message = f"The provider rejected the request{code}."
+    else:
+        message = f"The plugin's model failed ({type(exc).__name__})."
+    return PluginModelError(message, before_response=before_response)
+
+
 OUTPUT_TOKENS = 16384
 """The most a plugin's model may write in one response besides its thinking, hz's cap on that path (ADR 0159)."""
 
@@ -218,11 +265,11 @@ class _Listing:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-_listings: "weakref.WeakKeyDictionary[object, _Listing]" = weakref.WeakKeyDictionary()
-"""Per adapter object, never per id: a rebuilt adapter starts with a list of its own, and a freed one's goes away."""
-_pinned: dict[int, tuple[object, _Listing]] = {}
-"""For an adapter that can't be weakly referenced (`__slots__` without `__weakref__`): kept with its listing."""
-_listings_lock = threading.Lock()
+_listings: dict[int, tuple[Callable[[], object | None], _Listing]] = {}
+"""Per adapter object, by identity: the entry holds a weak reference (or, for an adapter that can't have one, the
+adapter itself) and is checked against it, so a rebuilt adapter never gets a freed one's list, and two equal adapter
+objects never share one. A weakly referenced adapter's entry goes away with it."""
+_listings_lock = threading.RLock()  # re-entrant: a freed adapter's callback may run while it is held
 
 
 def _validated(found: object) -> tuple[list[ModelOffer], str]:
@@ -274,16 +321,25 @@ def _fetch(source: AiModelsSource, listing: _Listing, done: threading.Event) -> 
 
 def _listing_of(adapter: object) -> _Listing:
     """The listing of `adapter`, made on first use; the caller holds `_listings_lock`."""
+    key = id(adapter)
+    found = _listings.get(key)
+    if found is not None and found[0]() is adapter:
+        return found[1]
     try:
-        found = _listings.get(adapter)
-        if found is None:
-            found = _listings[adapter] = _Listing()
-    except TypeError:  # not weakly referenceable: keep the adapter itself, so its id can't be reused meanwhile
-        kept = _pinned.get(id(adapter))
-        if kept is None or kept[0] is not adapter:
-            kept = _pinned[id(adapter)] = (adapter, _Listing())
-        found = kept[1]
-    return found
+        ref: Callable[[], object | None] = weakref.ref(adapter, lambda _gone: _forget(key))
+    except TypeError:  # can't be weakly referenced: keep the adapter itself, so its id can't be reused meanwhile
+        ref = lambda: adapter  # noqa: E731 - a strong reference with the same shape as a weak one
+    listing = _Listing()
+    _listings[key] = (ref, listing)
+    return listing
+
+
+def _forget(key: int) -> None:
+    """Drop a freed adapter's listing, unless another adapter took its id meanwhile."""
+    with _listings_lock:
+        found = _listings.get(key)
+        if found is not None and found[0]() is None:
+            del _listings[key]
 
 
 def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[list[ModelOffer], str]:
