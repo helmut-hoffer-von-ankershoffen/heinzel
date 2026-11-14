@@ -54,6 +54,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._tool_python import newer_python
 from heinzel.modules.system._announced import (
     Announcement,
     ToolSnapshot,
@@ -109,6 +110,13 @@ type Mode = Literal["new", "keep", "drop"]
 (`drop`)."""
 
 REASON_LENGTH = 300
+
+
+def _release_version(target: str | None) -> str | None:
+    """The version a release tag `vX.Y.Z` names; None for any other source."""
+    if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*", target):
+        return target.removeprefix("v")
+    return None
 
 
 def _is_conflict(output: str) -> bool:
@@ -319,7 +327,7 @@ class UpdateService:
             return selection
         pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
         prefix = self._installation.prefix.resolve(strict=True)
-        with self._mutation() as scope:
+        with self._interpreter_for(announced.core), self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 expected, guards, policy = self._prepare_announced(
@@ -378,6 +386,38 @@ class UpdateService:
             message=_with_heads(f"Installed hz {target}.", heads),
             heads=heads,
         )
+
+    def needed_python(self, version: str | None) -> str | None:
+        """The newer Python (`X.Y`) release `version` requires than this one runs on; None if this one will do.
+
+        None too when the release source can't say: the update then stays on the tool's interpreter, as before.
+
+        Raises:
+            HeinzelError: If the release's `Requires-Python` is malformed or no newer Python satisfies it.
+        """
+        if version is None or self._releases is None:
+            return None
+        try:
+            requires = self._releases.requires_python(version, RELEASE_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: an unknown requirement keeps today's interpreter
+            log.warning("could not read the Python requirement of hz %s: %s", version, exc)
+            return None
+        return newer_python(requires)
+
+    @contextmanager
+    def _interpreter_for(self, version: str | None) -> Generator[None]:
+        """Install release `version` onto a uv-managed newer Python if it needs one, else onto the tool's own.
+
+        Raises:
+            HeinzelError: If the newer Python can't be obtained; nothing was changed then.
+        """
+        needed = self.needed_python(version)
+        if needed is None:
+            yield
+            return
+        with self._installation.newer_interpreter(needed, subprocess_environment()):
+            log.info("hz %s needs Python %s; installing onto a uv-managed Python %s", version, needed, needed)
+            yield
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
@@ -1052,7 +1092,8 @@ class UpdateService:
         automatic: bool = True,
         generation: str | None = None,
     ) -> UpdateResult:
-        with self._mutation() as scope:
+        release = latest if latest is not None and target in {f"v{latest}", None} else _release_version(target)
+        with self._interpreter_for(release), self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 self._verify_selection(pin, plugins, scope)
@@ -1587,7 +1628,9 @@ class UpdateService:
                 return f"hz {self._version()} is still installed, with every plugin."
             except HeinzelError:
                 pass
-        restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
+        restore = self._installation.tool_install_command(
+            pin.requirement, [p.requirement for p in plugins], original=True
+        )
         try:
             restored = self._installation.attempt(restore, f"Restoring hz {current}", environment, recovery=True)
             if restored.returncode == 0 and self._same_generation(original):

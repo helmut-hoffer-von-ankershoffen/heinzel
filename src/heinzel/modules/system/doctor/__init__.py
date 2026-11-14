@@ -75,9 +75,10 @@ def doctor(kernel: Kernel) -> HealthReport:
 @module.health
 def core(kernel: Kernel, settings: Settings) -> list[Check]:
     """Heinzelmännchen's own checks: Python, uv, the installation, plugins and its directories."""
+    receipt = Path(sys.prefix) / "uv-receipt.toml"
     checks = [
         Check(name="hostname", status=Status.UP, detail=gethostname()),
-        Check(name="python", status=Status.UP, detail=sys.version.split()[0])
+        Check(name="python", status=Status.UP, detail=python_detail(tool=receipt.is_file()))
         if sys.version_info >= MINIMUM_PYTHON
         else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),
     ]
@@ -92,7 +93,6 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
             fix="Install uv: https://docs.astral.sh/uv/",
         )
     )
-    receipt = Path(sys.prefix) / "uv-receipt.toml"
     checks.append(
         Check(name="installation", status=Status.UP, detail=f"uv tool environment {sys.prefix}")
         if receipt.is_file()
@@ -132,6 +132,17 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
             )
         )
     return checks
+
+
+def python_detail(*, tool: bool) -> str:
+    """The running Python and, for a uv tool, how `hz system update` handles a release that needs a newer one."""
+    version = sys.version.split()[0]
+    if not tool:
+        return version
+    return (
+        f"{version} (the uv tool's interpreter; a release that needs a newer Python is installed onto a uv-managed "
+        "one by hz system update, or the update stops and this one keeps working)"
+    )
 
 
 def release_check(settings: Settings) -> Check:

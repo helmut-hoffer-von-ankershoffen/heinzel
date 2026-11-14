@@ -8,6 +8,7 @@ import re
 import sys
 import unicodedata
 import urllib.error
+import urllib.parse
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, Release
 from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
+from heinzel.modules.system._plugin_releases import PYPI, fetch_json
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
@@ -145,6 +147,19 @@ class GitHubReleases(ReleaseSource):
             commit=str(ref["sha"]) if ref.get("type") == "commit" else None,
             prerelease=bool(release.get("prerelease")) or bool(release.get("draft")),
         )
+
+    @override
+    def requires_python(self, version: str, timeout: float) -> str | None:
+        """The `Requires-Python` PyPI publishes for release `version` (the same wheel the tag builds); one GET.
+
+        Raises:
+            OSError: If PyPI can't be reached or answers with an error.
+            ValueError: If the answer is too large or not JSON.
+        """
+        data: object = fetch_json(f"{PYPI}/pypi/heinzel/{urllib.parse.quote(version)}/json", timeout)
+        info = cast("dict[str, object]", data).get("info") if isinstance(data, dict) else None
+        value = cast("dict[str, object]", info).get("requires_python") if isinstance(info, dict) else None
+        return value if isinstance(value, str) and value.strip() else None
 
     @override
     def accepted(self, version: str, timeout: float) -> bool:

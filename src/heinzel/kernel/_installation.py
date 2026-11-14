@@ -40,7 +40,7 @@ from packaging.utils import (
 )
 from packaging.version import InvalidVersion, Version
 
-from heinzel.kernel import _installation_continuity, _installed_metadata
+from heinzel.kernel import _installation_continuity, _installed_metadata, _tool_python
 from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
@@ -705,6 +705,9 @@ class Installation:
             ]
             | None
         ] = ContextVar("installation_tool_scope", default=None)
+        self._target_python: ContextVar[tuple[str, str, tuple[int, ...]] | None] = ContextVar(
+            "installation_target_python", default=None
+        )
 
     @property
     def is_tool(self) -> bool:
@@ -1137,17 +1140,29 @@ class Installation:
         return _core_requirement(source)
 
     def tool_install_command(
-        self, core: str, plugins: Sequence[str], *, refresh: bool = False, reinstall: bool = True
+        self,
+        core: str,
+        plugins: Sequence[str],
+        *,
+        refresh: bool = False,
+        reinstall: bool = True,
+        original: bool = False,
     ) -> list[str]:
         """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on.
 
         With `refresh` uv asks the indexes and git remotes again instead of trusting its cache, so a branch is
         resolved to its newest commit and an index to its newest release. Without `reinstall`, what is installed and
-        still satisfies the requirements stays as it is (automatic updates, ADR 0116).
+        still satisfies the requirements stays as it is (automatic updates, ADR 0116). Inside `newer_interpreter` the
+        command names that verified interpreter instead, unless `original` asks for the one the tool runs on (a
+        restore always does).
         """
         requirement = _core_requirement(core)
         scope = self._tool_scope.get()
-        python = scope[3][0] if scope else _installation_continuity.tool_python(self.prefix)[0]
+        target = None if original else self._target_python.get()
+        if target is not None:
+            python = target[0]
+        else:
+            python = scope[3][0] if scope else _installation_continuity.tool_python(self.prefix)[0]
         command = [
             self.uv,
             "tool",
@@ -1161,6 +1176,27 @@ class Installation:
         for plugin in plugins:
             command += ["--with", plugin]
         return command
+
+    @contextmanager
+    def newer_interpreter(self, version: str, environment: Mapping[str, str] | None = None) -> Generator[str]:
+        """Install onto a verified uv-managed Python `version` (`X.Y`) for one update; yields its path.
+
+        A target release that needs a newer Python than the tool runs on can only be reached this way. The
+        interpreter is obtained (uv installs it if missing) and verified before anything is installed; restores keep
+        naming the original interpreter.
+
+        Yields:
+            The path of the verified interpreter.
+
+        Raises:
+            HeinzelError: If uv can't provide a verified interpreter; the tool is untouched then.
+        """
+        identity = _tool_python.managed_python(self._runner, self.uv, version, environment)
+        token = self._target_python.set(identity)
+        try:
+            yield identity[0]
+        finally:
+            self._target_python.reset(token)
 
     def pip_command(self, action: str, spec: str) -> list[str]:
         """`uv pip install` or `uninstall` into the environment Heinzelmännchen runs in."""
@@ -1370,7 +1406,7 @@ class Installation:
             if constraints and any(arg.startswith(("-c", "--constraints")) for arg in command):
                 msg = "Cannot combine supplied constraints with the existing receipt policy; update manually."
                 raise HeinzelError(msg)
-            restore = self.tool_install_command(requirements[0], requirements[1:])
+            restore = self.tool_install_command(requirements[0], requirements[1:], original=True)
             with tempfile.TemporaryDirectory(prefix="heinzel-tool-constraints-") as directory:
                 args: list[str] = []
                 if constraints:
@@ -1457,7 +1493,12 @@ class Installation:
                 msg = "The original tool interpreter changed; inspect the installation before updating."
                 raise HeinzelError(msg)
             position = command.index("--python") + 1
-            if position >= len(command) or command[position] != python[0]:
+            target = None if recovery else self._target_python.get()
+            if target is not None and position < len(command) and command[position] == target[0]:
+                if _installation_continuity.external_python(Path(target[0])) != target:
+                    msg = "The selected newer interpreter changed; the update was not started."
+                    raise HeinzelError(msg)
+            elif position >= len(command) or command[position] != python[0]:
                 msg = "The selected tool interpreter changed; reload before updating."
                 raise HeinzelError(msg)
         with self._progress.task(activity):

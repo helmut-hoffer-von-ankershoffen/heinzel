@@ -77,6 +77,10 @@ def _fetch(url: str, timeout: float) -> Any:  # noqa: ANN401 - free-form JSON
     return json.loads(body)
 
 
+fetch_json = _fetch
+"""GET a PyPI JSON document, for hz's own release metadata as well."""
+
+
 class PyPIPluginReleases(PluginReleases):
     """Asks PyPI for each plugin from the package index and GitHub for each one pinned to a commit; stable only."""
 
