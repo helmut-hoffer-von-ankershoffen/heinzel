@@ -105,17 +105,22 @@ GRANDCHILD = textwrap.dedent(
 
 
 @pytest.mark.timeout(60)
-@pytest.mark.parametrize("attempt", range(3))
-def test_stop_kills_the_whole_launcher_group_even_with_a_short_stop_timeout(tmp_path: Path, attempt: int):
-    script, pid_file = tmp_path / "hang.py", tmp_path / f"grandchild-{attempt}"
-    script.write_text(GRANDCHILD, encoding="utf-8")
-    connector = McpConnector(
-        [sys.executable, str(script)], tools=["hang"], env={"PID_FILE": str(pid_file)}, timeout=1, stop_timeout=1
-    )
+@pytest.mark.parametrize(("attempt", "shebang"), [(0, False), (1, True), (2, True)], ids=["python", "shebang", "again"])
+def test_stop_kills_the_whole_launcher_group_even_with_a_short_stop_timeout(
+    tmp_path: Path, attempt: int, *, shebang: bool
+):
+    """Also a launcher run by name through its `#!` line, whose process shows its interpreter, not its name."""
+    script, pid_file = tmp_path / "acme-mcp", tmp_path / f"grandchild-{attempt}"
+    script.write_text(f"#!{sys.executable}\n{GRANDCHILD}", encoding="utf-8")
+    script.chmod(0o755)
+    command = [str(script), "launch", "mail"] if shebang else [sys.executable, str(script)]
+    connector = McpConnector(command, tools=["hang"], env={"PID_FILE": str(pid_file)}, timeout=1, stop_timeout=1)
     with connector, pytest.raises(McpConnectorError, match="didn't answer"):
         connector.call("hang")
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     assert not _alive(grandchild), "the launcher's grandchild outlived stop()"
+    leftovers = [p for p in psutil.Process().children(recursive=True) if str(script) in " ".join(p.cmdline())]
+    assert leftovers == [], "the launcher outlived stop()"
 
 
 def _alive(pid: int) -> bool:
