@@ -50,6 +50,7 @@ from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._self_chat import SelfChat
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
@@ -788,6 +789,29 @@ class Kernel:
             version=record.origin.version,
             adapter=cast("AiModels", instance),
         )
+
+    def self_chat(self) -> SelfChat | None:
+        """The bound chat adapter's self channel, for hz's own notices and questions (ADR 0160).
+
+        Trusted core code only, like `ai_models`: modules never get the adapter. None when no chat adapter is bound,
+        it can't write, or it serves neither `notify_self` nor `ask_self`. A class-based adapter is built on first use.
+
+        Raises:
+            HeinzelError: If a factory-built adapter must be built to see what it serves, and can't be.
+        """
+        name = self._capabilities.bound("chat")
+        providers = self._capabilities.adapters.get(("chat", name), []) if name is not None else []
+        if name is None or len(providers) != 1 or "write" not in providers[0].let.modes:
+            return None
+        chat = name
+
+        def build() -> object:
+            return self._capabilities.instance("chat", chat)[1]
+
+        factory = providers[0].let.factory
+        unsupported = declared_unsupported(factory if isinstance(factory, type) else build(), CAPABILITIES["chat"])
+        notifies, asks = "notify_self" not in unsupported, "ask_self" not in unsupported
+        return SelfChat(adapter=name, notifies=notifies, asks=asks, build=build) if notifies or asks else None
 
     def offers_ai_models(self, name: str | None) -> bool:
         """Whether `name` is an installed `ai-models` adapter, so its AI access option runs on hz's own engine."""

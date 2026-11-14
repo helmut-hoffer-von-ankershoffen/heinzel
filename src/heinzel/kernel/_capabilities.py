@@ -63,7 +63,14 @@ class Capability:
     inspection_methods: frozenset[str] = frozenset()
     """Offline inventory methods, never live actions; available only through explicit module inspection grants."""
 
+    optional: frozenset[str] = frozenset()
+    """Methods added after adapters shipped (ADR 0160): an adapter that doesn't define one doesn't support it, as if it
+    listed it in its `unsupported` attribute (ADR 0159), so it keeps loading."""
+
     def __post_init__(self) -> None:
+        if not self.optional <= set(self.methods):
+            msg = f"Capability {self.name!r} optional methods must be declared methods"
+            raise ValueError(msg)
         if any(self.methods.get(name) != "read" for name in self.inspection_methods):
             msg = f"Capability {self.name!r} inspection methods must be declared read methods"
             raise ValueError(msg)
@@ -128,8 +135,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Chat",
                 purpose="the channels your team talks in",
                 protocol=Chat,
-                summary="Channels people talk in: read their messages; post through publish operations.",
-                methods=MappingProxyType({"messages": "read", "post": "write"}),
+                summary="Channels people talk in: read their messages; post through publish operations; notify and ask "
+                "the user in their own direct messages (ADR 0160).",
+                methods=MappingProxyType(
+                    {"messages": "read", "post": "write", "notify_self": "write", "ask_self": "write"}
+                ),
+                optional=frozenset({"notify_self", "ask_self"}),
             ),
             Capability(
                 name="code-host",
@@ -221,12 +232,14 @@ def declared_unsupported(adapter: object, capability: Capability) -> frozenset[s
     """The methods of `capability` an adapter (class or instance) declares it doesn't support (ADR 0159).
 
     Read from its `unsupported` attribute, an iterable of method names; anything that isn't a method of the capability,
-    or an attribute that isn't such an iterable, counts as nothing declared.
+    or an attribute that isn't such an iterable, counts as nothing declared. An optional method the adapter doesn't
+    define counts as declared too (ADR 0160).
     """
+    absent = frozenset(name for name in capability.optional if not callable(getattr(adapter, name, None)))
     declared: object = getattr(adapter, "unsupported", ())
     if isinstance(declared, str | bytes) or not isinstance(declared, Iterable):
-        return frozenset()
-    return frozenset(name for name in cast("Iterable[object]", declared) if name in capability.methods)  # type: ignore[misc]
+        return absent
+    return absent | frozenset(name for name in cast("Iterable[object]", declared) if name in capability.methods)  # type: ignore[misc]
 
 
 def capability_of(protocol: Any) -> Capability | None:  # noqa: ANN401 - any annotation

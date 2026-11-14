@@ -20,8 +20,9 @@ recipients are participants too, so the workflow packet builder drops their addr
 """
 
 import re
+import threading
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any, Literal, Protocol, Self
 
@@ -197,6 +198,59 @@ class PostedMessage(BaseModel):
     url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
 
 
+SELF_OPTIONS = 10
+"""Most options one `Chat.ask_self` question offers."""
+SELF_OPTION_LENGTH = 75
+"""Longest option label: what a chat button shows in full."""
+SELF_CONTEXT_LENGTH = 60
+"""Longest context label, such as a schedule or Heinzel name."""
+
+
+class SelfMessage(BaseModel):
+    """What `Chat.notify_self` sent to the user's own direct messages (ADR 0160)."""
+
+    id: str = Field(description="Identifier of the new message, in the adapter's notation.")
+    thread: str = Field(
+        description="Handle that keeps later messages together: pass it back as `thread` to reply in the same "
+        "thread. For a top-level message, the handle of the thread it starts."
+    )
+    url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
+
+
+class SelfAnswer(BaseModel):
+    """How the user answered a `Chat.ask_self` question, or that nobody did in time (ADR 0160).
+
+    The answer is untrusted input, like any answer typed in a head: the core checks `option` against the options it
+    offered before it acts on it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    thread: str | None = Field(
+        default=None, description="Handle of the thread the question was posted in; pass it back to reply there."
+    )
+    text: str = Field(default="", description="What the user wrote, or the label of the button they chose.")
+    option: str | None = Field(
+        default=None, description="The offered option the user chose, exactly as offered; none for a typed reply."
+    )
+    timed_out: bool = Field(default=False, description="Nobody answered before the timeout, or the ask was cancelled.")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.timed_out and (self.text or self.option is not None):
+            msg = "A timed-out answer carries no text and no option"
+            raise ValueError(msg)
+        if not self.timed_out and not self.text.strip() and self.option is None:
+            msg = "An answer carries text or an option"
+            raise ValueError(msg)
+        return self
+
+    @property
+    def answered_by_option(self) -> bool:
+        """Whether the user chose one of the offered options rather than typing a reply."""
+        return self.option is not None
+
+
 class Meeting(BaseModel):
     """One meeting that took place, as the meeting tool recorded it."""
 
@@ -275,7 +329,10 @@ class Chat(Protocol):
     """Channels people talk in, such as Slack (capability `chat`).
 
     A `channel` argument is a channel id or a `#name`, which the adapter resolves; results carry the id. On Teams a
-    `#name` is a channel of the configured team. Direct messages and group chats are out of scope.
+    `#name` is a channel of the configured team. Direct messages to others and group chats are out of scope; the self
+    channel (`notify_self`, `ask_self`, ADR 0160) talks only to the user. Each method is optional: an adapter lists
+    the ones it can't serve in its `unsupported` class attribute (ADR 0159), so a self-only adapter declares
+    `unsupported = ("messages", "post")`.
     """
 
     def messages(self, channel: str, window: Window) -> list[Message]:
@@ -292,6 +349,38 @@ class Chat(Protocol):
         Adapters neutralise broadcast and mention syntax in `text` (Slack `<!channel>`, `<!here>`, `<@U…>`; Teams
         `<at>`), so a draft can't page a channel, and apply the vendor's length limit as they see fit. Only publish
         operations (`read_only=False`) get a handle on which this works (ADR 0028).
+        """
+        ...
+
+    def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+        """Send `text` (plain text or Markdown) to the user's own direct messages, fire and forget. Mode: write.
+
+        The self channel (ADR 0160): an extra place where hz tells the user what it would show in its own heads. It
+        never reaches anyone else. `thread` is a `SelfMessage.thread` or `SelfAnswer.thread` from an earlier call:
+        the message is a reply there. `context` is a short label such as a schedule or Heinzel name, which the
+        adapter shows with the message. Mentions are neutralised as in `post`. An adapter that can't send direct
+        messages lists this method in its `unsupported` class attribute (ADR 0159).
+        """
+        ...
+
+    def ask_self(  # noqa: PLR0913 - the question and its keyword-only knobs, as the chat CLIs take them
+        self,
+        question: str,
+        *,
+        options: Sequence[str] = (),
+        timeout: float,
+        thread: str | None = None,
+        context: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> SelfAnswer:
+        """Ask the user `question` in their own direct messages and wait for the answer. Mode: write.
+
+        `options` become buttons (at most `SELF_OPTIONS`, each at most `SELF_OPTION_LENGTH` characters); the user may
+        also reply in the thread with text. Blocks until the user answers, `timeout` seconds pass, or `cancel` is
+        set, because the user answered in another head first; the last two return `SelfAnswer(timed_out=True)`. An
+        adapter checks `cancel` at least every few seconds and stops waiting, such as by ending its subprocess.
+        The core calls this in a worker thread, never on its event loop. `thread`, `context` and mentions as in
+        `notify_self`; an adapter lists this method in `unsupported` if it can't ask.
         """
         ...
 

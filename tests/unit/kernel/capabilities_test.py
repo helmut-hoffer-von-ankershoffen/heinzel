@@ -93,7 +93,12 @@ def test_an_attachment_has_a_size_that_is_never_negative():
 
 
 def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
-    assert CAPABILITIES["chat"].methods == {"messages": "read", "post": "write"}
+    assert CAPABILITIES["chat"].methods == {
+        "messages": "read",
+        "post": "write",
+        "notify_self": "write",
+        "ask_self": "write",
+    }
     assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcripts": "read", "transcript": "read"}
     assert CAPABILITIES["calendar"].methods == {
         "events": "read",
