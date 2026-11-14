@@ -96,19 +96,39 @@ Starts of different connectors in this process are therefore serialised: one lau
 which assumes nothing else in this process spawns a child meanwhile.
 """
 
-_BEARER = re.compile(r"(?i)\b(bearer|basic)\s+\S+")
-_SECRET_PAIR = re.compile(
-    r"(?i)\b([\w.-]*(?:token|key|secret|password|passwd|auth|credential|signature|sig)[\w.-]*)(\s*[=:]\s*)\S+"
+_VALUE = r"""(?:"[^"\n]{0,256}"|'[^'\n]{0,256}'|\S{1,256})"""
+_USERINFO = re.compile(r"(?<=://)[^\s/@]{1,256}@")
+_AUTHORIZATION = re.compile(
+    rf"(?i)\b(authorization[\"']?\s{{0,4}}[=:]\s{{0,4}})(?:[A-Za-z]{{1,16}}\s+\S{{1,256}}|{_VALUE})"
 )
-_LONG_RUN = re.compile(r"[A-Za-z0-9+/_=-]{32,}|\b[0-9a-fA-F]{24,}\b")
+_BEARER = re.compile(r"(?i)\b(bearer|basic)\s+\S{1,256}")
+_SECRET_PAIR = re.compile(
+    rf"(?i)((?:token|key|secret|password|passwd|credential|signature)[\"']?\s{{0,4}}[=:]\s{{0,4}}){_VALUE}"
+)
+_SECRET_FLAG = re.compile(r"(?i)(--[\w-]{0,32}(?:token|key|secret|password|passwd|credential)\s{1,4})\S{1,256}")
+_LONG_RUN = re.compile(r"[A-Za-z0-9+/_=-]{32,}")
+_HEX_RUN = re.compile(r"\b[0-9a-fA-F]{32,}\b")
 REDACTED = "[redacted]"
+"""Every pattern is bounded or linear: a line of repeated keyword fragments cannot make it backtrack."""
+
+
+def _mixed(match: re.Match[str]) -> str:
+    """A long run that mixes upper and lower case with digits is a key; a path or a UUID is not."""
+    run = match.group()
+    if any(c.isupper() for c in run) and any(c.islower() for c in run) and any(c.isdigit() for c in run):
+        return REDACTED
+    return run
 
 
 def _redact(line: str) -> str:
-    """`line` without bearer tokens, key=value secrets and long base64 or hex runs (stderr may echo them)."""
+    """`line` without user info, bearer tokens, secret key-value pairs and long key runs (stderr may echo them)."""
+    line = _USERINFO.sub(f"{REDACTED}@", line)
+    line = _AUTHORIZATION.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
     line = _BEARER.sub(lambda m: f"{m.group(1)} {REDACTED}", line)
-    line = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", line)
-    return _LONG_RUN.sub(REDACTED, line)
+    line = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
+    line = _SECRET_FLAG.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
+    line = _HEX_RUN.sub(REDACTED, line)
+    return _LONG_RUN.sub(_mixed, line)
 
 
 _groups: set[int] = set()
