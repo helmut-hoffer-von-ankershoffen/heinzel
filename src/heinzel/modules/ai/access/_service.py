@@ -73,6 +73,10 @@ def setup_of(name: str, status: AccessStatus) -> tuple[Setup | None, str]:  # no
 
     Options are built into hz: what one lacks is a setting, a sign-in or an optional client, never a plugin.
     """
+    if status.core_engine:
+        if not status.installed:
+            return None, f"{status.title} offers no models"
+        return "plugin-model", ("Pick another model" if status.fix else "")
     if match := _CLIENT.search(status.fix):
         client = CLIENTS.get(match[1], match[1])
         return "client", f"Add the {client} client"
@@ -189,6 +193,8 @@ class AccessService:
                 "fix": status.fix,
                 "models": status.models,
                 "runner": status.runner,
+                "core_engine": status.core_engine,
+                "unavailable_models": status.unavailable_models,
             }
         )
 
@@ -210,7 +216,7 @@ class AccessService:
         elif chosen is None:
             note = f"No installed option is called {selected!r}; install its plugin or pick another."
             next_steps = [f"hz ai access use {o.name}" for o in options][:1]
-        elif chosen.runner and chosen.runner != runner:
+        elif not chosen.core_engine and chosen.runner and chosen.runner != runner:
             note = (
                 f"{chosen.title} names the agent runner {chosen.runner}, but {runner or 'none'} is bound, so the chat "
                 f"doesn't follow the AI access."
@@ -223,6 +229,15 @@ class AccessService:
         elif chosen.status == "not tested":
             next_steps = [f"hz ai access test --name {chosen.name}"]
         through = f"the agent runner {runner}" if runner else "nothing: no agent runner is bound"
+        if chosen is not None and chosen.core_engine:
+            # A plugin's models: hz's own engine runs chat, drafts and schedules on them (ADR 0159).
+            engine = f"hz's own engine on {chosen.title}'s models"
+            uses = [
+                AccessUse(use="chat", access=selected, runs=engine),
+                AccessUse(use="turns", access=selected, runs=f"{engine}, for drafts and schedules"),
+                AccessUse(use="coding", access=selected, runs=f"not built yet (ADR 0050); handoffs will use {through}"),
+            ]
+            return AccessList(selected=selected, options=options, uses=uses, note=note, next=next_steps)
         uses = [
             AccessUse(use="chat", access=selected, runs=through),
             AccessUse(
@@ -256,6 +271,10 @@ class AccessService:
         missing = None
         if not isinstance(status, AccessStatus):
             missing = f"{name}'s status couldn't be read, so no agent runner was bound: {status}"
+        elif status.core_engine:
+            # hz's own engine runs its models: chat needs no runner; coding binds the engine runner once installed.
+            if runner is not None and runner in self._view.installed("agent-runner"):
+                self._editor.write(RUNNER_KEY, runner, "user")
         elif runner is None:
             missing = f"{name} has no agent of its own; the chat keeps its agent runner."
         elif runner in self._view.installed("agent-runner"):

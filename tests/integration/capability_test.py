@@ -150,6 +150,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
     assert {c["name"]: c["bound"] for c in report["capabilities"]} == {
         "agent-runner": "claude-code",
         "ai-access": "claude-code",
+        "ai-models": None,
         "calendar": None,
         "chat": None,
         "code-host": None,

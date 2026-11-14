@@ -153,6 +153,8 @@ class ConnectorService:
         by_name = {connector.name: connector for connector in connectors}
         choices: list[CapabilityChoice] = []
         for spec in CAPABILITIES.values():
+            if not spec.listed:  # chosen as an AI access option, not bound here (ADR 0159)
+                continue
             bound, how = self._view.binding(spec.name)
             # No modes: whether the chosen adapter is installed and unambiguous, whatever a requester needs.
             problem = self._view.serves(Requirement(spec.name, frozenset()))[1] if bound is not None else None

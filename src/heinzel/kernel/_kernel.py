@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
 
+from heinzel.kernel._ai_models import AiModelOptions, AiModels, AiModelsSource
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
@@ -20,7 +21,7 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
+from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of, declared_unsupported
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
@@ -713,7 +714,61 @@ class Kernel:
                     logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=record.qualname, problem=problem
                 )
                 self.errors[record.qualname] = f"Adapter skipped: {problem}"
-        return adapters
+        return adapters + self._derived_access(adapters)
+
+    def _derived_access(self, adapters: list[Adapter]) -> list[Adapter]:
+        """An `ai-access` adapter for each `ai-models` adapter, by the same name and hosts (ADR 0159).
+
+        Not when an `ai-access` adapter of that name is installed already: a plugin that provides both keeps its own.
+        """
+        taken = {a.let.adapter for a in adapters if a.let.capability == "ai-access"}
+        derived: list[Adapter] = []
+        for adapter in adapters:
+            let = adapter.let
+            if let.capability != "ai-models" or let.adapter in taken:
+                continue
+            taken.add(let.adapter)
+            access = ProviderLet(
+                name=f"{let.adapter}:ai-access",
+                adapter=let.adapter,
+                capability="ai-access",
+                modes=frozenset({"read"}),
+                hosts=let.hosts,
+                factory=self._models_option(let.adapter),
+                configured_hosts=let.configured_hosts,
+            )
+            derived.append(Adapter(module=adapter.module, distribution=adapter.distribution, let=access))
+        return derived
+
+    def _models_option(self, name: str) -> Callable[[], object]:
+        def option() -> object:
+            return self.resolve(AiModelOptions).option(name, lambda: self.ai_models(name))
+
+        option.__qualname__ = f"ai-models option {name}"
+        return option
+
+    def ai_models(self, name: str) -> AiModelsSource:
+        """The `ai-models` adapter `name` itself with its plugin's name and version, for hz's own engine (ADR 0159).
+
+        Trusted core code only: hz's chat, draft and schedule turns and the derived AI access option. A module gets
+        the AI access option instead, which never hands out the adapter.
+
+        Raises:
+            HeinzelError: If no adapter or two adapters have that name, or it can't be built.
+        """
+        adapter, instance = self._capabilities.instance("ai-models", name)
+        record = self._records[adapter.module]
+        return AiModelsSource(
+            name=name,
+            module=adapter.module,
+            distribution=record.origin.distribution,
+            version=record.origin.version,
+            adapter=cast("AiModels", instance),
+        )
+
+    def offers_ai_models(self, name: str | None) -> bool:
+        """Whether `name` is an installed `ai-models` adapter, so its AI access option runs on hz's own engine."""
+        return name is not None and ("ai-models", name) in self._capabilities.adapters
 
     def _foreign_settings(self, let: ProviderLet, record: ModuleRecord) -> str:
         """Settings classes the adapter's hosts function reads that its own module doesn't declare, comma-separated."""
@@ -841,9 +896,12 @@ def _missing_methods(let: ProviderLet) -> list[str]:
     """Methods of its declared modes a class-based adapter doesn't define; a factory's result is checked when built."""
     if not isinstance(let.factory, type):
         return []
-    methods = CAPABILITIES[let.capability].methods
+    capability = CAPABILITIES[let.capability]
+    unsupported = declared_unsupported(let.factory, capability)
     return [
-        name for name, mode in methods.items() if mode in let.modes and not callable(getattr(let.factory, name, None))
+        name
+        for name, mode in capability.methods.items()
+        if mode in let.modes and name not in unsupported and not callable(getattr(let.factory, name, None))
     ]
 
 

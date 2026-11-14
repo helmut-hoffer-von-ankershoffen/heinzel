@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue
 
 from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
+    AiModelsSource,
     CapturedWriteService,
     CheckInChatContext,
     CheckInChatContextSource,
@@ -20,6 +21,7 @@ from heinzel.kernel import (
     DaemonInstallationLifecycle,
     Kernel,
     RunnerSnapshotProvider,
+    record_usage,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
 from heinzel.kernel._features import feature_enabled
@@ -878,6 +880,21 @@ def _register_user_chat_operations(module: Module) -> None:
         return service.activity(session_id, limit)
 
 
+class KernelPluginModels:
+    """The kernel's plugin `ai-models` adapters, for hz's own chat engine (ADR 0159)."""
+
+    def __init__(self, kernel: Kernel) -> None:
+        self._kernel = kernel
+
+    def offers(self, access: str) -> bool:
+        """Whether `access` is a plugin's `ai-models` adapter."""
+        return self._kernel.offers_ai_models(access)
+
+    def source(self, access: str) -> AiModelsSource:
+        """That adapter with its plugin's name and version."""
+        return self._kernel.ai_models(access)
+
+
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
     return UserChatService(
@@ -887,6 +904,8 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         connected=lambda: ConnectedReadGrants(crud, current, kernel),
         notifications=lambda: kernel.resolve(Notifications),
         playbook_kernel=kernel,
+        models=KernelPluginModels(kernel),
+        usage=lambda entry: record_usage(kernel, entry),
     )
 
 

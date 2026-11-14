@@ -19,9 +19,17 @@ from typing import Any, ClassVar, Literal, cast
 
 from pydantic import Field, model_validator
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
 from heinzel.kernel._config import ModuleSettings
-from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._errors import HeinzelError, NotSupportedError
 from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
 from heinzel.kernel._logging import log_event
 
@@ -312,7 +320,10 @@ class _Handle:
 
 def _wrap(instance: Callable[[], object], capability: Capability, name: str) -> Callable[..., Any]:
     def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 - forwards the protocol method
-        return getattr(instance(), name)(*args, **kwargs)
+        adapter = instance()
+        if name in declared_unsupported(adapter, capability):
+            raise NotSupportedError(capability.name, name)
+        return getattr(adapter, name)(*args, **kwargs)
 
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
@@ -634,12 +645,28 @@ class Capabilities:
         key = (adapter.let.capability, adapter.let.adapter)
         if key not in self._instances:
             instance = self._build(adapter.let.factory)
-            served = [m for m, mode in capability.methods.items() if mode in adapter.let.modes]
+            unsupported = declared_unsupported(instance, capability)
+            served = [m for m, mode in capability.methods.items() if mode in adapter.let.modes and m not in unsupported]
             if missing := [m for m in served if not callable(getattr(instance, m, None))]:
                 msg = f"Adapter {adapter.let.name} of {adapter.module} lacks {', '.join(missing)} of {capability.name}."
                 raise HeinzelError(msg)
             self._instances[key] = instance
         return self._instances[key]
+
+    def instance(self, capability: str, name: str) -> tuple[Adapter, object]:
+        """The adapter `name` of `capability` itself, built once, for the kernel's own trusted callers (ADR 0159).
+
+        Not a requester's handle: no mode is checked. Only the kernel calls it, for hz's own AI engine.
+
+        Raises:
+            HeinzelError: If no adapter or two adapters of `capability` have that name, or it can't be built.
+        """
+        candidates = self.adapters.get((capability, name), [])
+        if len(candidates) != 1:
+            why = "is installed" if not candidates else "is unambiguous"
+            msg = f"No {capability} adapter called {name!r} {why}."
+            raise HeinzelError(msg)
+        return candidates[0], self._instance(candidates[0], CAPABILITIES[capability])
 
     def installed(self, capability: str) -> list[str]:
         """The names of the installed adapters of `capability`, sorted."""

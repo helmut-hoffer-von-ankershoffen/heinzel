@@ -94,8 +94,9 @@ class ScheduleBinding(BaseModel):
     timeout_seconds: int = Field(
         ge=1, le=MAX_TURN_SECONDS, strict=True, description="Maximum turn duration in seconds."
     )
-    access: Literal["claude-code-subscription"] = Field(
-        default="claude-code-subscription", description="Selected subscription access mode."
+    access: Literal["claude-code-subscription", "plugin-models"] = Field(
+        default="claude-code-subscription",
+        description="Selected access mode: the Claude Code subscription, or a plugin's models on hz's engine.",
     )
     access_fingerprint: str = Field(
         pattern=r"^[a-f0-9]{64}$", description="Opaque selected-access continuity fingerprint."
@@ -169,24 +170,12 @@ class ScheduleReviewPage(BaseModel):
 
 
 def model_binding_fingerprint(chat: UserChatService) -> str:
-    """Observe selected CLI/settings, not provider account identity or publisher authenticity.
+    """Observe selected CLI/settings or plugin model, not provider account identity or publisher authenticity.
 
     Raises:
         HeinzelError: If selected access cannot be observed.
     """
-    limits, runner = chat.selected()
-    path = chat.which(runner.claude_executable)
-    if path is None:
-        msg = "The selected Claude Code executable is unavailable"
-        raise HeinzelError(msg)
-    executable, digest = chat.executable(path)
-    terms = {
-        "executable": str(executable),
-        "digest": digest,
-        "budget_mode": limits.subscription_budget_mode,
-        "model": runner.model,
-        "runner_revision": runner.revision,
-    }
+    terms = chat.binding_terms()
     return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -280,6 +269,7 @@ class AutonomousSchedules:
             cadence_seconds=cadence_seconds,
             max_requests=max_requests,
             timeout_seconds=timeout_seconds,
+            access="plugin-models" if self.chat.plugin_selected() is not None else "claude-code-subscription",
             access_fingerprint=model_binding_fingerprint(self.chat),
             connected_grant=connected_grant,
             notification_policy=notification_policy,

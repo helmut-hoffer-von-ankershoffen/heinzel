@@ -40,7 +40,7 @@ from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._stream import streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
-from heinzel.kernel._errors import SubscriptionUsageLimitError
+from heinzel.kernel._errors import NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
 
 HEAD = "api"
@@ -62,6 +62,11 @@ def _error_response(exc: HeinzelError, *, private: bool) -> JSONResponse:
         return JSONResponse(
             status_code=400,
             content={"error": SubscriptionUsageLimitError.message, "code": "subscription_usage_limit"},
+        )
+    if isinstance(exc, NotSupportedError):
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(exc), "code": "not_supported", "capability": exc.capability, "method": exc.method},
         )
     return JSONResponse(status_code=400, content={"error": str(exc)})
 

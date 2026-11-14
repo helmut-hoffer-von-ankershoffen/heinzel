@@ -1,22 +1,34 @@
-"""User-requested durable chat on the selected Claude Code subscription.
+"""User-requested durable chat on the selected Claude Code subscription or a plugin's models (ADR 0159).
 
-This invokes only the installed user-selected CLI with its documented restricted flags. Host tools are denied by
-default, except for bounded private proposal operations. Subscription usage remains unpriced and uses plan limits.
+On Claude Code this invokes only the installed user-selected CLI with its documented restricted flags. On a plugin's
+`ai-models` option hz's engine runs the model the plugin built, checking before each request that the choice holds.
+Host tools are denied by default, except for bounded private proposal operations. Subscription and plugin model
+usage remains unpriced: tokens are recorded, with no dollar cost.
 """
 
 import asyncio
 import shutil
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter
-from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter, UsageEntry
+from heinzel.kernel import (
+    PRIVATE_WRITE,
+    AiModelsSource,
+    CapabilitySettings,
+    Effort,
+    ModelOffer,
+    RunnerSnapshot,
+    RunnerSnapshotProvider,
+    UsageCause,
+)
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
+from heinzel.kernel._ai_models import PluginModelChoice, build_model, choose, list_offers
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
@@ -31,6 +43,8 @@ from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
@@ -38,6 +52,39 @@ _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 _MAX_REQUESTS = 12
 MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
+
+
+class PluginModels(Protocol):
+    """Where a plugin's `ai-models` adapters come from: the kernel, for hz's own trusted engine (ADR 0159)."""
+
+    def offers(self, access: str) -> bool:
+        """Whether the AI access option `access` is a plugin's `ai-models` adapter."""
+        ...
+
+    def source(self, access: str) -> AiModelsSource:
+        """That adapter, with its plugin's name and version."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PluginTurnChoice:
+    """The plugin model a turn runs on: checked before the turn and again before each request."""
+
+    limits: HeinzelSettings
+    source: AiModelsSource
+    offer: ModelOffer
+    effort: Effort | None
+
+    def terms(self) -> dict[str, object]:
+        """What binds an approved schedule or draft to this choice: access, plugin version, model, effort, budget."""
+        return {
+            "access": self.source.name,
+            "distribution": self.source.distribution,
+            "version": self.source.version,
+            "model": self.offer.id,
+            "effort": self.effort,
+            "budget_mode": self.limits.subscription_budget_mode,
+        }
 
 
 class UserChatAnswer(BaseModel):
@@ -122,8 +169,12 @@ class UserChatService:
         playbook_kernel: Kernel | None = None,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
         execute: Callable[..., Outcome] = run_bounded,
+        models: "PluginModels | None" = None,
+        usage: Callable[[UsageEntry], None] | None = None,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
+        self._models = models
+        self._usage = usage
         self._runner_settings = runner_settings
         self._connected = connected
         self._notifications = notifications
@@ -139,6 +190,52 @@ class UserChatService:
             msg = "Connected reads are unavailable"
             raise HeinzelError(msg)
         return self._connected()
+
+    def plugin_selected(self) -> PluginTurnChoice | None:
+        """The plugin model the selected AI access runs on hz's engine, or None for Claude Code (ADR 0159).
+
+        Raises:
+            HeinzelError: If the plugin's models can't serve a turn now: the dollar caps can't be enforced, or the
+                chosen model is unavailable (`ModelUnavailableError`, naming others to pick).
+        """
+        if self._models is None:
+            return None
+        config = self._load()
+        access = config.settings(CapabilitySettings, "capabilities").ai_access
+        if access is None or not self._models.offers(access):
+            return None
+        limits = config.settings(HeinzelSettings, "heinzel")
+        if limits.subscription_budget_mode != "plan-unknown":
+            msg = "A plugin's models report no dollar cost and cannot enforce the configured USD caps"
+            raise HeinzelError(msg)
+        choice = config.settings(PluginModelChoice, "ai.access")
+        source = self._models.source(access)
+        offers, _note = list_offers(source)
+        offer = choose(offers, choice.plugin_model)
+        return PluginTurnChoice(limits, source, offer, choice.plugin_effort)
+
+    def binding_terms(self) -> dict[str, object]:
+        """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.
+
+        Raises:
+            HeinzelError: If the selected access cannot be observed.
+        """
+        plugin = self.plugin_selected()
+        if plugin is not None:
+            return plugin.terms()
+        limits, runner = self.selected()
+        path = self.which(runner.claude_executable)
+        if path is None:
+            msg = "The selected Claude Code executable is unavailable"
+            raise HeinzelError(msg)
+        executable, digest = self.executable(path)
+        return {
+            "executable": str(executable),
+            "digest": digest,
+            "budget_mode": limits.subscription_budget_mode,
+            "model": runner.model,
+            "runner_revision": runner.revision,
+        }
 
     def selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
         config = self._load()
@@ -237,43 +334,15 @@ class UserChatService:
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
-        initial, runner = self.selected()
-        found = self.which(runner.claude_executable)
-        if found is None:
-            msg = "The selected Claude Code executable is unavailable"
-            raise HeinzelError(msg)
-        executable, digest = await asyncio.to_thread(self.executable, found)
-        await asyncio.to_thread(self._login, executable)
-        from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model construction after owner and access checks
-            ClaudeSubscriptionModel,
-            SubscriptionAdmission,
-        )
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
 
-        policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
-
-        def unchanged() -> bool:
-            verify()
-            current, selected = self.selected()
-            resolved = self.which(selected.claude_executable)
-            return (
-                current == initial
-                and selected == runner
-                and resolved is not None
-                and Path(resolved).resolve() == executable
-            )
-
-        verifier = _ClaudeVerifier(unchanged, executable, digest, policy)
-        model = ClaudeSubscriptionModel(
-            executable,
-            policy,
-            verifier,
-            lambda: policy if unchanged() else replace(policy, revision=2),
-            slots=SubscriptionSlots(self._crud.repository),
-            turn_id=turn,
-            execute=self._execute,
-        )
+        plugin = await asyncio.to_thread(self.plugin_selected)
+        if plugin is None:
+            model, unchanged, binding = await self._claude_model(session, turn, verify, max_requests, duration)
+        else:
+            cause: UsageCause = "chat" if user_proposals else "scheduled"
+            model, unchanged, binding = self._plugin_model(plugin, verify, cause)
         scheduled_notice = None
         if notification_policy is not None:
             if (
@@ -317,9 +386,86 @@ class UserChatService:
             connected_set=connected_set,
             draft_tools=lambda writer: self._document_drafts(session, turn, connected, writer),
             scheduled_notifications=scheduled_notice,
-            backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
+            backend_binding=binding,
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    async def _claude_model(
+        self, session: str, turn: str, verify: Callable[[], None], max_requests: int, duration: int
+    ) -> "tuple[Model, Callable[[], bool], BackendBinding]":
+        """The selected Claude Code subscription as the turn's model, with its continuity check.
+
+        Raises:
+            HeinzelError: If the selected executable is unavailable or not signed in.
+        """
+        initial, runner = self.selected()
+        found = self.which(runner.claude_executable)
+        if found is None:
+            msg = "The selected Claude Code executable is unavailable"
+            raise HeinzelError(msg)
+        executable, digest = await asyncio.to_thread(self.executable, found)
+        await asyncio.to_thread(self._login, executable)
+        from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model construction after owner and access checks
+            ClaudeSubscriptionModel,
+            SubscriptionAdmission,
+        )
+
+        policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
+
+        def unchanged() -> bool:
+            verify()
+            current, selected = self.selected()
+            resolved = self.which(selected.claude_executable)
+            return (
+                current == initial
+                and selected == runner
+                and resolved is not None
+                and Path(resolved).resolve() == executable
+            )
+
+        verifier = _ClaudeVerifier(unchanged, executable, digest, policy)
+        model = ClaudeSubscriptionModel(
+            executable,
+            policy,
+            verifier,
+            lambda: policy if unchanged() else replace(policy, revision=2),
+            slots=SubscriptionSlots(self._crud.repository),
+            turn_id=turn,
+            execute=self._execute,
+        )
+        return model, unchanged, BackendBinding(backend="claude-code", mode="cli-model", revision=1)
+
+    def _plugin_model(
+        self, plugin: "PluginTurnChoice", verify: Callable[[], None], cause: UsageCause
+    ) -> "tuple[Model, Callable[[], bool], BackendBinding]":
+        """A plugin's model as the turn's model: built by the plugin, checked and recorded by hz (ADR 0159)."""
+        from heinzel.modules.heinzel._plugin_turn_model import PluginTurnModel  # noqa: PLC0415 - only during a turn
+
+        initial = plugin.terms()
+
+        def unchanged() -> bool:
+            verify()
+            current = self.plugin_selected()
+            return current is not None and current.terms() == initial
+
+        def still() -> None:
+            if not unchanged():
+                msg = "The selected AI access or model changed during this turn"
+                raise HeinzelError(msg)
+
+        record = self._usage or (lambda _entry: None)
+        model = PluginTurnModel(
+            build_model(plugin.source, plugin.offer),
+            access=plugin.source.name,
+            offer=plugin.offer,
+            effort=plugin.effort,
+            verify=still,
+            record=lambda entry: record(entry.model_copy(update={"cause": cause})),
+        )
+        binding = BackendBinding(
+            backend=plugin.source.name, mode="api", model=plugin.offer.id, effort=plugin.effort, revision=1
+        )
+        return model, unchanged, binding
 
     def _document_drafts(
         self, session: str, turn: str, connected: ConnectedReadGrants | None, writer: SessionWriter

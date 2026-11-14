@@ -25,6 +25,14 @@ from heinzel.kernel._ai import (
     UsageLog,
     record_usage,
 )
+from heinzel.kernel._ai_models import (
+    AiModelOptions,
+    AiModels,
+    AiModelsSource,
+    ModelId,
+    ModelOffer,
+    ModelUnavailableError,
+)
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
@@ -167,7 +175,7 @@ from heinzel.kernel._draft_append import (
     ReviewedLinkChannel,
 )
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
-from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
+from heinzel.kernel._errors import HeinzelError, NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
@@ -482,6 +490,9 @@ __all__ = [
     "AiAccess",
     "AiAccessWebAttempt",
     "AiAccessWebSignIn",
+    "AiModelOptions",
+    "AiModels",
+    "AiModelsSource",
     "ApprovalChannel",
     "AssetType",
     "Attachment",
@@ -648,12 +659,16 @@ __all__ = [
     "Message",
     "MetricWidget",
     "Mode",
+    "ModelId",
+    "ModelOffer",
+    "ModelUnavailableError",
     "Module",
     "ModuleRecord",
     "ModuleSettings",
     "NavLet",
     "NavSettings",
     "Navigate",
+    "NotSupportedError",
     "Notice",
     "NoticeHelper",
     "NoticeKind",

@@ -1,7 +1,8 @@
 """The access module of ai: how hz reaches AI, chosen like the theme (ADR 0057).
 
 An AI access option is an adapter of the `ai-access` capability: `claude-code` (the Claude Code CLI, from
-`system.runner`), `gateway` (a company CLI described in `[ai.access]`) or one a plugin adds. `[capabilities] ai_access`
+`system.runner`), `gateway` (a company CLI described in `[ai.access]`) or one a plugin adds, also by providing
+`ai-models`, whose models hz's own engine runs (ADR 0159). `[capabilities] ai_access`
 is the one choice; `hz ai access use <name>` sets it, and binds the agent runner the option names so the chat follows.
 """
 
@@ -14,7 +15,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Credentials, Module, Progress
-from heinzel.kernel import AiAccessWebSignIn
+from heinzel.kernel import AiAccessWebSignIn, AiModelOptions
 from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
@@ -30,6 +31,7 @@ from heinzel.modules.ai.access._models import (
     AccessTestReport,
     AccessUse,
 )
+from heinzel.modules.ai.access._plugin_models import PluginModelOptions
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, model_hosts
 from heinzel.modules.ai.access._pydantic import NAME as PYDANTIC_AI
 from heinzel.modules.ai.access._service import AccessService
@@ -54,6 +56,7 @@ module.add(CHATGPT_LOGIN)
 module.provides("ai-access", modes={"read"}, hosts=CHATGPT_HOSTS, name=CHATGPT)(ChatGptAccess)
 module.service(ChatGptAccess)  # `hz ai access login` signs in through it
 module.service(AiAccessWebSignIn, ChatGptAccess)
+module.service(AiModelOptions, PluginModelOptions)  # the option of each plugin's `ai-models` adapter (ADR 0159)
 
 STYLES = {"signed in": "green", "tested": "green", "not signed in": "yellow", "test failed": "red", "error": "red"}
 

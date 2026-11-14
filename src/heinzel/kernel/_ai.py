@@ -8,9 +8,9 @@ when asked (`test`). `[capabilities] ai_access` is the one choice; the `ai` modu
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from heinzel.kernel._agents import AgentResult
 
@@ -49,6 +49,15 @@ class AccessStatus(BaseModel):
         description="`plan`: a subscription login, so a cost shown is what it would cost at API prices, covered by "
         "the plan; `api`: billed per token; none when it can't tell.",
     )
+    core_engine: bool = Field(
+        default=False,
+        description="Whether hz's own Pydantic AI engine runs chat, drafts and schedules on its models (a plugin's "
+        "`ai-models`, ADR 0159), so no agent runner is involved.",
+    )
+    unavailable_models: list[str] = Field(
+        default_factory=list[str],
+        description="Models in `models` that didn't answer when last probed: shown marked unavailable, still pickable.",
+    )
 
 
 class AccessTest(BaseModel):
@@ -64,9 +73,15 @@ class AccessTest(BaseModel):
     output_tokens: int | None = Field(default=None, description="Tokens produced, when the option reports them.")
 
 
-UsageCause = Literal["chat", "ask", "scheduled", "render", "handoff", "test"]
-"""Why a run spent tokens: a chat message, a one-off question, a scheduled or a manual render, a coding handoff, or a
-live test of an AI access option."""
+CoreUsageCause = Literal["chat", "ask", "scheduled", "render", "handoff", "test"]
+"""Why a core run spent tokens: a chat message, a one-off question, a scheduled or a manual render, a coding handoff,
+or a live test of an AI access option."""
+
+PLUGIN_CAUSE_PATTERN = r"^[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,31}$"
+"""A plugin's own cause, namespaced by the plugin: `<plugin>.<cause>`, e.g. `acme.probe` (ADR 0159)."""
+
+UsageCause = CoreUsageCause | Annotated[str, StringConstraints(pattern=PLUGIN_CAUSE_PATTERN)]
+"""Why a run spent tokens: a core cause, or a plugin's namespaced one."""
 
 
 COUNTS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")

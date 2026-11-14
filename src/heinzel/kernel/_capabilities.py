@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
 from heinzel.kernel._ai import AiAccess
+from heinzel.kernel._ai_models import AiModels
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -55,6 +56,10 @@ class Capability:
     """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
     is the person's explicit choice, whatever happens to be installed."""
 
+    listed: bool = True
+    """Whether Settings and the connector page offer a binding for it. Not for `ai-models`: a person picks AI access,
+    and each `ai-models` adapter is one of its options (ADR 0159)."""
+
     inspection_methods: frozenset[str] = frozenset()
     """Offline inventory methods, never live actions; available only through explicit module inspection grants."""
 
@@ -87,6 +92,17 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
                 methods=MappingProxyType({"status": "read", "test": "read"}),
                 inspection_methods=frozenset({"status"}),
+            ),
+            Capability(
+                name="ai-models",
+                title="AI models",
+                purpose="models a plugin reaches its own way, run by hz's own engine",
+                protocol=AiModels,
+                summary="Models a plugin reaches its own way: the models it offers, and a ready Pydantic AI model for "
+                "one, which hz's engine runs; each adapter is also an AI access option of the same name.",
+                methods=MappingProxyType({"models": "read", "model": "read"}),
+                automatic=False,
+                listed=False,
             ),
             Capability(
                 name="calendar",
@@ -199,6 +215,18 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
     }
 )
 """Every capability the core defines, by name."""
+
+
+def declared_unsupported(adapter: object, capability: Capability) -> frozenset[str]:
+    """The methods of `capability` an adapter (class or instance) declares it doesn't support (ADR 0159).
+
+    Read from its `unsupported` attribute, an iterable of method names; anything that isn't a method of the capability,
+    or an attribute that isn't such an iterable, counts as nothing declared.
+    """
+    declared: object = getattr(adapter, "unsupported", ())
+    if isinstance(declared, str | bytes) or not isinstance(declared, Iterable):
+        return frozenset()
+    return frozenset(name for name in cast("Iterable[object]", declared) if name in capability.methods)  # type: ignore[misc]
 
 
 def capability_of(protocol: Any) -> Capability | None:  # noqa: ANN401 - any annotation

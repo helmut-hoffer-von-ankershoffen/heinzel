@@ -49,6 +49,8 @@ SCHEMA_VERSION = 1
 SUFFIX = ".prose.md"
 """Contract files are `<name>.prose.md`."""
 RUNNER = "agent-runner"
+NOT_INPUTS = frozenset({RUNNER, "ai-models"})
+"""Capabilities a contract can't read as an input: what runs a turn, and a plugin's models (ADR 0159)."""
 """Every contract renders with an agent session, so it always requires `agent-runner:read`."""
 MAX_TIMEOUT = timedelta(hours=2)
 MAX_RETENTION_DAYS = 36_500
@@ -183,8 +185,8 @@ class Input(_Strict):
 
     def _capability_input(self) -> Self:
         spec = CAPABILITIES.get(self.capability)
-        if spec is None or self.capability == RUNNER:
-            known = ", ".join(sorted(name for name in CAPABILITIES if name != RUNNER))
+        if spec is None or self.capability in NOT_INPUTS:
+            known = ", ".join(sorted(name for name in CAPABILITIES if name not in NOT_INPUTS))
             raise at(("read",), f"{self.capability!r} is not a capability an input can read; known: {known}")
         mode = spec.methods.get(self.method)
         if mode is None:
