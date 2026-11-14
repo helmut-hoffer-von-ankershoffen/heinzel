@@ -145,10 +145,7 @@ class CapabilitySettings(ModuleSettings):
     documents: str | list[str] | None = Field(
         default=None,
         title="Documents",
-        description=(
-            "The connectors for documents and pages, such as Google Docs and Confluence. Switch on several: a link "
-            "opens in the one it belongs to, a search asks them all, and the first is where new documents go."
-        ),
+        description="The connectors for documents and pages, such as Google Docs and Confluence; switch on several.",
         json_schema_extra=_options("documents", multiple=True),
     )
     mail: str | None = Field(
