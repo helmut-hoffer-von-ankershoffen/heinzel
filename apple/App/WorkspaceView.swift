@@ -50,7 +50,11 @@ struct WorkspaceView: WebRepresentable {
             source: Self.windowDragScript, injectionTime: .atDocumentStart,
             forMainFrameOnly: true, in: .defaultClient
         ))
-        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen,"
+        // The bundle path belongs to this Mac and is only shared with the local service it launched.
+        let about = endpoint.origin.scheme == "http"
+            ? "about: () => window.webkit.messageHandlers.heinzelWindow.postMessage('about'),"
+            : ""
+        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(about)"
         #else
         let chrome = ""
         #endif
@@ -208,6 +212,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         if message.name == "heinzelWindow", message.body as? String == "fullscreen" {
             observeWindow(workspace.window)
             return (workspace.window?.styleMask.contains(.fullScreen) == true, nil)
+        }
+        if message.name == "heinzelWindow", message.body as? String == "about" {
+            guard endpoint.origin.scheme == "http",
+                  let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            else { return (nil, "App details unavailable") }
+            return (["version": version, "path": Bundle.main.bundleURL.path], nil)
         }
         if message.name == "heinzelDrag", message.body as? String == "drag" {
             guard let window = workspace.window, !window.styleMask.contains(.fullScreen),
