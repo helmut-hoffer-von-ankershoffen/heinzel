@@ -33,14 +33,23 @@ async function pressUntilOpen(summary, presses) {
   await pressUntilOpen(summary, presses - 1);
 }
 
-/** The conversation comes first: reviews, terms and schedules sit behind the Details disclosure. Open it, once. */
-// One click is not proof: while the conversation loads the summary moves, and a press that lands beside it opens
-// nothing; every later step then waits 30 s on a section that is not shown. So wait for the loaded conversation, click,
-// and require that Details is open once the page has painted; click again if it is not, three presses at most.
+/** The composer of the Heinzel's chat: "Message <name>" (ADR 0157: every chat is with a Heinzel). */
+export const heinzelComposer = (page) =>
+  page.getByRole("complementary", { name: "Chat" }).getByRole("textbox", { name: /^Message / });
+
+/** The conversation comes first: reviews, terms and schedules sit behind Details in the header's More. Show it, once. */
+// More → Details toggles, and a review link shows Details already: so read the row's pressed state and choose it only
+// when Details is not shown. Then require the disclosure open once the page has painted; a press that lands beside the
+// summary while the conversation loads opens nothing, so press again if it is not, three presses at most.
 export async function openDetails(page) {
-  const summary = page.locator("details > summary", { hasText: /^Details$/ }).first();
-  await summary.waitFor({ timeout: 30000 });
-  await page.getByLabel("Message your Heinzel").waitFor({ timeout: 30000 });
+  const chat = page.getByRole("complementary", { name: "Chat" });
+  await heinzelComposer(page).waitFor({ timeout: 30000 });
+  await chat.getByRole("button", { name: "More: search, details" }).click();
+  const row = page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Details" });
+  if ((await row.getAttribute("aria-pressed")) === "true") await page.keyboard.press("Escape");
+  else await row.click();
+  const summary = chat.locator("details > summary", { hasText: /^Details$/ }).first();
+  await summary.waitFor({ state: "visible", timeout: 30000 });
   await pressUntilOpen(summary, 3);
   const selects = await summary.locator("xpath=..").locator("select").all();
   const restyled = (await Promise.all(selects.map((select) => select.evaluate(quirkRestyled)))).filter(Boolean).length;
@@ -113,15 +122,13 @@ export function recurringTurns(page) {
 }
 
 // One place for the opening steps the workshop and template journeys share.
-/** Create a Heinzel from the general chat with this sentence, open Details and send it; returns the message field. */
+/** Name the first Heinzel at the chat's first start, open Details and send it this sentence; returns the composer. */
 export async function createHeinzelWithMessage(page, sentence) {
-  await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  await message.waitFor();
+  await createHeinzelWith(page, sentence);
+  const message = heinzelComposer(page);
   await openDetails(page);
   assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("complementary", { name: "Chat" }).getByRole("button", { name: "Send" }).click();
   return message;
 }
 
@@ -172,19 +179,19 @@ export async function appTakesInput(page) {
   );
 }
 
-/** Type the first message into the new-chat composer and press Create: the press must send the creation request. */
+/** With no Heinzel yet the chat is the first start (ADR 0157): press Start with the suggested name and look, which must
+ * send the creation request, then type the first message into the new Heinzel's composer without sending it. */
 export async function createHeinzelWith(page, text) {
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  const composer = page.getByLabel("Your message");
-  await composer.fill(text);
-  assert.equal(await composer.inputValue(), text, "The composer did not take the first message");
+  const chat = page.getByRole("complementary", { name: "Chat" });
+  const name = chat.getByLabel("What do you call it?");
+  if (!(await name.isVisible())) await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await name.waitFor({ timeout: 30000 });
   await appTakesInput(page);
   const sent = page.waitForRequest(
     (request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/heinzel/new-chat",
     { timeout: 15000 },
   );
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await chat.getByRole("button", { name: "Start", exact: true }).click();
   await sent.catch(async () => {
     const state = await page.evaluate(() => ({
       rootInert: document.getElementById("root")?.hasAttribute("inert") ?? null,
@@ -192,8 +199,12 @@ export async function createHeinzelWith(page, text) {
       dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => d.getAttribute("aria-label") ?? d.id),
       alerts: [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent.slice(0, 120)),
     }));
-    throw new Error(`Create a Heinzel sent no creation request: ${JSON.stringify(state)}`);
+    throw new Error(`Start sent no creation request: ${JSON.stringify(state)}`);
   });
+  const composer = heinzelComposer(page);
+  await composer.waitFor({ timeout: 30000 });
+  await composer.fill(text);
+  assert.equal(await composer.inputValue(), text, "The composer did not take the first message");
 }
 
 /** From the app's first load to the first message of a new Heinzel, with setup closed and Chat shown. */

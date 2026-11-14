@@ -22,8 +22,6 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my source current";
   await createHeinzelWithMessage(page, sentence);
   const assistantReply = page.locator('[data-message-speaker="heinzel"]').filter({ hasText: "Done" });
@@ -94,7 +92,7 @@ try {
   const result = JSON.parse(readFileSync(join(directory, "wake-result.json"), "utf8"));
   assert.equal(result.ok, true, `wake failed: ${result.failure}`);
   await page.reload();
-  const composerAfterReload = page.getByLabel("Message your Heinzel");
+  const composerAfterReload = page.getByLabel(/^Message /);
   const chatTabAfterReload = page.getByRole("tab", { name: "Chat", exact: true });
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();
@@ -116,7 +114,7 @@ try {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   const visible = {
     composer: await page
-      .getByLabel("Message your Heinzel")
+      .getByLabel(/^Message /)
       .isVisible()
       .catch(() => false),
     reply: await page

@@ -1,5 +1,5 @@
-// One kind of chat (flag `one_chat`, bead agqz) against a real isolated `hz ui`: the first start names the first
-// Heinzel, its chat opens with the face, the name and its switcher, More and Close, and there is no "Back to chat".
+// One kind of chat (ADR 0157, bead agqz) against a real isolated `hz ui`: the first start names the first Heinzel, its
+// chat opens with the face, the name and its switcher, More and Close; there is no general chat and no "Back to chat".
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -43,7 +43,7 @@ try {
   // The look editor in a real browser: the hat overlay lies inside the figure, arrow keys pick a hat, Surprise me
   // changes the figure, Undo brings it back, and the form passes axe at the phone and the desktop size.
   const figure = chat.locator("svg[role=img]").first();
-  const hatPart = chat.getByRole("button", { name: "Change the hat" });
+  const hatPart = chat.getByRole("radio", { name: "Change the hat" });
   const box = await figure.boundingBox();
   const spot = await hatPart.boundingBox();
   assert.ok(box && spot && spot.height > 8 && spot.width > 8, "the hat overlay has a size");
@@ -56,7 +56,7 @@ try {
   );
   await hatPart.focus();
   await page.keyboard.press("Enter");
-  assert.equal(await hatPart.getAttribute("aria-pressed"), "true", "the hat part is chosen");
+  assert.equal(await hatPart.getAttribute("aria-checked"), "true", "the hat part is chosen");
   const before = await figure.evaluate((node) => node.outerHTML);
   const hats = chat.getByRole("radiogroup", { name: "Hat" });
   // The swatches are buttons: Tab reaches each, Space chooses it.
@@ -91,9 +91,11 @@ try {
   await page.keyboard.press("Escape");
   assert.ok(await face.evaluate((node) => node === document.activeElement), "focus returns to the name");
 
-  const more = chat.getByRole("button", { name: "More: search, details, earlier chats" });
+  const more = chat.getByRole("button", { name: "More: search, details" });
   await more.click();
-  await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Search" }).click();
+  const moreMenu = page.getByRole("dialog", { name: "More" });
+  assert.equal(await moreMenu.getByRole("button", { name: "Earlier chats" }).count(), 0, "no earlier general chats");
+  await moreMenu.getByRole("button", { name: "Search" }).click();
   await chat.getByRole("region", { name: "Search conversation" }).waitFor();
 
   // Without AI access the message goes in but is not answered: the line under the bubble says so and offers Try again.
@@ -120,9 +122,10 @@ try {
   await page.getByRole("dialog", { name: "Your Heinzels" }).waitFor();
   await accessible('[role="dialog"]');
   await page.keyboard.press("Escape");
-  await chat.getByRole("button", { name: "More: search, details, earlier chats" }).click();
-  await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Earlier chats" }).click();
-  await chat.getByRole("button", { name: "Chat with Helmi" }).click();
+  await chat.getByRole("button", { name: "More: search, details" }).click();
+  await page.getByRole("dialog", { name: "More" }).waitFor();
+  await accessible('[role="dialog"]');
+  await page.keyboard.press("Escape");
   await phoneFace.waitFor();
   assert.deepEqual(errors, []);
   process.stdout.write(`${JSON.stringify({ oneChat: "verified" })}\n`);

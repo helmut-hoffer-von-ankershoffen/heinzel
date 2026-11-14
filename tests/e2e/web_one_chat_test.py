@@ -1,4 +1,4 @@
-"""Mounted one kind of chat (flag `one_chat`): the first start names a Heinzel and every chat is with it."""
+"""Mounted one kind of chat (ADR 0157): the first start names a Heinzel and every chat is with it."""
 
 import json
 import os
@@ -30,13 +30,11 @@ def test_the_first_start_names_a_heinzel_and_its_chat_has_no_back_to_chat(make_k
         monkeypatch.setenv(name, str(tmp_path / folder))
     (tmp_path / "home").mkdir()
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
-    monkeypatch.setenv("HZ_FEATURES", "one_chat")  # the web reads flags from the effective settings
     settings = Settings(
         data_dir=tmp_path / "data",
         cache_dir=tmp_path / "cache",
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",
-        features=frozenset({"one_chat"}),
     )
     kernel = make_kernel(builtins=True, settings_=settings, config=Config.load(tmp_path / "home"))
 

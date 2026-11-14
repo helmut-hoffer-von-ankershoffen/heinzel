@@ -15,15 +15,18 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  const header = page.getByRole("img", { name: /^Original/ }).first();
+  const message = page.getByLabel(/^Message /);
+  // The face in the chat's header sits in the switcher button, which carries the name (ADR 0157).
+  const header = page
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: /^Original.*\. Switch Heinzel$/ })
+    .locator('svg[data-view="bust"]');
   const hatFill = '[fill="#1E88E5"]';
   const checkHeader = async (hatBlue) => {
     await header.waitFor({ timeout: 30000 });
     const view = await header.getAttribute("data-view");
     assert.equal(view, "bust");
     // Chosen look: old, long beard, rose shirt, scarf; the hat is green before the change and blue after it.
-    assert.match((await header.getAttribute("aria-label")) ?? "", /wearing a scarf/);
     assert.equal((await header.locator(hatFill).count()) > 0, hatBlue);
     assert.ok((await header.locator('[fill="#43A047"]').count()) > 0 !== hatBlue);
   };
@@ -78,11 +81,11 @@ try {
   await page.goto(plain.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
   await chatTab.click();
-  await page.getByRole("button", { name: /: switch chats$/ }).click();
   await page
-    .getByRole("dialog", { name: "Your chats" })
-    .getByRole("button", { name: "Create a personal Heinzel" })
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: /\. Switch Heinzel$/ })
     .click();
+  await page.getByRole("dialog", { name: "Your Heinzels" }).getByRole("button", { name: "New Heinzel" }).click();
   await page.waitForURL((next) => next.searchParams.get("create") === "1", { timeout: 10000 });
   const pageTab = page.getByRole("tab", { name: "Page", exact: true });
   const draft = page.getByText("Your new Heinzel", { exact: true });

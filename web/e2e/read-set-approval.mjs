@@ -28,12 +28,12 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Message your Heinzel").isVisible()))
+  if (!(await page.getByLabel(/^Message /).isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await openDetails(page);
   const panel = page.getByRole("region", { name: "Sources for this chat" });
   await panel.getByRole("button", { name: "Ask about sources" }).click();
-  await page.getByLabel("Message your Heinzel").fill("Suggest two bounded reads.");
+  await page.getByLabel(/^Message /).fill("Suggest two bounded reads.");
   await page.getByRole("button", { name: "Send" }).click();
   await panel.getByText(/Suggested sources: no provider was contacted/).waitFor({ timeout: 30000 });
   assert.equal(approvals, 0);

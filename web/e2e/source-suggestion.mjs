@@ -23,7 +23,7 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  await page.getByLabel("Message your Heinzel").fill("Read the approved source now.");
+  await page.getByLabel(/^Message /).fill("Read the approved source now.");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Source read finished.").waitFor({ timeout: 30000 });
   await page.getByText("Approved read: first recorded result.").waitFor();
