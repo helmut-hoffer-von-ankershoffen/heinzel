@@ -1111,18 +1111,16 @@ try {
     // The composer is one row that fits the phone: the message field and Send side by side.
     await assertContained(page, page.getByLabel(/^Message /), `${spec.name}: Heinzel composer`);
     await assertContained(page, page.getByRole("button", { name: "Send" }), `${spec.name}: Heinzel send`);
-    // The suggestion sits with the other reviews behind the Details disclosure.
+    // The suggestion waits on the Heinzel's page, under Look and name; Use it applies it at once, with Undo.
     await openDetails(page);
-    await page.getByText(/Customize.*suggested look/).click();
-    const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
+    const look = page.getByRole("region", { name: "Look and name" });
+    const useSuggestion = look.getByRole("button", { name: "Use it" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);
     await useSuggestion.click();
-    await assertContained(
-      page,
-      page.getByRole("radiogroup", { name: "Shirt colour" }),
-      `${spec.name}: shirt colour swatches`,
-    );
-    assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Mira");
+    await look.getByRole("button", { name: "Undo" }).waitFor();
+    await look.getByRole("radio", { name: /^Shirt/ }).click();
+    await assertContained(page, look.getByRole("radiogroup", { name: "Shirt" }), `${spec.name}: shirt colour swatches`);
+    assert.equal(await look.getByLabel("Name", { exact: true }).inputValue(), "Mira");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-suggested-identity.png`) });
     // A real visual viewport zoom exercises fixed panels independently of layout viewport size.
     await page.goto(`${url.split("#")[0]}?settings=hz${new URL(url).hash}`);

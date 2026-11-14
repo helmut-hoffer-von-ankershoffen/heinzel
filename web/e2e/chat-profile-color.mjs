@@ -44,34 +44,27 @@ try {
   await openDetails(page);
   await message.fill("Make the hat blue, keep my other preferences");
   await page.getByRole("button", { name: "Send" }).click();
-  const editor = page
-    .locator("details")
-    .filter({ has: page.locator("summary").filter({ hasText: /^Customize your Heinzel(?: · suggested look)?$/ }) })
-    .last(); // the Details disclosure around it matches too
-  await editor.locator("summary").click();
-  const suggestion = editor.getByRole("region", { name: "Suggested identity" });
+  // The Heinzel's page: the look editor of Meet your first Heinzelmännchen, and the chat's suggestion with Use it.
+  const editor = page.getByRole("region", { name: "Look and name" });
+  const suggestion = editor.getByText(/^Suggested in chat: /);
   await suggestion.waitFor({ timeout: 30000 });
   const hat = () =>
-    editor
-      .getByRole("radiogroup", { name: "Hat colour" })
-      .getByRole("radio", { checked: true })
-      .getAttribute("aria-label");
+    editor.getByRole("radiogroup", { name: "Hat" }).getByRole("radio", { checked: true }).getAttribute("aria-label");
   assert.equal(await hat(), "Green");
-  await suggestion.getByRole("button", { name: "Use suggested identity" }).click();
-  assert.equal(await hat(), "Blue");
   const saved = page.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/heinzel/profile" && response.request().method() === "POST",
   );
-  await editor.getByRole("button", { name: "Save name and look" }).click();
+  await editor.getByRole("button", { name: "Use it" }).click();
   assert.equal((await saved).status(), 200);
+  await editor.getByRole("button", { name: "Undo" }).waitFor();
+  assert.equal(await hat(), "Blue");
   await page.reload();
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
   await openDetails(page);
-  await editor.locator("summary").click();
   assert.equal(await hat(), "Blue");
   await checkHeader(true);
-  const avatar = editor.getByRole("img", { name: "Appearance preview" });
+  const avatar = editor.getByRole("img", { name: /, as it looks now/ });
   assert.ok((await avatar.locator('[fill="#1E88E5"]').count()) > 0);
   // Phone width: the header avatar stays visible next to the name.
   await page.setViewportSize({ width: 375, height: 812 });

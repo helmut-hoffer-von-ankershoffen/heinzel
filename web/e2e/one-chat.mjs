@@ -106,7 +106,7 @@ try {
   await page.keyboard.press("Escape");
   assert.ok(await face.evaluate((node) => node === document.activeElement), "focus returns to the name");
 
-  const more = chat.getByRole("button", { name: "More: search, details" });
+  const more = chat.getByRole("button", { name: "More: search, about" });
   await more.click();
   const moreMenu = page.getByRole("dialog", { name: "More" });
   assert.equal(await moreMenu.getByRole("button", { name: "Earlier chats" }).count(), 0, "no earlier general chats");
@@ -157,7 +157,7 @@ try {
   await page.getByRole("dialog", { name: "Your Heinzels" }).waitFor();
   await accessible('[role="dialog"]');
   await page.keyboard.press("Escape");
-  await chat.getByRole("button", { name: "More: search, details" }).click();
+  await chat.getByRole("button", { name: "More: search, about" }).click();
   await page.getByRole("dialog", { name: "More" }).waitFor();
   await accessible('[role="dialog"]');
   await page.keyboard.press("Escape");

@@ -6,7 +6,6 @@ import {
   api,
   problem,
   type SchemaHeinzelAppearance,
-  type SchemaProfileProposal,
   type SchemaSessionList,
   type SchemaSessionSnapshot,
 } from "@/api/client";
@@ -617,13 +616,9 @@ function LookFields({
 export function ProfileEditor({
   initial,
   onLock,
-  inChat = false,
-  suggestion = null,
 }: {
   initial: SchemaSessionSnapshot;
   onLock: (locked: boolean) => void;
-  inChat?: boolean;
-  suggestion?: SchemaProfileProposal | null;
 }) {
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -758,50 +753,11 @@ export function ProfileEditor({
   const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
-  const suggestionSelected =
-    suggestion !== null && name === suggestion.name && JSON.stringify(look) === JSON.stringify(suggestion.appearance);
   useEffect(() => {
     onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
   }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <EditorForm onSubmit={() => void save()}>
-      {suggestion?.session_id === snapshot.session_id && suggestion.status === "proposed" && (
-        <section aria-label={t("personal.suggested")} className="space-y-2 rounded border border-border p-2 text-sm">
-          <h3 className="font-medium">{t("personal.suggested")}</h3>
-          <p>{t("personal.suggestedName", { name: suggestion.name })}</p>
-          <HeinzelAvatar
-            label={t("personal.suggestedLook")}
-            age={suggestion.appearance.age}
-            build={suggestion.appearance.build}
-            beard={suggestion.appearance.beard ?? undefined}
-            hat={suggestion.appearance.hat ?? undefined}
-            shirt={suggestion.appearance.shirt ?? undefined}
-            accessories={suggestion.appearance.accessories}
-            className="h-24 w-16"
-          />
-          <p>{t("personal.suggestedHelp")}</p>
-          {suggestion.expected_revision !== snapshot.profile_revision && (
-            <p role="status">{t("personal.suggestedStale")}</p>
-          )}
-          {hasUncommittedChanges && !pending && suggestionSelected && (
-            <p role="status">{t("personal.suggestedReady")}</p>
-          )}
-          {hasUncommittedChanges && !pending && !suggestionSelected && (
-            <p role="status">{t("personal.suggestedBlocked")}</p>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled || hasUncommittedChanges || suggestion.expected_revision !== snapshot.profile_revision}
-            onClick={() => {
-              setName(suggestion.name);
-              setLook(suggestion.appearance);
-            }}
-          >
-            {t("personal.suggestedUse")}
-          </Button>
-        </section>
-      )}
       <LookFields
         name={name}
         look={look}
@@ -822,7 +778,7 @@ export function ProfileEditor({
       <div className="flex flex-wrap gap-2">
         <Button
           type="submit"
-          variant={hasUncommittedChanges || pending || inChat ? "default" : "outline"}
+          variant={hasUncommittedChanges || pending ? "default" : "outline"}
           disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}
         >
           {pending ? t("personal.retrySave") : t("personal.save")}
@@ -845,20 +801,18 @@ export function ProfileEditor({
             {t("personal.reload")}
           </Button>
         )}
-        {!inChat && (
-          <Button
-            type="button"
-            variant={hasUncommittedChanges || pending ? "outline" : "default"}
-            disabled={busy || pending !== null || hasUncommittedChanges}
-            onClick={() => {
-              // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
-              if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
-              else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
-            }}
-          >
-            {t("personal.chatWith", { name: snapshot.name })}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant={hasUncommittedChanges || pending ? "outline" : "default"}
+          disabled={busy || pending !== null || hasUncommittedChanges}
+          onClick={() => {
+            // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
+            if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
+            else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
+          }}
+        >
+          {t("personal.chatWith", { name: snapshot.name })}
+        </Button>
       </div>
       {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveFirst")}</p>}
     </EditorForm>

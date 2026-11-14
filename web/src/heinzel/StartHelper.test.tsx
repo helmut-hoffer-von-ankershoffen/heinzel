@@ -3,9 +3,22 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { expect, it, vi } from "vitest";
+import { Providers, queryClient, routes } from "@/App";
 import { config, shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
 import { StartHelper } from "./StartHelper";
+
+/** The app's routes at `path`, with the router to move on from there. */
+function renderRoutes(path: string) {
+  sessionStorage.setItem("hz.token", "test-token");
+  const router = createMemoryRouter(routes, { initialEntries: [path] });
+  render(
+    <Providers client={queryClient()}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  return router;
+}
 
 function show() {
   return render(
@@ -47,19 +60,17 @@ it("sends one named first message and opens its durable chat with separate revie
       };
     },
   });
-  renderAt("/heinzel");
+  const router = renderRoutes("/heinzel");
   await screen.findByText("Start a helper from your first message");
   await fill();
   expect(calls.filter((request) => request.method === "POST")).toEqual([]);
   await userEvent.click(screen.getByRole("button", { name: "Send first message" }));
   const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
   expect(await chat.findByText("Private first message")).toBeInTheDocument();
-  // The review sections wait behind Details in the chat header's More (ADR 0157).
-  await userEvent.click(chat.getByRole("button", { name: "More: search, details" }));
-  await userEvent.click(
-    within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }),
-  );
-  const review = within(chat.getByRole("region", { name: "Review your helper" }));
+  // The grouped review is on the Heinzel's page, beside the chat (More → About), never inside the chat.
+  expect(chat.queryByRole("region", { name: "Review your Heinzel" })).not.toBeInTheDocument();
+  await act(async () => router.navigate(`/heinzel/${sessionId}?chat=${sessionId}`));
+  const review = within(await screen.findByRole("region", { name: "Review your Heinzel" }));
   expect(review.getByText("1. Agent terms")).toBeInTheDocument();
   expect(review.getByText("2. Source access and time window")).toBeInTheDocument();
   expect(review.getByText("3. Recurring turns and local notices")).toBeInTheDocument();
@@ -83,11 +94,12 @@ it("does not mount the first-prompt form or grouped review without its preview f
       messages: [{ id: "first", seq: 1, role: "user", text: "Existing message" }],
     }),
   });
-  renderAt(`/heinzel?chat=${sessionId}`);
+  const router = renderRoutes(`/heinzel?chat=${sessionId}`);
   await screen.findByText("Existing message");
   expect(screen.queryByText("Start a helper from your first message")).not.toBeInTheDocument();
-  expect(screen.queryByRole("region", { name: "Review your helper" })).not.toBeInTheDocument();
-  expect(screen.getByText("Scheduled Heinzel terms")).toBeInTheDocument();
+  await act(async () => router.navigate(`/heinzel/${sessionId}?chat=${sessionId}`));
+  expect(await screen.findByText("Scheduled Heinzel terms")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Review your Heinzel" })).not.toBeInTheDocument();
 });
 
 it("lets the accepted submission finish without reopening its chat after the form unmounts", async () => {
