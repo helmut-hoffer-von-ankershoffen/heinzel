@@ -450,8 +450,10 @@ function AdapterChoices(props: InstalledProps) {
   if (props.control.none !== undefined && !props.control.multiple) {
     options.unshift({ value: props.control.none, label: "None" });
   }
-  // Nothing configured, yet an adapter may serve it: hz binds the only installed one by itself (ADR 0055).
-  const serving = query.data?.capabilities?.find((capability) => capability.name === props.control.capability)?.bound;
+  // Nothing configured, yet an adapter may serve it: hz binds the only installed one by itself (ADR 0055). Only then
+  // is it "the only one installed"; a core default may be one of several.
+  const capability = query.data?.capabilities?.find((found) => found.name === props.control.capability);
+  const serving = capability?.how === "automatic" ? capability.bound : null;
   const selected = Array.isArray(props.value) ? props.value.map(String) : [];
   return (
     <InstalledChoices
@@ -459,7 +461,8 @@ function AdapterChoices(props: InstalledProps) {
       options={options}
       pending={!query.data}
       error={query.error?.message}
-      unset={serving ? t("settings.onlyInstalled", { adapter: serving }) : undefined}
+      unset={serving ? t("settings.onlyInstalled", { adapter: shortName(serving) }) : undefined}
+      unsetTitle={serving ? t("settings.onlyInstalled", { adapter: serving }) : undefined}
       // With several on, the first is where a new document goes: say which, so the order is no secret.
       note={
         props.control.multiple && selected.length > 1
@@ -479,6 +482,14 @@ function ModuleChoices(props: InstalledProps) {
   return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
 }
 
+/** The copy around an adapter's name leaves it this many characters within the pane's 60. */
+const ADAPTER_NAME_LIMIT = 17;
+
+/** A long adapter name cut short with an ellipsis; the full copy is the control's tooltip. */
+function shortName(name: string): string {
+  return name.length > ADAPTER_NAME_LIMIT ? `${name.slice(0, ADAPTER_NAME_LIMIT - 1)}…` : name;
+}
+
 /** Keep saved choices visible when their provider is absent; fetching options must never replace a value. */
 function InstalledChoices({
   id,
@@ -492,6 +503,7 @@ function InstalledChoices({
   pending,
   error,
   unset,
+  unsetTitle,
   note,
 }: InstalledProps & {
   options: InstalledOption[];
@@ -499,6 +511,8 @@ function InstalledChoices({
   error?: string;
   /** What the empty choice says instead of "not set": which adapter serves it while nothing is configured. */
   unset?: string;
+  /** The whole of `unset` when it was cut short, as a tooltip. */
+  unsetTitle?: string;
   /** A line under the choices, e.g. which of several is the default. */
   note?: string;
 }) {
@@ -546,6 +560,7 @@ function InstalledChoices({
           value={selected[0] ?? ""}
           disabled={disabled || pending}
           onChange={(event) => onChange(event.target.value)}
+          title={selected.length === 0 ? unsetTitle : undefined}
           className={selectField}
         >
           {selected.length === 0 && (
@@ -561,7 +576,9 @@ function InstalledChoices({
         </select>
       )}
       {control.multiple && selected.length === 0 && unset && !pending && (
-        <p className="text-xs text-muted-foreground">{unset}</p>
+        <p className="text-xs text-muted-foreground" title={unsetTitle}>
+          {unset}
+        </p>
       )}
       {note && !pending && <p className="text-xs text-muted-foreground">{note}</p>}
       {error && (

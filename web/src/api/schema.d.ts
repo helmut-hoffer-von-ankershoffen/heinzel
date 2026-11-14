@@ -5537,6 +5537,13 @@ export interface components {
              */
             bound: string | null;
             /**
+             * How
+             * @description How it got its adapter: `configured`, `automatic` (the only one installed), the core's `default`, `off` or `unbound` (ADR 0055).
+             * @default unbound
+             * @enum {string}
+             */
+            how: "configured" | "automatic" | "default" | "off" | "unbound";
+            /**
              * Modes
              * @description The modes it has: read, and write if any method writes.
              */

@@ -16,9 +16,11 @@ vi.mock("@/api/queries", () => ({
       ? undefined
       : {
           capabilities: [
-            { name: "calendar", bound: null },
-            { name: "mail", bound: "oak" },
-            { name: "documents", bound: "drive", adapters: ["drive", "wiki"], multiple: true },
+            { name: "calendar", bound: null, how: "unbound" },
+            { name: "mail", bound: "oak", how: "automatic" },
+            { name: "tracker", bound: "core-tracker", how: "default" },
+            { name: "meetings", bound: "a-very-long-meetings-adapter-name", how: "automatic" },
+            { name: "documents", bound: "drive", adapters: ["drive", "wiki"], multiple: true, how: "configured" },
           ],
           adapters: [
             { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
@@ -83,6 +85,14 @@ const setting = (source: string): SchemaSettingInfo => ({
   value: 8,
   default: 3,
   json_schema: { type: "number" },
+});
+
+const enabled = (value: boolean): SchemaSettingInfo => ({
+  ...setting("user"),
+  key: "enabled",
+  value,
+  default: false,
+  json_schema: { type: "boolean" },
 });
 
 describe("Schema setting metadata", () => {
@@ -206,6 +216,29 @@ describe("Schema setting metadata", () => {
     expect(screen.getByRole("combobox", { name: "Calendar" })).toHaveValue("");
   });
 
+  it("drops a staged change and says so when the value changed elsewhere meanwhile", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    expect(screen.getByRole("button", { name: /Restart and apply: Enabled/ })).toBeInTheDocument();
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.queryByRole("button", { name: /Restart and apply: Enabled/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Changed elsewhere meanwhile/)).toHaveAttribute("role", "status");
+    expect(mutateAsync).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a change it saved itself staged until applied, not flagged as changed elsewhere", async () => {
+    const { rerender } = render(<Row setting={enabled(true)} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    await user.click(screen.getByRole("button", { name: "Unsupported restart" }));
+    rerender(<Row setting={enabled(false)} />);
+    expect(screen.queryByText(/Changed elsewhere/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Restart and apply: Enabled/ })).toBeInTheDocument();
+  });
+
   it("identifies hz ui and saves only after the shared unsupported confirmation", async () => {
     render(
       <Row
@@ -294,6 +327,39 @@ describe("Declared installed choices", () => {
       />,
     );
     expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
+  });
+
+  it("says the only one installed only when hz chose it automatically, not for a core default", () => {
+    render(
+      <SchemaValue
+        label="Tracker"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "tracker", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("option", { name: "not set" })).toBeInTheDocument();
+    expect(screen.queryByText(/the only one installed/)).not.toBeInTheDocument();
+  });
+
+  it("cuts a long adapter name short within the pane and shows it whole as a tooltip", () => {
+    render(
+      <SchemaValue
+        label="Meetings"
+        schema={{ type: "string", "x-options": { source: "adapters", capability: "meetings", none: "none" } }}
+        value={null}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    const shown = "not set: a-very-long-meet… serves it, the only one installed";
+    expect(screen.getByRole("option", { name: shown })).toBeInTheDocument();
+    expect(shown.length).toBeLessThanOrEqual(60);
+    expect(screen.getByRole("combobox", { name: "Meetings" })).toHaveAttribute(
+      "title",
+      "not set: a-very-long-meetings-adapter-name serves it, the only one installed",
+    );
   });
 
   const documents = {

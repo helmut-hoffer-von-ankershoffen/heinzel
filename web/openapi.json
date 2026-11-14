@@ -1822,6 +1822,19 @@
             "description": "The adapter bound in the `[capabilities]` table; none if unbound.",
             "title": "Bound"
           },
+          "how": {
+            "default": "unbound",
+            "description": "How it got its adapter: `configured`, `automatic` (the only one installed), the core's `default`, `off` or `unbound` (ADR 0055).",
+            "enum": [
+              "configured",
+              "automatic",
+              "default",
+              "off",
+              "unbound"
+            ],
+            "title": "How",
+            "type": "string"
+          },
           "modes": {
             "description": "The modes it has: read, and write if any method writes.",
             "items": {

@@ -652,6 +652,7 @@ const en = {
   "settings.missing": "not there",
   "settings.notSet": "not set",
   "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
+  "settings.stagedDropped": "Changed elsewhere meanwhile, so your unsaved change was dropped.",
   "settings.severalOn":
     "Links open in the connector they belong to, and a search asks each one. {adapter}, the first, is the default.",
   "profile.team": "Team",
