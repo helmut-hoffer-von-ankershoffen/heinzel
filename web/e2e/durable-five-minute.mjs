@@ -1,4 +1,5 @@
 import { chromium, webkit } from "playwright-core";
+import { openDetails } from "./chat-ready.mjs";
 import { fetchOnce } from "./fetch-once.mjs";
 
 const supplied = process.argv[2];
@@ -113,17 +114,19 @@ try {
   await page.getByText("active", { exact: true }).waitFor();
   const active = await readSchedule();
   if (active.schedule?.status !== "active") throw new Error("Human confirmation did not activate schedule");
-  await page.getByRole("button", { name: "Review pause in chat" }).click();
-  const pause = page.getByRole("heading", { name: "Review pause of this schedule" }).locator("..");
-  await pause.getByRole("button", { name: "Confirm" }).click();
-  await page.getByText("paused", { exact: true }).waitFor();
+  // Pause and resume live on the Heinzel's page: pause at once; Undo opens the resume to confirm as one whole item.
+  await openDetails(page);
+  const lifecycle = page.getByRole("region", { name: "Pause or retire" });
+  await lifecycle.getByRole("button", { name: "Pause" }).click();
+  await lifecycle.getByText(/^Paused · /).waitFor();
   const paused = await readSchedule();
   if (paused.schedule?.status !== "paused" || paused.schedule.revision !== active.schedule.revision + 1)
     throw new Error("Pause did not update the reviewed schedule exactly once");
-  await page.getByRole("button", { name: "Review resume in chat" }).click();
-  const resume = page.getByRole("heading", { name: "Review resuming this schedule" }).locator("..");
-  await resume.getByRole("button", { name: "Confirm" }).click();
-  await page.getByText("active", { exact: true }).waitFor();
+  await lifecycle.getByRole("button", { name: "Undo" }).click();
+  const resume = page.getByRole("alertdialog", { name: /^Resume / });
+  await resume.getByRole("button", { name: /^Resume / }).click();
+  await resume.waitFor({ state: "hidden" });
+  await lifecycle.getByText("Running · on its schedule").waitFor();
   const resumed = await readSchedule();
   if (resumed.schedule?.status !== "active" || resumed.schedule.revision !== paused.schedule.revision + 1)
     throw new Error("Resume did not update the reviewed schedule exactly once");

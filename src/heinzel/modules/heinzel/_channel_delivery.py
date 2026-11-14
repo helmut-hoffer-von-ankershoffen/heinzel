@@ -39,7 +39,7 @@ from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost
 from heinzel.modules.heinzel._channel_binding import ChannelBinding
 from heinzel.modules.heinzel._session_bodies import immutable_body
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 
 _MAX_PREVIEW = 4000
@@ -388,6 +388,8 @@ class ChannelDelivery(ChannelReplyConsumer):
             if head.problem:
                 continue
             proposals = self.crud.repository.control_read(head.session).events
+            if is_retired(proposals):
+                continue
             for event in proposals:
                 if event.kind != "channel.proposed" or event.key is None:
                     continue
@@ -469,10 +471,12 @@ class ChannelDelivery(ChannelReplyConsumer):
                 return 0
             self._binding(terms)
             with self.crud.repository.control_writer(session) as writer:
+                # Retire takes this same lock: a reply that arrives as its Heinzel is retired claims nothing.
                 if (
                     self._events(session, "channel.claimed", request)
                     or self._events(session, "channel.closed", request)
                     or self.crud.clock() >= terms.approval.expires_at
+                    or is_retired(self.crud.repository.control_read(session).events)
                 ):
                     return 0
                 writer.append(

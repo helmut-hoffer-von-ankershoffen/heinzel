@@ -174,6 +174,18 @@ A profile change names the revision you saw; if another change arrived first, re
 request id with the same payload returns the first result; a different payload is refused. An empty appearance object
 restores the defaults. The web app's Heinzelmännchen page does the same, with a preview.
 
+Retire a Heinzel you no longer need. It leaves your list and never wakes (no check-in, schedule or draft workflow
+runs), and it takes no new message, not even one sent before you retired it; its whole history stays. Retiring
+pauses everything that ran on its own: its check-in, its agent schedules and its draft workflows. Restore brings it
+back with its history and all of those still paused; each runs again only after you approve it again, the same way as
+a resume after a pause (missed slots are not caught up). Only you retire or restore it, through the CLI or the app;
+an MCP client cannot:
+
+```bash
+hz heinzel retire <session-id> retire-1 --json
+hz heinzel restore <session-id> restore-1 --json
+```
+
 ### 12. Chat with it
 
 ```bash

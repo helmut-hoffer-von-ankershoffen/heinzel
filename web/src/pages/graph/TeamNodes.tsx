@@ -11,6 +11,7 @@ import type { FlowTone } from "@/components/graph/FlowNode";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { isDurableSession } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 import { heinzelId, type PromiseState, type TeamNode } from "./jgf";
 import type { TeamFlowNode } from "./layout";
@@ -45,12 +46,15 @@ export const kindIcon = (node: TeamNode, group = false): LucideIcon =>
 
 const handle = "!size-1.5 !border-0 !bg-border";
 
-/** The card's link: the artifact's own page in a new tab, or the Heinzelmännchen's page. */
+/** The card's link: the artifact's own page in a new tab, the personal Heinzel's page, or a team contract. */
 function NodeLink({ node, className, children }: { node: TeamNode; className: string; children: ReactNode }) {
   const kind = <span className="sr-only">, {t(`teamGraph.kind.${node.kind}`)}</span>;
   if (node.kind === "heinzel") {
+    // A personal Heinzel has its own page; a team Heinzelmännchen is its contract.
+    const id = heinzelId(node.id);
+    const to = isDurableSession(id) ? `/heinzel/${id}` : `/contracts/${encodeURIComponent(id)}`;
     return (
-      <Link to={`/heinzel/${encodeURIComponent(heinzelId(node.id))}`} className={cn("nodrag nopan", className)}>
+      <Link to={to} className={cn("nodrag nopan", className)}>
         {children}
         {kind}
       </Link>

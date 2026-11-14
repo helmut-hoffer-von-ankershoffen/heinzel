@@ -253,9 +253,8 @@ try {
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
-  // The reply and its tool activity are the conversation, pressed above with Details closed as a person finds it:
-  // open Details only now, for the reviews. Open earlier, its sections change height above the reply when the
-  // turn settles and can move the summary out from under a held press.
+  // The reply and its tool activity are the conversation, pressed above before the page opens, as a person finds it:
+  // open the Heinzel's page only now, for the reviews.
   await openDetails(page);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
@@ -273,11 +272,11 @@ try {
   await schedules.getByText(/Approved; the daemon must be running/).waitFor();
   await schedules.getByRole("button", { name: "Pause future turns" }).click();
   await schedules.getByText(/Every 5 minutes · paused/).waitFor();
-  await watchDisclosure(page.getByText(/suggested look/), "suggested-look");
-  await page.getByText(/suggested look/).click();
-  await page.getByRole("button", { name: "Use suggested identity" }).click();
-  await page.getByRole("button", { name: "Save name and look" }).click();
-  await page.getByRole("heading", { name: "Mira" }).waitFor();
+  // The chat's suggested look waits under Look and name on the Heinzel's page; Use it applies it at once, with Undo.
+  const look = page.getByRole("region", { name: "Look and name" });
+  await look.getByRole("button", { name: "Use it" }).click();
+  await look.getByText("Saved · Mira").waitFor();
+  await page.getByRole("heading", { name: "Mira, your Heinzel" }).waitFor();
   const state = await page.evaluate(async () => {
     const session = new URLSearchParams(location.search).get("chat");
     const authorization = `Bearer ${sessionStorage.getItem("hz.token")}`;
@@ -330,7 +329,11 @@ try {
       inserted.resolve();
     });
   }
-  await page.reload();
+  // Back on /doctor, whose late report grows the page above the chat (the Heinzel's page reads no report).
+  const list = new URL(page.url());
+  list.pathname = "/doctor";
+  list.search = `?chat=${list.searchParams.get("chat")}`;
+  await page.goto(list.href);
   await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
   const continueConversation = page.getByRole("button", { name: "Continue conversation" });

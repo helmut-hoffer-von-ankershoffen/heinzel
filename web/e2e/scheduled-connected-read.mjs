@@ -199,7 +199,9 @@ try {
     const ready = Promise.withResolvers();
     const release = Promise.withResolvers();
     const inserted = Promise.withResolvers();
-    await page.route("**/api/system/doctor", async (route) => {
+    // The Heinzel's page grows late when its list answers ("How it is doing" appears above the reviews), as /doctor
+    // did when its report answered: hold that answer between a press and its release.
+    await page.route("**/api/heinzel/sessions", async (route) => {
       const response = await route.fetch();
       ready.resolve();
       await release.promise;

@@ -1,8 +1,8 @@
 // The chat's header, and every chat is with a Heinzel (ADR 0157, canvas boards ChatDefault and Switch): the face, the
-// name with ▾ that opens your Heinzels and New Heinzel, More (search, details) and Close.
+// name with ▾ that opens your Heinzels and New Heinzel, More (search, About opening the Heinzel's page) and Close.
 // There is no "Back to chat": switching Heinzels is the only way between chats. Both popovers keep the keyboard path of
 // the session switcher: Escape closes and focus returns to the button that opened them; Tab out closes too.
-import { ChevronDown, Ellipsis, PanelRightClose, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Ellipsis, Info, PanelRightClose, Plus, Search } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useHeinzelSessions } from "@/api/queries";
@@ -25,9 +25,7 @@ type Props = {
   /** A turn is on its way: the face thinks. At rest the face is awake in an open chat (owner default). */
   busy: boolean;
   searchOpen: boolean;
-  detailsOpen: boolean;
   onSearch: () => void;
-  onDetails: () => void;
   onClose: () => void;
   /** Switching is held while a profile save is in flight, as the old "Back to chat" was. */
   locked?: boolean;
@@ -92,18 +90,7 @@ function Menu({
 const rowClass =
   "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:text-icon";
 
-export function HeinzelHeader({
-  sessionId,
-  name,
-  look,
-  busy,
-  searchOpen,
-  detailsOpen,
-  onSearch,
-  onDetails,
-  onClose,
-  locked = false,
-}: Props) {
+export function HeinzelHeader({ sessionId, name, look, busy, searchOpen, onSearch, onClose, locked = false }: Props) {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const switchTrigger = useRef<HTMLButtonElement>(null);
@@ -253,9 +240,13 @@ export function HeinzelHeader({
           <Search aria-hidden className="size-4" />
           {t("oneChat.search")}
         </button>
-        <button type="button" className={rowClass} aria-pressed={detailsOpen} onClick={pick(onDetails)}>
-          <SlidersHorizontal aria-hidden className="size-4" />
-          {t("oneChat.details")}
+        <button
+          type="button"
+          className={rowClass}
+          onClick={pick(() => navigate({ pathname: `/heinzel/${sessionId}`, search: params.toString() }))}
+        >
+          <Info aria-hidden className="size-4" />
+          {t("oneChat.about", { name })}
         </button>
       </Menu>
       <Button

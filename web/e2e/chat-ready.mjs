@@ -19,39 +19,33 @@ export async function openChatJourney() {
   return { axe, browser, context, page, token, url };
 }
 
-// Runs in the page, so it stands alone: is this summary's disclosure open once the page has painted?
-const openAfterPaint = (node) =>
-  new Promise((resolve) => {
-    const settled = () => resolve(node.parentElement.open);
-    requestAnimationFrame(() => requestAnimationFrame(settled));
-  });
-
-async function pressUntilOpen(summary, presses) {
-  if (await summary.evaluate(openAfterPaint)) return;
-  assert.ok(presses > 0, "Details did not stay open");
-  await summary.click();
-  await pressUntilOpen(summary, presses - 1);
-}
-
 /** The composer of the Heinzel's chat: "Message <name>" (ADR 0157: every chat is with a Heinzel). */
 export const heinzelComposer = (page) =>
   page.getByRole("complementary", { name: "Chat" }).getByRole("textbox", { name: /^Message / });
 
-/** The conversation comes first: reviews, terms and schedules sit behind Details in the header's More. Show it, once. */
-// More → Details toggles, and a review link shows Details already: so read the row's pressed state and choose it only
-// when Details is not shown. Then require the disclosure open once the page has painted; a press that lands beside the
-// summary while the conversation loads opens nothing, so press again if it is not, three presses at most.
+/** Reviews, terms and recurring turns live on the Heinzel's page (`/heinzel/:id`), beside its chat. Open it, once. */
+// The chat's More → About opens it. Then wait for the page's heading, keep the chat in reach on a phone, and restyle a
+// select the WebKit quirk below hides.
 export async function openDetails(page) {
   const chat = page.getByRole("complementary", { name: "Chat" });
   await heinzelComposer(page).waitFor({ timeout: 30000 });
-  await chat.getByRole("button", { name: "More: search, details" }).click();
-  const row = page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Details" });
-  if ((await row.getAttribute("aria-pressed")) === "true") await page.keyboard.press("Escape");
-  else await row.click();
-  const summary = chat.locator("details > summary", { hasText: /^Details$/ }).first();
-  await summary.waitFor({ state: "visible", timeout: 30000 });
-  await pressUntilOpen(summary, 3);
-  const selects = await summary.locator("xpath=..").locator("select").all();
+  const heading = page.getByRole("heading", { level: 1, name: /, your Heinzel$/ });
+  if (!(await heading.isVisible())) {
+    await chat.getByRole("button", { name: "More: search, about" }).click();
+    await page
+      .getByRole("dialog", { name: "More" })
+      .getByRole("button", { name: /^About / })
+      .click();
+  }
+  await heading.waitFor({ timeout: 30000 });
+  // On a phone a new address selects the Page tab; with Chat selected the page stays above the chat, both in reach.
+  const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
+  if ((await chatTab.count()) && !(await heinzelComposer(page).isVisible())) {
+    await chatTab.press("Enter");
+    await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
+  }
+  await heinzelComposer(page).waitFor();
+  const selects = await page.locator("main").locator("select").all();
   const restyled = (await Promise.all(selects.map((select) => select.evaluate(quirkRestyled)))).filter(Boolean).length;
   if (restyled) process.stderr.write(`openDetails: restyled ${restyled} select(s) after the WebKit visibility quirk\n`);
 }
@@ -92,7 +86,7 @@ const hiddenBy = (node) => {
   return node.checkVisibility() ? null : "every ancestor is shown, yet checkVisibility() is false";
 };
 
-/** A section behind Details must be visible within 10 s; if not, fail with what hides it, not 30 s later in an action. */
+/** A section of the Heinzel's page must be visible within 10 s; if not, fail with what hides it, not 30 s later in an action. */
 export async function requireShown(locator, label) {
   try {
     await locator.waitFor({ state: "visible", timeout: 10000 });
@@ -113,7 +107,7 @@ export async function requireShown(locator, label) {
 }
 
 // One place for the locator the scheduled, template and generic chat journeys each need.
-/** The recurring-turns disclosure of the Heinzel pane; the Details disclosure around it matches too, so take the last. */
+/** The recurring-turns disclosure on the Heinzel's page; a disclosure around it would match too, so take the last. */
 export function recurringTurns(page) {
   return page
     .locator("details")
@@ -122,7 +116,7 @@ export function recurringTurns(page) {
 }
 
 // One place for the opening steps the workshop and template journeys share.
-/** Name the first Heinzel at the chat's first start, open Details and send it this sentence; returns the composer. */
+/** Name the first Heinzel at the chat's first start, open its page and send it this sentence; returns the composer. */
 export async function createHeinzelWithMessage(page, sentence) {
   await createHeinzelWith(page, sentence);
   const message = heinzelComposer(page);

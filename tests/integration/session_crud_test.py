@@ -360,6 +360,32 @@ def test_cli_stdio_mcp_and_private_http_share_the_same_saved_personal_look(kerne
     anyio.run(scenario)
 
 
+def test_retire_and_restore_run_on_the_private_api_and_the_cli_but_are_no_mcp_tools(kernel):
+    client, auth = protected(kernel)
+    created = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "new-1", "name": "Helper"}).json()
+    session_id = created["session_id"]
+    retired = client.post("/heinzel/retire", headers=auth, json={"session_id": session_id, "request_id": "r-1"})
+    assert retired.status_code == 200, retired.text
+    assert retired.json()["state"] == "retired"
+    restored = CliRunner().invoke(cli.build(kernel), ["heinzel", "restore", session_id, "r-2", "--json"])
+    assert restored.exit_code == 0, restored.output
+    assert json.loads(restored.output)["state"] == "proposed"
+    with kernel.resolve(CurrentUser).local("cli"):
+        events = PersonalSessionRepository(kernel.resolve(CurrentUser)).control_read(session_id).events
+    assert [(event.kind, event.data["origin"]) for event in events if event.kind.startswith("heinzel.")] == [
+        ("heinzel.retired", "api-bearer"),
+        ("heinzel.restored", "cli"),
+    ]
+
+    async def scenario():
+        async with Client(mcp.build(kernel)) as connected:
+            names = {tool.name for tool in (await connected.list_tools()).tools}
+            assert "heinzel_session" in names
+            assert not {"heinzel_retire", "heinzel_restore"} & names
+
+    anyio.run(scenario)
+
+
 def test_stdio_mcp_can_create_propose_inspect_and_pause_but_cannot_activate_without_human_proof(kernel):
     client, auth = protected(kernel)
 

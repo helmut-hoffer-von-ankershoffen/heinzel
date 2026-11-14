@@ -34,9 +34,7 @@ function show(busy: boolean) {
           look={{}}
           busy={flag}
           searchOpen={false}
-          detailsOpen={false}
           onSearch={() => {}}
-          onDetails={() => {}}
           onClose={() => {}}
         />
       </MemoryRouter>

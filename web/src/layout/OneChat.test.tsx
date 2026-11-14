@@ -133,14 +133,15 @@ describe("one kind of chat", () => {
     await waitFor(() => expect(localStorage.getItem("hz.chat.heinzel")).toBe(fritz));
   });
 
-  it("opens search and details from More, and Escape returns to More", async () => {
+  it("opens search and the Heinzel's page from More, and Escape returns to More", async () => {
     mockOneChat([summary(helmi)]);
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    const more = await chat.findByRole("button", { name: "More: search, details" });
-    // Details and search wait in More instead of standing among the messages.
-    await waitFor(() => expect(chat.getByText("Details").closest("details")).not.toBeVisible());
+    const more = await chat.findByRole("button", { name: "More: search, about" });
+    // Search waits in More instead of standing among the messages; the chat has no Details block at all.
+    await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ });
+    expect(chat.queryByText("Details", { exact: true })).not.toBeInTheDocument();
     expect(chat.queryByRole("search", { name: "Search Heinzel chats" })).not.toBeInTheDocument();
     await user.click(more);
     // No earlier general chats: More holds search and details only.
@@ -156,9 +157,12 @@ describe("one kind of chat", () => {
     expect(await chat.findByRole("search", { name: "Search Heinzel chats" })).toBeInTheDocument();
     await user.click(more);
     await user.click(
-      within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }),
+      within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "About Helmi" }),
     );
-    expect(chat.getByText("Details").closest("details")).toBeVisible();
+    // The page opens beside the chat, and focus lands on its heading.
+    const heading = await screen.findByRole("heading", { name: "Helmi, your Heinzel", level: 1 });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(await chat.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     await expectAccessible(
       inside(chat.getByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }), ".chat-panel-header"),
     );

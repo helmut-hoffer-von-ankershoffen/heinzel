@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue
 
 from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
+    PRIVATE_WRITE,
     AiModelsSource,
     CapturedWriteService,
     CheckInChatContext,
@@ -818,6 +819,7 @@ def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
     _register_frontdoor_operations(module)
     register_level_operations(module)
+    _register_lifecycle_operations(module)
 
     @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
     def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
@@ -1049,6 +1051,44 @@ def _register_frontdoor_operations(module: Module) -> None:
             raise HeinzelError(msg)
         created = service.new_chat(request_id, name, initial_message=prompt)
         return asyncio.run(chat.answer(created.session_id, request_id))
+
+
+_HUMAN_ORIGINS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
+
+
+def _lifecycle_origin(current: CurrentUser) -> str:
+    """The human-facing head the owner retires or restores through; anything else is refused.
+
+    Raises:
+        HeinzelError: If the caller is not the authenticated owner through the CLI or the private web API.
+    """
+    context = current.context()
+    if (
+        context.authentication not in _HUMAN_ORIGINS
+        or context.principal != current.owner()
+        or PRIVATE_WRITE not in context.permissions
+    ):
+        msg = "Retiring or restoring a Heinzel requires its owner through the CLI or the app"
+        raise HeinzelError(msg)
+    return context.authentication
+
+
+def _register_lifecycle_operations(module: Module) -> None:
+    """Retire and restore: reversible, history kept (ADR 0049 §7); deleting for good is separate work."""
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def retire(
+        service: SessionCrud, current: CurrentUser, session_id: Identity, request_id: Request
+    ) -> SessionSnapshot:
+        """Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it."""
+        return service.retire(session_id, request_id, origin=_lifecycle_origin(current))
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def restore(
+        service: SessionCrud, current: CurrentUser, session_id: Identity, request_id: Request
+    ) -> SessionSnapshot:
+        """Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval."""
+        return service.retire(session_id, request_id, retired=False, origin=_lifecycle_origin(current))
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface

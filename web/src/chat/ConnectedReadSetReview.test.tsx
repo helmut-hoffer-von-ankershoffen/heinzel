@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { DurableSession } from "@/chat/DurableSession";
+import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { mockApi } from "@/test/render";
 
 function showSet() {
@@ -18,10 +19,25 @@ function showSet() {
 
 const session = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
-/** The review sections wait behind Details in the chat header's More (ADR 0157). */
+/** The chat at `/`, and the Heinzel's page with its chat beside it, as the app shows them. */
+const chatAndPage = () => [
+  { path: "/", element: <DurableSession sessionId={session} onClose={() => {}} /> },
+  {
+    path: "/heinzel/:id",
+    element: (
+      <>
+        <HeinzelPage />
+        <DurableSession sessionId={session} onClose={() => {}} />
+      </>
+    ),
+  },
+];
+
+/** The review sections are on the Heinzel's page, opened from the chat header's More → About. */
 async function showDetails() {
-  fireEvent.click(await screen.findByRole("button", { name: "More: search, details" }));
-  fireEvent.click(within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }));
+  fireEvent.click(await screen.findByRole("button", { name: "More: search, about" }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: /^About / }));
+  await screen.findByRole("heading", { level: 1, name: /, your Heinzel$/ });
 }
 const entries = [
   { capability: "calendar", method: "events", fixed_arguments: { window: { since: "Monday", until: "Tuesday" } } },
@@ -126,9 +142,7 @@ it("keeps a suggested set inert until a person reviews and confirms the exact se
     },
   });
   const user = userEvent.setup();
-  const router = createMemoryRouter([
-    { path: "/", element: <DurableSession sessionId={session} onClose={() => {}} /> },
-  ]);
+  const router = createMemoryRouter(chatAndPage());
   render(
     <Providers client={queryClient()}>
       <RouterProvider router={router} />
@@ -195,8 +209,7 @@ it.each(["done", "uncertain", "failed"])(
       },
       "/api/system/runner/chat/confirm": { status: 503, body: {} },
     });
-    const makeRouter = () =>
-      createMemoryRouter([{ path: "/", element: <DurableSession sessionId={session} onClose={() => {}} /> }]);
+    const makeRouter = () => createMemoryRouter(chatAndPage());
     const user = userEvent.setup();
     const view = render(
       <Providers client={queryClient()}>
@@ -259,14 +272,13 @@ it("refuses a saved action whose reviewed account differs from the current revie
       messages: [],
     }),
   });
-  const router = createMemoryRouter([
-    { path: "/", element: <DurableSession sessionId={session} onClose={() => {}} /> },
-  ]);
+  const router = createMemoryRouter(chatAndPage());
   render(
     <Providers client={queryClient()}>
       <RouterProvider router={router} />
     </Providers>,
   );
+  await showDetails();
   expect(await screen.findByText(/Sources ready for review/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /confirm/i })).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/confirm"))).toBe(false);

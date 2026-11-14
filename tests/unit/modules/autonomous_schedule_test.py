@@ -522,3 +522,40 @@ def test_approved_quiet_slot_does_not_dispatch_or_catch_up(tmp_path, monkeypatch
             now = datetime(2026, 11, 6, 7, 5, tzinfo=UTC)
             assert asyncio.run(schedules.tick(session, "schedule", now))
             assert (tmp_path / "model-calls").exists()
+
+
+def test_a_retire_pauses_an_approved_agent_schedule_and_a_restore_keeps_it_paused(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("schedule-retire").session_id
+        crud.propose_scheduled_agent(session, "contract", "Make a short status report", None, 30)
+        contract = ContractReview(crud)
+        contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
+        chat = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(fake_claude(tmp_path))
+        )
+        schedules = AutonomousSchedules(crud, chat)
+        binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
+        proof = schedules.issue(session, "schedule", "chat-confirm:test:schedule")
+        review = binding.model_dump(mode="json")
+        marker = ApprovalConfirmation()
+        args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
+        with marker.using("heinzel", "approve-agent-schedule", args):
+            schedules.approve(session, "schedule", review, proof, marker)
+        assert schedules.review(session, "schedule").status == "approved"
+        crud.retire(session, "retire-1")
+        # A slot already due refuses while retired, before any model work.
+        with current.local("daemon"), pytest.raises(HeinzelError, match="retired"):
+            asyncio.run(schedules.tick(session, "schedule", datetime.now(UTC)))
+        crud.retire(session, "restore-1", retired=False)
+        # The retire paused it; the restore does not resume it: only a new approval would.
+        assert schedules.review(session, "schedule").status == "paused"
+        with pytest.raises(HeinzelError, match="paused"):
+            schedules.approved(session, "schedule")
+        # Pausing it again records nothing new: it is already paused.
+        schedules.pause(session, "schedule")
+        events = crud.repository.control_read(session).events
+        assert not [event for event in events if event.kind == "agent.schedule-paused"]
