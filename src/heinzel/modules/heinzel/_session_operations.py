@@ -58,6 +58,7 @@ from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, sh
 from heinzel.modules.heinzel._history_fts import IndexedHistoryPage, indexed_search
 from heinzel.modules.heinzel._history_search import HistorySearchPage, HistorySearchRequest, search_history
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
+from heinzel.modules.heinzel._level_operations import register_level_operations
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -816,6 +817,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
     _register_frontdoor_operations(module)
+    register_level_operations(module)
 
     @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
     def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:

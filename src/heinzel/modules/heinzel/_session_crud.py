@@ -39,6 +39,7 @@ from heinzel.modules.heinzel._activity import (
     recently,
     run_counts,
 )
+from heinzel.modules.heinzel._levels import HeinzelIntelligence
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
     ContractVersion,
@@ -255,6 +256,11 @@ class PersonalProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     name: str = Field(min_length=1, max_length=100)
     appearance: HeinzelAppearance = Field(default_factory=HeinzelAppearance)
+    intelligence: HeinzelIntelligence = Field(
+        default_factory=HeinzelIntelligence,
+        # Left out at its default, so a profile saved before levels existed reads and hashes unchanged (ADR 0158).
+        exclude_if=lambda value: value == HeinzelIntelligence(),
+    )
 
     @field_validator("name")
     @classmethod
@@ -587,6 +593,15 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return profile, revision
 
+    def intelligence(self, session_id: str) -> tuple[HeinzelIntelligence, int]:
+        """This Heinzel's level, provider and exact model, and the profile revision they were read at (ADR 0158).
+
+        Raises:
+            HeinzelError: If the profile is missing or invalid.
+        """
+        profile, revision = self._profile(session_id, self.repository.control_read(session_id).events)
+        return profile.intelligence, revision
+
     def read_body(self, session_id: str, event: SessionEvent) -> JsonValue:
         """Hydrate a hash-verified immutable body from this owner's private session repository.
 
@@ -607,7 +622,7 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return body[0]
 
-    def profile(
+    def profile(  # noqa: PLR0913 - one replacement of the profile's optional keyword-only fields
         self,
         session_id: str,
         request_id: str,
@@ -615,6 +630,7 @@ class SessionCrud(ApprovalIssuer):
         *,
         name: str | None = None,
         appearance: HeinzelAppearance | None = None,
+        intelligence: HeinzelIntelligence | None = None,
     ) -> SessionSnapshot:
         """Replace explicit personal fields against the exact version the user saw, including default inheritance.
 
@@ -625,11 +641,13 @@ class SessionCrud(ApprovalIssuer):
         appearance = (
             HeinzelAppearance.model_validate_json(appearance.model_dump_json()) if appearance is not None else None
         )
-        request: JsonValue = {
+        request: dict[str, JsonValue] = {
             "expected_revision": expected_revision,
             "name": name,
             "appearance": appearance.model_dump(mode="json") if appearance is not None else None,
         }
+        if intelligence is not None:  # only then, so an older retry's request hash is unchanged
+            request["intelligence"] = intelligence.model_dump(mode="json")
         digest = _digest(request)
         with self.repository.control_writer(session_id) as writer:
             events = self.repository.control_read(session_id).events
@@ -641,11 +659,13 @@ class SessionCrud(ApprovalIssuer):
             else:
                 current, revision = self._profile(session_id, events)
                 if type(expected_revision) is not int or expected_revision != revision:
-                    msg = "This Heinzel's profile changed; reload before saving your appearance"
+                    what = "saving your appearance" if intelligence is None else "setting its level"
+                    msg = f"This Heinzel's profile changed; reload before {what}"
                     raise HeinzelError(msg)
                 profile = PersonalProfile(
                     name=current.name if name is None else name,
                     appearance=current.appearance if appearance is None else appearance,
+                    intelligence=current.intelligence if intelligence is None else intelligence,
                 )
                 body = immutable_body(writer, "profile", profile.model_dump(mode="json"), control=True)
                 writer.append(
