@@ -46,6 +46,15 @@ export type FormValue = string | number | boolean;
 const quoted = (value: FormValue) =>
   typeof value === "string" ? `'${value.replaceAll("'", `'"'"'`)}'` : JSON.stringify(value);
 
+/** A typed value longer than this is shown shortened in the confirmation; the call still sends all of it. */
+export const LONG_FORM_VALUE = 2000;
+const SHOWN_OF_LONG = 200;
+// A file a view sends as text (base64) would fill the dialog with noise; its start and its length say enough.
+const shown = (value: FormValue) =>
+  typeof value === "string" && value.length > LONG_FORM_VALUE
+    ? `${quoted(`${value.slice(0, SHOWN_OF_LONG)}…`)} (${value.length.toLocaleString("en")} characters)`
+    : quoted(value);
+
 /** The call a view's form makes: only a private mutation's declared inputs, shown in the dialog as they will run. */
 export function formCall(effect: Effect | undefined, values: Record<string, FormValue>) {
   if (effect?.kind !== "operation" || !effect.call?.body) throw new Error("This view has no form for that");
@@ -56,7 +65,7 @@ export function formCall(effect: Effect | undefined, values: Record<string, Form
     const plain = typeof value === "string" || typeof value === "boolean" || Number.isFinite(value);
     if (!plain) throw new Error(`${name} must be text, a number or yes/no`);
   }
-  const words = typed.map(([name, value]) => `--${name.replaceAll("_", "-")} ${quoted(value)}`);
+  const words = typed.map(([name, value]) => `--${name.replaceAll("_", "-")} ${shown(value)}`);
   return {
     ...effect.call,
     body: { ...effect.call.body, ...values },
@@ -66,6 +75,9 @@ export function formCall(effect: Effect | undefined, values: Record<string, Form
 // Plugins draw actions with the same components as the app (design/README.md, "Actions").
 export const viewSDK = {
   abi: 1,
+  // What this app's SDK can do beyond the first ABI 1 release, so a view offers only what works here.
+  // `form-long-values`: the confirmation shortens a long typed value, so a form may send a file as text.
+  features: ["form-long-values"] as readonly string[],
   React,
   ReactDOM,
   router,
