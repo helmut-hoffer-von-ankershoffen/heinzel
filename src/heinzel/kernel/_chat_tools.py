@@ -7,7 +7,10 @@ the very same `ChatTool`s there. Both paths select the tools with `chat_tools` a
 `ChatTool.call`, so what runs, what is proposed and what is refused cannot differ between them:
 
 - a read-only operation runs, and its result comes back as JSON without email addresses, cut at `RESULT_LIMIT`;
-- any other operation does not run: it is handed to the `ActionGate` as a proposal, and the call returns its id;
+- an operation that changes things follows its own marker (`agents=`, ADR 0162, `_agent_writes.py`): `direct`
+  runs at once, as a non-human caller without private write rights, within a write budget, and is audited;
+  `approve`, `propose` or no marker does not run: it is handed to the `ActionGate` as a proposal, and the call
+  returns its id; `never` is refused;
 - the one consumer of a person's prior authorization (`system runner chat confirm-authorized-mcp`) runs only for
   its own chat session; its proof never appears in arguments or results;
 - a failure reaches the agent as a `ChatToolError` without email addresses; a bug's message never does.
@@ -20,6 +23,7 @@ import inspect
 import json
 import logging
 import shlex
+import weakref
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final, Literal
@@ -27,6 +31,15 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
+from heinzel.kernel._agent_writes import (
+    AgentWrites,
+    Caller,
+    WriteBudget,
+    WriteOutcome,
+    agent_writes,
+    audit_write,
+    calling,
+)
 from heinzel.kernel._agents import ChatToolSet, ToolProfile
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import McpChatSessions
@@ -87,6 +100,8 @@ class ChatTool:
     item: Exposed
     session: str
     kind: Kind = "operation"
+    attended: bool = False
+    """Whether the person started this turn and watches it; unknown counts as not (a smaller write budget)."""
 
     def __post_init__(self) -> None:
         """Hold the operation as an agent may call it, however the tool was built (never with an approval proof)."""
@@ -133,7 +148,7 @@ class ChatTool:
                     return self._confirm(user, arguments)
                 if self.item.operation.read_only:
                     return self._read(user, arguments)
-                return self._propose(arguments)
+                return self._write(user, arguments)
         except ChatToolError:
             raise
         except HeinzelError as exc:
@@ -174,6 +189,45 @@ class ChatTool:
         with user.local_read(AUTHENTICATION):
             result = self.kernel.invoke(self.item.operation, **arguments)
         # Redacted before it is cut, so no address is cut into something the pattern misses.
+        text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
+        return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
+
+    def _write(self, user: CurrentUser, arguments: Mapping[str, Any]) -> str:
+        """Run, propose or refuse a write by the operation's own marker; every outcome is one audit line.
+
+        Raises:
+            ChatToolError: If the operation is the person's own (`never`).
+            HeinzelError: If the write budget is used up or the operation refuses the call.
+        """
+        record, operation = self.item.record, self.item.operation
+        policy = agent_writes(operation, arguments, builtin=record.origin.builtin)
+        caller = Caller("heinzel", self.session, session=self.session, attended=self.attended)
+
+        def note(outcome: WriteOutcome, error: str | None = None) -> None:
+            audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome=outcome, error=error)
+
+        if policy == "never":
+            note("refused")
+            msg = f"{self.name} is the person's own to do; no agent may call it"
+            raise ChatToolError(msg)
+        if policy != "direct":
+            text = self._propose(arguments)
+            note("proposed")
+            return text
+        try:
+            write_budget(self.kernel).take(caller)
+        except HeinzelError:
+            note("over-budget")
+            raise
+        try:
+            # A non-human identity that may read private data but never write it, and never the web session of
+            # the thread that happens to run the turn (`using(None)` came first).
+            with user.local_read(AUTHENTICATION), calling(caller):
+                result = self.kernel.invoke(operation, **arguments)
+        except Exception as exc:
+            note("failed", type(exc).__name__)
+            raise
+        note("ran")
         text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
         return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
 
@@ -229,7 +283,47 @@ def _pre_parsed(arguments: dict[str, Any], model: type[BaseModel]) -> dict[str, 
     return parsed
 
 
-def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") -> list[ChatTool]:
+_budgets: "weakref.WeakKeyDictionary[Kernel, WriteBudget]" = weakref.WeakKeyDictionary()
+
+
+def write_budget(kernel: Kernel) -> WriteBudget:
+    """The one count of agents' direct writes in this process, shared by every path of this kernel."""
+    return _budgets.setdefault(kernel, WriteBudget())
+
+
+def agent_write(kernel: Kernel, item: Exposed, arguments: Mapping[str, Any], caller: Caller) -> AgentWrites:
+    """Decide and account one write an outside agent asks for over MCP; the caller then runs it under `calling`.
+
+    `approve` cannot wait for the person here (no chat holds the proposal), so it is refused with the command the
+    person can run. `direct` and `propose` run (ADR 0162), within the caller's write budget.
+
+    Raises:
+        HeinzelError: If the operation is `never` or `approve` for agents, or the write budget is used up.
+    """
+    record, operation = item.record, item.operation
+    policy = agent_writes(operation, arguments, builtin=record.origin.builtin)
+    if policy in {"never", "approve"}:
+        audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome="refused")
+        if policy == "never":
+            msg = f"`{item.name}` is the person's own to do; no agent may call it"
+            raise HeinzelError(msg)
+        command = command_line(item, to_jsonable_python(dict(arguments), fallback=str))
+        msg = (
+            f"Not run: `{item.name}` needs the person's approval. Ask them to run it themselves if they want it: "
+            f"{command}"
+        )
+        raise HeinzelError(msg)
+    try:
+        write_budget(kernel).take(caller)
+    except HeinzelError:
+        audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome="over-budget")
+        raise
+    return policy
+
+
+def chat_tools(
+    kernel: Kernel, session: str, tools: ChatToolSet = "everyday", *, attended: bool = False
+) -> list[ChatTool]:
     """The tools of one chat session's agent, on whichever path the turn calls them.
 
     The session must exist; the agent cannot choose it. Private operations are left out (the durable engine grants
@@ -247,16 +341,16 @@ def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") ->
                 msg = "The personal-check-in tool profile requires a durable check-in chat"
                 raise HeinzelError(msg)
             return [
-                ChatTool(kernel, item, session)
+                ChatTool(kernel, item, session, attended=attended)
                 for item in exposed(kernel, "mcp-check-in")
                 if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
             ]
     selected: list[ChatTool] = []
     for item in exposed(kernel, HEAD):
         if (item.record.qualname, item.operation.name) == CONFIRM_AUTHORIZED:
-            selected.append(ChatTool(kernel, item, session, "confirm-authorized"))
+            selected.append(ChatTool(kernel, item, session, "confirm-authorized", attended))
         elif not item.operation.private and (tools == "all" or item.operation.audience == "everyday"):
-            selected.append(ChatTool(kernel, item, session))
+            selected.append(ChatTool(kernel, item, session, attended=attended))
     return selected
 
 
@@ -272,7 +366,7 @@ def direct_tools(kernel: Kernel, profile: ToolProfile) -> tuple[ToolProfile, lis
     hz = profile.hz_tools
     if hz is None:
         return profile, []
-    tools = chat_tools(kernel, hz.session, hz.tools)
+    tools = chat_tools(kernel, hz.session, hz.tools, attended=hz.attended)
     servers = {name: server for name, server in profile.mcp_servers.items() if name != hz.server}
     return profile.model_copy(update={"mcp_servers": servers, "hz_tools": None}), tools
 

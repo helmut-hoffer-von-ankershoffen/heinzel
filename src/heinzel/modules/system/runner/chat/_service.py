@@ -847,7 +847,8 @@ class ChatService:
                 working_dir=Path(directory),
                 read_files=False,
                 mcp_servers={SERVER: server},
-                hz_tools=HzTools(session=chat.id, tools=tools_set, server=SERVER),
+                # The person sent this message and reads the answer: an attended turn.
+                hz_tools=HzTools(session=chat.id, tools=tools_set, server=SERVER, attended=True),
             )
             chosen: dict[str, str] = {}  # only what the chat chose, so a runner keeps its own defaults
             if chat.model:

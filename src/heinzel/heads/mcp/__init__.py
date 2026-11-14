@@ -16,6 +16,7 @@ exposure, so what a UI hides from beginners is still a tool here.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import logging
@@ -61,8 +62,9 @@ from heinzel.kernel import (
     Kernel,
     boot,
 )
+from heinzel.kernel._agent_writes import AgentWrites, Caller, audit_write, calling
 from heinzel.kernel._approval import ApprovalIssuer
-from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item
+from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
 
@@ -80,8 +82,9 @@ INSTRUCTIONS = (
 )
 CHAT_INSTRUCTIONS = (
     "Heinzelmännchen's operations for one chat. Tools are named after their command path: `system_doctor` is "
-    "`hz system doctor`. Read-only tools run and return JSON. Any other tool does not run: it is proposed to the "
-    "person, who confirms or declines it in the chat, and the call returns its action id."
+    "`hz system doctor`. Read-only tools run and return JSON. A tool that changes things either runs at once and "
+    "returns its result, or, where the person's approval is needed, does not run: it is proposed to the person, "
+    "who confirms or declines it in the chat, and the call returns its action id."
 )
 NO_ISSUER = "http://127.0.0.1/"
 """The SDK's `AuthSettings` require an issuer; it is never used or advertised, because hz runs no OAuth server and
@@ -194,16 +197,40 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         if not local:
             return _authorized_http_call(kernel, item, kwargs)
+        # An outside agent the person started: never "the person" in what it writes or in the audit (ADR 0162).
+        caller = Caller("local-agent", "mcp-stdio")
         try:
-            with user.local("mcp-stdio"):
+            with user.local("mcp-stdio"), calling(caller):
                 mark_authenticated_presence(kernel, item.record.qualname)
-                if _is_schedule_approval(item, kwargs):
+                challenged = _is_schedule_approval(item, kwargs)
+                if challenged:
                     kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
-                return kernel.invoke(item.operation, **kwargs)
+                return _run_for_agent(kernel, item, kwargs, caller, challenged=challenged)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
     return _signed(run, item, item.returns)
+
+
+def _run_for_agent(
+    kernel: Kernel, item: Exposed, arguments: dict[str, Any], caller: Caller, *, challenged: bool = False
+) -> Any:  # noqa: ANN401 - whatever the operation returns
+    """Run one MCP call; a write first passes the operation's own marker and the budget, and leaves an audit line.
+
+    `challenged`: the person answered the terminal challenge for exactly this call, which is their approval.
+    """
+    operation = item.operation
+    if operation.read_only:
+        return kernel.invoke(operation, **arguments)
+    policy: AgentWrites = "approve" if challenged else agent_write(kernel, item, arguments, caller)
+    note = functools.partial(audit_write, caller, item.record.qualname, operation.name, arguments, policy=policy)
+    try:
+        result = kernel.invoke(operation, **arguments)
+    except Exception as exc:
+        note(outcome="failed", error=type(exc).__name__)
+        raise
+    note(outcome="ran")
+    return result
 
 
 class TokenVerifier:
@@ -255,11 +282,12 @@ def _authorized_http_call(kernel: Kernel, item: Exposed, arguments: dict[str, An
             msg = f"`{item.name}` changes things and this token may only read; make a write token if this agent should"
             raise ToolError(msg)
         try:
-            with kernel.resolve(CurrentUser).using(None):
+            caller = Caller("token", access.client_id)
+            with kernel.resolve(CurrentUser).using(None), calling(caller):
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, arguments):
                     arguments = _authorize_mcp_schedule(kernel, item, arguments, local=False)
-                return kernel.invoke(item.operation, **arguments)
+                return _run_for_agent(kernel, item, arguments, caller)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 

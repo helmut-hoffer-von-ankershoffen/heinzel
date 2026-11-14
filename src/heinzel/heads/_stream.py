@@ -21,7 +21,8 @@ from fastapi.responses import StreamingResponse
 from pydantic_core import to_jsonable_python
 
 from heinzel.heads._presence import mark_authenticated_presence
-from heinzel.kernel import Emit, HeinzelError, Kernel, OperationLet, Progress
+from heinzel.kernel import CurrentUser, Emit, HeinzelError, Kernel, OperationLet, Progress
+from heinzel.kernel._agent_writes import Caller, calling, person_caller
 from heinzel.kernel._errors import NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._progress import Advance
@@ -88,12 +89,21 @@ def _hold() -> Callable[[], None]:
     return hold[1]
 
 
+def request_person(kernel: Kernel) -> Caller | None:
+    """The signed-in person as caller; a request without a human authentication has no caller (ADR 0162)."""
+    try:
+        return person_caller(kernel.resolve(CurrentUser).context().authentication)
+    except HeinzelError:
+        return None
+
+
 def streamed(
     kernel: Kernel, operation: OperationLet, arguments: dict[str, Any], *, module: str = ""
 ) -> StreamingResponse:
     """Run `operation` in a worker thread and stream its events, then its result or error."""
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+    caller = request_person(kernel)  # read on the request's own thread, where the head authenticated it
 
     def emit(kind: str, data: Mapping[str, object]) -> None:
         with contextlib.suppress(RuntimeError):  # the loop closed: the browser left, nobody reads any more
@@ -105,7 +115,8 @@ def streamed(
         _SINK.set(emit)
         try:
             mark_authenticated_presence(kernel, module)
-            result = kernel.invoke(operation, **arguments)
+            with calling(caller):
+                result = kernel.invoke(operation, **arguments)
             emit("result", {"data": to_jsonable_python(result, fallback=str)})
         except HeinzelError as exc:
             emit("error", error_body(exc, private=operation.private))

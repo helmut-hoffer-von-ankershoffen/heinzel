@@ -44,6 +44,10 @@ class HzTools(BaseModel):
 
     session: str = Field(min_length=1, description="The chat session the tools act for; proposals wait in it.")
     tools: ChatToolSet = Field(default="everyday", description="Which of hz's operations the chat's agent gets.")
+    attended: bool = Field(
+        default=False,
+        description="Whether the person started this turn and watches it; a turn nobody watches writes less.",
+    )
     server: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")] = Field(
         default="hz", description="The `mcp_servers` entry that is this toolset's stdio pipe, for agent CLIs."
     )
