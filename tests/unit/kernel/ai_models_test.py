@@ -167,7 +167,7 @@ def test_choose_the_wanted_or_first_usable_model_and_name_others_when_unavailabl
         choose(offers, "new")
     assert missing.value.others == ["big", "old"]
     assert "hz system config set ai.access.plugin_model big" in str(missing.value)
-    with pytest.raises(ModelUnavailableError, match="didn't answer when the plugin last checked"):
+    with pytest.raises(ModelUnavailableError, match="didn't answer when last checked"):
         choose(offers, "gone")
     with pytest.raises(ModelUnavailableError, match="doesn't call tools"):
         choose(offers, "mute")
