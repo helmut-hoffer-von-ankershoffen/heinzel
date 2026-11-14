@@ -255,7 +255,14 @@ def test_the_table_holds_with_the_chat_s_own_gate_too(make_kernel, ran):
     kernel = make_kernel(builtins=True, notes=notes(ran))  # no fake: the chat module's ActionGate keeps proposals
     service = kernel.resolve(ChatService)
     session = service.open(None).id
-    same(direct_outcomes(kernel, session), mcp_outcomes(kernel, session))
+    desktop = FakeDesktop()  # the browser rows need a desktop; without one each would say so and be refused
+    desktop.seed(session, TAB)
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    try:
+        same(direct_outcomes(kernel, session), mcp_outcomes(kernel, session))
+    finally:
+        bridge.disconnect(desktop)
     assert ran == ["owner", "owner"]
     proposed = sum(kind == "proposed" for _, _, kind in CALLS)
     assert len(service._store.load(session).actions) == 2 * proposed
