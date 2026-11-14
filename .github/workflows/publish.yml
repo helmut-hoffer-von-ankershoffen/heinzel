@@ -207,7 +207,10 @@ jobs:
           # The bundles' DSSE envelopes are the signed in-toto SLSA provenance on its own, the format OpenSSF
           # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
           jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
-          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag
+          # Held as a pre-release with latest off until acceptance passes (ADR 0114): the stable channel skips it, and
+          # the release agent promotes only an accepted version with `gh release edit --prerelease=false --latest`.
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag \
+            --prerelease --latest=false
 
       - name: Request the independent release docs refresh
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
