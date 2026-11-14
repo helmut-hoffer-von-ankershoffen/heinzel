@@ -337,15 +337,16 @@ def test_a_swapped_parent_folder_doesn_t_redirect_the_tools(tmp_path: Path) -> N
     files.close()  # again is a no-op
 
 
-@pytest.mark.parametrize("wide", ["root", "home", "home-alias", "home-other-case"])
+# The other case of home is the same folder only on a case-insensitive disk; chosen at collection, never a skip.
+_OTHER_CASE = ["home-other-case"] if Path(str(Path.home()).swapcase()).is_dir() else []
+
+
+@pytest.mark.parametrize("wide", ["root", "home", "home-alias", *_OTHER_CASE])
 def test_the_whole_disk_or_home_is_refused_by_identity(tmp_path: Path, wide: str) -> None:
     """Refused by what the opened folder is, not by its name: another spelling or a symlink still counts."""
     home = Path.home()
     if wide == "home-other-case":
-        other = Path(str(home).swapcase())
-        if not other.is_dir():
-            pytest.skip("a case-sensitive disk: the other case is another folder")
-        folder = other
+        folder = Path(str(home).swapcase())
     elif wide == "home-alias":
         folder = tmp_path / "alias"
         folder.symlink_to(home)

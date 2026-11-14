@@ -33,6 +33,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -151,7 +152,7 @@ class _Before:
     """Whether the continuity record matched before; only then is it renewed after a put-back."""
 
 
-_ORIGINALS: ContextVar[dict[str, _Before]] = ContextVar("update_originals", default={})  # noqa: B039 - never mutated
+_ORIGINALS: ContextVar[Mapping[str, _Before]] = ContextVar("update_originals", default=MappingProxyType({}))
 """Each generation captured before a move to another interpreter, with what a restore of it must match."""
 
 
