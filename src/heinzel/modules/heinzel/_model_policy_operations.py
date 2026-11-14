@@ -140,7 +140,7 @@ def register_model_policy_operations(module: Module) -> None:
             session_id, request_id
         )
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def approve_model_grant(  # noqa: PLR0913, PLR0917 - exact reviewed terms and trusted proof
         service: SessionCrud,
         confirmation: ApprovalConfirmation,

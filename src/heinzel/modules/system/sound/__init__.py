@@ -74,7 +74,7 @@ def list_(service: SoundService) -> SoundList:
 
 
 # It can switch on a stream from another host, so the unauthenticated REST head doesn't get it (ADR 0058).
-@module.operation(read_only=False, render=render, heads={"cli", "mcp", "web"})
+@module.operation(read_only=False, render=render, heads={"cli", "mcp", "web"}, agents="direct")
 def use(
     service: SoundService,
     name: Annotated[str, Field(description="The soundscape to play, one `hz system sound list` shows, or `off`.")],

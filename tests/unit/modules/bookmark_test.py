@@ -9,7 +9,7 @@ import pytest
 from rich.console import Console
 
 from heinzel import HeinzelError
-from heinzel.kernel import OperationLet, exposed, restricts
+from heinzel.kernel import OperationLet, agent_writes, restricts
 from heinzel.modules.system import bookmark
 from heinzel.modules.system.bookmark import BookmarkService, render
 from heinzel.modules.system.bookmark._service import (
@@ -324,31 +324,30 @@ def test_a_tampered_cache_file_is_not_served(service, tmp_path):
     assert service.listing().favicons == {}
 
 
-def test_agents_read_and_add_but_never_change_or_remove():
+def test_every_operation_is_a_command_and_a_local_mcp_tool_and_none_is_unauthenticated():
     heads = {let.name: let.heads for let in bookmark.module.lets if isinstance(let, OperationLet)}
     assert set(heads) == {"list", "add", "folder", "edit", "move", "remove", "restore", "favicon"}
-    for name in ("list", "add", "folder"):
+    for name in set(heads) - {"favicon"}:
+        assert not restricts(heads[name], "cli")
         assert not restricts(heads[name], "mcp")
-        assert restricts(heads[name], "mcp-http")  # no authentication there
-        assert heads[name] & {"mcp", "mcp-stdio"}  # what a chat's agent may propose
-    for name in ("edit", "move", "remove", "restore", "favicon"):
-        assert restricts(heads[name], "mcp")
-        assert restricts(heads[name], "mcp-http")
-        assert not heads[name] & {"mcp", "mcp-stdio", "mcp-check-in"}
+        assert restricts(heads[name], "mcp-http")  # no bookmark over HTTP until token scopes cover it
+    assert heads["favicon"] == {"web"}
     assert all(restricts(found, "api") for found in heads.values())
 
 
-def test_each_head_offers_exactly_its_bookmark_operations(make_kernel):
-    kernel = make_kernel(builtins=True)
+def test_what_an_agent_may_do_with_each_bookmark_operation():
+    """ADR 0162: adding and arranging run; removing and repointing wait for the person; the icon cache is no tool."""
+    lets = {let.name: let for let in bookmark.module.lets if isinstance(let, OperationLet)}
 
-    def offered(head: str) -> set[str]:
-        return {item.path[-1] for item in exposed(kernel, head) if item.path[:2] == ("system", "bookmark")}
+    def policy(name: str, **arguments: object) -> str:
+        return agent_writes(lets[name], arguments, builtin=True)
 
-    assert offered("mcp") == {"list", "add", "folder"}
-    assert offered("mcp-http") == set()
-    assert offered("api") == set()
-    assert offered("cli") == {"list", "add", "folder", "edit", "move", "remove", "restore"}
-    assert offered("web") == {"list", "add", "folder", "edit", "move", "remove", "restore", "favicon"}
+    assert [policy(name) for name in ("add", "folder", "move", "restore")] == ["direct"] * 4
+    assert policy("edit", entry="b-1", title="New") == "direct"
+    assert policy("edit", entry="b-1", url="https://example.org/") == "approve"
+    assert policy("remove", entry="b-1") == "approve"
+    assert policy("favicon") == "never"
+    assert lets["list"].agents is None  # a read
 
 
 def test_the_tree_renders_indented(service):

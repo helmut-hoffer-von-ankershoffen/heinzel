@@ -49,13 +49,13 @@ def status(service: StateService) -> StateStatus:
     return service.status()
 
 
-@module.operation(read_only=False, render=render_pushed, private=True)
+@module.operation(read_only=False, render=render_pushed, private=True, agents="approve")
 def push(service: StateService) -> Pushed:
     """Push this machine's new presence and adoption lines to your personal state repository now."""
     return service.push()
 
 
-@module.operation(read_only=False, render=render_status, private=True)
+@module.operation(read_only=False, render=render_status, private=True, agents="approve")
 def reset(service: StateService) -> StateStatus:
     """Start this machine's clone of its branch afresh after a refused push; the old one is kept aside."""
     return service.reset()
