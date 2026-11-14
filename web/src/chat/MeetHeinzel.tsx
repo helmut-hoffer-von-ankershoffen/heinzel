@@ -56,12 +56,12 @@ function areas(look: Look): Record<PartId, { top: number; height: number }> {
     height: ((to - from) / high) * 100,
   });
   return {
-    hat: range(Math.min(headTop(look.age), 200), 270),
-    age: range(270, 400),
-    beard: range(400, 520),
-    shirt: range(520, 680),
-    build: range(680, 780),
-    accessories: range(780, 860),
+    hat: range(Math.min(headTop(look.age), 180), 270),
+    age: range(270, 390),
+    beard: range(390, 510),
+    shirt: range(510, 660),
+    build: range(660, 750),
+    accessories: range(750, 860),
   };
 }
 
@@ -234,7 +234,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
       <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
         <div className="flex flex-col items-center gap-2">
           <div
-            className="relative w-36 shrink-0"
+            className="relative w-44 shrink-0"
             style={{
               aspectRatio: viewBox(look.age, "full", look.accessories ?? [])
                 .split(" ")
@@ -263,7 +263,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
               />
             ))}
           </div>
-          <p className="max-w-36 text-center text-xs text-muted-foreground">{t("meet.figureHelp")}</p>
+          <p className="max-w-44 text-center text-xs text-muted-foreground">{t("meet.figureHelp")}</p>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-1">

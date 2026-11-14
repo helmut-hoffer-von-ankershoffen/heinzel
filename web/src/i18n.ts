@@ -49,7 +49,7 @@ const en = {
   "meet.mission.projects": "Your projects",
   "meet.mission.projects.job": "I am your project helper. I keep track of what comes next.",
   "meet.mission.projects.motto": "“I keep your projects moving. I propose, you approve.”",
-  "meet.missionHelp": "It starts as a proposal: nothing runs until you approve it.",
+  "meet.missionHelp": "For now the mission is only shown here, not saved. Nothing runs on its own.",
   "meet.created": "Your first Heinzelmännchen is ready. Open the chat to say hello.",
   "onboarding.first.meetIntro": "Give it a name and a look, and choose what it does first.",
   "personal.title": "Personal Heinzels",

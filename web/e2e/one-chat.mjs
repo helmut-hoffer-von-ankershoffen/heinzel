@@ -21,7 +21,9 @@ async function accessible(selector) {
     const found = await window.axe.run(document.querySelector(selector), {
       runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
     });
-    return found.violations.map((violation) => `${violation.id}: ${violation.help}`);
+    return found.violations.map(
+      (violation) => `${violation.id}: ${violation.help} ${violation.nodes.map((n) => n.target.join(" ")).join("; ")}`,
+    );
   }, selector);
   assert.deepEqual(violations, [], `axe in ${selector}`);
 }
@@ -37,6 +39,41 @@ try {
   }
   const chat = page.getByRole("complementary", { name: "Chat" });
   await chat.getByRole("heading", { name: "Meet your first Heinzelmännchen" }).waitFor({ timeout: 60_000 });
+  await accessible('[aria-label="Chat"] form');
+  // The look editor in a real browser: the hat overlay lies inside the figure, arrow keys pick a hat, Surprise me
+  // changes the figure, Undo brings it back, and the form passes axe at the phone and the desktop size.
+  const figure = chat.locator("svg[role=img]").first();
+  const hatPart = chat.getByRole("button", { name: "Change the hat" });
+  const box = await figure.boundingBox();
+  const spot = await hatPart.boundingBox();
+  assert.ok(box && spot && spot.height > 8 && spot.width > 8, "the hat overlay has a size");
+  assert.ok(
+    spot.x >= box.x - 1 &&
+      spot.y >= box.y - 1 &&
+      spot.x + spot.width <= box.x + box.width + 1 &&
+      spot.y + spot.height <= box.y + box.height + 1,
+    `the hat overlay lies inside the figure: ${JSON.stringify({ box, spot })}`,
+  );
+  await hatPart.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await hatPart.getAttribute("aria-pressed"), "true", "the hat part is chosen");
+  const before = await figure.evaluate((node) => node.outerHTML);
+  const hats = chat.getByRole("radiogroup", { name: "Hat" });
+  // The swatches are buttons: Tab reaches each, Space chooses it.
+  await hats.getByRole("radio").nth(2).focus();
+  await page.keyboard.press("Space");
+  await hats.getByRole("radio", { checked: true }).waitFor();
+  assert.notEqual(await figure.evaluate((node) => node.outerHTML), before, "a hat colour changes the figure");
+  const undo = chat.getByRole("button", { name: "Undo" });
+  const beforeSurprise = await figure.evaluate((node) => node.outerHTML);
+  await chat.getByRole("button", { name: "Surprise me" }).click();
+  assert.notEqual(await figure.evaluate((node) => node.outerHTML), beforeSurprise, "Surprise me changes the figure");
+  assert.equal(await undo.isDisabled(), false, "Undo is enabled after Surprise me");
+  await undo.click();
+  assert.equal(await figure.evaluate((node) => node.outerHTML), beforeSurprise, "Undo brings the look back");
+  await page.setViewportSize({ width: 375, height: 812 });
+  await accessible('[aria-label="Chat"] form');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await accessible('[aria-label="Chat"] form');
   await chat.getByLabel("What do you call it?").fill("Helmi");
   await chat.getByRole("button", { name: "Start" }).click();
