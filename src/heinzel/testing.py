@@ -32,6 +32,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from heinzel.conformance import Report
     from heinzel.kernel import Credentials, Kernel, ScriptedPrompter
 
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
@@ -288,3 +289,19 @@ def hz(hz_kernel: "Kernel") -> Callable[..., Result]:
         return Result(exit_code=result.exit_code, output=result.output)
 
     return run
+
+
+@pytest.fixture
+def hz_conformance(hz_kernel: "Kernel") -> Callable[..., "Report"]:
+    """Check a module's adapters against Core's contracts (`heinzel.conformance`, ADR 0159), built by `hz_kernel`.
+
+    `hz_conformance(module, samples={"tracker": {"issues_updated": {"window": "7d"}}})` raises `ConformanceError`
+    listing every problem, warns `ConformanceWarning` for what Core tolerates, and returns the report. An adapter
+    instance works too: `hz_conformance(adapter, "mail", modes={"read"})`.
+    """
+    from heinzel.conformance import assert_conformant  # noqa: PLC0415 - see the module comment
+
+    def check(target: object, capability: str | None = None, **options: Any) -> "Report":  # noqa: ANN401
+        return assert_conformant(target, capability, kernel=hz_kernel, **options)
+
+    return check

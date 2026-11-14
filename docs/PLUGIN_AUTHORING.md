@@ -253,6 +253,101 @@ method your system can't do raises `NotSupportedError(capability, method, reason
 attribute, `unsupported = frozenset({"replace_section"})`: then Heinzel refuses the call before it reaches you, and
 the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
 
+## Check your adapters with the conformance kit
+
+Core can't test a private plugin, so your plugin's own CI runs Core's checks. The kit comes with Heinzelmännchen:
+`heinzel.conformance`, and the `hz_conformance` pytest fixture, which needs no import or conftest. Point it at your
+module:
+
+```python
+import pytest
+
+from acme_plugin import module
+from heinzel import Window
+
+pytestmark = pytest.mark.integration
+
+
+def test_conforms(hz_conformance, fake_acme):
+    window = Window.model_validate({"since": "2026-11-01T00:00:00Z", "until": "2026-11-08T00:00:00Z"})
+    hz_conformance(
+        module,
+        samples={"mail": {"messages": {"query": "from:ada", "window": window}}},
+        writes=lambda: len(fake_acme.writes),
+    )
+```
+
+It builds each adapter your module provides as Heinzel does, and checks it against its capability's contract:
+
+- **Shape.** Every method of the modes you declare exists and takes the protocol's parameters and defaults, unless
+  `unsupported` lists it. Every name in `unsupported` is a method of the capability.
+- **Modes and hosts.** Each declared mode keeps a method you support. You name the hosts you send data to.
+- **Read calls.** It calls each read method once: those without parameters, and those you pass `samples` for. It
+  never calls a write method. A read call must return the protocol's type, or raise `NotSupportedError` with its
+  own capability and method. It must not write: calling one of your write methods, a write tool of an
+  `McpConnector`, or changing your `writes` counter fails the check.
+- **AI models.** `models()` answers within 5 seconds with valid `ModelOffer`s and unique ids. `model(id)` returns a
+  `pydantic_ai.models.Model`. An unknown or unavailable id should raise `ModelUnavailableError`. With
+  `live_request=True`, one request through your first model must answer.
+
+A failure lists every problem at once, each with the method and what the contract says. A `ConformanceWarning`
+names what Heinzel tolerates but you should fix, such as one invalid model offer Heinzel skips; with pytest's
+`filterwarnings = ["error"]` it fails too. The report names
+the Heinzelmännchen version, the `ai-models` interface version, Pydantic AI and httpx2. Check one adapter on its own
+with `hz_conformance(adapter, "mail", modes={"read"})`.
+
+## Build a connector on an MCP server
+
+A company MCP gateway often gives each connector a local launcher that signs in by itself. `McpConnector` runs that
+launcher and speaks MCP with it, so your plugin holds no secret:
+
+```python
+from heinzel import Message, Module, Window
+from heinzel.connectors.mcp import ENVELOPE_UNTRUSTED, INLINE_UNTRUSTED, McpConnector, McpTool
+
+module = Module("acme-chat", "Acme chat through the company MCP gateway.")
+
+
+@module.provides("chat", modes={"read"}, hosts=["mcp.acme.example"], name="acme-chat")
+class AcmeChat:
+    unsupported = frozenset({"post"})
+
+    def __init__(self) -> None:
+        self._mcp = McpConnector(
+            ["acme-mcp", "launch", "chat"],
+            tools=[McpTool("channel_history", aliases=("history",)), McpTool("send", mode="write")],
+            markers=[INLINE_UNTRUSTED, ENVELOPE_UNTRUSTED],
+            modes={"read"},
+        )
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        result = self._mcp.call("channel_history", {"channel": channel, "since": window.since.isoformat()})
+        return [Message.model_validate(row) for row in result.data["messages"]]
+```
+
+- **Start and stop.** The launcher starts on the first call, within `start_timeout`, and stops with `stop()` or at
+  exit. Each call has a `timeout`. A launcher that fails to start reports the last line it wrote to stderr, such as
+  its own "sign in again" hint.
+- **Tools.** At start, every tool you declare must exist under its name or one of its `aliases`; extra tools are
+  fine. A missing one raises `McpToolsMissingError`, naming it and the tools the server has.
+- **Modes.** MCP servers don't reliably say which tools write, so you declare each tool's mode. A connector with
+  `modes={"read"}` refuses its write tools.
+- **Untrusted content.** Servers mark text from outside, such as a mail body, with markers like
+  `«untrusted-data» … «/untrusted-data»` or `<untrusted-mail-data-UUID> … </untrusted-mail-data-UUID>`. Pass the
+  markers your server uses; `UntrustedMarker.literal(start, end)` makes your own. The connector removes them, keeps
+  the content, lists the marked parts in `result.untrusted`, and passes every string through `clean_text`. Heinzel
+  then treats what your adapter returns as data, never as instructions.
+- **Results.** `result.text` is the text, `result.data` the structured content or the text read as JSON, and
+  `result.parse(Model)` validates it.
+
+In your tests, `McpConnector.in_process(server, tools=...)` connects to an `mcp.server.MCPServer` in the same process.
+
+To see whether the person already set up the launcher in Claude Code or Claude Desktop, call
+`heinzel.connectors.claude_mcp_servers()`. It reads Claude's configuration files only and returns each server's
+name, source, program and the names of its environment variables, never a value. Servers the person switched off
+for Heinzels are left out. Use it to point people at the right setup step; your connector still starts its own
+launcher.
+
 ## Choose public or private hosting
 
 First commit the scaffold and your feature. Then create exactly one repository:
