@@ -28,6 +28,27 @@ export async function systemAudioAvailable(): Promise<boolean> {
   }
 }
 
+function untilAborted<T>(signal: AbortSignal, pending: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Capture cancelled", "AbortError"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    void pending.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Read native PCM locally and feed the same analyser used by browser capture. */
 async function captureNativeAudio(
   signal: AbortSignal,
@@ -93,9 +114,9 @@ async function captureNativeAudio(
       () => true,
       () => false,
     );
-    if ((await capture("start")) !== true || closed)
+    if ((await untilAborted(signal, capture("start"))) !== true || closed)
       throw new DOMException("System audio sharing was cancelled or unavailable.", "NotAllowedError");
-    if (!(await resumed) || closed) throw new Error("Audio could not start. Try again.");
+    if (!(await untilAborted(signal, resumed)) || closed) throw new Error("Audio could not start. Try again.");
     void poll();
     return { analyser, stream, label: "System audio", stop };
   } catch (error) {
@@ -143,25 +164,6 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
     }
   };
   signal.addEventListener("abort", stop, { once: true });
-  const untilAborted = <T>(pending: Promise<T>): Promise<T> =>
-    new Promise((resolve, reject) => {
-      const abort = () => {
-        signal.removeEventListener("abort", abort);
-        reject(new DOMException("Capture cancelled", "AbortError"));
-      };
-      if (signal.aborted) return abort();
-      signal.addEventListener("abort", abort, { once: true });
-      void pending.then(
-        (value) => {
-          signal.removeEventListener("abort", abort);
-          resolve(value);
-        },
-        (error: unknown) => {
-          signal.removeEventListener("abort", abort);
-          reject(error);
-        },
-      );
-    });
   try {
     // Hints keep this tab (including its embedded player) available; the person still chooses the source.
     const options = {
@@ -176,7 +178,7 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
     if (system && !desktop?.audioSource)
       throw new Error("System audio is not available in this app. Choose another source.");
     if (desktop?.audioSource) {
-      const armed = await untilAborted(desktop.audioSource(system ? "system" : "workspace"));
+      const armed = await untilAborted(signal, desktop.audioSource(system ? "system" : "workspace"));
       if (system && armed !== true)
         throw new Error("System audio is not available in this app. Choose another source.");
       if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
@@ -194,7 +196,7 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
       () => true,
       () => false,
     );
-    stream = await untilAborted(sharing);
+    stream = await untilAborted(signal, sharing);
     // The chooser requires video, but analysis needs only audio. Never retain screen imagery.
     for (const track of stream.getTracks()) if (track.kind === "video") stopTrack(track);
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
@@ -208,7 +210,7 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
       return tracks;
     };
     liveTracks();
-    if (!(await untilAborted(resumed))) throw new Error("Audio could not start. Stop sharing, then try again.");
+    if (!(await untilAborted(signal, resumed))) throw new Error("Audio could not start. Stop sharing, then try again.");
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
     const tracks = liveTracks();
     source = context.createMediaStreamSource(new MediaStream(tracks));
@@ -254,11 +256,18 @@ export async function captureMicrophone(signal: AbortSignal): Promise<CapturedAu
   };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const permission = navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    void permission.then(
+      (late) => {
+        if (closed) for (const track of late.getTracks()) track.stop();
+      },
+      () => undefined,
+    );
+    stream = await untilAborted(signal, permission);
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
-    await context.resume();
+    await untilAborted(signal, context.resume());
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
     source = context.createMediaStreamSource(stream);
     const analyser = context.createAnalyser();

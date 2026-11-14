@@ -201,6 +201,23 @@ describe("captureMicrophone", () => {
     expect(context.close).toHaveBeenCalled();
   });
 
+  it("settles Stop while permission is pending and releases a later microphone grant", async () => {
+    const mic = track("audio");
+    let resolve!: (value: { getTracks: () => (typeof mic)[] }) => void;
+    const permission = new Promise<{ getTracks: () => (typeof mic)[] }>((done) => {
+      resolve = done;
+    });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: () => permission } });
+    const controller = new AbortController();
+    const pending = captureMicrophone(controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    resolve({ getTracks: () => [mic] });
+    await permission;
+    expect(mic.stop).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+
   it("is cancelled before asking when already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -248,6 +265,31 @@ describe("desktop system audio", () => {
     expect(choose).not.toHaveBeenCalled();
     captured.stop();
     expect(nativeAudio).toHaveBeenLastCalledWith("stop");
+    expect(output.stop).toHaveBeenCalledOnce();
+  });
+
+  it("settles Stop even if the native picker does not respond", async () => {
+    let resolve!: (value: boolean) => void;
+    const picker = new Promise<boolean>((done) => {
+      resolve = done;
+    });
+    const nativeAudio = vi.fn((action: string) => (action === "start" ? picker : Promise.resolve(true)));
+    const output = track("audio");
+    vi.stubGlobal("heinzelDesktop", { nativeAudio });
+    vi.stubGlobal("AudioContext", function nativeContext() {
+      return {
+        ...context,
+        createAnalyser: () => ({ ...analyser, connect: vi.fn() }),
+        createMediaStreamDestination: () => ({ stream: { getTracks: () => [output] } }),
+      };
+    });
+    const controller = new AbortController();
+    const pending = captureAudio(controller.signal, true);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    resolve(true);
+    await picker;
+    expect(nativeAudio.mock.calls).toEqual([["start"], ["stop"]]);
     expect(output.stop).toHaveBeenCalledOnce();
   });
 
