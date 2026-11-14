@@ -26,6 +26,30 @@ function bridge(): BrowserBridge | undefined {
 export function desktopBrowserAvailable(): boolean {
   return bridge() !== undefined;
 }
+const SCHEME = /^[a-z][a-z\d+.-]*:/i;
+const SEARCH = "https://www.google.com/search";
+
+/**
+ * What a typed address means, like a browser's address bar: a scheme stays as typed, a host or path gets https://,
+ * and words or a sentence become a search. The desktop then applies its own rules (public HTTPS only).
+ */
+export function addressUrl(value: string): string | null {
+  const input = value.trim();
+  if (!input) return null;
+  // "localhost:3000" or "example.com:8443/x" is a host with a port, not a scheme.
+  const hostWithPort = /^[^\s/:]+:\d+(?:[/?#]|$)/.test(input);
+  if (SCHEME.test(input) && !hostWithPort) return input;
+  const host = input.split(/[/?#]/, 1)[0];
+  const looksLikeHost =
+    !/\s/.test(input) && (host.includes(".") || hostWithPort || /^localhost$/i.test(host) || host.startsWith("["));
+  if (!looksLikeHost) {
+    const search = new URL(SEARCH);
+    search.searchParams.set("q", input);
+    return search.href;
+  }
+  return `https://${input}`;
+}
+
 export function externalBrowserUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -43,6 +67,7 @@ export function externalBrowserUrl(value: string): string | null {
 export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; onClose: () => void }>) {
   const [address, setAddress] = useState("https://heinzel.team");
   const [state, setState] = useState<BrowserState>({ status: "empty" });
+  const [refused, setRefused] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const native = bridge();
   const request = async (command: Record<string, unknown>) => {
@@ -139,7 +164,19 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
     },
     [native],
   );
-  const external = externalBrowserUrl(address);
+  const target = addressUrl(address);
+  const external = target ? externalBrowserUrl(target) : null;
+  // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
+  const go = async (url: string) => {
+    try {
+      const result = await native?.browser({ action: "navigate", url });
+      setRefused(false);
+      if (result) setState(result);
+    } catch (error) {
+      if (String(error).includes("public HTTPS")) setRefused(true);
+      else setState({ status: "unavailable" });
+    }
+  };
   const status =
     state.status === "loading"
       ? t("browser.loading")
@@ -154,7 +191,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
         className="flex h-10 shrink-0 items-center gap-1 px-2"
         onSubmit={(event) => {
           event.preventDefault();
-          if (native && external) void request({ action: "navigate", url: external });
+          if (native && target) void go(target);
         }}
       >
         {native && (
@@ -196,9 +233,17 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
         )}
         <input
           aria-label={t("browser.address")}
-          type="url"
+          // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
+          type="text"
+          inputMode="url"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           value={address}
-          onChange={(event) => setAddress(event.target.value)}
+          onChange={(event) => {
+            setAddress(event.target.value);
+            setRefused(false);
+          }}
           className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
         />
         {native && (
@@ -221,7 +266,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
             size="icon"
             aria-label={t("browser.go")}
             title={t("browser.go")}
-            disabled={!external}
+            disabled={!target}
           >
             <CornerDownLeft aria-hidden />
           </Button>
@@ -255,6 +300,11 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
               status
             )}
           </p>
+          {refused && (
+            <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
+              {t("browser.refusedNote")}
+            </p>
+          )}
           {state.notice && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t(NOTICES[state.notice])}
