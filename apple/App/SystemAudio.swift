@@ -22,12 +22,12 @@ private final class AudioSamples: NSObject, SCStreamOutput, @unchecked Sendable 
         guard frames > 0, frames <= 12_000 else { return }
         let count = frames * MemoryLayout<Float>.size
         var packet = Data(count: count)
-        let result = packet.withUnsafeMutableBytes { storage in
+        let result = packet.withUnsafeMutableBytes { (storage: UnsafeMutableRawBufferPointer) -> OSStatus in
             var audio = AudioBufferList(
                 mNumberBuffers: 1,
                 mBuffers: AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(count), mData: storage.baseAddress)
             )
-            return CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, frameOffset: 0, numFrames: Int32(frames), bufferList: &audio)
+            return CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(frames), into: &audio)
         }
         guard result == noErr else { return }
         lock.withLock {
