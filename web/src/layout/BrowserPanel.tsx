@@ -68,7 +68,9 @@ function pageLabel(tab: BrowserTab): string {
 /** A Heinzel's tab shows the Heinzel's face; an outside agent's tab shows a neutral agent mark. */
 function AgentFace({ kind }: Readonly<{ kind: string }>) {
   const Icon = kind === "heinzel" ? HeinzelFace : Bot;
-  return <Icon aria-hidden data-agent-kind={kind === "heinzel" ? "heinzel" : "external"} className="size-3.5 shrink-0" />;
+  return (
+    <Icon aria-hidden data-agent-kind={kind === "heinzel" ? "heinzel" : "external"} className="size-3.5 shrink-0" />
+  );
 }
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 const SEARCH = "https://www.google.com/search";
@@ -446,10 +448,9 @@ export function BrowserPanel({
             </p>
           )}
           {agentTab?.agent && (
-            <div
-              role="group"
+            <fieldset
               aria-label={t("browser.agentUsing", { name: agentTab.agent.name })}
-              className="flex shrink-0 flex-wrap items-center gap-2 border-t-[0.5px] border-foreground/20 bg-muted px-3 py-1.5 text-xs"
+              className="m-0 flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-0 border-t-[0.5px] border-foreground/20 bg-muted px-3 py-1.5 text-xs"
             >
               <AgentFace kind={agentTab.agent.kind} />
               <p role="status" className="min-w-0 flex-1">
@@ -472,12 +473,11 @@ export function BrowserPanel({
               >
                 {t("browser.stopAgent")}
               </Button>
-            </div>
+            </fieldset>
           )}
           {agentTab?.agent && agentTab.commit && (
-            <div
-              // A region, not a dialog: a dialog would hide the page the person is asked about.
-              role="region"
+            <section
+              // A section, not a dialog: a dialog would hide the page the person is asked about.
               aria-label={t("browser.commitAsk", { name: agentTab.agent.name })}
               aria-describedby="browser-commit-summary"
               data-browser-commit
@@ -498,10 +498,14 @@ export function BrowserPanel({
               >
                 {t("browser.commitDecline")}
               </Button>
-              <Button type="button" size="sm" onClick={() => void request({ action: "commit-approve", tab: agentTab.id })}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void request({ action: "commit-approve", tab: agentTab.id })}
+              >
                 {t("browser.commitApprove")}
               </Button>
-            </div>
+            </section>
           )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
           <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">

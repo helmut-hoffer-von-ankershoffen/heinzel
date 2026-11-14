@@ -380,7 +380,9 @@ function agentBridge(kind = "heinzel", name = "Ada") {
   return { browser, tab };
 }
 const sent = (browser: ReturnType<typeof vi.fn>, action: string) =>
-  browser.mock.calls.map(([request]) => request as Record<string, unknown>).filter((request) => request.action === action);
+  browser.mock.calls
+    .map(([request]) => request as Record<string, unknown>)
+    .filter((request) => request.action === action);
 
 it("an agent tab has a bar with Take over, Hand back and Stop, each for that tab only", async () => {
   const { browser, tab } = agentBridge();
@@ -431,7 +433,14 @@ it("the person's own tab has no agent bar and no commit card", async () => {
     url: "https://mine.example.com/",
     selected: "t-00000001",
     tabs: [
-      { id: "t-00000001", owner: "person", selected: true, status: "ready", url: "https://mine.example.com/", title: "Mine" },
+      {
+        id: "t-00000001",
+        owner: "person",
+        selected: true,
+        status: "ready",
+        url: "https://mine.example.com/",
+        title: "Mine",
+      },
       {
         id: "t-000000aa",
         owner: "agent:ci-bot",
@@ -456,23 +465,26 @@ it("the person's own tab has no agent bar and no commit card", async () => {
 it.each([
   ["Approve", "commit-approve"],
   ["Decline", "commit-refuse"],
-])("the commit card shows the action and its target unchanged, and %s sends %s for that tab", async (button, action) => {
-  const { browser, tab } = agentBridge("external", "ci-bot");
-  const summary = 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)';
-  tab.commit = { summary };
-  render(<BrowserPanel active onClose={vi.fn()} />);
-  const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
-  expect(card).toHaveAccessibleDescription(summary);
-  // Not a dialog: the page the person is asked about stays on screen behind no overlay.
-  expect(card.closest('[role="dialog"], [role="alertdialog"]')).toBeNull();
-  expect(sent(browser, "hide")).toEqual([]);
-  expect(sent(browser, "commit-approve")).toEqual([]);
-  expect(sent(browser, "commit-refuse")).toEqual([]);
-  fireEvent.click(screen.getByRole("button", { name: button }));
-  expect(sent(browser, action)).toEqual([{ action, tab: tab.id }]);
-  expect(sent(browser, action === "commit-approve" ? "commit-refuse" : "commit-approve")).toEqual([]);
-  await waitFor(() => expect(screen.queryByRole("region", { name: /asks for your yes/ })).toBeNull());
-});
+])(
+  "the commit card shows the action and its target unchanged, and %s sends %s for that tab",
+  async (button, action) => {
+    const { browser, tab } = agentBridge("external", "ci-bot");
+    const summary = 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)';
+    tab.commit = { summary };
+    render(<BrowserPanel active onClose={vi.fn()} />);
+    const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
+    expect(card).toHaveAccessibleDescription(summary);
+    // Not a dialog: the page the person is asked about stays on screen behind no overlay.
+    expect(card.closest('[role="dialog"], [role="alertdialog"]')).toBeNull();
+    expect(sent(browser, "hide")).toEqual([]);
+    expect(sent(browser, "commit-approve")).toEqual([]);
+    expect(sent(browser, "commit-refuse")).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    expect(sent(browser, action)).toEqual([{ action, tab: tab.id }]);
+    expect(sent(browser, action === "commit-approve" ? "commit-refuse" : "commit-approve")).toEqual([]);
+    await waitFor(() => expect(screen.queryByRole("region", { name: /asks for your yes/ })).toBeNull());
+  },
+);
 
 it("in the PWA there are no agent tabs, no bar and no commit card", () => {
   Object.defineProperty(window, "heinzelDesktop", { value: undefined, configurable: true });

@@ -53,7 +53,9 @@ it("asks the desktop for its tabs while the panel is closed, and follows them", 
   tabs = [];
   await waitFor(() => expect(result.current).toEqual({ mark: "none", waiting: null }));
   // Only ever a read of the tab strip: nothing here opens, selects or answers.
-  expect(new Set(browser.mock.calls.map(([request]) => JSON.stringify(request)))).toEqual(new Set(['{"action":"tabs"}']));
+  expect(new Set(browser.mock.calls.map(([request]) => JSON.stringify(request)))).toEqual(
+    new Set(['{"action":"tabs"}']),
+  );
   unmount();
   const asked = browser.mock.calls.length;
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -125,7 +127,11 @@ it("names the waiting card's tab, agent and sentence; a person's tab never has o
   });
 });
 
-const CARD: WaitingCommit = { tab: "t-000000aa", name: "ci-bot", summary: 'Click button "Buy now" on shop.example.com' };
+const CARD: WaitingCommit = {
+  tab: "t-000000aa",
+  name: "ci-bot",
+  summary: 'Click button "Buy now" on shop.example.com',
+};
 
 function attention() {
   const browser = vi.fn(async () => ({ status: "ready" }));
@@ -172,7 +178,7 @@ it("a commit that waits while the browser panel is closed opens the panel on tha
   expect(show).toHaveBeenCalledTimes(2);
   // The next card is a new one.
   rerender({ waiting: null, open: false });
-  rerender({ waiting: { ...CARD, summary: "Click button \"Pay\"" }, open: false });
+  rerender({ waiting: { ...CARD, summary: 'Click button "Pay"' }, open: false });
   expect(show).toHaveBeenCalledTimes(3);
   expect(shown).toHaveLength(2);
 });
