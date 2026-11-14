@@ -57,7 +57,10 @@ const sidebar = () =>
     const column = document.querySelector('nav[aria-label="Settings"] > div:last-child');
     for (const element of column?.children ?? []) {
       if (element.tagName === "P") heading = element.textContent.trim();
-      else if (element.tagName === "BUTTON") (groups[heading] ??= []).push(element.textContent.trim());
+      else if (element.tagName === "BUTTON") {
+        groups[heading] = groups[heading] ?? [];
+        groups[heading].push(element.textContent.trim());
+      }
     }
     return groups;
   });

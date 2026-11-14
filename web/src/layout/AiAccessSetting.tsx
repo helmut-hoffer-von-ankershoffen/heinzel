@@ -24,8 +24,8 @@ import {
 } from "@/api/queries";
 import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
 import { CopyCommand } from "@/components/common";
-import { Button } from "@/components/ui/button";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import {
   acknowledgePluginRestart,
