@@ -10,13 +10,41 @@ const MAX_DEVICES = 8;
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
 const PASSKEY_PAGE = /\/challenge\/pk(?:\/|$)|passkey|webauthn/i;
 
+/** A vendor or product id as Electron sends it: a number, or a decimal or 0x-hex string. */
+function numeric(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value !== "string" || !value) return null;
+  const parsed = /^0x[0-9a-f]+$/i.test(value) ? Number.parseInt(value, 16) : /^\d+$/.test(value) ? Number(value) : Number.NaN;
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+/**
+ * The identity the device permission handler can match. Electron 45 hands the chooser a list entry but the handler
+ * its DeviceInfoToValue: HID {vendorId, productId, serialNumber|guid}, serial {vendor_id, product_id, serial_number},
+ * USB {deviceId: guid}. Both shapes reduce to the same key; a device without a serial number has none (Electron keeps
+ * it ephemeral, outside the handler).
+ */
+export function deviceIdentity(type, device) {
+  if (!device || typeof device !== "object") return null;
+  if (type === "usb") {
+    const id = device.deviceId ?? device.guid;
+    return typeof id === "string" && id ? `usb:${id}` : null;
+  }
+  if (type !== "hid" && type !== "serial") return null;
+  const vendor = numeric(device.vendorId ?? device.vendor_id);
+  const product = numeric(device.productId ?? device.product_id);
+  const serial = device.serialNumber ?? device.serial_number ?? (type === "hid" ? device.guid : undefined);
+  if (vendor === null || product === null || typeof serial !== "string" || !serial) return null;
+  return `${type}:${vendor}:${product}:${serial}`;
+}
+
 /** Label and id of one device from any chooser event, or null when Electron sent no usable entry. */
 function deviceChoice(device) {
   const id = device?.deviceId ?? device?.portId;
   if (typeof id !== "string" || !id) return null;
   const label = [device.productName ?? device.name ?? device.deviceName ?? device.displayName ?? device.portName,
     device.manufacturerName].filter((part) => typeof part === "string" && part.trim()).join(" · ");
-  return { id, label: (label || id).slice(0, 80) };
+  return { id, label: (label || id).slice(0, 80), device };
 }
 
 /** Native message box options: one button per device, then Cancel; the response index is the device. */
@@ -50,7 +78,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   let stopped = false;
   // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
   const grants = new Set();
-  const grantKey = (origin, type, id) => JSON.stringify([origin, type, id]);
+  const grantKey = (origin, identity) => JSON.stringify([origin, identity]);
   const originOf = (value) => { try { return new URL(value).origin; } catch { return ""; } };
   // The guest a prompt came from: its own contents, or the main frame above the requesting frame. A background
   // window never prompts, since only a focused window shows its guest and a site asks from a click in it.
@@ -70,9 +98,12 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     // Name the requester: an embed's own origin, not only the page around it.
     const origin = originOf(frame?.origin && frame.origin !== "null" ? frame.origin : frame?.url ?? guest.view.webContents.getURL());
     try {
-      const id = await chooseDevice({ window, host: origin ? new URL(origin).host : "", devices });
-      if (!devices.some((device) => device.id === id)) return null;
-      if (type && origin) grants.add(grantKey(origin, type, id));
+      const offered = devices.map(({ id, label }) => ({ id, label }));
+      const id = await chooseDevice({ window, host: origin ? new URL(origin).host : "", devices: offered });
+      const chosen = devices.find((device) => device.id === id);
+      if (!chosen) return null;
+      const identity = deviceIdentity(type, chosen.device);
+      if (identity && origin) grants.add(grantKey(origin, identity));
       return id;
     } catch { return null; }
   };
@@ -91,8 +122,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     // Only a device the person picked for this origin is granted, until browsing data is cleared.
     partition.setDevicePermissionHandler((details) => {
-      const id = deviceChoice(details?.device)?.id;
-      return Boolean(id) && grants.has(grantKey(originOf(details?.origin), details?.deviceType, id));
+      const identity = deviceIdentity(details?.deviceType, details?.device);
+      return Boolean(identity) && grants.has(grantKey(originOf(details?.origin), identity));
     });
     partition.setBluetoothPairingHandler?.((details, callback) => {
       if (details?.pairingKind !== "confirm" && details?.pairingKind !== "confirmPin") { callback({ confirmed: false }); return; }
@@ -143,6 +174,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
    */
   const clear = async () => {
     const partition = partitionFor();
+    // A guest still opening would load its site after the pages left theirs: wait for it first.
+    await Promise.allSettled([...opening.values()]);
     grants.clear();
     const pages = [...guests.values()].map((guest) => [guest, guest.view.webContents.getURL()]);
     await Promise.allSettled(pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")));
@@ -150,7 +183,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       partition.clearAuthCache?.()]);
     const failed = results.some((result) => result.status === "rejected");
     for (const [guest, url] of pages) {
-      guest.notice = failed ? "clear-failed" : null;
+      // Kept apart from page notices, so restoring the page cannot reset it; the next good clear does.
+      guest.clearFailed = failed;
+      guest.notice = null;
       if (url && !guest.view.webContents.isDestroyed())
         void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
     }
@@ -258,7 +293,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     url: guest.view.webContents.getURL(),
     canGoBack: guest.view.webContents.navigationHistory.canGoBack(),
     canGoForward: guest.view.webContents.navigationHistory.canGoForward(),
-    notice: guest.notice,
+    notice: guest.clearFailed ? "clear-failed" : guest.notice,
   });
   return {
     async handle(event, request) {

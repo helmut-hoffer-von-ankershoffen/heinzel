@@ -263,7 +263,13 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
           <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
             <p className="min-w-0 flex-1">{t("browser.private")}</p>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void clearData()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title={t("browser.clearDataHint")}
+              onClick={() => void clearData()}
+            >
               {t("browser.clearData")}
             </Button>
           </div>

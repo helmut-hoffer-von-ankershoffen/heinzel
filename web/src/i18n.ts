@@ -1121,6 +1121,8 @@ const en = {
     "Websites get their own session, separate from your Heinzel. Sign-ins stay until you clear browsing data. Downloads and popups are unavailable.",
   "browser.openInBrowser": "Open in browser",
   "browser.clearData": "Clear browsing data",
+  "browser.clearDataHint":
+    "Signs you out of every website and forgets the devices you shared. A device without a serial number stays shared until you unplug it or quit the app.",
   "browser.passkeyNote":
     "Passkeys may not work in the built-in browser. Choose another sign-in option, or open the page in your browser.",
   "browser.clearFailedNote": "Browsing data could not be cleared. Try again, or quit and reopen the app.",

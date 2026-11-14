@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-11-05
 implementation: partial
-decision-makers: maintainer
+decision-makers: maintainer, owner (device and security-key prompts, kept sign-ins)
 related: 0039, 0045, 0115
 ---
 
@@ -29,11 +29,14 @@ Do not grant guest permissions, downloads, popups or external protocol dispatch.
 Bluetooth, HID, serial and USB prompts open a native chooser naming the requesting origin (an embed's own): the
 person picks one listed device, each labelled as a device, or cancels. The device permission handler grants only a
 picked device to the origin and device type that asked, never an automatic choice. A prompt from a background window,
-from no guest or with no device grants nothing and shows a visible note. Camera, microphone, screen sharing and every other
-permission stay refused. All guests share one persistent partition (`persist:hz-browser`), never the product's
-session, so website sign-ins survive closing the panel and restarting the app. "Clear browsing data" takes open
-pages off their sites, then empties its cookies, storage, cache and authentication cache, revokes device grants and
-reloads the pages; a failed wipe is shown.
+from no guest or with no device grants nothing and shows a visible note. Camera, microphone, screen sharing and every
+other permission stay refused.
+
+All guests share one persistent partition (`persist:hz-browser`), never the product's session, so website sign-ins
+survive closing the panel and restarting the app. "Clear browsing data" takes open pages off their sites, then empties
+its cookies, storage, cache and authentication cache, revokes device grants and reloads the pages; a failed wipe is
+shown. Electron keeps a device without a serial number outside the permission handler, so that grant lasts until the
+device is unplugged or the app quits.
 
 WebAuthn is not refused. Electron serves no platform passkey (iCloud Keychain, Touch ID) for third-party sites: that
 needs a signed app whose identifier each relying party lists in its `apple-app-site-association`. The page then only
@@ -41,9 +44,9 @@ sees `NotAllowedError`, so a passkey step or WebAuthn failure shows a visible no
 the choice of another sign-in option or "Open in browser", which hands the guest's current public HTTPS address to the
 default browser after the person's click, under the window's external-link rate limit.
 
-Owner decisions, 2026-11-14: allow device and security-key prompts with a user choice ("don't refuse device or
-security key prompts"), and keep website sign-ins ("we want to stay signed in"). They replace the earlier refusal of
-every chooser and the per-window session wiped on close.
+The owner decided to allow device and security-key prompts with a user choice ("don't refuse device or security key
+prompts") and to keep website sign-ins ("we want to stay signed in"). This replaces the earlier refusal of every
+chooser and the per-window session wiped on close.
 
 HTTPS navigation, every redirect hop and subrequests reject credentials, literal IP addresses, local names
 (`localhost`, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, `*.corp`, `*.intranet`, tailnet `*.ts.net`), non-HTTPS schemes and the product origin.
