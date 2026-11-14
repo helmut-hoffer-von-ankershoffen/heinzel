@@ -28,6 +28,7 @@ and the runners ask for them by type.
 """
 
 import base64
+import contextlib
 import hashlib
 import inspect
 import json
@@ -125,11 +126,19 @@ class ChatTool:
     kind: Kind = "operation"
     attended: bool = False
     """Whether the person started this turn and watches it; unknown counts as not (a smaller write budget)."""
+    heinzel: str | None = None
+    """The Heinzel's own chat (`hz-…`) when `session` is its actions chat; `chat_tools` reads it from the binding."""
 
     def __post_init__(self) -> None:
         """Hold the operation as an agent may call it, however the tool was built (never with an approval proof)."""
         if self.kind == "operation":
             object.__setattr__(self, "item", agent_item(self.item))
+
+    @property
+    def caller(self) -> Caller:
+        """Who calls: the Heinzel of this chat, never a name from the arguments (ADR 0162)."""
+        own = self.heinzel or self.session
+        return Caller("heinzel", own, session=own, attended=self.attended)
 
     @property
     def name(self) -> str:
@@ -207,39 +216,60 @@ class ChatTool:
         return {name: getattr(checked, name) for name in fields}
 
     def _browser(self, user: CurrentUser, arguments: Mapping[str, Any]) -> object:
-        """A browser tool: it runs for this chat's session unless the browser's gate says it is a commit.
+        """A browser tool: it runs for this chat's Heinzel unless the browser's gate says it is a commit.
 
         The gate is the browser module's, not this policy's: a commit leaves the operation as `BrowserCommitError`
-        without having run, and is proposed with the fingerprint of the target the person will be shown.
+        without having run, and is proposed with the fingerprint of the target the person will be shown. A browser
+        input is a write like any other for the agent write policy: its marker, the budget and the audit line.
+
+        Raises:
+            ChatToolError: If the browser input is not marked `direct`; it never waits for a yes outside a commit.
         """
         if not self.kernel.resolve(BrowserBridge).available:
             # This process has no desktop (a turn's private pipe, a terminal): the one that has it runs the call,
-            # as this chat's session and by the tool's name only, so gate, proposal, limits and log are there.
+            # as this chat's session and by the tool's name only, so gate, proposal, limits, budget and logs are
+            # there, once. That side cannot know who watches, so the call counts as unattended.
             jsonable = to_jsonable_python(dict(arguments), fallback=str)
             answer = relay(self.kernel.settings.state_dir, "heinzel", self.session, self.name, jsonable)
             if answer is not None:
                 return _relayed(answer)
+        caller = self.caller
+        acting = BrowserCaller(actor=caller.id, kind="heinzel")
+        if self.item.operation.read_only:
+            with browser_caller(acting), user.local_read(AUTHENTICATION), calling(caller):
+                result = self.kernel.invoke(self.item.operation, **arguments)
+            return result if isinstance(result, PageImage) else _result_text(result)
+        policy, note = self._marked(caller, arguments)
+        if policy != "direct":
+            note("refused")
+            msg = f"{self.name} is not marked for agents; nothing ran"
+            raise ChatToolError(msg)
+        self._budget(caller, note)
         try:
-            with browser_caller(BrowserCaller(actor=self.session, kind="heinzel")), user.local_read(AUTHENTICATION):
+            with browser_caller(acting), user.local_read(AUTHENTICATION), calling(caller):
                 result = self.kernel.invoke(self.item.operation, **arguments)
         except BrowserCommitError as commit:
-            return self._propose({**arguments, "expected": commit.expected}, command=commit.summary)
-        return result if isinstance(result, PageImage) else _result_text(result)
+            text = self._propose({**arguments, "expected": commit.expected}, command=commit.summary)
+            note("proposed")
+            return text
+        except Exception as exc:
+            note("failed", type(exc).__name__)
+            raise
+        note("ran")
+        return _result_text(result)
 
     def _read(self, user: CurrentUser, arguments: Mapping[str, Any]) -> str:
         with user.local_read(AUTHENTICATION):
             result = self.kernel.invoke(self.item.operation, **arguments)
         return _result_text(result)
 
-    def _write(self, user: CurrentUser, arguments: Mapping[str, Any]) -> str:
-        """Run, propose or refuse a write by the operation's own marker; every outcome is one audit line.
+    def _marked(self, caller: Caller, arguments: Mapping[str, Any]) -> tuple[AgentWrites, Callable[..., None]]:
+        """The write's policy for this caller, and the audit line every outcome of it leaves.
 
         Raises:
-            ChatToolError: If the operation is the person's own (`never`).
-            HeinzelError: If the write budget is used up or the operation refuses the call.
+            HeinzelError: If the call names another session than the turn's own (audited as refused).
         """
         record, operation = self.item.record, self.item.operation
-        caller = Caller("heinzel", self.session, session=self.session, attended=self.attended)
         declared = agent_writes(operation, arguments, builtin=record.origin.builtin)
         try:
             policy = bound_to_caller(declared, caller, arguments)
@@ -250,6 +280,29 @@ class ChatTool:
         def note(outcome: WriteOutcome, error: str | None = None) -> None:
             audit_write(caller, record.qualname, operation.name, arguments, policy=policy, outcome=outcome, error=error)
 
+        return policy, note
+
+    def _budget(self, caller: Caller, note: Callable[..., None]) -> None:
+        """Count one direct write of `caller`.
+
+        Raises:
+            HeinzelError: If its budget is used up (audited as over budget); nothing runs.
+        """
+        try:
+            write_budget(self.kernel).take(caller)
+        except HeinzelError:
+            note("over-budget")
+            raise
+
+    def _write(self, user: CurrentUser, arguments: Mapping[str, Any]) -> str:
+        """Run, propose or refuse a write by the operation's own marker; every outcome is one audit line.
+
+        Raises:
+            ChatToolError: If the operation is the person's own (`never`).
+            HeinzelError: If the write budget is used up or the operation refuses the call.
+        """
+        caller = self.caller
+        policy, note = self._marked(caller, arguments)
         if policy == "never":
             note("refused")
             msg = f"{self.name} is the person's own to do; no agent may call it"
@@ -258,16 +311,12 @@ class ChatTool:
             text = self._propose(arguments)
             note("proposed")
             return text
-        try:
-            write_budget(self.kernel).take(caller)
-        except HeinzelError:
-            note("over-budget")
-            raise
+        self._budget(caller, note)
         try:
             # A non-human identity that may read private data but never write it, and never the web session of
             # the thread that happens to run the turn (`using(None)` came first).
             with user.local_read(AUTHENTICATION), calling(caller):
-                result = self.kernel.invoke(operation, **arguments)
+                result = self.kernel.invoke(self.item.operation, **arguments)
         except Exception as exc:
             note("failed", type(exc).__name__)
             raise
@@ -284,7 +333,9 @@ class ChatTool:
             arguments=jsonable,
             command=command or command_line(self.item, jsonable),
         )
-        action = self.kernel.resolve(ActionGate).propose(call)
+        # The local read identity, as for a read: a Heinzel's actions chat is the owner's, and checks who asks.
+        with self.kernel.resolve(CurrentUser).local_read(AUTHENTICATION):
+            action = self.kernel.resolve(ActionGate).propose(call)
         return redact_emails(
             f"Not run: `{call.command}` changes things, so it waits for the person's confirmation in the chat "
             f"(action {action}). Tell them briefly what it will do and why, then stop; don't call it again."
@@ -347,6 +398,11 @@ class FoundTool:
     session: str
     servers: FoundMcpServers
     gate: ActionGate
+    attended: bool = False
+    heinzel: str | None = None
+    """The Heinzel's own chat when `session` is its actions chat, as for `ChatTool`."""
+    user: CurrentUser | None = None
+    """Who proposes: the local read identity, as `ChatTool` proposes; None for a gate that never asks."""
 
     @property
     def name(self) -> str:
@@ -387,7 +443,25 @@ class FoundTool:
         with step(audit, "mcp.found.call", tool=self.name, session=self.session, decision=decision, arguments=digest):
             if self.found.read_only:
                 return untrusted(self.found.namespace, self.servers.call(self.found.server, self.found.name, jsonable))
-            return self._propose(jsonable, encoded)
+            # A found server's tool carries no `agents=` marker, so it is `propose` (ADR 0162 section 8).
+            own = self.heinzel or self.session
+            caller = Caller("heinzel", own, session=own, attended=self.attended)
+            module = FOUND_MODULE + self.found.server
+            try:
+                text = self._propose(jsonable, encoded)
+            except Exception as exc:
+                audit_write(
+                    caller,
+                    module,
+                    self.found.name,
+                    jsonable,
+                    policy="propose",
+                    outcome="failed",
+                    error=type(exc).__name__,
+                )
+                raise
+            audit_write(caller, module, self.found.name, jsonable, policy="propose", outcome="proposed")
+            return text
 
     def _propose(self, jsonable: dict[str, Any], encoded: str) -> str:
         command = f"{self.name} {encoded}"
@@ -399,14 +473,15 @@ class FoundTool:
             arguments=jsonable,
             command=command,
         )
-        action = self.gate.propose(call)
+        with self.user.local_read(AUTHENTICATION) if self.user is not None else contextlib.nullcontext():
+            action = self.gate.propose(call)
         return redact_emails(
             f"Not run: `{clean_text(command)}` may change things, so it waits for the person's confirmation in the "
             f"chat (action {action}). Tell them briefly what it will do and why, then stop; don't call it again."
         )
 
 
-def found_tools(kernel: Kernel, session: str) -> list[FoundTool]:
+def found_tools(kernel: Kernel, session: str, *, attended: bool = False) -> list[FoundTool]:
     """The tools of every found MCP server that is switched on, for one chat session's agent; none without a client.
 
     The session must exist, as for `chat_tools`. A server that can't be used is left out, never the turn.
@@ -416,7 +491,9 @@ def found_tools(kernel: Kernel, session: str) -> list[FoundTool]:
     """
     user = kernel.resolve(CurrentUser)
     with user.local_read(AUTHENTICATION):
-        kernel.resolve(McpChatSessions).require(session)
+        sessions = kernel.resolve(McpChatSessions)
+        sessions.require(session)
+        heinzel = sessions.heinzel_of(session)
     if not kernel.provides(FoundMcpServers) or not kernel.provides(ActionGate):
         return []
     servers, gate = kernel.resolve(FoundMcpServers), kernel.resolve(ActionGate)
@@ -430,7 +507,7 @@ def found_tools(kernel: Kernel, session: str) -> list[FoundTool]:
         if found.namespace.lower() == SERVER or seen[found.title.lower()] > 1:
             log_event(audit, "mcp.found.refused", level=logging.WARNING, tool=found.title, reason="name collision")
             continue
-        tools.append(FoundTool(found, session, servers, gate))
+        tools.append(FoundTool(found, session, servers, gate, attended, heinzel, user))
     return tools
 
 
@@ -542,6 +619,8 @@ def chat_tools(
                 for item in exposed(kernel, "mcp-check-in")
                 if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
             ]
+        # A Heinzel's actions chat: its tools call as that Heinzel, read from the chat's own binding (ADR 0162).
+        heinzel = sessions.heinzel_of(session)
     # Built once here, before a turn calls tools from several threads: `Kernel.resolve` takes no lock.
     for service in (ActionGate, BrowserBridge):
         if kernel.provides(service):
@@ -549,9 +628,10 @@ def chat_tools(
     selected: list[ChatTool] = []
     for item in exposed(kernel, HEAD):
         if (item.record.qualname, item.operation.name) == CONFIRM_AUTHORIZED:
-            selected.append(ChatTool(kernel, item, session, "confirm-authorized", attended))
+            if heinzel is None:  # a Heinzel's proposals are confirmed on their card only
+                selected.append(ChatTool(kernel, item, session, "confirm-authorized", attended))
         elif not item.operation.private and (tools == "all" or item.operation.audience == "everyday"):
-            selected.append(ChatTool(kernel, item, session, attended=attended))
+            selected.append(ChatTool(kernel, item, session, attended=attended, heinzel=heinzel))
     return selected
 
 
@@ -571,7 +651,7 @@ def direct_tools(kernel: Kernel, profile: ToolProfile) -> tuple[ToolProfile, lis
         return profile, []
     tools: list[TurnTool] = [*chat_tools(kernel, hz.session, hz.tools, attended=hz.attended)]
     if hz.tools != "personal-check-in":  # a check-in's only tool is its proposal
-        tools += found_tools(kernel, hz.session)
+        tools += found_tools(kernel, hz.session, attended=hz.attended)
     servers = {name: server for name, server in profile.mcp_servers.items() if name != hz.server}
     return profile.model_copy(update={"mcp_servers": servers, "hz_tools": None}), tools
 
@@ -608,22 +688,34 @@ def direct_picture(tool: ChatTool, arguments: Mapping[str, Any]) -> object:
 
 
 def pydantic_ai_tools(
-    tools: "list[ChatTool] | list[TurnTool]", *, counted: Callable[[str], None] | None = None, server: str = SERVER
+    tools: "list[ChatTool] | list[TurnTool]",
+    *,
+    counted: Callable[[str], None] | None = None,
+    server: str = SERVER,
+    pictures: bool = True,
+    observe: Callable[[str, Callable[[], object]], object] | None = None,
 ) -> "list[Tool[Any]]":
     """The chat's tools as Pydantic AI tools for a turn that runs its model inside hz: no process, no MCP hop.
 
     Each runs on a worker thread (Pydantic AI's way with plain functions), so a slow operation never blocks the
-    turn's event loop; `counted` hears each call's name.
+    turn's event loop; `counted` hears each call's name. `pictures` False gives a model that takes text only the
+    picture's caption. `observe` runs each call (`observe(name, run)`) so the turn can record what it asked for and
+    how it ended; a refusal is a text that starts with `Error: `.
     """
     from pydantic_ai import Tool  # noqa: PLC0415 - only a turn that runs its model in-process needs it
 
     def wrap(tool: TurnTool, name: str) -> Callable[..., object]:
+        def run(arguments: dict[str, Any]) -> object:
+            if pictures and isinstance(tool, ChatTool) and tool.item.returns is PageImage:
+                return direct_picture(tool, arguments)
+            return direct_result(tool, arguments)
+
         def call(**arguments: Any) -> object:  # noqa: ANN401 - the model's arguments, validated by the schema
             if counted is not None:
                 counted(name)
-            if isinstance(tool, ChatTool) and tool.item.returns is PageImage:
-                return direct_picture(tool, arguments)
-            return direct_result(tool, arguments)
+            if observe is not None:
+                return observe(name, lambda: run(arguments))
+            return run(arguments)
 
         return call
 

@@ -213,6 +213,7 @@ class UserChatService:
         models: "PluginModels | None" = None,
         usage: Callable[[UsageEntry], None] | None = None,
         emitter: Callable[[], Emit] | None = None,
+        tools_kernel: Kernel | None = None,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._models = models
@@ -222,6 +223,8 @@ class UserChatService:
         self._connected = connected
         self._notifications = notifications
         self._playbook_kernel = playbook_kernel
+        self._tools_kernel = tools_kernel
+        """Gives a turn hz's tools, the browser and found MCP servers in-process (ADR 0162); None gives none."""
         self.questions: QuestionRelay | None = None
         """Asks a turn's question in chat too, when the owner switched that on (ADR 0160); None asks nothing."""
 
@@ -424,6 +427,7 @@ class UserChatService:
             _MAX_REQUESTS,
             MAX_TURN_SECONDS,
             user_proposals=True,
+            attended=True,
         )
 
     async def dispatch(  # noqa: PLR0913 - private dispatcher receives exact host policy
@@ -441,7 +445,14 @@ class UserChatService:
         notification_contract: str | None = None,
         notification_schedule: str | None = None,
         notification_binding: str | None = None,
+        attended: bool = False,
     ) -> UserChatAnswer:
+        """Run one accepted message of `session` as a turn; `attended` when the person sent it and watches.
+
+        Raises:
+            HeinzelError: If the turn may not run, or a recorded state forbids running it again.
+            PluginModelError: If a plugin's model fails; before it answered, the turn is set aside.
+        """
         verify()
         events = self._crud.repository.control_read(session).events
         turn = interactive_turn_id(request)
@@ -456,6 +467,7 @@ class UserChatService:
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
+        from heinzel.modules.heinzel._direct_tools import turn_toolbox  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
 
@@ -503,6 +515,13 @@ class UserChatService:
             if user_proposals and connected is not None
             else None
         )
+        toolbox = (
+            await asyncio.to_thread(
+                turn_toolbox, self._tools_kernel, session, self._crud.repository.principal_id, attended=attended
+            )
+            if self._tools_kernel is not None
+            else None
+        )
         run = InteractiveTurn(self._crud).run(
             session,
             request,
@@ -518,6 +537,7 @@ class UserChatService:
             scheduled_notifications=scheduled_notice,
             backend_binding=binding,
             capabilities=hooks,
+            toolbox=toolbox,
         )
         try:
             message = await run

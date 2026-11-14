@@ -1,5 +1,6 @@
 """Public service contracts for heads that bridge runner chats to other Heinzel modules."""
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
@@ -48,6 +49,30 @@ class McpChatSessions:
 
         The process with the desktop's browser asks this before it runs another process's call as that session
         (ADR 0162): a session nobody is working in has no agent that could be calling.
+        """
+        raise NotImplementedError
+
+    def heinzel_actions(self, durable_session: str) -> str:
+        """The chat that holds what a Heinzel's own turn proposes, bound to its owner; made on first use (ADR 0162).
+
+        A Heinzel's chat (`hz-…`) is not a runner chat; its turn's tools propose into this one, and the person
+        confirms there with the chat's card. A full one is followed by a new one.
+
+        Raises:
+            HeinzelError: If no owner is signed in.
+        """
+        raise NotImplementedError
+
+    def heinzel_of(self, session_id: str) -> str | None:
+        """The Heinzel's chat an existing actions chat belongs to; None for any other chat, and without a provider."""
+        del session_id
+        return None
+
+    def answering(self, session_id: str) -> AbstractContextManager[None]:
+        """Hold the existing session while a Heinzel's turn runs elsewhere, so `turn_running` says yes meanwhile.
+
+        Raises:
+            HeinzelError: If another process holds it.
         """
         raise NotImplementedError
 

@@ -93,7 +93,7 @@ def tabs(browser: Browser) -> BrowserTabs:
     return browser.tabs()
 
 
-@module.operation(name="open", read_only=False, heads=HEADS, audience="everyday")
+@module.operation(name="open", read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def open_tab(
     browser: Browser,
     url: Annotated[str | None, Field(description="A public https:// address to open; empty for a blank tab.")] = None,
@@ -102,13 +102,13 @@ def open_tab(
     return browser.open(url)
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def close(browser: Browser, tab: Tab) -> TabClosed:
     """Close one of your browser tabs."""
     return browser.close(tab)
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def navigate(
     browser: Browser,
     tab: Tab,
@@ -167,7 +167,7 @@ def scroll(  # noqa: PLR0913 - the tool's inputs, as in other browser tools
     return browser.scroll(tab, {**where, "direction": direction, "amount": amount})
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def click(  # noqa: PLR0913 - the tool's inputs, as in other browser tools
     browser: Browser,
     tab: Tab,
@@ -187,7 +187,7 @@ def click(  # noqa: PLR0913 - the tool's inputs, as in other browser tools
     return browser.input("click", tab, _where(ref, x, y, required=True), what, expected)
 
 
-@module.operation(name="type", read_only=False, heads=HEADS, audience="everyday")
+@module.operation(name="type", read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def type_text(
     browser: Browser,
     tab: Tab,
@@ -206,7 +206,7 @@ def _no_control_characters(_caller: object, _fields: object) -> InputDone:
     raise BrowserError(msg, code="invalid")
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="direct")
 def key(
     browser: Browser,
     tab: Tab,

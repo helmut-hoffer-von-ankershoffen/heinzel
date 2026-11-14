@@ -913,6 +913,7 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
         emitter=lambda: kernel.resolve(Progress).emitter(),
+        tools_kernel=kernel,
     )
     service.questions = QuestionRelay(
         service,

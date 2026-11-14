@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, JsonValue, StringConstraints
 from heinzel import ModuleSettings
 from heinzel.kernel import Billing, Effort
 
-ContextKind = Literal["route", "contract", "draft", "event", "text", "check-in"]
+ContextKind = Literal["route", "contract", "draft", "event", "text", "check-in", "heinzel"]
 SessionId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{16}$")]
 """16 hex characters: a session's directory name, so never a path."""
 ActionId = Annotated[str, StringConstraints(pattern=r"^a[0-9]{1,4}$")]

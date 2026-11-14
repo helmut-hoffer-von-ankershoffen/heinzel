@@ -1022,7 +1022,9 @@ class ChatService:
     ) -> object:
         """Run the confirmed operation: a browser commit for the chat's own session, on the target shown."""
         if found.module == BROWSER_MODULE:
-            with browser_caller(BrowserCaller(actor=session, kind="heinzel", approved=True)):
+            # The tabs are the Heinzel's: in its actions chat, its own chat's id names it (ADR 0162).
+            actor = self._store.heinzel_of(session) or session
+            with browser_caller(BrowserCaller(actor=actor, kind="heinzel", approved=True)):
                 value = self._kernel.invoke(operation, **arguments)
             return value.caption() if isinstance(value, PageImage) else value
         if confirmation is None:
