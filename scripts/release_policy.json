@@ -153,6 +153,10 @@
     }
   },
   "focused_job": "Focused tests ({lane})",
+  "gate_checks": {
+    "coverage": "coverage-floor",
+    "sonar": "merge-gate"
+  },
   "judge_workflow": ".github/workflows/merge-gate.yml",
   "lanes": {
     "browser": {

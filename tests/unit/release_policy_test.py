@@ -88,6 +88,7 @@ def test_manifest_has_exactly_the_keys_the_release_tooling_parses(manifest):
         "aggregate",
         "expected_jobs",
         "focused_job",
+        "gate_checks",
         "judge_workflow",
         "lanes",
         "not_ci",
@@ -354,3 +355,21 @@ def test_judge_workflow_refuses_two_judges_or_the_ci_workflow(release_policy, tm
     with pytest.raises(release_policy.PolicyError, match="expected one workflow"):
         release_policy.judge_workflow(tmp_path, [release_policy.WORKFLOW])
     assert release_policy.judge_workflow(tmp_path, [paths[1], "README.md"]) == paths[1]
+
+
+def test_gate_checks_name_the_sonar_and_coverage_checks_the_judge_reports(release_policy, manifest):
+    assert manifest["gate_checks"] == {"coverage": "coverage-floor", "sonar": "merge-gate"}
+    assert set(manifest["gate_checks"].values()) == set(manifest["required_contexts"]) - {manifest["aggregate"]}
+    assert len(set(manifest["gate_checks"].values())) == len(manifest["gate_checks"])
+    judge = (ROOT / manifest["judge_workflow"]).read_text(encoding="utf-8")
+    swapped = judge.replace("steps.sonar.outcome", "steps.SWAP.outcome").replace(
+        "steps.coverage.outcome", "steps.sonar.outcome"
+    )
+    assert release_policy.gate_checks(swapped.replace("steps.SWAP.outcome", "steps.coverage.outcome")) == {
+        "coverage": "merge-gate",
+        "sonar": "coverage-floor",
+    }
+    with pytest.raises(release_policy.PolicyError, match="0 step outcomes"):
+        release_policy.gate_checks(judge.replace("MERGE_GATE_OUTCOME", "OTHER_OUTCOME"))
+    with pytest.raises(release_policy.PolicyError, match="not coverage and sonar"):
+        release_policy.gate_checks(judge.replace("steps.sonar.outcome", "steps.quality.outcome"))

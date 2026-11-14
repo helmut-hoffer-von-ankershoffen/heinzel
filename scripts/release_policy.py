@@ -97,6 +97,24 @@ def judge_workflow(root: Path, tracked: list[str]) -> str:
     return found[0]
 
 
+def gate_checks(judge: str) -> dict[str, str]:
+    """Which posted check reports which gate, read from the judge workflow's verdict step.
+
+    The judge posts each check of GATE_CONTEXTS and reports it with the outcome of one step:
+    `MERGE_GATE_OUTCOME: ${{ steps.sonar.outcome }}` names the Sonar gate's check, and so on.
+    """
+    found = {}
+    for check in GATE_CONTEXTS:
+        variable = check.replace("-", "_").upper()
+        step = re.findall(rf"^ +{variable}_OUTCOME: \$\{{\{{ steps\.([a-z_]+)\.outcome \}}\}}$", judge, re.MULTILINE)
+        require(len(step) == 1, f"the judge workflow reports {check} with {len(step)} step outcomes")
+        found[step[0]] = check
+    require(
+        sorted(found) == ["coverage", "sonar"], f"the judge's gate steps are {sorted(found)}, not coverage and sonar"
+    )
+    return dict(sorted(found.items()))
+
+
 def tracked(root: Path) -> list[str]:
     """Every path Git tracks in this checkout."""
     listing = subprocess.run(
@@ -113,6 +131,7 @@ def policy(root: Path = ROOT, listing: list[str] | None = None) -> dict[str, obj
     """Derive the manifest from the recorder, the workflow, the focused lanes and the tracked test files."""
     paths = tracked(root) if listing is None else listing
     rule = not_ci(root, paths)
+    judge = judge_workflow(root, paths)
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
     jobs = {event: expected_jobs(event) for event in EVENTS}
     split = {
@@ -132,7 +151,8 @@ def policy(root: Path = ROOT, listing: list[str] | None = None) -> dict[str, obj
         "aggregate": name,
         "expected_jobs": split,
         "focused_job": focused_job(workflow),
-        "judge_workflow": judge_workflow(root, paths),
+        "gate_checks": gate_checks((root / judge).read_text(encoding="utf-8")),
+        "judge_workflow": judge,
         "not_ci": rule,
         "lanes": {
             lane: {"kind": kind, "python": python, "runner": runner} for lane, (runner, python, kind) in LANES.items()
