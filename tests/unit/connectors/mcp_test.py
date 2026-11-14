@@ -258,3 +258,35 @@ def test_a_cut_never_keeps_part_of_a_marker():
     assert unmarker.found == []
     with pytest.raises(ValueError, match="max_output must be positive"):
         McpConnector(["x"], tools=["a"], max_output=0)
+
+
+@pytest.mark.parametrize(
+    ("line", "gone"),
+    [
+        ("auth failed: Authorization: Bearer abc123", "abc123"),
+        ("retry with api_key=s3cr3tvalue now", "s3cr3tvalue"),
+        ("password: hunter2", "hunter2"),
+        ("sent " + "a" * 40, "a" * 40),
+        ("digest " + "0123456789abcdef" * 2, "0123456789abcdef" * 2),
+    ],
+)
+def test_the_launchers_stderr_hint_redacts_token_like_strings(line, gone):
+    import tempfile
+
+    connector = McpConnector(["x"], tools=[McpTool("a")])
+    with tempfile.TemporaryFile("w+") as stderr:
+        stderr.write(f"noise\n{line}\n")
+        connector._stderr = stderr
+        hint = connector._hint()
+    assert gone not in hint
+    assert "It said" in hint or "credential" in hint
+
+
+def test_the_stderr_hint_keeps_a_plain_message():
+    import tempfile
+
+    connector = McpConnector(["x"], tools=[McpTool("a")])
+    with tempfile.TemporaryFile("w+") as stderr:
+        stderr.write("login required\n")
+        connector._stderr = stderr
+        assert connector._hint() == " It said: login required"

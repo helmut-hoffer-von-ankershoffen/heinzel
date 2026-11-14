@@ -89,7 +89,27 @@ GROUP_GONE = 2.0
 """Seconds `stop()` waits for a killed launcher group to be gone."""
 
 _spawning = threading.Lock()
-"""Held while a launcher starts, so the one new child process is this connector's."""
+"""Held while a launcher starts, so the one new child process is this connector's.
+
+Starts of different connectors in this process are therefore serialised: one launcher at a time, up to
+`start_timeout` each. The launcher is identified as the one new child that leads its own process group (`_find_group`),
+which assumes nothing else in this process spawns a child meanwhile.
+"""
+
+_BEARER = re.compile(r"(?i)\b(bearer|basic)\s+\S+")
+_SECRET_PAIR = re.compile(
+    r"(?i)\b([\w.-]*(?:token|key|secret|password|passwd|auth|credential|signature|sig)[\w.-]*)(\s*[=:]\s*)\S+"
+)
+_LONG_RUN = re.compile(r"[A-Za-z0-9+/_=-]{32,}|\b[0-9a-fA-F]{24,}\b")
+REDACTED = "[redacted]"
+
+
+def _redact(line: str) -> str:
+    """`line` without bearer tokens, key=value secrets and long base64 or hex runs (stderr may echo them)."""
+    line = _BEARER.sub(lambda m: f"{m.group(1)} {REDACTED}", line)
+    line = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", line)
+    return _LONG_RUN.sub(REDACTED, line)
+
 
 _groups: set[int] = set()
 """Process groups of running launchers, so two connectors with the same command never claim one group."""
@@ -586,9 +606,10 @@ class McpConnector:
             return ""
         if not lines:
             return ""
-        if looks_like_credential(lines[-1], free_text=True):
+        line = _redact(lines[-1])
+        if looks_like_credential(line, free_text=True):
             return " Its last line on stderr looks like a credential, so it isn't shown."
-        return f" It said: {clean_text(lines[-1])[:DETAIL_LIMIT]}"
+        return f" It said: {clean_text(line)[:DETAIL_LIMIT]}"
 
     def _children(self) -> set[int] | None:
         """This process's children now, taken before a launcher starts so the new one is told apart without argv.
