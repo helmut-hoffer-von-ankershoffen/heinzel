@@ -47,6 +47,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const generations = new WeakMap();
   let partition = null;
   let shared = null;
+  // Other guests on the website partition (the media player) hold a lease, so the broker outlives the panel.
+  let leases = 0;
   let stopped = false;
   // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
   const grants = new Set();
@@ -121,7 +123,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     return shared;
   };
   const releaseNetwork = () => {
-    if (guests.size || opening.size || !shared) return;
+    if (guests.size || opening.size || leases || !shared) return;
     const ending = shared;
     shared = null;
     void ending.then((network) => network.close(), () => {});
@@ -323,6 +325,18 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
       if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
       return state(guest);
+    },
+    /** The website partition with its configured broker for another guest; `release()` once that guest closes. */
+    async lease() {
+      if (stopped) throw new Error("Browser surface is closed.");
+      const session = partitionFor();
+      leases += 1;
+      let released = false;
+      const release = () => { if (!released) { released = true; leases -= 1; releaseNetwork(); } };
+      try {
+        const network = await networkFor(session);
+        return { session, network, release };
+      } catch (error) { release(); throw error; }
     },
     closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },
   };
