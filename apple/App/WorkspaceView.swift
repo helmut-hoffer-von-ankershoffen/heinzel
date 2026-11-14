@@ -115,6 +115,9 @@ struct WorkspaceView: WebRepresentable {
 
     // An isolated listener can distinguish an actual input event from a page calling click().
     private static let externalLinkScript = """
+    const activate = event => {
+        if (event.isTrusted) window.webkit.messageHandlers.heinzelExternalLink.postMessage("activate").catch(() => {});
+    };
     const openExternal = event => {
         if (!event.isTrusted || ![0, 1].includes(event.button) || event.defaultPrevented) return;
         const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
@@ -124,6 +127,9 @@ struct WorkspaceView: WebRepresentable {
         event.preventDefault();
         window.webkit.messageHandlers.heinzelExternalLink.postMessage(target.href).catch(() => {});
     };
+    addEventListener("pointerdown", activate, true);
+    addEventListener("keydown", activate, true);
+    addEventListener("click", activate, true);
     addEventListener("click", openExternal);
     addEventListener("auxclick", openExternal);
     """
@@ -237,12 +243,19 @@ private struct TitleBarDragLayout {
 
 @MainActor
 final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
+    private enum ProvisionalLoad {
+        case idle
+        case loading(WKNavigation?)
+    }
+
     private let endpoint: Endpoint
     private let ready: () -> Void
     weak var workspace: WKWebView?
     private let browser = IntegratedBrowser()
     private var nativeAudio: AnyObject?
-    private var lastExternalOpen: ContinuousClock.Instant?
+    private var externalLinks = ExternalLinkHandoff()
+    private var provisionalLoad = ProvisionalLoad.idle
+    private var hasCommittedWorkspace = false
     #if os(macOS)
     private weak var observedWindow: NSWindow?
     private var mouseMonitor: Any?
@@ -262,14 +275,48 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         #endif
     }
 
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard let url = action.request.url, let frame = action.targetFrame else { return .cancel }
-        return endpoint.permitsNavigation(to: url, inMainFrame: frame.isMainFrame) ? .allow : .cancel
+    func webView(
+        _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+    ) {
+        // Keep the decision ordered with WebKit's input messages and navigation callbacks.
+        if let url = action.request.url, let frame = action.targetFrame,
+           endpoint.permitsNavigation(to: url, inMainFrame: frame.isMainFrame) {
+            decisionHandler(.allow)
+            return
+        }
+        if action.targetFrame?.isMainFrame != false { handOffExternalNavigation(action, from: webView) }
+        decisionHandler(.cancel)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         guard let url = response.response.url else { return .cancel }
         return endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) ? .allow : .cancel
+    }
+
+    func webView(
+        _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+        for action: WKNavigationAction, windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        if action.targetFrame == nil { handOffExternalNavigation(action, from: webView) }
+        return nil
+    }
+
+    private func handOffExternalNavigation(_ action: WKNavigationAction, from webView: WKWebView) {
+        // A button can use window.open or assign location. Redirects from a provisional load may
+        // call the same delegate, so allow handoffs only from the committed workspace.
+        guard case .idle = provisionalLoad, webView === workspace, webView.url.map(endpoint.owns) == true,
+              action.navigationType == .linkActivated || action.navigationType == .other,
+              action.sourceFrame.isMainFrame,
+              action.sourceFrame.request.url.map(endpoint.owns) == true,
+              !action.shouldPerformDownload, action.request.httpMethod == "GET",
+              let value = action.request.url?.absoluteString,
+              let target = externalLinks.take(value, from: endpoint, needsActivation: true) else { return }
+        Task { [weak self, weak webView] in
+            guard let self, let webView, case .idle = provisionalLoad,
+                  webView === workspace, webView.url.map(endpoint.owns) == true else { return }
+            _ = await openExternal(target)
+        }
     }
 
     func webView(
@@ -280,21 +327,39 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         return frame.isMainFrame && requestIsOwned && type == .microphone ? .prompt : .deny
     }
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) async -> (Any?, String?) {
+    func userContentController(
+        _ controller: WKUserContentController, didReceive message: WKScriptMessage,
+        replyHandler: @escaping @MainActor (Any?, String?) -> Void
+    ) {
+        // Record trusted input before WebKit's synchronous new-window callback can run.
+        if message.name == "heinzelExternalLink", message.body as? String == "activate" {
+            guard case .idle = provisionalLoad, verifiedWorkspace(for: message) != nil else {
+                replyHandler(nil, "Workspace command unavailable")
+                return
+            }
+            externalLinks.activate()
+            replyHandler(true, nil)
+            return
+        }
+        Task {
+            let (value, error) = await handle(message)
+            replyHandler(value, error)
+        }
+    }
+
+    private func verifiedWorkspace(for message: WKScriptMessage) -> WKWebView? {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
               let workspace, message.webView === workspace,
-              workspace.url.map(endpoint.owns) == true else { return (nil, "Workspace command unavailable") }
+              workspace.url.map(endpoint.owns) == true else { return nil }
+        return workspace
+    }
+
+    private func handle(_ message: WKScriptMessage) async -> (Any?, String?) {
+        guard let workspace = verifiedWorkspace(for: message) else { return (nil, "Workspace command unavailable") }
         if message.name == "heinzelExternalLink" {
-            guard let value = message.body as? String, let target = ExternalLink.destination(value),
-                  !endpoint.owns(target) else { return (false, nil) }
-            let now = ContinuousClock.now
-            if let lastExternalOpen, lastExternalOpen.duration(to: now) < .seconds(2) { return (false, nil) }
-            lastExternalOpen = now
-            #if os(macOS)
-            return (NSWorkspace.shared.open(target), nil)
-            #else
-            return (await UIApplication.shared.open(target), nil)
-            #endif
+            guard let value = message.body as? String,
+                  let target = externalLinks.take(value, from: endpoint, needsActivation: false) else { return (false, nil) }
+            return (await openExternal(target), nil)
         }
         #if os(macOS)
         if message.name == "heinzelWindow", message.body as? String == "fullscreen" {
@@ -353,6 +418,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         nativeAudio = nil
     }
 
+    private func openExternal(_ target: URL) async -> Bool {
+        #if os(macOS)
+        NSWorkspace.shared.open(target)
+        #else
+        await UIApplication.shared.open(target)
+        #endif
+    }
+
     #if os(macOS)
     private func observeWindow(_ window: NSWindow?) {
         guard observedWindow !== window || (window == nil && mouseMonitor != nil) else { return }
@@ -396,6 +469,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     func close(_ view: WKWebView) {
+        if workspace === view { workspace = nil }
         view.configuration.userContentController.removeScriptMessageHandler(
             forName: "heinzelExternalLink", contentWorld: .defaultClient
         )
@@ -413,6 +487,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        provisionalLoad = .loading(navigation)
+        externalLinks.clearActivation()
         #if os(macOS)
         dragLayout = nil
         #endif
@@ -420,7 +496,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         browser.reset()
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        endProvisionalLoad(navigation)
+        hasCommittedWorkspace = true
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        endProvisionalLoad(navigation)
         ready()
         #if DEBUG
         Task {
@@ -439,7 +521,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        endProvisionalLoad(navigation)
         pageFailed(error)
+    }
+
+    private func endProvisionalLoad(_ navigation: WKNavigation?) {
+        if case .loading(let pending) = provisionalLoad, pending === navigation { provisionalLoad = .idle }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -447,6 +534,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        provisionalLoad = .idle
+        hasCommittedWorkspace = false
+        externalLinks.clearActivation()
         #if os(macOS)
         dragLayout = nil
         #endif
@@ -455,7 +545,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func pageFailed(_ error: Error) {
-        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        let failure = error as NSError
+        if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorCancelled { return }
+        // WebKit reports a cancelled policy decision as a frame load interruption. The previous
+        // workspace remains visible when a cross-origin redirect or external handoff is denied.
+        if hasCommittedWorkspace, failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
         ready()
         reportError("The workspace could not load. Check that the server is running and reachable.")
     }

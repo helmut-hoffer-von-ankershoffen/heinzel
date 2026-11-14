@@ -174,3 +174,25 @@ enum ExternalLink {
         } && !value.isEmpty
     }
 }
+
+/// A workspace may hand one public URL to the system after recent trusted input.
+struct ExternalLinkHandoff {
+    private var activatedAt: ContinuousClock.Instant?
+    private var openedAt: ContinuousClock.Instant?
+
+    mutating func activate(at time: ContinuousClock.Instant = .now) { activatedAt = time }
+
+    mutating func clearActivation() { activatedAt = nil }
+
+    mutating func take(
+        _ value: String, from endpoint: Endpoint, needsActivation: Bool, at time: ContinuousClock.Instant = .now
+    ) -> URL? {
+        guard let target = ExternalLink.destination(value), !endpoint.owns(target) else { return nil }
+        let activation = activatedAt
+        clearActivation()
+        if needsActivation, !(activation.map { $0.duration(to: time) <= .seconds(1) } ?? false) { return nil }
+        if let openedAt, openedAt.duration(to: time) < .seconds(2) { return nil }
+        openedAt = time
+        return target
+    }
+}
