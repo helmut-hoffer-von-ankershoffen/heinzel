@@ -47,6 +47,7 @@ def register_captured_write_operations(module: Module) -> None:
         crud: SessionCrud, current: CurrentUser, selected: SelectedWriteService, proposal: CapturedWriteProposal
     ) -> str:
         """Persist a local draft without writing to a provider or granting authority."""
+        selected = selected.owning(proposal.reference)
         draft = CapturedWriteDraft(
             owner=current.principal().id,
             session=proposal.session_id,

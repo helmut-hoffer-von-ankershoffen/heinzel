@@ -21,7 +21,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, ClassVar, Literal, cast, get_type_hints
+from typing import Any, ClassVar, Literal, cast, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -461,17 +461,31 @@ def _interleaved(results: list[tuple[str, list[object]]]) -> list[object]:
     return merged
 
 
-class _Malformed(Exception):  # noqa: N818 - an outcome, not an error anyone raises
-    """An adapter answered a fan-out read with something its protocol method doesn't return."""
+class _Malformed(HeinzelError):  # noqa: N818 - an outcome, raised only as one adapter's failure
+    """An adapter answered a fan-out read with something its protocol method doesn't return.
+
+    A `HeinzelError`, so one adapter serving alone fails its call with this message, never with a validation error
+    of the whole result; in a fan-out it is that adapter's failure only (ADR 0161).
+    """
 
 
 def _checked(capability: Capability, method: str, outcome: object) -> list[object] | _Malformed:
-    """`outcome` as the protocol method's list, validated item by item; `_Malformed` if it isn't one (ADR 0161)."""
+    """`outcome` as the protocol method's list, validated item by item; `_Malformed` if it isn't one (ADR 0161).
+
+    Strict: a string, a mapping or any other iterable is not a list, and is never read item by item; an item must be
+    an instance of the item type, never a mapping that could be read as one.
+    """
     hint: Any = get_type_hints(getattr(capability.protocol, method)).get("return", list[object])
+    item: object = get_args(hint)[0] if get_origin(hint) is list and get_args(hint) else object
     try:
-        return list(cast("Iterable[object]", TypeAdapter(hint).validate_python(outcome, strict=True)))
+        validated = list(cast("Iterable[object]", TypeAdapter(hint).validate_python(outcome, strict=True)))
     except (ValidationError, TypeError):
-        return _Malformed()
+        validated = None
+    if validated is None or (
+        isinstance(item, type) and not all(isinstance(each, item) for each in cast("list[object]", outcome))
+    ):
+        return _Malformed(f"answered in a shape {method.replace('_', ' ')} doesn't return")
+    return validated
 
 
 class _RoutedHandle:
@@ -628,7 +642,11 @@ def _wrap(
             return result
         # The core says where a result came from, never the adapter (ADR 0161): one serving alone is labelled too.
         if name in capability.fan_out:
-            return Gathered(_labelled(item, source) for item in cast("Iterable[object]", result))
+            checked = _checked(capability, name, result)
+            if isinstance(checked, _Malformed):
+                checked.args = (f"The {capability.name} connector {source} {checked}.",)
+                raise checked
+            return Gathered(_labelled(item, source) for item in checked)
         return _labelled(result, source)
 
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.

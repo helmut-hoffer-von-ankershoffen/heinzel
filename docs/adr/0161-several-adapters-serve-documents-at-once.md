@@ -83,8 +83,9 @@ when asked alone, and is reported as "can't search" in a fan-out.
    a host.
 3. An id goes to the adapter that returned it earlier in this process, as a `ref` or `url` of a result. Core remembers
    every adapter that gave an id out, for the last 4096 ids. An id more than one adapter gave out is refused, naming
-   them: it never goes to whichever answered last. This memory is per process and shared by every requester. It is
-   lost on restart, so a bare id then needs the prefix again, and a chat grant on one fails closed.
+   them: it never goes to whichever answered last. This memory is per process and shared by every requester and
+   every chat. It is lost on restart, so a bare id then needs the prefix again, and a chat grant or draft on one fails
+   closed: its approval no longer routes, and is refused rather than sent to another connector.
 4. Otherwise Core refuses: "'4242' could be in google or atlassian: pass its link, or name the connector, e.g.
    google:4242."
 
@@ -102,11 +103,15 @@ connector claiming another's host breaks its links.
 `Capabilities.fan_out_timeout` (20 s). An adapter may have at most `fan_out_cap` (4) calls running; a hung one gets no
 new thread and is reported busy, so threads stay bounded.
 
-Each answer is validated against the method's return type, and one in the wrong shape is that adapter's failure.
+Each answer is validated strictly against the method's return type, and one in the wrong shape is that adapter's
+failure: a string, a mapping or another iterable is not a list, and a list with an item of the wrong type is wrong
+too. With one adapter bound, its call fails with that reason, never with a validation error of the whole result.
 Results are merged in turns, binding order first, which is stable and fair, and are cut to `limit`. The result is a
 `Gathered` list, still a plain list, whose `failures` name each adapter that failed and why:
 
-- a `HeinzelError`'s own message;
+- a `HeinzelError`'s own message, cleaned and cut to 300 characters. It is the connector's own words, content from
+  it like a title or a snippet, never an instruction. Chat never searches through this handle: its reads and drafts
+  go through approved grants, whose failures are redacted;
 - the type only for any other error, since its message may hold a token;
 - "didn't answer within 20 s", or "still busy with earlier requests";
 - "answered in a shape search doesn't return";
@@ -130,8 +135,12 @@ and a fan-out method's results come back as `Gathered`.
 - Chat's connected reads route each grant to the adapter that holds its `ref` (`Kernel.capability_route`). The adapter
   is part of the reviewed binding digest, so changing which connector holds a document invalidates the approval.
   Changing the list of bound adapters invalidates it too.
-- Chat drafts and captured writes write through the default adapter only. They are offered only for documents the
-  default connector holds, never for another connector's.
+- Chat drafts and captured writes go to the connector that holds the document, routed as its read is: by link host,
+  by `<adapter>:<id>`, or by the remembered id; an ambiguous reference is refused, and no draft is offered for it.
+  The write binding the owner approves holds that adapter and the list of bound adapters, so a change of which
+  connector holds the document, or of the list, invalidates the approval. If the connector that holds it can't
+  write, Core says so, naming it, and offers no draft. A proposed new file names no document and goes to the
+  default.
 - `hz system capability list` shows every bound adapter, `multiple`, and each adapter's links.
 
 **Calendar, tracker and mail stay single for now.** The mechanism is generic, but switching them on is not free:
@@ -157,7 +166,10 @@ once the need is concrete.
 - Good: a search reports a failing connector next to the others' results instead of failing.
 - Bad: an id without a link is routed only within one process. The CLI asks again in a new process, and the error
   says how to name the connector.
-- Bad: chat drafts and captured writes still use the default connector only.
+- Good: chat drafts and captured writes reach the connector that holds the document, and an approval stops
+  matching when that connector changes.
+- Bad: a draft for a document whose connector can't write is not offered, even when another connector could write
+  it: a draft never moves to another connector. Drafts are offered only while the default connector can write.
 - Bad: a configuration with a list can't be read by an older hz. Single-name configurations load unchanged, so
   the release notes say that switching on a second documents connector is one-way.
 - Neutral: the public API gains `DocumentHit`, `Gathered` and `SourceFailure`, and `Document.source`
@@ -166,8 +178,12 @@ once the need is concrete.
 ### Confirmation
 
 - `tests/unit/kernel/multi_adapter_test.py` covers routing by links, by hosts, by id and by prefix; overlapping and
-  unknown hosts; fan-out with a failing, a crashing, a hanging and a non-searching adapter; writes to the owner and
-  to a read-only adapter; one binding unchanged; and the settings forms.
+  unknown hosts; fan-out with a failing, a crashing, a hanging, a non-searching adapter and one answering in a wrong
+  shape, alone or with others; writes to the owner and to a read-only adapter; one binding unchanged; and the
+  settings forms.
+- `tests/integration/captured_write_owner_test.py` covers reviewed writes and chat drafts with two connectors on: a
+  write reaches the connector holding the document by link and by prefix, an ambiguous reference is refused, a
+  change of owner or of the bound list invalidates the approval, and a connector that can't write is named.
 - `tests/integration/document_test.py` covers the CLI commands, the heads they are on, and `config set` with a list.
 - The Vitest cases in `web/src/layout/SettingControls.test.tsx` and `SettingsStructure.test.tsx` cover the switches,
   the default and connector use.

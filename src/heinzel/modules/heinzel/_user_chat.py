@@ -594,7 +594,6 @@ class UserChatService:
             selected.check_available()
         except HeinzelError:
             return None
-        writes_to = selected.registration.adapter
 
         def approved_reference() -> str | None:
             try:
@@ -605,13 +604,13 @@ class UserChatService:
             ref = grant.review.fixed_arguments.get("ref")
             if grant.capability != "documents" or grant.method != "read" or not isinstance(ref, str):
                 return None
-            # Drafts are written by the default documents connector: offer them only for a document it holds, never
-            # for one another connector that is on holds (ADR 0161).
+            # The connector that holds the document takes its drafts, routed as the approved read was; none is
+            # offered for an ambiguous reference or one whose connector can't write (ADR 0161).
             try:
-                routed = kernel.capability_route("documents", "read", {"ref": ref})
+                selected.owning(ref)
             except HeinzelError:
                 return None
-            return ref if routed in {None, writes_to} else None
+            return ref
 
         return DocumentDraftTools(
             self._crud,

@@ -2,6 +2,7 @@
 
 import threading
 from datetime import UTC, datetime
+from typing import ClassVar
 
 import pytest
 
@@ -117,8 +118,10 @@ class Malformed:
     def read(self, ref: str) -> Document:
         return Document(ref=ref, title="", text="")
 
+    answer: ClassVar[object] = "not a list of hits"
+
     def search(self, query: str, limit: int) -> object:
-        return "not a list of hits"
+        return type(self).answer
 
 
 class WikiSettings(ModuleSettings):
@@ -496,10 +499,32 @@ def test_the_core_sets_the_source_whatever_the_connector_claims(make_kernel):
     assert [hit.source for hit in call(several, "find", query="q")] == ["spoofing", "wiki", "wiki"]
 
 
-def test_a_connector_answering_in_the_wrong_shape_is_reported_not_fatal(make_kernel):
+WRONG_SHAPES = {
+    "string": "abc",
+    "mapping": {"ref": "a", "title": "b"},
+    "tuple": (DocumentHit(ref="a", title="b"),),
+    "generator": (hit for hit in [DocumentHit(ref="a", title="b")]),
+    "wrong-item": [DocumentHit(ref="a", title="b"), Document(ref="c", title="d", text="")],
+    "item-as-dict": [{"ref": "a", "title": "b"}],
+    "none": None,
+}
+
+
+@pytest.mark.parametrize("answer", WRONG_SHAPES.values(), ids=WRONG_SHAPES.keys())
+def test_a_connector_answering_in_the_wrong_shape_is_reported_not_fatal(make_kernel, monkeypatch, answer):
+    """Review A4: a string is never read char by char, and one wrong item fails that connector only."""
+    monkeypatch.setattr(Malformed, "answer", answer)
     kernel = make(make_kernel, ["malformed", "wiki"])
     assert [hit.source for hit in call(kernel, "find", query="q")] == ["wiki", "wiki"]
     assert failures(kernel) == [("malformed", "answered in a shape search doesn't return")]
+
+
+@pytest.mark.parametrize("answer", WRONG_SHAPES.values(), ids=WRONG_SHAPES.keys())
+def test_a_lone_connector_answering_in_the_wrong_shape_fails_with_its_reason(make_kernel, monkeypatch, answer):
+    monkeypatch.setattr(Malformed, "answer", answer)
+    kernel = make(make_kernel, "malformed")
+    with pytest.raises(HeinzelError, match="The documents connector malformed answered in a shape search doesn't"):
+        call(kernel, "find", query="q")
 
 
 def test_a_named_connector_takes_an_id_with_a_colon(two):
