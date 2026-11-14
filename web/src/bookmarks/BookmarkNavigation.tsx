@@ -1,12 +1,12 @@
 // The navigation's bookmarks: the whole tree. Folders open and close (remembered), every bookmark has its favicon.
 import { ChevronRight, Folder } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import type { SchemaBookmark } from "@/api/client";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Favicon } from "./Favicon";
-import { openInApp, opensInApp } from "./open";
+import { openBookmark } from "./open";
 import { useBookmarks } from "./queries";
 import { entries, shownEntries, type TreeKey, topLevel, treeStep } from "./tree";
 
@@ -49,17 +49,12 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
   const [open, setFolder] = useOpenFolders();
   const [focused, setFocused] = useState<string | null>(null);
   const tree = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const all = entries(bookmarks.data);
   if (!all.length) return null;
-  const inApp = opensInApp();
   const icon = (entry: SchemaBookmark) => (
     <Favicon image={entry.origin ? bookmarks.data?.favicons?.[entry.origin] : null} className="size-(--icon)" />
   );
-  const follow = (entry: SchemaBookmark) => (event: { preventDefault: () => void }) => {
-    if (!inApp || !entry.url) return;
-    event.preventDefault();
-    void openInApp(entry.url);
-  };
   // The collapsed rail has no room for a tree: it keeps the top-level bookmarks as icons.
   if (compact) {
     const top = topLevel(bookmarks.data);
@@ -68,17 +63,15 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
       <ul aria-label={t("bookmarks.title")} className="mt-2 flex flex-col items-center gap-0.5">
         {top.map((entry) => (
           <li key={entry.id}>
-            <a
-              href={entry.url ?? "#"}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
               className={linkClass}
               title={entry.title}
               aria-label={entry.title}
-              onClick={follow(entry)}
+              onClick={() => openBookmark(entry.url)}
             >
               {icon(entry)}
-            </a>
+            </button>
           </li>
         ))}
       </ul>
@@ -103,13 +96,14 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
   };
   return (
     <div>
-      <Link
-        to="/bookmarks"
+      <button
+        type="button"
+        onClick={() => navigate("/bookmarks")}
         className="mt-5 mb-1.5 flex items-center rounded-md pr-3 pl-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
         title={t("bookmarks.manage")}
       >
         {t("bookmarks.title")}
-      </Link>
+      </button>
       {/* A long tree scrolls here, inside its section, and leaves the rest of the navigation where it is. */}
       <div
         ref={tree}
@@ -142,18 +136,16 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
               <span className="truncate">{entry.title}</span>
             </button>
           ) : (
-            <a
+            <button
               key={entry.id}
+              type="button"
               {...shared}
-              href={entry.url ?? "#"}
-              target="_blank"
-              rel="noopener noreferrer"
               title={entry.url ?? undefined}
-              onClick={follow(entry)}
+              onClick={() => openBookmark(entry.url)}
             >
               {icon(entry)}
               <span className="truncate">{entry.title}</span>
-            </a>
+            </button>
           );
         })}
       </div>

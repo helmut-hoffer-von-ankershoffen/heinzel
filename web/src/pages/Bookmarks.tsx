@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Folder, FolderPlus, GripVertical, Pencil, Plus, Tra
 import { type FormEvent, type ReactNode, useState } from "react";
 import type { SchemaBookmark, SchemaBookmarkList } from "@/api/client";
 import { Favicon } from "@/bookmarks/Favicon";
-import { openInApp, opensInApp } from "@/bookmarks/open";
+import { openBookmark } from "@/bookmarks/open";
 import { bookmarkCalls, useBookmarkCall, useBookmarks } from "@/bookmarks/queries";
 import { bookmarkAddress, dropPlace, entries, folders, inside, stepPlace } from "@/bookmarks/tree";
 import { Loaded, Page } from "@/components/common";
@@ -34,7 +34,6 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
   const [dragged, setDragged] = useState<string | null>(null);
   const [removed, setRemoved] = useState<{ id: string; title: string } | null>(null);
   const failure = [add, folder, edit, move, remove, restore].find((call) => call.error)?.error;
-  const inApp = opensInApp();
 
   const addBookmark = (event: FormEvent) => {
     event.preventDefault();
@@ -169,20 +168,14 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
                 ) : entry.kind === "folder" ? (
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{entry.title}</span>
                 ) : (
-                  <a
-                    href={entry.url ?? "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     title={entry.url ?? undefined}
-                    className="min-w-0 flex-1 truncate text-sm hover:underline"
-                    onClick={(event) => {
-                      if (!inApp || !entry.url) return;
-                      event.preventDefault();
-                      void openInApp(entry.url);
-                    }}
+                    className="min-w-0 flex-1 truncate text-left text-sm"
+                    onClick={() => openBookmark(entry.url)}
                   >
                     {entry.title}
-                  </a>
+                  </button>
                 )}
                 <select
                   aria-label={t("bookmarks.moveTo", { title: entry.title })}

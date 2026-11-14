@@ -2,7 +2,7 @@
 import { Star } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { bookmarkCalls, useBookmarkCall, useBookmarks } from "./queries";
@@ -25,6 +25,7 @@ type Props = Readonly<{
  */
 export function BookmarkBar({ slot, url, title, tabs }: Props) {
   const bookmarks = useBookmarks();
+  const navigate = useNavigate();
   const add = useBookmarkCall(bookmarkCalls.add);
   const edit = useBookmarkCall(bookmarkCalls.edit);
   const move = useBookmarkCall(bookmarkCalls.move);
@@ -35,6 +36,7 @@ export function BookmarkBar({ slot, url, title, tabs }: Props) {
   const folderId = useId();
   const found = bookmarkOf(bookmarks.data, url);
   const canStar = originOf(url) !== null;
+  const starred = Boolean(found);
   const foundId = found?.id;
   const foundTitle = found?.title;
   // Another page, or a bookmark changed elsewhere: the editor shows that one's name; no bookmark closes it.
@@ -69,7 +71,7 @@ export function BookmarkBar({ slot, url, title, tabs }: Props) {
       size="icon"
       aria-label={label}
       title={label}
-      aria-pressed={found !== undefined}
+      aria-pressed={starred}
       aria-expanded={open}
       disabled={!canStar || add.isPending}
       onClick={() => {
@@ -118,9 +120,9 @@ export function BookmarkBar({ slot, url, title, tabs }: Props) {
         <Button type="button" variant="ghost" size="sm" onClick={() => remove.mutate(found.id)}>
           {t("bookmarks.remove")}
         </Button>
-        <Link to="/bookmarks" className="underline">
+        <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/bookmarks")}>
           {t("bookmarks.manage")}
-        </Link>
+        </Button>
         <Button type="submit" variant="ghost" size="sm">
           {t("bookmarks.done")}
         </Button>

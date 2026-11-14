@@ -137,9 +137,12 @@ describe("the navigation's bookmarks", () => {
     expect(names()).toEqual(["Docs", "Work", "Tracker", "News"]);
     const tracker = screen.getByRole("treeitem", { name: "Tracker" });
     expect(tracker).toHaveAttribute("aria-level", "2");
-    expect(tracker).toHaveAttribute("href", "https://tracker.example/");
+    expect(tracker).toHaveAttribute("title", "https://tracker.example/");
     expect(tracker.querySelector('[data-favicon="fallback"]')).not.toBeNull();
-    expect(screen.getByRole("link", { name: "Bookmarks" })).toHaveAttribute("href", "/bookmarks");
+    // Chrome has no text links: every row is a button.
+    expect(
+      within(screen.getByRole("navigation", { name: "Main" })).queryByRole("link", { name: /Docs|Tracker/ }),
+    ).toBeNull();
     await expectAccessible(container);
   });
 
@@ -199,24 +202,34 @@ describe("the navigation's bookmarks", () => {
 
   it("opens a bookmark in a new browser tab outside the desktop app", async () => {
     bookmarkApi();
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
     await openTree();
-    const link = screen.getByRole("treeitem", { name: "Docs" });
-    expect(link).toHaveAttribute("href", "https://docs.example/");
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
-    expect(fireEvent.click(link)).toBe(true); // not prevented: the browser follows the link
+    fireEvent.click(screen.getByRole("treeitem", { name: "Docs" }));
+    expect(opened).toHaveBeenCalledExactlyOnceWith("https://docs.example/", "_blank", "noopener,noreferrer");
+    opened.mockRestore();
+  });
+
+  it("opens the manager from the section's title", async () => {
+    bookmarkApi();
+    const user = userEvent.setup();
+    await openTree();
+    await user.click(screen.getByTitle("Manage bookmarks"));
+    expect(await screen.findByRole("list", { name: "Bookmarks and folders" })).toBeVisible();
   });
 
   it("opens a bookmark in a tab of the built-in browser in the desktop app and shows the panel", async () => {
     bookmarkApi();
     const browser = vi.fn(async () => ({ status: "empty" }));
     Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const shown = vi.fn();
     const listener = (event: Event) => shown((event as CustomEvent<string>).detail);
     window.addEventListener(MENU_EVENT, listener);
     await openTree();
     fireEvent.click(screen.getByRole("treeitem", { name: "Work" }));
-    expect(fireEvent.click(screen.getByRole("treeitem", { name: "Tracker" }))).toBe(false); // prevented: no window
+    fireEvent.click(screen.getByRole("treeitem", { name: "Tracker" }));
+    expect(opened).not.toHaveBeenCalled(); // no second window
+    opened.mockRestore();
     await waitFor(() => expect(shown).toHaveBeenCalledWith("browser-show"));
     expect(browser).toHaveBeenCalledWith({ action: "new-tab", url: "https://tracker.example/" });
     window.removeEventListener(MENU_EVENT, listener);
@@ -257,8 +270,8 @@ describe("the navigation's bookmarks", () => {
     const list = await screen.findByRole("list", { name: "Bookmarks" });
     expect(
       within(list)
-        .getAllByRole("link")
-        .map((link) => link.getAttribute("aria-label")),
+        .getAllByRole("button")
+        .map((item) => item.getAttribute("aria-label")),
     ).toEqual(["Docs", "News"]);
     expect(screen.queryByRole("tree")).toBeNull();
   });
@@ -285,8 +298,12 @@ describe("the bookmark manager", () => {
     expect(rows()[2]?.style.paddingLeft).toBe("1.75rem");
     expect(rows()[0]?.querySelector('img[data-favicon="image"]')).toHaveAttribute("src", ICON);
     expect(rows()[2]?.querySelector('[data-favicon="fallback"]')).not.toBeNull();
-    expect(within(rows()[2] as HTMLElement).getByRole("link", { name: "Tracker" })).toHaveAttribute("target", "_blank");
-    expect(screen.getByRole("button", { name: "Bookmarks" })).toBeVisible(); // the top bar names the screen
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    fireEvent.click(within(rows()[2] as HTMLElement).getByRole("button", { name: "Tracker" }));
+    expect(opened).toHaveBeenCalledExactlyOnceWith("https://tracker.example/", "_blank", "noopener,noreferrer");
+    opened.mockRestore();
+    const topBar = container.querySelector("header.workspace-topbar") as HTMLElement;
+    expect(within(topBar).getByRole("button", { name: "Bookmarks" })).toBeVisible(); // it names the screen
     await expectAccessible(container);
   });
 
@@ -372,7 +389,7 @@ describe("the bookmark manager", () => {
     await user.click(screen.getByRole("button", { name: "Remove News" }));
     const note = await screen.findByRole("status");
     expect(note).toHaveTextContent("Removed “News”.");
-    expect(screen.queryByRole("link", { name: "News" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove News" })).toBeNull();
     await user.click(within(note).getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(writes).toContainEqual(["restore", { entry: "b-4" }]));
     expect(await screen.findByRole("button", { name: "Remove News" })).toBeVisible();
@@ -430,7 +447,7 @@ describe("the star in the address bar", () => {
     await user.selectOptions(within(edit).getByRole("combobox", { name: "Folder" }), "Work");
     await waitFor(() => expect(writes).toContainEqual(["edit", { entry: "b-9", title: "Mine" }]));
     expect(writes).toContainEqual(["move", { entry: "b-9", parent: "b-2" }]);
-    expect(within(edit).getByRole("link", { name: "Manage bookmarks" })).toHaveAttribute("href", "/bookmarks");
+    expect(within(edit).getByRole("button", { name: "Manage bookmarks" })).toBeVisible();
     await user.click(within(edit).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(writes).toContainEqual(["remove", { entry: "b-9" }]));
     await waitFor(() => expect(screen.queryByRole("form", { name: "Edit bookmark" })).toBeNull());

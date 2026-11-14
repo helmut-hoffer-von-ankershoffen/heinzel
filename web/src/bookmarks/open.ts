@@ -1,4 +1,4 @@
-// Opening a bookmark: a tab of the built-in browser in the desktop app; elsewhere the link opens a new browser tab.
+// Opening a bookmark: a tab of the built-in browser in the desktop app; elsewhere a new browser tab.
 import { requestMenuAction } from "@/about/menu";
 
 type Bridge = { browser: (request: Record<string, unknown>) => Promise<unknown> };
@@ -18,4 +18,11 @@ export async function openInApp(url: string): Promise<void> {
     // All tabs in use, or an address the browser refuses: the panel opens and the person sees its state.
   }
   requestMenuAction("browser-show");
+}
+
+/** Open a bookmark where this app browses: the built-in browser in the desktop app, else a new browser tab. */
+export function openBookmark(url: string | null | undefined): void {
+  if (!url) return;
+  if (opensInApp()) void openInApp(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
 }
