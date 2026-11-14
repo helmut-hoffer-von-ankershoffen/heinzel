@@ -2146,6 +2146,37 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
   expect(screen.getAllByText(/Hello from the model/)).toHaveLength(1);
 });
 
+it("falls back to the journal's whole answer when the stream breaks mid-reply", async () => {
+  let stored: Record<string, unknown> = { ...snapshot, name: "Bruno", profile_revision: 1, messages: [] };
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": () => stored,
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/stream/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      // The connection drops after a piece; the turn still finished and its message is in the journal.
+      stored = {
+        ...stored,
+        messages: [
+          { id: body.request_id, seq: 1, role: "user", text: "Hi", status: "completed" },
+          { id: "a1", seq: 2, role: "assistant", text: "The whole answer", status: "completed" },
+        ],
+      };
+      return new Response(frame("text", { text: "The wh" }), { headers: { "Content-Type": "text/event-stream" } });
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const composer = await screen.findByLabelText(/^Message /);
+  fireEvent.change(composer, { target: { value: "Hi" } });
+  fireEvent.keyDown(composer, { key: "Enter" });
+  expect(await screen.findByText("The whole answer")).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector("[data-streaming]")).toBeNull());
+  expect(screen.queryByText("The wh")).not.toBeInTheDocument();
+});
+
 it("grows a streamed reply by its deltas and starts over when the stream says so", () => {
   let text = "";
   for (const event of [

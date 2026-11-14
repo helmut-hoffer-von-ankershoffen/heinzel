@@ -92,7 +92,10 @@ class ReplyStream(AbstractCapability[TurnDeps]):
         if event.index == self._output:  # a new response reuses the index: its own output call is announced again
             self._output = None
         if isinstance(event.part, ToolCallPart):
-            self._arguments[event.index] = event.part.args_as_json_str()
+            args = event.part.args  # the raw text so far: `args_as_json_str` would wrap a partial call as invalid
+            self._arguments[event.index] = (
+                args if isinstance(args, str) else "" if args is None else event.part.args_as_json_str()
+            )
             self._calls[event.index] = event.part.tool_call_id
         else:
             self._arguments.pop(event.index, None)

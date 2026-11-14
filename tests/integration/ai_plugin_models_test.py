@@ -20,6 +20,7 @@ from heinzel.kernel import Document, Documents, user_config_dir
 from tests.integration.chat_test import AUTH, web_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures/ai_models"))
+from heinzel_models_demo import STREAMED
 from heinzel_models_demo import module as demo
 
 pytestmark = pytest.mark.integration
@@ -84,7 +85,8 @@ def test_use_test_and_pick_a_model_through_the_cli(make_kernel):
     assert models["billing"] == "api"
 
 
-def test_a_chat_turn_through_the_web_head_runs_on_the_plugins_model(make_kernel, tmp_path):
+def chat_on_demo_deep(make_kernel, tmp_path) -> tuple[TestClient, str]:
+    """The web head with the demo plugin's `demo-deep` picked, and a Heinzel's chat holding one accepted message."""
     hz(make_kernel(builtins=True, models_demo=demo), "ai", "access", "use", "demo-models")
     hz(make_kernel(builtins=True, models_demo=demo), "system", "config", "set", "ai.access.plugin_model", "demo-deep")
     kernel = make_kernel(builtins=True, models_demo=demo, config=Config.load())
@@ -96,16 +98,38 @@ def test_a_chat_turn_through_the_web_head_runs_on_the_plugins_model(make_kernel,
         "/api/heinzel/chat", headers=AUTH, json={"session_id": session, "request_id": "hello", "message": "Hello"}
     )
     assert accepted.status_code == 200, accepted.text
+    return client, session
+
+
+def test_a_chat_turn_through_the_web_head_runs_on_the_plugins_model(make_kernel, tmp_path):
+    client, session = chat_on_demo_deep(make_kernel, tmp_path)
     answer = client.post("/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "hello"})
     assert answer.status_code == 200, answer.text
     message = answer.json()["message"]
-    assert message["text"] == "Hello from the demo models"
+    assert message["text"] == STREAMED  # a model that streams answers streamed, whether anyone listens or not
     assert message["backend_binding"]["backend"] == "demo-models"
     assert message["backend_binding"]["model"] == "demo-deep"
     assert message["billing"] == "api"
     code, usage = hz(make_kernel(builtins=True, models_demo=demo), "ai", "usage", "--by", "access")
     assert code == 0
     assert [row["key"] for row in usage["breakdowns"]["access"]] == ["demo-models"]
+
+
+def test_a_heinzels_reply_streams_through_the_web_head_and_ends_as_the_same_final_message(make_kernel, tmp_path):
+    client, session = chat_on_demo_deep(make_kernel, tmp_path)
+    body = {"session_id": session, "request_id": "hello"}
+    with client.stream("POST", "/api/stream/heinzel/answer-chat", headers=AUTH, json=body) as response:
+        assert response.status_code == 200
+        raw = "".join(response.iter_text())
+    frames = [block.split("\n", 1) for block in raw.strip().split("\n\n") if block.startswith("event:")]
+    events = [(head.removeprefix("event: "), json.loads(data.removeprefix("data: "))) for head, data in frames]
+    texts = [data for kind, data in events if kind == "text"]
+    assert len(texts) > 3, events  # piece by piece
+    assert events[-1][0] == "result"
+    final = events[-1][1]["data"]["message"]
+    assert "".join(str(data["text"]) for data in texts) == final["text"] == STREAMED
+    again = client.post("/api/heinzel/answer-chat", headers=AUTH, json=body)  # the journal's message, not a partial
+    assert again.json()["message"] == final
 
 
 class HalfDocs:

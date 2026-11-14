@@ -709,6 +709,7 @@ function DurableSessionView({
         throw new Error("Invalid answer acknowledgement");
       updateComposer({ pending: null, text: "" });
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+      setPartial(null); // the final message is in the list now
       await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "notification-proposals", sessionId] });
@@ -1234,8 +1235,8 @@ function DurableSessionView({
             </div>
           </div>
         ) : null}
-        {sending && partial !== null && partial.requestId === pending?.request_id ? (
-          // Not a live region: a screen reader hears the final message once, not every word (it is in the list).
+        {partial !== null ? (
+          // Shown until the journal's final message is read back, so the reply never blinks out. Not a live region: a screen reader hears the final message once, not every word.
           <div data-message-speaker="heinzel" data-streaming="" aria-busy="true" className="flex min-w-0 gap-2 text-sm">
             <HeinzelAvatar view="bust" {...look} state="thinking" className="mt-1 size-6 shrink-0 overflow-hidden" />
             <div className="min-w-0 flex-1 break-words rounded-lg border border-border px-3 py-2">
