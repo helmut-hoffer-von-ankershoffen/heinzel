@@ -331,9 +331,9 @@ it("an agent's tab shows the agent's name and does not use up the person's tabs"
   };
   const browser = vi.fn(async () => ({
     status: "ready",
-    url: person[0].url,
+    url: "https://p0.example.com/",
     tabs: [...person, agent],
-    selected: person[0].id,
+    selected: "t-00000010",
   }));
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active onClose={vi.fn()} />);
