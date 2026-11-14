@@ -53,6 +53,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from heinzel.heads import api
+from heinzel.heads._mcp_tokens import McpTokens, tokens_for_user
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
@@ -60,6 +61,7 @@ from heinzel.heads.web._chatgpt_signin import ChatGptSignIn, local_callback_navi
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
+from heinzel.heads.web._mcp import McpEndpoint, add_endpoint, add_routes
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
@@ -191,6 +193,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     devices: Devices | None = None,
     restart: Callable[[], None] | None = None,
     stopping: Stopping | None = None,
+    mcp_tokens: McpTokens | None = None,
 ) -> FastAPI:
     """The app `hz ui serve` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
 
@@ -202,6 +205,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         devices: The paired devices; the user's by default.
         restart: Restarts the server for `POST /api/restart`; None where it can't.
         stopping: Ends the notice stream and the terminals when the server stops; None where nothing stops it.
+        mcp_tokens: The tokens of outside agents for `/mcp` (ADR 0162); the user's by default.
 
     Raises:
         HeinzelError: If `static` holds no built app.
@@ -268,6 +272,10 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     add_updates(endpoints, kernel, static, restartable=restart is not None, busy=_update_busy(app.state.auto_update))
     add_auto_update(endpoints, app.state.auto_update)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
+    agents = mcp_tokens or tokens_for_user()
+    mcp = McpEndpoint(kernel, agents, stopping)
+    add_routes(endpoints, kernel, agents, mcp)  # the person's switch and tokens, behind the API's token
+    add_endpoint(app, mcp)  # /mcp: 404 while `[hz] mcp_http` is off, else the bearer-token MCP head
 
     add_views(app, kernel)
     app.mount("/api", endpoints)

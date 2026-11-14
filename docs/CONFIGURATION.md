@@ -33,6 +33,7 @@ does not inherit it.
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas. |
 | `ui_port` | `HZ_UI_PORT` | `8737` | The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address. Never read from a project's hz.toml. |
 | `ui_allowed_origins` | `HZ_UI_ALLOWED_ORIGINS` | `frozenset()` | Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy. The listener stays on this computer. Restart and apply after changing this user-only setting. In the environment, separate origins with commas. Example: "https://workstation.example.ts.net". Never read from a project's hz.toml. |
+| `mcp_http` | `HZ_MCP_HTTP` | `False` | Serve Heinzel's tools to outside agents (Claude Code, Codex, Cursor) at /mcp on the web app's address, with a token for each agent. Off by default; the web app follows it at once, and nothing else has to run. Heinzels in hz never need it. Never read from a project's hz.toml. |
 | `api_allowed_hosts` | `HZ_API_ALLOWED_HOSTS` | `frozenset()` | Host names the REST API answers besides this computer's own, for when it listens on another network interface. Requests naming any other host are refused. In the environment, separate them with commas. Never read from a project's hz.toml. |
 
 ## `[capabilities]`
