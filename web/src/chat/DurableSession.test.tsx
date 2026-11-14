@@ -2349,13 +2349,16 @@ it("opens and highlights a search match beyond the loaded conversation page", as
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
   await fromMore("Search");
-  const search = within(panel.getByRole("region", { name: "Search conversation" }));
-  fireEvent.change(search.getByLabelText("Text"), { target: { value: "matching" } });
+  const search = within(panel.getByRole("search", { name: "Search Heinzel chats" }));
+  fireEvent.change(search.getByLabelText("Search messages"), { target: { value: "matching" } });
   fireEvent.click(search.getByRole("button", { name: "Search" }));
-  await search.findByText("Old matching message");
-  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  fireEvent.click(await search.findByRole("button", { name: /Old matching message/ }));
   await waitFor(() => expect(panel.getByText("Search result")).toBeInTheDocument());
   expect(panel.getByText("Search result").parentElement).toHaveTextContent("Old matching message");
+  // The message has a stable anchor, is focused, and the search field is closed.
+  const anchor = panel.getByText("Old matching message").closest("#message-154");
+  expect(anchor).toHaveFocus();
+  expect(panel.queryByRole("search")).not.toBeInTheDocument();
   expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "anchored-jump")).toBe(true);
 });
 
@@ -2398,11 +2401,11 @@ it("opens an owner-search match in its exact helper without confirming any actio
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
   await fromMore("Search");
-  const search = within(panel.getByRole("region", { name: "Search all conversations" }));
-  fireEvent.change(search.getByLabelText("Text"), { target: { value: "match" } });
+  const search = within(panel.getByRole("search", { name: "Search Heinzel chats" }));
+  fireEvent.click(search.getByRole("radio", { name: "All Heinzels" }));
+  fireEvent.change(search.getByLabelText("Search messages"), { target: { value: "match" } });
   fireEvent.click(search.getByRole("button", { name: "Search" }));
-  await search.findByText("Other private match");
-  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  fireEvent.click(await search.findByRole("button", { name: /Other private match/ }));
   await waitFor(() => expect(panel.getByText("Search result").parentElement).toHaveTextContent("Other private match"));
   await fromMore("Details");
   const review = within(panel.getByRole("region", { name: "Review your helper" }));
@@ -2431,17 +2434,15 @@ it("keeps search closed until More asks for it and ignores cursor text in the br
   renderAt(`/heinzel?chat=${sessionId}&history=unexpected-cursor`);
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
-  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
-  expect(panel.queryByText("Search all Heinzel conversations")).not.toBeInTheDocument();
+  expect(panel.queryByRole("search")).not.toBeInTheDocument();
   // Search waits in More; choosing it again closes it.
   const more = panel.getByRole("button", { name: "More: search, details" });
   expect(more).toHaveAttribute("title", "More");
   expect(more).toHaveAttribute("aria-expanded", "false");
   await fromMore("Search");
-  expect(await panel.findByText("Search conversation")).toBeInTheDocument();
-  expect(panel.getByText("Search all Heinzel conversations")).toBeInTheDocument();
+  expect(await panel.findByRole("search", { name: "Search Heinzel chats" })).toBeInTheDocument();
   await fromMore("Search");
-  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
+  expect(panel.queryByRole("search")).not.toBeInTheDocument();
   expect(
     calls.some((request) => {
       const url = new URL(request.url);

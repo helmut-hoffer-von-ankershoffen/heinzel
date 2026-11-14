@@ -141,7 +141,7 @@ describe("one kind of chat", () => {
     const more = await chat.findByRole("button", { name: "More: search, details" });
     // Details and search wait in More instead of standing among the messages.
     await waitFor(() => expect(chat.getByText("Details").closest("details")).not.toBeVisible());
-    expect(chat.queryByRole("region", { name: "Search conversation" })).not.toBeInTheDocument();
+    expect(chat.queryByRole("search", { name: "Search Heinzel chats" })).not.toBeInTheDocument();
     await user.click(more);
     // No earlier general chats: More holds search and details only.
     expect(
@@ -153,7 +153,7 @@ describe("one kind of chat", () => {
     await user.click(
       within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Search" }),
     );
-    expect(await chat.findByRole("region", { name: "Search conversation" })).toBeInTheDocument();
+    expect(await chat.findByRole("search", { name: "Search Heinzel chats" })).toBeInTheDocument();
     await user.click(more);
     await user.click(
       within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Details" }),
