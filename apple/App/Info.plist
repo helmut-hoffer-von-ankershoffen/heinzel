@@ -11,6 +11,7 @@
         <key>UIColorName</key><string>StartupBackground</string>
         <key>UIImageRespectsSafeAreaInsets</key><true/>
     </dict>
+    <key>HeinzelHTTPSLinks</key><string>$(HEINZEL_HTTPS_LINKS)</string>
     <key>CFBundleDisplayName</key><string>Heinzelmännchen</string>
     <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
     <key>NSLocalNetworkUsageDescription</key><string>Connect to the Heinzelmännchen server you choose on your private network.</string>

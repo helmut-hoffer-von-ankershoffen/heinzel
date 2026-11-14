@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Open Heinzelmännchen</title>
+<main>
+  <h1>Open Heinzelmännchen</h1>
+  <p id="destination" hidden></p>
+  <p><a id="launch" hidden>Open in Heinzelmännchen</a></p>
+  <p id="help">Open this page from a shared workspace link.</p>
+</main>
+<script>
+  const payload = new URLSearchParams(location.hash.slice(1));
+  const help = document.getElementById("help");
+  try {
+    if ([...payload].length !== 1 || !payload.has("server")) throw Error();
+    const server = new URL(payload.get("server"));
+    if (server.protocol !== "https:" || server.username || server.password ||
+        server.search || server.hash || server.pathname !== "/") throw Error();
+    const launch = document.getElementById("launch");
+    const destination = document.getElementById("destination");
+    destination.textContent = server.origin;
+    destination.hidden = false;
+    launch.href = "heinzel://connect?" + new URLSearchParams({ server: server.origin });
+    launch.hidden = false;
+    help.textContent = "Install Heinzelmännchen on this device to open the workspace.";
+  } catch {}
+</script>
+</html>

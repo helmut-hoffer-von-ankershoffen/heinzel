@@ -37,9 +37,19 @@ struct Endpoint: Equatable {
     /// Shared links identify a workspace. Authentication remains a separate in-app step.
     static func sharedWorkspace(_ url: URL) -> Endpoint? {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              parts.scheme == "heinzel", parts.host == "connect", parts.path.isEmpty,
-              parts.user == nil, parts.password == nil, parts.port == nil, parts.fragment == nil,
-              let query = parts.queryItems, query.count == 1, query[0].name == "server",
+              parts.user == nil, parts.password == nil, parts.port == nil else { return nil }
+        let query: [URLQueryItem]?
+        switch (parts.scheme, parts.host, parts.percentEncodedPath) {
+        case ("heinzel", "connect", "") where parts.fragment == nil:
+            query = parts.queryItems
+        case ("https", "heinzel.team", "/open/") where parts.query == nil:
+            guard let fragment = parts.percentEncodedFragment, !fragment.contains("?"),
+                  let payload = URLComponents(string: "https://heinzel.team/?" + fragment) else { return nil }
+            query = payload.queryItems
+        default:
+            return nil
+        }
+        guard let query, query.count == 1, query[0].name == "server",
               let value = query[0].value, let endpoint = Endpoint(value),
               endpoint.token == nil else { return nil }
         return endpoint
@@ -47,10 +57,19 @@ struct Endpoint: Equatable {
 
     var shareURL: URL? {
         guard origin.scheme == "https" else { return nil }
+        var payload = URLComponents()
+        payload.queryItems = [URLQueryItem(name: "server", value: origin.absoluteString)]
         var parts = URLComponents()
-        parts.scheme = "heinzel"
-        parts.host = "connect"
-        parts.queryItems = [URLQueryItem(name: "server", value: origin.absoluteString)]
+        if Bundle.main.object(forInfoDictionaryKey: "HeinzelHTTPSLinks") as? String == "YES" {
+            parts.scheme = "https"
+            parts.host = "heinzel.team"
+            parts.path = "/open/"
+            parts.percentEncodedFragment = payload.percentEncodedQuery
+        } else {
+            parts.scheme = "heinzel"
+            parts.host = "connect"
+            parts.percentEncodedQuery = payload.percentEncodedQuery
+        }
         return parts.url
     }
 

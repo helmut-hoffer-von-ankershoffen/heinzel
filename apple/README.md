@@ -15,3 +15,12 @@ Use **Connection → Share workspace link** to generate a `heinzel://connect?ser
 The Swift shell uses the same title-bar layout and Browser panel as Electron. The Browser panel uses a separate WebKit session. Enable the host’s `sidebar_browser` feature flag to use the Browser panel. The browser uses an authenticated loopback HTTPS proxy with public-only DNS resolution and no direct fallback. The guest enables WebKit Lockdown Mode to disable peer connections. Mac, iPhone simulator, and iPad simulator probes confirmed that public HTTPS works through the proxy, loopback HTTP and WebRTC STUN are blocked, and closing the proxy stops public navigation. Lockdown Mode may limit some websites. See [ADR 0140](../docs/adr/0140-isolate-sidebar-browser-content-in-the-desktop.md).
 
 System audio uses the system ScreenCaptureKit picker on macOS and on iOS/iPadOS 27 or later where the picker is available. iOS Simulator builds omit this feature because their SDK does not expose ScreenCaptureKit. The microphone uses WebKit’s permission prompt in the workspace.
+
+For a signed iPhone or iPad build, enable Associated Domains for the app ID and
+build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
+Use `apple/scripts/association-file APPLICATION_IDENTIFIER_PREFIX` to generate the
+JSON for `https://heinzel.team/.well-known/apple-app-site-association`. Serve the
+file over HTTPS without redirects and deploy `docs/open/index.html` at
+`https://heinzel.team/open/`. Check that Messages opens the signed app from a new
+installation. The fallback page reads the workspace address from the URL
+fragment, which keeps it out of the page request.

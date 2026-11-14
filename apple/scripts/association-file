@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Print the Associated Domains file for the signed Heinzel app."""
+
+import argparse
+import json
+import re
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("app_identifier_prefix")
+args = parser.parse_args()
+if not re.fullmatch(r"[A-Z0-9]{10}", args.app_identifier_prefix):
+    parser.error("Provide the ten-character Application Identifier Prefix from the signing profile.")
+print(  # noqa: T201 - the association file is the command output
+    json.dumps(
+        {
+            "applinks": {
+                "details": [
+                    {
+                        "appIDs": [f"{args.app_identifier_prefix}.team.heinzel.apple"],
+                        "components": [{"/": "/open/"}],
+                    }
+                ]
+            }
+        },
+        indent=2,
+    )
+)
