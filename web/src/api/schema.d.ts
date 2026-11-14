@@ -3034,6 +3034,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notify/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show whether notices and questions also reach you in your own chat messages, and through which connector.
+         * @description Show whether notices and questions also reach you in your own chat messages, and through which connector.
+         *
+         *     Switch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it
+         *     works once a bound chat connector can message you (ADR 0160). The app keeps showing everything.
+         */
+        get: operations["system_notify_chat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/notify/list": {
         parameters: {
             query?: never;
@@ -13212,6 +13235,47 @@ export interface components {
             status: "recorded" | "unresolved" | "abandoned";
         };
         /**
+         * SelfChatStatus
+         * @description Whether notices and questions also reach you in chat, and through which connector (ADR 0160).
+         */
+        SelfChatStatus: {
+            /**
+             * Adapter
+             * @description The chat connector that would be used, such as `slack`; none when no bound one can message you.
+             */
+            adapter: string | null;
+            /**
+             * Detail
+             * @description How it stands, in words, with what to do when nothing can carry it.
+             */
+            detail: string;
+            /** @description Notices also sent to your own direct messages. */
+            notifications: components["schemas"]["SelfChatUse"];
+            /** @description A Heinzel's questions also asked in your own direct messages. */
+            questions: components["schemas"]["SelfChatUse"];
+            /**
+             * Wait Minutes
+             * @description How long a question waits for an answer in chat.
+             */
+            wait_minutes: number;
+        };
+        /**
+         * SelfChatUse
+         * @description One use of the self channel: whether the chat connector can carry it, and whether you switched it on.
+         */
+        SelfChatUse: {
+            /**
+             * On
+             * @description Whether it is switched on in `[system.notify]`.
+             */
+            on: boolean;
+            /**
+             * Supported
+             * @description Whether the bound chat connector serves the method this use needs.
+             */
+            supported: boolean;
+        };
+        /**
          * ServerSwitch
          * @description `hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.
          */
@@ -13325,7 +13389,7 @@ export interface components {
              * @default unknown
              * @enum {string}
              */
-            origin: "unknown" | "cli" | "mcp-stdio" | "daemon" | "api-bearer" | "web-session" | "web-device";
+            origin: "unknown" | "cli" | "mcp-stdio" | "daemon" | "api-bearer" | "web-session" | "web-device" | "self-chat";
             /**
              * Role
              * @description Who produced this visible message.
@@ -17715,6 +17779,8 @@ export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgent
 export type SchemaScheduledNotificationPage = components['schemas']['ScheduledNotificationPage'];
 export type SchemaScheduledNotificationPolicy = components['schemas']['ScheduledNotificationPolicy'];
 export type SchemaScheduledNotificationView = components['schemas']['ScheduledNotificationView'];
+export type SchemaSelfChatStatus = components['schemas']['SelfChatStatus'];
+export type SchemaSelfChatUse = components['schemas']['SelfChatUse'];
 export type SchemaServerSwitch = components['schemas']['ServerSwitch'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
@@ -22352,6 +22418,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_notify_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfChatStatus"];
                 };
             };
         };

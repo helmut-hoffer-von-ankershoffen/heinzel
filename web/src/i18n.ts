@@ -966,6 +966,16 @@ const en = {
   "settings.light": "Light",
   "settings.dark": "Dark",
   "notify.title": "Notifications",
+  "selfChat.title": "Also in chat",
+  "selfChat.uses": "Through {connector}, in your own direct messages. The app keeps showing everything.",
+  "selfChat.notifications": "Notices also in chat",
+  "selfChat.notificationsHelp":
+    "Sends the title and text of every notice that pops up to {connector} too, at the same time and under the same rules.",
+  "selfChat.questions": "Questions also in chat",
+  "selfChat.questionsHelp":
+    "Sends a Heinzel's question to {connector} too. The first answer counts, here or there; after {minutes} min it stays open here.",
+  "selfChat.answeredIn": "Answered in {connector}",
+  "selfChat.answeredInChat": "Answered in chat",
   "notify.open": "Notifications",
   "notify.openUnread": "Notifications, {count} unread",
   "notify.close": "Close notifications",

@@ -3106,6 +3106,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ack`: (expert) Mark notices as shown, so the...
+* `chat`: (expert) Show whether notices and...
 * `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
@@ -3126,6 +3127,22 @@ $ hz system notify ack [OPTIONS] {ids}
 **Arguments**:
 
 * `ids <str>`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify chat`
+
+(expert) Show whether notices and questions also reach you in your own chat messages, and through which connector.
+
+**Usage**:
+
+```console
+$ hz system notify chat [OPTIONS]
+```
 
 **Options**:
 

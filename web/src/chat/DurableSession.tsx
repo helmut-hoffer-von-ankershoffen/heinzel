@@ -41,6 +41,7 @@ import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { AnsweredInChat } from "@/notifications/ChatChannelSettings";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
@@ -1124,6 +1125,7 @@ function DurableSessionView({
                         Approved read: {inputComparison(item.status)}.
                       </p>
                     ))}
+                {message.role === "user" && message.origin === "self-chat" && <AnsweredInChat />}
                 {message.role === "user" && message.origin === "daemon" && (
                   <DaemonTurnInspection
                     sessionId={sessionId}

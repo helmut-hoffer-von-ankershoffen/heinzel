@@ -617,10 +617,14 @@ class NotifyService(Notifications):
     # Chat as an extra place (ADR 0160) -------------------------------------------------------------------------------
 
     def _channel(self) -> SelfChat | None:
-        """The self channel if notices go there and it can carry them; None otherwise, also when it can't be built."""
-        if not self.settings.chat_notifications:
-            return None
+        """The self channel if notices go there and it can carry them; None otherwise, also when it can't be built.
+
+        Reads the switch afresh, so switching it on or off needs no restart.
+        """
         try:
+            self.settings = self._refresh_settings()
+            if not self.settings.chat_notifications:
+                return None
             channel = self.self_chat()
         except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs a notice
             log_event(_EVENTS, "notify.chat.unavailable", level=logging.WARNING, problem=type(exc).__name__)
@@ -644,8 +648,6 @@ class NotifyService(Notifications):
 
         One sender runs at a time per process; a kick while it runs makes it look once more when it is done.
         """
-        if not self.settings.chat_notifications:
-            return
         self._chat_again.set()
         if not self._chat_busy.acquire(blocking=False):
             return

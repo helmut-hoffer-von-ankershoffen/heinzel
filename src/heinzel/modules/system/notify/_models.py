@@ -100,7 +100,7 @@ class NotifySettings(ModuleSettings):
         title="Questions also in chat",
         description="Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it "
         "can (ADR 0160). The first answer counts, in the app or in chat.",
-        json_schema_extra={"x-hidden": True},
+        json_schema_extra={"x-hidden": True, "x-live": True},
     )
     chat_wait_minutes: int = Field(
         default=5,
@@ -108,7 +108,7 @@ class NotifySettings(ModuleSettings):
         le=60,
         title="Wait for a chat answer",
         description="How long a question waits for your answer in chat; then it stays open in the app.",
-        json_schema_extra={"x-unit": "minutes", "x-hidden": True},
+        json_schema_extra={"x-unit": "minutes", "x-hidden": True, "x-live": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

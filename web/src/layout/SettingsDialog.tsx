@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { ChatChannelSettings } from "@/notifications/ChatChannelSettings";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
@@ -272,7 +273,12 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
               </>
             )}
             {current === "ai" && <AiAccessSetting />}
-            {current === "notifications" && <NotificationSettings />}
+            {current === "notifications" && (
+              <>
+                <NotificationSettings />
+                <ChatChannelSettings />
+              </>
+            )}
             {current === "web-server" && <WebServerSettings />}
             {current === "daemon" && (
               <>
