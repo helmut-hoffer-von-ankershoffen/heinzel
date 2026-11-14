@@ -17,7 +17,7 @@
     if ([...payload].length !== 1 || !payload.has("server")) throw Error();
     const server = new URL(payload.get("server"));
     if (server.protocol !== "https:" || server.username || server.password ||
-        server.search || server.hash || server.pathname !== "/") throw Error();
+        server.port === "0" || server.search || server.hash || server.pathname !== "/") throw Error();
     const launch = document.getElementById("launch");
     const destination = document.getElementById("destination");
     destination.textContent = server.origin;
