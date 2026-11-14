@@ -59,9 +59,13 @@ Checkable statements:
      option. The docstrings in `heinzel/kernel/_ai_models.py` are the reference; the author guide quotes them.
 2. **`ModelOffer` needs only an id.** It is a frozen Pydantic model that ignores fields it doesn't know. The id
    matches `^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$`. Optional: `title`, `description`, `aliases`,
-   `context_window`, `efforts`, `tools` (default true), `thinking` (`adaptive`, `budget` or none) and `available`
-   (default true). The picker and a reply's header show `title` or else `id`. A reply's details also show the
-   `model_name` the Pydantic AI response reported.
+   `context_window`, `efforts`, `tools` (default true), `thinking` (`adaptive`, `budget` or none), `available`
+   (default true) and `level` (`low`, `medium`, `high` or none). The picker and a reply's header show `title` or
+   else `id`. A reply's details also show the `model_name` the Pydantic AI response reported. Core picks a model by
+   level with `model_for_level(source, level)`: the usable offer (calls tools, not marked unavailable) marked with
+   that level; with several marked, the first, and a warning is logged; with none marked, or no level asked, the
+   first usable offer; with no usable offer, `ModelUnavailableError`. The conformance kit fails a plugin that marks
+   more than one offer with the same level.
 3. **What Core guarantees the plugin.** It calls `models()` off the event loop, one call at a time per plugin, on a
    daemon thread, with a 5 s timeout, and reuses an answer for 3 s. When a call fails or times out it shows the
    last good list and says so. A row that isn't a valid offer is skipped and logged, not the list. It calls
@@ -71,7 +75,8 @@ Checkable statements:
 
 4. **Within interface 1.x changes are additive only.** `ModelOffer` gains optional fields with defaults, and an
    unknown enum value in a newer plugin's row skips that row. The protocol gains optional methods only, which Core
-   detects before calling (like `test`). Required parameters are never added. A breaking change is interface 2.0,
+   detects before calling (like `test`). Required parameters are never added. `ModelOffer.level` came this way:
+   an optional field, so `AI_MODELS_INTERFACE` stays `1.0`. A breaking change is interface 2.0,
    follows [ADR 0026](0026-plugin-api-versioned-with-semver.md)'s deprecation rule, and Core keeps 1.x working for
    one minor release.
 5. **Pydantic AI is part of the contract.** Core pins `pydantic-ai-slim==2.61.0`. A Core release that moves to a

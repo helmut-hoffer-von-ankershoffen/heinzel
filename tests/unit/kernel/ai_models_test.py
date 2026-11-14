@@ -26,6 +26,7 @@ from heinzel.kernel._ai_models import (
     choose,
     effort_settings,
     list_offers,
+    model_for_level,
 )
 from heinzel.kernel._capabilities import declared_unsupported
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -249,6 +250,38 @@ def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkey
     offers, note = list_offers(_source(junk, name="never-good"))
     assert offers == []
     assert note == "its model list failed (TypeError: models() returned str, not a list of ModelOffer)"
+
+
+class Levels:
+    """A plugin that marks levels; `offers` is set per test."""
+
+    def __init__(self, offers: list[ModelOffer]) -> None:
+        self.offers = offers
+
+    def models(self) -> list[ModelOffer]:
+        return self.offers
+
+
+def test_model_for_level_picks_the_marked_usable_offer_else_the_first_usable(caplog):
+    offers = [
+        ModelOffer(id="mute", tools=False, level="high"),
+        ModelOffer(id="small", level="low"),
+        ModelOffer(id="gone", available=False, level="high"),
+        ModelOffer(id="big", level="high"),
+        ModelOffer(id="bigger", level="high"),
+    ]
+    source = _source(Levels(offers), name="levels-test")
+    assert model_for_level(source, "low").id == "small"
+    assert model_for_level(source, None).id == "small"
+    assert model_for_level(source, "medium").id == "small", "none marked: the first usable"
+    with caplog.at_level("WARNING"):
+        assert model_for_level(source, "high").id == "big", "the unusable are skipped; several marked: the first"
+    assert "ai.models.level_ambiguous" in caplog.text
+    assert ModelOffer.model_validate({"id": "x", "level": "high"}).level == "high"
+    with pytest.raises(ValidationError):
+        ModelOffer.model_validate({"id": "x", "level": "max"})
+    with pytest.raises(ModelUnavailableError):
+        model_for_level(_source(Levels([ModelOffer(id="mute", tools=False)]), name="levels-none"), "low")
 
 
 def test_one_bad_row_is_skipped_not_the_whole_list():

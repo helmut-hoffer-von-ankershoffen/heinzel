@@ -50,6 +50,9 @@ Thinking = Literal["adaptive", "budget"]
 `output_config: {effort}`, Pydantic AI's `anthropic_effort`) for newer models, `budget` (`thinking: {type: enabled,
 budget_tokens}`) for older ones. A plugin whose models speak another API leaves it unset and maps effort itself."""
 
+Level = Literal["low", "medium", "high"]
+"""A model's tier in its plugin's list: hz picks a model by level with `model_for_level` (ADR 0159)."""
+
 EFFORT_BUDGETS: dict[Effort, int] = {"low": 2048, "medium": 8192, "high": 16384, "xhigh": 32768, "max": 63999}
 """The thinking budget in tokens hz asks a `budget` model for at each effort."""
 
@@ -89,6 +92,11 @@ class ModelOffer(BaseModel):
         default=True,
         description="False when it didn't answer when the plugin last checked: hz keeps it in the picker, marked "
         "unavailable, and refuses a turn on it before starting, naming others to pick.",
+    )
+    level: Level | None = Field(
+        default=None,
+        description="Its tier, `low`, `medium` or `high`, when the plugin marks one: hz picks the model of a level "
+        "by it. At most one offer per level; none when unmarked.",
     )
 
     @property
@@ -399,6 +407,27 @@ def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None =
         msg = f"The model {wanted} doesn't take the effort {effort}; pick one of {allowed}, or none"
         raise HeinzelError(msg)
     return offer
+
+
+def model_for_level(source: AiModelsSource, level: Level | None) -> ModelOffer:
+    """The usable offer of `source` marked with `level`, else its first usable offer (ADR 0159).
+
+    Usable means it calls tools and isn't marked unavailable. With several usable offers marked with `level`, the
+    first, and a warning is logged; with none marked, or `level` None, the first usable offer.
+
+    Raises:
+        ModelUnavailableError: If the plugin offers no usable model.
+    """
+    offers, _note = list_offers(source)
+    usable = [o for o in offers if o.tools and o.available is not False]
+    if not usable:
+        raise ModelUnavailableError(NONE_CHOSEN, [], "the plugin offers no model that answers and calls tools")
+    marked = [o for o in usable if level is not None and o.level == level]
+    if len(marked) > 1:
+        log_event(
+            logger, "ai.models.level_ambiguous", level=logging.WARNING, adapter=source.name, tier=level, n=len(marked)
+        )
+    return (marked or usable)[0]
 
 
 def build_model(source: AiModelsSource, offer: ModelOffer) -> Any:  # noqa: ANN401 - a pydantic_ai Model
