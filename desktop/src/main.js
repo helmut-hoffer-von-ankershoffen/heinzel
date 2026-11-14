@@ -224,7 +224,11 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
         const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
         console.info(menuLogLine(action, ready ? "sent" : "no_window"));
-        if (ready) void window.webContents.executeJavaScript(menuScript(action));
+        if (!ready) return;
+        const sent = window.webContents.executeJavaScript(menuScript(action));
+        // Cmd+W closes the browser's selected tab when the page takes it, and otherwise the window as before.
+        if (action === "close-tab") void sent.then((taken) => { if (taken !== true && !window.isDestroyed()) window.close(); }, () => {});
+        else void sent;
       },
     })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {

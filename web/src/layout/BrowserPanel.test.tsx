@@ -23,7 +23,7 @@ it.each(["file:///etc/passwd", "http://example.com", "https://user:secret@exampl
     expect(externalBrowserUrl(value)).toBeNull();
   },
 );
-it("native controls send only explicit navigation and close the separate session on unmount", async () => {
+it("native controls send only explicit navigation and hide, not close, on unmount", async () => {
   const browser = vi.fn(async ({ action }: Record<string, unknown>) =>
     action === "navigate" ? { status: "ready", url: "https://example.com/page" } : { status: "empty" },
   );
@@ -42,7 +42,8 @@ it("native controls send only explicit navigation and close the separate session
   fireEvent.click(reload);
   expect(browser).toHaveBeenCalledWith({ action: "reload" });
   view.unmount();
-  expect(browser).toHaveBeenCalledWith({ action: "close" });
+  expect(browser).toHaveBeenLastCalledWith({ action: "hide" });
+  expect(browser).not.toHaveBeenCalledWith({ action: "close" });
 });
 
 it("switching away from the panel hides the page without closing it, so its state survives", async () => {
@@ -182,4 +183,85 @@ it("a typed host goes out with https://, and a refused local address shows a vis
   expect(await screen.findByRole("alert")).toHaveTextContent(/only public https websites work here/);
   fireEvent.change(field, { target: { value: "localhost2" } });
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+const TABS = [
+  { id: "t-00000001", owner: "person", selected: true, status: "ready", url: "https://one.example.com/", title: "One" },
+  { id: "t-00000002", owner: "person", selected: false, status: "ready", url: "https://two.example.com/", title: "" },
+];
+function tabBridge() {
+  let tabs = TABS.map((tab) => ({ ...tab }));
+  const select = (id: string) => {
+    tabs = tabs.map((tab) => ({ ...tab, selected: tab.id === id }));
+  };
+  const browser = vi.fn(async (request: Record<string, unknown>) => {
+    if (request.action === "select-tab") select(String(request.tab));
+    if (request.action === "close-tab") {
+      tabs = tabs.filter((tab) => tab.id !== request.tab);
+      if (tabs[0] && !tabs.some((tab) => tab.selected)) select(tabs[0].id);
+    }
+    if (request.action === "new-tab") {
+      tabs = [
+        ...tabs.map((tab) => ({ ...tab, selected: false })),
+        { id: "t-00000003", owner: "person", selected: true, status: "empty", url: "", title: "" },
+      ];
+    }
+    const current = tabs.find((tab) => tab.selected);
+    return { status: current?.status ?? "empty", url: current?.url ?? "", tabs, selected: current?.id ?? null };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  return browser;
+}
+
+it("shows the tabs the desktop holds when the panel opens again, and switches and closes them", async () => {
+  const browser = tabBridge();
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  expect(browser).toHaveBeenCalledWith({ action: "tabs" });
+  expect(screen.getByRole("tab", { name: "One" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("https://one.example.com/");
+  fireEvent.click(screen.getByRole("tab", { name: "two.example.com" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "select-tab", tab: "t-00000002" }));
+  await waitFor(() =>
+    expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("https://two.example.com/"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Close tab two.example.com" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000002" }));
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
+});
+
+it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the selected tab", async () => {
+  const browser = tabBridge();
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("");
+  fireEvent.keyDown(document, { key: "w", ctrlKey: true });
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000003" }));
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  fireEvent.keyDown(document, { key: "t", metaKey: true });
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+});
+
+it("the Mac menu's New Tab and Close Tab are taken by the panel, and Close Tab is left alone with no tab", async () => {
+  const browser = tabBridge();
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  const ask = (detail: string) => {
+    const event = new CustomEvent("hz:menu", { detail, cancelable: true });
+    return !window.dispatchEvent(event);
+  };
+  expect(ask("new-tab")).toBe(true);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+  expect(ask("close-tab")).toBe(true);
+  expect(ask("search")).toBe(false);
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000003" }));
+});
+
+it("the shortcuts do nothing while another panel is in front", async () => {
+  const browser = tabBridge();
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  fireEvent.keyDown(document, { key: "t", ctrlKey: true });
+  expect(browser).not.toHaveBeenCalledWith({ action: "new-tab" });
 });

@@ -15,6 +15,8 @@ export type MenuAction =
   | "browser"
   | "chat"
   | "new-chat"
+  | "new-tab"
+  | "close-tab"
   | "notifications"
   | "help"
   | "go:today"
