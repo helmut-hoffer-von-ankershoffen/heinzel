@@ -130,7 +130,12 @@ def test_producer_reports_unimported_module_from_real_branch_data(coverage, scop
 
 
 def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
-    """Both real analysis paths must leave an outer measured worker's data intact."""
+    """Both real analysis paths must leave a measured worker's data intact (#707).
+
+    An xdist worker is measured because coverage's `.pth` hook starts it from `COVERAGE_PROCESS_START`, and
+    `Coverage()` in such a process disables its save at exit. The probe is one process started the same way, without
+    the pytest controller and worker around it: those cost most of the time and are not what this proves.
+    """
     marker = tmp_path / "worker_marker.py"
     marker.write_text(
         "def before_opportunities():\n    return 11\n\n"
@@ -143,9 +148,11 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
         f"[tool.coverage.run]\nsource = [{json.dumps(str(tmp_path))}]\n"
         'branch = true\nparallel = true\npatch = ["subprocess"]\n'
     )
-    probe = tmp_path / "test_outer_worker_probe.py"
+    work = tmp_path / "work"
+    probe = tmp_path / "worker_probe.py"
     probe.write_text(
         textwrap.dedent(f"""
+        import os
         from pathlib import Path
 
         import worker_marker
@@ -160,50 +167,42 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
         WORKLOAD = FocusedPlan("pull_request", "refs/pull/1/merge", "a", "b", "c", ("Focused tests (python)",))
         SCOPE = Scope(WORKLOAD, "d", "e", {{}}, {{PATH: "source"}}, "config", {{}}, {{"python": ()}}, {{}}, "d")
 
-        def test_opportunities(monkeypatch):
-            assert worker_marker.before_opportunities() == 11
-            monkeypatch.setattr(focused, "git", lambda *_args: SOURCE)
-            rows = focused.source_opportunities(SCOPE, CONFIG)
-            assert rows[PATH]["missing_lines"] == [1, 2]
-            assert worker_marker.after_opportunities() == 12
+        assert worker_marker.before_opportunities() == 11
+        focused.git = lambda *_args: SOURCE
+        rows = focused.source_opportunities(SCOPE, CONFIG)
+        assert rows[PATH]["missing_lines"] == [1, 2]
+        assert worker_marker.after_opportunities() == 12
 
-        def test_instrument(monkeypatch, tmp_path):
-            assert worker_marker.before_instrument() == 13
-            monkeypatch.chdir(tmp_path)
-            module = tmp_path / PATH
-            module.parent.mkdir(parents=True)
-            module.write_bytes(SOURCE)
-            monkeypatch.setattr(focused, "git", lambda *_args: CONFIG)
-            def execute(args, env):
-                # The selected tests' data, written here: no runner interpreter; the analysis child stays real.
-                del args
-                data = CoverageData(basename=env["COVERAGE_FILE"], suffix=True)
-                data.add_arcs({{str(module.resolve()): [(-1, 1), (1, -1)]}})
-                data.write()
-            monkeypatch.setattr(focused, "_execute", execute)
-            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest"], tmp_path, {{}})
-            assert (tmp_path / focused.MEASUREMENT).is_file()
-            assert worker_marker.after_instrument() == 14
+        assert worker_marker.before_instrument() == 13
+        work = Path({str(work)!r})
+        module = work / PATH
+        module.parent.mkdir(parents=True)
+        module.write_bytes(SOURCE)
+        os.chdir(work)  # the scope's paths are relative to the checkout
+        focused.git = lambda *_args: CONFIG
+
+        def execute(args, env):
+            # The selected tests' data, written here: no runner interpreter; the analysis child stays real.
+            del args
+            data = CoverageData(basename=env["COVERAGE_FILE"], suffix=True)
+            data.add_arcs({{str(module.resolve()): [(-1, 1), (1, -1)]}})
+            data.write()
+
+        focused._execute = execute
+        focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest"], work, {{}})
+        assert (work / focused.MEASUREMENT).is_file()
+        assert worker_marker.after_instrument() == 14
     """)
     )
     env = {
         **os.environ,
         "PYTHONPATH": os.pathsep.join((str(REPO), str(tmp_path))),
         "COVERAGE_FILE": str(tmp_path / ".coverage"),
-        "PYTEST_ADDOPTS": "",
-        # The disposable probe needs real xdist, not unrelated installed pytest plugins.
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "COVERAGE_PROCESS_START": str(config),
     }
-    run = [sys.executable, "-m", "coverage"]
-    subprocess.run(
-        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "1", "-q", str(probe)],
-        cwd=tmp_path,
-        env=env,
-        check=True,
-        capture_output=True,
-        timeout=90,
-    )
-    # Read the workers' data files directly: no combine or report interpreters, and nothing measured is disturbed.
+    env.pop("COVERAGE_PROCESS_CONFIG", None)  # the outer suite's own measurement, if any, must not configure the probe
+    subprocess.run([sys.executable, str(probe)], cwd=tmp_path, env=env, check=True, capture_output=True, timeout=90)
+    # Read the probe's data files directly: no combine or report interpreters, and nothing measured is disturbed.
     executed: set[int] = set()
     for path in tmp_path.glob(".coverage.*"):
         data = CoverageData(basename=str(path))
