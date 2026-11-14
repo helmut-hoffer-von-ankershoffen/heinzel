@@ -7,7 +7,7 @@ out="$PWD/.build/package"
 stage="$(mktemp -d)"
 trap 'rm -rf -- "$stage"' EXIT
 xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
-    -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" build -quiet
+    -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES build -quiet
 app="$stage/Heinzelmaennchen.app"
 /usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
 /usr/bin/codesign --verify --strict --deep "$app"

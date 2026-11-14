@@ -112,12 +112,13 @@ private final class RefuseRedirects: NSObject, URLSessionTaskDelegate {
 }
 
 enum ConnectionError: LocalizedError {
-    case authentication, missingCLI, startup, stopped
+    case authentication, missingCLI, managedInstall, startup, stopped
 
     var errorDescription: String? {
         switch self {
         case .authentication: "Heinzel did not accept the sign-in link. Copy a fresh link from the host and try again."
         case .missingCLI: "Install Heinzel with uvx heinzel@latest, or connect to an existing server."
+        case .managedInstall: "The installed Heinzel service is unavailable or in use. Close other Heinzel apps and try again. If the problem persists, run hz app install --flavor=swift."
         case .startup: "The local Heinzel service could not start. Check that hz ui serve runs in Terminal."
         case .stopped: "The local Heinzel service stopped. Start it again to return to the workspace."
         }

@@ -18,8 +18,8 @@ System audio uses the system ScreenCaptureKit picker on macOS and on iOS/iPadOS 
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
-Use `apple/scripts/association-file APPLICATION_IDENTIFIER_PREFIX` to generate the
-JSON for `https://heinzel.team/.well-known/apple-app-site-association`. Serve the
+Use `apple/scripts/association-file APPLICATION_IDENTIFIER_PREFIX` to fill in the
+checked-in `apple/distribution/apple-app-site-association` template and generate the JSON for `https://heinzel.team/.well-known/apple-app-site-association`. Serve the
 file over HTTPS without redirects and deploy `docs/open/index.html` at
 `https://heinzel.team/open/`. Check that Messages opens the signed app from a new
 installation. The fallback page reads the workspace address from the URL
