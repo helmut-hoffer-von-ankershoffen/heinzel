@@ -1244,4 +1244,4 @@ def counts_as_work(method: str, path: str) -> bool:
     """Whether a request to the web head's API changes state and so holds off an update while it runs."""
     if method in {"GET", "HEAD", "OPTIONS"}:
         return False
-    return not path.startswith((f"/api{AUTO_UPDATE_PATH}", "/mcp"))  # an agent's MCP stream may stay open for long
+    return not path.startswith(f"/api{AUTO_UPDATE_PATH}")

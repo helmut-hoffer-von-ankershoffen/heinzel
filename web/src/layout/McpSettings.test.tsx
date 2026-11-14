@@ -55,3 +55,18 @@ it("switches MCP on, makes a token shown once with copy buttons, and revokes it"
   await user.click(within(dialog).getByRole("button", { name: "Revoke token claude-code" }));
   await waitFor(() => expect(within(dialog).getByText(/No tokens yet/)).toBeInTheDocument());
 });
+
+it("says why the switch or a token was refused", async () => {
+  mockApi({
+    ...shell,
+    "/api/_web/mcp": async (request: Request) =>
+      request.method === "PUT"
+        ? { status: 403, body: { error: "hz.mcp_http is controlled by the environment" } }
+        : { enabled: false, tokens: [] },
+  });
+  const user = userEvent.setup();
+  renderAt("/doctor?settings=mcp");
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await user.click(await within(dialog).findByRole("switch", { name: "Serve MCP to other agents" }));
+  expect(await within(dialog).findByText("hz.mcp_http is controlled by the environment")).toBeInTheDocument();
+});

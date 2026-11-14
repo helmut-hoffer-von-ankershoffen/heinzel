@@ -72,7 +72,7 @@ class McpEndpoint:
         self._clock = clock
         self._read_at = float("-inf")
         self._on = False
-        self._lock: asyncio.Lock | None = None
+        self._lock = asyncio.Lock()
         self._app: ASGIApp | None = None
         self._off: asyncio.Event | None = None
         self._holder: asyncio.Task[None] | None = None
@@ -93,8 +93,11 @@ class McpEndpoint:
         """Answer one request: 404 while off, else the MCP app's answer."""
         if scope["type"] != "http":
             return
-        if not self.is_on() or scope["path"] != PATH or self._stopping.stopped:
-            await self._close()
+        if not self.is_on() or self._stopping.stopped:
+            await self._close()  # only the switch ends the open sessions, never a request's path
+            await JSONResponse({"error": "Not found."}, status_code=NOT_FOUND)(scope, receive, send)
+            return
+        if scope["path"] != PATH:
             await JSONResponse({"error": "Not found."}, status_code=NOT_FOUND)(scope, receive, send)
             return
         app = await self._running()
@@ -102,17 +105,16 @@ class McpEndpoint:
 
     async def _close(self) -> None:
         """End the open sessions once the switch went off, so the next switch-on builds a fresh head."""
-        if self._holder is None:
-            return
-        if self._off is not None:
-            self._off.set()
-        holder, self._holder, self._app, self._off = self._holder, None, None, None
-        with contextlib.suppress(Exception):
-            await holder
+        async with self._lock:
+            if self._holder is None:
+                return
+            if self._off is not None:
+                self._off.set()
+            holder, self._holder, self._app, self._off = self._holder, None, None, None
+            with contextlib.suppress(Exception):
+                await holder
 
     async def _running(self) -> ASGIApp:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
         async with self._lock:
             if self._app is not None:
                 return self._app

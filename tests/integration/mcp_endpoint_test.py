@@ -4,6 +4,7 @@ The configuration is a real one in a temporary directory, so the switch is the s
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from heinzel.heads import web
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.heads.cli import build
+from heinzel.heads.web._devices import Devices
 from heinzel.kernel import Config
 
 pytestmark = pytest.mark.integration
@@ -45,13 +47,23 @@ def kernel(make_kernel, tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def tokens(tmp_path) -> McpTokens:
-    return McpTokens(tmp_path / "mcp")
+def now() -> list[datetime]:
+    return [datetime.now(UTC)]
 
 
 @pytest.fixture
-def client(kernel, tokens):
-    app = web.build(kernel, port=PORT, token=SESSION, static=None, mcp_tokens=tokens)
+def tokens(tmp_path, now) -> McpTokens:
+    return McpTokens(tmp_path / "mcp", clock=lambda: now[0])
+
+
+@pytest.fixture
+def devices(tmp_path) -> Devices:
+    return Devices(tmp_path / "web")
+
+
+@pytest.fixture
+def client(kernel, tokens, devices):
+    app = web.build(kernel, port=PORT, token=SESSION, static=None, mcp_tokens=tokens, devices=devices)
     with TestClient(app, base_url=BASE) as client:
         yield client
 
@@ -134,3 +146,76 @@ def test_the_cli_switch_is_the_same_setting_the_page_shows(kernel, client):
     stopped = runner.invoke(build(kernel), ["system", "serve", "mcp-stop", "--json"])
     assert json.loads(stopped.output)["enabled"] is False
     assert client.get("/api/_web/mcp", headers=APP).json()["enabled"] is False
+
+
+def sse(answer) -> dict:
+    """The JSON-RPC message of a streamable-HTTP answer, plain or as one event."""
+    text = answer.text
+    data = [line[5:].strip() for line in text.splitlines() if line.startswith("data:")]
+    return json.loads(data[-1] if data else text)
+
+
+def session(client, token: str) -> dict[str, str]:
+    """Initialize and return the headers of the open MCP session."""
+    answer = initialize(client, token)
+    assert answer.status_code == 200
+    headers = {
+        **ACCEPT,
+        "Authorization": f"Bearer {token}",
+        "Mcp-Session-Id": answer.headers["mcp-session-id"],
+        "MCP-Protocol-Version": sse(answer)["result"]["protocolVersion"],
+    }
+    client.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=headers)
+    return headers
+
+
+def call(client, headers: dict[str, str], tool: str, arguments: dict) -> dict:
+    body = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool, "arguments": arguments}}
+    return sse(client.post("/mcp", json=body, headers=headers))["result"]
+
+
+def test_a_read_token_is_refused_a_tool_that_changes_things(client, tokens):
+    switch(client, on=True)
+    _, token = tokens.create("codex", "read")
+    headers = session(client, token)
+    result = call(client, headers, "system_config_set", {"key": "hz.mcp_http", "value": "false"})
+    assert result["isError"] is True
+    assert "may only read" in json.dumps(result)
+    assert client.get("/api/_web/mcp", headers=APP).json()["enabled"] is True
+
+
+def test_expired_revoked_and_device_tokens_are_refused(client, tokens, devices, now):
+    switch(client, on=True)
+    record, revoked = tokens.create("codex", "write")
+    tokens.revoke(record.id)
+    _, shortlived = tokens.create("codex", "write", timedelta(days=1))
+    _, paired = devices.pair("a browser")
+    assert initialize(client, shortlived).status_code == 200
+    now[0] += timedelta(days=2)
+    assert initialize(client, shortlived).status_code == 401
+    assert initialize(client, revoked).status_code == 401
+    assert initialize(client, paired).status_code == 401
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_a_foreign_host_origin_or_site_is_refused_even_with_a_valid_token(client, tokens, method):
+    switch(client, on=True)
+    _, token = tokens.create("codex", "write")
+    good = {**ACCEPT, "Authorization": f"Bearer {token}"}
+    for extra in (
+        {"Host": "evil.example"},
+        {"Origin": "https://evil.example"},
+        {"Sec-Fetch-Site": "cross-site"},
+    ):
+        answer = client.request(method, "/mcp", json=HELLO if method == "POST" else None, headers={**good, **extra})
+        assert answer.status_code == 403, (method, extra, answer.status_code)
+
+
+def test_an_unauthenticated_request_below_mcp_never_ends_an_open_session(client, tokens):
+    switch(client, on=True)
+    _, token = tokens.create("codex", "write")
+    headers = session(client, token)
+    assert client.get("/mcp/x").status_code == 404
+    assert client.post("/mcp/x", json={}).status_code == 404
+    result = call(client, headers, "system_info", {})
+    assert not result.get("isError")
