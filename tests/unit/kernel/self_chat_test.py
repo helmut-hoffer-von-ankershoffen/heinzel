@@ -186,3 +186,10 @@ def test_a_self_only_adapter_builds_without_channel_methods(make_kernel):
     kernel = _kernel(make_kernel, SelfOnly)
     _adapter, instance = kernel._capabilities.instance("chat", "acmechat")
     assert isinstance(instance, SelfOnly)
+
+
+def test_the_self_only_dummy_passes_the_conformance_check():
+    from heinzel.testing import assert_adapter
+
+    assert_adapter(SelfOnly, "chat", modes={"read", "write"})
+    assert_adapter(ChannelsOnly, "chat", modes={"read", "write"})

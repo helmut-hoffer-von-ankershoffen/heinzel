@@ -197,22 +197,25 @@ def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("re
     """Assert `adapter` (a class or an instance) implements `capability`'s protocol in `modes` (ADR 0028).
 
     The kernel checks the same when it registers an adapter; this runs it in a plugin's own unit tests, and also
-    compares each method's parameters and their defaults with the protocol's, which the kernel does not.
+    compares each method's parameters and their defaults with the protocol's, which the kernel does not. Methods the
+    adapter declares unsupported (ADR 0159), and optional ones it doesn't define (ADR 0160), are skipped.
 
     Raises:
         AssertionError: Naming every method of those modes the adapter lacks or declares with other parameters.
         ValueError: If `capability` is not one the core defines.
     """
     from heinzel.kernel import CAPABILITIES  # noqa: PLC0415 - see the module comment
+    from heinzel.kernel._capabilities import declared_unsupported  # noqa: PLC0415 - see the module comment
 
     spec = CAPABILITIES.get(capability)
     if spec is None:
         msg = f"Unknown capability {capability!r}; known: {', '.join(sorted(CAPABILITIES))}"
         raise ValueError(msg)
     served = set(modes)
+    unsupported = declared_unsupported(adapter, spec)
     problems: list[str] = []
     for name, mode in spec.methods.items():
-        if mode not in served:
+        if mode not in served or name in unsupported:
             continue
         method = getattr(adapter, name, None)
         if not callable(method):
