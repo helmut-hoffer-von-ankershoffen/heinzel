@@ -1,43 +1,95 @@
-import { randomUUID } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
 
-/** A guest has no product preload, session, headers, cookies or native permissions. */
-export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, enabled, createNetwork = createGuestNetwork }) {
+/** The one persistent partition for websites: never the product's session, so no hz cookie or token is in it. */
+export const BROWSER_PARTITION = "persist:hz-browser";
+// Device APIs a site may ask for; the person then picks the device in a chooser. Camera, microphone, screen stay refused.
+const DEVICE_PERMISSIONS = new Set(["hid", "serial", "usb"]);
+const MAX_DEVICES = 8;
+// A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
+const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
+const PASSKEY_PAGE = /\/challenge\/pk(?:\/|$)|passkey|webauthn/i;
+
+/** Label and id of one device from any chooser event, or null when Electron sent no usable entry. */
+function deviceChoice(device) {
+  const id = device?.deviceId ?? device?.portId;
+  if (typeof id !== "string" || !id) return null;
+  const label = [device.productName ?? device.name ?? device.deviceName ?? device.displayName ?? device.portName,
+    device.manufacturerName].filter((part) => typeof part === "string" && part.trim()).join(" · ");
+  return { id, label: (label || id).slice(0, 80) };
+}
+
+/**
+ * A guest has no product preload, session, headers, cookies or native permissions. All guests share one persistent
+ * partition, so sign-ins survive closing the panel and restarting the app until the person clears browsing data.
+ * `chooseDevice({ window, host, devices })` shows the person a native chooser and resolves to a device id or null.
+ */
+export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, enabled,
+  createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => {} }) {
   const guests = new Map();
   const opening = new Map();
   const generations = new WeakMap();
-  // One in-memory partition per product window, wiped on every close, so reopening never grows memory (Electron
-  // cannot free a partition). The next guest waits for the wipe, so no state crosses from one browsing session.
-  const partitions = new WeakMap();
-  const wipes = new WeakMap();
+  let partition = null;
+  let shared = null;
   let stopped = false;
+  // The guest whose chooser this is: only a focused window shows its guest, and a site asks from a click in it.
+  const promptOwner = () => [...guests].find(([window]) => !window.isDestroyed() && window.isFocused());
+  const pick = async (list, notice) => {
+    const owner = promptOwner();
+    const devices = (Array.isArray(list) ? list : []).map(deviceChoice).filter(Boolean).slice(0, MAX_DEVICES);
+    if (!owner) return null;
+    const [window, guest] = owner;
+    if (!devices.length) { guest.notice = notice; return null; }
+    let host = "";
+    try { host = new URL(guest.view.webContents.getURL()).host; } catch { /* no location yet */ }
+    try {
+      const id = await chooseDevice({ window, host, devices });
+      return devices.some((device) => device.id === id) ? id : null;
+    } catch { return null; }
+  };
   // Electron cancels a HID/USB chooser with no device and a serial chooser with an empty port id.
-  const refuseDevice = (cancel) => (event, ...args) => {
+  const chooser = (listOf, cancel) => (event, ...args) => {
     event.preventDefault();
     const callback = args.at(-1);
-    if (typeof callback === "function") cancel === undefined ? callback() : callback(cancel);
+    if (typeof callback !== "function") return;
+    void pick(listOf(args), "no-device").then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
   };
-  const partitionFor = (window) => {
-    const existing = partitions.get(window);
-    if (existing) return existing;
-    const partition = createSession(`hz-browser-${randomUUID()}`, { cache: false });
-    partition.setPermissionCheckHandler(() => false);
+  const partitionFor = () => {
+    if (partition) return partition;
+    partition = createSession(BROWSER_PARTITION);
+    partition.setPermissionCheckHandler((_contents, permission) => DEVICE_PERMISSIONS.has(permission));
     partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    // Device choosers would otherwise pick the first device; screen sharing gets no source.
-    partition.setDevicePermissionHandler(() => false);
-    partition.setBluetoothPairingHandler?.((_details, callback) => callback({ confirmed: false }));
+    // No device permission handler: only a device the person picked in a chooser is granted.
+    partition.setBluetoothPairingHandler?.((details, callback) => {
+      if (details?.pairingKind !== "confirm" && details?.pairingKind !== "confirmPin") { callback({ confirmed: false }); return; }
+      const label = details.pairingKind === "confirmPin" ? `Pair with PIN ${String(details.pin ?? "").slice(0, 16)}` : "Pair";
+      void pick([{ deviceId: "pair", name: label }], "no-device").then((id) => callback({ confirmed: id === "pair" }));
+    });
     partition.setDisplayMediaRequestHandler((_request, callback) => callback({}));
-    partition.on("select-hid-device", refuseDevice());
-    partition.on("select-usb-device", refuseDevice());
-    partition.on("select-serial-port", refuseDevice(""));
+    partition.on("select-hid-device", chooser(([details]) => details?.deviceList));
+    partition.on("select-usb-device", chooser(([details]) => details?.deviceList));
+    partition.on("select-serial-port", chooser(([portList]) => portList, ""));
     partition.on("will-download", (event) => event.preventDefault());
     partition.webRequest.onBeforeRequest((details, callback) => {
       try { browserUrl(details.url, connection()?.origin); callback({ cancel: false }); }
       catch { callback({ cancel: true }); }
     });
-    partitions.set(window, partition);
     return partition;
+  };
+  // One CONNECT broker serves the shared partition while any guest exists; the last guest's close ends it.
+  const networkFor = (session) => {
+    shared ??= (async () => {
+      const network = await createNetwork();
+      try { await network.configure(session); } catch (error) { network.close(); throw error; }
+      return network;
+    })().catch((error) => { shared = null; throw error; });
+    return shared;
+  };
+  const releaseNetwork = () => {
+    if (guests.size || opening.size || !shared) return;
+    const ending = shared;
+    shared = null;
+    void ending.then((network) => network.close(), () => {});
   };
   const close = (window) => {
     generations.set(window, (generations.get(window) ?? 0) + 1);
@@ -45,22 +97,26 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     if (!guest) return;
     guests.delete(window);
     guest.detach();
-    guest.network.close();
     if (!window.isDestroyed()) window.contentView.removeChildView(guest.view);
     if (!guest.view.webContents.isDestroyed()) guest.view.webContents.close({ waitForBeforeUnload: false });
-    // A non-persistent partition is never shared with the product; closing wipes it before any reuse.
-    wipes.set(window, Promise.allSettled([guest.session.clearStorageData(), guest.session.clearCache?.(),
-      guest.session.clearAuthCache?.()]));
+    // The partition keeps sign-ins; only "Clear browsing data" empties it.
+    releaseNetwork();
+  };
+  const clear = async () => {
+    if (!partition) return;
+    await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(), partition.clearAuthCache?.()]);
+    for (const guest of guests.values()) {
+      guest.notice = null;
+      if (guest.view.webContents.getURL()) guest.view.webContents.reload();
+    }
   };
   const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
   const open = async (window) => {
-    await wipes.get(window);
-    const partition = partitionFor(window);
-    const network = await createNetwork();
-    let view;
+    const partition = partitionFor();
+    let view, network;
     try {
-      await network.configure(partition);
-      if (stopped || window.isDestroyed()) { network.close(); throw new Error("Browser surface is closed."); }
+      network = await networkFor(partition);
+      if (stopped || window.isDestroyed()) throw new Error("Browser surface is closed.");
       view = createView({ webPreferences: {
         session: partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
