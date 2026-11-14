@@ -62,7 +62,6 @@ import threading
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import IO, Any, Literal, Self, cast
 
 import psutil
@@ -88,6 +87,9 @@ Mode = Literal["read", "write"]
 
 GROUP_GONE = 2.0
 """Seconds `stop()` waits for a killed launcher group to be gone."""
+
+_spawning = threading.Lock()
+"""Held while a launcher starts, so the one new child process is this connector's."""
 
 _groups: set[int] = set()
 """Process groups of running launchers, so two connectors with the same command never claim one group."""
@@ -373,6 +375,7 @@ class McpConnector:
         self.max_output = max_output
         self.overflow = overflow
         self._group: int | None = None
+        self._before: set[int] | None = None
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -433,9 +436,14 @@ class McpConnector:
             self._loop, self._thread = loop, thread
             self._finished.clear()
             ready: concurrent.futures.Future[list[str]] = concurrent.futures.Future()
-            self._runner = asyncio.run_coroutine_threadsafe(self._serve(ready), loop)
             try:
-                offered = ready.result(timeout=self.start_timeout)
+                with _spawning:
+                    self._before = self._children()
+                    self._runner = asyncio.run_coroutine_threadsafe(self._serve(ready), loop)
+                    try:
+                        offered = ready.result(timeout=self.start_timeout)
+                    finally:  # also when it fails to start: what did start is killed in _shutdown
+                        self._group = self._find_group()
             except concurrent.futures.TimeoutError:
                 hint = self._hint()
                 self._shutdown(graceful=False)
@@ -447,7 +455,6 @@ class McpConnector:
                 detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
                 msg = f"The MCP server {self._label} didn't start ({detail}).{hint}"
                 raise McpConnectorError(msg) from exc
-            self._group = self._find_group()
             resolved: dict[str, str] = {}
             missing: list[str] = []
             for tool in self._tools.values():
@@ -583,22 +590,34 @@ class McpConnector:
             return " Its last line on stderr looks like a credential, so it isn't shown."
         return f" It said: {clean_text(lines[-1])[:DETAIL_LIMIT]}"
 
-    def _find_group(self) -> int | None:
-        """The launcher's process group: the MCP client starts it as a session leader, so its pid is the group's id.
+    def _children(self) -> set[int] | None:
+        """This process's children now, taken before a launcher starts so the new one is told apart without argv.
 
-        Found among this process's children by its arguments, so `_shutdown` can kill what the client's own shutdown
-        left behind, such as a grandchild of a launcher killed while the client was still cleaning up.
+        None for an in-process server, and where process groups don't exist.
         """
         if self._transport is not None or not hasattr(os, "killpg"):
             return None
+        with contextlib.suppress(psutil.Error):
+            return {child.pid for child in psutil.Process().children()}
+        return None
+
+    def _find_group(self) -> int | None:
+        """The launcher's process group: the MCP client starts it as a session leader, so its pid is the group's id.
+
+        It is the child that appeared since `start` began and leads its own group. Not matched by its arguments: a
+        launcher run through a `#!` line shows its interpreter there. Starts are serialised (`_spawning`), so no other
+        connector's launcher appears meanwhile. `_shutdown` kills what the client's own shutdown left of the group.
+        """
+        if self._before is None:
+            return None
         own = os.getpgrp()
-        for child in psutil.Process().children():
-            with contextlib.suppress(psutil.Error, OSError):
-                arguments = child.cmdline()
-                same = arguments[1:] == self._command[1:] and Path(arguments[0]).name == Path(self._command[0]).name
-                if same and child.pid not in _groups and os.getpgid(child.pid) == child.pid != own:
-                    _groups.add(child.pid)
-                    return child.pid
+        with contextlib.suppress(psutil.Error):
+            for child in psutil.Process().children():
+                with contextlib.suppress(psutil.Error, OSError):
+                    fresh = child.pid not in self._before and child.pid not in _groups
+                    if fresh and os.getpgid(child.pid) == child.pid != own:
+                        _groups.add(child.pid)
+                        return child.pid
         return None
 
     def _kill_group(self) -> None:
@@ -622,8 +641,6 @@ class McpConnector:
         short by the cancel.
         """
         loop, thread, runner, event = self._loop, self._thread, self._runner, self._stop_event
-        if self._group is None and runner is not None:
-            self._group = self._find_group()
         self._client = None
         self._resolved = {}
         if loop is not None and runner is not None:
@@ -633,16 +650,20 @@ class McpConnector:
                 # Cancelling runs the MCP client's own shutdown: close stdin, then terminate and kill the process tree.
                 runner.cancel()
                 self._finished.wait(self.stop_timeout + KILL_GRACE)
+        # Before the loop stops: the event loop's child watcher still gets to see the launcher exit.
+        self._kill_group()
         if loop is not None:
+            with contextlib.suppress(RuntimeError, concurrent.futures.TimeoutError):  # closed, or stuck
+                asyncio.run_coroutine_threadsafe(asyncio.sleep(0.05), loop).result(timeout=1)
             loop.call_soon_threadsafe(loop.stop)
             if thread is not None:
                 thread.join(timeout=self.stop_timeout)
             if thread is None or not thread.is_alive():
                 loop.close()
-        self._kill_group()
         if self._stderr is not None:
             self._stderr.close()
         self._loop = self._thread = self._runner = self._stop_event = self._stderr = None
+        self._before = None
 
 
 def _timed_out(exc: Exception) -> bool:
