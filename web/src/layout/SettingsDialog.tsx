@@ -273,12 +273,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
               </>
             )}
             {current === "ai" && <AiAccessSetting />}
-            {current === "notifications" && (
-              <>
-                <NotificationSettings />
-                <ChatChannelSettings />
-              </>
-            )}
+            {current === "notifications" && <NotificationSettings />}
             {current === "web-server" && <WebServerSettings />}
             {current === "daemon" && (
               <>
@@ -297,6 +292,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 />
               </div>
             )}
+            {current === "notifications" && <ChatChannelSettings />}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
               <>

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { ONE_CONNECTION } from "./fetch-once.mjs";
 
 const [url, shots] = process.argv.slice(2);
 if (!url || !shots) throw new Error("Usage: node e2e/self-chat.mjs URL SCREENSHOT_DIR");
@@ -38,16 +39,24 @@ try {
   await page.screenshot({ path: join(shots, "self-chat-1-offered.png") });
 
   await notices.click();
-  await page.waitForFunction(() => document.querySelector('[role="switch"][aria-checked="true"]') !== null, undefined, {
-    timeout: 15_000,
-  });
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[role="switch"][aria-checked="true"]')].some(
+        (element) =>
+          document.getElementById(element.getAttribute("aria-labelledby") ?? "")?.textContent ===
+          "Notices also in chat",
+      ),
+    undefined,
+    { timeout: 15_000 },
+  );
   await section.screenshot({ path: join(shots, "self-chat-2-notices-on.png") });
 
-  // A test notice without a native pop-up: it is recorded, and the switch sends it to the owner's messages too.
+  // A test notice without a native pop-up: it is recorded, and the switch sends it to the owner's messages too. With
+  // no pop-up anywhere in this isolated profile the operation answers 503 (its exit code 1), the notice recorded.
   const tested = await context.request.post(new URL("/api/system/notify/test", url).href, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { ...ONE_CONNECTION, Authorization: `Bearer ${token}` },
   });
-  assert.ok(tested.ok(), `the test notice is recorded: ${tested.status()}`);
+  assert.ok([200, 503].includes(tested.status()), `the test notice is recorded: ${tested.status()}`);
   const deadline = Date.now() + 20_000;
   while (!(existsSync(inbox) && readFileSync(inbox, "utf-8").trim()) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
