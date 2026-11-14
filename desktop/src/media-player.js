@@ -11,6 +11,9 @@ export const PLAYER_ORIGIN = "https://www.youtube.com";
 const VIDEO = /^[A-Za-z0-9_-]{11}$/;
 const STATES = new Set([-1, 0, 1, 2, 3, 5]);
 const PLAYER = 'document.getElementById("movie_player")';
+const SCRIPT_TIMEOUT_MS = 2000;
+// EU visitors are sent to YouTube's consent page before the embed; it is the one top-level detour allowed.
+const CONSENT_ORIGIN = "https://consent.youtube.com";
 
 /** The embed address for one video id; nothing else from the renderer reaches the URL. */
 export function playerUrl(video) {
@@ -63,11 +66,18 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
   const open = async (window, video) => {
     const url = playerUrl(video);
     const generation = generations.get(window) ?? 0;
-    const { session, network, release } = await lease();
-    if (stopped || window.isDestroyed() || (generations.get(window) ?? 0) !== generation) {
+    const { session, network, release, attach } = await lease();
+    try {
+      return build(window, video, url, generation, { session, network, release, attach });
+    } catch (error) {
       release();
-      throw new Error("Player surface is closed.");
+      throw error;
     }
+  };
+  const build = (window, video, url, generation, { session, network, release, attach }) => {
+    const product = connection();
+    if (!product || stopped || window.isDestroyed() || (generations.get(window) ?? 0) !== generation)
+      throw new Error("Player surface is closed.");
     const view = createView({ webPreferences: {
       session, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false,
       webviewTag: false, navigateOnDragDrop: false, safeDialogs: true, disableDialogs: true,
@@ -79,11 +89,13 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     contents.on("login", (event, _details, info, callback) => { event.preventDefault(); network.authenticate(info, callback); });
     contents.on("will-prevent-unload", (event) => event.preventDefault());
     contents.on("will-attach-webview", (event) => event.preventDefault());
+    // Electron would pick the first Bluetooth device itself; the player never needs one.
+    contents.on("select-bluetooth-device", (event, _devices, callback) => { event.preventDefault(); callback(""); });
     // The embed's own links ("Learn more", "Sign in", "Watch on YouTube") open in the default browser, only right
     // after the person's input in the player, classified and rate limited like every product link.
     const activation = createUserActivation({ now });
     grantOnNativeInput(contents, activation);
-    const opener = createExternalOpener({ connection: connection(), openExternal, now });
+    const opener = createExternalOpener({ connection: product, openExternal, now });
     const outside = (target) => {
       if (classifyUiLink(target, connection()).kind === "external" && activation.consume()) opener(target);
     };
@@ -91,7 +103,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     contents.on("will-navigate", (event) => {
       try {
         const next = new URL(event.url);
-        if (next.origin === PLAYER_ORIGIN && next.pathname === `/embed/${video}`) return;
+        if ((next.origin === PLAYER_ORIGIN && next.pathname === `/embed/${video}`) || next.origin === CONSENT_ORIGIN) return;
       } catch { /* not a URL */ }
       event.preventDefault();
       outside(event.url);
@@ -100,7 +112,14 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       try { browserUrl(event.url, connection()?.origin); } catch { event.preventDefault(); }
     };
     contents.on("will-frame-navigate", (event) => { if (!event.isMainFrame) guard(event); });
-    contents.on("will-redirect", guard);
+    contents.on("will-redirect", (event) => {
+      if (event.isMainFrame === false) { guard(event); return; }
+      try {
+        const next = new URL(event.url);
+        if ((next.origin === PLAYER_ORIGIN && next.pathname === `/embed/${video}`) || next.origin === CONSENT_ORIGIN) return;
+      } catch { /* not a URL */ }
+      event.preventDefault();
+    });
     contents.on("did-stop-loading", () => { if (player.status === "loading") player.status = "ready"; });
     contents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
       if (mainFrame && code !== -3) player.status = "unavailable";
@@ -120,8 +139,17 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     window.on("closed", onClosed);
     window.on("blur", onBlur);
     window.webContents.on("did-start-navigation", onNavigation);
-    // YouTube requires a referrer for embeds; it is the product's origin, as for the web head's frame.
-    void contents.loadURL(url, { httpReferrer: `${connection().origin}/` }).catch(() => { player.status = "unavailable"; });
+    // YouTube requires a referrer for embeds; it is the product's origin, as the web head's frame sends today.
+    const load = () => {
+      if (contents.isDestroyed()) return;
+      player.status = "loading";
+      void contents.loadURL(url, { httpReferrer: `${product.origin}/` }).catch(() => { player.status = "unavailable"; });
+    };
+    attach({
+      blank: () => (contents.isDestroyed() ? Promise.resolve() : contents.loadURL("about:blank")),
+      restore: load,
+    });
+    load();
     return player;
   };
   // The script is built (and its value checked) before the page runs it; only the page's own failure is tolerated.
@@ -129,7 +157,12 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     const script = playerScript(action, value);
     const contents = player.view.webContents;
     if (contents.isDestroyed()) return null;
-    try { return await contents.executeJavaScript(script, true); } catch { return null; }
+    // Never a user activation for the page (no gesture), and never waiting on a stuck page.
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), SCRIPT_TIMEOUT_MS); });
+    try { return await Promise.race([contents.executeJavaScript(script, false), timeout]); }
+    catch { return null; }
+    finally { clearTimeout(timer); }
   };
   return {
     async handle(event, request) {

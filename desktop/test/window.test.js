@@ -81,6 +81,7 @@ function quitHarness(result, rejects = false) {
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
+    createMediaPlayer: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
     createPublicMediaHandler, stopWithReport, shouldRefresh, hideWindows, showWindows, quitLogLine,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),

@@ -78,8 +78,30 @@ test("a sign-in cookie set in the sidebar browser is visible to the player guest
   assert.equal(playerSession, browserSession);
   assert.equal(playerSession.cookies.get("SID"), "signed-in");
   assert.equal(f.sessions.length, 1);
+  // Clear takes the playing embed off YouTube before the wipe, then reloads it with its referrer.
+  const player = f.views[1].webContents;
+  const order = [];
+  player.loadURL = async (target, options) => { order.push(["player", target, options]); };
+  const wipe = playerSession.clearStorageData;
+  playerSession.clearStorageData = async () => { order.push(["wipe"]); await wipe(); };
   await f.browse({ action: "clear" });
+  assert.deepEqual(order, [["player", "about:blank", undefined], ["wipe"],
+    ["player", `${PLAYER_ORIGIN}/embed/${VIDEO}?playsinline=1&rel=0`, { httpReferrer: `${ORIGIN}/` }]]);
   assert.equal(playerSession.cookies.size, 0);
+});
+
+test("a failed open releases its lease, also when the product connection is gone", async () => {
+  const f = fixture();
+  let product = { origin: ORIGIN, token: "a".repeat(32) };
+  const player = createMediaPlayer({ windows: new WeakSet([f.owner]), fromWebContents: (contents) => (contents === f.sender ? f.owner : null),
+    connection: () => product, lease: () => f.browser.lease(), createView: () => { throw new Error("no view"); }, openExternal: async () => {} });
+  const handle = (request) => player.handle({ sender: f.sender, senderFrame: f.sender.mainFrame }, request);
+  await assert.rejects(handle({ action: "open", video: VIDEO }), /no view/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter(([name]) => name === "network-ready").length, 1);
+  assert.equal(f.calls.filter(([name]) => name === "network-close").length, 1);
+  product = null;
+  await assert.rejects(handle({ action: "open", video: VIDEO }));
 });
 
 test("one broker serves both guests and ends only after the last of them closes", async () => {
@@ -95,14 +117,15 @@ test("one broker serves both guests and ends only after the last of them closes"
   assert.equal(f.calls.filter(([name]) => name === "network-close").length, 1);
 });
 
-test("the bridge carries only play, pause, volume and state, as fixed scripts with a gesture", async () => {
+test("the bridge carries only play, pause, volume and state, as fixed scripts without a gesture", async () => {
   const f = fixture();
   await f.play({ action: "open", video: VIDEO });
   await f.play({ action: "play" });
   await f.play({ action: "volume", value: 35 });
   await f.play({ action: "pause" });
   const scripts = f.calls.filter(([name]) => name === "script").map(([, code, gesture]) => [code, gesture]);
-  assert.ok(scripts.every(([, gesture]) => gesture === true));
+  // No bridge call ever hands the page a user activation.
+  assert.ok(scripts.every(([, gesture]) => gesture === false));
   const commands = scripts.map(([code]) => code).filter((code) => !code.includes("getPlayerState"));
   assert.deepEqual(commands, [playerScript("play"), playerScript("volume", 35), playerScript("pause")]);
   assert.match(commands[1], /p\.setVolume\(35\)/);
@@ -141,10 +164,26 @@ test("embed links open in the default browser only after input in the player; it
   contents.emit("before-mouse-event", {}, { type: "mouseDown" });
   contents.popup({ url: "file:///etc/passwd" });
   let redirected = 0;
-  contents.emit("will-redirect", { url: "https://consent.youtube.com/m", preventDefault: () => { redirected++; } });
-  contents.emit("will-redirect", { url: "http://127.0.0.1:8737/", preventDefault: () => { redirected++; } });
+  const redirect = (url, isMainFrame = true) => contents.emit("will-redirect", { url, isMainFrame, preventDefault: () => { redirected++; } });
+  // The main frame may only reach the embed itself or YouTube's EU consent page.
+  redirect("https://consent.youtube.com/m?continue=x");
+  redirect(`${PLAYER_ORIGIN}/embed/${VIDEO}?x=1`);
+  assert.equal(redirected, 0);
+  redirect("https://ads.example.com/landing");
+  redirect(`${PLAYER_ORIGIN}/watch?v=${VIDEO}`);
+  redirect("http://127.0.0.1:8737/");
+  assert.equal(redirected, 3);
+  redirect("https://googleads.example.com/frame", false);
+  redirect("http://127.0.0.1:8737/", false);
   contents.emit("will-frame-navigate", { url: "https://192.168.1.2/", isMainFrame: false, preventDefault: () => { redirected++; } });
-  assert.equal(redirected, 2);
+  assert.equal(redirected, 5);
+  navigate("https://consent.youtube.com/save");
+  assert.equal(blocked, 2);
+  // Electron would choose the first Bluetooth device on its own: the player refuses.
+  let bluetooth = "unset", prevented = false;
+  contents.emit("select-bluetooth-device", { preventDefault: () => { prevented = true; } }, [{ deviceId: "b1" }], (id) => { bluetooth = id; });
+  assert.equal(prevented, true);
+  assert.equal(bluetooth, "");
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(f.opened, ["https://accounts.google.com/ServiceLogin"]);
   clock += 1;
@@ -179,4 +218,14 @@ test("the embed address takes only an 11-character video id", () => {
   for (const video of ["", "short", "abcdefghijk?x", "abcdefghij/", "../abcdefgh", 12345678901, null])
     assert.throws(() => playerUrl(video));
   assert.throws(() => playerScript("eval"));
+});
+
+test("a page that never answers a bridge call costs at most the timeout", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  await f.play({ action: "open", video: VIDEO });
+  f.views[0].webContents.executeJavaScript = () => new Promise(() => {});
+  const pending = f.play({ action: "pause" });
+  for (let i = 0; i < 2; i++) { await Promise.resolve(); t.mock.timers.tick(2000); await new Promise((resolve) => setImmediate(resolve)); }
+  assert.deepEqual(await pending, { status: "loading", ready: false, state: -1, error: false });
 });

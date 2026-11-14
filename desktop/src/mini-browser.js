@@ -77,6 +77,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   let shared = null;
   // Other guests on the website partition (the media player) hold a lease, so the broker outlives the panel.
   let leases = 0;
+  // Pages of leased guests: clear takes them off their sites too, then lets each restore itself.
+  const leasedPages = new Set();
   let stopped = false;
   // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
   const grants = new Set();
@@ -180,7 +182,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     await Promise.allSettled([...opening.values()]);
     grants.clear();
     const pages = [...guests.values()].map((guest) => [guest, guest.view.webContents.getURL()]);
-    await Promise.allSettled(pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")));
+    const others = [...leasedPages];
+    await Promise.allSettled([...pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")),
+      ...others.map((page) => page.blank())]);
     const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
       partition.clearAuthCache?.()]);
     const failed = results.some((result) => result.status === "rejected");
@@ -191,6 +195,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (url && !guest.view.webContents.isDestroyed())
         void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
     }
+    for (const page of others) if (leasedPages.has(page)) page.restore();
     if (failed) throw new Error("Browsing data could not be cleared.");
   };
   const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
@@ -367,10 +372,19 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       const session = partitionFor();
       leases += 1;
       let released = false;
-      const release = () => { if (!released) { released = true; leases -= 1; releaseNetwork(); } };
+      const pages = new Set();
+      const release = () => {
+        if (released) return;
+        released = true;
+        for (const page of pages) leasedPages.delete(page);
+        leases -= 1;
+        releaseNetwork();
+      };
+      // `attach({ blank, restore })`: how clear takes this guest's page off its site and brings it back.
+      const attach = (page) => { if (!released) { pages.add(page); leasedPages.add(page); } };
       try {
         const network = await networkFor(session);
-        return { session, network, release };
+        return { session, network, release, attach };
       } catch (error) { release(); throw error; }
     },
     closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },
