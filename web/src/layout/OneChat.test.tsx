@@ -185,7 +185,8 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    await user.click(await chat.findByRole("button", { name: "Close the chat" }));
+    const header = inside(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" }), ".chat-panel-header");
+    await user.click(within(header).getByRole("button", { name: "Close the chat" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument());
   });
 

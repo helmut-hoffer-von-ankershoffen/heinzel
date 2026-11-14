@@ -65,15 +65,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
   const oneChat = usePreviewFeature("one_chat");
-  const heinzels = useHeinzelSessions(oneChat);
   const [earlier, setEarlier] = useState(false);
-  const openHeinzel = (sessionId: string) =>
-    setParams((current) => {
-      const next = new URLSearchParams(current);
-      clearChatLink(next);
-      next.set("chat", sessionId);
-      return next;
-    });
   const controls: OneChat = {
     onCollapse,
     onEarlier: () => {
@@ -193,38 +185,13 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       />
     );
   }
-  const fallback = oneChat ? defaultHeinzel(heinzels.data?.sessions ?? [], rememberedHeinzel()) : null;
-  if (oneChat && !earlier) {
-    if (heinzels.isPending)
-      return (
-        <p role="status" className="p-3 text-sm text-muted-foreground">
-          {t("state.loading")}
-        </p>
-      );
-    if (heinzels.isError)
-      return (
-        <div role="alert" className="space-y-2 p-3 text-sm">
-          <p>{t("oneChat.loadError")}</p>
-          <Button type="button" variant="outline" onClick={() => void heinzels.refetch()}>
-            {t("oneChat.retry")}
-          </Button>
-        </div>
-      );
-    if (fallback) return <DurableSession key={fallback} sessionId={fallback} oneChat={controls} onClose={onCollapse} />;
-    return <FirstHeinzel onCreated={openHeinzel} onClose={onCollapse} />;
-  }
+  if (oneChat && !earlier) return <DefaultHeinzel controls={controls} />;
   return (
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => navigate(createDraftPath(params))} />
-        {oneChat && fallback && (
-          <Button type="button" variant="ghost" size="sm" data-pane-action onClick={() => setEarlier(false)}>
-            {t("oneChat.backTo", {
-              name: heinzels.data?.sessions?.find((item) => item.session_id === fallback)?.name ?? "",
-            })}
-          </Button>
-        )}
+        {oneChat && <BackToHeinzel onBack={() => setEarlier(false)} />}
         <Button
           variant="ghost"
           size="icon"
@@ -276,5 +243,56 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         />
       </div>
     </div>
+  );
+}
+
+/** The Heinzel the panel opens without a link (flag `one_chat`); with none yet, the first start names one. */
+function DefaultHeinzel({ controls }: { controls: OneChat }) {
+  const [, setParams] = useSearchParams();
+  const heinzels = useHeinzelSessions();
+  if (heinzels.isPending)
+    return (
+      <p role="status" className="p-3 text-sm text-muted-foreground">
+        {t("state.loading")}
+      </p>
+    );
+  if (heinzels.isError)
+    return (
+      <div role="alert" className="space-y-2 p-3 text-sm">
+        <p>{t("oneChat.loadError")}</p>
+        <Button type="button" variant="outline" onClick={() => void heinzels.refetch()}>
+          {t("oneChat.retry")}
+        </Button>
+      </div>
+    );
+  const fallback = defaultHeinzel(heinzels.data?.sessions ?? [], rememberedHeinzel());
+  if (fallback)
+    return <DurableSession key={fallback} sessionId={fallback} oneChat={controls} onClose={controls.onCollapse} />;
+  return (
+    <FirstHeinzel
+      onClose={controls.onCollapse}
+      onCreated={(sessionId) =>
+        setParams((current) => {
+          const next = new URLSearchParams(current);
+          clearChatLink(next);
+          next.set("chat", sessionId);
+          return next;
+        })
+      }
+    />
+  );
+}
+
+/** In the earlier general chats: the one way back to the default Heinzel. */
+function BackToHeinzel({ onBack }: { onBack: () => void }) {
+  const heinzels = useHeinzelSessions();
+  const sessions = heinzels.data?.sessions ?? [];
+  const id = defaultHeinzel(sessions, rememberedHeinzel());
+  const name = sessions.find((item) => item.session_id === id)?.name;
+  if (!name) return null;
+  return (
+    <Button type="button" variant="ghost" size="sm" data-pane-action onClick={onBack}>
+      {t("oneChat.backTo", { name })}
+    </Button>
   );
 }
