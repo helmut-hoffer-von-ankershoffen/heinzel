@@ -59,6 +59,15 @@ try {
   await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Search" }).click();
   await chat.getByRole("region", { name: "Search conversation" }).waitFor();
 
+  // Without AI access the message goes in but is not answered: the line under the bubble says so and offers Try again.
+  await chat.getByLabel("Message Helmi").fill("Good morning");
+  await chat.getByRole("button", { name: "Send" }).click();
+  const state = chat.locator('[data-message-state="not-answered"], [data-message-state="not-sent"]');
+  await state.waitFor({ timeout: 60_000 });
+  await state.getByRole("button", { name: "Try again" }).waitFor();
+  assert.equal(await chat.getByRole("button", { name: "Retry the same message" }).count(), 0, "no composer retry");
+  await accessible('[aria-label="Chat"] [data-message-state]');
+
   // The default Heinzel survives a reload without a link, and on a phone the same header and menus pass axe.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(url.href);

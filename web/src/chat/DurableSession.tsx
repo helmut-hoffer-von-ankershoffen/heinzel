@@ -27,6 +27,7 @@ import { ConversationSearch } from "@/chat/ConversationSearch";
 import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { HeinzelHeader } from "@/chat/HeinzelHeader";
+import { MessageState } from "@/chat/MessageState";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
 import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
@@ -368,6 +369,8 @@ function DurableSessionView({
       ? agentChatQuery.data
       : undefined;
   const agentChatUnavailable = agentChatId !== null && !agentChat;
+  // An uncertain turn (a usage limit after acceptance) is never a plain retry: it keeps its own notice (T2).
+  const uncertain = pending?.outcome === "subscription_usage_limit";
   const approvalQuery = useQuery({
     queryKey: scopedChatKey(approvalChatId ?? ""),
     queryFn: ({ signal }) => readScopedChat(approvalChatId ?? "", signal),
@@ -890,6 +893,7 @@ function DurableSessionView({
     </>
   );
   const heinzelName = query.data?.name ?? t("durable.title");
+  const retryBlocked = busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || uncertain;
   const opened = query.data?.session_id === sessionId;
   useEffect(() => {
     if (oneChat && opened) rememberHeinzel(sessionId);
@@ -1155,9 +1159,11 @@ function DurableSessionView({
                     {speakerLabel(speaker, heinzelName, message.role)}
                   </p>
                   <MessageText role={message.role} text={message.text} />
-                  {message.status && message.status !== "completed" && (
-                    <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
-                  )}
+                  {message.status &&
+                    message.status !== "completed" &&
+                    !(oneChat && own && (message.status === "pending" || message.id === pending?.request_id)) && (
+                      <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
+                    )}
                   {message.billing === "plan" && (
                     <p className="text-xs text-muted-foreground">Subscription usage · cost unknown</p>
                   )}
@@ -1165,6 +1171,16 @@ function DurableSessionView({
                     <p className="text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</p>
                   )}
                 </div>
+                {oneChat && own && message.id === pending?.request_id && !sending && !uncertain ? (
+                  <MessageState
+                    kind="not-answered"
+                    announce={error}
+                    onRetry={() => void send()}
+                    retryDisabled={retryBlocked}
+                  />
+                ) : oneChat && own && message.status === "pending" ? (
+                  <MessageState kind="queued" />
+                ) : null}
                 {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
                 {message.role === "assistant" &&
                   message.turn_id &&
@@ -1188,7 +1204,27 @@ function DurableSessionView({
             </div>
           );
         })}
-        {sending && !query.data?.messages?.some((message) => message.id === pending?.request_id) && (
+        {oneChat && pending && !query.data?.messages?.some((message) => message.id === pending.request_id) ? (
+          <div data-message-speaker="you" className="flex min-w-0 text-sm">
+            <div className="ml-auto min-w-0 max-w-[85%] space-y-1">
+              <div className="break-words rounded-lg bg-accent px-3 py-2 text-accent-foreground">
+                <p className="sr-only">{t("chat.you")}</p>
+                <p className="whitespace-pre-wrap">{pending.message}</p>
+              </div>
+              {sending ? (
+                <MessageState kind="sending" />
+              ) : uncertain ? null : (
+                <MessageState
+                  kind={pending.accepted ? "not-answered" : "not-sent"}
+                  announce={error}
+                  onRetry={() => void send()}
+                  retryDisabled={retryBlocked}
+                />
+              )}
+            </div>
+          </div>
+        ) : null}
+        {!oneChat && sending && !query.data?.messages?.some((message) => message.id === pending?.request_id) && (
           <div data-message-speaker="you" className="flex min-w-0 text-sm">
             <div className="ml-auto min-w-0 max-w-[85%] break-words rounded-lg bg-accent px-3 py-2 text-accent-foreground">
               <p className="sr-only">{t("chat.you")}</p>
@@ -1654,9 +1690,9 @@ function DurableSessionView({
             {t("durable.preservationFailed")}
           </p>
         ) : null}
-        {error && pending?.outcome !== "subscription_usage_limit" && (
-          <div className="space-y-1 text-sm" role="alert">
-            <p>{t("durable.failed")}</p>
+        {error && pending?.outcome !== "subscription_usage_limit" && (!oneChat || errorDetail || !pending) && (
+          <div className="space-y-1 text-sm" role={oneChat && pending ? undefined : "alert"}>
+            {!(oneChat && pending) && <p>{t("durable.failed")}</p>}
             {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
             {errorDetail && (
               <>
@@ -1721,7 +1757,8 @@ function DurableSessionView({
             rows={2}
             className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
             // A message on its way is shown in the conversation, not twice; it returns here if the turn fails.
-            value={sending ? "" : text}
+            // With one kind of chat a message that did not go through waits in its bubble, not here as well.
+            value={sending || (oneChat && pending !== null) ? "" : text}
             maxLength={4000}
             placeholder={t("durable.placeholder", { name: heinzelName })}
             disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
@@ -1737,16 +1774,17 @@ function DurableSessionView({
           <Button
             type="submit"
             disabled={
-              busy ||
-              storageError ||
-              recoveryBlocked ||
-              agentChatUnavailable ||
-              !query.data ||
-              pending?.outcome === "subscription_usage_limit" ||
+              retryBlocked ||
+              // With one kind of chat, a message that did not go through is retried under its bubble.
+              (oneChat && pending !== null) ||
               (!pending && !agentPending && !text.trim())
             }
           >
-            {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
+            {busy
+              ? t("durable.scheduleWorking")
+              : agentPending || (pending && !oneChat)
+                ? t("durable.retry")
+                : t("durable.send")}
           </Button>
         </div>
       </form>
