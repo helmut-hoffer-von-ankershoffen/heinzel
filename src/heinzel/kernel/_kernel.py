@@ -167,6 +167,8 @@ class Kernel:
             Prompter: Prompter(),
         }
         self._factory_instances: dict[type[Any], object] = {}
+        self._self_chat: tuple[tuple[str | None, tuple[int, ...]], tuple[Adapter, ...], SelfChat | None] | None = None
+        """The last `self_chat()` and the binding it was found for: settings show it often, the binding rarely moves."""
         """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
@@ -816,12 +818,23 @@ class Kernel:
 
         Trusted core code only, like `ai_models`: modules never get the adapter. None when no chat adapter is bound,
         it can't write, or it serves neither `notify_self` nor `ask_self`. A class-based adapter is built on first use.
+        Kept until the binding changes: a factory-built adapter is built once to see what it serves, not on every call.
 
         Raises:
             HeinzelError: If a factory-built adapter must be built to see what it serves, and can't be.
         """
         name = self._capabilities.bound("chat")
         providers = self._capabilities.adapters.get(("chat", name), []) if name is not None else []
+        # The adapters by identity (the cache holds them, so an id isn't reused): a rebuilt adapter is a new binding.
+        key = (name, tuple(map(id, providers)))
+        cached = self._self_chat
+        if cached is not None and cached[0] == key:
+            return cached[2]
+        channel = self._find_self_chat(name, providers)
+        self._self_chat = (key, tuple(providers), channel)
+        return channel
+
+    def _find_self_chat(self, name: str | None, providers: Sequence[Adapter]) -> SelfChat | None:
         if name is None or len(providers) != 1 or "write" not in providers[0].let.modes:
             return None
         chat = name

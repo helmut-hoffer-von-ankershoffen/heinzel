@@ -6,13 +6,16 @@ place, never a replacement: the app shows everything as before, and nothing sent
 
 `SelfChat` is hz's own trusted view of that adapter, as `Kernel.ai_models` is for the AI engine: it is not a requester's
 handle, and modules never get one. It bounds what goes out (one-line context, at most `SELF_OPTIONS` short options,
-text cleaned of control and invisible characters) and checks what comes back: an answer's option must be one that was
-offered, and every string is cleaned. What the user wrote is still untrusted input, like anything typed in a head.
+text cleaned of control and invisible characters, mention syntax made inert) and checks what comes back: an answer's
+option must be one that was offered, and every string is cleaned. What the user wrote is still untrusted input, like
+anything typed in a head.
 """
 
 import fcntl
 import json
+import logging
 import os
+import re
 import threading
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
@@ -21,6 +24,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from heinzel.kernel._errors import HeinzelError, NotSupportedError
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._protocols import (
     SELF_CONTEXT_LENGTH,
     SELF_OPTION_LENGTH,
@@ -45,9 +49,23 @@ STATE = "self-chat"
 MAX_LEDGER = 500
 """Most entries one part of a self-chat ledger keeps; the oldest go first."""
 MAX_TIMEOUT = 3600.0
+"""Longest a question waits in chat, in seconds."""
 NOTIFY_WAIT = 15.0
 """Longest hz waits for one `notify_self`: a chat that doesn't answer by then costs only that message."""
-"""Longest a question waits in chat, in seconds."""
+INERT_AT = "\uff20"
+"""The full-width at sign that stands in for `@` in mention syntax: it reads the same and pings nobody."""
+
+logger = logging.getLogger(__name__)
+
+_BROADCAST = re.compile(r"(?<![\w@])@(here|channel|everyone|all)\b", re.IGNORECASE)
+"""A broadcast written out, such as `@here`: chats that turn typed names into pings would page everyone."""
+_ESCAPED = re.compile(r"<[@!#](?:[^<>\s|]{1,80})(?:\|([^<>]{0,80}))?>")
+"""A mention in angle brackets, such as `<!here>` or `<@U123>`, with an optional `|label`."""
+_TAGGED = re.compile(r"<at\b[^<>]{0,80}>([^<>]{0,80})</at>", re.IGNORECASE)
+"""A mention as a markup tag around a name."""
+_BUSY: dict[str, threading.Thread] = {}
+"""The call still running per chat adapter, so a hung adapter holds at most one thread (see `bounded`)."""
+_BUSY_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +167,7 @@ def self_text(text: str) -> str:
     Raises:
         HeinzelError: If nothing is left to send.
     """
-    cleaned = clean_text(text).strip()
+    cleaned = inert_mentions(clean_text(text)).strip()
     if not cleaned:
         msg = "A self message needs text."
         raise HeinzelError(msg)
@@ -160,7 +178,7 @@ def self_context(context: str | None) -> str | None:
     """A context label on one line, at most `SELF_CONTEXT_LENGTH` characters; None when empty."""
     if context is None:
         return None
-    line = " ".join(clean_text(context).split())
+    line = " ".join(inert_mentions(clean_text(context)).split())
     return line[:SELF_CONTEXT_LENGTH] or None
 
 
@@ -173,7 +191,7 @@ def self_options(options: Sequence[str]) -> tuple[str, ...]:
     if isinstance(options, str):
         msg = "Options are a list of labels, not one string."
         raise HeinzelError(msg)
-    offered = tuple(" ".join(clean_text(option).split()) for option in options)
+    offered = tuple(" ".join(inert_mentions(clean_text(option)).split()) for option in options)
     if len(offered) > SELF_OPTIONS:
         msg = f"A question offers at most {SELF_OPTIONS} options."
         raise HeinzelError(msg)
@@ -181,6 +199,24 @@ def self_options(options: Sequence[str]) -> tuple[str, ...]:
         msg = f"Each option is a distinct label of 1 to {SELF_OPTION_LENGTH} characters."
         raise HeinzelError(msg)
     return offered
+
+
+def inert_mentions(text: str) -> str:
+    """`text` with mention syntax made inert, so even an adapter that doesn't neutralise it pings nobody.
+
+    A broadcast such as `@here`, a mention in angle brackets such as `<!channel>` or `<@U123>`, and a mention tag
+    around a name all become the name after a full-width at sign (`INERT_AT`): the reader still sees who was meant.
+    """
+
+    def escaped(match: re.Match[str]) -> str:
+        whole = match.group(0)
+        label = (match.group(1) or "").lstrip("@").strip()
+        target = label or whole[2:-1].split("^")[-1].lstrip("&")
+        return INERT_AT + target
+
+    text = _TAGGED.sub(lambda match: INERT_AT + match.group(1).strip(), text)
+    text = _ESCAPED.sub(escaped, text)
+    return _BROADCAST.sub(lambda match: INERT_AT + match.group(1), text)
 
 
 def _handle(thread: str | None) -> str | None:
@@ -248,8 +284,11 @@ class SelfChatLedger:
 def bounded(call: Callable[[], object], seconds: float, adapter: str) -> object:
     """`call()` in a worker thread, waited for at most `seconds`; a hung adapter keeps only that daemon thread.
 
+    At most one call per adapter is in flight: while an earlier one still runs, a new call is skipped, not started,
+    so an adapter that hangs for good holds one thread, not one per message.
+
     Raises:
-        HeinzelError: If it doesn't return in time.
+        HeinzelError: If an earlier call to `adapter` still runs, or this one doesn't return in time.
         Exception: Whatever `call` raised.
     """
     outcome: list[object] = []
@@ -260,9 +299,20 @@ def bounded(call: Callable[[], object], seconds: float, adapter: str) -> object:
             outcome.append(call())
         except BaseException as exc:  # noqa: BLE001 - handed to the caller below
             failure.append(exc)
+        finally:
+            with _BUSY_LOCK:
+                if _BUSY.get(adapter) is threading.current_thread():
+                    del _BUSY[adapter]
 
-    worker = threading.Thread(target=run, name="hz-self-chat-call", daemon=True)
-    worker.start()
+    with _BUSY_LOCK:
+        running = _BUSY.get(adapter)
+        if running is not None and running.is_alive():
+            log_event(logger, "self_chat.call.skipped", level=logging.WARNING, adapter=adapter, reason="busy")
+            msg = f"The chat adapter {adapter} is still busy with an earlier message; this one was skipped."
+            raise HeinzelError(msg)
+        worker = threading.Thread(target=run, name="hz-self-chat-call", daemon=True)
+        _BUSY[adapter] = worker
+        worker.start()
     worker.join(seconds)
     if failure:
         raise failure[0]
