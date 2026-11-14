@@ -1,7 +1,7 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
-import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import {
@@ -20,10 +20,10 @@ import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
 import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
+import { ChatSearch } from "@/chat/ChatSearch";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
-import { ConversationSearch } from "@/chat/ConversationSearch";
 import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { HeinzelHeader } from "@/chat/HeinzelHeader";
@@ -31,7 +31,6 @@ import { MessageState } from "@/chat/MessageState";
 import { DayHeading, MessageTime } from "@/chat/MessageTime";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
-import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { ReleaseDraftActivity, ReleaseDraftReviewDetails, releaseDraftReview } from "@/chat/ReleaseDraftActivity";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
@@ -75,6 +74,18 @@ function recordWriteDecision(key: string): boolean {
 }
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
+
+const REVIEW_LINKS = [
+  "agent-chat",
+  "approval-chat",
+  "approval-request",
+  "agent-open-request",
+  "contract-chat",
+  "schedule-chat",
+  "schedule-request",
+  "notification-chat",
+  "connected-chat",
+];
 
 function conversationJump(state: unknown, sessionId: string): string | null {
   if (!state || typeof state !== "object" || !("conversationJump" in state)) return null;
@@ -206,6 +217,14 @@ function DurableSessionView({
   const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
   const historyCursor = historyCursors.at(-1) ?? null;
   const [searchJump, setSearchJump] = useState(false);
+  // Each jump scrolls and focuses its message once; a refetch or poll never takes focus back from the composer.
+  const [jumpRequest, setJumpRequest] = useState(0);
+  const jumpDone = useRef(0);
+  const startJump = useCallback((cursor: string) => {
+    setSearchJump(true);
+    setJumpRequest((count) => count + 1);
+    setHistoryCursors([null, cursor]);
+  }, []);
   const searchTarget = useRef<HTMLDivElement>(null);
   const newest = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -216,10 +235,32 @@ function DurableSessionView({
   );
   useEffect(() => {
     if (!pendingSearchJump) return;
-    setSearchJump(true);
-    setHistoryCursors([null, pendingSearchJump]);
+    startJump(pendingSearchJump);
     setParams((current) => current, { replace: true, state: null });
-  }, [pendingSearchJump, setParams]);
+  }, [pendingSearchJump, setParams, startJump]);
+  // Escape or Close in the search field returns focus to More, which opened it.
+  const closeSearch = () => {
+    setSearchOpen(false);
+    document.querySelector<HTMLElement>(`button[aria-label="${t("oneChat.moreLabel")}"]`)?.focus();
+  };
+  // A result opens its message here, or that Heinzel's chat at the message; the review links of this chat are dropped.
+  const jumpTo = (target: string, cursor: string) => {
+    if (!isDurableSession(target)) return;
+    setSearchOpen(false);
+    if (target === sessionId) {
+      startJump(cursor);
+      return;
+    }
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        for (const key of REVIEW_LINKS) next.delete(key);
+        next.set("chat", target);
+        return next;
+      },
+      { state: { conversationJump: { sessionId: target, cursor } } },
+    );
+  };
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -247,9 +288,19 @@ function DurableSessionView({
     placeholderData: (previous) => previous,
   });
   useEffect(() => {
-    if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
+    if (
+      searchJump &&
+      jumpDone.current !== jumpRequest &&
+      query.data?.messages?.length &&
+      !query.isFetching &&
+      !query.isPlaceholderData &&
+      !query.isError
+    ) {
+      jumpDone.current = jumpRequest;
       searchTarget.current?.scrollIntoView?.({ block: "center" });
-  }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+      searchTarget.current?.focus({ preventScroll: true });
+    }
+  }, [searchJump, jumpRequest, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
   const dayStartAt = dayStarts((query.data?.messages ?? []).map((message) => message.at));
   const lastMessage = query.data?.messages?.at(-1);
   const newestKey = lastMessage ? `${lastMessage.seq}-${lastMessage.id}-${lastMessage.status}` : "";
@@ -909,47 +960,7 @@ function DurableSessionView({
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
         {searchOpen && query.data?.session_id === sessionId && (
-          <>
-            <ConversationSearch
-              key={`search:${sessionId}`}
-              sessionId={sessionId}
-              onJump={(cursor) => {
-                setSearchJump(true);
-                setHistoryCursors([null, cursor]);
-              }}
-            />
-            <OwnerConversationSearch
-              key={`owner-search:${sessionId}`}
-              onJump={(target, cursor) => {
-                if (!isDurableSession(target)) return;
-                if (target === sessionId) {
-                  setSearchJump(true);
-                  setHistoryCursors([null, cursor]);
-                  return;
-                }
-                setParams(
-                  (current) => {
-                    const next = new URLSearchParams(current);
-                    for (const key of [
-                      "agent-chat",
-                      "approval-chat",
-                      "approval-request",
-                      "agent-open-request",
-                      "contract-chat",
-                      "schedule-chat",
-                      "schedule-request",
-                      "notification-chat",
-                      "connected-chat",
-                    ])
-                      next.delete(key);
-                    next.set("chat", target);
-                    return next;
-                  },
-                  { state: { conversationJump: { sessionId: target, cursor } } },
-                );
-              }}
-            />
-          </>
+          <ChatSearch key={`search:${sessionId}`} sessionId={sessionId} onClose={closeSearch} onJump={jumpTo} />
         )}
         {(historyCursors.length > 1 || query.data?.has_more) && (
           <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
@@ -1116,16 +1127,21 @@ function DurableSessionView({
           const row = (
             <div
               key={`${message.seq}-${message.id}`}
+              id={`message-${message.seq}`}
               ref={found ? searchTarget : undefined}
+              tabIndex={found ? -1 : undefined}
               data-message-speaker={speaker}
-              className={cn("flex min-w-0 gap-2 text-sm", found && "rounded border border-primary p-2")}
+              className={cn(
+                "flex min-w-0 gap-2 text-sm",
+                found && "rounded border-2 border-primary p-2 outline-none ring-2 ring-primary/30",
+              )}
             >
               {speaker === "heinzel" && (
                 <HeinzelAvatar view="bust" {...look} className="mt-1 size-6 shrink-0 overflow-hidden" />
               )}
               {/* The person's own row sits on the right: its bubble takes the free space on its left. */}
               <div className={cn("min-w-0 space-y-1", own ? "ml-auto max-w-[85%]" : "flex-1")}>
-                {found && <span className="block text-xs font-medium">Search result</span>}
+                {found && <span className="block text-xs font-medium">{t("chatSearch.opened")}</span>}
                 {message.at ? (
                   <MessageTime at={message.at} own={own} tabbable={index === (query.data?.messages?.length ?? 0) - 1}>
                     {bubble}

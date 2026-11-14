@@ -111,7 +111,17 @@ try {
   const moreMenu = page.getByRole("dialog", { name: "More" });
   assert.equal(await moreMenu.getByRole("button", { name: "Earlier chats" }).count(), 0, "no earlier general chats");
   await moreMenu.getByRole("button", { name: "Search" }).click();
-  await chat.getByRole("region", { name: "Search conversation" }).waitFor();
+  const search = chat.getByRole("search", { name: "Search Heinzel chats" });
+  await search.waitFor();
+  // One field with a scope choice; Escape closes it and focus returns to More.
+  assert.ok(
+    await search.getByLabel("Search messages").evaluate((node) => node === document.activeElement),
+    "field focus",
+  );
+  await search.getByRole("radio", { name: "All Heinzels" }).waitFor({ state: "attached" });
+  await page.keyboard.press("Escape");
+  await search.waitFor({ state: "detached" });
+  assert.ok(await more.evaluate((node) => node === document.activeElement), "focus returns to More after search");
 
   // Without AI access the message goes in but is not answered: the line under the bubble says so and offers Try again.
   await chat.getByLabel("Message Helmi").fill("Good morning");
@@ -141,6 +151,32 @@ try {
   await accessible('[aria-label="Chat"] [data-message-time-row]');
   await page.keyboard.press("Escape");
   assert.equal(await chat.locator("[data-message-time]").count(), 0, "Escape hides the time");
+
+  // Search finds the sent message in this chat and in all Heinzels; a result jumps to it, focused and highlighted.
+  const openSearch = async () => {
+    await more.click();
+    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Search" }).click();
+    await search.waitFor();
+  };
+  await openSearch();
+  await search.getByLabel("Search messages").fill("Good morning");
+  await search.getByRole("button", { name: "Search", exact: true }).click();
+  await search.getByRole("status").filter({ hasText: "1 result" }).waitFor({ timeout: 30_000 });
+  await accessible('[role="search"]');
+  await search.getByRole("radio", { name: "All Heinzels" }).check({ force: true });
+  await search.getByLabel("Search messages").fill("Good morning");
+  await search.getByRole("button", { name: "Search", exact: true }).click();
+  const hit = search.getByRole("button", { name: /Helmi.*Good morning/ });
+  await hit.waitFor({ timeout: 30_000 });
+  const box44 = await hit.boundingBox();
+  assert.ok(box44 && box44.height >= 44, "the result is a 44 px target");
+  await hit.click();
+  await search.waitFor({ state: "detached" });
+  const jumped = chat.locator('[id^="message-"]', { hasText: "Search result" });
+  await jumped.waitFor();
+  assert.ok(await jumped.evaluate((node) => node === document.activeElement), "the jumped-to message has focus");
+  assert.match(await jumped.textContent(), /Good morning/, "the highlighted message is the sent one");
+  await accessible('[aria-label="Chat"]');
 
   // The default Heinzel survives a reload without a link, and on a phone the same header and menus pass axe.
   await page.setViewportSize({ width: 375, height: 812 });
