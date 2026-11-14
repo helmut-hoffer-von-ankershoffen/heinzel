@@ -180,6 +180,15 @@ export const useTestAiAccess = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
   });
 };
+/** `hz ai access test --all --name <name>`: one tiny request per model of a plugin, only when asked; the ones that don't
+ * answer come back marked unavailable in the listing. */
+export const useTestAllAiModels = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/test", { params: { query: { name, all: true } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
 /** Whether a Model API key is kept in the credentials store; never the key. */
 export const useAiKey = () =>
   useQuery({ queryKey: ["ai", "access", "key"], queryFn: () => unwrap(api.GET("/ai/access/key")) });

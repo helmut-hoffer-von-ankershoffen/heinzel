@@ -198,6 +198,68 @@ describe("AI access", () => {
     expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("bridge-slow");
   });
 
+  it("tests every model of a plugin only when asked, and marks the ones that didn't answer (ADR 0159)", async () => {
+    let tested = false;
+    const bridge = () =>
+      option("bridge", {
+        title: "Example bridge",
+        in_use: true,
+        status: "tested",
+        setup: "plugin-model",
+        core_engine: true,
+        models: ["bridge-fast", "bridge-slow", "bridge-retired"],
+        unavailable_models: tested ? ["bridge-slow", "bridge-retired"] : ["bridge-retired"],
+        model: "bridge-fast",
+      });
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": () => ({
+        selected: "bridge",
+        options: [option("claude-code"), bridge()],
+        uses: [],
+        next: [],
+      }),
+      "/api/ai/access/test": () => {
+        tested = true;
+        return {
+          name: "bridge",
+          ok: true,
+          detail: "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped",
+          input_tokens: 12,
+          output_tokens: 2,
+          models: [
+            { model: "bridge-fast", outcome: "answered", detail: "OK", duration_seconds: 0.4 },
+            { model: "bridge-slow", outcome: "unanswered", detail: "no answer within 15s", duration_seconds: 15 },
+            { model: "bridge-retired", outcome: "skipped", detail: "", duration_seconds: 0 },
+          ],
+          untested: [],
+        };
+      },
+    });
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Pick a model of Example bridge" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pick a model of Example bridge" });
+    expect(within(dialog).getByRole("radio", { name: "bridge-slow" })).not.toHaveTextContent("unavailable");
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Check every model" }));
+    expect(
+      await within(dialog).findByText(
+        "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped; 14 tokens",
+      ),
+    ).toBeInTheDocument();
+    const test = calls.find((call) => call.url.includes("/ai/access/test"));
+    expect(new URL(test?.url ?? "").searchParams.get("all")).toBe("true");
+    expect(new URL(test?.url ?? "").searchParams.get("name")).toBe("bridge");
+    expect(dialog.querySelector('[data-model-test="bridge-slow"]')).toHaveTextContent("didn't answer");
+    const picker = () => screen.getByRole("dialog", { name: "Pick a model of Example bridge" });
+    await waitFor(() =>
+      expect(within(picker()).getByRole("radio", { name: /^bridge-slow/ })).toHaveTextContent("unavailable"),
+    );
+    expect(within(picker()).getByRole("radio", { name: /^bridge-slow/ })).toBeEnabled();
+    await expectAccessible(container);
+  });
+
   it("sets the Model API up in a dialog, then tests it there with the result inline", async () => {
     const { calls } = accessApi();
     const user = userEvent.setup();

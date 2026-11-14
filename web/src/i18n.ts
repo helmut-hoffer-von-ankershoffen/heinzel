@@ -676,9 +676,17 @@ const en = {
   "aiAccess.models.intro":
     "{title} brings its own models. Heinzel runs chat, drafts and schedules on the one you pick.",
   "aiAccess.models.unavailable": "unavailable",
-  "aiAccess.models.unavailableNote": "It didn't answer when {title} last checked; you can still pick it.",
+  "aiAccess.models.unavailableNote": "It didn't answer when {title} or a test last checked; you can still pick it.",
   "aiAccess.models.none": "{title} offers no models right now.",
   "aiAccess.models.saved": "Saved. Test it to see it answer.",
+  "aiAccess.models.testAll": "Check every model",
+  "aiAccess.models.testingAll": "Checking each model…",
+  "aiAccess.models.testAllNote":
+    "Heinzel asks each model one tiny question, at most 24, and marks the ones that don't answer unavailable; a few tokens each.",
+  "aiAccess.models.testedAll": "{detail}; {tokens} tokens",
+  "aiAccess.models.answered": "answered",
+  "aiAccess.models.unanswered": "didn't answer",
+  "aiAccess.models.skipped": "skipped",
   "aiAccess.state.signedIn": "Signed in",
   "aiAccess.state.tested": "Tested",
   "aiAccess.state.notSignedIn": "Not signed in",

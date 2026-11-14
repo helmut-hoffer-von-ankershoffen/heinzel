@@ -188,7 +188,8 @@ def live_check(
     """Run one cheap live check of an AI access option and keep the result; this may cost a little.
 
     Claude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each
-    model of a plugin's models gets one tiny request, one after another, within 15 seconds each; Ctrl-C stops it.
+    model of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,
+    Ctrl-C stops it.
     """
     if all:
         return service.test_all(name, options, progress)
