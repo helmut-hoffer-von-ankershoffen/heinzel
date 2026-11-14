@@ -138,7 +138,7 @@ def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
             assert not any("scripts/ci_node.py" in step.get("run", "") for step in job.get("steps", [])), name
 
 
-@pytest.mark.parametrize("python", ["3.12", "3.15"])
+@pytest.mark.parametrize("python", ["3.15"])
 @pytest.mark.parametrize("level", ["unit", "integration", ""])
 def test_python_sync_adds_only_existing_build_group_for_unit_bearing_cells(tmp_path, python, level):
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())

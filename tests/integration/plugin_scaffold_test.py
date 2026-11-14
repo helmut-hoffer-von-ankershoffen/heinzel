@@ -42,7 +42,7 @@ def test_starter_make_bootstraps_its_pinned_toolkit_without_overrides(tmp_path):
         "--frozen",
         "--no-build",
         "--python",
-        "3.14",
+        "3.15",
         "python",
         "scripts/plugin_tooling.py",
     ]
@@ -88,7 +88,7 @@ def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(
     }
     environment["UV_PYTHON"] = sys.executable
     project = tmp_path / "pyproject.toml"
-    source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.12"\n'
+    source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.15"\n'
     project.write_text(source)
     # This new, synthetic project must create its own lock; the repository stays frozen in CI.
     created = subprocess.run(

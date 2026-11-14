@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Run the released plugin toolkit from a disposable, hash-locked wheel environment, without installing core."""
@@ -338,7 +338,7 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
         environment = Path(temporary)
         interpreter = environment / "bin/python"
         # Resolved uv, disposable environment
-        subprocess.run([uv, "venv", "--python", "3.14", str(environment)], check=True, timeout=120)  # noqa: S603
+        subprocess.run([uv, "venv", "--python", "3.15", str(environment)], check=True, timeout=120)  # noqa: S603
         if toolkit != TOOLKIT:
             selection = [str(candidate_wheel(toolkit, environment))]
         else:

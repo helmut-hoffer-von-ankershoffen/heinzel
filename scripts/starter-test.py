@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Exercise fresh standalone and collection authors against installed core and toolkit artifacts."""

@@ -910,7 +910,7 @@ class WebService:
             self._sleep(min(READY_POLL_SECONDS, remaining))
 
     @contextmanager
-    def removal_guard(self, *, locks: MaintenanceLocks | None = None) -> Generator[WebRemoval, None, None]:
+    def removal_guard(self, *, locks: MaintenanceLocks | None = None) -> Generator[WebRemoval]:
         """Hold exact integration authority, separating stop from cleanup after verified tool removal.
 
         Yields:

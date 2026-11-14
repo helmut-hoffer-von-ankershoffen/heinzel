@@ -7,7 +7,7 @@ authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.c
 license = "MIT"
 # ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
 license-files = ["LICENSE", "ATTRIBUTIONS.md"]
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 keywords = ["cli", "typer", "pluggy", "agents", "product-development", "workflows"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -16,9 +16,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
@@ -100,6 +97,10 @@ exclude = ["web/node_modules", "web/test-results", "/plugins"]
 required-version = ">=0.13.0"
 
 [tool.ruff]
+# The code runs on 3.15, but lints and formats as 3.13 on purpose: from 3.14 on ruff treats annotations as lazy and wants
+# typing-only imports in TYPE_CHECKING blocks (breaks the pydantic and typer annotations read at runtime) and drops the
+# parentheses around multiple exception types. Adopt the 3.14+ style in one deliberate pass.
+target-version = "py313"
 line-length = 120
 fix = true
 extend-exclude = ["template", "plugins", "scripts/acceptance"] # independent projects; a hash-pinned stdlib harness
@@ -317,7 +318,7 @@ tag_pattern = "^v[0-9].*"
 [tool.pyright]
 include = ["src"]
 typeCheckingMode = "strict"
-pythonVersion = "3.12"
+pythonVersion = "3.15"
 venvPath = "."
 venv = ".venv"
 

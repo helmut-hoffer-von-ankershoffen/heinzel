@@ -94,7 +94,7 @@ def test_focused_scope_cannot_be_reused_for_another_event_or_source(router, chan
 
 
 @pytest.mark.parametrize(
-    "jobs", [(), ("",), ("Focused", "Focused"), ("Coverage",), ("Test (ubuntu-24.04, Python 3.12, unit)",)]
+    "jobs", [(), ("",), ("Focused", "Focused"), ("Coverage",), ("Test (ubuntu-24.04, Python 3.15, unit)",)]
 )
 def test_empty_duplicate_and_full_workloads_are_refused_as_focused_scope(router, jobs):
     with pytest.raises(router.CandidateError, match=r"reviewed focused jobs|reserved for release candidates"):

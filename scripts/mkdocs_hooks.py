@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """MkDocs hooks for the documentation site (ADR 0082); listed under `hooks:` in mkdocs.yml, loaded by mkdocs itself.

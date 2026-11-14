@@ -77,7 +77,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
         "unzip -l ": "asserts what the built wheel contains",
@@ -101,12 +101,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
     "acceptance-sharded.yml": {
-        "uv python install 3.13": "the isolated acceptance study interpreter",
-        '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
+        "uv python install 3.15": "the isolated acceptance study interpreter",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
     },
     "acceptance.yml": {
-        "uv python install 3.13": "the interpreter the harness runs on",
-        '"$(uv python find 3.13)" -I scripts/acceptance/': (
+        "uv python install 3.15": "the interpreter the harness runs on",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': (
             "installs the published core with the public commands on a hosted runner and writes the receipt"
         ),
     },
@@ -122,16 +122,16 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'archive="heinzel-desktop-': "checks the transferred desktop assets before signing them",
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
         ),
-        "uv run --no-project --frozen --no-build --python 3.14 python -I scripts/acceptance/run_acceptance.py "
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/acceptance/run_acceptance.py "
         "--check-foreground-ui": "checks the Core version contract without running acceptance",
         'if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then': (
             "requires core's configured confidential terms while preserving the shared plugin publisher"
         ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_notes.py": (
             "writes the release notes"
         ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
@@ -157,7 +157,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before verification tooling",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require": (
             "requires the configured release term list"
         ),
         'version="${TAG#v}"\ngh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts': (
@@ -170,7 +170,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
             "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
         ),
-        'uv run --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
+        'uv run --no-project --frozen --no-build --python 3.15 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
         "python -m heinzel_plugin_tools.publishing": (
             "publishes the original verified plugin bytes through its protected generic host workflow"
         ),
@@ -188,7 +188,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         'files="$(git diff': "picks the review tier from the changed files",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/review_outcome.py": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/review_outcome.py": (
             "judges the review attempt; the job has no project environment"
         ),
         'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
@@ -227,7 +227,7 @@ def not_through_make(workflow: Path) -> list[str]:
 
 def test_finds_commands_not_run_through_make(tmp_path):
     workflow = tmp_path / "publish.yml"
-    unreviewed = "uv run --no-project --frozen --no-build --python 3.14 python scripts/unreviewed.py"
+    unreviewed = "uv run --no-project --frozen --no-build --python 3.15 python scripts/unreviewed.py"
     steps = [
         {"run": "make build"},
         {"run": "uv sync"},
@@ -1116,12 +1116,12 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
     [
         ("pull_request", False, []),
         ("pull_request", True, []),
-        ("push", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("push", True, ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", True, ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", False, ["3.15"]),
+        ("push", True, ["3.15"]),
+        ("schedule", False, ["3.15"]),
+        ("schedule", True, ["3.15"]),
+        ("workflow_dispatch", False, ["3.15"]),
+        ("workflow_dispatch", True, ["3.15"]),
     ],
 )
 def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
@@ -1741,10 +1741,10 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
 @pytest.mark.parametrize(
     ("event", "expected"),
     [
-        ("pull_request", ["3.12", "3.15"]),
-        ("push", ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+        ("pull_request", ["3.15"]),
+        ("push", ["3.15"]),
+        ("schedule", ["3.15"]),
+        ("workflow_dispatch", ["3.15"]),
     ],
 )
 def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
@@ -1752,7 +1752,7 @@ def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_
     assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
     assert probe["if"] == (  # a cell every pull request runs, once
-        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit'"
+        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.15' && matrix.levels == 'unit'"
     )
     assert test["strategy"]["matrix"]["levels"] == ["unit", "integration"]  # Linux shards by level under the cap
 
@@ -1761,9 +1761,9 @@ def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_
     ("event", "expected"),
     [
         ("pull_request", ["3.15"]),
-        ("push", ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", ["3.15"]),
+        ("schedule", ["3.15"]),
+        ("workflow_dispatch", ["3.15"]),
     ],
 )
 def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
@@ -1825,12 +1825,9 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
     } <= outputs
     jobs = _ci_jobs()
     assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
-        "3.12",
-        "3.13",
-        "3.14",
         "3.15",
     ]
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 8
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 2
     assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", macos_full=True) == [
         "ubuntu-24.04",
         "macos-latest",

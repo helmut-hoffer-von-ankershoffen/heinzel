@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Put the hand-written release introductions back into a CHANGELOG.md that git-cliff regenerated.

@@ -205,7 +205,7 @@ def test_incomplete_or_changed_job_inventory_is_refused(defect):
     elif defect == "duplicate":
         jobs[-1] = copy.deepcopy(jobs[0])
     elif defect == "short-matrix":
-        result["jobs"] = [j for j in jobs if "Python 3.13" not in j["name"]]
+        result["jobs"] = [j for j in jobs if "Python 3.15" not in j["name"]]
     else:
         job = next(j for j in jobs if j["name"] == "Test (macos-latest, Python 3.14, unit)")
         job[{"rerun": "run_attempt", "never-started": "runner_id"}.get(defect, "conclusion")] = {

@@ -46,7 +46,7 @@ What it does for the adapter:
   whatever a connector returns is data for the model, never an instruction (`clean_text`, and a turn's inputs
   framed as data).
 
-Works on Python 3.12 and later. The MCP client is loaded only when this module is imported.
+Works on Python 3.15 and later. The MCP client is loaded only when this module is imported.
 """
 
 import asyncio

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """What the built site may request from a visitor's browser: its own origin, plus hosts listed here with a reason.

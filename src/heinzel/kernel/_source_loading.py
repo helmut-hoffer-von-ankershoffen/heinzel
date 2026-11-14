@@ -426,11 +426,15 @@ class SourceOnlyFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             return importlib.util.spec_from_file_location(
                 fullname,
                 self.snapshot.root / init,
-                loader=self,
+                loader=self,  # type: ignore[arg-type]  # typeshed wants load_module, removed in 3.15
                 submodule_search_locations=[str((self.snapshot.root / init).parent)],
             )
         if module in self.files:
-            return importlib.util.spec_from_file_location(fullname, self.snapshot.root / module, loader=self)
+            return importlib.util.spec_from_file_location(
+                fullname,
+                self.snapshot.root / module,
+                loader=self,  # type: ignore[arg-type]  # as above
+            )
         msg = "Module is outside the captured source graph"
         raise ModuleNotFoundError(msg)
 

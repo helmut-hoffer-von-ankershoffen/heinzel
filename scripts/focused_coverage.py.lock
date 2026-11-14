@@ -1,6 +1,6 @@
 version = 1
 revision = 5
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 
 [manifest]
 requirements = [{ name = "coverage", specifier = "==7.17.0" }]

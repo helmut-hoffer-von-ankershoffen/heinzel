@@ -117,7 +117,7 @@ commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conve
 		'&branch=[ -z "$$BRANCH" ] || uv run --script scripts/check_confidentiality.py --text "$$BRANCH"'
 
 test-all-pythons: ## Run unit and integration tests on every supported Python, in isolated environments
-	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
+	$(STEPS) $(foreach python,3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
 
 test-unit: ## Run unit tests
 	uv run pytest -m unit

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Run exactly one focused test selection on a hosted runner (`.github/workflows/focused-job.yml`).

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Plan CI workloads from exact reviewed scope without running jobs or publishing checks."""

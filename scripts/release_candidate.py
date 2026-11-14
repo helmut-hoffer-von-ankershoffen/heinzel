@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Bind one full release-candidate CI run to its exact source tree and complete first-attempt job inventory."""

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Build Heinzel Notifier, hz's macOS notifier app, into the package: `make notifier` (ADR 0043).

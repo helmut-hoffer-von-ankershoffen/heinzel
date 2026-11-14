@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Review one pull request's source with a tool-free model, from the protected review ref (workflow source-review.yml).

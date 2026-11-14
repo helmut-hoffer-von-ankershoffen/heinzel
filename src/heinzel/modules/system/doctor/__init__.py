@@ -14,7 +14,7 @@ from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __versio
 from heinzel.kernel import ReleaseCache
 from heinzel.kernel._uv_locate import find_uv
 
-MINIMUM_PYTHON = (3, 12)
+MINIMUM_PYTHON = (3, 15)
 
 module = Module("doctor", "Check that Heinzelmännchen and its modules are healthy.")
 
@@ -79,7 +79,12 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
         Check(name="hostname", status=Status.UP, detail=gethostname()),
         Check(name="python", status=Status.UP, detail=sys.version.split()[0])
         if sys.version_info >= MINIMUM_PYTHON
-        else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),
+        else Check(
+            name="python",
+            status=Status.DOWN,
+            detail=f"{sys.version.split()[0]} is too old",
+            fix="Use uv-managed Python 3.15: uv tool install --python 3.15 --reinstall heinzel",
+        ),
     ]
     uv = find_uv()
     checks.append(

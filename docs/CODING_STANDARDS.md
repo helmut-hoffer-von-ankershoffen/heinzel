@@ -19,7 +19,7 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 
 ## Python
 
-- **Version:** Python 3.12+. Use modern syntax: PEP 695 generics (`def f[T](x: T) -> T`), `X | None`,
+- **Version:** Python 3.15+. Use modern syntax: PEP 695 generics (`def f[T](x: T) -> T`), `X | None`,
   `match` where it reads better than `if` chains.
 - **Typing:** everything in `src/` is fully typed and passes `mypy --strict` and `pyright` strict. `Any` is allowed
   only for free-form JSON and forwarded `**kwargs`, with a `# noqa: ANN401` stating which. `cast` needs a reason
@@ -134,7 +134,7 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Tests don't read the wall clock: inject a fixed clock (`clock=` on services). An assertion on elapsed time (linear
   time, a budget) is a performance test: it carries `@pytest.mark.perf` besides its level, `make check-fast` and
   `make test` skip it, and `make test-perf` runs it in CI.
-- No sleeping, no ordering dependencies, no shared mutable fixtures. Tests run on macOS and Linux, Python 3.12–3.15.
+- No sleeping, no ordering dependencies, no shared mutable fixtures. Tests run on macOS and Linux, Python 3.15.
 
 ### Quarantine
 

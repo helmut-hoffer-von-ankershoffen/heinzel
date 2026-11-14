@@ -34,7 +34,7 @@ def test_conforms(hz_conformance):
 ```
 
 A failure lists every problem at once, each with what the contract says. Warnings (`ConformanceWarning`) name what
-Core tolerates but you should fix. Works on Python 3.12 and later.
+Core tolerates but you should fix. Works on Python 3.15 and later.
 """
 
 import asyncio

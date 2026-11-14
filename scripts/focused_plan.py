@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Resolve the administrator-reviewed workload for the exact Git tree tested by CI."""
@@ -43,15 +43,15 @@ if TYPE_CHECKING:
 
 PATH = re.compile(r"[A-Za-z0-9_.@+-]+(?:/[A-Za-z0-9_.@+-]+)*")
 LANES = {
-    "python": ("ubuntu-24.04", "3.14.8", "pytest"),
+    "python": ("ubuntu-24.04", "3.15", "pytest"),
     "python312": ("ubuntu-24.04", "3.12", "pytest"),
     "python315": ("ubuntu-24.04", "3.15", "pytest"),
-    "macos": ("macos-latest", "3.14", "pytest"),
-    "macos-notifier": ("macos-latest", "3.14", "pytest"),
-    "managed": ("ubuntu-24.04", "3.14", "managed"),
-    "web": ("ubuntu-24.04", "3.14", "vitest"),
-    "browser": ("ubuntu-24.04", "3.14", "e2e"),
-    "macos-browser": ("macos-latest", "3.14", "e2e"),
+    "macos": ("macos-latest", "3.15", "pytest"),
+    "macos-notifier": ("macos-latest", "3.15", "pytest"),
+    "managed": ("ubuntu-24.04", "3.15", "managed"),
+    "web": ("ubuntu-24.04", "3.15", "vitest"),
+    "browser": ("ubuntu-24.04", "3.15", "e2e"),
+    "macos-browser": ("macos-latest", "3.15", "e2e"),
 }
 ARTIFACT_PREFIX = "focused-pr-evidence"
 PLAN_VARIABLE = "FOCUSED_CI_PLANS"

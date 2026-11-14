@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["coverage==7.17.0"]
 # ///
 """Produce and independently check typed, branch-aware focused coverage evidence."""

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["playwright==1.64.1"]
 # ///
 """Exercise the built product site under its GitHub Pages prefix, including non-JavaScript navigation."""

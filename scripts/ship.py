@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """The golden path for small changes: one command per stage, one JSON line of output, the next step spelled out.
