@@ -4352,6 +4352,7 @@ $ hz system ui [OPTIONS] COMMAND [ARGS]...
 * `hide`: (expert) Hide a contribution from a slot...
 * `list`: (expert) List every contribution to the...
 * `navigation`: (expert) List active providers&#x27; navigation...
+* `restore`: (expert) Bring back every contribution you...
 * `show`: (expert) Show a contribution in a slot of...
 * `status`: (expert) List the status items modules add...
 * `views`: (expert) List active installed views,...
@@ -4423,6 +4424,23 @@ $ hz system ui navigation [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui restore`
+
+(expert) Bring back every contribution you hid from a slot, such as the widgets hidden from Today.
+
+**Usage**:
+
+```console
+$ hz system ui restore [OPTIONS]
+```
+
+**Options**:
+
+* `--slot <footer|sidebar|header|today>`: Where to bring hidden items back: `today` (default), `footer`, `sidebar` or `header`.  [default: today]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

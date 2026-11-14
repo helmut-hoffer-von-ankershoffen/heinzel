@@ -65,7 +65,16 @@ export const useNavigation = () =>
   });
 
 /** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
-export const useExpert = () => useQuery({ queryKey: keys.expert, queryFn: () => unwrap(api.GET("/system/expert")) });
+/**
+ * Expert mode as the server has it; `cachedOnly` reads only what another view already loaded. Without it the client's
+ * own default decides whether to fetch (a fixture client that fetches nothing stays that way).
+ */
+export const useExpert = (cachedOnly = false) =>
+  useQuery({
+    queryKey: keys.expert,
+    queryFn: () => unwrap(api.GET("/system/expert")),
+    ...(cachedOnly ? { enabled: false } : {}),
+  });
 /** `hz system expert on` or `off`, the operations the CLI runs; the answer is the mode in effect. */
 export const useSetExpert = () => {
   const client = useQueryClient();

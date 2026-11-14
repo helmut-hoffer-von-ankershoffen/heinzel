@@ -221,7 +221,9 @@ describe("Daemon Settings", () => {
     const { calls, user } = show();
     await user.click(await screen.findByRole("button", { name: "Pause" }));
     const paused = screen.getByRole("alertdialog", { name: "Pause the daemon?" });
-    expect(within(paused).getByText("hz system daemon pause")).toBeInTheDocument();
+    // Plain words; the raw command is for Expert mode only.
+    expect(within(paused).getByText("Scheduled work waits until you resume it.")).toBeInTheDocument();
+    expect(within(paused).queryByText("hz system daemon pause")).not.toBeInTheDocument();
     expect(within(paused).getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
     await user.click(within(paused).getByRole("button", { name: "Pause" }));
@@ -247,7 +249,7 @@ describe("Daemon Settings", () => {
       const label = action === "install" ? "Install" : "Uninstall";
       await user.click(await screen.findByRole("button", { name: label }));
       const dialog = screen.getByRole("alertdialog", { name: `${label} the daemon?` });
-      expect(dialog).toHaveTextContent(`hz system daemon ${action}`);
+      expect(dialog).not.toHaveTextContent(`hz system daemon ${action}`);
       expect(dialog).toHaveTextContent("starts when you sign in");
       expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
       await user.click(within(dialog).getByRole("button", { name: label }));
@@ -403,6 +405,13 @@ describe("Daemon Settings", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("Restart sent. Waiting for the daemon's next check-in.")).toBeInTheDocument();
+  });
+
+  it("names the exact pause command in its confirmation only in Expert mode", async () => {
+    const { user } = show({}, false, false, true, true);
+    await user.click(await screen.findByRole("button", { name: "Pause" }));
+    const paused = screen.getByRole("alertdialog", { name: "Pause the daemon?" });
+    expect(within(paused).getByText("hz system daemon pause")).toBeInTheDocument();
   });
 
   it.each([false, true])("shows the restart command only in expert mode=%s", async (expert) => {

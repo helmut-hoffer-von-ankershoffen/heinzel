@@ -499,6 +499,7 @@ List what modules add to the web app: status items, header actions and Today wid
 | List every contribution to the web app, where it may show and whether it does; nothing runs. | `hz system ui list` | `system_ui_list` | — | `GET /api/system/ui/list` |  | expert |
 | Show a contribution in a slot of the web app, such as the clock in the sidebar. | `hz system ui show` | `system_ui_show` | — | `POST /api/system/ui/show` | yes | expert |
 | Hide a contribution from a slot of the web app, such as the clock from the footer. | `hz system ui hide` | `system_ui_hide` | — | `POST /api/system/ui/hide` | yes | expert |
+| Bring back every contribution you hid from a slot, such as the widgets hidden from Today. | `hz system ui restore` | `system_ui_restore` | — | — | yes | expert |
 
 Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
 

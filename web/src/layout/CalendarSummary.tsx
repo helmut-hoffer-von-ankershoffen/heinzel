@@ -1,9 +1,9 @@
-// The footer calendar pane, read-only (phase 1): Now, Next, Then, a Join button and Open calendar. The write
-// actions (decline, extend, running-late note) are phase 2 and stay disabled until the connector grants write
-// access; what the calendar does not say stays unsaid (no attendee count, organizer or teaser is invented).
+// The footer calendar pane, read-only: Now, Next, Then, a Join button and Open calendar. Write actions (decline,
+// extend, a running-late note) come only with a real calendar operation behind them; what the calendar does not say
+// stays unsaid (no attendee count, organizer or teaser is invented).
 
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquareText, PanelRight, ShieldCheck, TimerReset, UserX, Video } from "lucide-react";
+import { PanelRight, ShieldCheck, Video } from "lucide-react";
 import { token } from "@/api/token";
 import { PaneAction } from "@/components/PaneActions";
 import { conferenceLink } from "@/lib/conferenceLink";
@@ -156,8 +156,8 @@ export function CalendarSummary({
 
 /**
  * The pane's one action row: Join (when the meeting has a link), Open calendar, which closes the pane it sits in,
- * then either the write actions (Decline, Extend, running late) once the connector may change the calendar, or the
- * consent link until then. No disabled placeholders for what the person cannot do yet.
+ * and the consent link while the connector may not change the calendar. No calendar write operation exists yet, so
+ * no Decline, Extend or running-late button: a button that does nothing is never drawn.
  */
 export function calendarActions({
   active,
@@ -190,19 +190,6 @@ export function calendarActions({
           Allow your Heinzels to change your calendar
         </PaneAction>
       )}
-      {full &&
-        writable &&
-        (
-          [
-            ["decline", "Decline", UserX],
-            ["extend", "Extend", TimerReset],
-            ["late", "Tell the next meeting you are late", MessageSquareText],
-          ] as const
-        ).map(([key, name, Icon]) => (
-          <PaneAction key={key} icon={Icon}>
-            {name}
-          </PaneAction>
-        ))}
     </>
   );
 }
