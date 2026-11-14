@@ -499,3 +499,50 @@ def test_the_whole_disk_or_home_is_no_working_directory(tmp_path: Path) -> None:
     runner(TestModel()).run(
         "x", contract="", tools=ToolProfile(working_dir=Path.home(), read_files=False), timeout=MINUTE, budget=Budget()
     )
+
+
+def test_home_swapped_in_after_the_early_check_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The early check is by name; the folder the tools open is checked again by identity (ADR 0159, A3)."""
+    from heinzel.modules.ai.access import _engine_runner
+
+    alias = tmp_path / "project"
+    alias.symlink_to(Path.home())
+
+    def checked_by_name_only(_directory: Path) -> bool:
+        return False  # as if the folder were swapped after the early check
+
+    monkeypatch.setattr(_engine_runner, "_too_wide", checked_by_name_only)
+
+    for wide in (Path("/"), Path.home(), alias):
+        with pytest.raises(HeinzelError, match="whole disk or your home"):
+            runner(TestModel()).run(
+                "x", contract="", tools=ToolProfile(working_dir=wide), timeout=MINUTE, budget=Budget()
+            )
+
+
+def test_the_folder_is_let_go_when_the_run_fails_before_its_turn(work: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+
+    from heinzel.modules.ai.access._file_tools import ConfinedFiles
+
+    closed: list[int] = []
+    real = ConfinedFiles.close
+
+    def close(files: ConfinedFiles) -> None:
+        closed.append(files.root_fd)
+        real(files)
+
+    def broken() -> Any:
+        raise RuntimeError
+
+    progress = Progress()
+    monkeypatch.setattr(ConfinedFiles, "close", close)
+    monkeypatch.setattr(progress, "emitter", broken)
+    engine = runner(TestModel(), progress=progress)
+
+    with pytest.raises(RuntimeError):
+        engine.run("x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget())
+
+    assert len(closed) == 1
+    assert closed[0] >= 0

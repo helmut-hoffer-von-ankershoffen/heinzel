@@ -93,7 +93,7 @@ class ConfinedFiles:
         of it already open, as the child process gets it.
 
         Raises:
-            FileToolError: If `root` isn't a directory.
+            FileToolError: If `root` isn't a directory, or is the filesystem's root or the home folder itself.
         """
         real = Path(os.path.realpath(root))
         if root_fd is None:
@@ -102,6 +102,10 @@ class ConfinedFiles:
             except OSError:
                 msg = f"{root} is not a directory"
                 raise FileToolError(msg) from None
+            if too_wide(os.fstat(root_fd)):
+                os.close(root_fd)
+                msg = f"{root} is the whole disk or your home; pick a project"
+                raise FileToolError(msg)
         self.root = real
         self.given = Path(root)
         self.root_fd = root_fd
@@ -109,8 +113,10 @@ class ConfinedFiles:
         self._budget = _Budget()
 
     def close(self) -> None:
-        """Let go of the directory."""
-        os.close(self.root_fd)
+        """Let go of the directory; again is a no-op."""
+        if self.root_fd >= 0:
+            os.close(self.root_fd)
+            self.root_fd = -1
 
     def _parts(self, path: str) -> list[str]:
         """The components of `path` below the root; never `..`, never outside.
@@ -390,6 +396,27 @@ class ConfinedFiles:
                 if len(found) >= room:
                     break
         return found
+
+
+WIDE_FOLDERS = ("/", "/System/Volumes/Data")
+"""Folders that hold everything: the filesystem's root, and on macOS the volume behind it; the home folder too."""
+
+
+def too_wide(folder: os.stat_result) -> bool:
+    """Whether `folder`, as opened, is the filesystem's root or the home folder itself.
+
+    By identity (device and inode), not by name: another spelling, a different case on a case-blind disk, or a
+    symlink swapped in after a check by name is still the same folder.
+    """
+    wide = [*WIDE_FOLDERS, str(Path.home())]
+    for path in wide:
+        try:
+            info = Path(path).stat()
+        except OSError:
+            continue
+        if (info.st_dev, info.st_ino) == (folder.st_dev, folder.st_ino):
+            return True
+    return False
 
 
 def _open_at(name: str, flags: int, directory: int, shown: str) -> int:

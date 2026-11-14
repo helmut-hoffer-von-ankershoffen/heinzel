@@ -289,3 +289,48 @@ def test_a_file_name_that_isnt_utf8_doesnt_fail_the_whole_answer(tree: Path) -> 
     answer = _file_tools.run(ConfinedFiles(tree), "glob", {"pattern": "*.md"})
     assert "README.md" in answer
     assert "bad-" in answer
+
+
+def test_a_swapped_parent_folder_doesn_t_redirect_the_tools(tmp_path: Path) -> None:
+    """The root is held open from the start, so swapping a folder above it changes nothing (ADR 0159, A4)."""
+    parent = tmp_path / "parent"
+    root = parent / "work"
+    root.mkdir(parents=True)
+    (root / "README.md").write_text("original\n", encoding="utf-8")
+    files = ConfinedFiles(root)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "work").mkdir(parents=True)
+    (elsewhere / "work" / "README.md").write_text("planted\n", encoding="utf-8")
+
+    parent.rename(tmp_path / "parent.old")
+    parent.symlink_to(elsewhere)
+
+    try:
+        assert files.read("README.md") == "     1\toriginal"
+        assert files.read(str(root / "README.md")) == "     1\toriginal"  # the old spelling still means the held folder
+        assert files.grep("planted|original") == "README.md:1: original"
+        assert _file_tools.run(files, "read", {"path": "README.md"}) == "     1\toriginal"  # the child gets the fd
+    finally:
+        files.close()
+    files.close()  # again is a no-op
+
+
+@pytest.mark.parametrize("wide", ["root", "home", "home-alias", "home-other-case"])
+def test_the_whole_disk_or_home_is_refused_by_identity(tmp_path: Path, wide: str) -> None:
+    """Refused by what the opened folder is, not by its name: another spelling or a symlink still counts."""
+    home = Path.home()
+    if wide == "home-other-case":
+        other = Path(str(home).swapcase())
+        if not other.is_dir():
+            pytest.skip("a case-sensitive disk: the other case is another folder")
+        folder = other
+    elif wide == "home-alias":
+        folder = tmp_path / "alias"
+        folder.symlink_to(home)
+    else:
+        folder = Path("/") if wide == "root" else home
+
+    with pytest.raises(FileToolError, match="whole disk or your home"):
+        ConfinedFiles(folder)
+    assert _file_tools.too_wide(folder.stat())
+    assert not _file_tools.too_wide(tmp_path.stat())
