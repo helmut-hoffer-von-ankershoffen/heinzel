@@ -385,3 +385,41 @@ def test_a_failing_self_chat_costs_nothing(world):
     relay._self_chat = broken
     _run(relay, session, "turn-1")
     assert QuestionRelay._live == {}
+
+
+def test_an_ask_a_restart_left_waiting_is_said_to_be_still_open_once(world):
+    current, crud, session = world
+    relay = _relay(world, Inbox(), Chat())
+    with relay.ledger.locked() as state:
+        state["threads"][session] = "t-old"
+        state["live"][session] = "999999999"  # no such process: it ended while it waited
+        state["live"]["hz-other"] = str(__import__("os").getpid())  # this process: still waiting
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    inbox = Inbox(SelfAnswer(timed_out=True, thread="t-old"))
+    _run(_relay(world, inbox, Chat()), session, "turn-1")
+    assert inbox.notes[0] == (STILL_OPEN, "t-old")
+    with relay.ledger.locked() as state:
+        assert session not in state["live"]
+        assert "hz-other" in state["live"]
+    inbox = Inbox(SelfAnswer(timed_out=True, thread="t-old"))
+    _run(_relay(world, inbox, Chat()), session, "turn-1")
+    assert inbox.notes == [(STILL_OPEN, "t-old")], "said once, then only this ask's own note"
+
+
+def test_the_self_chat_identity_never_approves():
+    """Approval, publication and head-only paths allowlist heads or the daemon; only these files may name self-chat."""
+    from pathlib import Path
+
+    allowed = {
+        "kernel/_identity.py",
+        "kernel/_self_chat.py",
+        "modules/heinzel/_session_models.py",
+        "modules/heinzel/_user_chat.py",
+        "modules/heinzel/_self_chat_questions.py",
+    }
+    root = Path(relay_module.__file__).resolve().parents[2]
+    naming = {
+        str(path.relative_to(root)) for path in root.rglob("*.py") if '"self-chat"' in path.read_text(encoding="utf-8")
+    }
+    assert naming <= allowed

@@ -39,7 +39,7 @@ from heinzel import (
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import SelfChat
+from heinzel.kernel._self_chat import STATE, SelfChat
 from heinzel.modules.system.notify import _chat, _resolve
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._channels import (
@@ -144,7 +144,7 @@ class NotifyService(Notifications):
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
         self.self_chat: Callable[[], SelfChat | None] = lambda: None
         """The bound chat adapter's self channel (ADR 0160); set by `for_user`, None sends nothing to chat."""
-        self.chat_ledger = _chat.notice_ledger(settings.state_dir / "self-chat")
+        self.chat_ledger = _chat.notice_ledger(settings.state_dir / STATE)
         self._chat_busy = threading.Lock()
         self._chat_again = threading.Event()
 

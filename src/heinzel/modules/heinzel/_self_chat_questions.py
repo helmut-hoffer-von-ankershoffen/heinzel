@@ -11,6 +11,7 @@ before; whichever answer comes first counts:
   turn), accepted by one compare-and-set against anything else arriving; its origin is `self-chat`, which no approval
   path accepts. A chosen option must be one that was offered; it is then exactly that label.
 - No answer in time: the thread says the question is still open in Heinzel, which is where it stays, as in the app.
+- The process ended while it waited (a restart): the next ask in any chat says so in that thread: still open.
 
 Answers are routed by the relay's own record (the chat, the question it asked), never by a thread the adapter returns.
 Write approvals never go this way (ADR 0068, 0120): only questions. One live ask per Heinzel chat (a newer question
@@ -21,15 +22,16 @@ ignores `cancel` frees its place `GRACE` seconds after the wait.
 import asyncio
 import hashlib
 import logging
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from heinzel import Config, CurrentUser, SelfAnswer, clean_text
+from heinzel import Config, CurrentUser, HeinzelError, SelfAnswer, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import SelfChat, SelfChatLedger
+from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest
 from heinzel.modules.system.notify import NotifySettings
@@ -82,7 +84,7 @@ class QuestionRelay:
     ) -> None:
         """Bind the chat service that runs turns, the owner's sessions, and the self channel."""
         self._chat, self._crud, self._current, self._self_chat = chat, crud, current, self_chat
-        self.ledger = SelfChatLedger(state_dir / "self-chat", "questions", ("threads",))
+        self.ledger = SelfChatLedger(state_dir / STATE, "questions", ("threads", "live"))
         self._settings = settings or (lambda: Config.load(Path.home()).settings(NotifySettings, "system.notify"))
         self.threads: list[threading.Thread] = []
         """Workers started, for tests to join."""
@@ -108,6 +110,7 @@ class QuestionRelay:
         channel = self._self_chat()
         if channel is None or not channel.asks:
             return
+        self._close_leftovers(channel)
         found = self._question(session, turn)
         if found is None:
             return
@@ -116,15 +119,33 @@ class QuestionRelay:
         if ask is None:
             log_event(_EVENTS, "self_chat.question.over_cap", level=logging.INFO, live=MAX_LIVE)
             return
+        mine = str(os.getpid())
         try:
             name = self._crud.snapshot(session, limit=1).name
             with self.ledger.locked() as state:
                 thread = state["threads"].get(session)
+                state["live"][session] = mine
             answer, problem = self._wait(channel, ask, (text, name, thread), settings.chat_wait_minutes * 60.0)
         finally:
             self._unregister(ask)
+            with self.ledger.locked() as state:
+                if state["live"].get(session) == mine:
+                    del state["live"][session]
         thread = self._remember(session, thread, answer)
         self._settle(channel, ask, (answer, problem), (thread, name))
+
+    def _close_leftovers(self, channel: SelfChat) -> None:
+        """Say "still open" in the threads of asks a process that ended (a restart) left waiting; once each."""
+        with self.ledger.locked() as state:
+            ended = [(s, state["threads"].get(s)) for s, pid in state["live"].items() if not _alive(pid)]
+            for session, _thread in ended:
+                del state["live"][session]
+        for session, thread in ended:
+            try:
+                name = self._crud.snapshot(session, limit=1).name
+            except HeinzelError:
+                continue  # the chat is gone
+            self._note(channel, STILL_OPEN, thread, name)
 
     def _question(self, session: str, turn: str) -> tuple[str, int, str] | None:
         """The question `turn` asked: its message id, its event's position and its text; None if it asked none."""
@@ -239,3 +260,16 @@ class QuestionRelay:
             log_event(
                 _EVENTS, "self_chat.note.failed", level=logging.WARNING, problem=type(exc).__name__, detail=detail
             )
+
+
+def _alive(pid: str) -> bool:
+    """Whether the process `pid` still runs; an unreadable entry counts as ended."""
+    if not pid.isdigit():
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True

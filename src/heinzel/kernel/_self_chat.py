@@ -40,6 +40,8 @@ MAX_SELF_TEXT = 3000
 """Longest text hz sends in one self message; longer text is cut with an ellipsis and the app keeps the whole."""
 MAX_ANSWER = 32000
 """Longest typed answer taken from chat: what the app's composer lets you send to a Heinzel."""
+STATE = "self-chat"
+"""The folder under the state directory where what went to chat is kept."""
 MAX_LEDGER = 500
 """Most entries one part of a self-chat ledger keeps; the oldest go first."""
 MAX_TIMEOUT = 3600.0
