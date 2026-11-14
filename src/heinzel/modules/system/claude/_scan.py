@@ -4,6 +4,10 @@ Every file is read through `_read`, which resolves links first and refuses any f
 it is expected in (a dotfiles link inside your home directory is fine, a link to `/etc` is not), and opens it with
 `O_NOFOLLOW`, only as a regular file, and with a size limit. Secrets are never kept: an entry's environment and headers
 are reduced to their names, and the models have no field for a value (ADR 0062).
+
+The one exception is `Scanner.want`: when hz starts a found server (ADR 0162), the scan is repeated for that one id
+and its raw entry is kept in `Scanner.captured`, for that start only, so how to start it is always read from the
+source file and never stored.
 """
 
 import hashlib
@@ -128,6 +132,15 @@ def _name(text: str) -> str:
     return clean_text(text).replace("\n", " ").strip()[:120]
 
 
+@dataclass(frozen=True, slots=True)
+class Captured:
+    """One server's raw entry, with the file it came from, kept only while hz starts that server (ADR 0162)."""
+
+    entry: dict[str, Any]
+    path: Path
+    origin: str | None
+
+
 @dataclass(slots=True)
 class Scanner:
     """Scans one home directory; `scan` returns everything found and everything skipped."""
@@ -137,6 +150,9 @@ class Scanner:
     skills: list[FoundSkill] = field(default_factory=list[FoundSkill])
     skipped: list[Skipped] = field(default_factory=list[Skipped])
     connectors: int = 0
+    want: str | None = None
+    """The id of the one server whose raw entry the scan keeps in `captured`, to start it; none for a listing."""
+    captured: "Captured | None" = None
     _enabled: set[str] = field(default_factory=set[str])
     _sensitive: set[str] = field(default_factory=set[str])
 
@@ -204,6 +220,8 @@ class Scanner:
         executable = Path(command).name if command else None
         own = executable in OWN or any(a in OWN for a in arguments)
         identity = ":".join(part for part in (source, origin, name) if part)
+        if self.want is not None and identity == self.want and self.captured is None:
+            self.captured = Captured(entry=json.loads(json.dumps(entry)), path=path, origin=origin)
         self.servers.append(
             FoundServer(
                 id=identity,

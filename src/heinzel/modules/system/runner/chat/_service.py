@@ -36,7 +36,15 @@ from heinzel import (
     ToolProfile,
     redact_emails,
 )
-from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
+from heinzel.kernel import (
+    FOUND_MODULE,
+    CapabilityView,
+    CheckInChatContextSource,
+    FoundMcpServers,
+    UsageEntry,
+    record_usage,
+    untrusted,
+)
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._logging import log_event
@@ -924,6 +932,8 @@ class ChatService:
         """
         with self._store.locked(session) as chat:
             found = self._pending(chat, action)
+            if found.module.startswith(FOUND_MODULE):
+                return self._confirm_found(chat, found)
             return self._confirm_locked(chat, found)
 
     def authorize_for_mcp(self, session: str, action: str) -> ChatSession:
@@ -1114,6 +1124,39 @@ class ChatService:
         found.decided = now()
         found.mcp_authorized = False
         verb = {"done": "Ran", "uncertain": "Uncertain", "failed": "Failed"}[found.status]
+        chat.messages.append(ChatMessage(role="action", text=f"{verb} `{found.command}`: {found.result}", at=now()))
+        self._store.save(chat)
+        return chat
+
+    def _confirm_found(self, chat: ChatSession, found: ChatAction) -> ChatSession:
+        """Run a confirmed call of a found MCP server's tool, with exactly the proposed arguments (ADR 0162).
+
+        hz is the client of that server (`FoundMcpServers`); what it returns is untrusted data, kept redacted and cut.
+        """
+        found.status = "running"  # saved first: a crash mid-run never leaves it pending, so it runs at most once
+        found.mcp_authorized = False
+        self._store.save(chat)
+        server = found.module.removeprefix(FOUND_MODULE)
+        if not self._kernel.provides(FoundMcpServers):
+            found.status, found.result = "failed", "No MCP client is available to run it"
+        else:
+            try:
+                value = self._kernel.resolve(FoundMcpServers).call(server, found.operation, dict(found.arguments))
+                found.status, found.result = "done", untrusted(found.tool, value)[:RESULT_LIMIT]
+            except HeinzelError as exc:
+                found.status, found.result = "failed", redact_emails(str(exc))
+            except Exception as exc:  # noqa: BLE001 - a bug in an action is recorded, never raised
+                log_event(
+                    log,
+                    "runner.chat.confirm_failed",
+                    level=logging.ERROR,
+                    exc_info=True,
+                    action=found.id,
+                    session=chat.id,
+                )
+                found.status, found.result = "failed", f"{type(exc).__name__}: failed with a bug; the log says why"
+        found.decided = now()
+        verb = {"done": "Ran", "failed": "Failed"}.get(found.status, "Uncertain")
         chat.messages.append(ChatMessage(role="action", text=f"{verb} `{found.command}`: {found.result}", at=now()))
         self._store.save(chat)
         return chat
