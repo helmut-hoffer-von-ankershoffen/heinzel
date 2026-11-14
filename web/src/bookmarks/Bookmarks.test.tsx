@@ -7,6 +7,7 @@ import { MENU_EVENT } from "@/about/menu";
 import type { SchemaBookmarkList } from "@/api/client";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { BookmarkNavigation } from "./BookmarkNavigation";
 import { BookmarkBar } from "./BookmarkStar";
 import { Favicon } from "./Favicon";
 
@@ -67,7 +68,7 @@ function bookmarkApi(start: SchemaBookmarkList = tree(), extra: Record<string, u
     ...shell,
     "/api/system/bookmark/list": () => current,
     ...Object.fromEntries([
-      write("add", (list, { url, title }) => ({
+      write("add", (list, { url = "", title }) => ({
         ...list,
         bookmarks: [
           ...(list.bookmarks ?? []),
@@ -82,25 +83,28 @@ function bookmarkApi(start: SchemaBookmarkList = tree(), extra: Record<string, u
           },
         ],
       })),
-      write("folder", (list, { title }) => ({
+      write("folder", (list, { title = "" }) => ({
         ...list,
         bookmarks: [
           ...(list.bookmarks ?? []),
           { id: "b-8", kind: "folder", title, url: null, origin: null, parent: null, depth: 0 },
         ],
       })),
-      write("edit", (list, { entry, title }) => ({
+      write("edit", (list, { entry, title = "" }) => ({
         ...list,
         bookmarks: (list.bookmarks ?? []).map((item) => (item.id === entry ? { ...item, title } : item)),
       })),
       write("move", (list) => list),
-      write("remove", (list, { entry }) => ({
+      write("remove", (list, { entry = "" }) => ({
         ...list,
         bookmarks: (list.bookmarks ?? []).filter((item) => item.id !== entry),
         restorable: [entry],
       })),
       write("restore", () => tree()),
-      write("favicon", (list, { origin, image }) => ({ ...list, favicons: { ...list.favicons, [origin]: image } })),
+      write("favicon", (list, { origin = "", image = "" }) => ({
+        ...list,
+        favicons: { ...list.favicons, [origin]: image },
+      })),
     ]),
     ...extra,
   });
@@ -112,22 +116,91 @@ afterEach(() => {
 });
 
 describe("the navigation's bookmarks", () => {
-  it("lists the top-level bookmarks with favicon and title, and nothing from inside a folder", async () => {
+  const openTree = async () => {
+    const view = renderAt("/");
+    const tree = await screen.findByRole("tree", { name: "Bookmarks" });
+    const items = () => within(tree).getAllByRole("treeitem");
+    return { ...view, tree, items, names: () => items().map((item) => item.textContent) };
+  };
+  afterEach(() => localStorage.removeItem("hz.bookmarks.open"));
+
+  it("shows the whole tree: folders closed at first, bookmarks with favicon and title at every level", async () => {
     bookmarkApi();
-    renderAt("/");
-    const section = await screen.findByRole("region", { name: "Bookmarks" });
-    const links = within(section).getAllByRole("link");
-    expect(links.map((link) => link.textContent)).toEqual(["Bookmarks", "Docs", "News"]);
-    expect(within(section).queryByText("Tracker")).toBeNull();
-    expect(within(section).queryByText("Work")).toBeNull();
-    expect(links[1]?.querySelector('img[data-favicon="image"]')).toHaveAttribute("src", ICON);
-    expect(links[2]?.querySelector('[data-favicon="fallback"]')).not.toBeNull();
+    const { container, items, names } = await openTree();
+    expect(names()).toEqual(["Docs", "Work", "News"]);
+    expect(items()[0]?.querySelector('img[data-favicon="image"]')).toHaveAttribute("src", ICON);
+    expect(items()[2]?.querySelector('[data-favicon="fallback"]')).not.toBeNull();
+    const work = screen.getByRole("treeitem", { name: "Work" });
+    expect(work).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(work);
+    expect(work).toHaveAttribute("aria-expanded", "true");
+    expect(names()).toEqual(["Docs", "Work", "Tracker", "News"]);
+    const tracker = screen.getByRole("treeitem", { name: "Tracker" });
+    expect(tracker).toHaveAttribute("aria-level", "2");
+    expect(tracker).toHaveAttribute("href", "https://tracker.example/");
+    expect(tracker.querySelector('[data-favicon="fallback"]')).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Bookmarks" })).toHaveAttribute("href", "/bookmarks");
+    await expectAccessible(container);
+  });
+
+  it("remembers which folders are open", async () => {
+    bookmarkApi();
+    const first = await openTree();
+    fireEvent.click(screen.getByRole("treeitem", { name: "Work" }));
+    expect(JSON.parse(localStorage.getItem("hz.bookmarks.open") ?? "[]")).toEqual(["b-2"]);
+    first.unmount();
+    const { names } = await openTree();
+    expect(names()).toEqual(["Docs", "Work", "Tracker", "News"]);
+    fireEvent.click(screen.getByRole("treeitem", { name: "Work" }));
+    expect(localStorage.getItem("hz.bookmarks.open")).toBe("[]");
+  });
+
+  it("ignores a damaged memory of open folders", async () => {
+    localStorage.setItem("hz.bookmarks.open", "{not json");
+    bookmarkApi();
+    expect((await openTree()).names()).toEqual(["Docs", "Work", "News"]);
+  });
+
+  it("moves with the arrow keys, opens and folds with right and left, and keeps one tab stop", async () => {
+    bookmarkApi();
+    const user = userEvent.setup();
+    const { items, names } = await openTree();
+    expect(items().map((item) => item.tabIndex)).toEqual([0, -1, -1]);
+    const focused = () => waitFor(() => expect(document.activeElement).toHaveAttribute("role", "treeitem"));
+    const at = (name: string) => waitFor(() => expect(document.activeElement).toHaveTextContent(name));
+    (items()[0] as HTMLElement).focus();
+    await focused();
+    await user.keyboard("{ArrowDown}");
+    await at("Work");
+    expect(screen.getByRole("treeitem", { name: "Work" }).tabIndex).toBe(0);
+    expect(screen.getByRole("treeitem", { name: "Docs" }).tabIndex).toBe(-1);
+    await user.keyboard("{ArrowRight}"); // opens the folder
+    await waitFor(() => expect(names()).toEqual(["Docs", "Work", "Tracker", "News"]));
+    await at("Work");
+    await user.keyboard("{ArrowRight}"); // into it
+    await at("Tracker");
+    await user.keyboard("{ArrowRight}"); // a bookmark has nothing to open
+    await at("Tracker");
+    await user.keyboard("{ArrowLeft}"); // back to its folder
+    await at("Work");
+    await user.keyboard("{ArrowLeft}"); // folds it
+    await waitFor(() => expect(names()).toEqual(["Docs", "Work", "News"]));
+    await user.keyboard("{End}");
+    await at("News");
+    await user.keyboard("{ArrowDown}"); // nothing below
+    await at("News");
+    await user.keyboard("{Home}");
+    await at("Docs");
+    await user.keyboard("{ArrowUp}");
+    await at("Docs");
+    await user.keyboard("{ArrowDown}{Enter}"); // Enter on a folder toggles it
+    await waitFor(() => expect(names()).toEqual(["Docs", "Work", "Tracker", "News"]));
   });
 
   it("opens a bookmark in a new browser tab outside the desktop app", async () => {
     bookmarkApi();
-    renderAt("/");
-    const link = await screen.findByRole("link", { name: "Docs" });
+    await openTree();
+    const link = screen.getByRole("treeitem", { name: "Docs" });
     expect(link).toHaveAttribute("href", "https://docs.example/");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -141,11 +214,11 @@ describe("the navigation's bookmarks", () => {
     const shown = vi.fn();
     const listener = (event: Event) => shown((event as CustomEvent<string>).detail);
     window.addEventListener(MENU_EVENT, listener);
-    renderAt("/");
-    const link = await screen.findByRole("link", { name: "News" });
-    expect(fireEvent.click(link)).toBe(false); // prevented: no second window
+    await openTree();
+    fireEvent.click(screen.getByRole("treeitem", { name: "Work" }));
+    expect(fireEvent.click(screen.getByRole("treeitem", { name: "Tracker" }))).toBe(false); // prevented: no window
     await waitFor(() => expect(shown).toHaveBeenCalledWith("browser-show"));
-    expect(browser).toHaveBeenCalledWith({ action: "new-tab", url: "https://news.example/" });
+    expect(browser).toHaveBeenCalledWith({ action: "new-tab", url: "https://tracker.example/" });
     window.removeEventListener(MENU_EVENT, listener);
   });
 
@@ -159,17 +232,42 @@ describe("the navigation's bookmarks", () => {
     const shown = vi.fn();
     const listener = (event: Event) => shown((event as CustomEvent<string>).detail);
     window.addEventListener(MENU_EVENT, listener);
-    renderAt("/");
-    fireEvent.click(await screen.findByRole("link", { name: "Docs" }));
+    await openTree();
+    fireEvent.click(screen.getByRole("treeitem", { name: "Docs" }));
     await waitFor(() => expect(shown).toHaveBeenCalledWith("browser-show"));
     window.removeEventListener(MENU_EVENT, listener);
   });
 
-  it("shows no section without a top-level bookmark, or when hz has no bookmarks yet", async () => {
+  it("scrolls a long tree inside its own section", async () => {
+    bookmarkApi();
+    const { tree } = await openTree();
+    expect(tree.className).toContain("max-h-64");
+    expect(tree.className).toContain("overflow-y-auto");
+  });
+
+  it("keeps the top-level bookmarks as icons in the collapsed rail", async () => {
+    bookmarkApi();
+    render(
+      <Providers client={queryClient()}>
+        <MemoryRouter>
+          <BookmarkNavigation compact linkClass="rail" />
+        </MemoryRouter>
+      </Providers>,
+    );
+    const list = await screen.findByRole("list", { name: "Bookmarks" });
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["Docs", "News"]);
+    expect(screen.queryByRole("tree")).toBeNull();
+  });
+
+  it("shows no tree when hz has no bookmarks", async () => {
     mockApi({ ...shell });
     renderAt("/");
     await screen.findByRole("navigation", { name: "Main" });
-    expect(screen.queryByRole("region", { name: "Bookmarks" })).toBeNull();
+    expect(screen.queryByRole("tree", { name: "Bookmarks" })).toBeNull();
   });
 });
 

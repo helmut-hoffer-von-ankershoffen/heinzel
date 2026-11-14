@@ -1147,7 +1147,7 @@ const en = {
     "Browsing inside this panel needs the desktop app. Here, open the website in a new browser tab and keep your workspace beside it.",
   "bookmarks.title": "Bookmarks",
   "bookmarks.intro":
-    "Your bookmarks for the built-in browser. The ones at the top level also appear in the navigation. Clearing browsing data keeps them.",
+    "Your bookmarks for the built-in browser. The navigation shows them as a tree, in this order. Clearing browsing data keeps them.",
   "bookmarks.manage": "Manage bookmarks",
   "bookmarks.tree": "Bookmarks and folders",
   "bookmarks.empty": "No bookmarks yet. Add an address above, or use the star in the browser's address bar.",

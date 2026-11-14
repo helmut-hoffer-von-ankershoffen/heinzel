@@ -1,11 +1,14 @@
-// The navigation's bookmarks: the top-level bookmarks (not folders or their contents), each with its favicon.
+// The navigation's bookmarks: the whole tree. Folders open and close (remembered), every bookmark has its favicon.
+import { ChevronRight, Folder } from "lucide-react";
+import { type KeyboardEvent, useRef, useState } from "react";
 import { Link } from "react-router";
+import type { SchemaBookmark } from "@/api/client";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Favicon } from "./Favicon";
 import { openInApp, opensInApp } from "./open";
 import { useBookmarks } from "./queries";
-import { topLevel } from "./tree";
+import { entries, shownEntries, type TreeKey, topLevel, treeStep } from "./tree";
 
 type Props = Readonly<{
   compact?: boolean;
@@ -13,47 +16,147 @@ type Props = Readonly<{
   linkClass: string;
 }>;
 
+const OPEN = "hz.bookmarks.open";
+const KEYS: readonly string[] = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"];
+
+/** The folders open in the navigation, remembered in this browser; storage may be unavailable, which is fine. */
+function useOpenFolders(): [Set<string>, (id: string, open: boolean) => void] {
+  const [open, setOpen] = useState<Set<string>>(() => {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(OPEN) ?? "[]");
+      return new Set(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const set = (id: string, value: boolean) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (value) next.add(id);
+      else next.delete(id);
+      try {
+        localStorage.setItem(OPEN, JSON.stringify([...next]));
+      } catch {
+        // Not remembered then.
+      }
+      return next;
+    });
+  return [open, set];
+}
+
 export function BookmarkNavigation({ compact = false, linkClass }: Props) {
   const bookmarks = useBookmarks();
-  const entries = topLevel(bookmarks.data);
-  if (!entries.length) return null;
+  const [open, setFolder] = useOpenFolders();
+  const [focused, setFocused] = useState<string | null>(null);
+  const tree = useRef<HTMLDivElement>(null);
+  const all = entries(bookmarks.data);
+  if (!all.length) return null;
   const inApp = opensInApp();
-  return (
-    <section aria-label={t("bookmarks.title")}>
-      {!compact && (
-        <Link
-          to="/bookmarks"
-          className="mt-5 mb-1.5 flex items-center rounded-md pr-3 pl-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
-          title={t("bookmarks.manage")}
-        >
-          {t("bookmarks.title")}
-        </Link>
-      )}
-      <ul className={cn("flex gap-0.5", compact ? "mt-2 flex-col items-center" : "flex-col")}>
-        {entries.map((entry) => (
+  const icon = (entry: SchemaBookmark) => (
+    <Favicon image={entry.origin ? bookmarks.data?.favicons?.[entry.origin] : null} className="size-(--icon)" />
+  );
+  const follow = (entry: SchemaBookmark) => (event: { preventDefault: () => void }) => {
+    if (!inApp || !entry.url) return;
+    event.preventDefault();
+    void openInApp(entry.url);
+  };
+  // The collapsed rail has no room for a tree: it keeps the top-level bookmarks as icons.
+  if (compact) {
+    const top = topLevel(bookmarks.data);
+    if (!top.length) return null;
+    return (
+      <ul aria-label={t("bookmarks.title")} className="mt-2 flex flex-col items-center gap-0.5">
+        {top.map((entry) => (
           <li key={entry.id}>
             <a
               href={entry.url ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               className={linkClass}
-              title={compact ? entry.title : (entry.url ?? undefined)}
-              aria-label={compact ? entry.title : undefined}
-              onClick={(event) => {
-                if (!inApp || !entry.url) return;
-                event.preventDefault();
-                void openInApp(entry.url);
-              }}
+              title={entry.title}
+              aria-label={entry.title}
+              onClick={follow(entry)}
             >
-              <Favicon
-                image={entry.origin ? bookmarks.data?.favicons?.[entry.origin] : null}
-                className="size-(--icon)"
-              />
-              {!compact && <span className="truncate">{entry.title}</span>}
+              {icon(entry)}
             </a>
           </li>
         ))}
       </ul>
-    </section>
+    );
+  }
+  const shown = shownEntries(bookmarks.data, open);
+  // One item of the tree is in the tab order: the one last focused, else the first.
+  const tabStop = shown.some((entry) => entry.id === focused) ? focused : shown[0]?.id;
+  const focus = (id: string) => {
+    setFocused(id);
+    // After a folder opened or closed, the item to focus is drawn in the next frame.
+    requestAnimationFrame(() => tree.current?.querySelector<HTMLElement>(`[data-bookmark="${id}"]`)?.focus());
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = (event.target as HTMLElement).dataset?.bookmark;
+    if (!current || !KEYS.includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const step = treeStep(shown, open, current, event.key as TreeKey);
+    if (step.open) setFolder(step.open, true);
+    if (step.close) setFolder(step.close, false);
+    if (step.focus) focus(step.focus);
+  };
+  return (
+    <div>
+      <Link
+        to="/bookmarks"
+        className="mt-5 mb-1.5 flex items-center rounded-md pr-3 pl-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
+        title={t("bookmarks.manage")}
+      >
+        {t("bookmarks.title")}
+      </Link>
+      {/* A long tree scrolls here, inside its section, and leaves the rest of the navigation where it is. */}
+      <div
+        ref={tree}
+        role="tree"
+        aria-label={t("bookmarks.title")}
+        onKeyDown={onKeyDown}
+        className="flex max-h-64 flex-col gap-0.5 overflow-y-auto"
+      >
+        {shown.map((entry) => {
+          const depth = entry.depth ?? 0;
+          const shared = {
+            role: "treeitem",
+            "aria-level": depth + 1,
+            "data-bookmark": entry.id,
+            tabIndex: entry.id === tabStop ? 0 : -1,
+            onFocus: () => setFocused(entry.id),
+            className: cn(linkClass, "w-full text-left"),
+            style: { paddingLeft: `${0.625 + depth * 0.875}rem` },
+          } as const;
+          return entry.kind === "folder" ? (
+            <button
+              key={entry.id}
+              type="button"
+              {...shared}
+              aria-expanded={open.has(entry.id)}
+              onClick={() => setFolder(entry.id, !open.has(entry.id))}
+            >
+              <ChevronRight aria-hidden className={cn("transition-transform", open.has(entry.id) && "rotate-90")} />
+              <Folder aria-hidden />
+              <span className="truncate">{entry.title}</span>
+            </button>
+          ) : (
+            <a
+              key={entry.id}
+              {...shared}
+              href={entry.url ?? "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={entry.url ?? undefined}
+              onClick={follow(entry)}
+            >
+              {icon(entry)}
+              <span className="truncate">{entry.title}</span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
   );
 }

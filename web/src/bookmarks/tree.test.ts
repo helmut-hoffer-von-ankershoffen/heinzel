@@ -8,9 +8,11 @@ import {
   folders,
   inside,
   originOf,
+  shownEntries,
   siblings,
   stepPlace,
   topLevel,
+  treeStep,
 } from "./tree";
 
 const entry = (id: string, kind: "bookmark" | "folder", parent: string | null, depth: number): SchemaBookmark => ({
@@ -92,5 +94,36 @@ describe("the bookmark tree", () => {
     expect(bookmarkAddress("https://example.com")).toBe("https://example.com/");
     for (const refused of ["", "two words", "localhost", "http://example.com", "https://u:p@example.com", "https://"])
       expect(bookmarkAddress(refused)).toBeNull();
+  });
+
+  it("shows what is not inside a closed folder", () => {
+    const ids = (open: string[]) => shownEntries(list, new Set(open)).map((item) => item.id);
+    expect(ids([])).toEqual(["a", "f", "d"]);
+    expect(ids(["f"])).toEqual(["a", "f", "b", "g", "d"]);
+    expect(ids(["g"])).toEqual(["a", "f", "d"]); // open, but inside a closed one
+    expect(ids(["f", "g"])).toEqual(["a", "f", "b", "g", "c", "d"]);
+    expect(shownEntries(undefined, new Set())).toEqual([]);
+  });
+
+  it("steps through the shown tree like a tree view", () => {
+    const open = new Set(["f"]);
+    const shown = shownEntries(list, open);
+    const step = (current: string, key: Parameters<typeof treeStep>[3]) => treeStep(shown, open, current, key);
+    expect(step("a", "ArrowDown")).toEqual({ focus: "f" });
+    expect(step("a", "ArrowUp")).toEqual({ focus: undefined });
+    expect(step("d", "ArrowDown")).toEqual({ focus: undefined });
+    expect(step("b", "Home")).toEqual({ focus: "a" });
+    expect(step("b", "End")).toEqual({ focus: "d" });
+    expect(step("f", "ArrowRight")).toEqual({ focus: "b" }); // open: into it
+    expect(step("g", "ArrowRight")).toEqual({ open: "g" }); // closed: open it
+    expect(step("b", "ArrowRight")).toEqual({});
+    expect(step("f", "ArrowLeft")).toEqual({ close: "f" });
+    expect(step("g", "ArrowLeft")).toEqual({ focus: "f" }); // closed: to its folder
+    expect(step("b", "ArrowLeft")).toEqual({ focus: "f" });
+    expect(step("a", "ArrowLeft")).toEqual({});
+    expect(step("nowhere", "ArrowDown")).toEqual({});
+    // An open folder with nothing in it has nowhere to go.
+    const empty = { bookmarks: [by("f")] };
+    expect(treeStep(shownEntries(empty, open), open, "f", "ArrowRight")).toEqual({});
   });
 });

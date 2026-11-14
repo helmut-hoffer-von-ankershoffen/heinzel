@@ -75,3 +75,44 @@ export function bookmarkAddress(value: string): string | null {
     return null;
   }
 }
+
+/** The entries the navigation's tree shows: everything not inside a closed folder, in order. */
+export function shownEntries(list: SchemaBookmarkList | undefined, open: ReadonlySet<string>): SchemaBookmark[] {
+  const shown: SchemaBookmark[] = [];
+  let closedAt: number | null = null;
+  for (const entry of entries(list)) {
+    const depth = entry.depth ?? 0;
+    if (closedAt !== null && depth > closedAt) continue;
+    closedAt = entry.kind === "folder" && !open.has(entry.id) ? depth : null;
+    shown.push(entry);
+  }
+  return shown;
+}
+
+export type TreeKey = "ArrowDown" | "ArrowUp" | "ArrowLeft" | "ArrowRight" | "Home" | "End";
+export type TreeStep = { focus?: string; open?: string; close?: string };
+
+/** What a key does at `current` in the shown tree, as a tree view does it: move, open or fold. */
+export function treeStep(
+  shown: readonly SchemaBookmark[],
+  open: ReadonlySet<string>,
+  current: string,
+  key: TreeKey,
+): TreeStep {
+  const index = shown.findIndex((entry) => entry.id === current);
+  const entry = shown[index];
+  if (!entry) return {};
+  if (key === "Home") return { focus: shown[0]?.id };
+  if (key === "End") return { focus: shown.at(-1)?.id };
+  if (key === "ArrowDown") return { focus: shown[index + 1]?.id };
+  if (key === "ArrowUp") return { focus: shown[index - 1]?.id };
+  const folder = entry.kind === "folder";
+  if (key === "ArrowRight") {
+    if (!folder) return {};
+    if (!open.has(entry.id)) return { open: entry.id };
+    const child = shown[index + 1];
+    return child?.parent === entry.id ? { focus: child.id } : {};
+  }
+  if (folder && open.has(entry.id)) return { close: entry.id };
+  return entry.parent ? { focus: entry.parent } : {};
+}
