@@ -933,6 +933,7 @@ const en = {
   "plugins.kind.capability": "Capability",
   "plugins.kind.playbook": "Playbook",
   "plugins.sourceUnknown": "source not reported yet",
+  "plugins.localRepository": "Local repository",
   "plugins.yoursIntro": "Installed on this machine. Their modules, themes and playbooks are part of hz now.",
   "plugins.discoverIntro":
     "Not installed yet: first-party plugins and community ones from GitHub. Add installs any other, e.g. your company's private plugin.",
