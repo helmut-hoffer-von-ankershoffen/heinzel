@@ -64,7 +64,9 @@ cleaned of control and invisible characters and cut at 3000 characters, a one-li
 at most 10 distinct options of at most 75 characters, a timeout from 1 second to an hour) and checks what comes back:
 a chosen option must be one that was offered and the answer's text is then exactly that label; a typed reply is
 cleaned and refused above the 32,000 characters a typed message may have. Adapters neutralise mention syntax as for
-`post`.
+`post`, and the core neutralises it too in the text, context and options it sends, so an adapter that doesn't still
+pages nobody. At most one call per adapter is in flight: while a hung one still runs, a new notice is skipped and
+logged, not sent in another thread.
 
 **Notices also in chat.** `[system.notify] chat_notifications` (off by default). Every notice that pops up also goes to
 `notify_self`: the same notice at the same time under the same policy, so quiet mode, working hours, the kinds switched

@@ -1,6 +1,10 @@
 """The chat capability's self channel: optional methods, hz's trusted view and its bounds (ADR 0160)."""
 
+import contextlib
+import re
 import threading
+import time
+from dataclasses import replace
 from typing import ClassVar
 
 import pytest
@@ -16,13 +20,16 @@ from heinzel.kernel import (
     PostedMessage,
     Window,
 )
+from heinzel.kernel import _self_chat as self_chat
 from heinzel.kernel._capabilities import Capability, declared_unsupported
 from heinzel.kernel._protocols import Chat
 from heinzel.kernel._self_chat import (
+    INERT_AT,
     MAX_ANSWER,
     MAX_SELF_TEXT,
     SelfChat,
     checked_answer,
+    inert_mentions,
     self_context,
     self_options,
     self_text,
@@ -243,3 +250,123 @@ def test_a_typed_answer_is_no_longer_than_a_typed_message():
     assert len(checked_answer(SelfAnswer(text="x" * MAX_ANSWER), (), "a").text) == MAX_ANSWER
     with pytest.raises(HeinzelError, match="longer than"):
         checked_answer(SelfAnswer(text="x" * (MAX_ANSWER + 1)), (), "a")
+
+
+def inert(text: str) -> str:
+    """`text` with each `~` as the inert at sign, to keep the look-alike character out of the source."""
+    return text.replace("~", INERT_AT)
+
+
+@pytest.mark.parametrize(
+    ("raw", "sent"),
+    [
+        ("Ping @here and @Channel", "Ping ~here and ~Channel"),
+        ("@everyone look", "~everyone look"),
+        ("x <!here> y <!channel> <!everyone>", "x ~here y ~channel ~everyone"),
+        ("hi <@U123ABC> and <!subteam^S99|@team>", "hi ~U123ABC and ~team"),
+        ("<at id='1'>Ann</at> ok", "~Ann ok"),
+        ("mail me at ann@example.com, @hereford stays", "mail me at ann@example.com, @hereford stays"),
+        ("<!here|<!channel>>", "~channel"),
+        ("<@U1|<@U2>>", "~U2"),
+        ("@@here and @room", "~here and ~room"),
+        ("<!here never closes", "~here never closes"),
+        ("<at>A</at> <!subteam^S9|@team>", "~A ~team"),
+    ],
+)
+def test_mention_syntax_is_made_inert(raw, sent):
+    assert inert_mentions(raw) == inert(sent)
+
+
+def test_notify_and_ask_neutralise_mentions_in_text_context_and_options():
+    SelfOnly.sent.clear()
+    channel = SelfChat(adapter="acmechat", notifies=True, asks=True, build=SelfOnly)
+    channel.notify("Build done <!channel>", context="@here run")
+    assert SelfOnly.sent[-1]["text"] == inert("Build done ~channel")
+    assert SelfOnly.sent[-1]["context"] == inert("~here run")
+    answer = channel.ask("Ping <@U1>?", options=["@everyone", "No"], timeout=5, context="<!here>")
+    assert SelfOnly.sent[-1]["question"] == inert("Ping ~U1?")
+    assert SelfOnly.sent[-1]["options"] == (inert("~everyone"), "No")
+    assert answer.option == inert("~everyone"), "the answer names the option as offered"
+
+
+def test_a_hung_adapter_holds_one_thread_and_callers_return_promptly(monkeypatch):
+    monkeypatch.setattr(self_chat, "NOTIFY_WAIT", 0.05)
+    release = threading.Event()
+    calls: list[str] = []
+
+    class Hung(SelfOnly):
+        def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+            calls.append(text)
+            release.wait(10)
+            return SelfMessage(id="late", thread="t")
+
+    channel = SelfChat(adapter="hung", notifies=True, asks=False, build=Hung)
+    before = threading.active_count()
+    started = time.monotonic()
+    with pytest.raises(HeinzelError, match="didn't answer"):
+        channel.notify("first")
+    for n in range(20):
+        with pytest.raises(HeinzelError, match="still busy"):
+            channel.notify(f"again {n}")
+    assert time.monotonic() - started < 2, "callers return promptly"
+    assert threading.active_count() <= before + 1, "one thread at most for the hung adapter"
+    assert calls == ["first"], "skipped sends never reach the adapter"
+    release.set()
+    deadline = time.monotonic() + 5
+    while "hung" in self_chat._BUSY and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert channel.notify("after").id == "late", "once the hung call ends the next one goes out"
+
+
+def test_self_chat_is_kept_until_the_binding_changes(make_kernel):
+    built: list[int] = []
+
+    def factory() -> SelfOnly:
+        built.append(1)
+        return SelfOnly()
+
+    chat = Module("acmechat", "Acme chat.")
+    chat.provides("chat", modes={"read", "write"}, name="acmechat")(factory)
+    kernel = make_kernel(acmechat=chat)
+    first = kernel.self_chat()
+    assert first is not None
+    assert kernel.self_chat() is first
+    assert kernel.self_chat() is first
+    assert len(built) == 1, "the factory is built once, not on every call"
+    providers = kernel._capabilities.adapters[("chat", "acmechat")]
+    kernel._capabilities.adapters[("chat", "acmechat")] = [replace(providers[0])]
+    assert kernel.self_chat() is not first, "a changed binding finds the channel again"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "<!here|<!channel>>",
+        "<@U1|<@U2>>",
+        "<!here|" + "a" * 81 + ">",
+        "<@" + "U" * 81 + ">",
+        "<at>" + "x" * 81 + "</at>",
+        "<at id='" + "x" * 90 + "'>A</at>",
+        "@@here",
+        "@room",
+        "<!a|" * 2000 + ">" * 2000,
+        "<at>" * 2000 + "</at>" * 2000,
+    ],
+)
+def test_no_length_or_nesting_gets_a_mention_through(raw):
+    """Probes from review: nested, long and doubled mentions must all come out inert, in linear time."""
+    started = time.monotonic()
+    out = inert_mentions(raw).lower()
+    assert time.monotonic() - started < 1
+    assert not re.search(r"<\s*[@!#]|<\s*/?\s*at\b|(?<!\w)@+(here|channel|everyone|all|room)\b", out), out[:80]
+
+
+@pytest.mark.parametrize("raw", ["@" * 100_000, "<" + " " * 100_000, "<@" * 50_000, "@here" * 20_000, " @" * 50_000])
+def test_bounding_self_text_context_and_options_is_linear(raw):
+    """Review probe: long runs of mention characters must not cost quadratic time anywhere on the way out."""
+    started = time.monotonic()
+    for bound in (inert_mentions, self_context, self_text):
+        bound(raw)
+    with contextlib.suppress(HeinzelError):  # a long label is refused; "<" alone is a fine one
+        self_options([raw])
+    assert time.monotonic() - started < 1
