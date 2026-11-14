@@ -3,7 +3,7 @@
 // else the last one you talked to in this browser, else your first that is not retired; with none yet, the first start
 // names one. Its conversation lives in hz, so it survives a reload. There is no general chat any more: earlier
 // general-chat sessions stay on disk untouched and unused (no migration, owner 2026-11-14).
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useSearchParams } from "react-router";
 import { useHeinzelSessions } from "@/api/queries";
 import { DurableSession } from "@/chat/DurableSession";
@@ -12,6 +12,7 @@ import { FirstHeinzel, settleFirstHeinzel } from "@/chat/FirstHeinzel";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { clearChatLink, isDurableSession } from "@/lib/chatIntent";
+import { splash } from "@/splash/store";
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const [params] = useSearchParams();
@@ -25,6 +26,9 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
 function DefaultHeinzel({ onCollapse }: { onCollapse: () => void }) {
   const [, setParams] = useSearchParams();
   const heinzels = useHeinzelSessions();
+  // While the splash is up (hz isn't answering, or is restarting) it already says what is wrong: the panel's error is
+  // then a status, not a second alert (role="alert" only for a new failure in this view).
+  const splashUp = useSyncExternalStore(splash.subscribe, splash.get).phase !== "ready";
   const listed = (heinzels.data?.sessions?.length ?? 0) > 0;
   // Once any Heinzel is listed the first start is over: a request a lost answer left behind is settled here.
   useEffect(() => {
@@ -38,7 +42,7 @@ function DefaultHeinzel({ onCollapse }: { onCollapse: () => void }) {
     );
   if (heinzels.isError)
     return (
-      <div role="alert" className="space-y-2 p-3 text-sm">
+      <div role={splashUp ? "status" : "alert"} className="space-y-2 p-3 text-sm">
         <p>{t("oneChat.loadError")}</p>
         <Button type="button" variant="outline" onClick={() => void heinzels.refetch()}>
           {t("oneChat.retry")}

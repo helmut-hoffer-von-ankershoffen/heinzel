@@ -171,6 +171,7 @@ export function HeinzelHeader({
             <HeinzelAvatar view="bust" {...look} state={activityPose(shown, true)} className="size-8 overflow-hidden" />
             <span className="min-w-0">
               <span className="block truncate text-[15px] leading-tight font-medium">{name}</span>
+              {/* A real space between the name and the word, so the shown text reads "Helmi Idle", not "HelmiIdle". */}{" "}
               <span
                 id={`${sessionId}-activity`}
                 className="block truncate text-ui-sm leading-tight text-muted-foreground"
