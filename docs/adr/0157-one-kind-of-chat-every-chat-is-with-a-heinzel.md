@@ -3,9 +3,10 @@ status: accepted
 date: 2026-11-14
 implementation: built
 decision-makers: maintainer (decision: no flag, no migration), architect (shape)
-amends: 0045, 0049
+amends: 0045, 0049, 0056
 amends-0045: the app's chat is always with a Heinzel; the general chat, its switcher and "Ask about it" leave the web app
 amends-0049: no general chat beside the Heinzels' sessions; a default Heinzel, named at first start
+amends-0056: a widget's "Ask about it" becomes "Ask <Name>", typed into the default Heinzel's composer, never sent
 related: 0039, 0043, 0058, 0115, 0122
 ---
 
@@ -50,7 +51,8 @@ Chosen option: **every chat in the web app is with a Heinzel.** Checkable statem
 1. **No general chat.** The chat panel shows one Heinzel's session (`hz heinzel session`) and nothing else. There is
    no general composer, no Workshop or recent-chats switcher, no model picker or cost line of the general chat, no
    "Back to chat", no Earlier chats, and no "Ask about it" on Today's cards, Today's widgets or the team graph: each of
-   those opened a general chat.
+   those opened a general chat. In its place "Ask <Name>" opens the default Heinzel's chat and types the card's text
+   into its composer (the tab's draft, `hz.durable.composer.<id>`) without sending it; it reads no earlier chat.
 2. **The default Heinzel.** Without a `?chat=hz-…` link the panel opens the Heinzel the person talked to last in this
    browser, else the oldest one that is not retired. A retired or removed Heinzel is never the default. A link to an
    old general chat (`?chat=<id>` that is not a Heinzel, or `?chat-context=`) opens the default Heinzel and reads
@@ -77,7 +79,8 @@ Chosen option: **every chat in the web app is with a Heinzel.** Checkable statem
 - Good: nothing on disk changes, so going back to an older version still finds its general chats.
 - Bad: earlier general conversations are no longer reachable in the web app (the CLI still lists them with
   `hz chat list`).
-- Bad: "Ask about it" from Today and the team graph is gone until asking a Heinzel about a card is designed.
+- Neutral: "Ask about it" from Today, its widgets and the team graph is "Ask <Name>" now: the question waits in the
+  default Heinzel's composer, so the person reads and sends it, and a widget's text is still framed as the module's.
 - Neutral: the general chat's operations stay, unused by the web app; removing them is a separate decision.
 
 ### Confirmation
