@@ -93,7 +93,7 @@ const CANOPY = { half: 170, height: 84, rim: -40 };
 const GRIP = { x: 430, y: 600, canopyX: 335 };
 
 /** The canvas y of the top of the head's drawing (the cap's tip, or the crown for a baby). */
-function headTop(age: Age): number {
+export function headTop(age: Age): number {
   return 173 + 0.75 * Math.min(BY_AGE[age].tip ?? 38, 38);
 }
 

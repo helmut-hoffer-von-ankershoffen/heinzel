@@ -7,7 +7,7 @@ import { Shuffle, Undo2 } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
+import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, headTop, SHIRTS, viewBox } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { appearanceLook } from "@/heinzel/look";
 import { MISSIONS } from "@/heinzel/missions";
@@ -47,15 +47,23 @@ export function settleFirstHeinzel() {
 const PARTS = ["hat", "age", "beard", "shirt", "build", "accessories"] as const;
 type PartId = (typeof PARTS)[number];
 
-/** Where each part sits on the full figure, in percent of its height (the drawing is one canvas, no new art). */
-const AREA: Record<PartId, { top: number; height: number }> = {
-  hat: { top: 0, height: 15 },
-  age: { top: 15, height: 15 },
-  beard: { top: 30, height: 13 },
-  shirt: { top: 43, height: 20 },
-  build: { top: 63, height: 17 },
-  accessories: { top: 80, height: 20 },
-};
+/** Where each part sits on the full figure, as canvas y ranges (the drawing is one canvas, no new art). */
+function areas(look: Look): Record<PartId, { top: number; height: number }> {
+  const top = Number(viewBox(look.age, "full", look.accessories ?? []).split(" ")[1]);
+  const high = 860 - top;
+  const range = (from: number, to: number) => ({
+    top: ((from - top) / high) * 100,
+    height: ((to - from) / high) * 100,
+  });
+  return {
+    hat: range(Math.min(headTop(look.age), 200), 270),
+    age: range(270, 400),
+    beard: range(400, 520),
+    shirt: range(520, 680),
+    build: range(680, 780),
+    accessories: range(780, 860),
+  };
+}
 
 const partLabel = (part: PartId) => t(`meet.part.${part}` as MessageKey);
 
@@ -175,6 +183,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
   const { name, look } = meeting;
   const chosen = MISSIONS.find((item) => item.id === mission) ?? MISSIONS[0];
   const shown = name.trim() || meeting.suggested;
+  const place = areas(look);
   // Every change of the look or the name is one step back; typing a name is one step per burst, not per letter.
   const change = (next: Meeting) => {
     setEarlier((steps) => [...steps, meeting]);
@@ -224,7 +233,15 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
     <form onSubmit={(event) => void submit(event)} className="flex w-full max-w-2xl flex-col gap-5 text-left">
       <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
         <div className="flex flex-col items-center gap-2">
-          <div className="relative h-60 w-36 shrink-0">
+          <div
+            className="relative w-36 shrink-0"
+            style={{
+              aspectRatio: viewBox(look.age, "full", look.accessories ?? [])
+                .split(" ")
+                .slice(2)
+                .join(" / "),
+            }}
+          >
             <HeinzelAvatar
               label={t("meet.figure", { name: shown })}
               {...appearanceLook(look)}
@@ -238,7 +255,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
                 aria-pressed={part === id}
                 title={partLabel(id)}
                 onClick={() => setPart(id)}
-                style={{ top: `${AREA[id].top}%`, height: `${AREA[id].height}%` }}
+                style={{ top: `${place[id].top}%`, height: `${place[id].height}%` }}
                 className={cn(
                   "absolute inset-x-0 rounded-md focus-visible:outline-2 focus-visible:outline-primary",
                   part === id ? "bg-primary/10 ring-2 ring-primary/60" : "hover:bg-primary/5",
