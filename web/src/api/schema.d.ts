@@ -2028,29 +2028,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/heinzel/start-helper": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-         * @description Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-         *
-         *     Raises:
-         *         HeinzelError: If the feature is off, request changed or selected model access is unavailable.
-         */
-        post: operations["heinzel_start_helper"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/heinzel/tool-activity": {
         parameters: {
             query?: never;
@@ -18157,24 +18134,6 @@ export interface components {
              */
             session_id: string;
         };
-        /** heinzel_start_helper_Input */
-        heinzel_start_helper_Input: {
-            /**
-             * Name
-             * @description Your Heinzel's display name.
-             */
-            name: string;
-            /**
-             * Prompt
-             * @description The exact first chat message; grants no connected access or schedule.
-             */
-            prompt: string;
-            /**
-             * Request Id
-             * @description A stable client request id; reuse it only for an exact retry.
-             */
-            request_id: string;
-        };
         /** system_claude_acknowledge_Input */
         system_claude_acknowledge_Input: {
             /**
@@ -18663,7 +18622,6 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelSetLevelInput = components['schemas']['heinzel_set_level_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
-export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
 export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
 export type SchemaSystemClaudeDisableInput = components['schemas']['system_claude_disable_Input'];
 export type SchemaSystemClaudeEnableInput = components['schemas']['system_claude_enable_Input'];
@@ -21874,39 +21832,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSharingPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    heinzel_start_helper: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["heinzel_start_helper_Input"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserChatAnswer"];
                 };
             };
             /** @description Validation Error */

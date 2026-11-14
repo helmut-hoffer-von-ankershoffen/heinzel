@@ -23408,38 +23408,6 @@
         "title": "heinzel_share_draft_link_Input",
         "type": "object"
       },
-      "heinzel_start_helper_Input": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "description": "Your Heinzel's display name.",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "prompt": {
-            "description": "The exact first chat message; grants no connected access or schedule.",
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "request_id": {
-            "description": "A stable client request id; reuse it only for an exact retry.",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Request Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id",
-          "name",
-          "prompt"
-        ],
-        "title": "heinzel_start_helper_Input",
-        "type": "object"
-      },
       "system_claude_acknowledge_Input": {
         "additionalProperties": false,
         "properties": {
@@ -28357,48 +28325,6 @@
           }
         },
         "summary": "Discover owner-private pending sharing request references.",
-        "tags": [
-          "heinzel"
-        ]
-      }
-    },
-    "/heinzel/start-helper": {
-      "post": {
-        "description": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.\n\nRaises:\n    HeinzelError: If the feature is off, request changed or selected model access is unavailable.",
-        "operationId": "heinzel_start_helper",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/heinzel_start_helper_Input"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserChatAnswer"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.",
         "tags": [
           "heinzel"
         ]

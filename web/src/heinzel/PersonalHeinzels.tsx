@@ -9,14 +9,12 @@ import {
   type SchemaSessionList,
   type SchemaSessionSnapshot,
 } from "@/api/client";
-import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { ActivityFace } from "@/heinzel/ActivityFace";
 import { sessionWord } from "@/heinzel/activity";
 import { appearanceLook } from "@/heinzel/look";
-import { StartHelper } from "@/heinzel/StartHelper";
 import { type MessageKey, t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
@@ -145,7 +143,6 @@ export function usePersonalSessions() {
 }
 
 export function PersonalHeinzels() {
-  const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null);
@@ -236,7 +233,6 @@ export function PersonalHeinzels() {
           {t("personal.create")}
         </Button>
       )}
-      {connectedFrontdoor && <StartHelper />}
       {drafting && (
         <NewHeinzel
           onLock={setLocked}
