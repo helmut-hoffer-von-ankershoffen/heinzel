@@ -30,7 +30,8 @@ export async function openDetails(page) {
   const chat = page.getByRole("complementary", { name: "Chat" });
   await heinzelComposer(page).waitFor({ timeout: 30000 });
   const heading = page.getByRole("heading", { level: 1, name: /, your Heinzel$/ });
-  if (!(await heading.isVisible())) {
+  const opened = !(await heading.isVisible());
+  if (opened) {
     await chat.getByRole("button", { name: "More: search, about" }).click();
     await page
       .getByRole("dialog", { name: "More" })
@@ -39,7 +40,11 @@ export async function openDetails(page) {
   }
   await heading.waitFor({ timeout: 30000 });
   // On a phone a new address selects the Page tab; with Chat selected the page stays above the chat, both in reach.
+  // That selection runs just after the page renders (before any tap of a person's, which React handles after it), so
+  // when About opened the page, wait for it to land before choosing Chat; else a slow runner chooses first and loses.
   const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
+  if (opened && (await chatTab.count()))
+    await page.getByRole("tab", { name: "Page", exact: true, selected: true }).waitFor({ timeout: 30000 });
   if ((await chatTab.count()) && !(await heinzelComposer(page).isVisible())) {
     await chatTab.press("Enter");
     await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
