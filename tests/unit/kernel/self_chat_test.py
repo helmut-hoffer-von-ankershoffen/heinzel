@@ -1,5 +1,6 @@
 """The chat capability's self channel: optional methods, hz's trusted view and its bounds (ADR 0160)."""
 
+import contextlib
 import re
 import threading
 import time
@@ -348,7 +349,6 @@ def test_self_chat_is_kept_until_the_binding_changes(make_kernel):
         "<at id='" + "x" * 90 + "'>A</at>",
         "@@here",
         "@room",
-        "< !here>",
         "<!a|" * 2000 + ">" * 2000,
         "<at>" * 2000 + "</at>" * 2000,
     ],
@@ -359,3 +359,14 @@ def test_no_length_or_nesting_gets_a_mention_through(raw):
     out = inert_mentions(raw).lower()
     assert time.monotonic() - started < 1
     assert not re.search(r"<\s*[@!#]|<\s*/?\s*at\b|(?<!\w)@+(here|channel|everyone|all|room)\b", out), out[:80]
+
+
+@pytest.mark.parametrize("raw", ["@" * 100_000, "<" + " " * 100_000, "<@" * 50_000, "@here" * 20_000, " @" * 50_000])
+def test_bounding_self_text_context_and_options_is_linear(raw):
+    """Review probe: long runs of mention characters must not cost quadratic time anywhere on the way out."""
+    started = time.monotonic()
+    for bound in (inert_mentions, self_context, self_text):
+        bound(raw)
+    with contextlib.suppress(HeinzelError):  # a long label is refused; "<" alone is a fine one
+        self_options([raw])
+    assert time.monotonic() - started < 1

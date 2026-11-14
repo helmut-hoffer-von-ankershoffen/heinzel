@@ -57,13 +57,13 @@ INERT_AT = "\uff20"
 
 logger = logging.getLogger(__name__)
 
-_BROADCAST = re.compile(r"(?<!\w)@+(here|channel|everyone|all|room)\b", re.IGNORECASE)
+_BROADCAST = re.compile(r"(?<![\w@])@+(here|channel|everyone|all|room)\b", re.IGNORECASE)
 """A broadcast written out, such as `@here` or `@@here`: chats that turn typed names into pings would page everyone."""
-_ESCAPED = re.compile(r"<\s*[@!#]([^<>\s|]*)(?:\|([^<>]*))?>")
+_ESCAPED = re.compile(r"<[@!#]([^<>\s|]*)(?:\|([^<>]*))?>")
 """An innermost mention in angle brackets, such as `<!here>` or `<@U123>`, with an optional `|label`, of any length."""
-_TAGGED = re.compile(r"<\s*at\b[^<>]*>([^<>]*)<\s*/\s*at\s*>", re.IGNORECASE)
+_TAGGED = re.compile(r"<at\b[^<>]*>([^<>]*)</at>", re.IGNORECASE)
 """An innermost mention tag around a name, of any length."""
-_OPENER = re.compile(r"<\s*[@!#]|<\s*/?\s*at\b[^<>]*>?", re.IGNORECASE)
+_OPENER = re.compile(r"<[@!#]|</?at\b[^<>]*>?", re.IGNORECASE)
 """What is left of mention syntax once the whole mentions are gone: an opening token that a chat could still read."""
 _MENTION_DEPTH = 4
 """How many levels of nested mentions become readable names; deeper ones only lose their opening tokens."""
@@ -171,19 +171,22 @@ def self_text(text: str) -> str:
     Raises:
         HeinzelError: If nothing is left to send.
     """
-    cleaned = inert_mentions(clean_text(text)).strip()
+    cleaned = clean_text(text).strip()
+    if len(cleaned) > MAX_SELF_TEXT:  # cut before mentions are made inert, which never lengthens, so it stays linear
+        cleaned = cleaned[: MAX_SELF_TEXT - 1].rstrip() + "…"
+    cleaned = inert_mentions(cleaned).strip()
     if not cleaned:
         msg = "A self message needs text."
         raise HeinzelError(msg)
-    return cleaned if len(cleaned) <= MAX_SELF_TEXT else cleaned[: MAX_SELF_TEXT - 1].rstrip() + "…"
+    return cleaned
 
 
 def self_context(context: str | None) -> str | None:
     """A context label on one line, at most `SELF_CONTEXT_LENGTH` characters; None when empty."""
     if context is None:
         return None
-    line = " ".join(inert_mentions(clean_text(context)).split())
-    return line[:SELF_CONTEXT_LENGTH] or None
+    line = " ".join(clean_text(context).split())[:SELF_CONTEXT_LENGTH]
+    return inert_mentions(line).strip() or None
 
 
 def self_options(options: Sequence[str]) -> tuple[str, ...]:
@@ -195,11 +198,14 @@ def self_options(options: Sequence[str]) -> tuple[str, ...]:
     if isinstance(options, str):
         msg = "Options are a list of labels, not one string."
         raise HeinzelError(msg)
-    offered = tuple(" ".join(inert_mentions(clean_text(option)).split()) for option in options)
-    if len(offered) > SELF_OPTIONS:
+    if len(options) > SELF_OPTIONS:
         msg = f"A question offers at most {SELF_OPTIONS} options."
         raise HeinzelError(msg)
-    if any(not option or len(option) > SELF_OPTION_LENGTH for option in offered) or len(set(offered)) != len(offered):
+    labels = tuple(" ".join(clean_text(option).split()) for option in options)
+    # Bounded before mentions are made inert, which never lengthens a label.
+    too_long = any(len(label) > SELF_OPTION_LENGTH for label in labels)
+    offered = tuple(inert_mentions(label).strip() for label in labels)
+    if too_long or not all(offered) or len(set(offered)) != len(offered):
         msg = f"Each option is a distinct label of 1 to {SELF_OPTION_LENGTH} characters."
         raise HeinzelError(msg)
     return offered
