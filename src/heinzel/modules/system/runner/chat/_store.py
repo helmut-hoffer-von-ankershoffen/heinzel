@@ -352,6 +352,11 @@ class ChatStore(McpChatSessions):
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
+    def turn_running(self, session_id: str) -> bool:
+        """Whether another holder has the session right now; asked without waiting, and nothing is kept."""
+        with self.held(self.directory(session_id)) as free:
+            return not free
+
     @contextlib.contextmanager
     def locked(self, session: str) -> Generator[ChatSession]:
         """The session, held exclusively while the block runs, so one process at a time answers or confirms.

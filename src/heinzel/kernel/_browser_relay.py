@@ -19,6 +19,7 @@ import os
 import secrets
 import socket
 import stat
+import struct
 import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -40,6 +41,9 @@ CONNECTIONS: Final = 16
 CONNECT_SECONDS: Final = 2.0
 ANSWER_SECONDS: Final = 180.0
 """Longer than the 120 seconds an outside agent's commit waits for the person's click."""
+_SOL_LOCAL: Final = 0
+_LOCAL_PEERCRED: Final = 0x001
+_XUCRED_SIZE: Final = 76
 _REQUEST_KEYS: Final = frozenset({"kind", "session", "tool", "arguments"})
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 
@@ -80,6 +84,19 @@ def _receive(connection: socket.socket, limit: int) -> bytes:
         msg = "Invalid local message."
         raise ValueError(msg)
     return bytes(data)
+
+
+def peer_uid(connection: socket.socket) -> int | None:
+    """The user id of the process at the other end of a Unix socket, as the kernel reports it; None if unknown."""
+    try:
+        if hasattr(socket, "SO_PEERCRED"):  # Linux: struct ucred {pid, uid, gid}
+            size = struct.calcsize("3i")
+            return int(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, size))[1])
+        # macOS and the BSDs: LOCAL_PEERCRED at level SOL_LOCAL gives struct xucred {version, uid, ...}
+        credentials = connection.getsockopt(_SOL_LOCAL, _LOCAL_PEERCRED, _XUCRED_SIZE)
+        return int(struct.unpack_from("2I", credentials)[1])
+    except (OSError, struct.error):
+        return None
 
 
 class BrowserRelay:
@@ -134,6 +151,8 @@ class BrowserRelay:
     def _serve(self, connection: socket.socket) -> None:
         try:
             with connection:
+                if peer_uid(connection) != os.getuid():
+                    return  # the folder already keeps others out; this holds if a descriptor was passed along
                 connection.settimeout(CONNECT_SECONDS)
                 request = _OBJECT.validate_json(_receive(connection, REQUEST_LIMIT))
                 kind, session, tool, arguments = (request.get(key) for key in ("kind", "session", "tool", "arguments"))

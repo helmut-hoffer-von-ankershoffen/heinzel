@@ -307,6 +307,10 @@ def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") ->
                 for item in exposed(kernel, "mcp-check-in")
                 if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
             ]
+    # Built once here, before a turn calls tools from several threads: `Kernel.resolve` takes no lock.
+    for service in (ActionGate, BrowserBridge):
+        if kernel.provides(service):
+            kernel.resolve(service)
     selected: list[ChatTool] = []
     for item in exposed(kernel, HEAD):
         if (item.record.qualname, item.operation.name) == CONFIRM_AUTHORIZED:

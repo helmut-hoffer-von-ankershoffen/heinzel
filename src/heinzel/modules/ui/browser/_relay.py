@@ -14,6 +14,7 @@ from pydantic import JsonValue
 from heinzel import HeinzelError, Kernel
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._browser_relay import BrowserRelay
+from heinzel.kernel._chat_services import McpChatSessions
 from heinzel.kernel._chat_tools import AUTHENTICATION, HEAD, ChatTool, ChatToolError, chat_tools
 from heinzel.kernel._exposure import exposed
 from heinzel.kernel._identity import CurrentUser
@@ -22,6 +23,7 @@ from heinzel.kernel._text import redact_emails
 
 log = logging.getLogger(__name__)
 REFUSED = "This is not a browser tool of this chat."
+NO_TURN = "This chat has no running turn; a Heinzel uses the browser only while it answers."
 
 
 def handle(kernel: Kernel, kind: str, session: str, tool: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
@@ -39,9 +41,15 @@ def handle(kernel: Kernel, kind: str, session: str, tool: str, arguments: dict[s
 
 
 def _for_heinzel(kernel: Kernel, session: str, tool: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    found = [item for item in chat_tools(kernel, session) if item.name == tool]
+    found = [item for item in chat_tools(kernel, session) if item.name == tool]  # refuses an unknown session
     if len(found) != 1 or found[0].item.record.qualname != BROWSER_MODULE:
         return {"error": REFUSED}
+    # The sender names a session; nothing proves it is that session's agent. So the session must be one somebody
+    # is answering right now: outside a running turn no Heinzel exists that could be calling.
+    user = kernel.resolve(CurrentUser)
+    with user.using(None), user.local_read(AUTHENTICATION):
+        if not kernel.resolve(McpChatSessions).turn_running(session):
+            return {"error": NO_TURN}
     result = found[0].call(arguments)
     if isinstance(result, PageImage):
         return {"image": result.model_dump(mode="json")}

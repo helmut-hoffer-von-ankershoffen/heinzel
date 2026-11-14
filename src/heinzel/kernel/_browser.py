@@ -83,7 +83,7 @@ class BrowserCaller:
     """The agent a browser call runs for; set by a head, never by the agent."""
 
     actor: str
-    """A Heinzel's chat session id, an MCP token's actor name, or `local` for stdio MCP."""
+    """A Heinzel's chat session id, `token:<actor name>` for an MCP token, or `local` for stdio MCP."""
     kind: CallerKind
     approved: bool = False
     """True only while the chat runs a commit the person confirmed."""

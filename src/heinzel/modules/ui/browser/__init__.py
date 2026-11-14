@@ -11,7 +11,9 @@ REST API do not offer them. A process without the desktop (a chat turn's private
 to the one that has it (`_relay.py`).
 """
 
+from threading import Lock
 from typing import Annotated, Literal
+from weakref import WeakKeyDictionary
 
 from pydantic import Field, JsonValue
 
@@ -24,13 +26,30 @@ from heinzel.modules.ui.browser._service import Browser
 module = Module("browser", "Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.")
 
 
+_BUILDING = Lock()
+_BRIDGES: WeakKeyDictionary[Kernel, BrowserBridge] = WeakKeyDictionary()
+_BROWSERS: WeakKeyDictionary[BrowserBridge, Browser] = WeakKeyDictionary()
+"""One bridge per kernel and one `Browser` per bridge, whoever asks first: tool calls of one turn run on several
+threads, and two bridges or two sets of limits in one process would each see only part of an agent's calls."""
+
+
 def _bridge(kernel: Kernel) -> BrowserBridge:
     """The bridge of this process; while a desktop is connected to it, other processes can pass their calls here."""
-    return BrowserBridge(on_change=RelayHost(kernel).follow)
+    with _BUILDING:
+        if kernel not in _BRIDGES:
+            _BRIDGES[kernel] = BrowserBridge(on_change=RelayHost(kernel).follow)
+        return _BRIDGES[kernel]
+
+
+def _browser(bridge: BrowserBridge) -> Browser:
+    with _BUILDING:
+        if bridge not in _BROWSERS:
+            _BROWSERS[bridge] = Browser(bridge)
+        return _BROWSERS[bridge]
 
 
 module.service(BrowserBridge, _bridge)
-module.service(Browser)
+module.service(Browser, _browser)
 
 HEADS = {"mcp"}
 """Stdio and HTTP MCP, and so a Heinzel's chat tools, which follow the MCP head's exposure."""

@@ -305,7 +305,10 @@ def _authorized_http_call(kernel: Kernel, item: Exposed, arguments: dict[str, An
             msg = f"`{item.name}` changes things and this token may only read; make a write token if this agent should"
             raise ToolError(msg)
         try:
-            with kernel.resolve(CurrentUser).using(None), _browser_actor(item, access.subject or access.client_id):
+            with (
+                kernel.resolve(CurrentUser).using(None),
+                _browser_actor(item, f"token:{access.subject or access.client_id}"),
+            ):
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, arguments):
                     arguments = _authorize_mcp_schedule(kernel, item, arguments, local=False)
