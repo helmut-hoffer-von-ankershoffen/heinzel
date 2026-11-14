@@ -3878,6 +3878,9 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `mcp`: (expert) Serve every operation as an MCP...
 * `mcp-check`: (expert) Authenticate and initialize a...
 * `mcp-install-project`: (expert) Create a new project MCP config;...
+* `mcp-start`: (expert) Serve MCP to other agents at /mcp...
+* `mcp-status`: (expert) Say whether MCP is on, where it...
+* `mcp-stop`: (expert) Stop serving MCP at /mcp; open...
 * `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
@@ -3969,6 +3972,53 @@ $ hz system serve mcp-install-project [OPTIONS]
 
 * `--client <claude|codex|cursor>`: Client whose project configuration to create.  [required]
 * `--project <path>`: Existing project directory other than home; no global configuration is changed.  [required]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-start`
+
+(expert) Serve MCP to other agents at /mcp on the web app&#x27;s address; the running web app follows at once.
+
+It sets ` mcp_http`, the switch Settings, MCP shows too. Nothing else has to run beyond `hz ui serve`.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-start [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-status`
+
+(expert) Say whether MCP is on, where it is served and whether the web app answers it.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-status [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-stop`
+
+(expert) Stop serving MCP at /mcp; open agent sessions end, the tokens stay.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-stop [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`
