@@ -9,10 +9,10 @@ from heinzel.kernel._bounded_process import ProcessOutcome as Outcome
 from heinzel.kernel._claude_code import (
     CONTRACT_OPTIONS,
     SubscriptionDeniedError,
-    _structured,
     check_access,
     prove_contract,
     require_subscription_login,
+    structured_result,
     supported_version,
 )
 
@@ -65,7 +65,7 @@ def _success(**fields):
     ],
 )
 def test_a_result_that_cannot_be_verified_is_typed(outcome, reason):
-    assert _reason(lambda: _structured(outcome)) == reason
+    assert _reason(lambda: structured_result(outcome)) == reason
 
 
 def test_a_login_status_that_cannot_run_is_unconfirmed(tmp_path):

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from heinzel import AccessStatus, AccessTest, HeinzelError, Progress, Status
 from heinzel.kernel import Effort
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system.runner._claude import DOCS, LOGIN, NAME, SILENT, auth_status
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Execute, run_bounded
@@ -109,7 +110,7 @@ class ClaudeCodeAccess:
             require_subscription_login(Path(found), self._execute)
             version, answer = check_access(Path(found), self._execute, TEST_PROMPT, TEST_TIMEOUT.total_seconds())
         except SubscriptionDeniedError as denied:
-            logger.warning("Claude Code access test refused: %s", denied.reason.value)
+            log_event(logger, "ai.access.claude_code_refused", level=logging.WARNING, reason=denied.reason.value)
             fix = f"Install Claude Code: {DOCS}" if denied.reason is Denial.UNAVAILABLE else ""
             return AccessTest(ok=False, detail=str(denied), fix=fix, duration_seconds=time.monotonic() - started)
         except HeinzelError as error:  # the usage limit: plain words, never the CLI's body

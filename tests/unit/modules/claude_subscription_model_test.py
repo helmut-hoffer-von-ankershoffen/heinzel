@@ -537,7 +537,9 @@ def test_every_refusal_keeps_a_typed_reason_and_plain_words_but_never_the_body( 
     assert words in str(error.value)
     assert "private" not in str(error.value)
     assert "private" not in caplog.text
-    assert f"refused: {reason}" in caplog.text
+    assert [
+        (r.event, r.reason) for r in caplog.records if getattr(r, "event", None) == "chat.subscription.refused"
+    ] == [("chat.subscription.refused", reason)]
 
 
 def test_unavailable_changed_and_refused_requests_say_what_happened(tmp_path):

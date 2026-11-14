@@ -39,26 +39,27 @@ from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import SubscriptionUsageLimitError
 from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.kernel._claude_code import (
-    _MAX_HELP,
-    _PROTOCOL,
     COMMAND_FLAGS,
     CONTRACT_OPTIONS,
+    MAX_HELP,
+    PROTOCOL,
     SUPPORTED_VERSIONS,
     VERSION,
     Denial,
     SubscriptionDeniedError,
-    _proven_before,
-    _remember_proof,
-    _structured,
     check_access,
+    contract_proven,
     executable_digest,
     in_supported_range,
     prove_contract,
+    remember_contract,
     require_no_model_override,
     require_subscription_login,
+    structured_result,
     subscription_environment,
     supported_version,
 )
+from heinzel.kernel._logging import log_event
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 
@@ -141,16 +142,16 @@ async def _admit(
             execute, [str(executable), "--version"], input=None, cwd=cwd, env=environment, timeout=5, limit=1024
         )
     )
-    if not _proven_before(executable, digest):
+    if not contract_proven(executable, digest):
         prove_contract(
             await _run_cancelable(
-                execute, [str(executable), "--help"], input=None, cwd=cwd, env=environment, timeout=10, limit=_MAX_HELP
+                execute, [str(executable), "--help"], input=None, cwd=cwd, env=environment, timeout=10, limit=MAX_HELP
             ),
             version,
         )
         if executable_digest(executable) != digest:
             raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)
-        _remember_proof(executable, digest)
+        remember_contract(executable, digest)
     return version
 
 
@@ -266,7 +267,7 @@ class ClaudeSubscriptionModel(Model):
         try:
             payload = json.dumps(
                 {
-                    "protocol": _PROTOCOL,
+                    "protocol": PROTOCOL,
                     "instructions": get_instructions(messages, model_request_parameters),
                     # Every request in the history repeats the instructions; once at the top is what the model needs.
                     "messages": [
@@ -331,7 +332,7 @@ class ClaudeSubscriptionModel(Model):
                     timeout=self._policy.timeout_seconds,
                     limit=self._policy.max_output_bytes,
                 )
-            wire = _structured(outcome)
+            wire = structured_result(outcome)
             parts: list[TextPart | ToolCallPart]
             outputs = model_request_parameters.output_tools
             # The real CLI can omit the name of the only output: that delivers a validated result, never a host tool.
@@ -355,7 +356,7 @@ class ClaudeSubscriptionModel(Model):
         except Exception as error:  # noqa: BLE001 - verifier, process and response errors can contain private data
             self._blocked = True
             if isinstance(error, SubscriptionUsageLimitError):
-                logger.warning("Claude Code subscription request refused: usage-limit")
+                log_event(logger, "chat.subscription.refused", level=logging.WARNING, reason="usage-limit")
                 raise SubscriptionUsageLimitError from None
             reason = (
                 error.reason
@@ -364,7 +365,7 @@ class ClaudeSubscriptionModel(Model):
                 if isinstance(error, OSError)
                 else Denial.REFUSED
             )
-            logger.warning("Claude Code subscription request refused: %s", reason.value)
+            log_event(logger, "chat.subscription.refused", level=logging.WARNING, reason=reason.value)
             if isinstance(error, SubscriptionDeniedError):
                 raise SubscriptionDeniedError(reason, error.version, older=error.older) from None
             raise SubscriptionDeniedError(reason) from None

@@ -27,7 +27,7 @@ options and JSON result were proven for this bridge. A release outside it is ref
 VERSION = "2.1.312 to before 2.2.0"
 """The reviewed range the host verifier binds; the observed release must lie inside it."""
 _VERSION_LINE = re.compile(r"(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,5}) \(Claude Code\)")
-_MAX_HELP = 256 * 1024
+MAX_HELP = 256 * 1024
 _PROVEN_LIMIT = 16
 _proven: set[tuple[str, str]] = set()
 _proven_lock = threading.Lock()
@@ -253,19 +253,19 @@ def prove_contract(outcome: Outcome, version: str) -> None:
         raise SubscriptionDeniedError(Denial.CONTRACT_UNPROVEN, version)
 
 
-def _proven_before(executable: Path, digest: str) -> bool:
+def contract_proven(executable: Path, digest: str) -> bool:
     with _proven_lock:
         return (str(executable), digest) in _proven
 
 
-def _remember_proof(executable: Path, digest: str) -> None:
+def remember_contract(executable: Path, digest: str) -> None:
     with _proven_lock:
         if len(_proven) >= _PROVEN_LIMIT:
             _proven.clear()
         _proven.add((str(executable), digest))
 
 
-_PROTOCOL = (
+PROTOCOL = (
     "This JSON object is a conversation transport. Follow its instructions and respond to its "
     "messages. Return exactly one response in the supplied JSON schema. To request a listed "
     "tool or deliver an output using a listed output tool, set kind to tool, name to its exact "
@@ -276,7 +276,7 @@ _PROTOCOL = (
 )
 
 
-def _structured(outcome: Outcome) -> _Wire:
+def structured_result(outcome: Outcome) -> _Wire:
     """The one closed structured result, or a typed refusal that never keeps the CLI's error body.
 
     Raises:
@@ -374,7 +374,7 @@ def check_access(executable: Path, execute: Callable[..., Outcome], prompt: str,
         raise SubscriptionDeniedError(Denial.UNAVAILABLE) from None
     payload = json.dumps(
         {
-            "protocol": _PROTOCOL,
+            "protocol": PROTOCOL,
             "instructions": None,
             "messages": [{"kind": "request", "parts": [{"part_kind": "user-prompt", "content": prompt}]}],
             "tools": [],
@@ -394,16 +394,16 @@ def check_access(executable: Path, execute: Callable[..., Outcome], prompt: str,
     with tempfile.TemporaryDirectory(prefix="hz-ai-test-") as directory:
         cwd = Path(directory)
         version = supported_version(run([str(resolved), "--version"], stdin=None, timeout=5, limit=1024))
-        prove_contract(run([str(resolved), "--help"], stdin=None, timeout=10, limit=_MAX_HELP), version)
+        prove_contract(run([str(resolved), "--help"], stdin=None, timeout=10, limit=MAX_HELP), version)
         try:
             unchanged = executable_digest(resolved) == digest
         except HeinzelError:
             raise SubscriptionDeniedError(Denial.UNAVAILABLE) from None
         if not unchanged:
             raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)
-        _remember_proof(resolved, digest)
+        remember_contract(resolved, digest)
         outcome = run([str(resolved), *COMMAND_FLAGS], stdin=payload, timeout=timeout, limit=16_384)
-    wire = _structured(outcome)
+    wire = structured_result(outcome)
     if wire.kind != "text" or not wire.text or wire.name is not None or wire.arguments is not None:
         raise SubscriptionDeniedError(Denial.OUTPUT_INVALID)
     return version, wire.text
