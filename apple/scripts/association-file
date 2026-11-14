@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the Associated Domains file for the signed Heinzel app."""
+"""Print or stage the Associated Domains file for the signed Heinzel app."""
 
 import argparse
 import json
@@ -8,9 +8,27 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("app_identifier_prefix")
+parser.add_argument("--site-dir", type=Path, help="Stage the file in an already built documentation site.")
 args = parser.parse_args()
 if not re.fullmatch(r"[A-Z0-9]{10}", args.app_identifier_prefix):
     parser.error("Provide the ten-character Application Identifier Prefix from the signing profile.")
 template = Path(__file__).resolve().parents[1] / "distribution" / "apple-app-site-association"
 association = json.loads(template.read_text().replace("@APP_IDENTIFIER_PREFIX@", args.app_identifier_prefix))
-print(json.dumps(association, indent=2))  # noqa: T201 - the association file is the command output
+content = json.dumps(association, indent=2) + "\n"
+if args.site_dir is None:
+    print(content, end="")  # noqa: T201 - the association file is the command output
+else:
+    site = args.site_dir
+    if not (site / "open/index.html").is_file():
+        parser.error("Build the documentation site with its /open/ fallback page before staging.")
+    directory = site / ".well-known"
+    destination = directory / "apple-app-site-association"
+    # The Pages upload includes hidden paths when staging succeeds. Allow only this file and its directory.
+    if site.is_symlink() or any(
+        path.is_symlink() or (path.name.startswith(".") and path != directory) for path in site.rglob("*")
+    ):
+        parser.error("The built site contains unexpected hidden paths or symbolic links.")
+    if directory.exists() and (not directory.is_dir() or any(path != destination for path in directory.iterdir())):
+        parser.error("The built site contains unexpected .well-known entries.")
+    directory.mkdir(exist_ok=True)
+    destination.write_text(content, encoding="utf-8")
