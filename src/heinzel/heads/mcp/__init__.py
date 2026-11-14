@@ -140,7 +140,12 @@ def build(
     )
     if chat is not None:
         # The private pipe of one chat turn: a thin adapter over the turn's direct toolset and its one policy.
-        for chat_item in chat_toolset(kernel, chat, chat_tools):
+        selected = chat_toolset(kernel, chat, chat_tools)
+        if any(chat_item.heinzel is not None for chat_item in selected):
+            # Only the browser relay rebuilds an actions chat's tools; a pipe for it would be a second way in.
+            msg = "A Heinzel's actions chat has no pipe: its turn calls its tools inside hz (ADR 0162)."
+            raise HeinzelError(msg)
+        for chat_item in selected:
             server.add_tool(
                 chat_tool(chat_item),
                 name=chat_item.name,

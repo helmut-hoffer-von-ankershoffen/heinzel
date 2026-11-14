@@ -29,7 +29,6 @@ and the runners ask for them by type.
 
 import base64
 import contextlib
-import hashlib
 import inspect
 import json
 import logging
@@ -49,6 +48,7 @@ from heinzel.kernel._agent_writes import (
     WriteBudget,
     WriteOutcome,
     agent_writes,
+    arguments_digest,
     audit_write,
     bound_to_caller,
     calling,
@@ -440,7 +440,7 @@ class FoundTool:
             msg = f"The arguments for {self.name} are longer than {ARGUMENT_LIMIT} characters"
             raise ChatToolError(msg)
         # The audit names the call and a digest of its arguments, never their text or the server's output.
-        digest = hashlib.sha256(encoded.encode()).hexdigest()[:16]
+        digest = arguments_digest(jsonable, self._salt())
         decision = "ran" if self.found.read_only else "proposed"
         with step(audit, "mcp.found.call", tool=self.name, session=self.session, decision=decision, arguments=digest):
             if self.found.read_only:
@@ -457,15 +457,19 @@ class FoundTool:
             self._note(caller, module, jsonable, "proposed")
             return text
 
+    def _salt(self) -> bytes:
+        """The installation's key for argument digests, as `note_write` takes it; never an unsalted digest."""
+        try:
+            return (self.log or AgentWriteLog()).salt()
+        except Exception:  # noqa: BLE001 - an unreadable salt must not stop the audit line
+            return AgentWriteLog().salt()
+
     def _note(
         self, caller: Caller, module: str, jsonable: dict[str, Any], outcome: WriteOutcome, error: str | None = None
     ) -> None:
         """One audit line and one entry in the owner's record, as `note_write` leaves for hz's own writes."""
         log_ = self.log or AgentWriteLog()
-        try:
-            salt = log_.salt()
-        except Exception:  # noqa: BLE001 - an unreadable salt must not stop the audit line
-            salt = AgentWriteLog().salt()
+        salt = self._salt()
         name = self.found.name
         audit_write(caller, module, name, jsonable, policy="propose", outcome=outcome, error=error, salt=salt)
         try:

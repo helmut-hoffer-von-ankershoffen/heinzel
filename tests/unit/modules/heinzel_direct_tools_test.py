@@ -1,16 +1,28 @@
 """A Heinzel's own turn calls its tools in-process, and what waits goes to its actions chat (ADR 0162, G1 F5)."""
 
+import asyncio
+import os
 import re
+from types import SimpleNamespace
 
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+import heinzel.kernel._chat_tools as chat_tools_module
 from heinzel import CurrentUser, HeinzelError, Module, ProposedCall
-from heinzel.kernel import ChatToolError, chat_tools
+from heinzel.heads import mcp
+from heinzel.kernel import ChatToolError, chat_tools, found_tools
+from heinzel.kernel._agent_writes import AgentWriteLog, WriteBudget
+from heinzel.kernel._browser import BrowserBridge
+from heinzel.kernel._chat_services import FoundMcpServers, FoundMcpTool
 from heinzel.modules.heinzel._direct_tools import activity_name, turn_toolbox
+from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner.chat._service import ChatService
+from heinzel.modules.ui.browser._relay import NO_TURN
+from heinzel.modules.ui.browser._relay import handle as relay_handle
+from tests._fake_browser import FakeDesktop
 
 pytestmark = pytest.mark.unit
 
@@ -180,3 +192,203 @@ def test_the_turn_records_each_call_by_name_and_outcome_and_holds_its_chat(kerne
 def test_every_activity_name_is_one_the_activity_accepts(name, shown):
     assert activity_name(name) == shown
     assert ACTIVITY.fullmatch(activity_name(name))
+
+
+# --- review conditions (RUNNER-REVIEW.md C1 to C3, N1 to N3) ---
+
+TAB = "t-0000000a"
+
+
+@pytest.fixture
+def desktop(kernel):
+    desktop = FakeDesktop()
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    yield desktop
+    bridge.disconnect(desktop)
+
+
+@pytest.fixture
+def audited(monkeypatch) -> list[dict]:
+    lines: list[dict] = []
+
+    def keep(caller, module, operation, arguments, **fields):
+        lines.append({"caller": str(caller), "module": module, "operation": operation, **fields})
+
+    monkeypatch.setattr(chat_tools_module, "audit_write", keep)
+    return lines
+
+
+def test_a_browser_input_takes_the_budget_and_leaves_one_audit_line_each_way(kernel, desktop, audited, monkeypatch):
+    actions = actions_chat(kernel)
+    desktop.seed(HEINZEL, TAB)  # the Heinzel's own tabs, not the actions chat's
+    click = tool(kernel, actions, "ui_browser_click")
+    assert "Not run" not in str(click.call({"tab": TAB, "ref": "ref_1"}))
+    assert str(click.call({"tab": TAB, "ref": "ref_2"})).startswith("Not run: ")  # "Send" is a commit
+    monkeypatch.setattr(chat_tools_module, "write_policy", lambda *_args: "approve")
+    with pytest.raises(ChatToolError, match="not marked for agents"):
+        click.call({"tab": TAB, "ref": "ref_1"})
+    monkeypatch.undo()
+    monkeypatch.setattr(chat_tools_module, "audit_write", lambda *a, **k: audited.append({"outcome": k["outcome"]}))
+
+    def spent(self, caller):
+        msg = "This agent used its write budget for the minute"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(WriteBudget, "take", spent)
+    with pytest.raises(ChatToolError, match="write budget"):
+        click.call({"tab": TAB, "ref": "ref_1"})
+    assert [line["outcome"] for line in audited] == ["ran", "proposed", "refused", "over-budget"]
+    assert {line["caller"] for line in audited[:3]} == {f"heinzel:{HEINZEL}"}
+    assert {line["policy"] for line in audited[:2]} == {"direct"}
+    assert [command.actor for command in desktop.commands] == [HEINZEL] * len(desktop.commands)
+    assert desktop.acted() == ["click"]  # the commit and both refusals never acted
+
+
+class Servers(FoundMcpServers):
+    def __init__(self) -> None:
+        self.called: list[str] = []
+
+    def tools(self) -> list[FoundMcpTool]:
+        return [
+            FoundMcpTool("srv", "srv", "send", "mcp__srv__send", "Send a message.", {"type": "object"}, read_only=False)
+        ]
+
+    def call(self, server, tool, arguments):
+        self.called.append(tool)
+        return "sent"
+
+
+class Record(AgentWriteLog):
+    def __init__(self) -> None:
+        self.entries: list[tuple] = []
+
+    def record(self, caller, module, operation, arguments, *, policy, outcome):  # noqa: PLR0913 - the base's own
+        self.entries.append((str(caller), module, operation, policy, outcome))
+
+    def salt(self) -> bytes:
+        return b"installation-salt"
+
+
+def test_a_found_tool_s_change_is_proposed_as_the_heinzel_audited_and_recorded(kernel, audited, monkeypatch):
+    servers, record = Servers(), Record()
+    kernel.bind(FoundMcpServers, servers)
+    kernel.bind(AgentWriteLog, record)
+    salts: list[bytes] = []
+    digest = chat_tools_module.arguments_digest
+    monkeypatch.setattr(chat_tools_module, "arguments_digest", lambda a, salt: salts.append(salt) or digest(a, salt))
+    actions = actions_chat(kernel)
+    [send] = found_tools(kernel, actions, attended=True)
+    assert str(send.call({"to": "team"})).startswith("Not run: ")
+    assert servers.called == []
+    assert salts == [b"installation-salt"]  # the mcp.found.call step's digest is salted (C1)
+    assert [(line["caller"], line["module"], line["outcome"]) for line in audited] == [
+        (f"heinzel:{HEINZEL}", "mcp:srv", "proposed")
+    ]
+    assert audited[0]["salt"] == b"installation-salt"
+    assert record.entries == [(f"heinzel:{HEINZEL}", "mcp:srv", "send", "propose", "proposed")]
+    with kernel.resolve(CurrentUser).local_read("cli"):
+        [action] = store(kernel).load(actions).actions
+    assert (action.module, action.operation, action.arguments) == ("mcp:srv", "send", {"to": "team"})
+
+
+def _service(tools_kernel, seen: dict) -> UserChatService:
+    repository = SimpleNamespace(control_read=lambda _session: SimpleNamespace(events=[]), principal_id="u-owner")
+    service = UserChatService(SimpleNamespace(repository=repository), None, None, tools_kernel=tools_kernel)  # type: ignore[arg-type]
+    service.plugin_selected = lambda _session=None: object()  # type: ignore[method-assign]
+
+    async def plugin_model(*_args):
+        return object(), lambda: True, None, object()
+
+    service._plugin_model = plugin_model  # type: ignore[method-assign]
+    service._owner = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+
+    def toolbox(_kernel, session, owner, *, attended):
+        seen.update(session=session, owner=owner, attended=attended)
+        raise LookupError
+
+    import heinzel.modules.heinzel._direct_tools as direct
+
+    service._patch = (direct, toolbox)  # type: ignore[attr-defined]
+    return service
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_only_the_person_s_own_message_is_an_attended_turn(monkeypatch, scheduled):
+    seen: dict = {}
+    service = _service(object(), seen)
+    direct, toolbox = service._patch  # type: ignore[attr-defined]
+    monkeypatch.setattr(direct, "turn_toolbox", toolbox)
+    turn = (
+        service.dispatch(HEINZEL, "occurrence", lambda: None, 4, 60, user_proposals=False)  # as a schedule does
+        if scheduled
+        else service.answer(HEINZEL, "request")
+    )
+    with pytest.raises(LookupError):
+        asyncio.run(turn)
+    assert seen == {"session": HEINZEL, "owner": "u-owner", "attended": not scheduled}
+
+
+def test_an_answer_from_a_chat_app_is_not_attended(monkeypatch):
+    service = _service(None, {})
+    forwarded: dict = {}
+
+    async def dispatch(*_args, **kwargs):
+        forwarded.update(kwargs)
+        raise LookupError
+
+    monkeypatch.setattr(service, "dispatch", dispatch)
+    with pytest.raises(LookupError):
+        asyncio.run(service.answer_from_chat(HEINZEL, "request"))
+    assert forwarded.get("attended", False) is False
+
+
+def test_the_relay_takes_an_actions_chat_only_while_its_turn_holds_it(kernel, owner, desktop):
+    box = turn_toolbox(kernel, HEINZEL, owner, attended=True)
+    assert box is not None
+    desktop.seed(HEINZEL, TAB)
+    assert relay_handle(kernel, "heinzel", box.actions, "ui_browser_read", {"tab": TAB}) == {"error": NO_TURN}
+    with box.answering():
+        answered = relay_handle(kernel, "heinzel", box.actions, "ui_browser_read", {"tab": TAB})
+    assert "text" in answered
+    assert desktop.commands[-1].actor == HEINZEL
+    assert relay_handle(kernel, "heinzel", box.actions, "ui_browser_read", {"tab": TAB}) == {"error": NO_TURN}
+
+
+def test_a_turn_starts_without_its_tools_when_a_card_holds_the_chat(kernel, owner):
+    box = turn_toolbox(kernel, HEINZEL, owner, attended=True)
+    assert box is not None
+    with box.answering(), pytest.raises(HeinzelError, match="busy"), box.answering():
+        pass  # what `InteractiveTurn.run` catches before `interactive.started`, then runs without the tools
+
+
+def test_no_pipe_serves_an_actions_chat(kernel):
+    with pytest.raises(HeinzelError, match="no pipe"):
+        mcp.build(kernel, chat=actions_chat(kernel))
+
+
+def test_a_failed_call_still_records_its_end(kernel, owner, monkeypatch):
+    box = turn_toolbox(kernel, HEINZEL, owner, attended=True)
+    assert box is not None
+    seen: list[tuple[int, str, str]] = []
+
+    def broken(*_args):
+        raise RuntimeError
+
+    monkeypatch.setattr(chat_tools_module, "direct_result", broken)
+    [look] = [item for item in box.pydantic_tools(pictures=False, record=lambda *e: seen.append(e))
+              if item.name == "mcp__hz__desk_look"]  # fmt: skip
+    with pytest.raises(RuntimeError):
+        look.function()
+    assert seen == [(1, "hz:desk-look", "requested"), (1, "hz:desk-look", "failed")]
+
+
+def test_retention_keeps_an_actions_chat_with_waiting_cards(kernel):
+    actions = actions_chat(kernel)
+    tool(kernel, actions, "desk_publish").call({"title": "Week 43"})
+    folder = store(kernel).root / actions
+    old = 0  # the epoch: far beyond any keep_days
+    os.utime(folder / "session.json", (old, old))
+    with kernel.resolve(CurrentUser).local_read("cli"):
+        assert actions not in store(kernel).prune()
+        assert store(kernel).load(actions).actions[0].status == "pending"

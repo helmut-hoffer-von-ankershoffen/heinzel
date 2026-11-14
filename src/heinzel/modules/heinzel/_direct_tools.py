@@ -71,7 +71,11 @@ class TurnToolbox:
                 self._calls += 1
                 call = self._calls
             record(call, shown, "requested")
-            result = run()
+            try:
+                result = run()
+            except BaseException:
+                record(call, shown, "failed")  # a bug past the policy: the call still has its end
+                raise
             refused = isinstance(result, str) and result.startswith(REFUSED)
             record(call, shown, "denied" if refused else "completed")
             return result
