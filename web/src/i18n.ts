@@ -13,7 +13,7 @@ const en = {
   "oneChat.message": "Message {name}",
   "oneChat.notSent": "Not sent",
   "oneChat.notAnswered": "Not answered",
-  "oneChat.queued": "Queued · sends after the one above",
+  "oneChat.queued": "Queued · after the one above",
   "oneChat.tryAgain": "Try again",
   "oneChat.details": "Details",
   "oneChat.earlier": "Earlier chats",

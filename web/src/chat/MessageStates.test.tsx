@@ -117,7 +117,7 @@ describe("message states", () => {
     ]);
     renderAt("/doctor");
     const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
-    const queued = await chat.findByText("Queued · sends after the one above");
+    const queued = await chat.findByText("Queued · after the one above");
     expect(queued.closest("[data-message-state]")).toHaveAttribute("data-message-state", "queued");
     // The word stands under the bubble, not a second time inside it.
     expect(chat.queryByText("Queued")).not.toBeInTheDocument();

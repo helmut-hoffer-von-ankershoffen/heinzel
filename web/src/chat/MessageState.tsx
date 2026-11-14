@@ -1,5 +1,5 @@
 // One quiet line under the person's own message when every chat is with a Heinzel (flag `one_chat`, canvas board 7):
-// "Sending…", "✖ Not sent · Try again", "✖ Not answered · Try again" or "Queued · sends after the one above". The
+// "Sending…", "✖ Not sent · Try again", "✖ Not answered · Try again" or "Queued · after the one above". The
 // symbol is decoration beside the word. Only a failure that happens in front of the person is announced as an alert;
 // one found on reopening is shown, not shouted. An uncertain turn never gets here: it keeps its own recovery card.
 import { RotateCcw } from "lucide-react";
