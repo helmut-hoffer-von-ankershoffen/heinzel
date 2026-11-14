@@ -263,11 +263,19 @@ describe("Desktop menu actions", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const panel = await screen.findByRole("complementary", { name: "Chat" });
+    const composer = await within(panel).findByLabelText("Message Helmi");
+    await waitFor(() => expect(composer).toBeEnabled());
+    expect(composer).not.toHaveFocus();
+    // With the chat open, New Chat puts the cursor in the default Heinzel's composer.
+    act(() => requestMenuAction("new-chat"));
+    await waitFor(() => expect(within(panel).getByLabelText("Message Helmi")).toHaveFocus());
     await user.click(await within(panel).findByRole("button", { name: "Close the chat" }));
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
     act(() => requestMenuAction("new-chat"));
     const reopened = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await reopened.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    // Closed, it opens the chat and focuses the composer once it is ready.
+    await waitFor(() => expect(reopened.getByLabelText("Message Helmi")).toHaveFocus());
     // There is no general chat to start: New Chat never opens one.
     expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
   });
@@ -283,6 +291,8 @@ describe("Desktop menu actions", () => {
     act(() => requestMenuAction("new-chat"));
     // No Heinzel is listed, so the default is the first start.
     expect(await screen.findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
+    // The first start takes the cursor in its name field.
+    await waitFor(() => expect(screen.getByLabelText("What do you call it?")).toHaveFocus());
     expect(screen.queryByRole("button", { name: "Personal Heinzel. Switch Heinzel" })).not.toBeInTheDocument();
     expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
   });

@@ -14,6 +14,7 @@ import { MISSIONS } from "@/heinzel/missions";
 import { AGE_LABEL, BEARD_LABEL, BUILD_LABEL, Swatches } from "@/heinzel/PersonalHeinzels";
 import { type Look, type Meeting, START_LOOK, SUGGESTED_NAMES, surprise } from "@/heinzel/surprise";
 import { type MessageKey, t } from "@/i18n";
+import { useComposerFocus } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 import { rememberHeinzel } from "./defaultHeinzel";
 
@@ -215,6 +216,8 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
   const [failed, setFailed] = useState(false);
   const creating = useRef(false);
   const field = useId();
+  const nameInput = useRef<HTMLInputElement>(null);
+  useComposerFocus(nameInput, true);
   const group = useId();
   const { name, look } = meeting;
   const chosen = MISSIONS.find((item) => item.id === mission) ?? MISSIONS[0];
@@ -310,6 +313,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
             </label>
             <input
               id={field}
+              ref={nameInput}
               value={name}
               maxLength={100}
               autoComplete="off"

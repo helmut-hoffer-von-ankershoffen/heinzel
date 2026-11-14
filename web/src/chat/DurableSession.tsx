@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button";
 import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
-import { isDurableSession } from "@/lib/chatIntent";
+import { isDurableSession, useComposerFocus } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 import { AnsweredInChat } from "@/notifications/ChatChannelSettings";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
@@ -885,6 +885,8 @@ function DurableSessionView({
   }, [opened, sessionId]);
   const look = appearanceLook(query.data?.appearance);
   const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
+  const composerDisabled = busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked;
+  useComposerFocus(composerInput, !composerDisabled);
 
   return (
     <div className="flex h-full flex-col">
@@ -1705,7 +1707,7 @@ function DurableSessionView({
             value={sending || pending !== null ? "" : text}
             maxLength={4000}
             placeholder={t("durable.placeholder", { name: heinzelName })}
-            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
+            disabled={composerDisabled}
             onChange={(event) => {
               updateComposer({ text: event.target.value });
               typed(); // a soundscape plays softer while you type (ADR 0058)
