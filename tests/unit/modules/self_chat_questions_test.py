@@ -826,14 +826,15 @@ def test_a_helpers_lifetime_is_its_wait_the_grace_one_answer_turn_and_a_margin()
     assert relay_module.lifetime(settings) == 7 * 60 + relay_module.GRACE + MAX_TURN_SECONDS + relay_module.MARGIN
 
 
-def test_a_failing_helper_reports_it_and_ends_at_once(monkeypatch, capsys):
+def test_a_failing_helper_reports_it_and_ends_at_once(monkeypatch, caplog):
     def broken(session: str, turn: str) -> None:
         raise RuntimeError
 
     ended = _helper_kernel(monkeypatch, broken)
     assert helper_module.main([SESSION_ID, TURN_ID]) == 1
     assert ended == [1]
-    assert "RuntimeError" in capsys.readouterr().err
+    assert "self_chat.helper.crashed" in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 STRAY_THREAD = r"""
