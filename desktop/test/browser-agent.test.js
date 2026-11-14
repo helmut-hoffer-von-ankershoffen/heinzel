@@ -774,6 +774,7 @@ test("the person's own key or click in an agent's tab takes it over; the agent's
   contents.emit("before-input-event", {});
   assert.equal(await paused(), false);
   // The engine's input reaches the page through the same events, and stays the agent's.
+  view.page.at = 5;
   view.page.on = (method, params) => {
     if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") contents.emit("before-mouse-event", {}, { type: "mouseDown" });
     if (method === "Input.dispatchKeyEvent") contents.emit("before-input-event", {}, { type: params.type === "keyUp" ? "keyUp" : "rawKeyDown" });

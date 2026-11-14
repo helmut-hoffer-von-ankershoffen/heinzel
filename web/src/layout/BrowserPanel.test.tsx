@@ -474,9 +474,12 @@ it.each([
     render(<BrowserPanel active onClose={vi.fn()} />);
     const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
     expect(card).toHaveAccessibleDescription(summary);
-    // Not a dialog: the page the person is asked about stays on screen behind no overlay.
-    expect(card.closest('[role="dialog"], [role="alertdialog"]')).toBeNull();
-    expect(sent(browser, "hide")).toEqual([]);
+    // Not a dialog or any other overlay the panel hides the page for: the page the person is asked about stays.
+    expect(
+      card.closest(
+        '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], dialog, .viewport-popover, [popover]',
+      ),
+    ).toBeNull();
     expect(sent(browser, "commit-approve")).toEqual([]);
     expect(sent(browser, "commit-refuse")).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: button }));

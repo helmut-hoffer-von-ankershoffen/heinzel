@@ -35,7 +35,7 @@ it("reads the mark from the tab strip: none, an agent at work, an agent waiting 
 
 it("asks the desktop for its tabs while the panel is closed, and follows them", async () => {
   let tabs: unknown[] = [];
-  const browser = vi.fn(async () => ({ status: "empty", tabs }));
+  const browser = vi.fn(async (_request: Record<string, unknown>) => ({ status: "empty", tabs }));
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   const { result, unmount } = renderHook(() => useBrowserAgents(20));
   expect(result.current).toEqual({ mark: "none", waiting: null });
