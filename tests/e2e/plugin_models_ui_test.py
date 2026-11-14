@@ -20,7 +20,8 @@ def test_a_plugins_models_are_picked_as_ai_access_and_a_model_in_settings(enviro
     (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel-models-demo\nVersion: 1.0.0\n")
     (metadata / "entry_points.txt").write_text("[heinzel.modules]\nmodels-demo = heinzel_models_demo\n")
     env = env | {
-        "PYTHONPATH": ":".join((env["PYTHONPATH"], str(metadata.parent), str(REPO / "tests/fixtures/ai_models")))
+        "HZ_DEMO_MODELS_DELAY": "0.2",  # slow enough that the browser sees the answer grow
+        "PYTHONPATH": ":".join((env["PYTHONPATH"], str(metadata.parent), str(REPO / "tests/fixtures/ai_models"))),
     }
 
     result = drive_ui_script(env, tmp_path, "plugin-models.mjs")

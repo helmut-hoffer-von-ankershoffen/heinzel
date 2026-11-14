@@ -6,6 +6,7 @@ company proxy's model list overstates what answers.
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
 
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
@@ -24,6 +25,8 @@ def _answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
 
 
 STREAMED = "Hello from the demo models, word by word"
+DELAY = float(os.environ.get("HZ_DEMO_MODELS_DELAY", "0"))
+"""Seconds between streamed words: none in tests, set by the browser journey to watch the answer grow."""
 
 
 async def _stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -35,7 +38,7 @@ async def _stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterato
             yield {0: DeltaToolCall(name=name if index == 0 else None, json_args=raw[index : index + 8])}
         return
     for word in STREAMED.split(" "):
-        await asyncio.sleep(0.2)  # slow enough that a browser sees the answer grow
+        await asyncio.sleep(DELAY)  # slow enough that a browser sees the answer grow
         yield word + " "
 
 

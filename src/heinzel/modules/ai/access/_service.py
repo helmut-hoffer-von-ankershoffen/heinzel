@@ -44,6 +44,8 @@ SECTION = "capabilities"
 KEY = f"{SECTION}.ai_access"
 RUNNER_KEY = f"{SECTION}.agent_runner"
 PLUGIN_MODEL_KEY = "ai.access.plugin_model"
+ENGINE_RUNNER = "engine"
+"""The agent runner that runs a plugin's models for the chat with the picker and coding (ADR 0159)."""
 VARIABLE = "HZ_CAPABILITIES__AI_ACCESS"
 DEFAULT = "claude-code"
 TESTS_FILE = "tests.json"
@@ -233,7 +235,7 @@ class AccessService:
         through = f"the agent runner {runner}" if runner else "nothing: no agent runner is bound"
         if chosen is not None and chosen.core_engine:
             # A plugin's models: hz's own engine runs chat, drafts and schedules on them (ADR 0159).
-            engine = f"hz's own engine on {chosen.title}'s models"
+            engine = f"hz's own engine on the models of {chosen.title}"
             uses = [
                 AccessUse(use="chat", access=selected, runs=engine),
                 AccessUse(use="turns", access=selected, runs=f"{engine}, for drafts and schedules"),
@@ -241,7 +243,7 @@ class AccessService:
                     use="coding",
                     access=selected,
                     runs=f"{engine}, with read-only file tools in the session's folder"
-                    if runner == "engine"
+                    if runner == ENGINE_RUNNER
                     else f"{through}, outside these models",
                 ),
             ]

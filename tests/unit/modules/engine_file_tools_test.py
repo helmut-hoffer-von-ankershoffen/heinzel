@@ -279,3 +279,13 @@ def test_walk_stops_at_the_depth_limit(tree: Path, monkeypatch: pytest.MonkeyPat
     (deep / "deep.txt").write_text("hit\n", encoding="utf-8")
 
     assert "deep.txt" not in ConfinedFiles(tree).glob("*")
+
+
+def test_a_file_name_that_isnt_utf8_doesnt_fail_the_whole_answer(tree: Path) -> None:
+    try:
+        (tree / os.fsdecode(b"bad-\xff.md")).write_text("hello\n", encoding="utf-8")
+    except OSError:
+        pytest.skip("this file system refuses names that aren't UTF-8 (APFS)")
+    answer = _file_tools.run(ConfinedFiles(tree), "glob", {"pattern": "*.md"})
+    assert "README.md" in answer
+    assert "bad-" in answer

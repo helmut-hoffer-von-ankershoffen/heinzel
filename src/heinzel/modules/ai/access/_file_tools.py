@@ -489,7 +489,8 @@ def _main() -> None:
     files = ConfinedFiles(Path(request["root"]), root_fd=int(request["fd"]))
     answer = call(files, request["tool"], request["arguments"])
     # The answer goes to the parent's pipe, never a terminal: the parent started this child with captured output.
-    with open(1, "w", encoding="utf-8", closefd=False) as pipe:
+    # A file name that isn't valid UTF-8 shows with a replacement character instead of failing the whole answer.
+    with open(1, "w", encoding="utf-8", errors="replace", closefd=False) as pipe:
         pipe.write(answer)
 
 
