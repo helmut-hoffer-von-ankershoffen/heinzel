@@ -2,12 +2,12 @@ import { spawn } from "node:child_process";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, WebContentsView, webContents } from "electron";
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
-import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
+import { createMiniBrowser, deviceDialog, smallFavicon } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createSettingsStore } from "./settings-store.js";
@@ -116,6 +116,8 @@ const miniBrowser = createMiniBrowser({
   },
   // "Open in browser" needs the person's click in that window and shares its external-link rate limit.
   openExternal: (url, window) => activations.get(window.webContents)?.open(url) ?? false,
+  // A page's icon becomes a 32-pixel PNG: small enough for a tab, a bookmark and the navigation.
+  faviconImage: (buffer) => smallFavicon(buffer, (bytes) => nativeImage.createFromBuffer(bytes)),
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });

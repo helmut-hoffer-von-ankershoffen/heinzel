@@ -20,6 +20,30 @@ const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", r
 // A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
 const PASSKEY_PAGE = /\/challenge\/pk(?:\/|$)|passkey|webauthn/i;
+// A page's own icon, for its tab and for bookmarks: read once per origin, kept small, never from a third-party service.
+const MAX_FAVICON_DOWNLOAD = 512 * 1024;
+export const MAX_FAVICON_BYTES = 6000;
+// 6000 bytes as base64, plus the data: prefix.
+const MAX_FAVICON_DATA_URL = 8100;
+const MAX_FAVICON_ORIGINS = 200;
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The icon as a 32-pixel PNG `data:` URL through the app's image decoder, or null for what it cannot read. */
+export function smallFavicon(buffer, decode) {
+  try {
+    const image = decode(buffer);
+    if (!image || image.isEmpty()) return smallPng(buffer);
+    const { width, height } = image.getSize();
+    const small = width > 32 || height > 32 ? image.resize({ width: 32, height: 32, quality: "best" }) : image;
+    return smallPng(small.toPNG());
+  } catch { return null; }
+}
+
+/** Without an image library only a PNG that is small already is kept; the app passes a resizing `faviconImage`. */
+export function smallPng(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > MAX_FAVICON_BYTES || !buffer.subarray(0, 8).equals(PNG_MAGIC)) return null;
+  return `data:image/png;base64,${buffer.toString("base64")}`;
+}
 
 /** A vendor or product id as Electron sends it: a number, or a decimal or 0x-hex string. */
 function numeric(value) {
@@ -80,7 +104,8 @@ export function deviceDialog({ host, devices }) {
  * `openExternal(url, window)` applies the product window's gesture check and rate limit and returns whether it opened.
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
-  createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false }) {
+  createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false,
+  faviconImage = smallPng }) {
   // window -> { tabs: Map(id -> guest), selected, bounds, shown, opening, pending }: every tab shares one partition.
   const surfaces = new Map();
   const opening = new Set();
@@ -92,6 +117,33 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const grants = new Set();
   const grantKey = (origin, identity) => JSON.stringify([origin, identity]);
   const originOf = (value) => { try { return new URL(value).origin; } catch { return ""; } };
+  // origin -> data: URL of the icon a page of that origin showed; emptied with the browsing data.
+  const icons = new Map();
+  /**
+   * The first icon the page names that is public HTTPS, read in the guests' own partition (same proxy, same rules),
+   * bounded and reduced to a small image. A page that left for another origin meanwhile keeps no stale icon.
+   */
+  const readFavicon = async (guest, urls) => {
+    const page = originOf(guest.view.webContents.getURL());
+    if (!page.startsWith("https://") || !Array.isArray(urls)) return;
+    for (const candidate of urls.slice(0, 4)) {
+      let url;
+      try { url = browserUrl(candidate, connection()?.origin); } catch { continue; }
+      try {
+        const response = await guest.session.fetch(url, { credentials: "omit" });
+        const type = String(response.headers.get("content-type") ?? "").toLowerCase();
+        const length = Number(response.headers.get("content-length") ?? 0);
+        if (!response.ok || !type.startsWith("image/") || length > MAX_FAVICON_DOWNLOAD) continue;
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!buffer.length || buffer.length > MAX_FAVICON_DOWNLOAD) continue;
+        const image = faviconImage(buffer);
+        if (typeof image !== "string" || !image.startsWith("data:image/") || image.length > MAX_FAVICON_DATA_URL) continue;
+        if (icons.size >= MAX_FAVICON_ORIGINS && !icons.has(page)) icons.delete(icons.keys().next().value);
+        icons.set(page, image);
+        return;
+      } catch { /* the next candidate */ }
+    }
+  };
   // The guest a prompt came from: its own contents, or the main frame above the requesting frame. A background
   // window never prompts, since only a focused window shows its guest and a site asks from a click in it.
   const everyGuest = () => [...surfaces].flatMap(([window, surface]) =>
@@ -243,6 +295,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     // A guest still opening would load its site after the pages left theirs: wait for it first.
     await Promise.allSettled([...opening.values()]);
     grants.clear();
+    icons.clear();
     const pages = everyGuest().map(([, guest]) => guest).map((guest) => [guest, guest.view.webContents.getURL()]);
     await Promise.allSettled(pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")));
     const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
@@ -313,6 +366,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         network.authenticate(info, callback);
       });
       contents.on("will-prevent-unload", (event) => event.preventDefault());
+      contents.on("page-favicon-updated", (_event, urls) => { void readFavicon(guest, urls).catch(() => {}); });
       // target=_blank and window.open in a page open a new tab, but only right after the person's own input in this
       // page, and not faster than one a half second: Electron's window-open details carry no gesture.
       const activation = createUserActivation();
@@ -357,8 +411,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       throw new Error("Browser network is unavailable.");
     }
   };
-  const tabInfo = (guest, selected) => ({ id: guest.id, owner: guest.owner, selected, status: guest.status,
-    url: guest.view.webContents.getURL(), title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200) });
+  const tabInfo = (guest, selected) => {
+    const url = guest.view.webContents.getURL();
+    return { id: guest.id, owner: guest.owner, selected, status: guest.status, url,
+      title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200), favicon: icons.get(originOf(url)) ?? null };
+  };
   // The selected tab's state, plus the whole strip.
   const state = (window, target) => {
     const surface = surfaces.get(window);
