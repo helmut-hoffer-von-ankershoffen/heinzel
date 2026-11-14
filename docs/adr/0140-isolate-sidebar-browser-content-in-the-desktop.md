@@ -55,8 +55,8 @@ clears its separate session. Unsupported sites receive an explicit status, not a
 
 The ordinary web application offers an address field and a user-clicked external link with no opener or referrer.
 It explains that browsing inside the panel needs the desktop application. No CSP, iframe, backend, plugin or service
-permission changes are part of this feature. The `sidebar_browser` flag keeps the implementation dark until review
-and native containment qualification finish.
+permission changes are part of this feature. The former `sidebar_browser` preview flag is retired: the panel is always available in the desktop application
+(a setting that still names it is ignored). Every safety rule here stays in force.
 
 ### Consequences
 

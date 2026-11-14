@@ -14,15 +14,15 @@ def test_every_flag_is_off_by_default():
 
 def test_a_named_flag_is_on_and_others_stay_off(monkeypatch):
     monkeypatch.setitem(FEATURES, "other", "Another one.")
-    settings = Settings(features=frozenset({"durable_agents"}))
-    assert feature_enabled(settings, "durable_agents")
+    settings = Settings(features=frozenset({"connected_frontdoor"}))
+    assert feature_enabled(settings, "connected_frontdoor")
     assert not feature_enabled(settings, "other")
 
 
 def test_the_environment_takes_a_comma_separated_list(monkeypatch):
-    monkeypatch.setenv("HZ_FEATURES", "durable_agents, typo")
+    monkeypatch.setenv("HZ_FEATURES", "connected_frontdoor, typo")
     settings = Settings()
-    assert feature_enabled(settings, "durable_agents")
+    assert feature_enabled(settings, "connected_frontdoor")
     assert unknown_features(settings) == ["typo"]
 
 
@@ -32,9 +32,10 @@ def test_an_unregistered_name_in_code_is_a_bug():
         feature_enabled(settings, "typo")
 
 
-def test_retired_web_preview_setting_is_harmless_without_hiding_other_unknown_flags():
-    settings = Settings(features={"persistent_web", "misspelled"})
-    assert "persistent_web" not in FEATURES
+@pytest.mark.parametrize("retired", ["persistent_web", "sidebar_browser", "durable_agents"])
+def test_retired_preview_setting_is_harmless_without_hiding_other_unknown_flags(retired):
+    settings = Settings(features={retired, "misspelled"})
+    assert retired not in FEATURES
     assert unknown_features(settings) == ["misspelled"]
 
 

@@ -98,18 +98,6 @@ const miniBrowser = createMiniBrowser({
   connection: () => (stopping || quitting ? null : instance.currentConnection()),
   createSession: (partition, options) => session.fromPartition(partition, options),
   createView: (options) => new WebContentsView(options),
-  enabled: async () => {
-    const connection = instance.currentConnection();
-    if (!connection || stopping || quitting) return false;
-    const response = await fetch(`${connection.origin}/api/system/config/show`, {
-      headers: { Authorization: `Bearer ${connection.token}` }, redirect: "error",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) return false;
-    const report = await response.json();
-    const features = report.settings?.find((row) => row.section === "hz" && row.key === "features")?.value;
-    return Array.isArray(features) && features.includes("sidebar_browser");
-  },
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
