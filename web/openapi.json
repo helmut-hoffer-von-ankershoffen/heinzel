@@ -1553,6 +1553,7 @@
             "type": "string"
           },
           "kind": {
+            "description": "A bookmark with an address, or a folder.",
             "enum": [
               "bookmark",
               "folder"
@@ -1585,6 +1586,7 @@
             "title": "Parent"
           },
           "title": {
+            "description": "The name shown.",
             "title": "Title",
             "type": "string"
           },
@@ -1613,6 +1615,7 @@
         "description": "The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.",
         "properties": {
           "bookmarks": {
+            "description": "Every entry, depth-first in order; `parent` and `depth` give the tree.",
             "items": {
               "$ref": "#/components/schemas/Bookmark"
             },

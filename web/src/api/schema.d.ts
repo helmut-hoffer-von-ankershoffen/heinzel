@@ -5473,6 +5473,7 @@ export interface components {
             id: string;
             /**
              * Kind
+             * @description A bookmark with an address, or a folder.
              * @enum {string}
              */
             kind: "bookmark" | "folder";
@@ -5486,7 +5487,10 @@ export interface components {
              * @description The folder it is in; none at the top level.
              */
             parent?: string | null;
-            /** Title */
+            /**
+             * Title
+             * @description The name shown.
+             */
             title: string;
             /**
              * Url
@@ -5499,7 +5503,10 @@ export interface components {
          * @description The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.
          */
         BookmarkList: {
-            /** Bookmarks */
+            /**
+             * Bookmarks
+             * @description Every entry, depth-first in order; `parent` and `depth` give the tree.
+             */
             bookmarks?: components["schemas"]["Bookmark"][];
             /**
              * Changed

@@ -105,12 +105,15 @@ browser opens no other. A removed entry, a folder with everything in it, stays r
 out.
 
 The address bar has a star that adds the shown page and then edits its name and folder or removes it. The manager at
-`/bookmarks` shows the tree: folders, rename, drag and buttons to reorder and move, and remove with undo. The left
-navigation shows the whole tree: folders open and close, and which are open is remembered in that browser; every
-bookmark has its favicon and title. It is a tree view for the keyboard and screen readers: arrow keys move, right opens
-a folder, left folds it, Enter opens. A long tree scrolls inside its own section. The collapsed rail keeps the top-level
-bookmarks as icons. A click on a bookmark opens a new tab of the built-in browser in the desktop app; in the PWA the
-link opens a new browser tab.
+`/bookmarks` shows the tree: folders, rename, drag and buttons to reorder and move, and remove with undo.
+
+The left navigation shows the whole tree: folders open and close, and which are open is remembered in that browser;
+every bookmark has its favicon and title. It is a tree view for the keyboard and screen readers: arrow keys move, right
+opens a folder, left folds it, Enter opens. A long tree scrolls inside its own section. The collapsed rail keeps the
+top-level bookmarks as icons.
+
+A bookmark opens a new tab of the built-in browser in the desktop app, and a new browser tab in the PWA. Its rows are
+buttons, like the rest of the navigation.
 
 A favicon is the icon the page itself named (`page-favicon-updated`): the desktop reads it inside the guest partition,
 under the same public-HTTPS rule and proxy as the page, reduces it to a 32-pixel PNG and keeps it per origin for its
