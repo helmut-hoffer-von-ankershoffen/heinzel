@@ -915,6 +915,7 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         kernel.self_chat,
         kernel.settings.state_dir,
         forget_notices=lambda chats: kernel.resolve(Notifications).forget_chats(chats),
+        log_dir=kernel.settings.log_dir,
     )
     return service
 

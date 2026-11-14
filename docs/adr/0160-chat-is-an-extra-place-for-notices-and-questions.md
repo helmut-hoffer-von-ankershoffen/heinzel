@@ -101,6 +101,16 @@ frees its place 30 seconds after the wait. Quiet mode keeps questions out of cha
 follows the owner's own conversation or the schedule's own quiet hours. If the process ends while an ask waits, the
 next ask says "still open" in that thread once.
 
+A scheduled turn's question is relayed by a detached helper. The daemon's tick is a short-lived process
+([ADR 0020](0020-daemon-head.md)) that would end a waiting ask with it, so the daemon job marks its turns, and there the relay
+starts a private helper process (`python -m heinzel.modules.heinzel._self_chat_helper`, no command of its own) and
+returns at once. The helper has the tick's environment (profile, home, state directory), a session of its own, no
+inherited locks or descriptors, and writes what it prints to a log file; it runs the same relay with the same switch,
+quiet mode, wait, caps and answer path. One ask is live per Heinzel chat across processes too: an ask whose chat another
+process now asks in is superseded. A helper asks only while fewer than three asks are live across all processes, by the
+ledger's live entries of running processes; over that cap the question is only in the app. A helper that crashes leaves
+its live entry, and the next ask says "still open". The web app, a long-lived process, keeps its worker thread.
+
 A Heinzel chat that no longer exists keeps nothing: before each question the relay drops its thread and any live ask
 (cancelled without a note), in both ledgers, so a new chat never gets an old chat's thread.
 

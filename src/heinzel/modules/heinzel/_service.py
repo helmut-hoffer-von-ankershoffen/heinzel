@@ -106,6 +106,7 @@ from heinzel.modules.heinzel._models import (
     Step,
 )
 from heinzel.modules.heinzel._retention import Sweep, expired
+from heinzel.modules.heinzel._self_chat_questions import short_lived_process
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._starter import from_template, is_name, slug, starter
 
@@ -623,10 +624,14 @@ class HeinzelService:
         return jobs
 
     def _autonomous_job(self, schedules: AutonomousSchedules, binding: ScheduleBinding) -> JobLet:
-        """A daemon tick uses its real slot; the user-approved binding is rechecked at launch."""
+        """A daemon tick uses its real slot; the user-approved binding is rechecked at launch.
+
+        The tick ends soon after the turn, so a question the turn asks goes to chat through a detached helper.
+        """
 
         def run(slot: datetime) -> JsonValue:
-            result = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
+            with short_lived_process():
+                result = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
             return {"status": "quiet-hours" if result is None else "completed"}
 
         def unavailable() -> JsonValue:

@@ -15,19 +15,28 @@ before; whichever answer comes first counts:
 
 Answers are routed by the relay's own record (the chat, the question it asked), never by a thread the adapter returns.
 Write approvals never go this way (ADR 0068, 0120): only questions. One live ask per Heinzel chat (a newer question
-supersedes it) and at most `MAX_LIVE` in this process; over the cap, the question is only in the app. An adapter that
-ignores `cancel` frees its place `GRACE` seconds after the wait.
+supersedes it, also from another process) and at most `MAX_LIVE` in this process; over the cap, the question is only
+in the app. An adapter that ignores `cancel` frees its place `GRACE` seconds after the wait.
+
+A scheduled turn runs in the daemon's tick, a short-lived process that would end the wait with it. There the daemon job
+says so (`short_lived_process`), and the relay hands the ask to a detached helper process of its own
+(`_self_chat_helper`) and returns at once. The helper runs the same relay: the same switch, wait, caps and answer path,
+and it asks only while fewer than `MAX_DETACHED` asks are live across all processes, by the ledger's live entries.
 
 A chat that no longer exists keeps nothing: before each question the relay drops the thread and any live ask of chats
 that are gone, here and in the notices' ledger.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import os
+import subprocess
+import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -46,6 +55,12 @@ if TYPE_CHECKING:
 _EVENTS = get_logger("heinzel.self_chat")
 MAX_LIVE = 3
 """Most chat asks waiting at once in this process."""
+MAX_DETACHED = 3
+"""Most chat asks live across all processes when a detached helper asks."""
+HELPER = "heinzel.modules.heinzel._self_chat_helper"
+"""The module the detached helper runs: private, no command of its own."""
+HELPER_LOG = "self-chat-helper.err.log"
+"""Where helpers write what they print, under the log directory."""
 GRACE = 30.0
 """Seconds an adapter may overrun its wait before the relay stops waiting for it."""
 POLL = 2.0
@@ -56,6 +71,44 @@ NOT_USED = "This was already answered in Heinzel, so this reply wasn't used."
 REFUSED = "That answer couldn't be used; the question is still open in Heinzel."
 
 End = Literal["answered-here", "superseded"]
+
+_SHORT_LIVED: ContextVar[bool] = ContextVar("heinzel_self_chat_short_lived", default=False)
+
+
+@contextlib.contextmanager
+def short_lived_process() -> Generator[None]:
+    """Mark calls inside as running in a process that ends soon (the daemon's tick): questions go to a helper."""
+    token = _SHORT_LIVED.set(True)
+    try:
+        yield
+    finally:
+        _SHORT_LIVED.reset(token)
+
+
+def _launch(command: list[str], log_dir: Path | None) -> subprocess.Popen[bytes]:
+    """Start the helper in a session of its own with this process's environment; it outlives the caller."""
+    if log_dir is None:
+        return subprocess.Popen(  # noqa: S603 - this interpreter and a fixed module, arguments are ids, no shell
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(log_dir / HELPER_LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        return subprocess.Popen(  # noqa: S603 - this interpreter and a fixed module, arguments are ids, no shell
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=descriptor,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        os.close(descriptor)
 
 
 class QuestionSettings(BaseModel):
@@ -101,32 +154,69 @@ class QuestionRelay:
         *,
         settings: Callable[[], QuestionSettings] = _user_settings,
         forget_notices: Callable[[set[str]], object] | None = None,
+        log_dir: Path | None = None,
     ) -> None:
         """Bind the chat service that runs turns, the owner's sessions, and the self channel.
 
-        `forget_notices(chats)` drops the notices' chat threads of Heinzel chats not in `chats`.
+        `forget_notices(chats)` drops the notices' chat threads of Heinzel chats not in `chats`; detached helpers
+        write what they print to a file in `log_dir`.
         """
         self._chat, self._crud, self._current, self._self_chat = chat, crud, current, self_chat
         self.ledger = SelfChatLedger(state_dir / STATE, "questions", ("threads", "live"))
         self._settings = settings
         self._forget_notices = forget_notices
+        self._log_dir = log_dir
         self.threads: list[threading.Thread] = []
         """Workers started, for tests to join."""
+        self.helpers: list[subprocess.Popen[bytes]] = []
+        """Detached helpers started, for tests to wait for."""
 
     def asked(self, session: str, turn: str) -> None:
-        """A turn of `session` ended with a question: ask it in chat too, in the background. Returns at once."""
+        """A turn of `session` ended with a question: ask it in chat too, in the background. Returns at once.
+
+        In a short-lived process (`short_lived_process`) a detached helper asks, never a thread that would die with it.
+        """
+        if _SHORT_LIVED.get():
+            try:
+                self._detach(session, turn)
+            except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs the scheduled turn
+                log_event(_EVENTS, "self_chat.helper.failed", level=logging.WARNING, problem=type(exc).__name__)
+            return
         worker = threading.Thread(target=self._guarded, args=(session, turn), name="hz-self-chat-ask", daemon=True)
         self.threads.append(worker)
         worker.start()
 
-    def _guarded(self, session: str, turn: str) -> None:
+    def _detach(self, session: str, turn: str) -> None:
+        """Start the helper that asks, unless nothing would be asked or the asks across processes are at their cap."""
+        settings = self._settings()
+        if not settings.chat_questions or settings.quiet or not settings.enabled:
+            return
+        with self.ledger.locked() as state:
+            full = self._full(state["live"], session)
+        if full:
+            log_event(_EVENTS, "self_chat.question.over_cap", level=logging.INFO, live=MAX_DETACHED)
+            return
+        helper = _launch([sys.executable, "-m", HELPER, session, turn], self._log_dir)
+        self.helpers.append(helper)
+        log_event(_EVENTS, "self_chat.helper.started", level=logging.INFO, pid=helper.pid)
+
+    @staticmethod
+    def _full(live: dict[str, str], session: str) -> bool:
+        """Whether `MAX_DETACHED` asks of other chats are live in running processes; this chat's own is superseded."""
+        return sum(1 for s, pid in live.items() if s != session and process_alive(pid)) >= MAX_DETACHED
+
+    def run_detached(self, session: str, turn: str) -> None:
+        """The helper's whole work: tidy, then ask under the cap across processes; never raises."""
+        self._guarded(session, turn, detached=True)
+
+    def _guarded(self, session: str, turn: str, *, detached: bool = False) -> None:
         with self._current.local("self-chat"):
             try:
                 self.forget_gone()
             except Exception as exc:  # noqa: BLE001 - tidying never costs the question
                 log_event(_EVENTS, "self_chat.forget.failed", level=logging.WARNING, problem=type(exc).__name__)
             try:
-                self.relay(session, turn)
+                self.relay(session, turn, detached=detached)
             except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs the question in the app
                 log_event(_EVENTS, "self_chat.question.failed", level=logging.WARNING, problem=type(exc).__name__)
 
@@ -145,8 +235,11 @@ class QuestionRelay:
         if self._forget_notices is not None:
             self._forget_notices(chats)
 
-    def relay(self, session: str, turn: str) -> None:
-        """Ask the question of `turn` in chat and act on what comes first; under the `self-chat` identity."""
+    def relay(self, session: str, turn: str, *, detached: bool = False) -> None:
+        """Ask the question of `turn` in chat and act on what comes first; under the `self-chat` identity.
+
+        `detached`: this is a helper process, which asks only under the cap across processes.
+        """
         settings = self._settings()
         if not settings.chat_questions or settings.quiet or not settings.enabled:
             return
@@ -166,6 +259,9 @@ class QuestionRelay:
         try:
             name = self._crud.snapshot(session, limit=1).name
             with self.ledger.locked() as state:
+                if detached and self._full(state["live"], session):
+                    log_event(_EVENTS, "self_chat.question.over_cap", level=logging.INFO, live=MAX_DETACHED)
+                    return
                 thread = state["threads"].get(session)
                 state["live"][session] = mine
             answer, problem = self._wait(channel, ask, (text, name, thread), settings.chat_wait_minutes * 60.0)
@@ -241,6 +337,9 @@ class QuestionRelay:
             if ask.ended is None and self.answered_after(ask.session, ask.seq):
                 ask.ended = "answered-here"
                 ask.cancel.set()
+            elif ask.ended is None and self._taken_over(ask.session):
+                ask.ended = "superseded"
+                ask.cancel.set()
         if not outcome:
             return None, "abandoned"
         result = outcome[0]
@@ -248,6 +347,12 @@ class QuestionRelay:
             log_event(_EVENTS, "self_chat.question.refused", level=logging.WARNING, problem=type(result).__name__)
             return None, "refused"
         return result, None
+
+    def _taken_over(self, session: str) -> bool:
+        """Whether another process now asks in this chat: a newer question supersedes this ask there too."""
+        with self.ledger.locked() as state:
+            owner = state["live"].get(session)
+        return owner is not None and owner != str(os.getpid())
 
     def answered_after(self, session: str, seq: int) -> bool:
         """Whether anything came after the question at `seq`: an answer in a head, or a newer turn."""

@@ -1,9 +1,13 @@
 """A Heinzel's questions also in chat (ADR 0160): the races, the caps, the notes, and what an answer may become."""
 
 import hashlib
+import os
+import subprocess
+import sys
 import threading
 import time
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,12 +16,16 @@ from heinzel.kernel._self_chat import SelfChat
 from heinzel.modules.heinzel import _self_chat_questions as relay_module
 from heinzel.modules.heinzel._self_chat_questions import (
     ANSWERED_HERE,
+    HELPER,
+    MAX_DETACHED,
     NOT_USED,
     REFUSED,
     STILL_OPEN,
     QuestionRelay,
     QuestionSettings,
+    short_lived_process,
 )
+from heinzel.modules.heinzel._service import HeinzelService
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts, SessionMessage
@@ -493,3 +501,163 @@ def test_tidying_that_fails_never_costs_the_question(world, caplog):
     _run(relay, session, "turn-1")
     assert len(inbox.asked) == 1
     assert "self_chat.forget.failed" in caplog.text
+
+
+class Launches:
+    """Stands in for starting the detached helper: records each command and the log directory, starts nothing."""
+
+    def __init__(self) -> None:
+        self.commands: list[tuple[list[str], object]] = []
+
+    def __call__(self, command: list[str], log_dir: object) -> object:
+        self.commands.append((command, log_dir))
+        return SimpleNamespace(pid=4242)
+
+
+def _dead_pid() -> str:
+    """A process id that just ended: started here, waited for."""
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait(10)
+    return str(child.pid)
+
+
+def test_in_a_short_lived_process_a_detached_helper_asks_and_the_caller_returns_at_once(world, monkeypatch):
+    current, crud, session = world
+    inbox, launches = Inbox("wait"), Launches()
+    monkeypatch.setattr(relay_module, "_launch", launches)
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    relay = _relay(world, inbox, Chat())
+    started = time.monotonic()
+    with short_lived_process():
+        relay.asked(session, "turn-1")
+    assert time.monotonic() - started < 0.2
+    assert launches.commands == [([sys.executable, "-m", HELPER, session, "turn-1"], None)]
+    assert relay.threads == [], "no thread that would die with the tick"
+    assert inbox.asked == [], "the helper asks, not the tick"
+    relay.asked(session, "turn-1")  # outside the tick (the web app): the worker thread as before
+    assert launches.commands[1:] == []
+    assert inbox.waiting.wait(5)
+    inbox.release.set()
+    for worker in relay.threads:
+        worker.join(10)
+
+
+def test_the_daemon_job_marks_its_turns_short_lived(monkeypatch):
+    seen: list[bool] = []
+
+    class Schedules:
+        async def tick(self, session: str, request: str, when: datetime) -> str:
+            del session, request, when
+            seen.append(relay_module._SHORT_LIVED.get())
+            return "done"
+
+    binding = SimpleNamespace(session_id="S1", request_id="r1", cadence_seconds=60, timeout_seconds=60)
+    job = HeinzelService._autonomous_job(SimpleNamespace(), Schedules(), binding)  # type: ignore[arg-type]
+    assert job.run_for_slot is not None
+    assert job.run_for_slot(datetime.now(UTC)) == {"status": "completed"}
+    assert seen == [True]
+    assert relay_module._SHORT_LIVED.get() is False, "only inside the tick's turn"
+
+
+def test_no_helper_starts_when_nothing_would_be_asked(world, monkeypatch):
+    current, crud, session = world
+    launches = Launches()
+    monkeypatch.setattr(relay_module, "_launch", launches)
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    for settings in ({"chat_questions": False}, {"quiet": True}, {"enabled": False}):
+        with short_lived_process():
+            _relay(world, Inbox(), Chat(), **settings).asked(session, "turn-1")
+    assert launches.commands == []
+
+
+def test_a_helper_that_cannot_start_costs_the_turn_nothing(world, monkeypatch, caplog):
+    current, crud, session = world
+
+    def broken(command: list[str], log_dir: object) -> object:
+        del command, log_dir
+        raise OSError
+
+    monkeypatch.setattr(relay_module, "_launch", broken)
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    with short_lived_process():
+        _relay(world, Inbox(), Chat()).asked(session, "turn-1")
+    assert "self_chat.helper.failed" in caplog.text
+
+
+def test_detached_asks_stay_under_a_small_cap_across_processes(world, monkeypatch):
+    current, crud, session = world
+    launches, inbox = Launches(), Inbox(SelfAnswer(text="Work", thread="t-1"))
+    monkeypatch.setattr(relay_module, "_launch", launches)
+    with current.local("cli"):
+        others = [crud.new_chat(f"H{n}").session_id for n in range(MAX_DETACHED)]
+        _ask(crud, session, "turn-1")
+    relay = _relay(world, inbox, Chat())
+    with relay.ledger.locked() as state:
+        for other in others:
+            state["live"][other] = str(os.getpid())  # a running process asks in each
+    with short_lived_process():
+        relay.asked(session, "turn-1")
+    assert launches.commands == [], "the tick starts no helper over the cap"
+    relay.run_detached(session, "turn-1")
+    assert inbox.asked == [], "a helper started meanwhile asks nothing over the cap: the question is only in the app"
+    with relay.ledger.locked() as state:
+        assert session not in state["live"]
+        state["live"][others[0]] = _dead_pid()  # that process ended: its place is free
+        state["live"][session] = str(os.getpid())  # this chat's own ask is superseded, never counted
+    with short_lived_process():
+        relay.asked(session, "turn-1")
+    assert len(launches.commands) == 1
+
+
+def test_the_helper_runs_the_same_relay_and_answer_path(world):
+    current, crud, session = world
+    inbox, chat = Inbox(SelfAnswer(text="The work one", thread="t-1")), Chat()
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    relay = _relay(world, inbox, chat)
+    relay.run_detached(session, "turn-1")
+    assert [a["question"] for a in inbox.asked] == ["Which calendar?"]
+    accepted = _accepted(crud, session)
+    assert [a["origin"] for a in accepted] == ["self-chat"]
+    with current.local("cli"):
+        message = crud.read_message(session, crud.repository.control_read(session).events[-1])
+    assert (message.text, message.origin, message.role) == ("The work one", "self-chat", "user")
+    assert chat.turns == [(session, accepted[0]["message_id"])]
+    with relay.ledger.locked() as state:
+        assert state["live"] == {}, "nothing is left that a later ask would call still open"
+
+
+def test_an_ask_another_process_takes_over_is_superseded_silently(world):
+    current, crud, session = world
+    inbox, chat = Inbox("wait"), Chat()
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    relay = _relay(world, inbox, chat)
+    relay.asked(session, "turn-1")
+    assert inbox.waiting.wait(5)
+    with relay.ledger.locked() as state:
+        state["live"][session] = "1"  # a helper asks a newer question of this chat
+    for worker in relay.threads:
+        worker.join(10)
+        assert not worker.is_alive()
+    assert inbox.notes == [], "a superseded ask says nothing"
+    assert chat.turns == []
+    with relay.ledger.locked() as state:
+        assert state["live"] == {session: "1"}, "the newer ask keeps its place"
+
+
+def test_the_helper_process_starts_detached_with_its_output_in_the_log(tmp_path):
+    log_dir = tmp_path / "logs"
+    code = "import os, sys; sys.stdout.write('out'); sys.stderr.write(f'{os.getsid(0)} {os.getpid()}')"
+    child = relay_module._launch([sys.executable, "-c", code], log_dir)
+    try:
+        assert child.wait(20) == 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+    session_id, pid = (log_dir / relay_module.HELPER_LOG).read_text().split()
+    assert session_id == pid, "a session of its own: the tick's end never signals it"
+    assert (log_dir / relay_module.HELPER_LOG).stat().st_mode & 0o777 == 0o600
