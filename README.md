@@ -288,6 +288,7 @@ Built in today:
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
+- [`system.bookmark`](docs/MODULES.md#systembookmark) — Keep the built-in browser's bookmarks: a tree of folders and bookmarks.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
 - [`system.claude`](docs/MODULES.md#systemclaude) — See the MCP servers and skills you already set up for Claude, and switch servers off or on.

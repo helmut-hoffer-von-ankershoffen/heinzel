@@ -8,6 +8,7 @@ import { ErrorBoundary, RouteError } from "@/components/ErrorScreen";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { t } from "@/i18n";
 import { Shell } from "@/layout/Shell";
+import { Bookmarks } from "@/pages/Bookmarks";
 import { Contract } from "@/pages/Contract";
 import { Contracts } from "@/pages/Contracts";
 import { Doctor } from "@/pages/Doctor";
@@ -46,6 +47,7 @@ export const routes: RouteObject[] = [
       { path: "inventory/types", element: <AssetTypes /> },
       { path: "inventory/assets", element: <Assets /> },
       { path: "doctor", element: <Doctor /> },
+      { path: "bookmarks", element: <Bookmarks /> },
       { path: "profile", element: <Profile /> },
       { path: "plugins/*", element: <InstalledPage /> },
       { path: "*", element: <NotFound /> },

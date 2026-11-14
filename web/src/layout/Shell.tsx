@@ -681,7 +681,11 @@ function Layout() {
                           id: "browser",
                           title: t("browser.title"),
                           content: (
-                            <BrowserPanel active={selectedPanel === "browser"} onClose={() => setBrowserOpen(false)} />
+                            <BrowserPanel
+                              bookmarks
+                              active={selectedPanel === "browser"}
+                              onClose={() => setBrowserOpen(false)}
+                            />
                           ),
                         },
                       ]

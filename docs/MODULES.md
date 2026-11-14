@@ -17,6 +17,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
+| [`system.bookmark`](#systembookmark) | Keep the built-in browser's bookmarks: a tree of folders and bookmarks. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
 | [`system.claude`](#systemclaude) | See the MCP servers and skills you already set up for Claude, and switch servers off or on. |
@@ -204,6 +205,20 @@ Install the Heinzelmännchen skills for coding agents.
 | Remove Heinzelmännchen's skills from each configured agent skill directory. | `hz system agent uninstall` | `system_agent_uninstall` | `POST /system/agent/uninstall` | `POST /api/system/agent/uninstall` | yes | expert |
 
 Settings: [`[system.agent]`](CONFIGURATION.md#systemagent).
+
+## `system.bookmark`
+
+Keep the built-in browser's bookmarks: a tree of folders and bookmarks.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the bookmarks and folders in their order, with each entry's id and folder. | `hz system bookmark list` | `system_bookmark_list` | — | `GET /api/system/bookmark/list` |  | expert |
+| Add a bookmark; an address already in that folder is kept once. | `hz system bookmark add` | `system_bookmark_add` | — | `POST /api/system/bookmark/add` | yes | expert |
+| Add an empty bookmark folder. | `hz system bookmark folder` | `system_bookmark_folder` | — | `POST /api/system/bookmark/folder` | yes | expert |
+| Rename a bookmark or folder, or change a bookmark's address. | `hz system bookmark edit` | — | — | `POST /api/system/bookmark/edit` | yes | expert |
+| Move a bookmark or folder into another folder or to another place in its own. | `hz system bookmark move` | — | — | `POST /api/system/bookmark/move` | yes | expert |
+| Remove a bookmark, or a folder with everything in it; `restore` brings it back. | `hz system bookmark remove` | — | — | `POST /api/system/bookmark/remove` | yes | expert |
+| Bring back a removed bookmark or folder to where it was. | `hz system bookmark restore` | — | — | `POST /api/system/bookmark/restore` | yes | expert |
 
 ## `system.capability`
 
