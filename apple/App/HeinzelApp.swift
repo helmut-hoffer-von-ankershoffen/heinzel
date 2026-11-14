@@ -179,11 +179,16 @@ struct ConnectionView: View {
             #else
             .overlay(alignment: .bottomTrailing) {
                 if !loadingWorkspace {
-                    Button("Connection", systemImage: "network") { showConnection = true }
-                        .labelStyle(.iconOnly)
-                        .frame(width: 44, height: 30)
-                        .offset(y: -44)
-                        .padding(.trailing, 14)
+                    Button {
+                        showConnection = true
+                    } label: {
+                        Label("Connection", systemImage: "network")
+                            .labelStyle(.iconOnly)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .offset(y: -44)
+                    .padding(.trailing, 14)
                 }
             }
             #endif
