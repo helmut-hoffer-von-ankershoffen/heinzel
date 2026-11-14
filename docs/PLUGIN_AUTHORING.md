@@ -193,6 +193,64 @@ cannot drift from what the code does. Test a declaration with `hz system prerequ
 (`HZ_SHARING__ENABLED=1` selects the example above; `--context feature` asks for a `feature` program that has no
 predicate) and `hz system prerequisite list --json`, against the released SDK; no Core checkout is needed.
 
+## Bring your own AI models and connectors
+
+A company plugin can reach its own models and its own systems. It needs Heinzelmännchen 0.9.43 or later (the first
+release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md)). Pin it as
+`heinzel>=0.9.43,<1`. The public `heinzel-example-bridge` plugin in `heinzel-plugins` does all of this with made-up
+parts. Copy it, and replace its dummy data with your company's calls.
+
+**Models.** Provide `ai-models` with two methods. `models()` returns the models on offer, the default first, as
+`ModelOffer`s; only `id` is required. `model(model_id)` returns a ready Pydantic AI model whose HTTP client carries
+your authentication. Heinzel runs that model for chat, drafts and schedules, with its own tools, limits and usage
+records. Your plugin never runs an agent and Heinzel never sees your token:
+
+```python
+from httpx2 import AsyncClient
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+
+from heinzel import ModelOffer, Module
+from heinzel.token_auth import CommandTokenAuth
+
+module = Module("acme-ai", "Acme's models through the company proxy.")
+PROXY = "https://ai-proxy.acme.example"
+
+
+@module.provides("ai-models", modes={"read"}, hosts=["ai-proxy.acme.example"], name="acme")
+class AcmeModels:
+    title = "Acme AI"
+
+    def models(self) -> list[ModelOffer]:
+        return [ModelOffer(id=row.id, thinking="adaptive") for row in cached_rows()]  # your cache, refreshed by you
+
+    def model(self, model_id: str) -> AnthropicModel:
+        auth = CommandTokenAuth(["acme-sso", "token"], drop=["x-api-key"])
+        provider = AnthropicProvider(api_key="unused", base_url=PROXY, http_client=AsyncClient(auth=auth))
+        return AnthropicModel(model_id, provider=provider)
+```
+
+The option shows up as "Acme AI" in Settings and in `hz ai access list`. People pick it with
+`hz ai access use acme`, and pick a model in Settings or with
+`hz system config set ai.access.plugin_model <id>`. Your plugin is responsible for:
+
+- `models()` answering in milliseconds from your own cache. Heinzel waits 5 seconds at most, then shows the last list
+  it got.
+- marking a model `available=False` when your own probe found it doesn't answer. Heinzel keeps it visible, marked,
+  and refuses a turn on it with the names of models to pick instead.
+- setting `thinking` to `"adaptive"` or `"budget"` when the model takes Anthropic's effort settings. Heinzel then
+  maps the chosen effort. Leave it unset to handle effort yourself.
+- never putting a token or header into an exception message: Heinzel shows failure messages, cut short.
+
+`CommandTokenAuth` runs your token helper without a shell. It refreshes the token 5 minutes before its JWT `exp`
+and once on a 401. When the helper prints nothing (its own sign-in expired), it raises `TokenCommandError` with the
+helper's hint. It is an `httpx2.Auth`, the HTTP client Pydantic AI uses.
+
+**Connectors.** Provide `mail`, `calendar`, `documents`, `tracker`, `chat`, `meetings` or `code-host` as for any
+connector. A method your system can't do raises `NotSupportedError(capability, method, reason)`. Or list it in a
+class attribute, `unsupported = frozenset({"replace_section"})`; then Heinzel refuses the call before it reaches
+you, and the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
+
 ## Choose public or private hosting
 
 First commit the scaffold and your feature. Then create exactly one repository:

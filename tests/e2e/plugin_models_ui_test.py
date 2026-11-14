@@ -1,4 +1,4 @@
-"""A plugin's own AI models in the real Settings, on an isolated `hz ui serve` with a made-up plugin (ADR 0159)."""
+"""A plugin's own AI models in the real Settings, driven by Playwright on an isolated `hz ui serve` (ADR 0159)."""
 
 import tomllib
 from pathlib import Path
