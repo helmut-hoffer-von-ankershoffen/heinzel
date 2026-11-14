@@ -188,6 +188,8 @@ function TestResult({ result }: { result: SchemaAccessTestReport }) {
   );
 }
 
+/** The most models one check of every model asks, as `hz ai access test --all` caps it. */
+const MAX_MODELS_CHECKED = 24;
 const OUTCOME_TONE = { answered: "text-ok", unanswered: "text-bad", skipped: "text-muted-foreground" } as const;
 const OUTCOME_LABEL = {
   answered: "aiAccess.models.answered",
@@ -297,7 +299,9 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
   const client = useQueryClient();
   const save = useSetSetting();
   const check = useTestAiAccess();
-  const all = useTestAllAiModels();
+  const [step, setStep] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const all = useTestAllAiModels(setStep);
   const unavailable = new Set(option.unavailable_models ?? []);
   const models = option.models ?? [];
   const [chosen, setChosen] = useState(option.model ?? "");
@@ -349,16 +353,45 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
       {saved && !save.error && <p className="text-sm text-ok">{t("aiAccess.models.saved")}</p>}
       {check.data && <TestResult result={check.data} />}
       {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
-      {all.data && <AllModelsResult result={all.data} />}
+      {all.isPending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {step || t("aiAccess.models.testingAll")}
+        </p>
+      )}
+      {all.data && !all.isPending && <AllModelsResult result={all.data} />}
       {all.error && <p className="text-sm text-bad">{all.error.message}</p>}
+      {confirming && (
+        <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+          <p className="text-sm">
+            {t("aiAccess.models.testAllCost", { count: Math.min(models.length, MAX_MODELS_CHECKED) })}
+          </p>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} type="button" onClick={() => setConfirming(false)}>
+              {t("aiAccess.models.testAllCancel")}
+            </PaneAction>
+            <PaneAction
+              key="confirm"
+              primary
+              icon={ListChecks}
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setStep("");
+                all.mutate(option.name);
+              }}
+            >
+              {t("aiAccess.models.testAllConfirm")}
+            </PaneAction>
+          </PaneActions>
+        </div>
+      )}
       <PaneActions align="end" words="all">
         <PaneAction
           key="test-all"
           icon={ListChecks}
           type="button"
-          disabled={all.isPending || check.isPending}
-          title={t("aiAccess.models.testAllNote")}
-          onClick={() => all.mutate(option.name)}
+          disabled={all.isPending || check.isPending || confirming}
+          onClick={() => setConfirming(true)}
         >
           {all.isPending ? t("aiAccess.models.testingAll") : t("aiAccess.models.testAll")}
         </PaneAction>

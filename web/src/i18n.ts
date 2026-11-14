@@ -681,8 +681,10 @@ const en = {
   "aiAccess.models.saved": "Saved. Test it to see it answer.",
   "aiAccess.models.testAll": "Check every model",
   "aiAccess.models.testingAll": "Checking each model…",
-  "aiAccess.models.testAllNote":
-    "Heinzel asks each model one tiny question, at most 24, and marks the ones that don't answer unavailable; a few tokens each.",
+  "aiAccess.models.testAllCost":
+    "Heinzel asks each of {count} models one tiny question, one after another: a few tokens each, billed by your plugin's provider. The ones that don't answer are marked unavailable until a check answers.",
+  "aiAccess.models.testAllConfirm": "Check them",
+  "aiAccess.models.testAllCancel": "Cancel",
   "aiAccess.models.testedAll": "{detail}; {tokens} tokens",
   "aiAccess.models.answered": "answered",
   "aiAccess.models.unanswered": "didn't answer",

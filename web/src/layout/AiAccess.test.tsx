@@ -198,8 +198,22 @@ describe("AI access", () => {
     expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("bridge-slow");
   });
 
-  it("tests every model of a plugin only when asked, and marks the ones that didn't answer (ADR 0159)", async () => {
+  it("checks every model of a plugin only after a cost confirmation, with progress, and marks the silent ones", async () => {
     let tested = false;
+    let finish = () => {};
+    const report = {
+      name: "bridge",
+      ok: true,
+      detail: "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped",
+      input_tokens: 12,
+      output_tokens: 2,
+      models: [
+        { model: "bridge-fast", outcome: "answered", detail: "OK", duration_seconds: 0.4 },
+        { model: "bridge-slow", outcome: "unanswered", detail: "no answer within 15s", duration_seconds: 15 },
+        { model: "bridge-retired", outcome: "skipped", detail: "", duration_seconds: 0 },
+      ],
+      untested: [],
+    };
     const bridge = () =>
       option("bridge", {
         title: "Example bridge",
@@ -219,21 +233,22 @@ describe("AI access", () => {
         uses: [],
         next: [],
       }),
-      "/api/ai/access/test": () => {
+      "/api/stream/ai/access/test": () => {
         tested = true;
-        return {
-          name: "bridge",
-          ok: true,
-          detail: "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped",
-          input_tokens: 12,
-          output_tokens: 2,
-          models: [
-            { model: "bridge-fast", outcome: "answered", detail: "OK", duration_seconds: 0.4 },
-            { model: "bridge-slow", outcome: "unanswered", detail: "no answer within 15s", duration_seconds: 15 },
-            { model: "bridge-retired", outcome: "skipped", detail: "", duration_seconds: 0 },
-          ],
-          untested: [],
-        };
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const send = (kind: string, data: object) =>
+                controller.enqueue(new TextEncoder().encode(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`));
+              send("task", { text: "Testing bridge-slow (2/3)" });
+              finish = () => {
+                send("result", { data: report });
+                controller.close();
+              };
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
       },
     });
     const user = userEvent.setup();
@@ -243,6 +258,16 @@ describe("AI access", () => {
     expect(within(dialog).getByRole("radio", { name: "bridge-slow" })).not.toHaveTextContent("unavailable");
     expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Check every model" }));
+    expect(within(dialog).getByText(/Heinzel asks each of 3 models one tiny question/)).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(within(dialog).queryByText(/Heinzel asks each of 3 models/)).not.toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Check every model" }));
+    await user.click(within(dialog).getByRole("button", { name: "Check them" }));
+    expect(await within(dialog).findByText("Testing bridge-slow (2/3)")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Checking each model…" })).toBeDisabled();
+    finish();
     expect(
       await within(dialog).findByText(
         "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped; 14 tokens",
