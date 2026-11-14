@@ -29,12 +29,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from heinzel import Config, CurrentUser, HeinzelError, SelfAnswer, clean_text
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest
-from heinzel.modules.system.notify import NotifySettings
 
 if TYPE_CHECKING:
     from heinzel.modules.heinzel._user_chat import UserChatService
@@ -52,6 +53,21 @@ NOT_USED = "This was already answered in Heinzel, so this reply wasn't used."
 REFUSED = "That answer couldn't be used; the question is still open in Heinzel."
 
 End = Literal["answered-here", "superseded"]
+
+
+class QuestionSettings(BaseModel):
+    """What the relay reads of `[system.notify]`, which the notify module owns; read afresh for every question."""
+
+    model_config = ConfigDict(extra="ignore")
+    enabled: bool = True
+    quiet: bool = False
+    chat_questions: bool = False
+    chat_wait_minutes: int = Field(default=5, ge=1, le=60)
+
+
+def _user_settings() -> QuestionSettings:
+    """The user's `[system.notify]`, as the notify module reads it: user scope only, never a project's."""
+    return QuestionSettings.model_validate(Config.load(Path.home()).section("system.notify"))
 
 
 @dataclass(eq=False)
@@ -80,12 +96,12 @@ class QuestionRelay:
         self_chat: Callable[[], SelfChat | None],
         state_dir: Path,
         *,
-        settings: Callable[[], NotifySettings] | None = None,
+        settings: Callable[[], QuestionSettings] = _user_settings,
     ) -> None:
         """Bind the chat service that runs turns, the owner's sessions, and the self channel."""
         self._chat, self._crud, self._current, self._self_chat = chat, crud, current, self_chat
         self.ledger = SelfChatLedger(state_dir / STATE, "questions", ("threads", "live"))
-        self._settings = settings or (lambda: Config.load(Path.home()).settings(NotifySettings, "system.notify"))
+        self._settings = settings
         self.threads: list[threading.Thread] = []
         """Workers started, for tests to join."""
 

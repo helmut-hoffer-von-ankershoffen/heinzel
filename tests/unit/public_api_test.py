@@ -658,6 +658,7 @@ KERNEL = [
     "clean_text",
     "collapses",
     "daypart",
+    "declared_unsupported",
     "discover",
     "draft_reporting_lines",
     "env_prefix",

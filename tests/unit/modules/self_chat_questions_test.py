@@ -16,12 +16,12 @@ from heinzel.modules.heinzel._self_chat_questions import (
     REFUSED,
     STILL_OPEN,
     QuestionRelay,
+    QuestionSettings,
 )
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts, SessionMessage
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
-from heinzel.modules.system.notify import NotifySettings
 
 pytestmark = pytest.mark.unit
 
@@ -125,7 +125,7 @@ def _relay(world, inbox: Inbox, chat: Chat, **settings: object) -> QuestionRelay
         current,
         lambda: channel,
         current.directory.parent,
-        settings=lambda: NotifySettings.model_validate(values),
+        settings=lambda: QuestionSettings.model_validate(values),
     )
 
 

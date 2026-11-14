@@ -6,8 +6,7 @@ import time
 from collections.abc import Callable, Iterable
 
 from heinzel import Check, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, SetupLet, Status
-from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement
-from heinzel.kernel._capabilities import declared_unsupported
+from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement, declared_unsupported
 from heinzel.modules.system.connector._models import (
     Access,
     AdapterCandidate,

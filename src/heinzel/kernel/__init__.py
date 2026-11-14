@@ -39,7 +39,15 @@ from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, Capabil
 from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._captured_write import (
@@ -841,6 +849,7 @@ __all__ = [
     "clean_text",
     "collapses",
     "daypart",
+    "declared_unsupported",
     "discover",
     "draft_reporting_lines",
     "env_prefix",
