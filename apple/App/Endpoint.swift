@@ -81,6 +81,19 @@ struct Endpoint: Equatable {
         return (url.port ?? defaultPort) == (origin.port ?? defaultPort)
     }
 
+    func permitsNavigation(to url: URL, inMainFrame: Bool) -> Bool {
+        if owns(url) { return true }
+        guard !inMainFrame else { return false }
+        if url.absoluteString == "about:blank" { return true }
+        // The host CSP still decides when a soundscape may use either YouTube player origin.
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme == "https", parts.user == nil, parts.password == nil, parts.fragment == nil,
+              parts.port == nil || parts.port == 443,
+              let host = parts.host?.lowercased(), host == "www.youtube-nocookie.com" || host == "www.youtube.com"
+        else { return false }
+        return parts.percentEncodedPath.wholeMatch(of: /\/embed\/[A-Za-z0-9_-]{11}/) != nil
+    }
+
     func verify() async throws {
         guard let token else { return }
         let session = URLSession(configuration: .ephemeral, delegate: RefuseRedirects(), delegateQueue: nil)

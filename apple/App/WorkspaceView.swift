@@ -264,13 +264,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let frame = action.targetFrame else { return .cancel }
-        if endpoint.owns(url) || (!frame.isMainFrame && url.absoluteString == "about:blank") { return .allow }
-
-        return .cancel
+        return endpoint.permitsNavigation(to: url, inMainFrame: frame.isMainFrame) ? .allow : .cancel
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        response.response.url.map(endpoint.owns) == true ? .allow : .cancel
+        guard let url = response.response.url else { return .cancel }
+        return endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) ? .allow : .cancel
     }
 
     func webView(
