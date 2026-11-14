@@ -41,7 +41,7 @@ function fixture({ answer = () => ({ ready: true, state: 1, error: false }) } = 
   const network = { configure: async () => calls.push(["network-ready"]), close: () => calls.push(["network-close"]),
     authenticate: (_info, callback) => callback("guest", "secret") };
   const browser = createMiniBrowser({ ...common, createSession, createView, createNetwork: async () => network });
-  const player = createMediaPlayer({ ...common, createView, lease: () => browser.lease(),
+  const player = createMediaPlayer({ ...common, createView, lease: (page) => browser.lease(page),
     openExternal: async (url) => { opened.push(url); } });
   const as = (controller) => (request) => controller.handle({ sender, senderFrame: frame }, request);
   return { owner, sender, calls, views, sessions, opened, browser, player, play: as(player), browse: as(browser) };
@@ -228,4 +228,18 @@ test("a page that never answers a bridge call costs at most the timeout", async 
   const pending = f.play({ action: "pause" });
   for (let i = 0; i < 2; i++) { await Promise.resolve(); t.mock.timers.tick(2000); await new Promise((resolve) => setImmediate(resolve)); }
   assert.deepEqual(await pending, { status: "loading", ready: false, state: -1, error: false });
+});
+
+test("a player still opening when browsing data is cleared is restored after the wipe", async () => {
+  const f = fixture();
+  await f.browse({ action: "clear" });
+  const session = f.sessions[0];
+  session.clearStorageData = async () => { f.calls.push(["wipe"]); };
+  const opening = f.play({ action: "open", video: VIDEO });
+  const clearing = f.browse({ action: "clear" });
+  await Promise.all([opening, clearing]);
+  const embed = `${PLAYER_ORIGIN}/embed/${VIDEO}?playsinline=1&rel=0`;
+  const lastLoad = f.calls.findLastIndex(([name, target]) => name === "load" && target === embed);
+  // Whatever order the two took, the embed loads again after the wipe.
+  assert.ok(lastLoad > f.calls.findIndex(([name]) => name === "wipe"), f.calls.map(([name, target]) => target ?? name).join(" "));
 });

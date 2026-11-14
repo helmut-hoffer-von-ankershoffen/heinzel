@@ -367,7 +367,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       return state(guest);
     },
     /** The website partition with its configured broker for another guest; `release()` once that guest closes. */
-    async lease() {
+    async lease(page) {
       if (stopped) throw new Error("Browser surface is closed.");
       const session = partitionFor();
       leases += 1;
@@ -381,7 +381,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         releaseNetwork();
       };
       // `attach({ blank, restore })`: how clear takes this guest's page off its site and brings it back.
-      const attach = (page) => { if (!released) { pages.add(page); leasedPages.add(page); } };
+      const attach = (entry) => { if (!released) { pages.add(entry); leasedPages.add(entry); } };
+      // Attached before the broker await, so a clear during opening still blanks and restores this page.
+      if (page) attach(page);
       try {
         const network = await networkFor(session);
         return { session, network, release, attach };

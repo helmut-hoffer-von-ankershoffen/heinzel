@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { viewportBounds } from "@/lib/viewport";
+import { useNativeSurface } from "@/lib/nativeSurface";
 
 type BrowserState = {
   status: string;
@@ -87,77 +87,12 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       setState((previous) => ({ ...previous, notice: "clear-failed" }));
     }
   };
-  useEffect(() => {
-    if (!native) return;
-    const update = () => {
-      const element = surface.current;
-      const overlay = Array.from(
-        document.querySelectorAll(
-          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], dialog[open], .viewport-popover, [popover]',
-        ),
-      ).some((node) => node.getClientRects().length > 0 && !node.closest("[hidden], [inert]"));
-      if (!active || !element || element.closest("[hidden], [inert]") || overlay || document.hidden) {
-        void native.browser({ action: "hide" }).catch(() => {});
-        return;
-      }
-      const box = element.getBoundingClientRect();
-      // The native surface must stay inside the visible viewport; anything else hides it rather than overflowing.
-      const view = viewportBounds();
-      if (
-        box.width < 1 ||
-        box.height < 1 ||
-        box.x < view.left ||
-        box.y < view.top ||
-        box.right > view.left + view.width ||
-        box.bottom > view.top + view.height
-      ) {
-        void native.browser({ action: "hide" }).catch(() => {});
-        return;
-      }
-      void native
-        .browser({
-          action: "layout",
-          bounds: {
-            x: Math.round(box.x),
-            y: Math.round(box.y),
-            width: Math.floor(box.width),
-            height: Math.floor(box.height),
-          },
-        })
-        .catch(() => {});
-    };
-    const observer = new ResizeObserver(update);
-    if (surface.current) observer.observe(surface.current);
-    const changes = new MutationObserver(update);
-    changes.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["hidden", "inert", "open", "role", "class", "style"],
-    });
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    document.addEventListener("visibilitychange", update);
-    document.addEventListener("toggle", update, true);
-    const timer = window.setInterval(() => {
-      void native
-        .browser({ action: "state" })
-        .then(setState)
-        .catch(() => {});
-      update();
-    }, 500);
-    update();
-    return () => {
-      observer.disconnect();
-      changes.disconnect();
-      window.clearInterval(timer);
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-      document.removeEventListener("visibilitychange", update);
-      document.removeEventListener("toggle", update, true);
-      void native.browser({ action: "hide" }).catch(() => {});
-    };
-  }, [active, native]);
+  useNativeSurface(surface, active, native?.browser, () => {
+    void native
+      ?.browser({ action: "state" })
+      .then(setState)
+      .catch(() => {});
+  });
   useEffect(
     () => () => {
       void native?.browser({ action: "close" }).catch(() => {});

@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-11-05
 implementation: partial
-decision-makers: maintainer, owner (device and security-key prompts, kept sign-ins)
+decision-makers: maintainer, owner (device and security-key prompts, kept sign-ins, player shares the sign-in)
 related: 0039, 0045, 0115
 ---
 
@@ -43,6 +43,12 @@ needs a signed app whose identifier each relying party lists in its `apple-app-s
 sees `NotAllowedError`, so a passkey step or WebAuthn failure shows a visible note that passkeys may not work, with
 the choice of another sign-in option or "Open in browser", which hands the guest's current public HTTPS address to the
 default browser after the person's click, under the window's external-link rate limit.
+
+In the desktop the media player's YouTube embed is a guest on the same partition, so a sign-in in the browser counts
+in the player and the other way round; the web app keeps its iframe and the browser's own cookies. The embed is a
+top-level page there, so a narrow bridge carries only open, play, pause, volume and the player state, as fixed
+scripts without a user activation. The player follows these guest rules and refuses Bluetooth choosers; its links
+open in the default browser after the person's input, and "Clear browsing data" blanks and reloads it too.
 
 The owner decided to allow device and security-key prompts with a user choice ("don't refuse device or security key
 prompts") and to keep website sign-ins ("we want to stay signed in"). This replaces the earlier refusal of every

@@ -66,15 +66,17 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
   const open = async (window, video) => {
     const url = playerUrl(video);
     const generation = generations.get(window) ?? 0;
-    const { session, network, release, attach } = await lease();
+    // The page is known to the partition's clear before the guest exists; it acts once the view is built.
+    const page = { blank: () => Promise.resolve(), restore: () => {} };
+    const { session, network, release } = await lease(page);
     try {
-      return build(window, video, url, generation, { session, network, release, attach });
+      return build(window, video, url, generation, { session, network, release, page });
     } catch (error) {
       release();
       throw error;
     }
   };
-  const build = (window, video, url, generation, { session, network, release, attach }) => {
+  const build = (window, video, url, generation, { session, network, release, page }) => {
     const product = connection();
     if (!product || stopped || window.isDestroyed() || (generations.get(window) ?? 0) !== generation)
       throw new Error("Player surface is closed.");
@@ -145,10 +147,8 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       player.status = "loading";
       void contents.loadURL(url, { httpReferrer: `${product.origin}/` }).catch(() => { player.status = "unavailable"; });
     };
-    attach({
-      blank: () => (contents.isDestroyed() ? Promise.resolve() : contents.loadURL("about:blank")),
-      restore: load,
-    });
+    page.blank = () => (contents.isDestroyed() ? Promise.resolve() : contents.loadURL("about:blank"));
+    page.restore = load;
     load();
     return player;
   };
