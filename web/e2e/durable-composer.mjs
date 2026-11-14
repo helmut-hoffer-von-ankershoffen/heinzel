@@ -62,16 +62,19 @@ await page.route("**/api/heinzel/chat", async (route) => {
     json: { session_id: body.session_id, request_id: body.request_id, disposition: "queued", inbox_position: 1 },
   });
 });
-await page.route("**/api/heinzel/answer-chat", async (route) => {
+// The chat streams the answer (`POST /api/stream/heinzel/answer-chat`); its result is the plain call's answer.
+await page.route((url) => url.pathname === "/api/stream/heinzel/answer-chat", async (route) => {
   const body = route.request().postDataJSON();
   answerRequested.resolve(body);
   await finishAnswer.promise;
+  const answer = {
+    session_id: body.session_id,
+    request_id: body.request_id,
+    message: { id: "fixture-answer", seq: 3, role: "assistant", text: "The draft is ready.", status: "completed" },
+  };
   return route.fulfill({
-    json: {
-      session_id: body.session_id,
-      request_id: body.request_id,
-      message: { id: "fixture-answer", seq: 3, role: "assistant", text: "The draft is ready.", status: "completed" },
-    },
+    contentType: "text/event-stream",
+    body: `event: result\ndata: ${JSON.stringify({ data: answer })}\n\n`,
   });
 });
 // The app streams the update (`POST /api/stream/system/update`) to show its steps; either route counts as an install.

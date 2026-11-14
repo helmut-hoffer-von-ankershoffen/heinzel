@@ -13,7 +13,10 @@ const page = await context.newPage();
 const observed = [];
 page.on("response", (response) => {
   const path = new URL(response.url()).pathname;
-  if (["/api/heinzel/chat", "/api/heinzel/answer-chat", "/api/heinzel/session"].includes(path) && observed.length < 32)
+  if (
+    ["/api/heinzel/chat", "/api/stream/heinzel/answer-chat", "/api/heinzel/session"].includes(path) &&
+    observed.length < 32
+  )
     observed.push({ path, status: response.status() });
 });
 try {

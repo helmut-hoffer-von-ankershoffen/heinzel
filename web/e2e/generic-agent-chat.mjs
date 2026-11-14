@@ -48,7 +48,7 @@ const began = Date.now();
 const watched = new Set([
   "/api/heinzel/new-chat", // bead f67s: the first start's Start must show whether it answered
   "/api/heinzel/chat",
-  "/api/heinzel/answer-chat",
+  "/api/stream/heinzel/answer-chat",
   "/api/heinzel/chat-turn-state",
   "/api/heinzel/abandon-chat-turn",
   "/api/heinzel/session",
@@ -309,7 +309,13 @@ try {
     .locator('[data-message-speaker="you"]')
     .filter({ hasText: "Continue after the interruption." });
   await uncertain.first().waitFor();
-  assert.equal(await uncertain.locator("[data-message-state]").count(), 0);
+  // Once it is no longer on its way, the bubble carries no failure line (not sent, not answered) to retry from.
+  await uncertain.locator('[data-message-state="sending"]').first().waitFor({ state: "detached", timeout: 15000 });
+  assert.equal(
+    await uncertain.locator('[data-message-state="not-sent"], [data-message-state="not-answered"]').count(),
+    0,
+    `uncertain bubble states: ${await uncertain.locator("[data-message-state]").evaluateAll((all) => all.map((e) => e.getAttribute("data-message-state")))}`,
+  );
   assert.equal(await page.locator("[data-message-state]").getByRole("button", { name: "Try again" }).count(), 0);
   await page.reload();
   await revealChat(page);
@@ -376,7 +382,7 @@ try {
   );
   const answered = page.waitForResponse(
     (response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/heinzel/answer-chat",
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/stream/heinzel/answer-chat",
   );
   const rendered = page.getByText("I prepared proposals for your review.").nth(1).waitFor({ timeout: 30000 });
   await submit.click();
