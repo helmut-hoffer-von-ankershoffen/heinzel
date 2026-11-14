@@ -455,6 +455,13 @@ function AdapterChoices(props: InstalledProps) {
   const capability = query.data?.capabilities?.find((found) => found.name === props.control.capability);
   const serving = capability?.how === "automatic" ? capability.bound : null;
   const selected = Array.isArray(props.value) ? props.value.map(String) : [];
+  // Connectors that are on and open links on the same host: such links are refused (ADR 0161), as doctor says.
+  const owners = new Map<string, string[]>();
+  for (const adapter of query.data?.adapters ?? []) {
+    if (adapter.capability !== props.control.capability || !selected.includes(adapter.adapter)) continue;
+    for (const host of adapter.links ?? []) owners.set(host, [...(owners.get(host) ?? []), adapter.adapter]);
+  }
+  const overlaps = [...owners].filter(([, names]) => names.length > 1);
   return (
     <InstalledChoices
       {...props}
@@ -467,6 +474,13 @@ function AdapterChoices(props: InstalledProps) {
       note={
         props.control.multiple && selected.length > 1
           ? t("settings.severalOn", { adapter: selected[0] ?? "" })
+          : undefined
+      }
+      warning={
+        props.control.multiple && overlaps.length > 0
+          ? t("settings.linkOverlap", {
+              hosts: overlaps.map(([host, names]) => `${host} (${names.join(", ")})`).join("; "),
+            })
           : undefined
       }
     />
@@ -505,6 +519,7 @@ function InstalledChoices({
   unset,
   unsetTitle,
   note,
+  warning,
 }: InstalledProps & {
   options: InstalledOption[];
   pending: boolean;
@@ -515,6 +530,8 @@ function InstalledChoices({
   unsetTitle?: string;
   /** A line under the choices, e.g. which of several is the default. */
   note?: string;
+  /** A problem with the choices as they are, e.g. two connectors that are on claim the same link host. */
+  warning?: string;
 }) {
   const saved = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
   // A list of switches has no "None": a saved `none` is every switch off.
@@ -581,6 +598,7 @@ function InstalledChoices({
         </p>
       )}
       {note && !pending && <p className="text-xs text-muted-foreground">{note}</p>}
+      {warning && !pending && <p className="text-xs text-warn">{warning}</p>}
       {error && (
         <p role="alert" className="text-xs text-bad">
           {error}

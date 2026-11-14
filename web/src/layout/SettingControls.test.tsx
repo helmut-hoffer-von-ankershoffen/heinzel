@@ -25,8 +25,27 @@ vi.mock("@/api/queries", () => ({
           adapters: [
             { adapter: "maple", capability: "calendar", distribution: "sample-maple", module: "maple" },
             { adapter: "oak", capability: "mail", distribution: "sample-oak", module: "oak" },
-            { adapter: "drive", capability: "documents", distribution: "sample-drive", module: "drive" },
-            { adapter: "wiki", capability: "documents", distribution: "sample-wiki", module: "wiki" },
+            {
+              adapter: "drive",
+              capability: "documents",
+              distribution: "sample-drive",
+              module: "drive",
+              links: ["drive.example.test"],
+            },
+            {
+              adapter: "wiki",
+              capability: "documents",
+              distribution: "sample-wiki",
+              module: "wiki",
+              links: ["wiki.example.test"],
+            },
+            {
+              adapter: "plain",
+              capability: "documents",
+              distribution: "sample-plain",
+              module: "plain",
+              links: ["drive.example.test"],
+            },
           ],
         },
   }),
@@ -394,6 +413,33 @@ describe("Declared installed choices", () => {
     expect(screen.getByText(/drive, the first, is the default/)).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("checkbox", { name: /drive/ }));
     expect(onChange).toHaveBeenLastCalledWith(["wiki"]);
+  });
+
+  it("warns when connectors that are on open links on the same host, as doctor does", () => {
+    const { rerender } = render(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "wiki"]}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/belong to more than one connector/)).not.toBeInTheDocument();
+    rerender(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "plain"]}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Links on drive.example.test (drive, plain) belong to more than one connector that is on, so they are refused. Switch one off.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("reads a saved none as every documents connector off", () => {
