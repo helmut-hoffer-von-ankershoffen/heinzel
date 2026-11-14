@@ -35,13 +35,16 @@ What it does for the adapter:
 - **Expected tools.** At start it lists the server's tools and checks that every expected tool is there, under its
   name or one of its aliases. Extra tools are fine. A missing one raises `McpToolsMissingError`, naming it and what the
   server offers.
+- **Size.** An answer longer than `max_output` characters is refused, or with `overflow="cut"` cut with a note.
 - **Modes.** MCP servers don't say reliably which tools write (`readOnlyHint` is a hint), so the adapter declares
   each tool's mode itself. A connector opened with `modes={"read"}` refuses to call a `write` tool.
 - **Untrusted content.** Servers mark text that comes from outside, such as a mail body, with markers like
   `«untrusted-data» … «/untrusted-data»` or `<untrusted-mail-data-UUID> … </untrusted-mail-data-UUID>`. The
   connector removes the markers, keeps the content, lists the marked parts in `McpResult.untrusted`, and passes every
-  string through `clean_text`. Core's own rule then applies: whatever a connector returns is data for the model,
-  never an instruction (`clean_text`, and a turn's inputs framed as data).
+  string through `clean_text`. Content can carry markers itself, so a marker without a unique id is read
+  conservatively: everything from its first occurrence to its last is untrusted. Core's own rule then applies:
+  whatever a connector returns is data for the model, never an instruction (`clean_text`, and a turn's inputs
+  framed as data).
 
 Works on Python 3.12 and later. The MCP client is loaded only when this module is imported.
 """
@@ -49,18 +52,25 @@ Works on Python 3.12 and later. The MCP client is loaded only when this module i
 import asyncio
 import atexit
 import concurrent.futures
+import contextlib
 import json
+import os
 import re
+import signal
 import tempfile
 import threading
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import IO, Any, Literal, Self, cast
 
+import psutil
 from pydantic import BaseModel, ValidationError
 
 from heinzel.conformance import reading
 from heinzel.kernel import HeinzelError, clean_text
+from heinzel.kernel._telemetry import looks_like_credential
 
 __all__ = [
     "ENVELOPE_UNTRUSTED",
@@ -75,6 +85,15 @@ __all__ = [
 ]
 
 Mode = Literal["read", "write"]
+
+GROUP_GONE = 2.0
+"""Seconds `stop()` waits for a killed launcher group to be gone."""
+
+_groups: set[int] = set()
+"""Process groups of running launchers, so two connectors with the same command never claim one group."""
+
+MAX_OUTPUT = 1_000_000
+"""Characters one tool answer may have by default: plenty for a page of mail, not a whole mailbox."""
 
 DETAIL_LIMIT = 300
 """How many characters of a server's error or stderr an error message carries at most."""
@@ -129,13 +148,17 @@ class McpTool:
 class UntrustedMarker:
     """How a server marks untrusted content: a start and an end, both regular expressions.
 
-    `end` may refer to groups of `start`, so an envelope's closing tag must carry the same id as its opening tag, and
-    content can't close it early. `stray` matches a leftover start or end that didn't pair, which is removed.
+    Content can contain the markers too, to close its own region early or to nest one. So a marker is read
+    conservatively: everything from its first start or end to its last one is untrusted, and an end before any start
+    makes everything before it untrusted. Only a `unique` marker, whose end refers to a random id in its start (an
+    envelope's `<…-UUID>`), pairs each start with its own end: content can't guess the id. `stray` matches every start
+    or end; each one is removed.
     """
 
     start: str
     end: str
-    stray: str = ""
+    stray: str
+    unique: bool = False
 
     @classmethod
     def literal(cls, start: str, end: str) -> "UntrustedMarker":
@@ -150,6 +173,7 @@ ENVELOPE_UNTRUSTED = UntrustedMarker(
     r"<untrusted-(?P<kind>[a-z][a-z0-9-]{0,40})-data-(?P<id>[0-9A-Fa-f-]{8,64})>",
     r"</untrusted-(?P=kind)-data-(?P=id)>",
     r"</?untrusted-[a-z][a-z0-9-]{0,40}-data-[0-9A-Fa-f-]{8,64}>",
+    unique=True,
 )
 """An envelope with a random id: `<untrusted-mail-data-UUID> … </untrusted-mail-data-UUID>`, any kind of data."""
 
@@ -164,6 +188,8 @@ class McpResult:
     """The structured content, or the text parsed as JSON when it is JSON; None when neither."""
     untrusted: tuple[str, ...] = ()
     """The parts the server marked as untrusted, cleaned, in order."""
+    cut: bool = False
+    """Whether the answer was longer than `max_output` and cut: then `text` ends with a note and `data` is None."""
 
     def parse[M: BaseModel](self, model: type[M]) -> M:
         """`data` validated as `model`.
@@ -186,7 +212,28 @@ class McpResult:
 class _Compiled:
     start: re.Pattern[str]
     pair: re.Pattern[str]
-    stray: re.Pattern[str] | None
+    stray: re.Pattern[str]
+    unique: bool
+
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        """Where `text` is untrusted by this marker, as (start, end) offsets."""
+        if self.unique:
+            spans: list[tuple[int, int]] = []
+            position = 0
+            while (opened := self.start.search(text, position)) is not None:
+                paired = self.pair.match(text, opened.start())
+                if paired is None:  # never closed: the rest is untrusted
+                    return [*spans, (opened.start(), len(text))]
+                spans.append((opened.start(), paired.end()))
+                position = paired.end()
+            return spans
+        tokens = list(self.stray.finditer(text))
+        if not tokens:
+            return []
+        first, last = tokens[0], tokens[-1]
+        begin = first.start() if self.start.fullmatch(first.group()) else 0
+        finish = len(text) if self.start.fullmatch(last.group()) else last.end()
+        return [(begin, finish)]
 
 
 @dataclass
@@ -201,39 +248,47 @@ class _Unmarker:
         self._compiled = [
             _Compiled(
                 re.compile(m.start),
-                re.compile(f"(?:{m.start})(?P<hz_body>.*?)(?:{m.end})", re.DOTALL),
-                re.compile(m.stray) if m.stray else None,
+                re.compile(f"(?:{m.start}).*?(?:{m.end})", re.DOTALL),
+                re.compile(m.stray),
+                m.unique,
             )
             for m in self.markers
         ]
 
-    def text(self, text: str) -> str:
-        """`text` with paired markers removed, an unpaired start marking the rest, stray markers dropped, cleaned."""
+    def text(self, text: str, limit: int | None = None) -> str:
+        """`text` with every marker removed and cleaned; the regions they mark are kept and recorded as untrusted.
+
+        With `limit`, only that many characters are kept, at most, and never part of a marker; the regions are read
+        on the whole text first, so a cut can't end a region early.
+        """
+        spans = sorted(span for marker in self._compiled for span in marker.spans(text))
+        if limit is not None and limit < len(text):
+            for marker in self._compiled:
+                for token in marker.stray.finditer(text, 0, limit + 200):
+                    if token.start() < limit < token.end():
+                        limit = token.start()
+            spans = [(begin, min(finish, limit)) for begin, finish in spans if begin < limit]
+            text = text[:limit]
+        merged: list[list[int]] = []
+        for begin, finish in spans:
+            if merged and begin <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], finish)
+            else:
+                merged.append([begin, finish])
         out: list[str] = []
         position = 0
-        while self._compiled:
-            starts = [(m.start.search(text, position), m) for m in self._compiled]
-            hits = [(hit, m) for hit, m in starts if hit is not None]
-            if not hits:
-                break
-            hit, marker = min(hits, key=lambda pair: pair[0].start())
-            out.append(text[position : hit.start()])
-            paired = marker.pair.match(text, hit.start())
-            body = paired.group("hz_body") if paired else text[hit.end() :]
-            body = self._strip(body)
+        for begin, finish in merged:
+            out.append(text[position:begin])
+            body = self._strip(text[begin:finish])
             self.found.append(clean_text(body))
             out.append(body)
-            if not paired:
-                position = len(text)
-                break
-            position = paired.end()
+            position = finish
         out.append(text[position:])
         return clean_text(self._strip("".join(out)))
 
     def _strip(self, text: str) -> str:
         for marker in self._compiled:
-            if marker.stray is not None:
-                text = marker.stray.sub("", text)
+            text = marker.stray.sub("", text)
         return text
 
     def value(self, value: object) -> object:
@@ -272,6 +327,8 @@ class McpConnector:
         timeout: float = 30.0,
         start_timeout: float = 30.0,
         stop_timeout: float = 5.0,
+        max_output: int = MAX_OUTPUT,
+        overflow: Literal["refuse", "cut"] = "refuse",
     ) -> None:
         """Describe the server; nothing starts yet.
 
@@ -286,6 +343,9 @@ class McpConnector:
             timeout: Seconds one tool call may take.
             start_timeout: Seconds starting the server and listing its tools may take.
             stop_timeout: Seconds the server gets to stop before it is killed.
+            max_output: Characters one answer may have, its text or its structured content.
+            overflow: What a longer answer does: `refuse` raises `McpConnectorError`, `cut` keeps the first
+                `max_output` characters of the text with a visible note, and no data.
 
         Raises:
             ValueError: If `command` is a string or empty, a tool is declared twice, or a mode is unknown.
@@ -307,6 +367,12 @@ class McpConnector:
         self.timeout = timeout
         self.start_timeout = start_timeout
         self.stop_timeout = stop_timeout
+        if max_output < 1 or overflow not in {"refuse", "cut"}:
+            msg = "McpConnector: max_output must be positive and overflow 'refuse' or 'cut'"
+            raise ValueError(msg)
+        self.max_output = max_output
+        self.overflow = overflow
+        self._group: int | None = None
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -381,6 +447,7 @@ class McpConnector:
                 detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
                 msg = f"The MCP server {self._label} didn't start ({detail}).{hint}"
                 raise McpConnectorError(msg) from exc
+            self._group = self._find_group()
             resolved: dict[str, str] = {}
             missing: list[str] = []
             for tool in self._tools.values():
@@ -435,6 +502,9 @@ class McpConnector:
             msg = f"The MCP tool {tool} didn't answer within {self.timeout:g}s."
             raise McpConnectorError(msg) from None
         except Exception as exc:
+            if _timed_out(exc):  # the MCP client's own read timeout, the same `timeout`
+                msg = f"The MCP tool {tool} didn't answer within {self.timeout:g}s."
+                raise McpConnectorError(msg) from exc
             detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
             msg = f"The MCP tool {tool} failed: {detail}"
             raise McpConnectorError(msg) from exc
@@ -444,19 +514,32 @@ class McpConnector:
         unmarker = _Unmarker(self._markers)
         raw = "\n".join(getattr(block, "text", "") for block in result.content if getattr(block, "type", "") == "text")
         if result.is_error:
-            msg = f"The MCP tool {tool} answered an error: {unmarker.text(raw)[:DETAIL_LIMIT] or 'no details'}"
+            msg = f"The MCP tool {tool} answered an error: {unmarker.text(raw[:4096])[:DETAIL_LIMIT] or 'no details'}"
             raise McpConnectorError(msg)
-        text = unmarker.text(raw)
+        structured: object = result.structured_content
+        size = max(len(raw), len(json.dumps(structured, default=str)) if structured is not None else 0)
+        cut = size > self.max_output
+        if cut and self.overflow == "refuse":
+            msg = (
+                f"The MCP tool {tool} answered {size:,} characters, more than this connector's max_output of "
+                f"{self.max_output:,}. Ask it for less, or raise max_output."
+            )
+            raise McpConnectorError(msg)
+        if cut:
+            structured = None
+        text = unmarker.text(raw, self.max_output if cut else None)
         data: object = None
-        if result.structured_content is not None:
-            data = unmarker.value(result.structured_content)
-        else:
+        if structured is not None:
+            data = unmarker.value(structured)
+        elif not cut:
             try:
                 data = unmarker.value(json.loads(raw))
             except ValueError:
                 data = None
+        if cut:
+            text += f"\n[cut: the answer had {size:,} characters; this connector keeps {self.max_output:,}]"
         # Every string was unmarked once for `text` and again inside `data`: keep each marked part once, in order.
-        return McpResult(text=text, data=data, untrusted=tuple(dict.fromkeys(unmarker.found)))
+        return McpResult(text=text, data=data, untrusted=tuple(dict.fromkeys(unmarker.found)), cut=cut)
 
     async def _serve(self, ready: "concurrent.futures.Future[list[str]]") -> None:
         from mcp import Client  # noqa: PLC0415 - loaded only when a connector starts
@@ -494,11 +577,53 @@ class McpConnector:
             lines = [line.strip() for line in self._stderr.read()[-4096:].splitlines() if line.strip()]
         except (OSError, ValueError):
             return ""
-        return f" It said: {clean_text(lines[-1])[:DETAIL_LIMIT]}" if lines else ""
+        if not lines:
+            return ""
+        if looks_like_credential(lines[-1], free_text=True):
+            return " Its last line on stderr looks like a credential, so it isn't shown."
+        return f" It said: {clean_text(lines[-1])[:DETAIL_LIMIT]}"
+
+    def _find_group(self) -> int | None:
+        """The launcher's process group: the MCP client starts it as a session leader, so its pid is the group's id.
+
+        Found among this process's children by its arguments, so `_shutdown` can kill what the client's own shutdown
+        left behind, such as a grandchild of a launcher killed while the client was still cleaning up.
+        """
+        if self._transport is not None or not hasattr(os, "killpg"):
+            return None
+        own = os.getpgrp()
+        for child in psutil.Process().children():
+            with contextlib.suppress(psutil.Error, OSError):
+                arguments = child.cmdline()
+                same = arguments[1:] == self._command[1:] and Path(arguments[0]).name == Path(self._command[0]).name
+                if same and child.pid not in _groups and os.getpgid(child.pid) == child.pid != own:
+                    _groups.add(child.pid)
+                    return child.pid
+        return None
+
+    def _kill_group(self) -> None:
+        group, self._group = self._group, None
+        if group is None:
+            return
+        _groups.discard(group)
+        deadline = time.monotonic() + GROUP_GONE
+        try:
+            os.killpg(group, signal.SIGKILL)
+            while time.monotonic() < deadline:  # gone once every member is dead and reaped
+                time.sleep(0.02)
+                os.killpg(group, 0)
+        except (ProcessLookupError, PermissionError):
+            return
 
     def _shutdown(self, *, graceful: bool = True) -> None:
-        """Stop the server: ask it to end, or right away cancel it, whose cleanup kills the launcher's process tree."""
+        """Stop the server: ask it to end, or right away cancel it, whose cleanup kills the launcher's process tree.
+
+        Whatever is left of the launcher's process group afterwards is killed: the client's own cleanup can be cut
+        short by the cancel.
+        """
         loop, thread, runner, event = self._loop, self._thread, self._runner, self._stop_event
+        if self._group is None and runner is not None:
+            self._group = self._find_group()
         self._client = None
         self._resolved = {}
         if loop is not None and runner is not None:
@@ -514,9 +639,18 @@ class McpConnector:
                 thread.join(timeout=self.stop_timeout)
             if thread is None or not thread.is_alive():
                 loop.close()
+        self._kill_group()
         if self._stderr is not None:
             self._stderr.close()
         self._loop = self._thread = self._runner = self._stop_event = self._stderr = None
+
+
+def _timed_out(exc: Exception) -> bool:
+    """Whether `exc` is the MCP client's request timeout."""
+    from mcp.types import REQUEST_TIMEOUT  # noqa: PLC0415 - loaded with the client
+
+    error = getattr(exc, "error", None)
+    return getattr(exc, "code", getattr(error, "code", None)) == REQUEST_TIMEOUT
 
 
 def _tools(tools: Iterable[McpTool | str]) -> dict[str, McpTool]:

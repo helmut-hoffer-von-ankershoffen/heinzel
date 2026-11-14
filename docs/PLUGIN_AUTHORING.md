@@ -285,10 +285,16 @@ It builds each adapter your module provides as Heinzel does, and checks it again
 - **Read calls.** It calls each read method once: those without parameters, and those you pass `samples` for. It
   never calls a write method. A read call must return the protocol's type, or raise `NotSupportedError` with its
   own capability and method. It must not write: calling one of your write methods, a write tool of an
-  `McpConnector`, or changing your `writes` counter fails the check.
+  `McpConnector`, or changing your `writes` counter fails the check. The counter is the guard that really counts:
+  the other two only see writes made through those paths on the calling thread.
 - **AI models.** `models()` answers within 5 seconds with valid `ModelOffer`s and unique ids. `model(id)` returns a
-  `pydantic_ai.models.Model`. An unknown or unavailable id should raise `ModelUnavailableError`. With
-  `live_request=True`, one request through your first model must answer.
+  `pydantic_ai.models.Model`. An unknown or unavailable id should raise `ModelUnavailableError`; the kit warns
+  otherwise, since Heinzel refuses such an id before it calls `model()`. With `live_request=True`, one request
+  through your first model must answer.
+- **Sign-in and health.** A `@module.sign_in` provider's `status(live=False)` answers within 5 seconds without the
+  network, with a `SignInStatus` that lists every declared grant, says `live=False`, and names the account, never a
+  token. Offline `@module.health` checks run without the network and return a list of `Check`. Live checks and
+  `sign_in` itself are never called.
 
 A failure lists every problem at once, each with the method and what the contract says. A `ConformanceWarning`
 names what Heinzel tolerates but you should fix, such as one invalid model offer Heinzel skips; with pytest's
@@ -330,13 +336,19 @@ class AcmeChat:
   its own "sign in again" hint.
 - **Tools.** At start, every tool you declare must exist under its name or one of its `aliases`; extra tools are
   fine. A missing one raises `McpToolsMissingError`, naming it and the tools the server has.
+- **Size.** An answer longer than `max_output` characters (a million by default) raises `McpConnectorError`. With
+  `overflow="cut"` the connector keeps the first `max_output` characters of the text, adds a note, and sets
+  `result.cut`.
 - **Modes.** MCP servers don't reliably say which tools write, so you declare each tool's mode. A connector with
   `modes={"read"}` refuses its write tools.
 - **Untrusted content.** Servers mark text from outside, such as a mail body, with markers like
   `«untrusted-data» … «/untrusted-data»` or `<untrusted-mail-data-UUID> … </untrusted-mail-data-UUID>`. Pass the
   markers your server uses; `UntrustedMarker.literal(start, end)` makes your own. The connector removes them, keeps
-  the content, lists the marked parts in `result.untrusted`, and passes every string through `clean_text`. Heinzel
-  then treats what your adapter returns as data, never as instructions.
+  the content, lists the marked parts in `result.untrusted`, and passes every string through `clean_text`. Content
+  can contain markers too, to end its region early or nest one. So everything from a marker's first appearance to its
+  last counts as untrusted, and an end marker with no start before it makes everything before it untrusted. Only an
+  envelope with a random id pairs exactly. Heinzel then treats what your adapter returns as data, never as
+  instructions.
 - **Results.** `result.text` is the text, `result.data` the structured content or the text read as JSON, and
   `result.parse(Model)` validates it.
 
