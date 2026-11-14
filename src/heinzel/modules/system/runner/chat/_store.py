@@ -22,6 +22,7 @@ from pydantic import JsonValue, ValidationError
 
 from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
 from heinzel.kernel import McpChatSessions
+from heinzel.kernel._browser import BROWSER_MODULE, QUOTED_NOTICE
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -213,6 +214,11 @@ class ChatStore(McpChatSessions):
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
                 )
+            elif action.module == BROWSER_MODULE and action.command.endswith(QUOTED_NOTICE):
+                # A browser commit runs on a ref and a fingerprint, which tell a person nothing. Its card keeps the
+                # sentence hz's own gate wrote when it described the target ("Click button "Send" on ..."), which
+                # ends by saying whose words the quoted name is.
+                pass
             else:
                 action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)

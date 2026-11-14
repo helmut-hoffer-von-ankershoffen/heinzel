@@ -18,7 +18,7 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from pydantic_ai import BinaryContent, ToolReturn
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, ProposedCall
 from heinzel.heads import mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens
@@ -361,7 +361,7 @@ def test_an_agent_cannot_approve_its_own_commit_through_any_argument(kernel, des
         ("click", {"ref": "ref_6"}, 'Click link "Jetzt kaufen"'),
         ("click", {"x": 10, "y": 20}, "Click at a point hz cannot identify"),
         ("key", {"keys": "Enter"}, 'Press Enter in textbox "Message"'),
-        ("type", {"text": "Hello\n", "ref": "ref_4"}, 'Type 6 characters into textbox "Message"'),
+        ("type", {"text": "Hello\n", "ref": "ref_4"}, 'Type 6 characters (starting: Hello) into textbox "Message"'),
     ],
 )
 def test_the_gate_table_through_a_heinzel_s_tools(kernel, desktop, name, arguments, words):
@@ -1080,3 +1080,26 @@ def test_a_session_a_turn_really_holds_is_still_busy(kernel):
         assert store.turn_running(session) is True
         with pytest.raises(HeinzelError, match="busy right now"), store.locked(session):
             pass
+
+
+def test_only_the_gate_s_own_sentence_stays_on_a_card(kernel):
+    session = open_chat(kernel)
+    store = kernel.resolve(ChatStore)
+
+    def proposed(module: str, operation: str, command: str) -> str:
+        call = ProposedCall(
+            session=session,
+            module=module,
+            operation=operation,
+            tool="t",
+            arguments={"tab": "t-00000001"},
+            command=command,
+        )
+        store.propose(call)
+        return store.load(session).actions[-1].command
+
+    sentence = f'Click button "Send" on shop.example.org (browser tab t-00000001). {QUOTED_NOTICE}'
+    assert proposed("ui.browser", "click", sentence) == sentence
+    # Without the gate's ending, or for any other module, the card is built from what runs, as before.
+    assert proposed("ui.browser", "click", "Just a harmless click") == "hz ui browser click --tab t-00000001"
+    assert proposed("notes", "publish", sentence) == "hz notes publish --tab t-00000001"

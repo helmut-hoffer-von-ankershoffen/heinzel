@@ -27,6 +27,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, JsonValue, ValidationError
 
 from heinzel.kernel._browser import (
+    QUOTED_NOTICE,
     BrowserBridge,
     BrowserCaller,
     BrowserCommand,
@@ -48,7 +49,11 @@ WINDOW_SECONDS: Final = 60.0
 CONFIRM_SECONDS: Final = 120
 """How long an outside agent's commit waits for the person's click on the card."""
 LONGEST_EDGE: Final = 1568
-NAME_LIMIT: Final = 80
+NAME_LIMIT: Final = 60
+ROLE_LIMIT: Final = 12
+HOST_LIMIT: Final = 60
+PREVIEW_LIMIT: Final = 40
+"""Together a sentence and its notice stay inside the card's 300 characters without losing the host."""
 SUMMARY_LIMIT: Final = 300
 """The desktop's card takes a sentence of 300 characters at most."""
 URL_LIMIT: Final = 2048
@@ -58,8 +63,6 @@ _PRIVATE_SUFFIXES: Final = (
 )  # fmt: skip
 _LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 _NUMERIC_LABEL = re.compile(r"(0x[0-9a-f]*|\d+)")
-QUOTED_NOTICE: Final = "The words in quotes are the website's own, untrusted data."
-"""On every confirmation card and proposal: the name of the control is what the page says, not what hz says."""
 PAGE_CHANGED: Final = "The page changed since this target was described; read it again."
 
 
@@ -176,12 +179,12 @@ def label(target: Target) -> str:
     name = " ".join(clean_text(target.name).split())
     if len(name) > NAME_LIMIT:
         name = name[: NAME_LIMIT - 1] + "…"
-    kind = clean_text(target.role or target.tag)[:30] or "element"
+    kind = clean_text(target.role or target.tag)[:ROLE_LIMIT] or "element"
     return f'{kind} "{name}"' if name else kind
 
 
 def summary(action: Input, target: Target, tab: str, *, text: str, keys: str) -> str:
-    """The sentence on the confirmation card: what would happen, where. The typed text itself is in the arguments."""
+    """The sentence on the confirmation card: what would happen, where, and how typed text starts."""
     sentence = _sentence(action, target, tab, text=text, keys=keys)
     return f"{sentence[: SUMMARY_LIMIT - len(QUOTED_NOTICE) - 2]}. {QUOTED_NOTICE}"
 
@@ -189,11 +192,14 @@ def summary(action: Input, target: Target, tab: str, *, text: str, keys: str) ->
 def _sentence(action: Input, target: Target, tab: str, *, text: str, keys: str) -> str:
     if not target.resolved:
         return f"Click at a point hz cannot identify in browser tab {tab}"
-    where = f"on {clean_text(target.host)[:100] or 'this page'} (browser tab {tab})"
+    where = f"on {clean_text(target.host)[:HOST_LIMIT] or 'this page'} (browser tab {tab})"
     if action == "click":
         return f"Click {label(target)} {where}"
     if action == "type":
-        return f"Type {len(text)} characters into {label(target)} {where}"
+        start = " ".join(clean_text(text).split())
+        if len(start) > PREVIEW_LIMIT:
+            start = start[: PREVIEW_LIMIT - 1] + "…"
+        return f"Type {len(text)} characters (starting: {start}) into {label(target)} {where}"
     return f"Press {keys} in {label(target)} {where}"
 
 
