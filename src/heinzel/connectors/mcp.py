@@ -89,7 +89,47 @@ GROUP_GONE = 2.0
 """Seconds `stop()` waits for a killed launcher group to be gone."""
 
 _spawning = threading.Lock()
-"""Held while a launcher starts, so the one new child process is this connector's."""
+"""Held while a launcher starts, so the one new child process is this connector's.
+
+Starts of different connectors in this process are therefore serialised: one launcher at a time, up to
+`start_timeout` each. The launcher is identified as the one new child that leads its own process group (`_find_group`),
+which assumes nothing else in this process spawns a child meanwhile.
+"""
+
+_VALUE = r"""(?:"[^"\n]{0,256}"|'[^'\n]{0,256}'|\S{1,256})"""
+_USERINFO = re.compile(r"(?<=://)[^\s/@]{1,256}@")
+_AUTHORIZATION = re.compile(
+    rf"(?i)\b(authorization[\"']?\s{{0,4}}[=:]\s{{0,4}})(?:[A-Za-z]{{1,16}}\s+\S{{1,256}}|{_VALUE})"
+)
+_BEARER = re.compile(r"(?i)\b(bearer|basic)\s+\S{1,256}")
+_SECRET_PAIR = re.compile(
+    rf"(?i)((?:(?<![a-z])(?:auth|sig)|token|key|secret|password|passwd|credential|signature|session)[\"']?\s{{0,4}}[=:]\s{{0,4}}){_VALUE}"
+)
+_SECRET_FLAG = re.compile(r"(?i)(--[\w-]{0,32}(?:token|key|secret|password|passwd|credential)\s{1,4})\S{1,256}")
+_LONG_RUN = re.compile(r"[A-Za-z0-9+/_=-]{32,}")
+_HEX_RUN = re.compile(r"\b[0-9a-fA-F]{32,}\b")
+REDACTED = "[redacted]"
+"""Every pattern is bounded or linear: a line of repeated keyword fragments cannot make it backtrack."""
+
+
+def _mixed(match: re.Match[str]) -> str:
+    """A long run that mixes upper and lower case with digits is a key; a path or a UUID is not."""
+    run = match.group()
+    if any(c.isupper() for c in run) and any(c.islower() for c in run) and any(c.isdigit() for c in run):
+        return REDACTED
+    return run
+
+
+def _redact(line: str) -> str:
+    """`line` without user info, bearer tokens, secret key-value pairs and long key runs (stderr may echo them)."""
+    line = _USERINFO.sub(f"{REDACTED}@", line)
+    line = _AUTHORIZATION.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
+    line = _BEARER.sub(lambda m: f"{m.group(1)} {REDACTED}", line)
+    line = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
+    line = _SECRET_FLAG.sub(lambda m: f"{m.group(1)}{REDACTED}", line)
+    line = _HEX_RUN.sub(REDACTED, line)
+    return _LONG_RUN.sub(_mixed, line)
+
 
 _groups: set[int] = set()
 """Process groups of running launchers, so two connectors with the same command never claim one group."""
@@ -586,9 +626,10 @@ class McpConnector:
             return ""
         if not lines:
             return ""
-        if looks_like_credential(lines[-1], free_text=True):
+        line = _redact(lines[-1])
+        if looks_like_credential(line, free_text=True):
             return " Its last line on stderr looks like a credential, so it isn't shown."
-        return f" It said: {clean_text(lines[-1])[:DETAIL_LIMIT]}"
+        return f" It said: {clean_text(line)[:DETAIL_LIMIT]}"
 
     def _children(self) -> set[int] | None:
         """This process's children now, taken before a launcher starts so the new one is told apart without argv.

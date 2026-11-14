@@ -258,3 +258,75 @@ def test_a_cut_never_keeps_part_of_a_marker():
     assert unmarker.found == []
     with pytest.raises(ValueError, match="max_output must be positive"):
         McpConnector(["x"], tools=["a"], max_output=0)
+
+
+@pytest.mark.parametrize(
+    ("line", "gone"),
+    [
+        ("auth failed: Authorization: Bearer abc123", "abc123"),
+        ("retry with api_key=s3cr3tvalue now", "s3cr3tvalue"),
+        ("password: hunter2", "hunter2"),
+        ("sent " + "a" * 40, "a" * 40),
+        ("digest " + "0123456789abcdef" * 2, "0123456789abcdef" * 2),
+        ("sent " + "aB3" * 14, "aB3" * 14),
+        ("fetch https://alice:hunter2@host/x", "hunter2"),
+        ('{"password": "hunter2"}', "hunter2"),
+        ("{'api_key': 'abc123'}", "abc123"),
+        ('password="hunter 2" failed', "hunter 2"),
+        ('password="hunter 2" failed', '2"'),
+        ("Authorization: token ghabc123", "ghabc123"),
+        ("run --token abc123", "abc123"),
+        ("GET https://h/b?sv=2022&sig=abcDEF123%2Bxyz&se=1", "abcDEF123%2Bxyz"),
+        ("retry auth=abc123", "abc123"),
+        ("session=abc123def", "abc123def"),
+    ],
+)
+def test_the_launchers_stderr_hint_redacts_token_like_strings(line, gone):
+    import tempfile
+
+    connector = McpConnector(["x"], tools=[McpTool("a")])
+    with tempfile.TemporaryFile("w+") as stderr:
+        stderr.write(f"noise\n{line}\n")
+        connector._stderr = stderr
+        hint = connector._hint()
+    assert gone not in hint
+    assert "It said" in hint or "credential" in hint
+
+
+def test_the_stderr_hint_keeps_a_plain_message():
+    import tempfile
+
+    connector = McpConnector(["x"], tools=[McpTool("a")])
+    with tempfile.TemporaryFile("w+") as stderr:
+        stderr.write("login required\n")
+        connector._stderr = stderr
+        assert connector._hint() == " It said: login required"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "cannot load /Users/x/Code/heinzel/node_modules/foo/index.js",
+        "no server " + ID,
+        "authentication: failed",
+        "signal: killed",
+        "keychain: locked",
+        "design: done",
+    ],
+)
+def test_the_stderr_hint_keeps_paths_ids_and_plain_words(line):
+    from heinzel.connectors.mcp import _redact
+
+    assert _redact(line) == line
+
+
+@pytest.mark.perf
+@pytest.mark.parametrize("line", ["token." * 700, "a." * 2048, "key=" * 1024, "token" + "x" * 4000, "a" * 1_000_000])
+def test_redaction_stays_fast_on_hostile_lines(line):
+    import time
+
+    from heinzel.connectors.mcp import _redact
+
+    start = time.monotonic()
+    _redact(line)
+    assert time.monotonic() - start < 1.0
