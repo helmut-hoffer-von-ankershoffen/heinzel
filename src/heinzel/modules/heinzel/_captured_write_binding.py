@@ -17,6 +17,8 @@ from heinzel.kernel import (
 from heinzel.kernel._features import feature_enabled
 
 OPERATION = "insert-draft"
+NEW_FILE = "new:"
+"""How a proposed new file's reference starts; it names no existing document, so the default connector creates it."""
 
 
 class SelectedWriteService(CapturedWriteService):
@@ -24,11 +26,15 @@ class SelectedWriteService(CapturedWriteService):
 
     A source-captured provider runs under the same continuity checks as its reads. This verifies registration
     continuity, not publisher identity, and it is not a sandbox.
+
+    While several documents connectors are on (ADR 0161), `adapter` names the one this service writes through, as
+    `Kernel.capability_route` chose it for a document; None is the default. `owning` finds it for a reference.
     """
 
-    def __init__(self, kernel: Kernel) -> None:
+    def __init__(self, kernel: Kernel, adapter: str | None = None) -> None:
         self.kernel = kernel
-        self.record, self.registration = kernel.selected_capability_provider("documents")
+        self.adapter = adapter
+        self.record, self.registration = kernel.selected_capability_provider("documents", adapter)
         self.service: CapturedWriteService | None = None
         self.binding_id = self._binding_id()
 
@@ -50,7 +56,7 @@ class SelectedWriteService(CapturedWriteService):
         if discovery is None:
             msg = "Conditional writes require an installed source-bound provider"
             raise HeinzelError(msg)
-        binding = discovery.binding(self.kernel, "documents", CapturedWriteService)
+        binding = discovery.binding(self.kernel, "documents", CapturedWriteService, self.adapter)
         capture = binding.capture
         service = capture.service(self.kernel, self.record, CapturedWriteService)
         operations = self._operations(service)
@@ -70,7 +76,37 @@ class SelectedWriteService(CapturedWriteService):
             capture.finder.snapshot.digest(),
             *sorted(capture.approved_runtime),
         )
+        bound = self.kernel.capability_settings.bound_all("documents")
+        if len(bound) > 1:
+            # Which connector holds the document, and which are on, are part of what the owner approves (ADR 0161).
+            identity = (*identity, "adapter", self.registration.adapter, "bound", *bound)
         return hashlib.sha256("\0".join(identity).encode()).hexdigest()
+
+    def owning(self, reference: str) -> "SelectedWriteService":
+        """The write service of the documents connector that holds `reference`, routed as its reads are (ADR 0161).
+
+        A proposed new file names no document, so the default connector creates it.
+
+        Raises:
+            HeinzelError: If the reference names none or several connectors, or the one holding it can't write.
+        """
+        adapter = (
+            None
+            if reference.startswith(NEW_FILE)
+            else self.kernel.capability_route("documents", "replace_section", {"ref": reference})
+        )
+        if adapter is None and self.adapter is None:
+            return self
+        if adapter is not None and adapter == self.registration.adapter:
+            return self
+        try:
+            owner = SelectedWriteService(self.kernel, adapter)
+            owner.check_available()
+        except HeinzelError:
+            name = adapter or self.kernel.capability_settings.bound("documents") or "documents"
+            msg = f"The {name} connector holds this document and can't take reviewed writes"
+            raise HeinzelError(msg) from None
+        return owner
 
     def _resolved(self) -> CapturedWriteService:
         config = Config.load(Path.home())
@@ -81,7 +117,7 @@ class SelectedWriteService(CapturedWriteService):
             raise HeinzelError(msg)
         current = config.settings(CapabilitySettings, "capabilities")
         original = self.kernel.capability_settings
-        record, registration = self.kernel.selected_capability_provider("documents")
+        record, registration = self.kernel.selected_capability_provider("documents", self.adapter)
         if (
             current.bound_all("documents") != original.bound_all("documents")
             or current.configured("documents") != original.configured("documents")
@@ -95,7 +131,7 @@ class SelectedWriteService(CapturedWriteService):
             raise HeinzelError(msg)
         discovery = self.kernel.source_discovery
         if discovery is not None:
-            binding = discovery.binding(self.kernel, "documents", CapturedWriteService)
+            binding = discovery.binding(self.kernel, "documents", CapturedWriteService, self.adapter)
             service = binding.capture.service(self.kernel, self.record, CapturedWriteService)
         else:
             msg = "Conditional writes require an installed source-bound provider"
@@ -108,6 +144,14 @@ class SelectedWriteService(CapturedWriteService):
         return service
 
     def check(self, draft: CapturedWriteDraft) -> None:
+        """Whether `draft` still goes to this exact provider and binding.
+
+        Raises:
+            HeinzelError: If the provider, binding or connector holding the draft's document changed.
+        """
+        if self.owning(draft.reference) is not self:
+            msg = "The selected document provider or write binding changed"
+            raise HeinzelError(msg)
         self._resolved()
         if (
             draft.provider != self.record.qualname
@@ -131,8 +175,12 @@ class SelectedWriteService(CapturedWriteService):
         """Observe where a draft would go; this writes nothing and needs no approval.
 
         Raises:
-            HeinzelError: If selected source, declaration, configuration or service continuity changes.
+            HeinzelError: If selected source, declaration, configuration or service continuity changes, or another
+                connector holds `reference`.
         """
+        if self.owning(reference) is not self:
+            msg = "Another documents connector holds this document"
+            raise HeinzelError(msg)
         service = self._resolved()
         result = service.target(reference)
         if self._resolved() is not service:
@@ -146,6 +194,10 @@ class SelectedWriteService(CapturedWriteService):
         Raises:
             HeinzelError: If selected provider continuity cannot be established.
         """
+        owner = self.owning(draft.reference)
+        if owner is not self:
+            # The connector holding the document now writes it; its binding must be the one the owner approved.
+            return owner.open_lease(draft)
         self.check(draft)
         service = self.service
         if service is None:
