@@ -12,17 +12,18 @@ adapter left running. A helper that ends that way or crashes leaves its live ent
 says is still open.
 """
 
+import logging
 import os
 import re
 import sys
 import threading
-import traceback
 from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from heinzel.kernel._boot import boot
+from heinzel.kernel import boot
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.heinzel._self_chat_questions import QuestionSettings, lifetime, short_lived_process, user_settings
 from heinzel.modules.heinzel._session_models import SessionId
 from heinzel.modules.heinzel._user_chat import UserChatService
@@ -31,6 +32,7 @@ _SESSION = TypeAdapter(SessionId)
 _TURN = re.compile(r"interactive-[0-9a-f]{64}")
 TIMED_OUT = 124
 """The exit code of a helper its watchdog ended."""
+_EVENTS = get_logger("heinzel.self_chat")
 _exit: Callable[[int], object] = os._exit  # the end of the process; tests record it instead
 
 
@@ -42,9 +44,16 @@ def _valid(session: str, turn: str) -> bool:
     return _TURN.fullmatch(turn) is not None
 
 
+def _flush() -> None:
+    """Flush what was logged before the process ends; the handlers stay open (main also runs in tests)."""
+    for handler in (*logging.getLogger().handlers, *_EVENTS.handlers, logging.lastResort):
+        if handler is not None:
+            handler.flush()
+
+
 def _end() -> None:
-    sys.stderr.write("hz self-chat helper: ended by its watchdog\n")
-    sys.stderr.flush()
+    log_event(_EVENTS, "self_chat.helper.timed_out", level=logging.WARNING)
+    _flush()
     _exit(TIMED_OUT)
 
 
@@ -73,13 +82,12 @@ def main(argv: list[str] | None = None) -> int:
         if relay is not None:
             with short_lived_process():
                 relay.run_detached(session, turn)
-    except Exception:  # noqa: BLE001 - reported in the helpers' log; the process ends either way
-        traceback.print_exc()
+    except Exception as exc:  # noqa: BLE001 - reported in the helpers' log; the process ends either way
+        log_event(_EVENTS, "self_chat.helper.crashed", level=logging.ERROR, exc_info=True, problem=type(exc).__name__)
         code = 1
     finally:
         timer.cancel()
-        sys.stdout.flush()
-        sys.stderr.flush()
+        _flush()
         _exit(code)  # never waits at shutdown for a thread a plugin or an adapter left running
     return code
 
