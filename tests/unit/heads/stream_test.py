@@ -51,3 +51,23 @@ def test_a_streamed_error_carries_the_code_the_plain_call_answers_with(monkeypat
     body = asyncio.run(drain())
     assert "event: error" in body
     assert ('"code": "subscription_usage_limit"' in body) is (code is not None)
+
+
+def test_a_streamed_not_supported_error_names_the_capability_and_method(monkeypatch):
+    from heinzel.kernel._errors import NotSupportedError
+
+    monkeypatch.setattr(_stream, "mark_authenticated_presence", lambda kernel, module: None)
+
+    def unsupported(operation, **arguments):
+        capability, method = "documents", "replace_section"
+        raise NotSupportedError(capability, method)
+
+    body = asyncio.run(_drain(SimpleNamespace(invoke=unsupported), SimpleNamespace(name="demo", private=False)))
+    assert '"code": "not_supported"' in body
+    assert '"capability": "documents"' in body
+    assert '"method": "replace_section"' in body
+
+
+async def _drain(kernel, operation) -> str:
+    response = _stream.streamed(kernel, operation, {})  # type: ignore[arg-type]
+    return "".join([chunk async for chunk in response.body_iterator])  # type: ignore[misc]

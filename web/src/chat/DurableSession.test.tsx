@@ -2185,13 +2185,13 @@ it("falls back to the journal's whole answer when the stream breaks mid-reply", 
 it("grows a streamed reply by its deltas and starts over when the stream says so", () => {
   let text = "";
   for (const event of [
-    { event: "text", data: { text: "Hel" } },
+    { event: "text", data: { text: "Good " } },
     { event: "tool", data: { name: "search" } },
-    { event: "text", data: { text: "lo" } },
+    { event: "text", data: { text: "day" } },
     { event: "text", data: { text: 3 } },
   ])
     text = grownReply(text, event);
-  expect(text).toBe("Hello");
+  expect(text).toBe("Good day");
   expect(grownReply(text, { event: "text", data: { text: "Which day?", replace: true } })).toBe("Which day?");
 });
 

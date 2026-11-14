@@ -129,7 +129,7 @@ def test_only_a_model_that_streams_gets_the_relay():
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [
-        ('{"report": "Answered", "summary": "Hel', "Hel"),
+        ('{"report": "Answered", "summary": "Good morning, ev', "Good morning, ev"),
         ('{"report": "Answ', None),
         ('{"question": "Which day?"}', "Which day?"),
         ('{"summary": "Done", "question": "Next?"}', "Done"),
@@ -159,21 +159,21 @@ def test_only_the_output_call_is_relayed_and_a_retried_reply_starts_over():
         PartStartEvent(index=0, part=TextPart("thinking aloud")),
         PartStartEvent(index=1, part=ToolCallPart("use_tool", '{"summary": "not the reply', tool_call_id="tool")),
         PartDeltaEvent(index=1, delta=ToolCallPartDelta(args_delta='"}')),
-        PartStartEvent(index=2, part=ToolCallPart("final_result", '{"summary": "Fir', tool_call_id="out")),
+        PartStartEvent(index=2, part=ToolCallPart("final_result", '{"summary": "First ', tool_call_id="out")),
         FinalResultEvent(tool_name="final_result", tool_call_id="out"),
-        PartDeltaEvent(index=2, delta=ToolCallPartDelta(args_delta='st try"}')),
+        PartDeltaEvent(index=2, delta=ToolCallPartDelta(args_delta='try"}')),
         PartDeltaEvent(index=0, delta=ToolCallPartDelta(args_delta="ignored")),  # not a tool call
         # A retried request: a new response whose output call starts over at the same index.
         PartStartEvent(index=2, part=ToolCallPart("final_result", None, tool_call_id="again")),
-        PartDeltaEvent(index=2, delta=ToolCallPartDelta(args_delta='{"summary": "Sec', tool_call_id="again")),
+        PartDeltaEvent(index=2, delta=ToolCallPartDelta(args_delta='{"summary": "Second ', tool_call_id="again")),
         FinalResultEvent(tool_name="final_result", tool_call_id="again"),
         PartDeltaEvent(index=2, delta=ToolCallPartDelta(args_delta={"summary": "Second try"})),
     )
     assert events == [
-        ("text", {"text": "Fir"}),
-        ("text", {"text": "st try"}),
-        ("text", {"text": "Sec", "replace": True}),
-        ("text", {"text": "ond try"}),
+        ("text", {"text": "First "}),
+        ("text", {"text": "try"}),
+        ("text", {"text": "Second ", "replace": True}),
+        ("text", {"text": "try"}),
     ]
     assert events.text() == "Second try"
 
