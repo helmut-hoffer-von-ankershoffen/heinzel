@@ -379,6 +379,7 @@ test("typing race: text and keys reach only the element whose focus was checked"
   view.sent.length = 0;
   // The focus moves right after the first look at it: the look that sets the guard sees the other field.
   let looked = false;
+  view.page.blocked = 0;
   view.page.on = (method, params) => {
     if (method === "Runtime.evaluate" && params.expression === PAGE_SCRIPTS.FOCUSED) looked = true;
     else if (looked && method === "Page.getFrameTree") view.page.focused = PASSWORD;
