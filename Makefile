@@ -19,6 +19,7 @@ LINT := \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&design=uv run python scripts/design_tokens.py --check" \
+		"&release-policy=uv run --script scripts/release_policy.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
@@ -95,6 +96,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&design=uv run python scripts/design_tokens.py --check" \
+		"&release-policy=uv run --script scripts/release_policy.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
