@@ -135,6 +135,7 @@ $ hz ai access test [OPTIONS]
 **Options**:
 
 * `--name <str>`: The option to test, e.g. `gateway`; the one in use when not given.
+* `--all / --no-all`: Ask every model of a plugin&#x27;s models one tiny request each, at most 24, and mark the ones that don&#x27;t answer unavailable in the model picker; a few tokens per model.  [default: no-all]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

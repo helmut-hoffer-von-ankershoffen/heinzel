@@ -88,8 +88,36 @@ def render(result: AccessList) -> RenderableType:
     return Group(*parts)
 
 
+OUTCOME_STYLES = {"answered": "green", "unanswered": "red", "skipped": "yellow"}
+
+
+def _tokens(sent: int | None, produced: int | None) -> str:
+    """Tokens in and out, e.g. `12 in, 1 out`; empty when none were reported."""
+    return f"{sent or 0} in, {produced or 0} out" if sent is not None or produced is not None else ""
+
+
+def render_test_all(result: AccessTestReport) -> RenderableType:
+    """Each model's outcome, time and tokens, then how many answered and what the run cost in tokens."""
+    table = Table(box=None, pad_edge=False)
+    for column in ("Model", "Outcome", "Time", "Tokens", "Detail"):
+        table.add_column(column, overflow="fold")
+    for row in result.models:
+        table.add_row(
+            Text(row.model),
+            Text(row.outcome, style=OUTCOME_STYLES[row.outcome]),
+            Text(f"{row.duration_seconds:.1f}s"),
+            Text(_tokens(row.input_tokens, row.output_tokens) or "-"),
+            Text(row.detail),
+        )
+    spent = f"tokens: {used}" if (used := _tokens(result.input_tokens, result.output_tokens)) else "no tokens reported"
+    head = Text(f"{result.name}: {result.detail}; {spent}", style="green" if result.ok else "red")
+    return Group(table, head)
+
+
 def render_test(result: AccessTestReport) -> RenderableType:
     """Whether the option answered, what it said or why not, and what it cost."""
+    if result.models:
+        return render_test_all(result)
     cost = f", ${result.cost_usd:.4f}" if result.cost_usd is not None else ""
     model = f" ({result.model})" if result.model else ""
     head = Text(
@@ -142,17 +170,29 @@ def use(
 def live_check(
     service: AccessService,
     options: Adapters[AiAccess],
+    progress: Progress,
     name: Annotated[
         str | None,
         Field(
             pattern=ADAPTER_PATTERN, description="The option to test, e.g. `gateway`; the one in use when not given."
         ),
     ] = None,
+    all: Annotated[  # noqa: A002 - the flag people type is `--all`
+        bool,
+        Field(
+            description="Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones "
+            "that don't answer unavailable in the model picker; a few tokens per model."
+        ),
+    ] = False,
 ) -> AccessTestReport:
     """Run one cheap live check of an AI access option and keep the result; this may cost a little.
 
-    Claude Code answers one line within $0.05; the gateway runs its configured test command.
+    Claude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each
+    model of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,
+    Ctrl-C stops it.
     """
+    if all:
+        return service.test_all(name, options, progress)
     return service.test(name, options)
 
 
