@@ -1,3 +1,4 @@
+import Network
 import WebKit
 
 /// Owns a separate, in-memory WebKit session for the shared workspace's Browser panel.
@@ -106,13 +107,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         network = broker
         let proxy = try await broker.start()
         guard revision == generation else { throw URLError(.cancelled) }
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.websiteDataStore.proxyConfigurations = [proxy]
-        configuration.userContentController.add(rules)
-        #if os(iOS)
-        configuration.allowsInlineMediaPlayback = true
-        #endif
+        let configuration = Self.guestConfiguration(proxy: proxy, rules: rules)
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.uiDelegate = self
@@ -120,6 +115,19 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         workspace.addSubview(view)
         surface = view
         return view
+    }
+
+    static func guestConfiguration(proxy: ProxyConfiguration, rules: WKContentRuleList) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        // WebRTC can open direct UDP sockets outside WebKit's HTTPS proxy.
+        configuration.defaultWebpagePreferences.isLockdownModeEnabled = true
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore.proxyConfigurations = [proxy]
+        configuration.userContentController.add(rules)
+        #if os(iOS)
+        configuration.allowsInlineMediaPlayback = true
+        #endif
+        return configuration
     }
 
     private func permits(_ url: URL) -> Bool {
