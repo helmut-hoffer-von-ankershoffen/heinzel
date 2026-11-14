@@ -5,6 +5,8 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, WebContentsView, webContents } from "electron";
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
+import { createBrowserAgent } from "./browser-agent.js";
+import { createBrowserBridge } from "./browser-bridge.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMediaPlayer } from "./media-player.js";
@@ -130,6 +132,20 @@ const mediaPlayer = createMediaPlayer({
   createView: (options) => new WebContentsView(options),
   openExternal: (url) => shell.openExternal(url),
 });
+// Agents drive their own tabs through the daemon (ADR 0162): one socket to the local service, and an engine that only
+// ever gets guests of the browser's tab table.
+const ownedWindows = () => BrowserWindow.getAllWindows().filter((window) => windows.has(window) && !window.isDestroyed());
+const browserBridge = createBrowserBridge({
+  connection: () => (stopping || quitting ? null : instance.currentConnection()),
+  engine: createBrowserAgent({
+    tabs: miniBrowser.agents,
+    window: () => {
+      const focused = BrowserWindow.getFocusedWindow();
+      return focused && windows.has(focused) && !focused.isDestroyed() ? focused : ownedWindows()[0] ?? null;
+    },
+  }),
+  listen: miniBrowser.agents.listen,
+});
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
@@ -208,6 +224,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     // it already reported a crash). Hide the windows before the service stops so none repaints the disconnected page.
     stopping = true;
     permissions?.revoke();
+    browserBridge.stop();
     mediaPlayer.closeAll();
     miniBrowser.closeAll();
     workspaceAudio?.revoke();
@@ -285,6 +302,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
       instance.setConnection(connection);
       instance.setReady();
       serviceStarted = true;
+      browserBridge.start();
       return instance.open();
     });
   }).catch((error) => {
