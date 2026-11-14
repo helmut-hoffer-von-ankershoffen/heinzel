@@ -20,7 +20,7 @@ struct WorkspaceView: WebRepresentable {
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlaybackIfSupported()
-        // ADR 0140 requires a public-only HTTPS broker before serving production browser traffic.
+        // Keep the native browser in debug builds until WebKit egress probes pass.
         #if DEBUG
         let browserEnabled = ProcessInfo.processInfo.environment["HZ_SPIKE_BROWSER"] == "1"
         #else
@@ -74,17 +74,14 @@ struct WorkspaceView: WebRepresentable {
     #if os(macOS)
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
     func updateNSView(_ view: WKWebView, context: Context) {}
-    static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { removeBridge(from: view) }
+    static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #else
     func makeUIView(context: Context) -> WKWebView { makeWebView(context) }
     func updateUIView(_ view: WKWebView, context: Context) {}
-    static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { removeBridge(from: view) }
+    static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
 
-    private static func removeBridge(from view: WKWebView) {
-        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelBrowser", contentWorld: .page)
-        view.stopLoading()
-    }
+
 }
 
 private extension WKWebViewConfiguration {
@@ -133,7 +130,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               let workspace, let request = message.body as? [String: Any] else {
             return (nil, "Browser command unavailable")
         }
-        return (browser.handle(request, in: workspace, excluding: endpoint), nil)
+        return (await browser.handle(request, in: workspace, excluding: endpoint), nil)
+    }
+
+    func close(_ view: WKWebView) {
+        browser.reset()
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelBrowser", contentWorld: .page)
+        view.stopLoading()
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        browser.reset()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

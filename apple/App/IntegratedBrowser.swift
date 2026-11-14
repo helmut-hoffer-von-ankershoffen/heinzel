@@ -4,17 +4,29 @@ import WebKit
 @MainActor
 final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var surface: WKWebView?
+    private var network: BrowserNetwork?
+    private var opening = false
+    private var generation = 0
     private var endpoint: Endpoint?
     private var status = "empty"
 
-    func handle(_ request: [String: Any], in workspace: WKWebView, excluding endpoint: Endpoint) -> [String: Any] {
+    func handle(_ request: [String: Any], in workspace: WKWebView, excluding endpoint: Endpoint) async -> [String: Any] {
         self.endpoint = endpoint
         switch request["action"] as? String {
         case "navigate":
             guard let value = request["url"] as? String, value.utf8.count <= 4096,
                   let url = URL(string: value), permits(url) else { return ["status": "unavailable"] }
+            guard !opening else { break }
             status = "loading"
-            browser(in: workspace).load(URLRequest(url: url))
+            let revision = generation
+            opening = true
+            do {
+                let view = try await browser(in: workspace, revision: revision)
+                if revision == generation { view.load(URLRequest(url: url)) }
+            } catch {
+                if revision == generation { reset(status: "unavailable") }
+            }
+            if revision == generation { opening = false }
         case "layout":
             guard let bounds = request["bounds"] as? [String: CGFloat],
                   let x = bounds["x"], let y = bounds["y"], let width = bounds["width"], let height = bounds["height"],
@@ -29,11 +41,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             surface?.frame = frame
             surface?.isHidden = false
         case "hide": surface?.isHidden = true
-        case "close":
-            surface?.stopLoading()
-            surface?.removeFromSuperview()
-            surface = nil
-            status = "empty"
+        case "close": reset(status: "empty")
         case "back": surface?.goBack()
         case "forward": surface?.goForward()
         case "reload": surface?.reload()
@@ -47,10 +55,26 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         return state
     }
 
-    private func browser(in workspace: WKWebView) -> WKWebView {
+    func reset(status: String = "empty") {
+        generation += 1
+        opening = false
+        surface?.stopLoading()
+        surface?.removeFromSuperview()
+        surface = nil
+        network?.close()
+        network = nil
+        self.status = status
+    }
+
+    private func browser(in workspace: WKWebView, revision: Int) async throws -> WKWebView {
         if let surface { return surface }
+        let broker = try BrowserNetwork(deniedHost: endpoint?.origin.host()?.lowercased())
+        network = broker
+        let proxy = try await broker.start()
+        guard revision == generation else { throw URLError(.cancelled) }
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore.proxyConfigurations = [proxy]
         #if os(iOS)
         configuration.allowsInlineMediaPlayback = true
         #endif
@@ -66,10 +90,8 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func permits(_ url: URL) -> Bool {
         guard url.scheme == "https", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443, endpoint?.owns(url) == false,
-              let host = url.host()?.lowercased(),
-              host.wholeMatch(of: /[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z][a-z0-9-]*/) != nil else { return false }
-        let local = ["local", "localhost", "internal", "lan", "home", "arpa", "test", "ts.net"]
-        return !local.contains { host == $0 || host.hasSuffix("." + $0) }
+              let host = url.host(), BrowserAddress.host(host + ":443") != nil else { return false }
+        return true
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
