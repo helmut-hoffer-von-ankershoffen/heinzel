@@ -103,7 +103,7 @@ def test_every_connector_capability_is_bound_and_switched_in_settings(make_kerne
     assert final == {
         "mail": "bridge",
         "calendar": "other",
-        "documents": "bridge-docs",
+        "documents": ["bridge-docs"],
         "tracker": "other",
         "chat": "bridge",
         "meetings": "bridge",

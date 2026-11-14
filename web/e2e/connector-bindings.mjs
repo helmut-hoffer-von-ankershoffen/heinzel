@@ -1,5 +1,6 @@
 // Settings → Connectors: bind every connector capability to one plugin's adapters, then switch mail, calendar,
 // documents and tracker to another plugin's and back; after each round a reload shows exactly what was saved.
+// Documents takes several connectors at once (ADR 0161): a switch per adapter, saved as a list.
 // The server refuses restarts (as `make web-dev` does), so each "Restart and apply" saves and says to restart.
 import assert from "node:assert/strict";
 import { chromium, webkit } from "playwright-core";
@@ -21,6 +22,8 @@ const TITLES = {
   directory: "Directory",
 };
 const choice = (capability) => page.getByRole("combobox", { name: TITLES[capability], exact: true });
+// The switches themselves, inside the row that is labelled Documents too.
+const documents = () => page.locator('fieldset[aria-label="Documents"]');
 
 async function openConnectors() {
   const connectors = new URL(url); // keeps the session token in the fragment
@@ -31,12 +34,35 @@ async function openConnectors() {
   await page.getByText("Loading choices…").first().waitFor({ state: "detached", timeout: 15000 });
 }
 
+/** The documents connectors switched on, in the order the switches show. */
+async function documentsOn() {
+  const on = [];
+  for (const box of await documents().getByRole("checkbox").all())
+    if (await box.isChecked()) on.push(((await box.locator("xpath=..").textContent()) ?? "").split(" · ")[0].trim());
+  return on;
+}
+
 async function bind(capability, adapter) {
   const title = TITLES[capability];
-  await choice(capability).selectOption(adapter);
-  // Staged, it shows as chosen until applied.
-  assert.equal(await choice(capability).inputValue(), adapter);
-  const row = page.locator("li").filter({ has: choice(capability) });
+  let row;
+  if (capability === "documents") {
+    // Switch the wanted one on first, then the others off, so it is never none in between.
+    await documents()
+      .getByRole("checkbox", { name: new RegExp(`^${adapter} ·`) })
+      .check();
+    for (const other of await documentsOn())
+      if (other !== adapter)
+        await documents()
+          .getByRole("checkbox", { name: new RegExp(`^${other} ·`) })
+          .uncheck();
+    assert.deepEqual(await documentsOn(), [adapter]);
+    row = page.locator("li").filter({ has: documents() });
+  } else {
+    await choice(capability).selectOption(adapter);
+    // Staged, it shows as chosen until applied.
+    assert.equal(await choice(capability).inputValue(), adapter);
+    row = page.locator("li").filter({ has: choice(capability) });
+  }
   await row.getByRole("button", { name: "Restart and apply", exact: true }).click();
   await page.getByRole("button", { name: "Restart and apply hz ui" }).click();
   await row
@@ -48,7 +74,8 @@ async function bind(capability, adapter) {
 async function expectBound(expected) {
   await openConnectors();
   for (const [capability, adapter] of Object.entries(expected))
-    assert.equal(await choice(capability).inputValue(), adapter, capability);
+    if (capability === "documents") assert.deepEqual(await documentsOn(), [adapter], capability);
+    else assert.equal(await choice(capability).inputValue(), adapter, capability);
 }
 
 try {
@@ -82,7 +109,7 @@ try {
   for (const [capability, adapter] of Object.entries(back)) await bind(capability, adapter);
   const final = { ...bridge, ...switched, ...back };
   await expectBound(final);
-  console.log(JSON.stringify(final));
+  console.log(JSON.stringify({ ...final, documents: [final.documents] }));
 } catch (error) {
   if (shots) await page.screenshot({ path: `${shots}/connectors-${engine}-failed.png`, fullPage: true });
   throw error;
