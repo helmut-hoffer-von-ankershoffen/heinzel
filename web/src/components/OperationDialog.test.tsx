@@ -545,11 +545,13 @@ describe("Show all for a shortened value", () => {
     expect(summary.closest("details")).not.toHaveAttribute("open");
     await userEvent.click(summary);
     expect(summary.closest("details")).toHaveAttribute("open");
-    const boxes = within(dialog).getAllByRole("textbox") as HTMLTextAreaElement[];
+    const boxes = within(dialog).getAllByRole("textbox");
     expect(boxes).toHaveLength(1);
-    expect(boxes[0]).toHaveAttribute("readonly");
-    expect(boxes[0].value).toBe((getRun() as { call: { body: Record<string, string> } }).call.body.file_data);
-    expect(boxes[0].value).toBe(value);
+    const box = boxes[0] as HTMLTextAreaElement;
+    expect(box).toHaveAttribute("readonly");
+    // The sent body is the object the call carries; the shown value must equal it.
+    expect(box.value).toBe(body.file_data);
+    expect(box.value).toBe(value);
     dismissOperation();
   });
 });
