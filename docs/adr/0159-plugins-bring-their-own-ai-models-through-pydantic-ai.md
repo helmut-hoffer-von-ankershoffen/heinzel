@@ -199,5 +199,5 @@ connector helper with untrusted markers, and public discovery of Claude Code's M
 built-in `pydantic-ai` option to an Anthropic base address, opens `ConfiguredApiAccess` and the internal admission
 paths, and builds the `engine` runner of statement 11. **Head A ships only together with Head C**, in one bundle
 and one release, 0.9.43: without the `engine` runner the chat with the picker can't serve a plugin's models. The
-public `heinzel-acme-bridge` plugin, in the `heinzel-acme` repository of the made-up reference company, implements
+public `heinzel-acme-connectors` plugin, in the `heinzel-acme` repository of the made-up reference company, implements
 every connector capability and `ai-models` with made-up parts and runs the conformance kit.
