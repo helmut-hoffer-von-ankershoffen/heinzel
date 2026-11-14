@@ -53,7 +53,29 @@ const pane = () => within(screen.getByRole("region", { name: "Audio visualizer c
 const source = (name: string) =>
   within(screen.getByRole("radiogroup", { name: "Listen to" })).getByRole("radio", { name });
 
+/**
+ * Capture answers a test queued (mockResolvedValueOnce and the like) and never used, and resets every capture mock.
+ * vi.clearAllMocks keeps both queued answers and default implementations, so one test's leftover answers the next
+ * test's first request: a queued shared-audio answer ahead of "does not restart an ended microphone…" fails it and
+ * the test after it, the way CI run 43538261610 failed. Each test must use what it queues.
+ */
+function unusedCaptureAnswers() {
+  const unused: string[] = [];
+  for (const [name, mock] of [
+    ["captureAudio", vi.mocked(captureAudio)],
+    ["captureMicrophone", vi.mocked(captureMicrophone)],
+  ] as const) {
+    const marker = {};
+    mock.mockImplementation((() => marker) as never);
+    while ((mock as unknown as () => unknown)() !== marker) unused.push(name);
+    mock.mockReset();
+  }
+  vi.mocked(captureMicrophone).mockImplementation(() => new Promise(() => undefined));
+  return unused;
+}
+
 afterEach(() => {
+  const unused = unusedCaptureAnswers();
   if (realSecure) Object.defineProperty(globalThis, "isSecureContext", realSecure);
   else delete (globalThis as { isSecureContext?: boolean }).isSecureContext;
   if (realMediaDevices) Object.defineProperty(navigator, "mediaDevices", realMediaDevices);
@@ -64,6 +86,7 @@ afterEach(() => {
   act(() => setVizStage(null));
   reloadSettings();
   act(() => publishOwnAudio({ mode: "none" }));
+  expect(unused, "queued capture answers this test never used").toEqual([]);
 });
 
 /** A recording 2D context on every canvas, a visible document and captured animation frames; `restore` undoes it. */
