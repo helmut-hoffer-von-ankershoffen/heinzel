@@ -8,7 +8,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypedDict
 
 import typer
 from pydantic import BaseModel
@@ -392,7 +392,16 @@ def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console)
         typer.echo(json.dumps({"mcp_readiness": "initialized", "tools": count, "worker_ownership": "unverified"}))
 
 
-def _mcp_state(kernel: Kernel) -> dict[str, object]:
+class McpState(TypedDict):
+    """What `mcp-start`, `mcp-stop` and `mcp-status` report."""
+
+    enabled: bool
+    url: str
+    shared_urls: list[str]
+    serving: bool
+
+
+def _mcp_state(kernel: Kernel) -> McpState:
     """The `[hz] mcp_http` switch as the files hold it now, where it is served, and whether the web app answers."""
     settings = kernel.config.reread().settings(Settings, KERNEL_SECTION)
     url = f"http://127.0.0.1:{settings.ui_port}/mcp"
@@ -419,7 +428,7 @@ def _mcp_serving(port: int) -> bool:
         connection.close()
 
 
-def _print_mcp_state(state: dict[str, object], *, json_output: bool) -> None:
+def _print_mcp_state(state: McpState, *, json_output: bool) -> None:
     """The switch, as JSON or as lines saying what to do next."""
     if json_output:
         typer.echo(json.dumps(state))
@@ -431,8 +440,7 @@ def _print_mcp_state(state: dict[str, object], *, json_output: bool) -> None:
         typer.echo(f"MCP for other agents is on at {state['url']}")
     else:
         typer.echo(f"MCP for other agents is on, and `hz ui serve` serves it at {state['url']} once it runs.")
-    shared = state["shared_urls"]
-    for url in shared if isinstance(shared, list) else []:
+    for url in state["shared_urls"]:
         typer.echo(f"Shared: {url}")
     typer.echo("Every agent needs a token: `hz system serve mcp-token create --actor NAME`.")
 
