@@ -1,12 +1,23 @@
 import { ArrowLeft, ArrowRight, CornerDownLeft, ExternalLink, Plus, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
+import { BookmarkBar } from "@/bookmarks/BookmarkStar";
+import { Favicon } from "@/bookmarks/Favicon";
 import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { viewportBounds } from "@/lib/viewport";
 
-type BrowserTab = { id: string; owner: string; selected: boolean; status: string; url: string; title: string };
+type BrowserTab = {
+  id: string;
+  owner: string;
+  selected: boolean;
+  status: string;
+  url: string;
+  title: string;
+  /** The page's own icon as a small `data:` image, once the desktop read it. */
+  favicon?: string | null;
+};
 /** The person's own tabs per window, as the desktop enforces. */
 const MAX_TABS = 8;
 type BrowserState = {
@@ -81,7 +92,15 @@ export function externalBrowserUrl(value: string): string | null {
  * Switching panel tabs only hides the surface, so the page and its state stay. Website sign-ins live in the desktop's
  * separate persistent session until the person clears browsing data.
  */
-export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; onClose: () => void }>) {
+export function BrowserPanel({
+  active,
+  onClose,
+  bookmarks = false,
+}: Readonly<{
+  active: boolean;
+  onClose: () => void /** Show the bookmark star; needs the app's providers. */;
+  bookmarks?: boolean;
+}>) {
   const [address, setAddress] = useState("https://heinzel.team");
   const [state, setState] = useState<BrowserState>({ status: "empty" });
   const [refused, setRefused] = useState(false);
@@ -243,6 +262,9 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
       window.removeEventListener(MENU_EVENT, menu);
     };
   }, [native, active]);
+  const current = tabs.find((tab) => tab.id === selectedId);
+  // The star's place inside the address form; the bookmark bar draws into it from below the tab strip.
+  const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
   const target = addressUrl(address);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
@@ -326,6 +348,7 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           }}
           className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
         />
+        {native && bookmarks && <span ref={setStarSlot} className="contents" />}
         {native && (
           <Button
             type="button"
@@ -385,10 +408,11 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
                   role="tab"
                   aria-selected={tab.selected}
                   title={tab.url || undefined}
-                  className="min-w-0 flex-1 truncate px-2 py-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1 text-left"
                   onClick={() => void request({ action: "select-tab", tab: tab.id })}
                 >
-                  {tabLabel(tab)}
+                  {tab.favicon && <Favicon image={tab.favicon} className="size-3" />}
+                  <span className="truncate">{tabLabel(tab)}</span>
                 </button>
                 <button
                   type="button"
@@ -423,6 +447,9 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
               status
             )}
           </p>
+          {bookmarks && (
+            <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />
+          )}
           {refused && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t("browser.refusedNote")}
