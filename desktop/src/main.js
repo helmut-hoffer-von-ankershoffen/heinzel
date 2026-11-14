@@ -88,7 +88,7 @@ const instance = createInstanceLifecycle({
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
       activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url), {
-        browserOn: () => settings.get("linksInBrowser"),
+        browserOn: () => settings().get("linksInBrowser"),
         browser: async (url) => {
           await miniBrowser.openLink(window, url);
           // Show the panel on the new tab: the page opens it without toggling it shut.
@@ -101,7 +101,8 @@ const instance = createInstanceLifecycle({
 });
 
 // Settings > Browser > "Open links in the built-in browser": a setting of the app itself, live and kept across restarts.
-const settings = createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") });
+let settingsStore;
+const settings = () => (settingsStore ??= createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") }));
 const miniBrowser = createMiniBrowser({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -126,8 +127,8 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
       fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
       connection: () => (stopping || quitting ? null : instance.currentConnection()),
     });
-    if (owned && typeof inBrowser === "boolean") settings.set("linksInBrowser", inBrowser);
-    return settings.get("linksInBrowser");
+    if (owned && typeof inBrowser === "boolean") settings().set("linksInBrowser", inBrowser);
+    return settings().get("linksInBrowser");
   });
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,

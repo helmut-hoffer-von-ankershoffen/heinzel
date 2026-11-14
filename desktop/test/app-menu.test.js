@@ -130,3 +130,8 @@ test("New Tab and Close Tab ask the page, which may take them with a cancelable 
   assert.deepEqual(sent, ["new-tab", "close-tab"]);
   assert.match(menuScript("close-tab"), /^!window\.dispatchEvent\(.*cancelable: true/);
 });
+
+test("the app may ask the page to show the browser panel, with no menu item for it", () => {
+  assert.match(menuScript("browser-show"), /"hz:menu".*"browser-show"/);
+  assert.equal(ACTIONS.includes("browser-show"), false);
+});
