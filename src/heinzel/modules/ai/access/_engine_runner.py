@@ -242,6 +242,26 @@ class _Stream:
             self.partial += delta
             self.emit("text", {"text": delta})
 
+    def relay(self, event: object) -> None:
+        """Pass one streamed event on: answer text as it is written, each tool call and each tool's result."""
+        from pydantic_ai.messages import (  # noqa: PLC0415 - only during a run
+            FunctionToolCallEvent,
+            FunctionToolResultEvent,
+            PartDeltaEvent,
+            PartStartEvent,
+            TextPart,
+            TextPartDelta,
+        )
+
+        if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+            self.text(event.part.content)
+        elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+            self.text(event.delta.content_delta)
+        elif isinstance(event, FunctionToolCallEvent):
+            self.emit("tool", {"name": event.part.tool_name})
+        elif isinstance(event, FunctionToolResultEvent):
+            self.emit("tool_result", {"name": event.part.tool_name})
+
 
 class EngineRunner:
     """The `engine` agent runner: a read-only session on hz's own engine and the selected option's model."""
@@ -418,14 +438,6 @@ class EngineRunner:
         `runs` receives the run as soon as it starts, so a stopped turn can still read the messages it had.
         """
         from pydantic_ai import Agent  # noqa: PLC0415 - only during a run
-        from pydantic_ai.messages import (  # noqa: PLC0415
-            FunctionToolCallEvent,
-            FunctionToolResultEvent,
-            PartDeltaEvent,
-            PartStartEvent,
-            TextPart,
-            TextPartDelta,
-        )
         from pydantic_ai.usage import UsageLimits  # noqa: PLC0415
 
         async with agent.iter(
@@ -437,21 +449,12 @@ class EngineRunner:
             runs.append(run)
             async for node in run:
                 if Agent.is_model_request_node(node):
-                    stream.partial = ""
-                    responses: Any  # the model's response events
-                    async with node.stream(run.ctx) as responses:
-                        async for event in responses:
-                            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-                                stream.text(event.part.content)
-                            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                                stream.text(event.delta.content_delta)
-                elif Agent.is_call_tools_node(node):
-                    async with node.stream(run.ctx) as handled:
-                        async for event in handled:
-                            if isinstance(event, FunctionToolCallEvent):
-                                stream.emit("tool", {"name": event.part.tool_name})
-                            elif isinstance(event, FunctionToolResultEvent):
-                                stream.emit("tool_result", {"name": event.part.tool_name})
+                    stream.partial = ""  # a new answer starts
+                if Agent.is_model_request_node(node) or Agent.is_call_tools_node(node):
+                    events: Any  # the node's events: a model response, or the tool calls and their results
+                    async with node.stream(run.ctx) as events:
+                        async for event in events:
+                            stream.relay(event)
             return run.result
 
 
