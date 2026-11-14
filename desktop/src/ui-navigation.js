@@ -188,8 +188,10 @@ export function openUiLinkExternally(target, connection, openExternal) {
 
 /**
  * Page scripts can click links and call window.open() without a person, and Electron's window-open and
- * navigation details carry no user activation. The isolated preload reports trusted pointer, key and
- * click input from the owned main frame (`grant`); one external open may follow within `windowMs`.
+ * navigation details carry no user activation (Electron 45 window-open details: url, frameName, features,
+ * disposition, referrer, postBody; disposition is no gesture signal). The isolated preload reports trusted
+ * pointer, key and click input from the owned main frame, and the main process native input to any frame
+ * (`grant`); one external open may follow within `windowMs`.
  */
 export function createUserActivation({ now = Date.now, windowMs = 1000 } = {}) {
   let until = Number.NEGATIVE_INFINITY;
@@ -204,16 +206,34 @@ export function createUserActivation({ now = Date.now, windowMs = 1000 } = {}) {
 }
 
 /**
+ * Native input the browser process hands to the page, in any frame. The preload sees only the main
+ * frame's document, so a click inside a cross-origin embed (the YouTube player's "Learn more" or
+ * "Sign in") never reached it. Page scripts cannot produce these events; pointer moves, wheel and
+ * key-up are no gesture.
+ */
+const GESTURE_INPUT = new Set(["mouseDown", "mouseUp", "pointerDown", "pointerUp", "touchEnd", "gestureTap", "rawKeyDown", "keyDown"]);
+
+/** Grant the window's activation from trusted native input to any of its frames. */
+export function grantOnNativeInput(contents, activation) {
+  const grant = (input) => { if (GESTURE_INPUT.has(input?.type)) activation.grant(); };
+  // Keyboard input is delegated per WebContents and covers every frame; mouse and touch come as
+  // input-event and before-mouse-event. Listening never prevents the event.
+  for (const name of ["before-input-event", "input-event", "before-mouse-event"])
+    contents.on(name, (_event, input) => grant(input));
+}
+
+/**
  * Only top-level documents use this guard; embedded third-party frames keep the web head's CSP.
  * The window never leaves the owned origin and never opens a child window: target=_blank,
- * window.open() and middle-click on a public link go to the default browser only right after trusted
- * user input, classified and rate-limited; scripted opens and everything else are denied.
- * Returns the window's user activation for the preload's input reports.
+ * window.open() and middle-click on a public link, from the page or an embed, go to the default
+ * browser only right after trusted user input, classified and rate-limited; scripted opens and
+ * everything else are denied. Returns the window's user activation for the preload's input reports.
  */
 export function guardUiNavigation(contents, connection, openExternal, options = {}) {
   const { windowMs, ...openerOptions } = options;
   const log = options.log ?? defaultLog;
   const activation = createUserActivation({ now: options.now, windowMs });
+  grantOnNativeInput(contents, activation);
   const opener = createExternalOpener({ connection, openExternal, ...openerOptions });
   let refusedLogged = false;
   const open = (target) => {
