@@ -169,6 +169,10 @@ def test_a_forged_draft_for_the_default_never_reaches_the_owner(two):
     forged = draft.model_copy(update={"provider": default.record.qualname, "binding_id": default.binding_id})
     with pytest.raises(HeinzelError, match="changed"):
         default.open_lease(forged)
+    with pytest.raises(HeinzelError, match="changed"):
+        default.check(draft)
+    with pytest.raises(HeinzelError, match="Another documents connector holds this document"):
+        default.target(WIKI)
     assert all(state["opens"] == 0 for state in states.values())
 
 
