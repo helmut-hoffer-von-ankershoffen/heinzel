@@ -103,6 +103,9 @@ export const restartOutcomeUnconfirmed = (run: OperationRun): boolean =>
 
 const outcomeUnconfirmed = () => restartOutcomeUnconfirmed(current);
 
+/** A typed string longer than this is shortened in the confirmation, where "Show all" reveals it in full. */
+export const LONG_FORM_VALUE = 2000;
+
 /** Ask the person to confirm `call`; nothing runs yet. Ignored while another write is being asked about or running. */
 export function requestOperation(call: SchemaOperationCall): boolean {
   if (outcomeUnconfirmed()) return false;

@@ -179,3 +179,10 @@ data.
   take. The view calls `submit(action, values)`; the app sends only the declared inputs, still asks first, and its
   dialog shows the command built from the values that will run, never the view's label. The promise settles with the
   operation's result, or fails when the person cancels or the operation fails.
+
+- Amendment, 2026-11-14: a typed value longer than 2,000 characters is shown in the dialog as its first 200
+  characters and its length; the call still sends all of it. A "Show all" disclosure, built by the app from the
+  body that will be sent (never from text a page supplies), reveals each shortened value in full in a scrollable,
+  read-only block, so nothing is sent that cannot be read first. A view can so send a file as text (a screenshot
+  with a report, base64) without filling the dialog. The view SDK names what it can do beyond the first ABI 1 release in
+  `sdk.features`; `form-long-values` is this, and a view offers a file only where it finds it.

@@ -726,6 +726,8 @@ const en = {
   "op.lastReported": "Last reported: {state}",
   "op.working": "Working…",
   "op.close": "Close",
+  "op.showAll": "Show all",
+  "op.showAllNote": "Shortened above; this is the whole value that will be sent.",
   "op.retry": "Try again",
   "op.noStop": "This can't be stopped halfway. It takes a few seconds.",
   "op.failed": "That did not work.",
