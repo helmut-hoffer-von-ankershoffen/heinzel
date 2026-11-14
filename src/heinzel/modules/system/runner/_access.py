@@ -88,7 +88,7 @@ class ClaudeCodeAccess:
 
         No model override, a claude.ai subscription login, the reviewed release, the help contract, the closed result.
         """
-        from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - bridge runtime only when testing
+        from heinzel.kernel._claude_code import (  # noqa: PLC0415 - bridge admission only when testing
             Denial,
             SubscriptionDeniedError,
             check_access,
