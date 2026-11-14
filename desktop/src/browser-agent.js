@@ -23,8 +23,12 @@
  *   allow      {}                                             -> {}           (lifts the person's Stop)
  *
  * Two-step input: `describe` says what the target is; the daemon runs its commit gate and sends the input with
- * `expect` set to the fingerprint. The engine describes the target again just before it acts and refuses with
- * `changed` when anything differs.
+ * `expect` set to the fingerprint (of the description and of the element or point itself). The engine describes the
+ * target again just before it acts and refuses with `changed` when anything differs. A click is checked once more
+ * between press and release: a recorder in the isolated world says what was really pressed, and a press that landed
+ * anywhere else, such as in a frame the page slid under the pointer, is let go outside the page so nothing is clicked.
+ * Text and keys reach only the element that had the focus when it was checked: until the input is in, a guard in the
+ * isolated world cancels input anywhere else.
  *
  * `target`: {resolved, host, role, name, tag, type, autocomplete, editable, submit, in_form, form_has_password,
  * payment_page, href_host, never}. `never` is null, or why no agent may type there: "password", "one-time-code",
@@ -59,15 +63,28 @@ const DESCRIBE = `function () {
   const tag = el.tagName.toLowerCase();
   const type = tag === "input" || tag === "button" ? cut(el.type).toLowerCase() : "";
   const form = el.form || el.closest("form");
-  const buttonInput = tag === "input" && ["button", "submit", "reset", "image", "checkbox", "radio", "file", "range", "color", "hidden"].includes(type);
+  const labelled = tag === "input" && ["button", "submit", "reset"].includes(type);
+  const buttonInput = labelled || (tag === "input" && ["image", "checkbox", "radio", "file", "range", "color", "hidden"].includes(type));
   const editable = (tag === "input" && !buttonInput) || tag === "textarea" || tag === "select" || el.isContentEditable === true || attr("role") === "textbox";
+  // What only the live page can tell: a field drawn as dots, and one box of a code that is typed digit by digit.
+  let secret = null;
+  if (editable && tag === "input") {
+    const security = getComputedStyle(el).webkitTextSecurity;
+    const short = (box) => box.maxLength > 0 && box.maxLength <= 2;
+    const scope = form || (el.parentElement && el.parentElement.parentElement) || el.parentElement || el;
+    const boxes = Array.from(scope.querySelectorAll("input")).filter(short).length;
+    const numeric = /^(numeric|decimal|tel)$/i.test(el.getAttribute("inputmode") || "") || type === "tel" || type === "number";
+    if (security && security !== "none") secret = "password";
+    else if (scope.querySelector("input[autocomplete~='one-time-code' i]") || (short(el) && (boxes >= 4 || (numeric && boxes >= 3)))) secret = "one-time-code";
+  }
   const card = "input[autocomplete^='cc-' i], input[name*='cardnumber' i], input[name*='card-number' i], input[name*='card_number' i], input[name*='cvc' i], input[name*='cvv' i], input[id*='cardnumber' i], input[id*='card-number' i], iframe[name*='card' i], iframe[title*='card' i], iframe[title*='payment' i], iframe[src*='js.stripe.com' i]";
   let href = null;
   if (tag === "a") { try { href = new URL(el.href).host; } catch (error) { href = null; } }
   return {
     tag, type,
     role: attr("role"),
-    name: cut(el.getAttribute("aria-label") || (tag === "input" ? (buttonInput ? el.value : "") : el.innerText) || el.getAttribute("title") || el.getAttribute("alt") || el.getAttribute("placeholder") || ""),
+    name: cut(el.getAttribute("aria-label") || (tag === "input" ? (labelled ? el.value : "") : el.innerText) || el.getAttribute("title") || el.getAttribute("alt") || el.getAttribute("placeholder") || ""),
+    secret,
     autocomplete: attr("autocomplete").toLowerCase(),
     hints: cut([el.getAttribute("name"), el.id, el.getAttribute("placeholder"), el.getAttribute("aria-label"), el.getAttribute("inputmode")].filter(Boolean).join(" ")),
     editable,
@@ -78,15 +95,64 @@ const DESCRIBE = `function () {
     href,
   };
 }`;
-const FOCUSED = `(() => {
+const ACTIVE = `(() => {
   let active = document.activeElement;
   while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
-  if (!active || active === document.body || active === document.documentElement) return null;
-  return (${DESCRIBE}).call(active);
+  return !active || active === document.body || active === document.documentElement ? null : active;
 })()`;
+const FOCUSED = `(() => { const active = ${ACTIVE}; return active ? (${DESCRIBE}).call(active) : null; })()`;
 const CONTAINS = "function (other) { return this === other || (typeof this.contains === \"function\" && this.contains(other)); }";
 const PAGE_TEXT = "(() => String((document.body && document.body.innerText) || \"\").slice(0, 200000))()";
-const SCRIPTS = new Set([DESCRIBE, FOCUSED, CONTAINS, PAGE_TEXT]);
+// One state object per document in the isolated world. Its listeners are the first to be added on the window in
+// that world; only trusted events count, so a page cannot fake a press or an input.
+const STATE = `(globalThis.__hzAgent || (globalThis.__hzAgent = (() => {
+  const state = { path: null, armed: false, allowed: null, blocked: 0 };
+  window.addEventListener("pointerdown", (event) => { if (event.isTrusted) state.path = event.composedPath(); }, { capture: true, passive: true });
+  const guard = (event) => {
+    if (!state.armed || !event.isTrusted) return;
+    const target = event.composedPath()[0];
+    if (target === state.allowed && !(target && target.type === "password")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    state.blocked += 1;
+  };
+  window.addEventListener("keydown", guard, { capture: true });
+  window.addEventListener("beforeinput", guard, { capture: true });
+  return state;
+})()))`;
+// Before a press: forget the last one. After it: was the described element really what was pressed?
+const ARM_PRESS = `(() => { ${STATE}.path = null; return true; })()`;
+const PRESSED = `function () {
+  const state = ${STATE};
+  const path = state.path;
+  state.path = null;
+  if (!path || !path.length) return false;
+  if (/^(IFRAME|FRAME|OBJECT|EMBED)$/i.test((path[0] && path[0].tagName) || "")) return false;
+  return path.includes(this.nodeType === 1 ? this : this.parentElement);
+}`;
+// Before text or a key: say what has the focus and let input reach only that element until it is disarmed.
+const ARM_INPUT = `(() => {
+  const state = ${STATE};
+  const active = ${ACTIVE};
+  state.allowed = active || document.body;
+  state.blocked = 0;
+  state.armed = true;
+  return active ? (${DESCRIBE}).call(active) : null;
+})()`;
+// The same, for text meant for one element: the focus must be on it or inside it.
+const ARM_NODE = `function () {
+  const state = ${STATE};
+  const active = ${ACTIVE};
+  if (!active || !(this === active || (typeof this.contains === "function" && this.contains(active)))) return null;
+  state.allowed = active;
+  state.blocked = 0;
+  state.armed = true;
+  return (${DESCRIBE}).call(active);
+}`;
+const DISARM = `(() => { const state = ${STATE}; state.armed = false; state.allowed = null; return state.blocked; })()`;
+/** The fixed page scripts by name; tests tell them apart with this. */
+export const PAGE_SCRIPTS = Object.freeze({ DESCRIBE, FOCUSED, CONTAINS, PAGE_TEXT, ARM_PRESS, PRESSED, ARM_INPUT, ARM_NODE, DISARM });
+const SCRIPTS = new Set(Object.values(PAGE_SCRIPTS));
 
 const FRAME_TAGS = new Set(["iframe", "frame", "object", "embed"]);
 const PASSWORD_HINT = /passw|kennwort|passcode|(?:^|[^a-z])pin(?:[^a-z]|$)/i;
@@ -98,6 +164,7 @@ export function neverField(raw) {
   if (!raw) return null;
   if (FRAME_TAGS.has(raw.tag)) return "frame";
   if (!raw.editable) return null;
+  if (raw.secret === "password" || raw.secret === "one-time-code") return raw.secret;
   const tokens = String(raw.autocomplete ?? "").split(/\s+/);
   const hints = String(raw.hints ?? "");
   if (raw.type === "password" || tokens.includes("current-password") || tokens.includes("new-password") || PASSWORD_HINT.test(hints))
@@ -135,7 +202,7 @@ const HIDDEN_ROLES = new Set(["none", "generic", "presentation", "InlineTextBox"
  * The accessibility tree as indented lines: `- role "name" [ref_N]`. `refOf(backendNodeId, {role, name})` names a
  * node. With `filter: "interactive"` only what can be clicked or typed into is listed.
  */
-export function outline(nodes, { filter = "all", root = null, refOf }) {
+export function outline(nodes, { filter = "all", root = null, refOf, valueOf = (node) => node.value?.value }) {
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
   const first = root === null ? nodes.find((node) => node.parentId === undefined) ?? nodes[0]
     : nodes.find((node) => node.backendDOMNodeId === root);
@@ -153,7 +220,8 @@ export function outline(nodes, { filter = "all", root = null, refOf }) {
     else if (shown) shown = filter === "all" ? Boolean(name) || interactive : interactive;
     if (shown) {
       const ref = role !== "StaticText" && role !== "RootWebArea" && Number.isInteger(node.backendDOMNodeId) ? refOf(node.backendDOMNodeId, { role, name }) : null;
-      const value = VALUED.has(role) && node.value?.value !== undefined ? ` value=${JSON.stringify(text(node.value.value, 100))}` : "";
+      const held = VALUED.has(role) ? valueOf(node) : undefined;
+      const value = held !== undefined ? ` value=${JSON.stringify(text(held, 100))}` : "";
       lines.push(`${"  ".repeat(Math.min(depth, 20))}- ${role === "StaticText" ? "text" : role}${name ? ` ${JSON.stringify(name)}` : ""}${value}${ref ? ` [${ref}]` : ""}`);
     }
     for (const child of node.childIds ?? []) walk(byId.get(child), shown ? depth + 1 : depth, shown ? name : above);
@@ -208,6 +276,10 @@ export function parseKeys(keys) {
 }
 
 const MAX_EDGE = 1568;
+// Text is put in in pieces, with a look at the focus before each.
+const TYPE_CHUNK = 200;
+// Field values are shown for this many fields of a page at most; each is checked first.
+const MAX_VALUES = 40;
 /** Width and height of a PNG from its header, or null. */
 export function pngSize(buffer) {
   if (!buffer || buffer.length < 24 || buffer.readUInt32BE(0) !== 0x89504e47 || buffer.toString("latin1", 12, 16) !== "IHDR") return null;
@@ -300,6 +372,9 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     const script = method === "Runtime.evaluate" ? params.expression : method === "Runtime.callFunctionOn" ? params.functionDeclaration : null;
     if (method.startsWith("Runtime.") && (!SCRIPTS.has(script) || (method === "Runtime.evaluate" && !Number.isInteger(params.contextId))))
       throw new BridgeError("failed", "That browser protocol method is not allowed.");
+    // The isolated world never gets more reach than a content script.
+    if (method === "Page.createIsolatedWorld" && (params.grantUniveralAccess || params.grantUniversalAccess))
+      throw new BridgeError("failed", "That browser protocol method is not allowed.");
     if (!tabs.holds(id, guest)) throw new BridgeError("unknown_tab", "Unknown tab.");
     const wire = guest.view.webContents.debugger;
     if (!wire.isAttached()) {
@@ -350,19 +425,27 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     return node;
   };
   const urlOf = (guest) => guest.view.webContents.getURL();
-  const fingerprint = (guest, target) => createHash("sha256")
-    .update(JSON.stringify([salt, guest.id, pageOf(guest).document, target])).digest("hex");
+  // Of the description and of the element or point itself, so two look-alike controls never share an approval.
+  const fingerprint = (guest, target, anchor) => createHash("sha256")
+    .update(JSON.stringify([salt, guest.id, pageOf(guest).document, anchor, target])).digest("hex");
+  const quiet = async (work) => {
+    try { return await work(); } catch (error) {
+      if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
+      return null;
+    }
+  };
 
   /** What an input would act on: `{target, node}`; `node` is the element for a ref or a point, null for the focus. */
   const resolve = async (id, guest, action, args) => {
     const host = hostOf(urlOf(guest));
     if (Object.hasOwn(args, "ref")) {
       const node = nodeOfRef(guest, args.ref);
-      return { node, target: targetOf(await describeNode(id, guest, node), pageOf(guest).named.get(args.ref), host) };
+      return { node, anchor: ["node", node], target: targetOf(await describeNode(id, guest, node), pageOf(guest).named.get(args.ref), host) };
     }
     if (Object.hasOwn(args, "x")) {
       const node = await nodeAt(id, guest, args.x, args.y);
-      if (node === null) return { node: null, target: UNRESOLVED(host) };
+      const anchor = ["point", args.x, args.y, node];
+      if (node === null) return { node: null, anchor, target: UNRESOLVED(host) };
       let ax = null;
       try {
         const [first] = (await cdp(id, guest, "Accessibility.getPartialAXTree", { backendNodeId: node, fetchRelatives: false })).nodes ?? [];
@@ -370,15 +453,41 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       } catch (error) {
         if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
       }
-      return { node, target: targetOf(await describeNode(id, guest, node), ax, host) };
+      return { node, anchor, target: targetOf(await describeNode(id, guest, node), ax, host) };
     }
     if (action === "click") throw new BridgeError("invalid", "Invalid browser command.");
-    return { node: null, target: targetOf(await describeFocused(id, guest), null, host) };
+    return { node: null, anchor: ["focus"], target: targetOf(await describeFocused(id, guest), null, host) };
   };
   const expected = async (id, guest, action, args) => {
     const found = await resolve(id, guest, action, args);
-    if (fingerprint(guest, found.target) !== args.expect) throw new BridgeError("changed", MESSAGES.stale);
+    if (fingerprint(guest, found.target, found.anchor) !== args.expect) throw new BridgeError("changed", MESSAGES.stale);
     return found;
+  };
+  const evaluate = async (id, guest, expression, contextId) =>
+    (await cdp(id, guest, "Runtime.evaluate", { expression, contextId, returnByValue: true })).result?.value;
+  const callOn = async (id, guest, node, context, functionDeclaration, extra = {}) =>
+    (await cdp(id, guest, "Runtime.callFunctionOn", { objectId: await objectOf(id, guest, node, context), functionDeclaration,
+      returnByValue: true, ...extra })).result?.value;
+  /** Is the element at this point the described one, or inside it? */
+  const under = async (id, guest, node, at) => {
+    const hit = await nodeAt(id, guest, at.x, at.y);
+    if (hit === null) return false;
+    return (await quiet(async () => {
+      const context = await world(id, guest);
+      return callOn(id, guest, node, context, CONTAINS, { arguments: [{ objectId: await objectOf(id, guest, hit, context) }] });
+    })) === true;
+  };
+  /**
+   * Let input reach only what has the focus now, and say what that is. With `node` the focus must be on that element.
+   * Returns the raw description, or null when nothing fitting has the focus; `disarm` tells how much was held back.
+   */
+  const arm = async (id, guest, node) => quiet(async () => {
+    const context = await world(id, guest);
+    return (node === null ? await evaluate(id, guest, ARM_INPUT, context) : await callOn(id, guest, node, context, ARM_NODE)) ?? null;
+  });
+  const disarm = async (id, guest) => {
+    const blocked = await quiet(async () => evaluate(id, guest, DISARM, await world(id, guest)));
+    return typeof blocked === "number" ? blocked : 1;
   };
   const centre = async (id, guest, node) => {
     try {
@@ -457,7 +566,17 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
         state.named.set(ref, named);
         return ref;
       };
-      return page(guest, outline(nodes ?? [], { filter: args.filter ?? "all", root, refOf }), args.max_chars ?? 20000);
+      // What a field holds is shown only for a field an agent may type into, and never on a page that takes a card:
+      // the person may have typed a code or a number there while they had taken over.
+      const valued = (nodes ?? []).filter((node) => !node.ignored && VALUED.has(node.role?.value) && node.value?.value !== undefined &&
+        Number.isInteger(node.backendDOMNodeId));
+      const open = new Set();
+      for (const node of valued.slice(0, MAX_VALUES)) {
+        const raw = await describeNode(who.id, guest, node.backendDOMNodeId);
+        if (raw && raw.editable && !raw.payment_page && !neverField(raw)) open.add(node.nodeId);
+      }
+      const valueOf = (node) => (open.has(node.nodeId) ? node.value.value : undefined);
+      return page(guest, outline(nodes ?? [], { filter: args.filter ?? "all", root, refOf, valueOf }), args.max_chars ?? 20000);
     },
     async text(who, args, guest) {
       const contextId = await world(who.id, guest);
@@ -502,63 +621,97 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       return { url: urlOf(guest) };
     },
     async describe(who, args, guest) {
-      const { target } = await resolve(who.id, guest, args.action, args);
-      return { target, fingerprint: fingerprint(guest, target) };
+      const { target, anchor } = await resolve(who.id, guest, args.action, args);
+      return { target, fingerprint: fingerprint(guest, target, anchor) };
     },
     async click(who, args, guest) {
-      const { node } = await expected(who.id, guest, "click", args);
-      let at = { x: args.x, y: args.y };
-      if (Object.hasOwn(args, "ref")) {
-        at = await centre(who.id, guest, node);
-        // The click lands where the pointer is: refuse when something else lies over the described target.
-        const hit = await nodeAt(who.id, guest, at.x, at.y);
-        let inside = false;
-        if (hit !== null) {
-          try {
-            const context = await world(who.id, guest);
-            const [objectId, other] = [await objectOf(who.id, guest, node, context), await objectOf(who.id, guest, hit, context)];
-            inside = (await cdp(who.id, guest, "Runtime.callFunctionOn", { objectId, functionDeclaration: CONTAINS,
-              arguments: [{ objectId: other }], returnByValue: true })).result?.value === true;
-          } catch (error) {
-            if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
-          }
-        }
-        if (!inside) throw new BridgeError("changed", "Something else covers that element. Read the page again.");
-        // Scrolling it into view must not have changed what it is.
-        await expected(who.id, guest, "click", args);
-      }
+      const id = who.id;
+      const byRef = Object.hasOwn(args, "ref");
+      const { node, target } = await expected(id, guest, "click", args);
+      const at = byRef ? await centre(id, guest, node) : { x: args.x, y: args.y };
       const button = args.button ?? "left";
       const modifiers = (args.modifiers ?? []).reduce((bits, name) => bits | MODIFIERS[name.toLowerCase()], 0);
       const event = { x: at.x, y: at.y, modifiers };
-      await cdp(who.id, guest, "Input.dispatchMouseEvent", { ...event, type: "mouseMoved" });
+      const mouse = (type, more = {}) => cdp(id, guest, "Input.dispatchMouseEvent", { ...event, type, ...more });
+      // Still the described target, and (for a ref) nothing else lying over it where the pointer is?
+      const verify = async () => {
+        await expected(id, guest, "click", args);
+        if (byRef && !(await under(id, guest, node, at)))
+          throw new BridgeError("changed", "Something else covers that element. Read the page again.");
+      };
+      // The pointer goes there first: whatever the page does when it is hovered happens before the checks, not after.
+      await mouse("mouseMoved");
+      await verify();
+      // A frame or an unknown target has no element of this document to be pressed; the checks above and below stand.
+      const watched = node !== null && target.resolved;
       for (let count = 1; count <= (args.count ?? 1); count += 1) {
-        await cdp(who.id, guest, "Input.dispatchMouseEvent", { ...event, type: "mousePressed", button, clickCount: count });
-        await cdp(who.id, guest, "Input.dispatchMouseEvent", { ...event, type: "mouseReleased", button, clickCount: count });
+        const context = watched ? await world(id, guest) : null;
+        if (watched) await evaluate(id, guest, ARM_PRESS, context);
+        await mouse("mousePressed", { button, clickCount: count });
+        // Between press and release: the press must have landed on the described element, which must still be it.
+        // A press that went into a frame, or to anything else, is let go far outside, so no click happens there.
+        const landed = await quiet(async () => {
+          if (watched && (await callOn(id, guest, node, context, PRESSED)) !== true) return false;
+          try { await verify(); } catch (error) {
+            if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
+            return false;
+          }
+          return true;
+        });
+        if (landed !== true) {
+          await quiet(() => mouse("mouseReleased", { x: -1, y: -1, button, clickCount: count }));
+          throw new BridgeError("changed", "The page put something else under the pointer. Nothing was clicked: read the page again.");
+        }
+        await mouse("mouseReleased", { button, clickCount: count });
       }
       return { url: urlOf(guest) };
     },
     async type(who, args, guest) {
-      const { node, target } = await expected(who.id, guest, "type", args);
+      const id = who.id;
+      const { node, target, anchor } = await expected(id, guest, "type", args);
       if (target.never || !target.resolved) throw new BridgeError("never", MESSAGES.never);
       if (node !== null) {
-        try { await cdp(who.id, guest, "DOM.focus", { backendNodeId: node }); } catch (error) {
+        try { await cdp(id, guest, "DOM.focus", { backendNodeId: node }); } catch (error) {
           if (error instanceof BridgeError) throw error;
           throw new BridgeError("stale_ref", MESSAGES.stale);
         }
       }
-      // The text goes to whatever has the focus now: a page may have moved it, so look again.
-      const focused = await describeFocused(who.id, guest);
-      if (!focused || neverField(focused)) throw new BridgeError("never", MESSAGES.never);
-      await cdp(who.id, guest, "Input.insertText", { text: args.text });
+      // Text goes to whatever has the focus, and a page may move it at any time. So before every piece: look at the
+      // focus again, and let the page take input only in that one element until the piece is in.
+      for (let start = 0; start < args.text.length; start += TYPE_CHUNK) {
+        try {
+          const focused = await arm(id, guest, node);
+          // With a ref the focus must be on that element; a page that sends it elsewhere gets no text at all.
+          if (!focused && node !== null) throw new BridgeError("changed", "The page moved the focus away from that field. Read the page again.");
+          if (!focused || neverField(focused)) throw new BridgeError("never", MESSAGES.never);
+          if (node === null && fingerprint(guest, targetOf(focused, null, hostOf(urlOf(guest))), anchor) !== args.expect)
+            throw new BridgeError("changed", MESSAGES.stale);
+          await cdp(id, guest, "Input.insertText", { text: args.text.slice(start, start + TYPE_CHUNK) });
+        } finally {
+          if ((await disarm(id, guest)) > 0) throw new BridgeError("changed", "The page moved the focus while typing. Read the page again.");
+        }
+      }
       return { url: urlOf(guest) };
     },
     async key(who, args, guest) {
+      const id = who.id;
       const chord = parseKeys(args.keys);
-      const { target } = await expected(who.id, guest, "key", args);
-      if (target.never && !HARMLESS_KEYS.has(chord.key)) throw new BridgeError("never", MESSAGES.never);
-      await cdp(who.id, guest, "Input.dispatchKeyEvent", { ...chord, type: Object.hasOwn(chord, "text") ? "keyDown" : "rawKeyDown" });
-      const { text: _text, ...up } = chord;
-      await cdp(who.id, guest, "Input.dispatchKeyEvent", { ...up, type: "keyUp" });
+      await expected(id, guest, "key", args);
+      let down = false;
+      try {
+        // The same look at the focus in the step that arms the guard, so nothing can move in between.
+        const focused = await arm(id, guest, null);
+        const target = targetOf(focused, null, hostOf(urlOf(guest)));
+        if (fingerprint(guest, target, ["focus"]) !== args.expect) throw new BridgeError("changed", MESSAGES.stale);
+        if (target.never && !HARMLESS_KEYS.has(chord.key)) throw new BridgeError("never", MESSAGES.never);
+        down = true;
+        await cdp(id, guest, "Input.dispatchKeyEvent", { ...chord, type: Object.hasOwn(chord, "text") ? "keyDown" : "rawKeyDown" });
+      } finally {
+        const { text: _text, ...up } = chord;
+        const blocked = await disarm(id, guest);
+        if (down) await quiet(() => cdp(id, guest, "Input.dispatchKeyEvent", { ...up, type: "keyUp" }));
+        if (blocked > 0) throw new BridgeError("changed", "The page moved the focus before the key. Read the page again.");
+      }
       return { url: urlOf(guest) };
     },
     async confirm(who, args, guest) {

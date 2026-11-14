@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { BridgeError, CDP_METHODS, createBrowserAgent, neverField, outline, parseKeys, pngSize, targetOf } from "../src/browser-agent.js";
+import { BridgeError, CDP_METHODS, PAGE_SCRIPTS, createBrowserAgent, neverField, outline, parseKeys, pngSize, targetOf } from "../src/browser-agent.js";
 import { AGENT_IDLE_MS, createMiniBrowser } from "../src/mini-browser.js";
 
 const HEINZEL = { id: "chat-1", name: "Ada", kind: "heinzel" };
@@ -40,12 +40,16 @@ function fixture() {
       webRequest: { onBeforeRequest: () => {} } }),
     createView: () => {
       let url = "", dead = false, attached = false;
-      const page = { elements: {}, focused: null, at: null, covered: false, text: "Hello page", shot: image(800, 600), ax: [] };
+      // `pressed`: whether a press lands on the described element; `blocked`: input the guard held back; `on`: what
+      // the page does when a protocol call reaches it.
+      const page = { elements: {}, focused: null, at: null, covered: false, text: "Hello page", shot: image(800, 600), ax: [],
+        pressed: true, blocked: 0, armed: null, on: () => {} };
       const sent = [];
       const wire = { isAttached: () => attached, attach: (version) => { attached = true; sent.push(["attach", version]); },
         detach: () => { attached = false; sent.push(["detach"]); },
         sendCommand: async (method, params) => {
           sent.push([method, params]);
+          page.on(method, params);
           if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "F" } } };
           if (method === "Page.createIsolatedWorld") return { executionContextId: 7 };
           if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { clientWidth: 800, clientHeight: 600 } };
@@ -59,9 +63,21 @@ function fixture() {
           if (method === "DOM.getNodeForLocation") { if (page.at === null) throw new Error("No node"); return { backendNodeId: page.at }; }
           if (method === "DOM.getBoxModel") return { model: { content: [10, 10, 30, 10, 30, 20, 10, 20] } };
           if (method === "DOM.focus") { page.onFocus?.(params.backendNodeId); return {}; }
-          if (method === "Runtime.callFunctionOn")
-            return { result: { value: params.functionDeclaration.includes("other") ? !page.covered : page.elements[Number(params.objectId.slice(1))] } };
-          if (method === "Runtime.evaluate") return { result: { value: params.expression.includes("activeElement") ? page.focused : page.text } };
+          if (method === "Runtime.callFunctionOn") {
+            const node = Number(params.objectId.slice(1)), script = params.functionDeclaration;
+            if (script === PAGE_SCRIPTS.CONTAINS) return { result: { value: !page.covered } };
+            if (script === PAGE_SCRIPTS.PRESSED) return { result: { value: page.pressed } };
+            // The focus must be on the element the text is for.
+            if (script === PAGE_SCRIPTS.ARM_NODE) { page.armed = page.focused === page.elements[node] ? node : null; return { result: { value: page.armed === null ? null : page.focused } }; }
+            return { result: { value: page.elements[node] } };
+          }
+          if (method === "Runtime.evaluate") {
+            const script = params.expression;
+            if (script === PAGE_SCRIPTS.ARM_INPUT) { page.armed = "focus"; return { result: { value: page.focused } }; }
+            if (script === PAGE_SCRIPTS.DISARM) { page.armed = null; const blocked = page.blocked; page.blocked = 0; return { result: { value: blocked } }; }
+            if (script === PAGE_SCRIPTS.ARM_PRESS) return { result: { value: true } };
+            return { result: { value: script === PAGE_SCRIPTS.FOCUSED ? page.focused : page.text } };
+          }
           return {};
         } };
       const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
@@ -93,7 +109,7 @@ async function onPage(f, agent = HEINZEL) {
     { nodeId: "1", childIds: ["2", "3", "4"], role: { value: "RootWebArea" }, name: { value: "Shop" }, backendDOMNodeId: 1 },
     { nodeId: "2", parentId: "1", role: { value: "button" }, name: { value: "More" }, backendDOMNodeId: 5 },
     { nodeId: "3", parentId: "1", role: { value: "textbox" }, name: { value: "Search" }, backendDOMNodeId: 6, value: { value: "shoes" } },
-    { nodeId: "4", parentId: "1", role: { value: "textbox" }, name: { value: "Password" }, backendDOMNodeId: 9 },
+    { nodeId: "4", parentId: "1", role: { value: "textbox" }, name: { value: "Password" }, backendDOMNodeId: 9, value: { value: "hunter2" } },
   ];
   await f.call(agent, "read", { tab: tab.id });
   return { tab: tab.id, view };
@@ -207,6 +223,10 @@ test("read: refs come from the accessibility tree and die with the document", as
   assert.equal(read.content, '- RootWebArea "Shop"\n  - button "More" [ref_1]\n  - textbox "Search" value="shoes" [ref_2]\n  - textbox "Password" [ref_3]');
   assert.equal(read.url, "https://shop.example.com/");
   assert.equal((await f.call(HEINZEL, "read", { tab, filter: "interactive", max_chars: 10 })).truncated, true);
+  // What a field holds is shown for ordinary fields only (the password above is not), and for none on a page that takes a card.
+  view.page.elements[6] = { ...FIELD, payment_page: true };
+  assert.doesNotMatch((await f.call(HEINZEL, "read", { tab })).content, /value=/);
+  view.page.elements[6] = FIELD;
   assert.equal((await f.call(HEINZEL, "read", { tab, ref: "ref_1" })).content, '- button "More" [ref_1]');
   assert.deepEqual(await f.call(HEINZEL, "text", { tab, max_chars: 5 }), { url: "https://shop.example.com/", title: "Title", content: "Hello", truncated: true });
   const described = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
@@ -239,11 +259,13 @@ test("two-step input: the click runs only on the target that was described", asy
   view.page.elements[5] = BUTTON;
   // Something else lies where the pointer would land.
   view.page.at = 77; view.page.elements[77] = { ...BUTTON, name: "Pay" }; view.page.covered = true;
-  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), "changed");
   assert.deepEqual(inputs(), []);
+  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), "changed");
+  // The pointer went there, nothing was pressed.
+  assert.deepEqual(inputs().map(([, event]) => event.type), ["mouseMoved"]);
   view.page.covered = false;
   assert.deepEqual(await f.call(HEINZEL, "click", { tab, ref: "ref_1", count: 2, modifiers: ["shift"], expect: fingerprint }), { url: "https://shop.example.com/" });
-  assert.deepEqual(inputs().map(([, event]) => [event.type, event.x, event.y, event.clickCount, event.modifiers]),
+  assert.deepEqual(inputs().slice(-5).map(([, event]) => [event.type, event.x, event.y, event.clickCount, event.modifiers]),
     [["mouseMoved", 20, 15, undefined, 8], ["mousePressed", 20, 15, 1, 8], ["mouseReleased", 20, 15, 1, 8], ["mousePressed", 20, 15, 2, 8], ["mouseReleased", 20, 15, 2, 8]]);
   // By coordinates: what is there is described; nothing there, or a frame, is not resolved.
   view.page.at = 5;
@@ -256,8 +278,114 @@ test("two-step input: the click runs only on the target that was described", asy
   view.page.at = 8; view.page.elements[8] = { ...BUTTON, tag: "iframe", name: "" };
   const frame = await f.call(HEINZEL, "describe", { tab, action: "click", x: 5, y: 5 });
   assert.equal(frame.target.resolved, false);
+  // Two controls that read the same are still two targets: a yes for one is no yes for the other, nor for another point.
+  view.page.at = 77; view.page.elements[77] = BUTTON;
+  const twin = await f.call(HEINZEL, "describe", { tab, action: "click", x: 20, y: 15 });
+  assert.deepEqual(twin.target, point.target);
+  assert.notEqual(twin.fingerprint, point.fingerprint);
+  assert.notEqual((await f.call(HEINZEL, "describe", { tab, action: "click", x: 21, y: 15 })).fingerprint, twin.fingerprint);
   for (const args of [{ x: 1 }, { x: 1, y: 1, ref: "ref_1" }, { x: -1, y: 1 }, { x: 1.5, y: 1 }, { ref: "ref_0" }, { ref: "ref_1", extra: true }])
     await f.refused(f.call(HEINZEL, "describe", { tab, action: "click", ...args }), "invalid");
+});
+
+test("click race: a frame the page slides under the pointer is never clicked", async () => {
+  const f = fixture();
+  const { tab, view } = await onPage(f);
+  view.page.elements[8] = { ...BUTTON, tag: "iframe", name: "" };
+  const mouse = () => view.sent.filter(([name]) => name === "Input.dispatchMouseEvent").map(([, event]) => [event.type, event.x, event.y]);
+  const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  view.page.at = 5;
+  // On mousemove the page puts another site's frame where the pointer is: seen before anything is pressed.
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mouseMoved") { view.page.at = 8; view.page.covered = true; }
+  };
+  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), "changed");
+  assert.deepEqual(mouse(), [["mouseMoved", 20, 15]]);
+  // It waits for the press instead (a timer): the press lands in the frame, the recorder saw no press on the button,
+  // and the button is let go outside the page, so the frame gets no click.
+  view.sent.length = 0; view.page.at = 5; view.page.covered = false;
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") view.page.pressed = false;
+  };
+  await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }),
+    (error) => error.code === "changed" && /Nothing was clicked/.test(error.message));
+  assert.deepEqual(mouse(), [["mouseMoved", 20, 15], ["mousePressed", 20, 15], ["mouseReleased", -1, -1]]);
+  // The press landed on the button, but the page turned it into something else before the release.
+  view.sent.length = 0; view.page.pressed = true;
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") view.page.elements[5] = { ...BUTTON, name: "Pay now", submit: true };
+  };
+  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), "changed");
+  assert.deepEqual(mouse().at(-1), ["mouseReleased", -1, -1]);
+  view.page.elements[5] = BUTTON;
+  // The second press of a double click is checked like the first.
+  view.sent.length = 0;
+  let presses = 0;
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed" && ++presses === 2) view.page.pressed = false;
+  };
+  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", count: 2, expect: fingerprint }), "changed");
+  assert.deepEqual(mouse().map(([type, x]) => [type, x]), [["mouseMoved", 20], ["mousePressed", 20], ["mouseReleased", 20], ["mousePressed", 20], ["mouseReleased", -1]]);
+  // By coordinates, after the person's yes to a frame there: a different frame under the point is not that target.
+  view.sent.length = 0; view.page.pressed = true; view.page.on = () => {};
+  view.page.at = 8;
+  const frame = await f.call(HEINZEL, "describe", { tab, action: "click", x: 40, y: 40 });
+  view.page.elements[88] = view.page.elements[8];
+  view.page.on = (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mouseMoved") view.page.at = 88;
+  };
+  await f.refused(f.call(HEINZEL, "click", { tab, x: 40, y: 40, expect: frame.fingerprint }), "changed");
+  assert.deepEqual(mouse(), [["mouseMoved", 40, 40]]);
+  view.page.on = () => {}; view.page.at = 8;
+  await f.call(HEINZEL, "click", { tab, x: 40, y: 40, expect: frame.fingerprint });
+  assert.deepEqual(mouse().slice(-2), [["mousePressed", 40, 40], ["mouseReleased", 40, 40]]);
+});
+
+test("typing race: text and keys reach only the element whose focus was checked", async () => {
+  const f = fixture();
+  const { tab, view } = await onPage(f);
+  const texts = () => view.sent.filter(([name]) => name === "Input.insertText").map(([, params]) => params.text.length);
+  const scripts = (script) => view.sent.filter(([name, params]) => name.startsWith("Runtime.") && (params.expression ?? params.functionDeclaration) === script).length;
+  view.page.onFocus = (node) => { view.page.focused = view.page.elements[node]; };
+  const search = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_2" });
+  // Long text goes in pieces, with the focus checked and the guard set before each and lifted after it.
+  await f.call(HEINZEL, "type", { tab, ref: "ref_2", text: "x".repeat(450), expect: search.fingerprint });
+  assert.deepEqual(texts(), [200, 200, 50]);
+  assert.equal(scripts(PAGE_SCRIPTS.ARM_NODE), 3);
+  assert.equal(scripts(PAGE_SCRIPTS.DISARM), 3);
+  assert.equal(view.page.armed, null);
+  // After the first piece the page moves the focus to its password field: no second piece.
+  view.sent.length = 0;
+  view.page.on = (method) => { if (method === "Input.insertText") view.page.focused = PASSWORD; };
+  await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_2", text: "x".repeat(450), expect: search.fingerprint }), "changed");
+  assert.deepEqual(texts(), [200]);
+  assert.equal(view.page.armed, null);
+  // The focus moved in the instant between the check and the text: the guard held the input back, and that is reported.
+  view.sent.length = 0;
+  view.page.on = (method) => { if (method === "Input.insertText") view.page.blocked = 1; };
+  await assert.rejects(f.call(HEINZEL, "type", { tab, ref: "ref_2", text: "abc", expect: search.fingerprint }),
+    (error) => error.code === "changed" && /moved the focus/.test(error.message));
+  // Without a ref: the focused field is checked against what was described, before every piece.
+  view.sent.length = 0; view.page.on = () => {}; view.page.focused = FIELD;
+  const focused = await f.call(HEINZEL, "describe", { tab, action: "type" });
+  view.page.on = (method) => { if (method === "Input.insertText") view.page.focused = { ...FIELD, hints: "other" , name: "Other" }; };
+  await f.refused(f.call(HEINZEL, "type", { tab, text: "x".repeat(300), expect: focused.fingerprint }), "changed");
+  assert.deepEqual(texts(), [200]);
+  // A key: the same guard, and no key at all when the focus is elsewhere by then.
+  view.sent.length = 0; view.page.on = () => {}; view.page.focused = FIELD;
+  const enter = await f.call(HEINZEL, "describe", { tab, action: "key" });
+  view.page.on = (method) => { if (method === "Input.dispatchKeyEvent") view.page.blocked = 1; };
+  await f.refused(f.call(HEINZEL, "key", { tab, keys: "Enter", expect: enter.fingerprint }), "changed");
+  view.sent.length = 0;
+  // The focus moves right after the first look at it: the look that sets the guard sees the other field.
+  let looked = false;
+  view.page.on = (method, params) => {
+    if (method === "Runtime.evaluate" && params.expression === PAGE_SCRIPTS.FOCUSED) looked = true;
+    else if (looked && method === "Page.getFrameTree") view.page.focused = PASSWORD;
+  };
+  await f.refused(f.call(HEINZEL, "key", { tab, keys: "Enter", expect: enter.fingerprint }), "changed");
+  assert.deepEqual(view.sent.filter(([name]) => name === "Input.dispatchKeyEvent"), []);
+  assert.equal(view.page.armed, null);
 });
 
 test("never: passwords, one-time codes and card fields are typed by the person only", async () => {
@@ -277,7 +405,7 @@ test("never: passwords, one-time codes and card fields are typed by the person o
   assert.deepEqual(typed().map(([, params]) => params.text), ["blue shoes"]);
   // ...unless the page moves the focus to a password field when it is focused.
   view.page.onFocus = () => { view.page.focused = PASSWORD; };
-  await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_2", text: "again", expect: search.fingerprint }), "never");
+  await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_2", text: "again", expect: search.fingerprint }), "changed");
   // Without a ref the focused element is the target: a secret field, a frame or nothing takes no text.
   for (const [focused, never] of [[PASSWORD, "password"], [{ ...FIELD, autocomplete: "one-time-code" }, "one-time-code"],
     [{ ...FIELD, hints: "cardnumber" }, "payment-card"], [{ ...BUTTON, tag: "iframe" }, "frame"], [null, null]]) {
@@ -311,6 +439,11 @@ test("field and key rules as data", () => {
   assert.equal(neverField({ ...FIELD, hints: "otp-input numeric" }), "one-time-code");
   assert.equal(neverField({ ...FIELD, hints: "Verification code" }), "one-time-code");
   assert.equal(neverField({ ...FIELD, hints: "cvc" }), "payment-card");
+  // What the page script found on the live page: a field drawn as dots, or one box of a split code.
+  assert.equal(neverField({ ...FIELD, secret: "password" }), "password");
+  assert.equal(neverField({ ...FIELD, secret: "one-time-code" }), "one-time-code");
+  assert.equal(neverField({ ...BUTTON, secret: "password" }), null);
+  assert.equal(neverField({ ...FIELD, secret: "anything-else" }), null);
   assert.equal(neverField({ ...FIELD, hints: "shipping option" }), null);
   assert.equal(neverField({ ...BUTTON, hints: "password" }), null);
   assert.equal(neverField(null), null);
