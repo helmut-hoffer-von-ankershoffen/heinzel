@@ -623,6 +623,9 @@ class Capabilities:
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
+            if name in capability.core_only:
+                denied[name] = f"Only hz itself calls {capability.name}.{name} (ADR 0160); {requester.label} can't."
+                continue
             if inspection and (name not in capability.inspection_methods or mode != "read"):
                 denied[name] = f"{requester.label} may only inspect {capability.name}; {name} needs an operation grant."
                 continue

@@ -7,10 +7,19 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel import HeinzelError, Module, NotSupportedError, SelfAnswer, SelfMessage
-from heinzel.kernel import CAPABILITIES, SELF_OPTION_LENGTH, SELF_OPTIONS, Message, PostedMessage, Window
+from heinzel.kernel import (
+    CAPABILITIES,
+    SELF_OPTION_LENGTH,
+    SELF_OPTIONS,
+    Message,
+    OperationLet,
+    PostedMessage,
+    Window,
+)
 from heinzel.kernel._capabilities import Capability, declared_unsupported
 from heinzel.kernel._protocols import Chat
 from heinzel.kernel._self_chat import (
+    MAX_ANSWER,
     MAX_SELF_TEXT,
     SelfChat,
     checked_answer,
@@ -69,12 +78,13 @@ def test_chat_has_optional_self_methods_that_write():
     assert spec.methods["notify_self"] == "write"
     assert spec.methods["ask_self"] == "write"
     assert spec.optional == {"notify_self", "ask_self"}
+    assert spec.core_only == {"notify_self", "ask_self"}
     assert callable(Chat.notify_self)
     assert callable(Chat.ask_self)
 
 
 def test_optional_methods_must_be_methods_of_the_capability():
-    with pytest.raises(ValueError, match="optional methods"):
+    with pytest.raises(ValueError, match="optional and core-only"):
         Capability(name="x", protocol=Chat, summary="", methods={"post": "write"}, optional=frozenset({"nope"}))
 
 
@@ -193,3 +203,43 @@ def test_the_self_only_dummy_passes_the_conformance_check():
 
     assert_adapter(SelfOnly, "chat", modes={"read", "write"})
     assert_adapter(ChannelsOnly, "chat", modes={"read", "write"})
+
+
+def test_no_operation_can_reach_the_self_methods_through_its_handle(make_kernel):
+    """A publish operation with chat:write could otherwise run its own 'approval' in the owner's direct messages."""
+    SelfOnly.sent.clear()
+    probe = Module("probe", "Tries to talk to the owner itself.")
+
+    @probe.operation(read_only=False, requires=["chat:read,write"])
+    def nag(chat: Chat) -> str:
+        """Ask the owner to approve something."""
+        for call in (
+            lambda: chat.ask_self("Approve the write?", options=("Approve", "Reject"), timeout=5),
+            lambda: chat.notify_self("Approved."),
+        ):
+            with pytest.raises(HeinzelError, match="Only hz itself calls chat"):
+                call()
+        return "refused"
+
+    chat = Module("acmechat", "Acme chat.")
+    chat.provides("chat", modes={"read", "write"})(SelfOnly)
+    kernel = make_kernel(acmechat=chat, probe=probe)
+    operation = next(let for _record, let in kernel.lets(OperationLet) if let.name == "nag")
+    assert kernel.invoke(operation) == "refused"
+    assert SelfOnly.sent == [], "the adapter saw nothing"
+
+
+def test_core_only_methods_must_be_methods_of_the_capability():
+    with pytest.raises(ValueError, match="core-only"):
+        Capability(name="x", protocol=Chat, summary="", methods={"post": "write"}, core_only=frozenset({"nope"}))
+
+
+def test_an_option_answer_is_exactly_the_offered_label():
+    answer = checked_answer(SelfAnswer(option="Yes", text="Yes, and also delete the repo"), ("Yes", "No"), "a")
+    assert (answer.text, answer.option) == ("Yes", "Yes")
+
+
+def test_a_typed_answer_is_no_longer_than_a_typed_message():
+    assert len(checked_answer(SelfAnswer(text="x" * MAX_ANSWER), (), "a").text) == MAX_ANSWER
+    with pytest.raises(HeinzelError, match="longer than"):
+        checked_answer(SelfAnswer(text="x" * (MAX_ANSWER + 1)), (), "a")

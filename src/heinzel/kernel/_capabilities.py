@@ -67,9 +67,13 @@ class Capability:
     """Methods added after adapters shipped (ADR 0160): an adapter that doesn't define one doesn't support it, as if it
     listed it in its `unsupported` attribute (ADR 0159), so it keeps loading."""
 
+    core_only: frozenset[str] = frozenset()
+    """Methods only hz itself calls, through its own trusted view (ADR 0160): no requester's handle offers them, in any
+    mode, so no operation or playbook can talk to the user in their own direct messages or read their answers."""
+
     def __post_init__(self) -> None:
-        if not self.optional <= set(self.methods):
-            msg = f"Capability {self.name!r} optional methods must be declared methods"
+        if not (self.optional | self.core_only) <= set(self.methods):
+            msg = f"Capability {self.name!r} optional and core-only methods must be declared methods"
             raise ValueError(msg)
         if any(self.methods.get(name) != "read" for name in self.inspection_methods):
             msg = f"Capability {self.name!r} inspection methods must be declared read methods"
@@ -141,6 +145,7 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                     {"messages": "read", "post": "write", "notify_self": "write", "ask_self": "write"}
                 ),
                 optional=frozenset({"notify_self", "ask_self"}),
+                core_only=frozenset({"notify_self", "ask_self"}),
             ),
             Capability(
                 name="code-host",

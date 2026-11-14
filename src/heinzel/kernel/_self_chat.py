@@ -33,6 +33,8 @@ METHOD: dict[SelfUse, str] = {"notifications": "notify_self", "questions": "ask_
 """The `Chat` method each use needs."""
 MAX_SELF_TEXT = 3000
 """Longest text hz sends in one self message; longer text is cut with an ellipsis and the app keeps the whole."""
+MAX_ANSWER = 32000
+"""Longest typed answer taken from chat: what the app's composer lets you send to a Heinzel."""
 MAX_TIMEOUT = 3600.0
 """Longest a question waits in chat, in seconds."""
 
@@ -107,10 +109,10 @@ class SelfChat:
 
 
 def checked_answer(answer: object, offered: Sequence[str], adapter: str) -> SelfAnswer:
-    """`answer` cleaned, with its option one of `offered`.
+    """`answer` cleaned: a chosen option is exactly the offered label and nothing else; a typed reply is bounded.
 
     Raises:
-        HeinzelError: If it isn't a `SelfAnswer`, or names an option that wasn't offered.
+        HeinzelError: If it isn't a `SelfAnswer`, names an option that wasn't offered, or is too long.
     """
     if not isinstance(answer, SelfAnswer):
         msg = f"The chat adapter {adapter} answered ask_self with something other than a SelfAnswer."
@@ -120,8 +122,13 @@ def checked_answer(answer: object, offered: Sequence[str], adapter: str) -> Self
     if answer.option is not None and answer.option not in offered:
         msg = f"The chat adapter {adapter} answered with an option that wasn't offered."
         raise HeinzelError(msg)
-    text = clean_text(answer.text).strip() or (answer.option or "")
-    return SelfAnswer(thread=_cleaned(answer.thread), text=text, option=answer.option)
+    if answer.option is not None:
+        return SelfAnswer(thread=_cleaned(answer.thread), text=answer.option, option=answer.option)
+    text = clean_text(answer.text).strip()
+    if len(text) > MAX_ANSWER:
+        msg = f"The chat answer is longer than the {MAX_ANSWER} characters a message to a Heinzel may have."
+        raise HeinzelError(msg)
+    return SelfAnswer(thread=_cleaned(answer.thread), text=text)
 
 
 def self_text(text: str) -> str:

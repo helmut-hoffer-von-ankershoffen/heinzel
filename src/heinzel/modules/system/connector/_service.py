@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 
 from heinzel import Check, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, SetupLet, Status
 from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement
+from heinzel.kernel._capabilities import declared_unsupported
 from heinzel.modules.system.connector._models import (
     Access,
     AdapterCandidate,
@@ -121,7 +122,7 @@ class ConnectorService:
                     summary=_summary(getattr(spec.protocol, method)),
                 )
                 for method, mode in spec.methods.items()
-                if mode in let.modes
+                if mode in let.modes and method not in declared_unsupported(let.factory, spec)
             )
         setup = any(r.qualname == record.qualname for r, _ in self._kernel.lets(SetupLet))
         sign_in = record.qualname in self._sign_ins.supported()
