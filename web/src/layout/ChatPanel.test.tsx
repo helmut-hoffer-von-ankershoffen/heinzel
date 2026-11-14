@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseEvents } from "@/api/stream";
@@ -46,6 +46,37 @@ describe("ChatPanel", () => {
     expect(
       calls.slice(created + 1).some((request) => new URL(request.url).pathname.endsWith("/runner/chat/show")),
     ).toBe(false);
+  });
+
+  it("keeps the new Heinzel's chat, and what is typed in it, when Start links it", async () => {
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    let created = false;
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": () => {
+        created = true;
+        return { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] };
+      },
+      "/api/heinzel/sessions": () => ({
+        sessions: created
+          ? [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 0, updated_at: "2026-11-14T09:00:00Z" }]
+          : [],
+      }),
+      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    await user.click(await panel.findByRole("button", { name: "Start" }));
+    const composer = await panel.findByLabelText("Message Helmi");
+    await waitFor(() => expect(composer).toBeEnabled());
+    await user.type(composer, "Hello right after Start");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    // One chat instance from Start on: the composer the person typed in is still the one shown, with their words.
+    expect(panel.getByLabelText("Message Helmi")).toHaveValue("Hello right after Start");
+    expect(panel.getByLabelText("Message Helmi")).toBe(composer);
   });
 });
 

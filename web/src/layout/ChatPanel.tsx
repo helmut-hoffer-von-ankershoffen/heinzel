@@ -15,17 +15,11 @@ import { clearChatLink, isDurableSession } from "@/lib/chatIntent";
 import { splash } from "@/splash/store";
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
-  const [params] = useSearchParams();
-  const durableId = params.get("chat");
-  if (durableId && isDurableSession(durableId))
-    return <DurableSession key={durableId} sessionId={durableId} onClose={onCollapse} />;
-  return <DefaultHeinzel onCollapse={onCollapse} />;
-}
-
-/** The Heinzel the panel opens without a link; with none yet, the first start names one. */
-function DefaultHeinzel({ onCollapse }: { onCollapse: () => void }) {
-  const [, setParams] = useSearchParams();
-  const heinzels = useHeinzelSessions();
+  const [params, setParams] = useSearchParams();
+  const linked = params.get("chat");
+  const durableId = linked && isDurableSession(linked) ? linked : null;
+  // The list is read only without a link: it names the default Heinzel, or says there is none yet.
+  const heinzels = useHeinzelSessions(durableId === null);
   // While the splash is up (hz isn't answering, or is restarting) it already says what is wrong: the panel's error is
   // then a status, not a second alert (role="alert" only for a new failure in this view).
   const splashUp = useSyncExternalStore(splash.subscribe, splash.get).phase !== "ready";
@@ -34,6 +28,10 @@ function DefaultHeinzel({ onCollapse }: { onCollapse: () => void }) {
   useEffect(() => {
     if (listed) settleFirstHeinzel();
   }, [listed]);
+  // One place and one key for the Heinzel's chat, linked or the default: when Start links the Heinzel the panel already
+  // shows, it is the same chat, so nothing typed right after Start is lost to a fresh composer.
+  const chat = (sessionId: string) => <DurableSession key={sessionId} sessionId={sessionId} onClose={onCollapse} />;
+  if (durableId) return chat(durableId);
   if (heinzels.isPending)
     return (
       <p role="status" className="p-3 text-sm text-muted-foreground">
@@ -50,7 +48,7 @@ function DefaultHeinzel({ onCollapse }: { onCollapse: () => void }) {
       </div>
     );
   const fallback = defaultHeinzel(heinzels.data?.sessions ?? [], rememberedHeinzel());
-  if (fallback) return <DurableSession key={fallback} sessionId={fallback} onClose={onCollapse} />;
+  if (fallback) return chat(fallback);
   return (
     <FirstHeinzel
       onClose={onCollapse}
