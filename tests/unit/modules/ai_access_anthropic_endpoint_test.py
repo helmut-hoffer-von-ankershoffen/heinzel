@@ -379,13 +379,39 @@ def test_ambient_custom_headers_never_reach_the_endpoint(proxy: Proxy, monkeypat
         assert {"x-gateway-token", "x-team", "x-later"}.isdisjoint(sent.headers)
 
 
-def test_an_ambient_header_that_overrides_the_key_takes_it_out(proxy: Proxy, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The variable may name `Authorization`: then no token goes at all, rather than the gateway's."""
-    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "Authorization: Bearer gw-must-not-leak\nanthropic-beta: env-beta")
+@pytest.mark.parametrize("name", ["Authorization", "authorization", "AUTHORIZATION"])
+def test_an_ambient_authorization_never_replaces_the_key(
+    proxy: Proxy, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """The variable may name `Authorization`: hz's own key still goes, never the gateway's token."""
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", f"{name}: Bearer gw-must-not-leak\nanthropic-beta: env-beta")
     proxy.replies.append(httpx2.Response(200, json=message([{"type": "text", "text": "OK"}])))
 
     run(build_model("claude-example-1", "sk-proxy", BASE, api="anthropic"))
 
     sent = proxy.requests[0]
+    assert sent.headers.get_list("authorization") == ["Bearer sk-proxy"]
     assert "must-not-leak" not in str(sent.headers)
     assert "env-beta" not in sent.headers.get("anthropic-beta", "")
+
+
+def test_only_the_ambient_item_of_a_shared_header_goes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A header hz sends with items of its own keeps them; a header the request lacks is left alone."""
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "anthropic-beta: env-beta\nx-absent: env-only")
+    seen: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200)
+
+    client = _pydantic._without_ambient_headers(httpx2.AsyncClient(transport=httpx2.MockTransport(answer)), "sk-proxy")
+
+    async def send() -> None:
+        async with client:
+            await client.get(BASE, headers={"anthropic-beta": "own-beta, env-beta, other-beta"})
+
+    asyncio.run(send())
+
+    assert seen[0].headers["anthropic-beta"] == "own-beta, other-beta"
+    assert "x-absent" not in seen[0].headers
+    assert seen[0].headers["authorization"] == "Bearer sk-proxy"

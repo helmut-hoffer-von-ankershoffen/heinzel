@@ -161,8 +161,9 @@ Checkable statements:
     are confined to the working directory:
     - no `..`, no symbolic link anywhere on the path (each component opened with `O_NOFOLLOW` from a directory
       handle held for the session), no hard-linked file, no `.git`, regular files only;
-    - `/` and the home directory are refused as working directories, by the identity of the opened folder, so
-      another spelling, a different case on macOS or a symlink swapped in after the check doesn't pass;
+    - `/`, the home directory and every folder above it (`/Users`, `/home`), and on macOS the data volume and
+      its folders above the home directory are refused as working directories, by the identity of the opened
+      folder, so another spelling, a different case on macOS or a symlink swapped in after the check doesn't pass;
     - each call runs in an isolated child process (`python -I`, no environment, only the directory handle), stopped
       at 20 s or the run's remaining time, whichever is sooner;
     - each call reads at most 64 MiB and visits at most 20,000 entries; `read` returns at most 2,000 lines or
@@ -177,8 +178,9 @@ Checkable statements:
        requests (sampling, roots, elicitation) are answered as not supported, and only text content is returned.
     6. `ANTHROPIC_CUSTOM_HEADERS` in hz's environment is not sent to an `api = "anthropic"` endpoint, although
        Anthropic's client reads it: hz's own HTTP client drops every header it names, with the value it gives,
-       before a request leaves (a gateway setup meant for Claude Code would otherwise send its token there). The
-       Claude Code runner is unchanged.
+       before a request leaves (a gateway setup meant for Claude Code would otherwise send its token there), and
+       puts hz's own `Authorization: Bearer <key>` back should the variable have replaced it. The Claude Code
+       runner is unchanged.
 20. **The built-in Model API option at an Anthropic endpoint.** With `[ai.access] api = "anthropic"` it speaks the
     Messages API at `base_url`, with the stored key as a bearer token, and lists no models. There is no token
     command (owner decision). `run_granted` refuses any binding that no pricing policy covers (any plugin, any

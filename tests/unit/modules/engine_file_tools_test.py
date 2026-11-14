@@ -330,7 +330,23 @@ def test_the_whole_disk_or_home_is_refused_by_identity(tmp_path: Path, wide: str
     else:
         folder = Path("/") if wide == "root" else home
 
-    with pytest.raises(FileToolError, match="whole disk or your home"):
+    with pytest.raises(FileToolError, match="whole disk, your home or a folder above it"):
         ConfinedFiles(folder)
     assert _file_tools.too_wide(folder.stat())
     assert not _file_tools.too_wide(tmp_path.stat())
+
+
+@pytest.mark.parametrize(
+    "above",
+    ["/Users", "/Users/", "/home", "/System", "/System/Volumes", "/System/Volumes/Data", "/System/Volumes/Data/Users"],
+)
+def test_every_folder_above_home_or_the_data_volume_is_refused(above: str) -> None:
+    """`/Users` or `/home` holds every user's home, and the data volume holds the whole disk (ADR 0159, A3)."""
+    folder = Path(above)
+    if not folder.is_dir():
+        pytest.skip(f"{above} doesn't exist here")
+    if above in {"/Users", "/Users/", "/home"} and folder not in Path.home().parents:
+        pytest.skip(f"{above} isn't above the home folder here")
+
+    with pytest.raises(FileToolError, match="whole disk, your home or a folder above it"):
+        ConfinedFiles(folder)

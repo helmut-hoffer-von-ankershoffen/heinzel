@@ -323,7 +323,10 @@ class EngineRunner:
             msg = f"The run's working directory {tools.working_dir} does not exist or is not a directory."
             raise HeinzelError(msg)
         if tools.working_dir is not None and tools.read_files and _too_wide(tools.working_dir):
-            msg = f"The run's working directory {tools.working_dir} is the whole disk or your home; pick a project."
+            msg = (
+                f"The run's working directory {tools.working_dir} is the whole disk, your home or a folder above it; "
+                "pick a project."
+            )
             raise HeinzelError(msg)
         chosen = self._models(model, effort)
         warnings = list(chosen.warnings)
@@ -470,7 +473,7 @@ class EngineRunner:
 
 
 def _too_wide(directory: Path) -> bool:
-    """Whether reading `directory` would expose everything: the filesystem's root or the home folder itself.
+    """Whether reading `directory` would expose everything: the filesystem's root, the home folder or one above it.
 
     An early, clear refusal; `ConfinedFiles` checks the folder it opens again, by identity.
     """

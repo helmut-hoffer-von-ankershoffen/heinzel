@@ -101,13 +101,15 @@ def _ambient_headers() -> set[tuple[str, str]]:
     }
 
 
-def _without_ambient_headers(client: Any) -> Any:  # noqa: ANN401 - httpx2.AsyncClient, lazily imported
-    """`client`, made to drop every header `ANTHROPIC_CUSTOM_HEADERS` adds before a request leaves.
+def _without_ambient_headers(client: Any, key: str) -> Any:  # noqa: ANN401 - httpx2.AsyncClient, lazily imported
+    """`client`, made to drop every header `ANTHROPIC_CUSTOM_HEADERS` adds before a request leaves, with `key` kept.
 
     Anthropic's client reads that variable each time it is built or copied (a copy per request with retries set),
     so a gateway setup meant for Claude Code would send its headers, often a token, to this endpoint. Only the
     headers the variable names with the value it gives (then or now) go; a value the request appends to one, as
-    `anthropic-beta` does, loses only that item. The client hz builds sends only what hz chose (ADR 0159).
+    `anthropic-beta` does, loses only that item; a header hz itself sends with the same value goes too. The
+    variable may name `Authorization` and so replace hz's own: `Bearer <key>` is put back after the strip. The
+    client hz builds sends only what hz chose (ADR 0159).
     """
     built = _ambient_headers()
 
@@ -122,6 +124,7 @@ def _without_ambient_headers(client: Any) -> Any:  # noqa: ANN401 - httpx2.Async
             elif value in items:
                 kept = [item for item in items if item != value]
                 request.headers[name] = ", ".join(kept)
+        request.headers["authorization"] = f"Bearer {key}"
 
     client.event_hooks = {**client.event_hooks, "request": [*client.event_hooks["request"], drop]}
     return client
@@ -137,7 +140,7 @@ def _anthropic_endpoint(model: str, key: str | None, base_url: str) -> Any:  # n
     from pydantic_ai.models.anthropic import AnthropicModel  # noqa: PLC0415
     from pydantic_ai.providers.anthropic import AnthropicProvider  # noqa: PLC0415
 
-    client = _without_ambient_headers(_local_client(base_url) or create_async_httpx2_client())
+    client = _without_ambient_headers(_local_client(base_url) or create_async_httpx2_client(), key or NO_KEY)
     provider = AnthropicProvider(api_key=key or NO_KEY, base_url=base_url, http_client=client)
     return AnthropicModel(endpoint_model(model), provider=provider)
 
