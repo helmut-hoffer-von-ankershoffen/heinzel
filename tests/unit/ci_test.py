@@ -1871,7 +1871,9 @@ def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
     assert re.search(r"^\s*bash scripts/bootstrap-pyyaml\.sh$", bootstrap["run"], re.MULTILINE)
     assert 'requires-python = ">=3.15"' in bootstrap["run"]
     script = (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
-    assert 'rm -f "$site"/pyyaml-6.0.3.dist-info/direct_url.json' in script
+    assert 'install --lock uv.lock --python "$project_python"' in script
+    module = (REPO / "src" / "heinzel" / "bootstrap_pyyaml.py").read_text(encoding="utf-8")
+    assert '"direct_url.json").unlink(missing_ok=True)' in module  # a later sync never rebuilds it from source
     for name, job in _ci_jobs().items():
         for step in job.get("steps", []):
             if "uv sync" in step.get("run", ""):

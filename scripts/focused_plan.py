@@ -64,8 +64,8 @@ PROTECTED_FILES = (
     "scripts/focused_job.py",
     "scripts/focused_coverage.py",
     "scripts/focused_coverage.py.lock",
-    "scripts/pyyaml-build-requirements.txt",
     "scripts/release_candidate.py",
+    "src/heinzel/bootstrap_pyyaml.py",
     "uv.lock",
 )
 MAX_PLAN = 48 * 1024
