@@ -338,7 +338,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | End leftover Heinzel Notifier processes and make macOS forget its stray copies. | `hz system notify clean` | — | — | — | yes | expert |
 | Recover a durable notification store whose replay keys a legacy notice list replaced. | `hz system notify recover` | — | — | — | yes | expert |
 | Open the system's notification settings to allow hz's pop-ups (macOS: System Settings). | `hz system notify settings` | — | — | `POST /api/system/notify/settings` | yes | expert |
-| Show whether notices and questions also reach you in your own chat messages, and through which connector. | `hz system notify chat` | `system_notify_chat` | — | `GET /api/system/notify/chat` |  | expert |
+| Show whether notices and questions also reach you in chat, and through which connector. | `hz system notify chat` | `system_notify_chat` | — | `GET /api/system/notify/chat` |  | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).
 

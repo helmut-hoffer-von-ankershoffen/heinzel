@@ -3136,7 +3136,7 @@ $ hz system notify ack [OPTIONS] {ids}
 
 #### `hz system notify chat`
 
-(expert) Show whether notices and questions also reach you in your own chat messages, and through which connector.
+(expert) Show whether notices and questions also reach you in chat, and through which connector.
 
 **Usage**:
 

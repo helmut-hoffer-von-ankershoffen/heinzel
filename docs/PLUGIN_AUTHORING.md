@@ -253,6 +253,47 @@ method your system can't do raises `NotSupportedError(capability, method, reason
 attribute, `unsupported = frozenset({"replace_section"})`: then Heinzel refuses the call before it reaches you, and
 the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
 
+#### A chat that can message its owner
+
+A `chat` connector may also reach the person in their own direct messages
+([ADR 0160](adr/0160-chat-is-an-extra-place-for-notices-and-questions.md)). Implement either or both:
+
+```python
+import threading
+from collections.abc import Sequence
+
+from heinzel import SelfAnswer, SelfMessage
+
+
+class OwnChat:
+    unsupported = frozenset({"messages", "post"})  # this one talks only to its owner
+
+    def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+        ...  # send `text` to the owner, as a reply in `thread` if given; label it with `context`
+        return SelfMessage(id="m-1", thread=thread or "m-1")
+
+    def ask_self(
+        self,
+        question: str,
+        *,
+        options: Sequence[str] = (),
+        timeout: float,
+        thread: str | None = None,
+        context: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> SelfAnswer:
+        ...  # options as buttons; wait for a button or a reply in the thread, checking `cancel` every few seconds
+        return SelfAnswer(thread="m-1", timed_out=True)
+```
+
+Heinzel calls them itself, in a worker thread, when the person switches on "Notices also in chat" or "Questions also
+in chat" under Settings, Notifications; no operation, playbook or other plugin can. Return `SelfAnswer(option=label,
+text=label)` for a button, `SelfAnswer(text=reply)` for a typed reply, and `SelfAnswer(timed_out=True)` when the time
+ran out or `cancel` was set; never raise for those. Count only the owner's own answer. Neutralise mention syntax as
+for `post`, and pass every string you return through `clean_text`. These buttons answer a question, never approve a
+write: keep them apart from any approval buttons your plugin has. A connector written before these methods doesn't
+offer them.
+
 ## Choose public or private hosting
 
 First commit the scaffold and your feature. Then create exactly one repository:

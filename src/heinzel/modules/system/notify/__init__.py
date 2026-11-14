@@ -193,7 +193,7 @@ def open_settings(service: NotifyService) -> Opened:
 
 @module.operation(name="chat", heads=HEADS)
 def chat(service: NotifyService) -> SelfChatStatus:
-    """Show whether notices and questions also reach you in your own chat messages, and through which connector.
+    """Show whether notices and questions also reach you in chat, and through which connector.
 
     Switch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it
     works once a bound chat connector can message you (ADR 0160). The app keeps showing everything.
