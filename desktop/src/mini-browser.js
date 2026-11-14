@@ -3,7 +3,7 @@ import { createGuestNetwork } from "./mini-browser-network.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
 
 /** A guest has no product preload, session, headers, cookies or native permissions. */
-export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, enabled, createNetwork = createGuestNetwork }) {
+export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, createNetwork = createGuestNetwork }) {
   const guests = new Map();
   const opening = new Map();
   const generations = new WeakMap();
@@ -151,7 +151,6 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
           const onNavigation = (details) => { if (isNewDocument(details)) navigated = true; };
           event.sender.on("did-start-navigation", onNavigation);
           try {
-            if (!(await enabled())) throw new Error("Browser panel is not enabled.");
             if (stopped || navigated || (generations.get(window) ?? 0) !== generation)
               throw new Error("Browser surface is closed.");
             if (!guests.has(window)) {

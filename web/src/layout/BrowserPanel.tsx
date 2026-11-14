@@ -11,6 +11,10 @@ function bridge(): BrowserBridge | undefined {
   const value = (window as Window & { heinzelDesktop?: Partial<BrowserBridge> }).heinzelDesktop;
   return typeof value?.browser === "function" ? (value as BrowserBridge) : undefined;
 }
+/** Whether this window is the desktop app, the only place that owns an isolated browsing surface. */
+export function desktopBrowserAvailable(): boolean {
+  return bridge() !== undefined;
+}
 export function externalBrowserUrl(value: string): string | null {
   try {
     const url = new URL(value);

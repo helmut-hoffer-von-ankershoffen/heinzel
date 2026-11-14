@@ -24,7 +24,7 @@ import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
-import { BrowserPanel } from "./BrowserPanel";
+import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -115,8 +115,7 @@ function Layout() {
     [titlebar.bar, titlebar.fullscreen, navOpen],
   );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
-  const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
-  const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
+  const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);

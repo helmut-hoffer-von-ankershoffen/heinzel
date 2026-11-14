@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { createDraftPath } from "@/lib/chatIntent";
 import { answered } from "@/test/chat";
@@ -222,6 +222,7 @@ describe("Shell", () => {
 });
 
 describe("Desktop menu actions", () => {
+  afterEach(() => Reflect.deleteProperty(window, "heinzelDesktop"));
   it("opens Settings from the app menu", async () => {
     mockApi({ ...answers, "/api/system/config/show": config });
     renderAt("/doctor");
@@ -291,24 +292,11 @@ describe("Desktop menu actions", () => {
     async ({ width, placement, chatButton, terminalButton }) => {
       vi.stubGlobal("innerWidth", width);
       localStorage.setItem("hz.chat.open", "false");
-      mockApi({
-        ...answers,
-        "/api/system/config/show": {
-          ...config,
-          settings: [
-            ...config.settings,
-            {
-              section: "hz",
-              key: "features",
-              value: ["sidebar_browser"],
-              default: [],
-              source: "user",
-              env: "HZ_FEATURES",
-              description: "Preview features",
-            },
-          ],
-        },
+      Object.defineProperty(window, "heinzelDesktop", {
+        value: { browser: vi.fn().mockResolvedValue({ status: "empty" }) },
+        configurable: true,
       });
+      mockApi(answers);
       const user = userEvent.setup();
       renderAt("/doctor");
       await screen.findByRole("button", { name: "Open the browser" });

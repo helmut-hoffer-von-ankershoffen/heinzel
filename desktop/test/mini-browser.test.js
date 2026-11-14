@@ -3,14 +3,14 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 import { createMiniBrowser } from "../src/mini-browser.js";
 
-function fixture(enabled = true, configure = async () => {}) {
+function fixture(configure = async () => {}) {
   const frame = { processId: 1, frameToken: "main", url: "http://127.0.0.1:8737/", detached: false, isDestroyed: () => false };
   const sender = Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, getZoomFactor: () => 1 });
   const views = [], sessions = [], options = [], calls = [];
   const owner = Object.assign(new EventEmitter(), { webContents: sender, isDestroyed: () => false, isFocused: () => true,
     getContentSize: () => [1000, 700], contentView: { addChildView: (view) => calls.push(["add", view]), removeChildView: () => calls.push(["remove"]) } });
   const controller = createMiniBrowser({ createNetwork: async () => ({ configure: async () => { await configure(); calls.push(["network-ready"]); }, close: () => calls.push(["network-close"]), authenticate: (_info, callback) => callback() }), windows: new WeakSet([owner]), fromWebContents: (contents) => contents === sender ? owner : null,
-    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }), enabled: async () => typeof enabled === "function" ? enabled() : enabled,
+    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }),
     createSession: (partition, config) => {
       const session = Object.assign(new EventEmitter(), { partition, config, clearStorageData: async () => calls.push(["clear"]),
         setPermissionCheckHandler: (handler) => { session.check = handler; },
@@ -35,10 +35,7 @@ function fixture(enabled = true, configure = async () => {}) {
     invoke: (request) => controller.handle({ sender, senderFrame: frame }, request) };
 }
 
-test("native guest is dark until explicitly enabled and never borrows the product session/preload", async () => {
-  const dark = fixture(false);
-  await assert.rejects(dark.invoke({ action: "navigate", url: "https://example.com" }));
-  assert.equal(dark.views.length, 0);
+test("native guest never borrows the product session/preload", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   assert.match(f.sessions[0].partition, /^hz-browser-/);
   assert.ok(!f.sessions[0].partition.startsWith("persist:"));
@@ -138,25 +135,10 @@ test("unknown commands, fields and a guest sender cannot control the product", a
   await assert.rejects(f.controller.handle({ sender: { isDestroyed: () => false }, senderFrame: f.frame }, { action: "close" }));
   assert.equal(f.views.length, 0);
 });
-test("concurrent initial navigation creates only one guest after asynchronous feature validation", async () => {
+test("concurrent initial navigation creates only one guest while the guest opens", async () => {
   const f = fixture();
   await Promise.all([f.invoke({ action: "navigate", url: "https://example.com/one" }), f.invoke({ action: "navigate", url: "https://example.com/two" })]);
   assert.equal(f.views.length, 1);
-});
-
-test("closing, navigating or shutting down during feature validation cannot create a late guest", async () => {
-  for (const action of ["close", "shutdown", "navigation"]) {
-    let complete;
-    const f = fixture(() => new Promise((resolve) => { complete = resolve; }));
-    const pending = f.invoke({ action: "navigate", url: "https://example.com" });
-    if (action === "shutdown") f.controller.closeAll();
-    else if (action === "navigation") {
-      f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
-    } else await f.invoke({ action: "close" });
-    complete(true);
-    await assert.rejects(pending);
-    assert.equal(f.views.length, 0);
-  }
 });
 
 test("guest declines platform certificates and authentication challenges", async () => {
@@ -179,14 +161,14 @@ test("guest declines platform certificates and authentication challenges", async
 });
 
 test("proxy setup fails closed and close during setup never loads a late website", async () => {
-  const broken = fixture(true, async () => { throw new Error("private internal error"); });
+  const broken = fixture(async () => { throw new Error("private internal error"); });
   await assert.rejects(broken.invoke({ action: "navigate", url: "https://example.com" }), /^Error: Browser network is unavailable\.$/);
   assert.equal(broken.views.length, 0);
   assert(broken.calls.some(([name]) => name === "network-close"));
   let complete, started;
   const pending = new Promise(resolve => { complete = resolve; });
   const began = new Promise(resolve => { started = resolve; });
-  const f = fixture(true, async () => { started(); await pending; });
+  const f = fixture(async () => { started(); await pending; });
   const navigation = f.invoke({ action: "navigate", url: "https://example.com" });
   await began;
   await f.invoke({ action: "close" });
