@@ -50,12 +50,14 @@ whole-project coverage floor. `scripts/release_candidate.py` is not touched by t
   the full-set paths runs the site tests.
 - Every selected test file must run at least one case; the judge checks it against the lane's JUnit report.
 - A change to the workflow, the code that decides and runs a workload, or what runs inside a full-set job
-  (`PROTECTED_FILES`: `ci.yml`, the `Makefile`, the focused producers, `uv.lock`, `pyproject.toml`, the conftests,
-  the desktop and web `package.json`, the CI helper scripts; `PROTECTED_PATTERNS`: the shared test helpers
-  `tests/_*.py` and `tests/e2e/_*.py`) runs code the judge has not seen. The judge then requires a reviewed
+  (`PROTECTED_FILES`: `ci.yml`, the `Makefile`, the focused producers, `uv.lock`, `pyproject.toml`,
+  `tests/quarantine.toml`, `web/vite.config.ts`, the desktop and web `package.json`, the CI helper scripts;
+  `PROTECTED_PATTERNS`: every `conftest.py` in the tree and the shared test helpers `tests/_*.py` and
+  `tests/e2e/_*.py`) runs code the judge has not seen. The judge then requires a reviewed
   execution manifest that pins those tested blobs, as before this decision.
 - A main run that took the full set is judged as the full set, even when a proof posted after it started would make
-  the judge's own selection focused: full is a superset.
+  the judge's own selection focused: full is a superset. Its base must still not be newer than the last accepted
+  green main, because the base decides the coverage scope, the protected-file check and the prose exemption.
 - The judge on the default branch (`scripts/focused_gate.py`) recomputes the selection with its own selector over the
   tested tree. A pull request cannot narrow what judges it: a change to the selector is itself a full-set path.
 - A manifest in the plan registry is optional and can only widen a selection.

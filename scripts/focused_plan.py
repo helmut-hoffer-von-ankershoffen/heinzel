@@ -119,16 +119,17 @@ PROTECTED_FILES = (
     "uv.lock",
     # What runs inside a full-set job: test collection, pytest configuration, package test scripts, CI helpers.
     "pyproject.toml",
-    "tests/conftest.py",
-    "tests/unit/conftest.py",
-    "tests/e2e/conftest.py",
+    "tests/quarantine.toml",  # an entry takes a test out of every required job
+    "web/vite.config.ts",  # its test.include decides which Vitest files run
     "desktop/package.json",
     "web/package.json",
     "scripts/ci_node.py",
     "scripts/quarantine.py",
 )
-# Shared test helpers, matched in the tested tree; a change, addition or removal is a protected change too.
-PROTECTED_PATTERNS = ("tests/_*.py", "tests/e2e/_*.py")
+# Matched over the whole tested tree; a change, addition or removal is a protected change too. A conftest.py
+# anywhere (the root, any test package) can skip every test with a collection hook; the shared test helpers decide
+# what an e2e lane runs. A pattern without a folder matches a file name in any folder.
+PROTECTED_PATTERNS = ("conftest.py", "tests/_*.py", "tests/e2e/_*.py")
 MAX_PLAN = 48 * 1024
 SLOT_VARIABLES = tuple(f"FOCUSED_CI_PLANS_V2_{index}" for index in range(4))
 MAX_SLOT = 40_000
@@ -338,22 +339,25 @@ def object_id(revision: str) -> str:
     return value
 
 
-def tracked_paths(commit: str, prefix: str) -> list[str]:
-    """The tracked files under PREFIX in COMMIT."""
-    raw = git("ls-tree", "-r", "--name-only", "-z", commit, "--", prefix)
+def tracked_paths(commit: str) -> list[str]:
+    """Every tracked file in COMMIT."""
+    raw = git("ls-tree", "-r", "--name-only", "-z", commit)
     return [name for name in raw.decode().split("\0") if name]
+
+
+def _protected_pattern(path: str) -> bool:
+    folder, _, name = path.rpartition("/")
+    for pattern in PROTECTED_PATTERNS:
+        where, _, glob = pattern.rpartition("/")
+        if ("/" not in pattern or folder == where) and fnmatch.fnmatchcase(name, glob):
+            return True
+    return False
 
 
 def protected_blobs(commit: str) -> dict[str, str]:
     """The blob of every protected file and of every tracked file a protected pattern matches, in COMMIT."""
     blobs = {path: git_blob(commit, path) for path in PROTECTED_FILES}
-    for path in tracked_paths(commit, "tests"):
-        folder, _, name = path.rpartition("/")
-        if any(
-            folder == pattern.rpartition("/")[0] and fnmatch.fnmatchcase(name, pattern.rpartition("/")[2])
-            for pattern in PROTECTED_PATTERNS
-        ):
-            blobs[path] = git_blob(commit, path)
+    blobs.update({path: git_blob(commit, path) for path in tracked_paths(commit) if _protected_pattern(path)})
     return blobs
 
 

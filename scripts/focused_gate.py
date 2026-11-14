@@ -653,10 +653,12 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
     )
     green = last_green_main(gate.github, gate.head)
     # A run that took the full set is judged as the full set: a proof posted after it started can make this judge's
-    # own selection focused, and full is a superset of it. The full-set checks below then apply.
+    # own selection focused, and full is a superset of it. The full-set checks below then apply. The base must still
+    # not be newer than the last accepted green main: it decides the coverage scope, the protected-file check and
+    # the prose exemption.
     ran_full = went_full(latest_jobs(gate.github, run_id))
     require(
-        ran_full or green is None or git("merge-base", base, green).decode().strip() == base,
+        green is None or git("merge-base", base, green).decode().strip() == base,
         "a main base must not be newer than the last accepted green main commit",
     )
     source = WorkloadSource("push", REPOSITORY, "refs/heads/main", {}, base, gate.head, raw_diff(base, gate.head))

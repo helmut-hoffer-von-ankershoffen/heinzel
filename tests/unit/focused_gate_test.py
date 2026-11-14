@@ -1011,17 +1011,23 @@ def test_shared_test_helpers_and_collection_inputs_are_protected(monkeypatch):
             "tests/e2e/sub/_x.py",
             "tests/unit/_y.py",
             "tests/a_test.py",
+            "conftest.py",
+            "tests/conftest.py",
+            "tests/integration/conftest.py",
+            "tests/unit/heads/conftest.py",
+            "web/conftest_notes.md",
         ],
-        "b": ["tests/_e2e_lanes.py"],
+        "b": ["tests/_e2e_lanes.py", "tests/conftest.py"],
     }
-    monkeypatch.setattr(focused_plan, "tracked_paths", lambda commit, _prefix: tree[commit])
+    monkeypatch.setattr(focused_plan, "tracked_paths", lambda commit: tree[commit])
     monkeypatch.setattr(focused_plan, "git_blob", lambda commit, path: f"{commit}:{path}")
     blobs = focused_plan.protected_blobs("c")
-    assert {"tests/_e2e_lanes.py", "tests/e2e/_mounted.py"} <= blobs.keys()
-    assert not {"tests/e2e/sub/_x.py", "tests/unit/_y.py", "tests/a_test.py"} & blobs.keys()
-    for path in ("pyproject.toml", "tests/conftest.py", "tests/e2e/conftest.py", "desktop/package.json"):
+    conftests = {"conftest.py", "tests/conftest.py", "tests/integration/conftest.py", "tests/unit/heads/conftest.py"}
+    assert {"tests/_e2e_lanes.py", "tests/e2e/_mounted.py", *conftests} <= blobs.keys()
+    assert not {"tests/e2e/sub/_x.py", "tests/unit/_y.py", "tests/a_test.py", "web/conftest_notes.md"} & blobs.keys()
+    for path in ("pyproject.toml", "tests/quarantine.toml", "web/vite.config.ts", "desktop/package.json"):
         assert path in focused_plan.PROTECTED_FILES
-    assert "tests/e2e/_mounted.py" not in focused_plan.protected_blobs("b")
+    assert not {"tests/e2e/_mounted.py", "tests/unit/heads/conftest.py"} & focused_plan.protected_blobs("b").keys()
 
 
 def test_an_added_test_helper_needs_the_reviewed_execution_pin(focused_gate, monkeypatch):
@@ -1029,9 +1035,7 @@ def test_an_added_test_helper_needs_the_reviewed_execution_pin(focused_gate, mon
     from scripts.ci_workload import FocusedPlan
     from scripts.focused_plan import Scope
 
-    monkeypatch.setattr(
-        focused_plan, "tracked_paths", lambda commit, _p: ["tests/e2e/_new.py"] if commit == "c" else []
-    )
+    monkeypatch.setattr(focused_plan, "tracked_paths", lambda commit: ["tests/e2e/_new.py"] if commit == "c" else [])
     monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: "e" * 40)
     workload = FocusedPlan("pull_request", "refs/pull/1/merge", "b", "h", "d", ("CI OK",), full=True)
     scope = Scope(workload, "c", "t", {}, {}, "e", {}, {}, {}, "f", full=True)
@@ -1077,7 +1081,10 @@ def test_a_main_run_that_went_full_is_judged_full_after_a_late_proof(focused_gat
     )
     full_jobs = [{"name": "Coverage", "conclusion": "success"}, {"name": "CI OK", "conclusion": "success"}]
     monkeypatch.setattr(focused_gate, "latest_jobs", lambda _get, _run, which="latest": full_jobs)
-    monkeypatch.setattr(focused_gate, "last_green_main", lambda _get, _head: "9" * 40)  # a proof posted meanwhile
+    monkeypatch.setattr(
+        focused_gate, "last_green_main", lambda _get, _head: base
+    )  # the previous push, proven meanwhile
+    git_rows[("merge-base", base, base)] = base.encode()
     seen = {}
 
     class StopError(Exception):
@@ -1161,3 +1168,34 @@ def test_the_main_proof_race_accepts_the_full_run_that_followed(focused_gate, fi
     # 4. The judge accepts N+1 as the full set it ran.
     proof = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
     assert (proof["full"], proof["head"], proof["base"]) == (True, head, base)
+
+
+def test_a_prose_tip_after_an_untested_code_push_gets_no_main_proof(focused_gate, first_attempt, monkeypatch):
+    """R4: C1 (code, its run replaced or red), then C2 (prose). C2's run has no app jobs, so it counts as full. Judged
+    from base C1, newer than the last accepted green C0, it would pass as prose; C1's code was never tested."""
+    gate, run_id, _manifest, lane, rows, logs, git_rows = first_attempt
+    c0, c1, c2 = "1" * 40, "a" * 40, gate.head
+    run = rows[f"actions/runs/{run_id}"]
+    run.update(event="push", head_branch="main", head_repository={"full_name": gate.repo})
+    rows["git/ref/heads/main"] = {"object": {"sha": c2}}
+    rows[f"actions/workflows/{focused_gate.CI_WORKFLOW_ID}/runs?head_sha={c2}&event=push&per_page=1"] = {
+        "workflow_runs": [run]
+    }
+    jobs = rows[f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1"]
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] not in {*focused_gate.PR_JOBS, lane["name"]}]
+    jobs["total_count"] = len(jobs["jobs"])
+    prose = f":100644 100644 {c1} {'e' * 40} M\0README.md\0".encode()
+    git_rows.update(
+        {
+            ("fetch", "--no-tags", "origin", "refs/heads/main"): b"",
+            ("rev-parse", "FETCH_HEAD"): c2.encode(),
+            ("merge-base", c1, c2): c1.encode(),
+            ("merge-base", c1, c0): c0.encode(),  # C1 is newer than the last accepted green C0
+            ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", c1, c2): prose,
+        }
+    )
+    monkeypatch.setattr(focused_gate, "last_green_main", lambda _get, _head: c0)
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    assert focused_gate.went_full(jobs["jobs"])
+    with pytest.raises(focused_gate.CandidateError, match="newer than the last accepted green"):
+        focused_gate.verify_main(gate, run_id, c1, "{}", logs.__getitem__)
