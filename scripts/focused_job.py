@@ -39,7 +39,9 @@ ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("e2e", "pytest", "vitest")
 LANES = ("cli", "supervised", "web-1", "web-2")
 MAX_IDS = 10
-PYTHON_CI_MAX_IDS = 32
+PYTHON_CI_MAX_IDS = 4096
+"""The canonical Python lane's limit: above any number of test files, so it never binds (owner, 2026-11-14). A head's
+selection may name every test it needs; the key stays until the steuermaschine stops reading it, then goes."""
 VITEST_ALL = "web/ALL"  # the whole Vitest suite as `make test-web` runs it: no file filter, never mixed with files
 MAX_REPEAT = 60
 DEADLINE = 1020  # seconds into the run: start no new round after this, so the tally and artifacts still upload
