@@ -43,6 +43,7 @@ from heinzel import Module
 
 module = Module("harbor", "Useful Harbor operations.")
 
+
 @module.operation
 def hello(name: str = "Ada") -> str:
     """Greet someone by name."""
@@ -136,16 +137,20 @@ without Core knowing your provider:
 ```python
 from heinzel import Homebrew, ManualInstall, Module, ModuleSettings
 
+
 class SharingSettings(ModuleSettings):
     """Whether to share the workspace."""
 
     enabled: bool = False
 
+
 module = Module("sharing", "Share the workspace.")
 module.settings(SharingSettings)
 
+
 def wanted(settings: SharingSettings) -> bool:
     return settings.enabled
+
 
 module.prerequisite(
     "vpn-tool",
@@ -209,6 +214,7 @@ from heinzel import ModelOffer, ModelUnavailableError, Module
 
 module = Module("acme-ai", "ACME's models.")
 
+
 @module.provides("ai-models", modes={"read"}, hosts=["ai.acme.example"], name="acme")
 class AcmeModels:
     title = "ACME AI"
@@ -258,6 +264,7 @@ from collections.abc import Sequence
 
 from heinzel import SelfAnswer, SelfMessage
 
+
 class OwnChat:
     unsupported = frozenset({"messages", "post"})  # this one talks only to its owner
 
@@ -300,6 +307,7 @@ from acme_plugin import module
 from heinzel import Window
 
 pytestmark = pytest.mark.integration
+
 
 def test_conforms(hz_conformance, fake_acme):
     window = Window.model_validate({"since": "2026-11-01T00:00:00Z", "until": "2026-11-08T00:00:00Z"})
@@ -345,6 +353,7 @@ from heinzel import Message, Module, Window
 from heinzel.connectors.mcp import ENVELOPE_UNTRUSTED, INLINE_UNTRUSTED, McpConnector, McpTool
 
 module = Module("acme-chat", "ACME chat through the company MCP gateway.")
+
 
 @module.provides("chat", modes={"read"}, hosts=["mcp.acme.example"], name="acme-chat")
 class AcmeChat:
