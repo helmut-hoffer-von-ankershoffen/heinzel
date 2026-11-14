@@ -31,6 +31,8 @@ SYNC = Path(os.environ.get("HZ_JOURNEY_SYNC", "."))
 PREFIX = "mcp__hz__ui_browser_"
 KEPT = 400
 """How much of each tool result goes into the report."""
+PAGE_KEPT = 4000
+"""How much of the page the agent read goes into the report."""
 NOT_PUBLIC = (
     "https://127.0.0.1/",
     "https://localhost/",
@@ -120,9 +122,12 @@ def second_turn() -> Script:
 
 
 def shorten(value: object) -> object:
-    """A report with every text cut, so it fits a chat answer."""
+    """A report with every text cut, so it fits a chat answer; the page that was read keeps enough to check it."""
     if isinstance(value, dict):
-        return {key: shorten(item) for key, item in value.items()}
+        return {
+            key: item[:PAGE_KEPT] if key == "read" and isinstance(item, str) else shorten(item)
+            for key, item in value.items()
+        }
     return value[:KEPT] if isinstance(value, str) else value
 
 
