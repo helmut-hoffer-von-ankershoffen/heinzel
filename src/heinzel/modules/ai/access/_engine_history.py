@@ -22,7 +22,7 @@ import re
 import secrets
 import stat
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # Pydantic AI loads only when a run uses the history, not when hz starts
     from pydantic_ai.messages import ModelMessage
@@ -138,7 +138,8 @@ class SessionHistory:
             data = json.loads(raw)
             if data.get("format") != _FORMAT:
                 return [], {}
-            notes = data.get("notes") if isinstance(data.get("notes"), dict) else {}
+            found = data.get("notes")
+            notes: dict[str, Any] = cast("dict[str, Any]", found) if isinstance(found, dict) else {}
             return ModelMessagesTypeAdapter.validate_python(data["messages"]), notes
         except (ValueError, KeyError, TypeError, AttributeError):
             return [], {}

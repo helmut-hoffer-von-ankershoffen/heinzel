@@ -91,7 +91,8 @@ class StdioMcp:
             if not isinstance(listed, list):
                 msg = f"the MCP server {self.name} listed no tools"
                 raise McpError(msg)
-            found += [t for t in cast("list[object]", listed) if isinstance(t, dict) and isinstance(t.get("name"), str)]
+            rows = [cast("dict[str, Any]", t) for t in cast("list[object]", listed) if isinstance(t, dict)]
+            found += [t for t in rows if isinstance(t.get("name"), str)]
             next_cursor = result.get("nextCursor")
             if not isinstance(next_cursor, str) or len(found) >= MAX_TOOLS:
                 break

@@ -308,7 +308,7 @@ class ConfinedFiles:
         """
         if depth > MAX_DEPTH:
             return
-        entries = []
+        entries: list[os.DirEntry[str]] = []
         with os.scandir(directory) as scan:
             for entry in scan:
                 self._budget.entries -= 1

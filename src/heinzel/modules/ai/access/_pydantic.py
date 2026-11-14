@@ -191,7 +191,8 @@ def _installed(package: str) -> bool:
         return False
 
 
-def _selected_access() -> str | None:
+def selected_access() -> str | None:
+    """The AI access the files and environment bind now, not as at boot."""
     return Config.load().settings(Bindings, "capabilities").ai_access
 
 
@@ -214,7 +215,7 @@ class PydanticAiAccess:
         build: ModelFactory = build_model,
         installed: Callable[[str], bool] = _installed,
         get: Fetch = fetch,
-        binding: Callable[[], str | None] = _selected_access,
+        binding: Callable[[], str | None] = selected_access,
         current_settings: Callable[[], AccessSettings] = _current_model_settings,
     ) -> None:
         """Create the option; settings and credentials are injected, the rest replace the world in tests."""

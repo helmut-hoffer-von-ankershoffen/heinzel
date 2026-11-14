@@ -26,7 +26,7 @@ from heinzel import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapsh
 from heinzel.kernel import AiModelsSource, ModelOffer
 from heinzel.kernel._ai_models import build_model, choose, list_offers
 from heinzel.modules.ai.access._models import AccessSettings
-from heinzel.modules.ai.access._pydantic import PydanticAiAccess, _selected_access, build_reserved_openai
+from heinzel.modules.ai.access._pydantic import PydanticAiAccess, build_reserved_openai, selected_access
 
 MODEL = "openai:gpt-4.1-mini-2025-04-14"
 
@@ -358,7 +358,7 @@ class TrustedConfiguredApiAccess(ConfiguredApiAccess):
         self,
         current: CurrentUser,
         kernel: Kernel,
-        selected: Callable[[], str | None] = _selected_access,
+        selected: Callable[[], str | None] = selected_access,
         plugin_model: Callable[[], str | None] = _plugin_model,
     ) -> None:
         self._current = current

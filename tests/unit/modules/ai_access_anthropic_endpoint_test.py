@@ -319,7 +319,7 @@ def test_the_option_reads_the_selection_and_its_settings_afresh(monkeypatch: pyt
     monkeypatch.setenv("HZ_CAPABILITIES__AI_ACCESS", "pydantic-ai")
     monkeypatch.setenv("HZ_AI_ACCESS__MODEL", "claude-example-1")
 
-    assert _pydantic._selected_access() == "pydantic-ai"
+    assert _pydantic.selected_access() == "pydantic-ai"
     assert _pydantic._current_model_settings().model == "claude-example-1"
     assert _pydantic._installed("json") is True
     assert _pydantic._installed("no_such_package_hz") is False

@@ -422,7 +422,7 @@ def build_model(source: AiModelsSource, offer: ModelOffer) -> Any:  # noqa: ANN4
             f"The plugin {source.distribution} returned {type(model).__name__} for {offer.id}, not a Pydantic AI model"
         )
         raise HeinzelError(msg)
-    return model
+    return cast("Model[Any]", model)  # type: ignore[redundant-cast]  # narrow the provider generic for Pyright
 
 
 class PluginModelChoice(ModuleSettings):

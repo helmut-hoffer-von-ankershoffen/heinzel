@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from heinzel import (
     AgentResult,
@@ -106,7 +106,7 @@ class SelectedModels:
         if access == MODEL_API:
             option = self._kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
             configured = option.configured_model()
-            warnings = []
+            warnings: list[str] = []
             if model is not None and model != configured:
                 warnings.append(f"the Model API option runs its configured model {configured}, not {model}")
             if effort is not None:
@@ -126,7 +126,9 @@ class _Session:
             self.files = ConfinedFiles(cwd) if tools.read_files else None
         except FileToolError as exc:
             raise HeinzelError(str(exc)) from None
-        self.wanted = {TOOL_NAMES[t] for t in (tools.tools or list(TOOL_NAMES))} if tools.read_files else set()
+        self.wanted: set[str] = (
+            {TOOL_NAMES[t] for t in (tools.tools or list(TOOL_NAMES))} if tools.read_files else set()
+        )
         self.servers = [StdioMcp(name, s.command, s.env, cwd) for name, s in sorted(tools.mcp_servers.items())]
 
     def _file_tool(self, files: ConfinedFiles, name: str) -> Callable[..., str]:
@@ -169,8 +171,10 @@ class _Session:
             await server.start()
             for spec in await server.tools():
                 name = tool_name(server.name, spec["name"])
-                given = spec.get("inputSchema")
-                schema: dict[str, Any] = given if isinstance(given, dict) else {"type": "object"}
+                given: object = spec.get("inputSchema")
+                schema: dict[str, Any] = (
+                    cast("dict[str, Any]", given) if isinstance(given, dict) else {"type": "object"}
+                )
                 wrapped.append(
                     Tool.from_schema(self._mcp_tool(server, spec["name"], name), name, spec.get("description"), schema)
                 )
