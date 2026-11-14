@@ -46,7 +46,6 @@ export const BUILDS = ["slim", "regular", "round"] as const;
 export type Build = (typeof BUILDS)[number];
 export const STATES = [
   "idle",
-  "sleeping",
   "working",
   "thinking",
   "waiting",
@@ -241,8 +240,6 @@ function badge(age: Age, colour: string, mark: Shape[]): Shape[] {
 function signs(age: Age, state: HeinzelState): Shape[] {
   const mark = (colour: string, shapes: Shape[]) => badge(age, colour, shapes);
   switch (state) {
-    case "sleeping":
-      return mark("#5C6BC0", [line("M420 64 H460 L420 106 H460", WHITE, 12)]);
     case "thinking":
       return mark("#8E5BD8", [circle(414, 86, 9, WHITE), circle(440, 86, 9, WHITE), circle(466, 86, 9, WHITE)]);
     case "waiting":
@@ -394,7 +391,7 @@ function beardShape(beard: Exclude<Beard, "none">, colour: string): Shape {
 }
 
 function eyes(state: HeinzelState, size: number): Shape[] {
-  if (state === "sleeping")
+  if (state === "asleep")
     return [line("M180 276 Q202 292 224 276", INK, 10), line("M288 276 Q310 292 332 276", INK, 10)];
   if (state === "done") return [line("M180 282 Q202 258 224 282", INK, 10), line("M288 282 Q310 258 332 282", INK, 10)];
   const up = state === "thinking" ? -10 : 0;
@@ -409,7 +406,7 @@ function eyes(state: HeinzelState, size: number): Shape[] {
 function mouth(state: HeinzelState, bearded: boolean, light: string): Shape[] {
   if (!bearded) {
     if (state === "blocked") return [line("M222 352 Q256 332 290 352", MOUTH, 10)];
-    if (state === "sleeping") return [circle(256, 342, 12, MOUTH)];
+    if (state === "asleep") return [circle(256, 342, 12, MOUTH)];
     return [
       path(state === "done" ? "M198 318 C208 384 304 384 314 318 Z" : "M206 322 C216 372 296 372 306 322 Z", MOUTH),
     ];
@@ -491,8 +488,6 @@ function arm(shoulder: number, x: number, y: number, sleeve: string): Shape[] {
 
 /** The arms for a state: down, holding a tray, a hand raised or at the chin, or together in a little bow. */
 function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: boolean): Shape[] {
-  const still = [...arm(256 - build.shoulder, 256 - build.belly - 12, 640, sleeve)];
-  const rightStill = (r: number) => arm(r, 256 + build.belly + 12, 640, sleeve);
   const [left, right] = [256 - build.shoulder, 256 + build.shoulder];
   const rightDown = holding ? arm(right, GRIP.x, GRIP.y, sleeve) : arm(right, 256 + build.belly + 12, 640, sleeve);
   // The right hand down is the one that waves in idle life.
@@ -516,7 +511,10 @@ function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: bo
         line("M352 560 L392 440", "#8D6E63", 14),
         path("M356 420 L428 446 L418 474 L346 448 Z", "#9AA0A6"),
       ];
-      return [...still, ...(holding ? rightStill(right) : [...arm(right, 342, 580, sleeve), ...hammer])];
+      return [
+        ...arm(left, 256 - build.belly - 12, 640, sleeve),
+        ...(holding ? rightDown : [...arm(right, 342, 580, sleeve), ...hammer]),
+      ];
     }
     case "overloaded": {
       // Both arms round a stack of parcels that is too tall.
@@ -541,7 +539,7 @@ function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: bo
       return [
         ...sign,
         ...arm(left, 72, 470, sleeve),
-        ...(holding ? rightStill(right) : [...arm(right, 318, 552, sleeve), ...watch]),
+        ...(holding ? rightDown : [...arm(right, 318, 552, sleeve), ...watch]),
       ];
     }
     case "waiting":
@@ -606,8 +604,7 @@ const FACE_OF: Partial<Record<HeinzelState, HeinzelState>> = {
   watching: "idle",
   paused: "idle",
   overloaded: "blocked",
-  asleep: "sleeping",
-  dozing: "sleeping",
+  dozing: "asleep",
 };
 
 /** The whole Heinzelmännchen on the 512 by 860 canvas, back to front; the top 512 square is its bust. */
@@ -636,7 +633,7 @@ export function heinzelShapes({
   const outfit = assetLayer(theme, `outfit-${age}`);
   const hatAsset = assetLayer(theme, `hat-${age}`, true);
   return [
-    ...legs(state === "sleeping" || state === "asleep", b.hem),
+    ...legs(state === "asleep", b.hem),
     path(
       `M${sl} 500 C${sl} 472 ${256 - b.shoulder * 0.5} 462 256 462 C${256 + b.shoulder * 0.5} 462 ${sr} 472 ${sr} 500 ` +
         `C${br} 560 ${br} 640 ${hr} 690 Q256 708 ${hl} 690 C${bl} 640 ${bl} 560 ${sl} 500 Z`,

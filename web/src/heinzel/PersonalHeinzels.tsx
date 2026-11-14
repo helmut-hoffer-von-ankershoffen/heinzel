@@ -14,7 +14,9 @@ import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
-import { appearanceLook, stateLabel } from "@/heinzel/look";
+import { ActivityFace } from "@/heinzel/ActivityFace";
+import { sessionWord } from "@/heinzel/activity";
+import { appearanceLook } from "@/heinzel/look";
 import { StartHelper } from "@/heinzel/StartHelper";
 import { type MessageKey, t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
@@ -217,14 +219,14 @@ export function PersonalHeinzels() {
                 !drafting && item.session_id === selected && "border-primary bg-accent text-accent-foreground",
               )}
             >
-              <HeinzelAvatar
-                view="bust"
-                {...appearanceLook(item.appearance)}
+              <ActivityFace
+                appearance={item.appearance}
+                activity={item.activity}
                 className="size-10 shrink-0 overflow-hidden"
               />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{item.name}</span>
-                <span className="block text-xs text-muted-foreground">{stateLabel(item.state)}</span>
+                <span className="block text-xs text-muted-foreground">{sessionWord(item)}</span>
               </span>
             </Button>
           ))}
@@ -359,11 +361,6 @@ function NewHeinzel({
                   state: "proposed",
                   last_seq: 0,
                   updated_at: new Date().toISOString(),
-                  activity: "idle",
-                  waiting_count: 0,
-                  runs_last_hour: 0,
-                  queued_runs: 0,
-                  last_run_failed: false,
                   appearance: created.appearance,
                   activity: "idle",
                   last_run_failed: false,

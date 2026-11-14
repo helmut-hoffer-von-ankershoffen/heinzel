@@ -31,12 +31,13 @@ export function usePreviewFeature(name: string): boolean {
   return Array.isArray(features) && features.includes(name);
 }
 /** `hz heinzel sessions`: your durable Heinzels, newest first; the chat's header and default Heinzel read it. */
-export const useHeinzelSessions = (enabled = true) =>
+export const useHeinzelSessions = (enabled = true, pollMs: number | false = false) =>
   useQuery({
     queryKey: ["heinzel", "sessions"],
     queryFn: () => unwrap(api.GET("/heinzel/sessions")),
     enabled,
     retry: false,
+    refetchInterval: pollMs,
   });
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {

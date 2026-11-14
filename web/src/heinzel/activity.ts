@@ -3,6 +3,7 @@
 import type { HeinzelState } from "@/components/heinzel";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
+import { stateLabel } from "./look";
 
 export const ACTIVITIES = [
   "paused",
@@ -38,4 +39,14 @@ export function activityPose(activity: Activity | undefined, awake = false): Hei
 export function activityWord(activity: Activity | undefined): string {
   const known = activity && (ACTIVITIES as readonly string[]).includes(activity) ? activity : "idle";
   return t(`activity.${known}` as MessageKey);
+}
+
+/**
+ * The one word on a row: the computed activity, except that a lifecycle fact the activity cannot show wins over idle
+ * only (a retired Heinzel is "Retired", a proposal not yet confirmed is "New"); any other activity is the activity.
+ */
+export function sessionWord(session: { state: string; activity?: Activity }): string {
+  if (session.state === "retired") return stateLabel(session.state);
+  if (session.state === "proposed" && (!session.activity || session.activity === "idle")) return stateLabel("proposed");
+  return activityWord(session.activity);
 }

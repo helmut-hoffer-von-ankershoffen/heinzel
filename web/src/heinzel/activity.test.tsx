@@ -1,9 +1,11 @@
 // The nine states of one kind of chat as faces: each has its own pose or badge shape and its own word, only
 // "working" moves, and an idle Heinzel is awake in an open chat and dozing elsewhere.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { heinzelSvg } from "@/components/heinzel";
+import { heinzelShapes, heinzelSvg } from "@/components/heinzel";
 import { t } from "@/i18n";
 import { ACTIVITIES, activityPose, activityWord } from "./activity";
 
@@ -17,19 +19,22 @@ describe("the nine states on the face", () => {
     expect(drawing("idle", false)).not.toBe(drawing("idle", true));
   });
 
-  it("has a badge shape and a word for every state but idle, never colour alone", () => {
+  it("has its own badge shape and word for every state but idle, never colour alone", () => {
     const words = new Set<string>();
+    const badges = new Map<string, string>();
     for (const activity of ACTIVITIES) {
-      const word = activityWord(activity);
-      expect(word).toBeTruthy();
-      words.add(word);
-      const { container } = render(<HeinzelAvatar state={activityPose(activity, false)} view="bust" />);
-      const svg = container.querySelector("svg");
-      expect(svg).toHaveAttribute("data-state", activityPose(activity, false));
-      // Idle has no badge (awake) or dozes (elsewhere); every other state carries one.
-      expect(container.querySelectorAll("svg > g").length).toBe(activity === "idle" ? 1 : 2);
+      words.add(activityWord(activity));
+      const shapes = heinzelShapes({ age: "grown", state: activityPose(activity, false) });
+      const badge = JSON.stringify(shapes.filter((shape) => shape.part === "badge"));
+      if (activity !== "idle") badges.set(activity, badge);
+      else expect(badge).toBe("[]");
     }
     expect(words.size).toBe(ACTIVITIES.length);
+    expect(badges.size).toBe(ACTIVITIES.length - 1);
+    expect(new Set(badges.values()).size).toBe(badges.size);
+    // Not even the colour is shared, so a drawing without the colour still differs by its mark.
+    const marks = [...badges.values()].map((badge) => badge.replace(/#[0-9A-Fa-f]{6}/g, ""));
+    expect(new Set(marks).size).toBe(marks.length);
   });
 
   it("says done, never made, and keeps the words the canvas names", () => {
@@ -50,25 +55,32 @@ describe("the nine states on the face", () => {
     expect(heinzelSvg({ state: "overloaded" }, "full")).not.toContain("#C98A1E");
   });
 
-  it("moves only for working, and reduced motion stops that bob", () => {
+  it("moves only for working: no other state animates anything, in the figure or the badge", () => {
     for (const activity of ACTIVITIES) {
-      const { container } = render(<HeinzelAvatar state={activityPose(activity, true)} />);
-      const moving = [...container.querySelectorAll("svg g[class]")].filter((g) =>
-        /animate/.test(g.getAttribute("class") ?? ""),
-      );
-      if (activity === "working") {
-        expect(moving).toHaveLength(1);
-        expect(moving[0]?.getAttribute("class")).toMatch(/^motion-safe:animate-\[hz-bob/);
-      } else expect(moving.filter((g) => /hz-bob/.test(g.getAttribute("class") ?? ""))).toHaveLength(0);
+      for (const awake of [true, false]) {
+        const { container, unmount } = render(<HeinzelAvatar state={activityPose(activity, awake)} />);
+        const moving = [...container.querySelectorAll("svg g[class]")].filter((g) =>
+          /animate/.test(g.getAttribute("class") ?? ""),
+        );
+        if (activity === "working") {
+          expect(moving).toHaveLength(1);
+          // Reduced motion stops it: the animation applies only where motion is safe.
+          expect(moving[0]?.getAttribute("class")).toMatch(/^motion-safe:animate-\[hz-bob/);
+        } else expect(moving).toHaveLength(0);
+        unmount();
+      }
     }
   });
 
-  it("holds the badge still for the new states", () => {
-    for (const activity of ["paused", "overloaded", "working", "waiting_on_others", "asleep"] as const) {
-      const { container } = render(<HeinzelAvatar state={activityPose(activity, true)} view="bust" />);
-      expect(
-        container.querySelector("svg > g.motion-safe\\:animate-\\[hz-breathe_2\\.4s_ease-in-out_infinite\\]"),
-      ).toBeNull();
-    }
+  it("draws every colour of a badge from a design token", () => {
+    const tokens = readFileSync(resolve("../design/tokens.json"), "utf-8").toLowerCase();
+    const source = readFileSync(resolve("src/components/heinzel.ts"), "utf-8");
+    const used = [...source.matchAll(/return mark\("(#[0-9A-Fa-f]{6})"/g)].map(
+      (match) => match[1]?.toLowerCase() ?? "",
+    );
+    expect(used.length).toBeGreaterThanOrEqual(9);
+    for (const colour of used) expect(tokens).toContain(`"${colour}"`);
+    // Two states never share one badge colour (the old sleeping badge is retired for asleep).
+    expect(new Set(used).size).toBe(used.length);
   });
 });

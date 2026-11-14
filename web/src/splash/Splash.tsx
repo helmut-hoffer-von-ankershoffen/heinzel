@@ -241,7 +241,7 @@ function SleepingUnderTree() {
         />
         <path d="M66 86h48" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
       </svg>
-      <HeinzelAvatar state="sleeping" age="young" shirt="teal" className="relative z-10 h-[4.5rem] w-11" />
+      <HeinzelAvatar state="asleep" age="young" shirt="teal" className="relative z-10 h-[4.5rem] w-11" />
     </div>
   );
 }

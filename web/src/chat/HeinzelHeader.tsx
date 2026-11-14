@@ -10,11 +10,13 @@ import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import type { HeinzelLook } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
-import { activityPose, activityWord } from "@/heinzel/activity";
-import { appearanceLook, stateLabel } from "@/heinzel/look";
+import { ActivityFace } from "@/heinzel/ActivityFace";
+import { activityPose, activityWord, sessionWord } from "@/heinzel/activity";
 import { t } from "@/i18n";
 import { clearChatLink, createDraftPath } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
+
+const ACTIVITY_POLL_MS = 20_000;
 
 type Props = {
   sessionId: string;
@@ -106,7 +108,8 @@ export function HeinzelHeader({
   const [moreOpen, setMoreOpen] = useState(false);
   const switchTrigger = useRef<HTMLButtonElement>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
-  const sessions = useHeinzelSessions();
+  // The state word follows the backend while the chat stays open: asked again every 20 s and when a turn starts or ends.
+  const sessions = useHeinzelSessions(true, ACTIVITY_POLL_MS);
   const { refetch } = sessions;
   // Opening the list asks again: a Heinzel made elsewhere (the Heinzels page, the CLI) shows at once.
   useEffect(() => {
@@ -117,7 +120,15 @@ export function HeinzelHeader({
   const heinzels = (sessions.data?.sessions ?? []).filter(
     (item) => item.state !== "retired" || item.session_id === sessionId,
   );
-  const activity = (sessions.data?.sessions ?? []).find((item) => item.session_id === sessionId)?.activity;
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current !== busy) void refetch();
+    wasBusy.current = busy;
+  }, [busy, refetch]);
+  const current = (sessions.data?.sessions ?? []).find((item) => item.session_id === sessionId);
+  // A turn on its way is work: face and word say so together, whatever the list last said about a quiet Heinzel.
+  const quiet = !current || ["idle", "asleep", "proud"].includes(current.activity);
+  const shown = busy && quiet ? "working" : current?.activity;
   const choose = (id: string) => {
     setSwitchOpen(false);
     switchTrigger.current?.focus();
@@ -153,22 +164,17 @@ export function HeinzelHeader({
             aria-expanded={switchOpen}
             aria-label={t("oneChat.switch", { name })}
             aria-describedby={`${sessionId}-activity`}
-            data-activity={activity ?? "idle"}
+            data-activity={shown ?? "idle"}
             className="flex h-11 min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-accent/70 disabled:opacity-50"
           >
-            <HeinzelAvatar
-              view="bust"
-              {...look}
-              state={busy ? "thinking" : activityPose(activity, true)}
-              className="size-8 overflow-hidden"
-            />
+            <HeinzelAvatar view="bust" {...look} state={activityPose(shown, true)} className="size-8 overflow-hidden" />
             <span className="min-w-0">
               <span className="block truncate text-[15px] leading-tight font-medium">{name}</span>
               <span
                 id={`${sessionId}-activity`}
                 className="block truncate text-ui-sm leading-tight text-muted-foreground"
               >
-                {activityWord(activity)}
+                {busy && quiet ? activityWord("working") : current ? sessionWord(current) : activityWord(undefined)}
               </span>
             </span>
             <ChevronDown aria-hidden className="size-3.5 shrink-0 text-icon" />
@@ -191,17 +197,15 @@ export function HeinzelHeader({
                 aria-current={item.session_id === sessionId || undefined}
                 className={cn(rowClass, item.session_id === sessionId && "bg-accent text-accent-foreground")}
               >
-                <HeinzelAvatar
-                  view="bust"
-                  {...appearanceLook(item.appearance)}
-                  state={activityPose(item.activity, item.session_id === sessionId)}
+                <ActivityFace
+                  appearance={item.appearance}
+                  activity={item.activity}
+                  awake={item.session_id === sessionId}
                   className="size-7 shrink-0 overflow-hidden"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{item.name}</span>
-                  <span className="block truncate text-ui-sm text-muted-foreground">
-                    {item.state === "retired" ? stateLabel(item.state) : activityWord(item.activity)}
-                  </span>
+                  <span className="block truncate text-ui-sm text-muted-foreground">{sessionWord(item)}</span>
                 </span>
               </button>
             </li>
