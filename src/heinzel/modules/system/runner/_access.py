@@ -84,11 +84,16 @@ class ClaudeCodeAccess:
         )
 
     def test(self) -> AccessTest:
-        """One short answer through the chat's own admission: reviewed release, help contract, closed result."""
+        """One short answer through the chat's own admission, so an OK means chat can run.
+
+        No model override, a claude.ai subscription login, the reviewed release, the help contract, the closed result.
+        """
         from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - bridge runtime only when testing
             Denial,
             SubscriptionDeniedError,
             check_access,
+            require_no_model_override,
+            require_subscription_login,
         )
 
         found = self._which(self._settings.claude_executable)
@@ -100,6 +105,8 @@ class ClaudeCodeAccess:
             )
         started = time.monotonic()
         try:
+            require_no_model_override(self._settings.model)
+            require_subscription_login(Path(found), self._execute)
             version, answer = check_access(Path(found), self._execute, TEST_PROMPT, TEST_TIMEOUT.total_seconds())
         except SubscriptionDeniedError as denied:
             logger.warning("Claude Code access test refused: %s", denied.reason.value)

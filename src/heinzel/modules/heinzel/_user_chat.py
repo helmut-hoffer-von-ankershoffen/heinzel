@@ -6,13 +6,12 @@ default, except for bounded private proposal operations. Subscription usage rema
 
 import asyncio
 import shutil
-import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field
 
 from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
@@ -142,9 +141,9 @@ class UserChatService:
         if limits.subscription_budget_mode != "plan-unknown":
             msg = "Claude subscription usage has unknown dollar cost and cannot enforce the configured USD caps"
             raise HeinzelError(msg)
-        if runner.model is not None:
-            msg = "This Claude chat bridge cannot enforce the configured model override"
-            raise HeinzelError(msg)
+        from heinzel.modules.heinzel._claude_subscription_model import require_no_model_override  # noqa: PLC0415 - model runtime only when checking selected AI access
+
+        require_no_model_override(runner.model)
         return limits, runner
 
     def _owner(self, session: str, request: str, *, allow_daemon_origin: bool = False) -> None:
@@ -167,31 +166,9 @@ class UserChatService:
             raise HeinzelError(msg)
 
     def _login(self, executable: Path) -> None:
-        from heinzel.modules.heinzel._claude_subscription_model import subscription_environment  # noqa: PLC0415 - model runtime only when checking selected AI access
+        from heinzel.modules.heinzel._claude_subscription_model import require_subscription_login  # noqa: PLC0415 - model runtime only when checking selected AI access
 
-        env = subscription_environment()
-        try:
-            with tempfile.TemporaryDirectory(prefix="hz-auth-") as directory:
-                result = self._execute(
-                    [str(executable), "auth", "status", "--json"],
-                    input=None,
-                    cwd=Path(directory),
-                    env=env,
-                    timeout=10,
-                    limit=16_384,
-                )
-            data = TypeAdapter(dict[str, JsonValue]).validate_json(result.stdout, strict=True)
-            if (
-                result.returncode != 0
-                or result.truncated
-                or data.get("loggedIn") is not True
-                or data.get("authMethod") != "claude.ai"
-                or data.get("apiProvider") != "firstParty"
-            ):
-                raise ValueError  # noqa: TRY301 - all status errors are redacted
-        except Exception:  # noqa: BLE001 - status may contain private user details
-            msg = "The selected Claude Code subscription could not be confirmed"
-            raise HeinzelError(msg) from None
+        require_subscription_login(executable, self._execute)
 
     @staticmethod
     def executable(found: str) -> tuple[Path, str]:

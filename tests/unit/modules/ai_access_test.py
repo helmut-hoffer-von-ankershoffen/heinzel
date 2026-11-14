@@ -235,13 +235,21 @@ def test_the_model_hosts_follow_the_vendor():
 # Claude Code
 
 
-def claude(tmp_path: Path, logged_in: str, answer: str = "OK", version: str = "2.1.321") -> ClaudeCodeAccess:
+def claude(
+    tmp_path: Path,
+    logged_in: str,
+    answer: str = "OK",
+    version: str = "2.1.321",
+    method: str = "claude.ai",
+    **settings: object,
+) -> ClaudeCodeAccess:
     executable = tmp_path / "claude"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
 
     def execute(command, **_):
         if command[1:3] == ["auth", "status"]:
-            return Outcome(0, f'{{"loggedIn": {logged_in}}}', "")
+            status = f'{{"loggedIn": {logged_in}, "authMethod": "{method}", "apiProvider": "firstParty"}}'
+            return Outcome(0, status, "")
         if command[1:] == ["--version"]:
             return Outcome(0, f"{version} (Claude Code)\n", "")
         if command[1:] == ["--help"]:
@@ -250,7 +258,7 @@ def claude(tmp_path: Path, logged_in: str, answer: str = "OK", version: str = "2
         result = {"type": "result", "subtype": "success", "is_error": False, "structured_output": wire}
         return Outcome(0, json.dumps(result) + "\n", "")
 
-    return ClaudeCodeAccess(RunnerSettings(), execute=execute, which=lambda _: str(executable))
+    return ClaudeCodeAccess(RunnerSettings(**settings), execute=execute, which=lambda _: str(executable))
 
 
 def test_claude_code_is_signed_in_from_auth_status_and_names_its_runner(tmp_path):
@@ -268,6 +276,21 @@ def test_claude_code_missing_is_not_installed():
 def test_a_claude_code_test_answers_through_the_chat_admission_and_names_the_release(tmp_path):
     result = claude(tmp_path, "true").test()
     assert (result.ok, result.detail) == (True, "OK (Claude Code 2.1.321)")
+
+
+@pytest.mark.parametrize(
+    ("changes", "words"),
+    [
+        ({"logged_in": "false"}, "not signed in with a Claude subscription"),
+        ({"method": "api-key"}, "not signed in with a Claude subscription"),
+        ({"model": "sonnet"}, "cannot use a model override"),
+    ],
+    ids=["signed-out", "api-key", "model-override"],
+)
+def test_a_claude_code_test_fails_whenever_chat_would_refuse_its_access(tmp_path, changes, words):
+    result = claude(tmp_path, **{"logged_in": "true", **changes}).test()
+    assert not result.ok
+    assert words in result.detail
 
 
 def test_a_claude_code_test_refuses_a_release_chat_would_refuse(tmp_path):

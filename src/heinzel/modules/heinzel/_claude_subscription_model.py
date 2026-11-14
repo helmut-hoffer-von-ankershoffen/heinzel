@@ -197,6 +197,8 @@ class Denial(StrEnum):
     PROCESS_FAILED = "process-failed"
     OUTPUT_INVALID = "output-invalid"
     CLI_ERROR = "cli-error"
+    LOGIN_UNCONFIRMED = "login-unconfirmed"
+    MODEL_OVERRIDE = "model-override"
 
 
 _DENIALS: dict[str, str] = {  # by Denial value; version-older is the older-release wording
@@ -225,6 +227,14 @@ _DENIALS: dict[str, str] = {  # by Denial value; version-older is the older-rele
         "access in Settings."
     ),
     "cli-error": "Claude Code reported an error; the turn outcome is uncertain",
+    "login-unconfirmed": (
+        "Claude Code is not signed in with a Claude subscription. Run `claude auth login`, then re-check AI access "
+        "in Settings."
+    ),
+    "model-override": (
+        "Chat through a Claude subscription cannot use a model override. Clear the Claude Code model in AI access, "
+        "then send the message again."
+    ),
 }
 
 
@@ -376,6 +386,46 @@ def _structured(outcome: Outcome) -> _Wire:
         return _Wire.model_validate(result.get("structured_output"))
     except ValueError:
         raise SubscriptionDeniedError(Denial.OUTPUT_INVALID) from None
+
+
+def require_no_model_override(model: str | None) -> None:
+    """Chat cannot enforce a configured model, so a model override refuses chat and its access test alike.
+
+    Raises:
+        SubscriptionDeniedError: If a model is configured.
+    """
+    if model is not None:
+        raise SubscriptionDeniedError(Denial.MODEL_OVERRIDE)
+
+
+def require_subscription_login(executable: Path, execute: Callable[..., Outcome]) -> None:
+    """Require a claude.ai first-party login from `claude auth status --json`; no token is read, no field kept.
+
+    Raises:
+        SubscriptionDeniedError: If the status is missing, unreadable or not a claude.ai subscription login.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix="hz-auth-") as directory:
+            result = execute(
+                [str(executable), "auth", "status", "--json"],
+                input=None,
+                cwd=Path(directory),
+                env=subscription_environment(),
+                timeout=10,
+                limit=16_384,
+            )
+        data: object = json.loads(result.stdout)
+    except Exception:  # noqa: BLE001 - status may contain private user details
+        raise SubscriptionDeniedError(Denial.LOGIN_UNCONFIRMED) from None
+    fields = cast("dict[str, object]", data) if isinstance(data, dict) else {}
+    if (
+        result.returncode != 0
+        or result.truncated
+        or fields.get("loggedIn") is not True
+        or fields.get("authMethod") != "claude.ai"
+        or fields.get("apiProvider") != "firstParty"
+    ):
+        raise SubscriptionDeniedError(Denial.LOGIN_UNCONFIRMED)
 
 
 def check_access(executable: Path, execute: Callable[..., Outcome], prompt: str, timeout: float) -> tuple[str, str]:
