@@ -104,3 +104,40 @@ enum ConnectionError: LocalizedError {
         }
     }
 }
+
+
+enum ExternalLink {
+    static func destination(_ input: String) -> URL? {
+        guard input.utf8.count <= 8192, !hasControls(input),
+              let parts = URLComponents(string: input), let url = parts.url,
+              parts.user == nil, parts.password == nil else { return nil }
+
+        if parts.scheme == "mailto" {
+            guard input.utf8.count <= 2000, parts.host == nil, parts.fragment == nil,
+                  validAddresses(parts.path) else { return nil }
+            var seen = Set<String>()
+            for item in parts.queryItems ?? [] {
+                let key = item.name.lowercased()
+                guard ["subject", "body", "cc", "bcc"].contains(key), seen.insert(key).inserted,
+                      let value = item.value, !hasControls(value) else { return nil }
+                if ["cc", "bcc"].contains(key), !validAddresses(value) { return nil }
+            }
+            return url
+        }
+
+        guard parts.scheme == "http" || parts.scheme == "https",
+              let host = url.host(),
+              BrowserAddress.host(host + ":443") != nil || BrowserAddress.publicEndpoint(host) != nil else { return nil }
+        return url
+    }
+
+    private static func hasControls(_ value: String) -> Bool {
+        value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private static func validAddresses(_ value: String) -> Bool {
+        value.split(separator: ",", omittingEmptySubsequences: false).allSatisfy {
+            $0.wholeMatch(of: /[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*\.[A-Za-z0-9]+/) != nil
+        } && !value.isEmpty
+    }
+}

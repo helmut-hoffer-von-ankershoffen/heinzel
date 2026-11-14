@@ -20,6 +20,13 @@ struct WorkspaceView: WebRepresentable {
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlaybackIfSupported()
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .defaultClient, name: "heinzelExternalLink"
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: Self.externalLinkScript, injectionTime: .atDocumentStart,
+            forMainFrameOnly: true, in: .defaultClient
+        ))
         // Keep the native browser in debug builds until WebKit egress probes pass.
         #if DEBUG
         let browserEnabled = ProcessInfo.processInfo.environment["HZ_SPIKE_BROWSER"] == "1"
@@ -102,6 +109,21 @@ struct WorkspaceView: WebRepresentable {
         return view
     }
 
+    // An isolated listener can distinguish an actual input event from a page calling click().
+    private static let externalLinkScript = """
+    const openExternal = event => {
+        if (!event.isTrusted || ![0, 1].includes(event.button) || event.defaultPrevented) return;
+        const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+        if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
+        const target = new URL(anchor.href);
+        if (target.origin === location.origin || !["https:", "http:", "mailto:"].includes(target.protocol)) return;
+        event.preventDefault();
+        window.webkit.messageHandlers.heinzelExternalLink.postMessage(target.href).catch(() => {});
+    };
+    addEventListener("click", openExternal);
+    addEventListener("auxclick", openExternal);
+    """
+
     private static func javascriptString(_ value: String) -> String {
         guard let data = try? JSONEncoder().encode(value) else { return "null" }
         return String(decoding: data, as: UTF8.self)
@@ -144,6 +166,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     weak var workspace: WKWebView?
     private let browser = IntegratedBrowser()
     private var nativeAudio: AnyObject?
+    private var lastExternalOpen: ContinuousClock.Instant?
     #if os(macOS)
     private weak var observedWindow: NSWindow?
     #endif
@@ -178,6 +201,18 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
               let workspace, message.webView === workspace,
               workspace.url.map(endpoint.owns) == true else { return (nil, "Workspace command unavailable") }
+        if message.name == "heinzelExternalLink" {
+            guard let value = message.body as? String, let target = ExternalLink.destination(value),
+                  !endpoint.owns(target) else { return (false, nil) }
+            let now = ContinuousClock.now
+            if let lastExternalOpen, lastExternalOpen.duration(to: now) < .seconds(2) { return (false, nil) }
+            lastExternalOpen = now
+            #if os(macOS)
+            return (NSWorkspace.shared.open(target), nil)
+            #else
+            return (await UIApplication.shared.open(target), nil)
+            #endif
+        }
         #if os(macOS)
         if message.name == "heinzelWindow", message.body as? String == "fullscreen" {
             observeWindow(workspace.window)
@@ -240,6 +275,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     func close(_ view: WKWebView) {
+        view.configuration.userContentController.removeScriptMessageHandler(
+            forName: "heinzelExternalLink", contentWorld: .defaultClient
+        )
         #if os(macOS)
         observeWindow(nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
