@@ -21,6 +21,7 @@ from heinzel.kernel import (
     DaemonAttestation,
     DaemonInstallationLifecycle,
     Kernel,
+    Progress,
     RunnerSnapshotProvider,
     record_usage,
 )
@@ -911,6 +912,7 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         playbook_kernel=kernel,
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
+        emitter=lambda: kernel.resolve(Progress).emitter(),
     )
     service.questions = QuestionRelay(
         service,

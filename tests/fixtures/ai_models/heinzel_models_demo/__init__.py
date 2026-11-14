@@ -31,11 +31,15 @@ DELAY = float(os.environ.get("HZ_DEMO_MODELS_DELAY", "0"))
 
 async def _stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
     """The same answers, streamed in small pieces, as a real provider streams them."""
-    if info.output_tools:
+    if info.output_tools:  # a Heinzel's reply is the outcome's summary: its call streams word by word too
         raw = json.dumps({"report": "Answered", "summary": STREAMED})
+        cut = raw.index(STREAMED)
+        words = STREAMED.split(" ")
+        pieces = [raw[:cut], *(word + " " for word in words[:-1]), words[-1] + raw[cut + len(STREAMED) :]]
         name = info.output_tools[0].name
-        for index in range(0, len(raw), 8):
-            yield {0: DeltaToolCall(name=name if index == 0 else None, json_args=raw[index : index + 8])}
+        for index, piece in enumerate(pieces):
+            await asyncio.sleep(DELAY)
+            yield {0: DeltaToolCall(name=name if index == 0 else None, json_args=piece)}
         return
     for word in STREAMED.split(" "):
         await asyncio.sleep(DELAY)  # slow enough that a browser sees the answer grow

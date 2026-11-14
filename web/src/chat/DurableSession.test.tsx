@@ -3,7 +3,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient, routes } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
-import { DurableSession } from "@/chat/DurableSession";
+import { DurableSession, grownReply } from "@/chat/DurableSession";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { frame } from "@/test/chat";
 import { config, shell } from "@/test/fixtures";
@@ -1922,6 +1922,120 @@ it("reads as a chat: formatted replies, the sent message at once, and the Heinze
   await waitFor(() => expect(screen.queryByText("Bruno is thinking…")).not.toBeInTheDocument());
   expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
   expect(screen.getAllByText("What now?")).toHaveLength(1);
+});
+
+it("shows the reply as the Heinzel writes it, then only the final message from the journal", async () => {
+  const releases: Array<() => void> = [];
+  const next = () => new Promise<void>((resolve) => releases.push(resolve));
+  let stored: Record<string, unknown> = { ...snapshot, name: "Bruno", profile_revision: 1, messages: [] };
+  const reply = {
+    id: "a1",
+    seq: 2,
+    role: "assistant",
+    text: "Hello from the model, word by word",
+    status: "completed",
+  };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": () => stored,
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/stream/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encoder.encode(frame("text", { text: "Hello " }) + frame("text", { text: "from" })));
+          await next();
+          controller.enqueue(encoder.encode(frame("text", { text: " the model, word" })));
+          await next();
+          stored = {
+            ...stored,
+            messages: [{ id: body.request_id, seq: 1, role: "user", text: "Hi", status: "completed" }, reply],
+          };
+          controller.enqueue(
+            encoder.encode(
+              frame("text", { text: "Hello from the model", replace: true }) +
+                frame("result", { data: { session_id: sessionId, request_id: body.request_id, message: reply } }),
+            ),
+          );
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const composer = await screen.findByLabelText(/^Message /);
+  fireEvent.change(composer, { target: { value: "Hi" } });
+  fireEvent.keyDown(composer, { key: "Enter" });
+  // The partial reply grows in a Heinzel bubble in place of "thinking"; it is busy, not a live region.
+  const partial = (await screen.findByText("Hello from")).closest("[data-streaming]") as HTMLElement;
+  expect(partial).toHaveAttribute("data-message-speaker", "heinzel");
+  expect(partial).toHaveAttribute("aria-busy", "true");
+  expect(partial.closest("[aria-live]")).toBeNull();
+  expect(screen.queryByText("Bruno is thinking…")).not.toBeInTheDocument();
+  expect(screen.getByText("Sending…")).toBeInTheDocument();
+  const sent = calls.find((call) => new URL(call.url).pathname === "/api/stream/heinzel/answer-chat");
+  expect(sent?.method).toBe("POST");
+  // It grows in place with the next piece, still before any final message.
+  await waitFor(() => expect(releases).toHaveLength(1));
+  await act(async () => releases[0]?.());
+  expect(await screen.findByText("Hello from the model, word")).toBe(within(partial).getByText(/^Hello from/));
+  expect(screen.queryByText("Hello from the model, word by word")).not.toBeInTheDocument();
+  await waitFor(() => expect(releases).toHaveLength(2));
+  await act(async () => releases[1]?.());
+  // The journal's final message replaces the partial one, once.
+  await screen.findByText("Hello from the model, word by word");
+  await waitFor(() => expect(document.querySelector("[data-streaming]")).toBeNull());
+  expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
+  expect(screen.getAllByText(/Hello from the model/)).toHaveLength(1);
+});
+
+it("falls back to the journal's whole answer when the stream breaks mid-reply", async () => {
+  let stored: Record<string, unknown> = { ...snapshot, name: "Bruno", profile_revision: 1, messages: [] };
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": () => stored,
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/stream/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      // The connection drops after a piece; the turn still finished and its message is in the journal.
+      stored = {
+        ...stored,
+        messages: [
+          { id: body.request_id, seq: 1, role: "user", text: "Hi", status: "completed" },
+          { id: "a1", seq: 2, role: "assistant", text: "The whole answer", status: "completed" },
+        ],
+      };
+      return new Response(frame("text", { text: "The wh" }), { headers: { "Content-Type": "text/event-stream" } });
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const composer = await screen.findByLabelText(/^Message /);
+  fireEvent.change(composer, { target: { value: "Hi" } });
+  fireEvent.keyDown(composer, { key: "Enter" });
+  expect(await screen.findByText("The whole answer")).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector("[data-streaming]")).toBeNull());
+  expect(screen.queryByText("The wh")).not.toBeInTheDocument();
+});
+
+it("grows a streamed reply by its deltas and starts over when the stream says so", () => {
+  let text = "";
+  for (const event of [
+    { event: "text", data: { text: "Good " } },
+    { event: "tool", data: { name: "search" } },
+    { event: "text", data: { text: "day" } },
+    { event: "text", data: { text: 3 } },
+  ])
+    text = grownReply(text, event);
+  expect(text).toBe("Good day");
+  expect(grownReply(text, { event: "text", data: { text: "Which day?", replace: true } })).toBe("Which day?");
 });
 
 it("keeps the conversation first: no Details block in the chat, and the button says Send", async () => {

@@ -63,6 +63,10 @@ try {
   const chat = page.getByRole("complementary", { name: "Chat" });
   assert.equal(await chat.getByRole("button", { name: /^Model and effort: / }).count(), 0);
   await chat.getByRole("button", { name: "Send" }).click();
+  // The reply shows in a streaming Heinzel bubble while the model writes it, before the final message replaces it.
+  const partial = chat.locator('[data-streaming][data-message-speaker="heinzel"]');
+  await partial.waitFor({ timeout: 30_000 });
+  assert.match((await partial.textContent()) ?? "", /Hello/);
   const reply = page.getByText(/Hello from the demo models/);
   await reply.first().waitFor({ timeout: 30_000 });
   const lengths = new Set();

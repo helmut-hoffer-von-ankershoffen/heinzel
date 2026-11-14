@@ -22,6 +22,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.kernel import Emit, HeinzelError, Kernel, OperationLet, Progress
+from heinzel.kernel._errors import NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._progress import Advance
 
@@ -64,6 +65,15 @@ def _drop(kind: str, data: Mapping[str, object]) -> None:
     del kind, data
 
 
+def error_body(exc: HeinzelError, *, private: bool) -> dict[str, str]:
+    """What a call answers for `exc`: its message, and the code the app acts on; the same on a stream (`error`)."""
+    if private and isinstance(exc, SubscriptionUsageLimitError):
+        return {"error": SubscriptionUsageLimitError.message, "code": "subscription_usage_limit"}
+    if isinstance(exc, NotSupportedError):
+        return {"error": str(exc), "code": "not_supported", "capability": exc.capability, "method": exc.method}
+    return {"error": str(exc)}
+
+
 def frame(kind: str, data: object) -> str:
     """One server-sent event: `event: <kind>` and its data as one line of JSON."""
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
@@ -98,7 +108,7 @@ def streamed(
             result = kernel.invoke(operation, **arguments)
             emit("result", {"data": to_jsonable_python(result, fallback=str)})
         except HeinzelError as exc:
-            emit("error", {"error": str(exc)})
+            emit("error", error_body(exc, private=operation.private))
         except Exception:  # noqa: BLE001 - the browser gets a plain error; the event keeps the trace
             log_event(log, "stream.operation.failed", level=logging.ERROR, exc_info=True, operation=operation.name)
             emit("error", {"error": f"{operation.name} failed with a bug; the log of `hz ui serve` says why."})
