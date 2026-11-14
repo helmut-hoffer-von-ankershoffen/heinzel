@@ -23,7 +23,7 @@ from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, Release
 from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
-from heinzel.modules.system._plugin_releases import PYPI, fetch_json
+from heinzel.modules.system._pypi import PYPI, fetch
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
@@ -156,7 +156,7 @@ class GitHubReleases(ReleaseSource):
             OSError: If PyPI can't be reached or answers with an error.
             ValueError: If the answer is too large or not JSON.
         """
-        data: object = fetch_json(f"{PYPI}/pypi/heinzel/{urllib.parse.quote(version)}/json", timeout)
+        data: object = fetch(f"{PYPI}/pypi/heinzel/{urllib.parse.quote(version)}/json", timeout)
         info = cast("dict[str, object]", data).get("info") if isinstance(data, dict) else None
         value = cast("dict[str, object]", info).get("requires_python") if isinstance(info, dict) else None
         return value if isinstance(value, str) and value.strip() else None

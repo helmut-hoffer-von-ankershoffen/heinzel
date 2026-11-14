@@ -18,6 +18,7 @@ version it has if that still resolves, and otherwise taken out of the installati
 import hashlib
 import importlib.metadata
 import json
+import logging
 import platform
 import re
 import shlex
@@ -53,7 +54,7 @@ from heinzel.kernel import (
     WebHeadRefresh,
     subprocess_environment,
 )
-from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.kernel._tool_python import newer_python
 from heinzel.modules.system._announced import (
     Announcement,
@@ -408,12 +409,12 @@ class UpdateService:
         Raises:
             HeinzelError: If the release's `Requires-Python` is malformed or no newer Python satisfies it.
         """
-        if version is None or self._releases is None:
+        if version is None:
             return None
         try:
             requires = self._releases.requires_python(version, RELEASE_TIMEOUT)
         except Exception as exc:  # noqa: BLE001 - isolation boundary: an unknown requirement keeps today's interpreter
-            log.warning("could not read the Python requirement of hz %s: %s", version, exc)
+            log_event(log, "update.python.unknown", level=logging.WARNING, version=version, error=str(exc))
             return None
         return newer_python(requires)
 
@@ -429,7 +430,7 @@ class UpdateService:
             yield
             return
         with self._installation.newer_interpreter(needed, subprocess_environment()):
-            log.info("hz %s needs Python %s; installing onto a uv-managed Python %s", version, needed, needed)
+            log_event(log, "update.python.managed", version=version, python=needed)
             yield
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":

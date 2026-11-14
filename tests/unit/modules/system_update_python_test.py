@@ -64,12 +64,12 @@ def test_github_releases_read_requires_python_from_pypi(monkeypatch):
         urls.append(url)
         return {"info": {"requires_python": ">=3.15"}}
 
-    monkeypatch.setattr(_service, "fetch_json", fetch)
+    monkeypatch.setattr(_service, "fetch", fetch)
     assert GitHubReleases("owner/name").requires_python("0.9.44", 1.0) == ">=3.15"
     assert urls == ["https://pypi.org/pypi/heinzel/0.9.44/json"]
-    monkeypatch.setattr(_service, "fetch_json", lambda url, timeout: {"info": {"requires_python": ""}})
+    monkeypatch.setattr(_service, "fetch", lambda url, timeout: {"info": {"requires_python": ""}})
     assert GitHubReleases("owner/name").requires_python("0.9.44", 1.0) is None
-    monkeypatch.setattr(_service, "fetch_json", lambda url, timeout: [])
+    monkeypatch.setattr(_service, "fetch", lambda url, timeout: [])
     assert GitHubReleases("owner/name").requires_python("0.9.44", 1.0) is None
 
 
