@@ -275,8 +275,8 @@ def _local(spec: str, name: str | None, path: Path, ref: str | None, subdirector
     for part in (ref, subdirectory):
         if part is not None and (not SAFE_PART.match(part) or ".." in part.split("/") or part.endswith(("/", ".lock"))):
             refused(spec, f"{part!r} is no git ref or subdirectory")
+    real = Path(os.path.realpath(path))
     try:
-        real = Path(os.path.realpath(path))
         is_repository = real.is_dir() and (real / ".git").exists()
     except OSError:
         is_repository = False
