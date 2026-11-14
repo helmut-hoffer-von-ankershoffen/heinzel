@@ -10,6 +10,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import os
 import secrets
 from collections.abc import Generator, Iterator
 from pathlib import Path
@@ -35,7 +36,46 @@ _IMAGES = {
     "image/x-icon": (b"\x00\x00\x01\x00",),
 }
 _SUFFIX = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/x-icon": "ico"}
+PRIVATE_DIR = 0o700
+PRIVATE_FILE = 0o600
 type Node = dict[str, Any]
+
+
+def _private_dir(path: Path) -> None:
+    """Create `path` for the owner alone; one that exists is narrowed to the owner too."""
+    path.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
+    path.chmod(PRIVATE_DIR)
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Replace `path` with `data` through a sibling file only the owner can read."""
+    temporary = path.with_name(f".{path.name}-{secrets.token_hex(4)}.tmp")
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
+        with os.fdopen(descriptor, "wb") as file:
+            file.write(data)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _well_formed(node: object) -> bool:
+    """Whether a stored entry has the shape every operation relies on, all the way down."""
+    if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not isinstance(node.get("title"), str):
+        return False
+    if node.get("kind") == "bookmark":
+        return isinstance(node.get("url"), str)
+    children = node.get("children")
+    return node.get("kind") == "folder" and isinstance(children, list) and all(map(_well_formed, children))
+
+
+def _well_formed_removal(item: object) -> bool:
+    return (
+        isinstance(item, dict)
+        and _well_formed(item.get("node"))
+        and isinstance(item.get("parent"), str | None)
+        and isinstance(item.get("index"), int)
+    )
 
 
 def bookmark_url(value: str) -> str:
@@ -108,8 +148,9 @@ class BookmarkService:
 
     @contextlib.contextmanager
     def _locked(self) -> Generator[None]:
-        self._file.parent.mkdir(parents=True, exist_ok=True)
-        with (self._file.parent / "bookmarks.lock").open("a") as lock:
+        _private_dir(self._file.parent)
+        descriptor = os.open(self._file.parent / "bookmarks.lock", os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
+        with os.fdopen(descriptor, "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
@@ -121,19 +162,23 @@ class BookmarkService:
         except (OSError, ValueError) as exc:
             msg = f"The bookmarks file {self._file} can't be read ({exc}); move it away to start again."
             raise HeinzelError(msg) from exc
-        if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("children"), list):
+        children = data.get("children") if isinstance(data, dict) else None
+        removed = data.get("removed", []) if isinstance(data, dict) else None
+        if (
+            not isinstance(data, dict)
+            or data.get("version") != 1
+            or not isinstance(children, list)
+            or not isinstance(removed, list)
+            or not all(map(_well_formed, children))
+            or not all(map(_well_formed_removal, removed))
+        ):
             msg = f"The bookmarks file {self._file} has an unknown format; move it away to start again."
             raise HeinzelError(msg)
-        data.setdefault("removed", [])
+        data["removed"] = removed
         return data
 
     def _write(self, data: Node) -> None:
-        temporary = self._file.with_name(f".bookmarks-{secrets.token_hex(4)}.tmp")
-        try:
-            temporary.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-            Path(temporary).replace(self._file)
-        finally:
-            temporary.unlink(missing_ok=True)
+        _write_private(self._file, json.dumps(data, ensure_ascii=False, indent=1).encode())
 
     # --- tree helpers ---
 
@@ -182,7 +227,21 @@ class BookmarkService:
 
     @staticmethod
     def _height(node: Node) -> int:
-        return 1 + max((BookmarkService._height(child) for child in node.get("children", [])), default=0)
+        """Levels the entry takes: 1 for a bookmark; a folder counts the level below it too, even while empty."""
+        if node["kind"] != "folder":
+            return 1
+        return 1 + max((BookmarkService._height(child) for child in node["children"]), default=1)
+
+    @staticmethod
+    def _require_room(depth: int, height: int) -> None:
+        """The one depth rule of add, folder, move and restore.
+
+        Raises:
+            HeinzelError: If an entry of `height` levels at `depth` would nest deeper than `MAX_DEPTH`.
+        """
+        if depth + height > MAX_DEPTH:
+            msg = f"Folders nest at most {MAX_DEPTH - 1} deep."
+            raise HeinzelError(msg)
 
     @staticmethod
     def _insert(children: list[Node], node: Node, before: str | None) -> None:
@@ -245,9 +304,7 @@ class BookmarkService:
         with self._locked():
             data = self._read()
             children, depth = self._folder(data, parent)
-            if depth >= MAX_DEPTH:
-                msg = f"Folders nest at most {MAX_DEPTH} deep."
-                raise HeinzelError(msg)
+            self._require_room(depth, 1)
             if same := next((node for node in children if node.get("url") == address), None):
                 return self._view(data, same["id"])
             node = self._new(data, "bookmark", _title(title or "", urlsplit(address).hostname or address), address)
@@ -264,9 +321,7 @@ class BookmarkService:
         with self._locked():
             data = self._read()
             children, depth = self._folder(data, parent)
-            if depth >= MAX_DEPTH - 1:
-                msg = f"Folders nest at most {MAX_DEPTH} deep."
-                raise HeinzelError(msg)
+            self._require_room(depth, 2)
             node = self._new(data, "folder", _title(title, "Folder"), None)
             self._insert(children, node, before)
             self._write(data)
@@ -306,9 +361,7 @@ class BookmarkService:
                 msg = "A folder can't move into itself or a folder inside it."
                 raise HeinzelError(msg)
             children, depth = self._folder(data, parent)
-            if depth + self._height(node) > MAX_DEPTH:
-                msg = f"Folders nest at most {MAX_DEPTH} deep."
-                raise HeinzelError(msg)
+            self._require_room(depth, self._height(node))
             index = holder.index(node)
             holder.remove(node)
             try:
@@ -387,7 +440,8 @@ class BookmarkService:
             if origin not in known:
                 msg = "A favicon is kept only for the origin of a bookmark, e.g. https://example.com."
                 raise HeinzelError(msg)
-            self._icons.mkdir(parents=True, exist_ok=True)
+            _private_dir(self._icons.parent)
+            _private_dir(self._icons)
             stem = self._icon_stem(origin)
             # Icons of origins without a bookmark go, so the cache follows the tree and stays bounded.
             keep = {self._icon_stem(item) for item in known}
@@ -395,12 +449,7 @@ class BookmarkService:
                 if path.stem not in keep or path.stem == stem:
                     path.unlink(missing_ok=True)
             if len(keep) <= MAX_FAVICONS:
-                temporary = self._icons / f".{stem}-{secrets.token_hex(4)}.tmp"
-                try:
-                    temporary.write_bytes(data)
-                    Path(temporary).replace(self._icons / f"{stem}.{_SUFFIX[media]}")
-                finally:
-                    temporary.unlink(missing_ok=True)
+                _write_private(self._icons / f"{stem}.{_SUFFIX[media]}", data)
             return self._view(tree)
 
     @property

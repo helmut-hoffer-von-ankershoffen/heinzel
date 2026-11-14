@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { BROWSER_PARTITION, MAX_FAVICON_BYTES, createMiniBrowser, deviceDialog, smallFavicon, smallPng } from "../src/mini-browser.js";
+import { BROWSER_PARTITION, MAX_FAVICON_BYTES, MAX_FAVICON_DOWNLOAD, createMiniBrowser, deviceDialog, smallFavicon, smallPng } from "../src/mini-browser.js";
 
 function fixture(configure = async () => {}, extra = {}) {
   const frame = { processId: 1, frameToken: "main", url: "http://127.0.0.1:8737/", detached: false, isDestroyed: () => false };
@@ -553,7 +553,12 @@ test("links: a page's target=_blank opens a tab only right after the person's in
 // --- favicons: the page's own icon, read in the guest partition, kept small per origin ---
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24)]);
 const PNG_URL = `data:image/png;base64,${PNG.toString("base64")}`;
-const iconResponse = (body = PNG, type = "image/png", ok = true) => ({ ok, headers: new Headers({ "content-type": type }), arrayBuffer: async () => body });
+// A real streamed body, so the reader, the cap and the cancel are the ones the app uses.
+const iconResponse = (body = PNG, type = "image/png", ok = true) => {
+  const response = new Response(body, { status: ok ? 200 : 404, headers: { "content-type": type } });
+  response.arrayBuffer = async () => { throw new Error("the whole body must never be buffered"); };
+  return response;
+};
 const iconSettled = () => new Promise((resolve) => setTimeout(resolve, 0));
 async function withIcon(fetch, extra = {}) {
   const f = fixture(async () => {}, extra);
@@ -567,7 +572,10 @@ test("a tab carries the icon its page showed, read without credentials in the gu
   const f = await withIcon(() => iconResponse());
   assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
   await f.icon(["https://example.com/favicon.png"]);
-  assert.deepEqual(f.fetched, [["https://example.com/favicon.png", { credentials: "omit" }]]);
+  assert.equal(f.fetched.length, 1);
+  assert.equal(f.fetched[0][0], "https://example.com/favicon.png");
+  assert.equal(f.fetched[0][1].credentials, "omit");
+  assert.ok(f.fetched[0][1].signal instanceof AbortSignal);
   const state = await f.invoke({ action: "state" });
   assert.equal(state.tabs[0].favicon, PNG_URL);
 });
@@ -620,4 +628,50 @@ test("the app's decoder reduces any icon to a small PNG and refuses what it cann
   const f = await withIcon(() => iconResponse(Buffer.from("ico"), "image/x-icon"), { faviconImage: () => "javascript:alert(1)" });
   await f.icon(["https://example.com/favicon.ico"]);
   assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+});
+
+test("a chunked icon body without a length is cancelled at the cap, not buffered", async () => {
+  let pulled = 0, cancelled = false;
+  const endless = () => new Response(new ReadableStream({
+    pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(64 * 1024)); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 }), { headers: { "content-type": "image/png" } });
+  const f = await withIcon((url) => url.endsWith("endless") ? endless() : iconResponse());
+  await f.icon(["https://example.com/endless"]);
+  for (let turn = 0; turn < 50 && !cancelled; turn += 1) await iconSettled();
+  assert.equal(cancelled, true);
+  assert.ok(pulled * 64 * 1024 <= MAX_FAVICON_DOWNLOAD + 2 * 64 * 1024, `read ${pulled} chunks`);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  // The next candidate still gets its turn.
+  await f.icon(["https://example.com/endless", "https://example.com/good.png"]);
+  for (let turn = 0; turn < 50 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1) await iconSettled();
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("an icon whose answer or body never ends is given up after the timeout", async () => {
+  const signals = [];
+  // Like the network: the pending answer and the pending read both fail when the request is aborted.
+  const onAbort = (signal, fail) => signal.addEventListener("abort", () => fail(new Error("aborted")), { once: true });
+  const f = await withIcon(() => iconResponse(), { faviconTimeout: 20 });
+  f.sessions[0].fetch = async (url, init) => {
+    signals.push(init.signal);
+    if (url.endsWith("no-answer")) return new Promise((_resolve, reject) => onAbort(init.signal, reject));
+    if (url.endsWith("stalled")) return new Response(new ReadableStream({
+      start(controller) { controller.enqueue(PNG); onAbort(init.signal, (error) => controller.error(error)); },
+    }), { headers: { "content-type": "image/png" } });
+    return iconResponse();
+  };
+  f.views[0].webContents.emit("page-favicon-updated", {}, ["https://example.com/no-answer", "https://example.com/stalled",
+    "https://example.com/good.png"]);
+  for (let turn = 0; turn < 200 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(signals.map((signal) => signal.aborted), [true, true, false]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("a refused icon answer is aborted, so its body is never downloaded", async () => {
+  const f = await withIcon((url) => iconResponse(PNG, url.endsWith("html") ? "text/html" : "image/png"));
+  await f.icon(["https://example.com/html"]);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
 });

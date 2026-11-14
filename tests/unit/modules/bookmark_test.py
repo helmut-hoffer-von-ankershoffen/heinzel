@@ -2,6 +2,8 @@
 
 import base64
 import json
+import os
+import stat
 
 import pytest
 from rich.console import Console
@@ -151,6 +153,14 @@ def test_nesting_is_bounded(service):
     with pytest.raises(HeinzelError, match="nest at most"):
         service.folder("Too deep", parent, None)
     service.add("https://example.com/", "Leaf", parent, None)
+    # One rule for every way in: an empty folder moved there is refused like a new one.
+    empty = service.folder("Empty", None, None).changed
+    with pytest.raises(HeinzelError, match="nest at most"):
+        service.move(empty, parent, None)
+    service.remove(empty)
+    service.remove(parent)
+    assert service.restore(empty).changed == empty
+    service.restore(parent)
     tall = service.folder("Tall", None, None).changed
     service.folder("Child", tall, None)
     with pytest.raises(HeinzelError, match="nest at most"):
@@ -202,6 +212,68 @@ def test_a_damaged_file_is_named_not_overwritten(service):
     with pytest.raises(HeinzelError, match="unknown format"):
         service.listing()
     assert service.file.read_text() == '{"version": 2}'
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {"version": 1, "children": [{"id": "b-1", "title": "No kind"}]},
+        {"version": 1, "children": [{"kind": "bookmark", "title": "No id", "url": "https://example.com/"}]},
+        {"version": 1, "children": [{"id": "b-1", "kind": "bookmark", "title": "No address"}]},
+        {"version": 1, "children": [{"id": "b-1", "kind": "folder", "title": "No children"}]},
+        {"version": 1, "children": [{"id": "b-1", "kind": "folder", "title": "F", "children": ["text"]}]},
+        {"version": 1, "children": [{"id": "b-1", "kind": "note", "title": "Other kind"}]},
+        {"version": 1, "children": ["text"]},
+        {"version": 1, "children": [], "removed": "text"},
+        {"version": 1, "children": [], "removed": [{"node": {"id": "b-1"}, "parent": None, "index": 0}]},
+        {"version": 1, "children": [], "removed": [{"parent": None, "index": 0}]},
+        ["a list"],
+    ],
+)
+def test_a_damaged_entry_gives_the_format_error_in_every_operation(service, stored):
+    service.file.parent.mkdir(parents=True)
+    service.file.write_text(json.dumps(stored))
+    for call in (
+        service.listing,
+        lambda: service.add("https://example.com/", None, None, None),
+        lambda: service.move("b-1", None, None),
+        lambda: service.remove("b-1"),
+        lambda: service.restore(None),
+    ):
+        with pytest.raises(HeinzelError, match="unknown format"):
+            call()
+    assert json.loads(service.file.read_text()) == stored
+
+
+def test_the_tree_and_the_favicon_cache_are_the_owners_alone(service, tmp_path):
+    def mode(path) -> int:
+        return stat.S_IMODE(path.stat().st_mode)
+
+    old = os.umask(0o022)
+    try:
+        service.add("https://example.com/", None, None, None)
+        service.set_favicon("https://example.com", data_url())
+    finally:
+        os.umask(old)
+    tree_dir, cache_dir = service.file.parent, tmp_path / "cache/bookmark"
+    assert mode(tree_dir) == 0o700
+    assert {path.name: mode(path) for path in tree_dir.iterdir()} == {"bookmarks.json": 0o600, "bookmarks.lock": 0o600}
+    assert mode(cache_dir) == 0o700
+    assert mode(cache_dir / "favicons") == 0o700
+    assert [mode(path) for path in (cache_dir / "favicons").iterdir()] == [0o600]
+
+
+def test_stores_that_were_open_to_others_are_narrowed(service, tmp_path):
+    service.file.parent.mkdir(parents=True, mode=0o755)
+    service.file.parent.chmod(0o755)
+    (tmp_path / "cache/bookmark/favicons").mkdir(parents=True, mode=0o755)
+    service.file.write_text('{"version": 1, "children": []}')
+    service.file.chmod(0o644)
+    service.add("https://example.com/", None, None, None)
+    service.set_favicon("https://example.com", data_url())
+    assert stat.S_IMODE(service.file.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(service.file.stat().st_mode) == 0o600
+    assert stat.S_IMODE((tmp_path / "cache/bookmark/favicons").stat().st_mode) == 0o700
 
 
 def test_a_favicon_is_cached_per_origin_of_a_bookmark(service):

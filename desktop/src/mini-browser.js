@@ -21,7 +21,8 @@ const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", r
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
 const PASSKEY_PAGE = /\/challenge\/pk(?:\/|$)|passkey|webauthn/i;
 // A page's own icon, for its tab and for bookmarks: read once per origin, kept small, never from a third-party service.
-const MAX_FAVICON_DOWNLOAD = 512 * 1024;
+export const MAX_FAVICON_DOWNLOAD = 512 * 1024;
+const FAVICON_TIMEOUT_MS = 5000;
 export const MAX_FAVICON_BYTES = 6000;
 // 6000 bytes as base64, plus the data: prefix.
 const MAX_FAVICON_DATA_URL = 8100;
@@ -105,7 +106,7 @@ export function deviceDialog({ host, devices }) {
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
   createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false,
-  faviconImage = smallPng }) {
+  faviconImage = smallPng, faviconTimeout = FAVICON_TIMEOUT_MS }) {
   // window -> { tabs: Map(id -> guest), selected, bounds, shown, opening, pending }: every tab shares one partition.
   const surfaces = new Map();
   const opening = new Set();
@@ -123,25 +124,47 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
    * The first icon the page names that is public HTTPS, read in the guests' own partition (same proxy, same rules),
    * bounded and reduced to a small image. A page that left for another origin meanwhile keeps no stale icon.
    */
+  // The body in pieces, never more than the cap in memory: past it the download is cancelled, whatever the headers said.
+  const readCapped = async (response, abort) => {
+    const reader = response.body?.getReader();
+    if (!reader) return null;
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks);
+      size += value.byteLength;
+      if (size > MAX_FAVICON_DOWNLOAD) {
+        abort.abort();
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  };
   const readFavicon = async (guest, urls) => {
     const page = originOf(guest.view.webContents.getURL());
     if (!page.startsWith("https://") || !Array.isArray(urls)) return;
     for (const candidate of urls.slice(0, 4)) {
       let url;
       try { url = browserUrl(candidate, connection()?.origin); } catch { continue; }
+      // One deadline for the answer and its body: a site that never finishes costs a few seconds, not a connection.
+      const abort = new AbortController();
+      const deadline = setTimeout(() => abort.abort(), faviconTimeout);
       try {
-        const response = await guest.session.fetch(url, { credentials: "omit" });
+        const response = await guest.session.fetch(url, { credentials: "omit", signal: abort.signal });
         const type = String(response.headers.get("content-type") ?? "").toLowerCase();
         const length = Number(response.headers.get("content-length") ?? 0);
-        if (!response.ok || !type.startsWith("image/") || length > MAX_FAVICON_DOWNLOAD) continue;
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length || buffer.length > MAX_FAVICON_DOWNLOAD) continue;
+        if (!response.ok || !type.startsWith("image/") || length > MAX_FAVICON_DOWNLOAD) { abort.abort(); continue; }
+        const buffer = await readCapped(response, abort);
+        if (!buffer?.length) continue;
         const image = faviconImage(buffer);
         if (typeof image !== "string" || !image.startsWith("data:image/") || image.length > MAX_FAVICON_DATA_URL) continue;
         if (icons.size >= MAX_FAVICON_ORIGINS && !icons.has(page)) icons.delete(icons.keys().next().value);
         icons.set(page, image);
         return;
       } catch { /* the next candidate */ }
+      finally { clearTimeout(deadline); }
     }
   };
   // The guest a prompt came from: its own contents, or the main frame above the requesting frame. A background
