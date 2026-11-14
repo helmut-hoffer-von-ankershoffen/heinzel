@@ -229,4 +229,3 @@ class ConnectorService:
 
 def _key(capability: str) -> str:
     return f"capabilities.{capability.replace('-', '_')}"
-

@@ -5,7 +5,7 @@ implementation: built
 decision-makers: maintainer (need), builder (shape)
 amends: 0028
 amends-0028: a capability that allows it is served by several adapters at once, routed by item and fanned out for lists
-related: 0021, 0026, 0028, 0055, 0057, 0159
+related: 0021, 0026, 0028, 0055, 0057, 0159, 0160
 ---
 
 # 0161: Several adapters serve documents at once
@@ -56,7 +56,8 @@ counts every connector that is on as in use. Only capabilities with `Capability.
 - `routes`: methods that act on one item, mapped to the parameter that names it. For documents, `read` and
   `replace_section` route on `ref`.
 - `fan_out`: read methods that return a list and are asked of every adapter. For documents, `search`.
-- `optional_methods`: methods an adapter may leave out. For documents, `search`.
+- `optional`: methods an adapter may leave out, the field [ADR 0160](0160-chat-is-an-extra-place-for-notices-and-questions.md)
+  added. For documents, `search`.
 
 `module.provides(..., links=...)` declares the **hosts of the links** an adapter opens, such as `docs.google.com`, as
 a static list or as a function of the module's settings, like `hosts=`. Declared `hosts` are where an adapter sends
