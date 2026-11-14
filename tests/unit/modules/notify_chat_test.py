@@ -11,7 +11,7 @@ import pytest
 from heinzel import HeinzelError, NoticeHelper, NoticeKind, SelfMessage
 from heinzel.kernel._self_chat import SelfChat
 from heinzel.modules.system.notify import NotifyService, NotifySettings
-from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, notice_ledger
+from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, forget_chats, notice_ledger
 from heinzel.modules.system.notify._native import Native
 
 pytestmark = pytest.mark.unit
@@ -284,3 +284,30 @@ def test_a_send_a_finished_process_left_claimed_is_taken_over(make):
     with service.chat_ledger.locked() as state:
         state["sent"][notice.id] = f"sending:{__import__('os').getpid()}"  # this process is still at it
     assert service.post_chat() == 0
+
+
+def test_the_threads_of_deleted_chats_are_forgotten_and_never_reused(make, clock):
+    inbox = Inbox()
+    service = make(inbox, chat_notifications=True)
+    with service.chat_ledger.locked() as state:
+        state["threads"].update({"/heinzel?chat=hz-gone": "t-gone", "/heinzel?chat=hz-1": "t-1", "/doctor": "t-d"})
+    assert service.forget_chats({"hz-1", "hz-2"}) == 1
+    with service.chat_ledger.locked() as state:
+        assert state["threads"] == {"/heinzel?chat=hz-1": "t-1", "/doctor": "t-d"}, "other routes stay"
+    helper = NoticeHelper(name="Ada", reason="scheduled check-in")
+    service.emit(
+        NoticeKind.HEINZEL, "Ada checked in", "", route="/heinzel?chat=hz-gone", command="hz", key="k", helper=helper
+    )
+    assert service.post_chat() == 1
+    assert inbox.sent[0]["thread"] is None
+
+
+def test_forgetting_never_raises_for_an_unreadable_ledger(make, monkeypatch):
+    service = make(Inbox())
+
+    def unreadable(*_args: object) -> int:
+        raise OSError
+
+    monkeypatch.setattr("heinzel.modules.system.notify._chat.forget_chats", unreadable)
+    assert service.forget_chats(set()) == 0
+    assert forget_chats(service.chat_ledger, set()) == 0

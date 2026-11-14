@@ -223,6 +223,10 @@ class Notifications:
         """Compact a batch of completed outbox keys while preserving unresolved keys and visible notices."""
         raise NotImplementedError
 
+    def forget_chats(self, chats: set[str]) -> int:
+        """Forget what chat delivery keeps for Heinzel chats not in `chats` (those that exist); how many it forgot."""
+        raise NotImplementedError
+
     def has_once(self, key: str) -> bool | None:
         """Check a durable key; None means the store could not answer safely."""
         raise NotImplementedError

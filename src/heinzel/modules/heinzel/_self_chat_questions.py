@@ -17,6 +17,9 @@ Answers are routed by the relay's own record (the chat, the question it asked), 
 Write approvals never go this way (ADR 0068, 0120): only questions. One live ask per Heinzel chat (a newer question
 supersedes it) and at most `MAX_LIVE` in this process; over the cap, the question is only in the app. An adapter that
 ignores `cancel` frees its place `GRACE` seconds after the wait.
+
+A chat that no longer exists keeps nothing: before each question the relay drops the thread and any live ask of chats
+that are gone, here and in the notices' ledger.
 """
 
 import asyncio
@@ -97,11 +100,16 @@ class QuestionRelay:
         state_dir: Path,
         *,
         settings: Callable[[], QuestionSettings] = _user_settings,
+        forget_notices: Callable[[set[str]], object] | None = None,
     ) -> None:
-        """Bind the chat service that runs turns, the owner's sessions, and the self channel."""
+        """Bind the chat service that runs turns, the owner's sessions, and the self channel.
+
+        `forget_notices(chats)` drops the notices' chat threads of Heinzel chats not in `chats`.
+        """
         self._chat, self._crud, self._current, self._self_chat = chat, crud, current, self_chat
         self.ledger = SelfChatLedger(state_dir / STATE, "questions", ("threads", "live"))
         self._settings = settings
+        self._forget_notices = forget_notices
         self.threads: list[threading.Thread] = []
         """Workers started, for tests to join."""
 
@@ -112,11 +120,30 @@ class QuestionRelay:
         worker.start()
 
     def _guarded(self, session: str, turn: str) -> None:
-        try:
-            with self._current.local("self-chat"):
+        with self._current.local("self-chat"):
+            try:
+                self.forget_gone()
+            except Exception as exc:  # noqa: BLE001 - tidying never costs the question
+                log_event(_EVENTS, "self_chat.forget.failed", level=logging.WARNING, problem=type(exc).__name__)
+            try:
                 self.relay(session, turn)
-        except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs the question in the app
-            log_event(_EVENTS, "self_chat.question.failed", level=logging.WARNING, problem=type(exc).__name__)
+            except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs the question in the app
+                log_event(_EVENTS, "self_chat.question.failed", level=logging.WARNING, problem=type(exc).__name__)
+
+    def forget_gone(self) -> None:
+        """Drop what is kept for Heinzel chats that no longer exist: their threads, and any live ask (cancelled)."""
+        chats = {head.session for head in self._crud.repository.heads()}
+        with self._guard:
+            for session in [s for s in self._live if s not in chats]:
+                ask = self._live.pop(session)
+                ask.ended = "superseded"
+                ask.cancel.set()
+        with self.ledger.locked() as state:
+            for part in state.values():
+                for session in [s for s in part if s not in chats]:
+                    del part[session]
+        if self._forget_notices is not None:
+            self._forget_notices(chats)
 
     def relay(self, session: str, turn: str) -> None:
         """Ask the question of `turn` in chat and act on what comes first; under the `self-chat` identity."""

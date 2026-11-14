@@ -101,6 +101,9 @@ frees its place 30 seconds after the wait. Quiet mode keeps questions out of cha
 follows the owner's own conversation or the schedule's own quiet hours. If the process ends while an ask waits, the
 next ask says "still open" in that thread once.
 
+A Heinzel chat that no longer exists keeps nothing: before each question the relay drops its thread and any live ask
+(cancelled without a note), in both ledgers, so a new chat never gets an old chat's thread.
+
 **Approvals never go through chat.** `ask_self` asks questions; it never approves anything. Write approvals stay with
 the CLI and paired web confirmation ([ADR 0068](0068-human-approval-proofs-and-head-parity.md)) and the reviewed channel
 claims of ADR 0120, including a plugin's own reviewed Approve and Decline buttons. Every approval, publication and
@@ -127,7 +130,7 @@ credentials or approval previews. The switch descriptions say the text goes to t
 Unit tests: the protocol shape and the optional and core-only methods, including a publish operation refused on both;
 a self-only adapter; the bounds both ways; notices fan out once with a failing, unbuildable or unsupporting chat
 costing nothing; the race (app first, chat first, both at once, late, superseded, timeout, refused, a hung adapter,
-a restart); the caps; the thread kept per chat; no blocking of the caller; the settings status. An integration test
+a restart); the caps; the thread kept per chat and forgotten with a deleted chat; no blocking of the caller; the settings status. An integration test
 runs a turn that asks, and a turn for a chat answer under the `self-chat` identity only. Vitest covers the switches and
 the "Answered in" line; a browser journey switches it on with a test plugin's chat connector.
 

@@ -389,11 +389,13 @@ def test_a_failing_self_chat_costs_nothing(world):
 
 def test_an_ask_a_restart_left_waiting_is_said_to_be_still_open_once(world):
     current, crud, session = world
+    with current.local("cli"):
+        other = crud.new_chat("other").session_id
     relay = _relay(world, Inbox(), Chat())
     with relay.ledger.locked() as state:
         state["threads"][session] = "t-old"
         state["live"][session] = "999999999"  # no such process: it ended while it waited
-        state["live"]["hz-other"] = str(__import__("os").getpid())  # this process: still waiting
+        state["live"][other] = str(__import__("os").getpid())  # this process: still waiting
     with current.local("cli"):
         _ask(crud, session, "turn-1")
     inbox = Inbox(SelfAnswer(timed_out=True, thread="t-old"))
@@ -401,7 +403,7 @@ def test_an_ask_a_restart_left_waiting_is_said_to_be_still_open_once(world):
     assert inbox.notes[0] == (STILL_OPEN, "t-old")
     with relay.ledger.locked() as state:
         assert session not in state["live"]
-        assert "hz-other" in state["live"]
+        assert other in state["live"]
     inbox = Inbox(SelfAnswer(timed_out=True, thread="t-old"))
     _run(_relay(world, inbox, Chat()), session, "turn-1")
     assert inbox.notes == [(STILL_OPEN, "t-old")], "said once, then only this ask's own note"
@@ -423,3 +425,71 @@ def test_the_self_chat_identity_never_approves():
         str(path.relative_to(root)) for path in root.rglob("*.py") if '"self-chat"' in path.read_text(encoding="utf-8")
     }
     assert naming <= allowed
+
+
+def _delete(crud: SessionCrud, monkeypatch, session: str) -> None:
+    """Core has no delete for a Heinzel chat yet: one that is gone is one the repository no longer lists."""
+    heads = crud.repository.heads
+    monkeypatch.setattr(crud.repository, "heads", lambda: [h for h in heads() if h.session != session])
+
+
+def test_a_deleted_chats_thread_is_forgotten_and_never_reused(world, monkeypatch):
+    current, crud, old = world
+    forgotten: list[set[str]] = []
+    relay = _relay(world, Inbox(), Chat())
+    relay._forget_notices = forgotten.append
+    with relay.ledger.locked() as state:
+        state["threads"][old] = "t-old"
+        state["live"][old] = "999999999"
+    _delete(crud, monkeypatch, old)
+    with current.local("cli"):
+        new = crud.new_chat("again").session_id
+        _ask(crud, new, "turn-1")
+    inbox = Inbox(SelfAnswer(timed_out=True, thread="t-new"))
+    relay._self_chat = lambda: SelfChat(adapter="acmechat", notifies=True, asks=True, build=lambda: inbox)
+    _run(relay, new, "turn-1")
+    assert new != old
+    assert inbox.asked[0]["thread"] is None, "a new chat starts its own thread"
+    assert inbox.notes == [(STILL_OPEN, "t-new")], "the new chat's own thread; no note for the deleted chat's ask"
+    with relay.ledger.locked() as state:
+        assert old not in state["threads"]
+        assert old not in state["live"]
+    assert forgotten == [{new}], "the notices' threads of gone chats are dropped too"
+
+
+def test_a_live_ask_of_a_deleted_chat_is_cancelled_silently(world, monkeypatch):
+    current, crud, session = world
+    inbox = Inbox("wait")
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+        other = crud.new_chat("other").session_id
+        _ask(crud, other, "turn-2")
+    relay = _relay(world, inbox, Chat())
+    relay.asked(session, "turn-1")
+    assert inbox.waiting.wait(5)
+    _delete(crud, monkeypatch, session)
+    inbox.answers.append(SelfAnswer(timed_out=True))
+    relay.asked(other, "turn-2")
+    for worker in relay.threads:
+        worker.join(10)
+        assert not worker.is_alive()
+    assert [a["question"] for a in inbox.asked] == ["Which calendar?", "Which calendar?"]
+    assert inbox.notes == [(STILL_OPEN, None)], "only the other chat's own note; nothing for the deleted chat"
+    assert QuestionRelay._live == {}
+
+
+def test_tidying_that_fails_never_costs_the_question(world, caplog):
+    current, crud, session = world
+    with current.local("cli"):
+        _ask(crud, session, "turn-1")
+    inbox = Inbox(SelfAnswer(timed_out=True, thread="t-1"))
+    relay = _relay(world, inbox, Chat())
+
+    def broken(chats: set[str]) -> None:
+        msg = "no notify module"
+        raise HeinzelError(msg)
+
+    relay._forget_notices = broken
+    _run(relay, session, "turn-1")
+    assert len(inbox.asked) == 1
+    assert "self_chat.forget.failed" in caplog.text

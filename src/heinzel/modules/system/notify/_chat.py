@@ -7,8 +7,8 @@ limit). It never replaces the app: the list keeps every notice, and a failure he
 Each notice is sent once. It is claimed in a small ledger under a lock before the adapter is called, so the web
 app's process and the daemon's tick never both send it; a failed send is logged, not retried, and a claim whose process
 ended mid-send (a tick that finished first) is taken over by the next sender. A Heinzel's notices
-share one thread per Heinzel chat. Only notices that became due within `WINDOW` are sent, so switching it on doesn't
-replay a backlog.
+share one thread per Heinzel chat, forgotten once that chat no longer exists. Only notices that became due within
+`WINDOW` are sent, so switching it on doesn't replay a backlog.
 """
 
 import logging
@@ -44,6 +44,19 @@ KIND_LABEL: dict[NoticeKind, str] = {
 def notice_ledger(directory: Path) -> SelfChatLedger:
     """Which notices went to chat (`sent`), and the thread of each Heinzel chat (`threads`)."""
     return SelfChatLedger(directory, "notices", ("sent", "threads"))
+
+
+CHAT_ROUTE = "/heinzel?chat="
+"""How a Heinzel chat's notices are routed in the web app; the rest of the route is the chat's id."""
+
+
+def forget_chats(ledger: SelfChatLedger, chats: set[str]) -> int:
+    """Drop the threads of Heinzel chats not in `chats` (those that exist); other threads stay. How many went."""
+    with ledger.locked() as state:
+        gone = [k for k in state["threads"] if k.startswith(CHAT_ROUTE) and k[len(CHAT_ROUTE) :] not in chats]
+        for key in gone:
+            del state["threads"][key]
+    return len(gone)
 
 
 def chat_text(notice: Notice, url: str | None) -> str:
