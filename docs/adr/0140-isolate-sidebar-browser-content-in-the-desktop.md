@@ -22,16 +22,30 @@ Many websites also refuse embedding in another web page. A fetching proxy would 
 
 ## Decision Outcome
 
-Use an Electron WebContentsView with a fresh nonpersistent session, sandbox, context isolation and no preload or
+Use an Electron WebContentsView with its own website session, sandbox, context isolation and no preload or
 Node integration. The authenticated product main frame controls this surface through narrowly validated commands.
 Do not grant guest permissions, downloads, popups or external protocol dispatch. Keep ordinary certificate checks.
 
-Refuse Bluetooth, HID, serial and USB choosers, device permissions and screen sharing. Each product window
-reuses one in-memory partition and wipes it on every close, so reopening never grows memory.
+Bluetooth, HID, serial and USB prompts open a native chooser: the person picks one listed device or cancels, and
+only a picked device is granted (no device permission handler, no automatic choice). A prompt from a background
+window or with no device grants nothing and shows a visible note. Camera, microphone, screen sharing and every other
+permission stay refused. All guests share one persistent partition (`persist:hz-browser`), never the product's
+session, so website sign-ins survive closing the panel and restarting the app; "Clear browsing data" empties its
+cookies, storage, cache and authentication cache.
+
+WebAuthn is not refused. Electron serves no platform passkey (iCloud Keychain, Touch ID) for third-party sites: that
+needs a signed app whose identifier each relying party lists in its `apple-app-site-association`. The page then only
+sees `NotAllowedError`, so a passkey step or WebAuthn failure shows a visible note that passkeys may not work, with
+the choice of another sign-in option or "Open in browser", which hands the guest's current public HTTPS address to the
+default browser.
+
+Owner decisions, 2026-11-14: allow device and security-key prompts with a user choice ("don't refuse device or
+security key prompts"), and keep website sign-ins ("we want to stay signed in"). They replace the earlier refusal of
+every chooser and the per-window session wiped on close.
 
 HTTPS navigation, every redirect hop and subrequests reject credentials, literal IP addresses, local names
 (`localhost`, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, `*.corp`, `*.intranet`, tailnet `*.ts.net`), non-HTTPS schemes and the product origin.
-Only the default TLS port is supported. Before creating the guest view, configure its fresh session with a fixed,
+Only the default TLS port is supported. Before creating the guest view, configure its session with a fixed,
 authenticated local CONNECT broker and explicitly subtract Chromium's implicit loopback bypass. Close pooled
 connections before the first navigation.
 
@@ -39,7 +53,8 @@ The broker resolves both address families, rejects any nonpublic answer (loopbac
 tailnet 100.64/10, ULA, documentation and transition ranges),
 and connects a selected numeric address without a second DNS lookup. It does not decrypt TLS or receive product
 credentials. It rejects ordinary HTTP, arbitrary ports and unauthenticated clients, bounds connection/header/time
-resources, and closes all sockets when the guest closes. Proxy failure has no configured direct fallback.
+resources, serves every guest of the shared partition, and closes all sockets when the last guest closes.
+Proxy failure has no configured direct fallback.
 
 This is a guest-session network policy, not an operating-system egress sandbox. Qualification must include
 Chromium routing outside ordinary navigation, especially WebRTC, workers, WebTransport and proxy failure.
@@ -51,7 +66,7 @@ its selected content area, hidden for product dialogs, navigation and background
 or product window.
 
 Display the actual guest location separately from the editable destination. Closing the panel
-clears its separate session. Unsupported sites receive an explicit status, not a simulated successful page.
+keeps the website session; only "Clear browsing data" ends it. Unsupported sites receive an explicit status, not a simulated successful page.
 
 The ordinary web application offers an address field and a user-clicked external link with no opener or referrer.
 It explains that browsing inside the panel needs the desktop application. No CSP, iframe, backend, plugin or service
@@ -60,9 +75,9 @@ permission changes are part of this feature. The former `sidebar_browser` previe
 
 ### Consequences
 
-The desktop gets genuine browsing without using the workspace's authenticated session. Popups, downloads and some
-login flows are intentionally unavailable in this first version. Browser-hosted workspaces retain an external-tab
-workflow rather than an unreliable frame. Native geometry, overlays and session cleanup need real desktop tests.
+The desktop gets genuine browsing without using the workspace's authenticated session. Popups, downloads and platform
+passkeys are unavailable; other sign-ins persist until the person clears browsing data. Browser-hosted workspaces
+retain an external-tab workflow rather than an unreliable frame. Native geometry, overlays and session cleanup need real desktop tests.
 
 ### Confirmation
 

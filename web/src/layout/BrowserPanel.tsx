@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { viewportBounds } from "@/lib/viewport";
 
-type BrowserState = { status: string; url?: string; canGoBack?: boolean; canGoForward?: boolean };
+type BrowserState = {
+  status: string;
+  url?: string;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
+  notice?: "passkey" | "no-device" | null;
+};
 type BrowserBridge = { browser: (request: Record<string, unknown>) => Promise<BrowserState> };
 function bridge(): BrowserBridge | undefined {
   const value = (window as Window & { heinzelDesktop?: Partial<BrowserBridge> }).heinzelDesktop;
@@ -26,7 +32,8 @@ export function externalBrowserUrl(value: string): string | null {
 
 /**
  * The web view offers an external link; only the desktop owns an isolated native browsing surface.
- * Switching panel tabs only hides the surface, so the page and its state stay; closing the panel discards the session.
+ * Switching panel tabs only hides the surface, so the page and its state stay. Website sign-ins live in the desktop's
+ * separate persistent session until the person clears browsing data.
  */
 export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; onClose: () => void }>) {
   const [address, setAddress] = useState("https://heinzel.team");
@@ -180,6 +187,19 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           onChange={(event) => setAddress(event.target.value)}
           className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
         />
+        {native && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("browser.openInBrowser")}
+            title={t("browser.openInBrowser")}
+            disabled={!state.url}
+            onClick={() => void request({ action: "external" })}
+          >
+            <ExternalLink aria-hidden />
+          </Button>
+        )}
         {native ? (
           <Button
             type="submit"
@@ -221,8 +241,18 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
               status
             )}
           </p>
+          {state.notice && (
+            <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
+              {t(state.notice === "passkey" ? "browser.passkeyNote" : "browser.noDeviceNote")}
+            </p>
+          )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
-          <p className="shrink-0 px-3 py-1 text-xs text-muted-foreground">{t("browser.private")}</p>
+          <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
+            <p className="min-w-0 flex-1">{t("browser.private")}</p>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void request({ action: "clear" })}>
+              {t("browser.clearData")}
+            </Button>
+          </div>
         </>
       ) : (
         <p className="p-4 text-sm text-muted-foreground">{t("browser.webOnly")}</p>

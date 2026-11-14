@@ -92,3 +92,42 @@ it("hides the native surface while a product popover is open and restores it whe
     measure.mockRestore();
   }
 });
+
+it("Open in browser and Clear browsing data send their own commands, and only once a page is open", async () => {
+  let url = "";
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "navigate") url = "https://example.com/page";
+    return { status: url ? "ready" : "empty", url };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  const open = screen.getByRole("button", { name: "Open in browser" });
+  expect(open).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "clear" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Website address" }), {
+    target: { value: "https://example.com/page" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  await waitFor(() => expect(open).toBeEnabled());
+  fireEvent.click(open);
+  expect(browser).toHaveBeenCalledWith({ action: "external" });
+  expect(screen.getByText(/Sign-ins stay until you clear browsing data/)).toBeVisible();
+});
+
+it.each([
+  ["passkey", /Passkeys may not work in the built-in browser\. Choose another sign-in option/],
+  ["no-device", /No device was found for this website/],
+] as const)("a %s notice from the desktop is shown as a visible alert", async (notice, text) => {
+  const browser = vi.fn(async () => ({ status: "ready", url: "https://accounts.example.com/", notice }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(text);
+});
+
+it("web mode has no native browser controls", () => {
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
+});
