@@ -174,12 +174,26 @@ def follows_link(action: Input, target: Target, keys: str) -> bool:
     return link and (action == "click" or (action == "key" and chord_key(keys) in {"enter", "return", "numpadenter"}))
 
 
+_DOUBLE_QUOTES: Final = '"\u201c\u201d\u201e\u201f\u00ab\u00bb\u2039\u203a\uff02\u301d\u301e\u301f'
+"""Every mark a reader takes for a quotation mark: straight, curly, low, angle, full-width and CJK ones."""
+_QUOTES = str.maketrans(dict.fromkeys(_DOUBLE_QUOTES, "'"))
+_BRACKETS = str.maketrans({"(": "[", ")": "]"})
+
+
+def quoted(text: str, limit: int) -> str:
+    """Page or agent text made safe to stand inside the card's quotes: one line, cut, and with no double quote.
+
+    A name such as `Cancel" on hz.example "Keep` could otherwise close the quote and add words of its own to the
+    sentence the person reads; every kind of double quote becomes a single one.
+    """
+    line = " ".join(clean_text(text).split()).translate(_QUOTES)
+    return line if len(line) <= limit else line[: limit - 1] + "…"
+
+
 def label(target: Target) -> str:
     """A target as one short phrase for the person and the agent: `button "Send"`; page text, cleaned and cut."""
-    name = " ".join(clean_text(target.name).split())
-    if len(name) > NAME_LIMIT:
-        name = name[: NAME_LIMIT - 1] + "…"
-    kind = clean_text(target.role or target.tag)[:ROLE_LIMIT] or "element"
+    name = quoted(target.name, NAME_LIMIT)
+    kind = quoted(target.role or target.tag, ROLE_LIMIT).replace("…", "") or "element"
     return f'{kind} "{name}"' if name else kind
 
 
@@ -192,13 +206,11 @@ def summary(action: Input, target: Target, tab: str, *, text: str, keys: str) ->
 def _sentence(action: Input, target: Target, tab: str, *, text: str, keys: str) -> str:
     if not target.resolved:
         return f"Click at a point hz cannot identify in browser tab {tab}"
-    where = f"on {clean_text(target.host)[:HOST_LIMIT] or 'this page'} (browser tab {tab})"
+    where = f"on {quoted(target.host, HOST_LIMIT) or 'this page'} (browser tab {tab})"
     if action == "click":
         return f"Click {label(target)} {where}"
     if action == "type":
-        start = " ".join(clean_text(text).split())
-        if len(start) > PREVIEW_LIMIT:
-            start = start[: PREVIEW_LIMIT - 1] + "…"
+        start = quoted(text, PREVIEW_LIMIT).translate(_BRACKETS)  # it stands in brackets: it cannot close them
         return f"Type {len(text)} characters (starting: {start}) into {label(target)} {where}"
     return f"Press {keys} in {label(target)} {where}"
 
