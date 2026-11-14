@@ -20,8 +20,11 @@ and injected by type. It is never built from arguments, and an operation asking 
 
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
+import re
+import secrets
 import threading
 import time
 from collections import deque
@@ -128,8 +131,9 @@ class Caller:
     """The Heinzel's chat session, the token's key id, or the head's name for a person, a local agent, the daemon."""
     session: str | None = None
     """The chat session of a Heinzel's turn; operations taking a session id compare it with this."""
-    attended: bool = True
-    """Whether a person started the turn and is there to see it; a scheduled turn is unattended."""
+    attended: bool = False
+    """Whether a person started the turn and is there to see it. Unknown counts as not: a scheduled turn, a token
+    and an agent over stdio are unattended, and only the head that knows a person watches says otherwise."""
 
     @property
     def agent(self) -> bool:
@@ -177,7 +181,7 @@ HUMAN_AUTHENTICATIONS: Final = frozenset({"cli", "api-bearer", "web-session", "w
 
 def person_caller(authentication: str | None) -> Caller | None:
     """The person as caller for a call a human head authenticated; None for any other, which then has no caller."""
-    return Caller("person", authentication) if authentication in HUMAN_AUTHENTICATIONS else None
+    return Caller("person", authentication, attended=True) if authentication in HUMAN_AUTHENTICATIONS else None
 
 
 def caller_or_none() -> Caller | None:
@@ -256,6 +260,10 @@ class WriteBudget:
             writes.append(now)
 
 
+_PROCESS_SALT: Final = secrets.token_bytes(16)
+"""The salt where no installation salt is kept: digests then compare within one process only."""
+
+
 class AgentWriteLog:
     """What the owner sees and allows of agents' writes; a module provides a subclass (`system.writes`).
 
@@ -279,18 +287,30 @@ class AgentWriteLog:
         """Whether the owner allowed this plugin's operation to run directly for agents; no by default."""
         return False
 
+    def salt(self) -> bytes:
+        """The installation's key for argument digests; without a provider, one of this process."""
+        return _PROCESS_SALT
 
-def arguments_digest(arguments: Mapping[str, Any]) -> str:
-    """A short digest of a call's arguments: enough to tell two calls apart, nothing to read."""
+
+def arguments_digest(arguments: Mapping[str, Any], salt: bytes = _PROCESS_SALT) -> str:
+    """A short keyed digest of a call's arguments: enough to tell two calls apart, nothing to read.
+
+    Keyed with a salt of this installation, so a guessed argument (a short title, an address) cannot be confirmed
+    from a log line by someone who does not hold the salt.
+    """
     text = json.dumps(arguments, sort_keys=True, default=str, ensure_ascii=False)
-    return hashlib.sha256(text.encode()).hexdigest()[:16]
+    return hmac.new(salt, text.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,79}")
+"""What counts as an id in the record: no spaces and no `@`, so neither free text nor an email address is kept."""
 
 
 def target_of(arguments: Mapping[str, Any]) -> str | None:
-    """The id of what the call changes, where its arguments name one; never free text."""
+    """The id of what the call changes, where its arguments name one; never free text or an address."""
     for name in ("entry", "id", "name", "issue", "session", "session_id"):
         value = arguments.get(name)
-        if isinstance(value, str) and value and len(value) <= 80 and not any(char.isspace() for char in value):  # noqa: PLR2004
+        if isinstance(value, str) and _ID.fullmatch(value):
             return value
     return None
 
@@ -304,6 +324,7 @@ def audit_write(  # noqa: PLR0913 - one flat audit line
     policy: AgentWrites,
     outcome: WriteOutcome,
     error: str | None = None,
+    salt: bytes = _PROCESS_SALT,
 ) -> None:
     """One `agent.write` line for every write an agent asked for, on every path; arguments only as a digest."""
     log_event(
@@ -315,7 +336,7 @@ def audit_write(  # noqa: PLR0913 - one flat audit line
         module=module,
         operation=operation,
         target=target_of(arguments),
-        arguments=arguments_digest(arguments),
+        arguments=arguments_digest(arguments, salt),
         policy=policy,
         outcome=outcome,
         error=error,

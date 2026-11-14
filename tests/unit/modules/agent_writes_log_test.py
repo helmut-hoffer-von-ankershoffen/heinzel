@@ -18,6 +18,7 @@ from heinzel.kernel import (
     discover,
     restricts,
 )
+from heinzel.kernel._agent_writes import arguments_digest
 from heinzel.kernel._chat_tools import write_log, write_policy
 from heinzel.modules.system import writes
 from heinzel.modules.system.runner.chat._service import ChatService
@@ -121,8 +122,22 @@ def test_every_write_an_agent_asks_for_is_one_private_line_without_its_arguments
     assert [w.operation for w in log.listing("token:k1a2b3", unattended=False, limit=1).writes] == ["remove"]
 
 
+def test_argument_digests_are_keyed_with_a_private_salt_of_this_installation(kernel, log, tmp_path):
+    salt = log.salt()
+    path = tmp_path / "state/agent-writes/salt"
+    assert len(salt) == 16
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert WriteLog(kernel).salt() == salt  # made once, the same for every process of this installation
+    log.record(Caller("token", "k1"), "crm", "create", {"title": "Ada"}, policy="direct", outcome="ran")
+    (entry,) = log.listing(None, unattended=False, limit=1).writes
+    assert entry.arguments == arguments_digest({"title": "Ada"}, salt)
+    assert entry.arguments != arguments_digest({"title": "Ada"}, b"0" * 16)
+    path.write_bytes(b"")  # emptied: no guessable key, this process uses its own
+    assert len(WriteLog(kernel).salt()) == 16
+
+
 def test_the_digest_counts_what_ran_with_nobody_watching(kernel, log):
-    watched, unwatched = Caller("heinzel", "s1", session="s1"), Caller("heinzel", "s2", session="s2", attended=False)
+    watched, unwatched = Caller("heinzel", "s1", session="s1", attended=True), Caller("heinzel", "s2", session="s2")
     assert log.listing(None, unattended=True, limit=5).unattended_ran == 0
     assert health(log) == []
     log.record(watched, "system.bookmark", "add", {}, policy="direct", outcome="ran")
@@ -184,11 +199,16 @@ def test_a_plugins_direct_write_is_proposed_until_the_owner_allows_the_plugin(ke
 def test_an_update_that_turns_an_operation_direct_waits_for_a_new_yes(kernel, log, tmp_path):
     log.allow("crm", revoke=False)
     allowed = tmp_path / "state/agent-writes/allowed.json"
-    assert json.loads(allowed.read_text()) == {"heinzel-crm": ["crm create", "crm send"]}
+    assert json.loads(allowed.read_text()) == {"heinzel-crm": ["crm create [direct]", "crm send [direct]"]}
     assert stat.S_IMODE(allowed.stat().st_mode) == 0o600
     # The next version marks one more operation direct: the earlier yes named the operations, so it does not cover it.
     assert log.acknowledged("heinzel-crm", "crm", "create") is True
     assert log.acknowledged("heinzel-crm", "crm", "export") is False
+    # Nor a marker that changed since the yes: the yes named the marker too.
+    allowed.write_text(json.dumps({"heinzel-crm": ["crm create [direct|approve:when it repoints]", "crm send"]}))
+    assert log.acknowledged("heinzel-crm", "crm", "create") is False
+    assert log.acknowledged("heinzel-crm", "crm", "send") is False
+    log.allow("crm", revoke=False)
     assert log.acknowledged("heinzel-other", "crm", "create") is False
     assert log.acknowledged("Heinzel_CRM", "crm", "create") is True  # one plugin, however its name is written
 

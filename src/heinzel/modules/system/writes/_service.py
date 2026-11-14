@@ -19,7 +19,7 @@ from packaging.utils import canonicalize_name
 from pydantic import ValidationError
 
 from heinzel import HeinzelError, Kernel
-from heinzel.kernel import AgentWriteLog, Caller, OperationLet, declared_agent_writes
+from heinzel.kernel import AgentWriteLog, ByArguments, Caller, OperationLet, declared_agent_writes
 from heinzel.kernel._agent_writes import AgentWrites as Policy
 from heinzel.kernel._agent_writes import WriteOutcome, arguments_digest, reaches_people, target_of
 from heinzel.modules.system.writes._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
@@ -29,6 +29,18 @@ PRIVATE_FILE = 0o600
 KEEP = 2000
 """Entries the journal keeps; past twice that it is cut back to the latest `KEEP`."""
 MAX_LINE = 2000
+SALT_BYTES = 16
+
+
+def _key(module: str, operation: OperationLet) -> str:
+    """What the owner's yes names: the operation and the marker it had.
+
+    A later version that loosens the marker (a rename that then also repoints, without asking) is another key, so
+    it waits for a new yes.
+    """
+    marker = operation.agents
+    shape = f"{marker.base}|{marker.stricter}:{marker.reason}" if isinstance(marker, ByArguments) else str(marker)
+    return f"{module} {operation.name} [{shape}]"
 
 
 class WriteLog(AgentWriteLog):
@@ -40,6 +52,7 @@ class WriteLog(AgentWriteLog):
         self._directory = kernel.settings.state_dir / "agent-writes"
         self._journal = self._directory / "journal.jsonl"
         self._allowed = self._directory / "allowed.json"
+        self._salt: bytes | None = None
 
     # --- storage ---
 
@@ -56,6 +69,23 @@ class WriteLog(AgentWriteLog):
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+
+    def salt(self) -> bytes:
+        """This installation's key for argument digests: 16 random bytes, made once, readable by the owner alone."""
+        if self._salt is None:
+            self._ready()
+            path = self._directory / "salt"
+            try:
+                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(descriptor, "wb") as file:
+                    file.write(secrets.token_bytes(SALT_BYTES))
+            found = path.read_bytes()
+            # A short or emptied file is no key: this process then uses its own, never a guessable one.
+            self._salt = found if len(found) >= SALT_BYTES else AgentWriteLog().salt()
+        return self._salt
 
     # --- the record ---
 
@@ -77,7 +107,7 @@ class WriteLog(AgentWriteLog):
             module=module,
             operation=operation,
             target=target_of(arguments),
-            arguments=arguments_digest(arguments),
+            arguments=arguments_digest(arguments, self.salt()),
             policy=policy,
             outcome=outcome,
         )
@@ -149,8 +179,18 @@ class WriteLog(AgentWriteLog):
         }
 
     def acknowledged(self, distribution: str, module: str, operation: str) -> bool:
-        """Whether the owner allowed this plugin operation to run directly."""
-        return f"{module} {operation}" in self._allowances().get(canonicalize_name(distribution), [])
+        """Whether the owner allowed this plugin operation to run directly, with the marker it has now."""
+        found = next(
+            (
+                let
+                for record, let in self._kernel.lets(OperationLet)
+                if record.qualname == module and let.name == operation and not record.origin.builtin
+            ),
+            None,
+        )
+        if found is None:
+            return False
+        return _key(module, found) in self._allowances().get(canonicalize_name(distribution), [])
 
     def _asking(self) -> list[tuple[str, str, OperationLet]]:
         """Every plugin write whose own marker can be `direct`: distribution, module, operation."""
@@ -169,7 +209,7 @@ class WriteLog(AgentWriteLog):
                 module=module,
                 operation=operation.name,
                 summary=operation.summary,
-                allowed=f"{module} {operation.name}" in allowed.get(plugin, []),
+                allowed=_key(module, operation) in allowed.get(plugin, []),
                 capped=reaches_people(operation),
             )
             for plugin, module, operation in self._asking()
@@ -184,7 +224,7 @@ class WriteLog(AgentWriteLog):
             HeinzelError: If no installed plugin of that name asks for a direct write.
         """
         name = canonicalize_name(plugin if plugin.startswith("heinzel-") else f"heinzel-{plugin}")
-        asking = [f"{module} {operation.name}" for found, module, operation in self._asking() if found == name]
+        asking = [_key(module, operation) for found, module, operation in self._asking() if found == name]
         allowed = self._allowances()
         if revoke:
             allowed.pop(name, None)

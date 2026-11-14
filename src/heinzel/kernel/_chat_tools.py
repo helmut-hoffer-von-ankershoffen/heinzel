@@ -315,9 +315,14 @@ def note_write(  # noqa: PLR0913 - one flat entry
 ) -> None:
     """One audit line and one entry in the owner's record for a write an agent asked for."""
     module, name = item.record.qualname, item.operation.name
-    audit_write(caller, module, name, arguments, policy=policy, outcome=outcome, error=error)
+    record = write_log(kernel)
     try:
-        write_log(kernel).record(caller, module, name, arguments, policy=policy, outcome=outcome)
+        salt = record.salt()
+    except Exception:  # noqa: BLE001 - an unreadable salt must not stop the audit line
+        salt = AgentWriteLog().salt()
+    audit_write(caller, module, name, arguments, policy=policy, outcome=outcome, error=error, salt=salt)
+    try:
+        record.record(caller, module, name, arguments, policy=policy, outcome=outcome)
     except Exception:  # noqa: BLE001 - the record must never fail or undo the write it describes
         log_event(log, "agent.write.record_failed", level=logging.ERROR, exc_info=True)
 

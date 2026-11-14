@@ -310,7 +310,10 @@ def test_no_agent_authentication_is_a_human_one():
     assert person_caller("mcp-stdio") is None
     assert person_caller("daemon") is None
     assert person_caller(None) is None
-    assert person_caller("web-session") == Caller("person", "web-session")
+    assert person_caller("web-session") == Caller("person", "web-session", attended=True)
+    # Unknown is unwatched: a token and an agent over stdio never get the watched budget or leave the digest.
+    assert Caller("token", "k1").attended is False
+    assert Caller("local-agent", "mcp-stdio").attended is False
 
 
 # --- which head offers which bookmark operation ---
@@ -369,7 +372,7 @@ def test_callers_say_what_they_are():
 def test_the_write_budget_counts_per_caller_minute_and_day():
     now = [0.0]
     budget = WriteBudget(clock=lambda: now[0])
-    watched, unwatched = Caller("heinzel", "a"), Caller("heinzel", "b", attended=False)
+    watched, unwatched = Caller("heinzel", "a", attended=True), Caller("heinzel", "b")
     for _ in range(UNATTENDED.minute):
         budget.take(unwatched)
     with pytest.raises(HeinzelError, match="write budget for the minute"):
@@ -398,10 +401,15 @@ def test_audit_names_the_target_and_only_a_digest_of_the_arguments():
     assert target_of(arguments) == "b-1a2b3c4d"
     assert target_of({"title": "free text with spaces"}) is None
     assert target_of({"name": "x" * 200}) is None
+    assert target_of({"id": "mira.sato@example.org"}) is None  # an address is no id
+    assert target_of({"name": "weekly-digest"}) == "weekly-digest"
     digest = arguments_digest(arguments)
     assert len(digest) == 16
     assert digest == arguments_digest(dict(reversed(arguments.items())))
     assert digest != arguments_digest({**arguments, "title": "Other"})
+    # Keyed per installation: the same arguments under another salt give another digest.
+    assert arguments_digest(arguments, b"a" * 16) != arguments_digest(arguments, b"b" * 16)
+    assert arguments_digest(arguments, b"a" * 16) == arguments_digest(arguments, b"a" * 16)
 
 
 # --- a Heinzel's turn ---
@@ -573,7 +581,7 @@ def test_stdio_refuses_approve_with_the_persons_command_and_never_outright(kerne
 
 def test_stdio_writes_share_the_budget(kernel, ran):
     jot = stdio(kernel, ("desk", "jot"))
-    for _ in range(ATTENDED.minute):
+    for _ in range(UNATTENDED.minute):  # nobody is known to watch an outside agent
         jot(text="x")
     with pytest.raises(ToolError, match="write budget"):
         jot(text="x")
