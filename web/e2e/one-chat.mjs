@@ -107,6 +107,24 @@ try {
   assert.equal(await chat.getByRole("button", { name: "Retry the same message" }).count(), 0, "no composer retry");
   await accessible('[aria-label="Chat"] [data-message-state]');
 
+  // Times on demand: a day heading, the time kept for screen readers, and the time shown by keyboard alone.
+  await chat.getByRole("heading", { level: 3, name: "Today" }).waitFor();
+  const row = chat.locator("[data-message-time-row]").first();
+  assert.match((await row.locator("time.sr-only").textContent()) ?? "", /\d{2}:\d{2}/, "the time is in the page");
+  assert.equal(await chat.locator("[data-message-time]").count(), 0, "no time beside every message");
+  await chat.getByLabel("Message Helmi").focus();
+  let reached = false;
+  for (let step = 0; step < 40 && !reached; step += 1) {
+    await page.keyboard.press("Shift+Tab");
+    reached = await row.evaluate((node) => node === document.activeElement);
+  }
+  assert.ok(reached, "the message is reachable by keyboard");
+  await chat.locator("[data-message-time]").waitFor();
+  assert.ok((await row.boundingBox())?.height >= 44, "the row is a 44 px target");
+  await accessible('[aria-label="Chat"] [data-message-time-row]');
+  await page.keyboard.press("Escape");
+  assert.equal(await chat.locator("[data-message-time]").count(), 0, "Escape hides the time");
+
   // The default Heinzel survives a reload without a link, and on a phone the same header and menus pass axe.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(url.href);
