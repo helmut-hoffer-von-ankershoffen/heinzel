@@ -13,6 +13,7 @@ import secrets
 import shlex
 import shutil
 import stat
+import time
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -42,6 +43,9 @@ MAX_MESSAGES = 200
 SESSION = "session.json"
 PROPOSALS = "proposals.jsonl"
 LOCK = "session.lock"
+LOCK_TRIES = 5
+LOCK_PAUSE_SECONDS = 0.05
+"""A session held for an instant by a probe is asked for again; one held by a turn is busy after a quarter second."""
 
 
 def now() -> datetime:
@@ -367,7 +371,16 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If there is no such session, or another process holds it.
         """
-        with self.held(self.directory(session)) as holding:
+        folder = self.directory(session)
+        for _ in range(LOCK_TRIES - 1):
+            # Another process may hold it for an instant only to ask whether a turn is running (`turn_running`):
+            # that must never cost the person their message, so ask again a few times before saying busy.
+            with self.held(folder) as holding:
+                if holding:
+                    yield self.load(session)
+                    return
+            time.sleep(LOCK_PAUSE_SECONDS)
+        with self.held(folder) as holding:
             if not holding:
                 msg = f"Chat session {session} is busy right now; try again when the current operation is done."
                 raise HeinzelError(msg)

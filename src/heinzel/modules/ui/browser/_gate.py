@@ -24,6 +24,13 @@ _SECRET_AUTOCOMPLETE: Final = frozenset({"current-password", "new-password", "on
 _ENTER: Final = frozenset({"enter", "return", "numpadenter"})
 _ACTIVATE: Final = _ENTER | {"space", "spacebar"}
 _HARMLESS_IN_SECRET: Final = frozenset({"tab", "escape", "esc"})
+_MOVES: Final = frozenset({
+    "tab", "escape", "esc", "pageup", "pagedown", "home", "end",
+    "arrowup", "arrowdown", "arrowleft", "arrowright", "up", "down", "left", "right",
+})  # fmt: skip
+"""Keys that only move the focus or the view. Outside a text field every other key may be a shortcut of the site
+(Delete removes a mail, `e` archives it), so it is a commit."""
+_PLAIN_MODIFIERS: Final = frozenset({"shift"})
 
 
 class Target(BaseModel):
@@ -86,6 +93,19 @@ def chord_key(keys: str) -> str:
     return keys.rsplit("+", 1)[-1].strip().casefold()
 
 
+def chord_commands(keys: str) -> bool:
+    """Whether the chord holds ctrl, alt or meta: a command to the site or the browser, not a character."""
+    held = {part.strip().casefold() for part in keys.split("+")[:-1]}
+    return bool(held - _PLAIN_MODIFIERS)
+
+
+def _shortcut(target: Target, keys: str, key: str) -> bool:
+    """Whether a key outside a text field may be a shortcut of the site: anything but moving, Enter and Space."""
+    if target.editable:
+        return False
+    return chord_commands(keys) or key not in _MOVES | _ACTIVATE
+
+
 def _refused(action: Input, target: Target, key: str) -> str | None:
     """Why no agent does this input at all, or None."""
     if not target.resolved:
@@ -102,14 +122,19 @@ def _presses(action: Input, target: Target, key: str) -> bool:
     return action == "click" or (action == "key" and key in _ACTIVATE and not target.editable)
 
 
-def _commit(action: Input, target: Target, text: str, key: str) -> str | None:
+def _commit(action: Input, target: Target, text: str, keys: str) -> str | None:
     """Why this input is a commit, or None."""
+    key = chord_key(keys) if action == "key" else ""
     form_field = target.editable or target.in_form
     reasons = (
         (not target.resolved, "the target of these coordinates cannot be told"),
         (target.payment_page, "the page has a payment field"),
         (action == "type" and "\n" in text and form_field, "a new line in a form field sends it like Enter"),
         (action == "key" and key in _ENTER and form_field, "Enter in a form field sends the form"),
+        (
+            action == "key" and _shortcut(target, keys, key),
+            "outside a text field this key may be a shortcut of the site, such as delete or archive",
+        ),
         (_presses(action, target, key) and target.submit, "it submits a form"),
         (
             _presses(action, target, key) and not target.editable and commit_name(target.name),
@@ -127,6 +152,6 @@ def decide(action: Input, target: Target, *, text: str = "", keys: str = "") -> 
     key = chord_key(keys) if action == "key" else ""
     if reason := _refused(action, target, key):
         return Verdict("never", reason)
-    if reason := _commit(action, target, text, key):
+    if reason := _commit(action, target, text, keys):
         return Verdict("commit", reason)
     return Verdict("run")

@@ -7,6 +7,7 @@ import os
 import socket
 import stat
 import threading
+import time
 from datetime import timedelta
 
 import anyio
@@ -17,6 +18,7 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from pydantic_ai import BinaryContent, ToolReturn
 
+from heinzel import HeinzelError
 from heinzel.heads import mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens
@@ -32,13 +34,13 @@ from heinzel.kernel._browser import (
     browser_caller,
     current_browser_caller,
 )
-from heinzel.kernel._browser_relay import RECORD, REQUEST_LIMIT, peer_uid, relay
+from heinzel.kernel._browser_relay import RECORD, REQUEST_LIMIT, REQUEST_SECONDS, peer_uid, relay
 from heinzel.kernel._logging import record_fields
 from heinzel.kernel._private_control import private_socket_directory
 from heinzel.modules.system.runner.chat._service import PREAMBLE, ChatService
 from heinzel.modules.system.runner.chat._store import ChatStore
-from heinzel.modules.ui.browser._service import Browser, Limits, png_size, public_host
-from tests._fake_browser import PAGE_TEXT, FakeDesktop, png
+from heinzel.modules.ui.browser._service import QUOTED_NOTICE, Browser, Limits, png_size, public_host
+from tests._fake_browser import ELEMENTS, PAGE_TEXT, FakeDesktop, png
 
 pytestmark = pytest.mark.unit
 
@@ -961,3 +963,120 @@ def test_services_are_built_once_however_many_threads_ask(make_kernel):
         thread.join(5)
     assert len(found) == 8
     assert len(set(found)) == 1
+
+
+# Review C-REVIEW.md: shortcuts, the notice on proposals, link walking, a slow sender, the probe of a turn
+
+
+def test_a_shortcut_key_on_a_mail_row_is_proposed_not_pressed(kernel, desktop):
+    ELEMENTS["ref_9"] = {"role": "row", "name": "Invoice 4711 from Nordwind", "tag": "tr"}
+    try:
+        call = heinzel(kernel)
+        tab = call("open")["id"]
+        desktop.focus = "ref_9"
+        for keys in ("Delete", "e", "ctrl+Enter"):
+            assert f"Press {keys} in row" in call("key", tab=tab, keys=keys)
+        assert call("key", tab=tab, keys="ArrowDown")["done"] is True
+        assert desktop.acted() == ["key"]
+        assert len(pending(kernel, call.session)) == 3
+    finally:
+        del ELEMENTS["ref_9"]
+
+
+def test_every_proposal_says_the_quoted_name_is_the_website_s(kernel, desktop):
+    call = heinzel(kernel)
+    tab = call("open")["id"]
+    assert QUOTED_NOTICE in call("click", tab=tab, ref="ref_2")
+    [action] = pending(kernel, call.session)
+    assert action.command.endswith(QUOTED_NOTICE)
+    [(_, opened)] = stdio(kernel, [("ui_browser_open", {})])
+    stdio(kernel, [("ui_browser_click", {"tab": json.loads(opened[0].text)["id"], "ref": "ref_2"})])
+    card = desktop.commands[-1].arguments["summary"]
+    assert card.endswith(QUOTED_NOTICE)
+    assert len(card) <= 300
+
+
+def test_a_long_page_name_never_pushes_the_notice_off_the_card(kernel, desktop):
+    ELEMENTS["ref_9"] = {"role": "button", "name": "Send " + "x" * 500, "tag": "button"}
+    try:
+        call = heinzel(kernel)
+        tab = call("open")["id"]
+        desktop.tabs[call.session][tab]["url"] = "https://shop.example.org/"
+        call("click", tab=tab, ref="ref_9")
+        [action] = pending(kernel, call.session)
+        assert action.command.endswith(QUOTED_NOTICE)
+        assert len(action.command) <= 300
+    finally:
+        del ELEMENTS["ref_9"]
+
+
+def test_clicks_that_follow_links_count_as_navigations(kernel, desktop, audit):
+    ELEMENTS["ref_9"] = {"role": "link", "name": "Older", "tag": "a"}
+    try:
+        call = heinzel(kernel)
+        tab = call("open")["id"]
+        desktop.focus = "ref_9"
+        for _ in range(5):
+            call("click", tab=tab, ref="ref_9")
+            call("key", tab=tab, keys="Enter")
+        for name, arguments in (("click", {"ref": "ref_9"}), ("key", {"keys": "Enter"})):
+            with pytest.raises(ChatToolError, match="Too many navigations: 10 a minute"):
+                call(name, tab=tab, **arguments)
+        assert audit.calls()[-1]["reason"] == "rate"
+        with pytest.raises(ChatToolError, match="Too many navigations"):
+            call("navigate", tab=tab, url="https://shop.example.org/next")
+        assert call("click", tab=tab, ref="ref_1")["done"] is True  # an ordinary button is no navigation
+        assert len(desktop.acted()) == 11
+    finally:
+        del ELEMENTS["ref_9"]
+
+
+def test_a_sender_that_trickles_its_request_is_cut_off_at_one_deadline(kernel, desktop, settings):
+    directory = settings.state_dir / "ui"
+    path = private_socket_directory(directory) / json.loads((directory / RECORD).read_text())["socket"]
+    started = time.monotonic()
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(REQUEST_SECONDS + 5)
+        connection.connect(str(path))
+        closed = False
+        while time.monotonic() - started < REQUEST_SECONDS + 4:
+            try:
+                connection.sendall(b"x")  # a byte now and then: each alone would be in time
+                time.sleep(0.2)
+            except OSError:
+                closed = True
+                break
+        assert closed
+    assert time.monotonic() - started < REQUEST_SECONDS + 2
+    assert desktop.commands == []
+
+
+def test_asking_whether_a_turn_runs_never_costs_the_person_their_message(kernel):
+    session = open_chat(kernel)
+    store = kernel.resolve(ChatStore)
+    assert store.turn_running(session) is False
+    stop = threading.Event()
+
+    def probe() -> None:
+        while not stop.is_set():
+            store.turn_running(session)
+            time.sleep(0.001)  # as often as a thousand relayed calls a second, far above the limit
+
+    prober = threading.Thread(target=probe)
+    prober.start()
+    try:
+        for _ in range(100):
+            with store.locked(session) as chat:  # what a message does first; a probe in between must not refuse it
+                assert chat.id == session
+    finally:
+        stop.set()
+        prober.join(5)
+
+
+def test_a_session_a_turn_really_holds_is_still_busy(kernel):
+    session = open_chat(kernel)
+    store = kernel.resolve(ChatStore)
+    with store.locked(session):
+        assert store.turn_running(session) is True
+        with pytest.raises(HeinzelError, match="busy right now"), store.locked(session):
+            pass

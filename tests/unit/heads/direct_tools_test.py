@@ -34,6 +34,7 @@ from heinzel.kernel._browser import BrowserBridge
 from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.kernel._identity import CallIdentity
 from heinzel.modules.system.runner.chat._service import ChatService
+from heinzel.modules.ui.browser._service import QUOTED_NOTICE
 from tests._fake_browser import FakeDesktop
 
 pytestmark = pytest.mark.unit
@@ -242,8 +243,8 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
     # The browser rows: only the ordinary click reached the page, once on each path; the commits wait.
     assert desktop.acted() == ["click", "click"]
     assert [command for _, _, command in proposals[6:]] == [
-        f'Click button "Send" on shop.example.org (browser tab {TAB})',
-        f'Press Enter in textbox "Message" on shop.example.org (browser tab {TAB})',
+        f'Click button "Send" on shop.example.org (browser tab {TAB}). {QUOTED_NOTICE}',
+        f'Press Enter in textbox "Message" on shop.example.org (browser tab {TAB}). {QUOTED_NOTICE}',
     ]
     assert "approved" not in proposals[6][1]
     assert direct[17][1] == "The page changed since this target was described; read it again."

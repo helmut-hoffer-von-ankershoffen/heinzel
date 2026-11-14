@@ -90,7 +90,7 @@ def test_enter_outside_a_form_runs():
     assert decide("key", target(role="RootWebArea", name="News"), keys="Enter").outcome == "run"
 
 
-@pytest.mark.parametrize("keys", ["Enter", "Space", "ctrl+Enter"])
+@pytest.mark.parametrize("keys", ["Enter", "Space", "shift+Enter"])
 def test_enter_or_space_on_a_focused_control_is_judged_like_a_click(keys):
     assert decide("key", target(name="Delete"), keys=keys).outcome == "commit"
     assert decide("key", target(name="Next", submit=True), keys=keys).outcome == "commit"
@@ -150,3 +150,48 @@ def test_a_button_named_like_a_secret_is_no_secret_field():
 
 def test_the_target_ignores_facts_it_does_not_know():
     assert Target.model_validate({"resolved": True, "href_host": "example.org", "later": 1}).resolved
+
+
+# Outside a text field a key may be a shortcut of the site (review C1): only moving keys run without a card.
+
+MAIL_ROW = {"role": "row", "name": "Invoice 4711 from Nordwind", "tag": "tr"}
+PAGE_BODY = {"role": "RootWebArea", "name": "Inbox", "tag": "body"}
+NOT_EDITABLE = [MAIL_ROW, PAGE_BODY, {"role": "button", "name": "Next"}, {"role": "link", "name": "Older"}]
+
+MOVING_KEYS = [
+    "Tab", "shift+Tab", "Escape", "Esc", "PageUp", "PageDown", "Home", "End",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Up", "Down", "Left", "Right", "shift+ArrowDown",
+]  # fmt: skip
+SHORTCUT_KEYS = [
+    "Delete", "Backspace", "e", "E", "l", "y", "x", "1", "F5", "Insert", "shift+Delete", "shift+3",
+    "ctrl+Enter", "meta+Enter", "cmd+Enter", "command+Enter", "alt+Enter", "option+Enter", "control+Enter",
+    "ctrl+a", "ctrl+s", "ctrl+z", "meta+z", "cmd+Backspace", "alt+ArrowLeft", "ctrl+Tab", "ctrl+shift+Delete",
+    "ctrl+Space", "alt+Home",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("facts", NOT_EDITABLE)
+@pytest.mark.parametrize("keys", MOVING_KEYS)
+def test_a_key_that_only_moves_runs_outside_a_text_field(facts, keys):
+    assert decide("key", target(**facts), keys=keys).outcome == "run"
+
+
+@pytest.mark.parametrize("facts", NOT_EDITABLE)
+@pytest.mark.parametrize("keys", SHORTCUT_KEYS)
+def test_any_other_key_or_command_chord_outside_a_text_field_is_a_commit(facts, keys):
+    verdict = decide("key", target(**facts), keys=keys)
+    assert verdict.outcome == "commit"
+    assert "shortcut" in verdict.reason
+
+
+@pytest.mark.parametrize("keys", ["Enter", "Space", "shift+Enter"])
+def test_enter_and_space_keep_their_own_rule_outside_a_text_field(keys):
+    assert decide("key", target(**MAIL_ROW), keys=keys).outcome == "run"
+    assert decide("key", target(**PAGE_BODY), keys=keys).outcome == "run"
+    assert decide("key", target(role="row", name="Delete draft"), keys=keys).outcome == "commit"
+
+
+@pytest.mark.parametrize("keys", ["Delete", "Backspace", "e", "ctrl+a", "ctrl+z", "meta+ArrowLeft", "x"])
+def test_in_a_text_field_keys_edit_the_text_and_run(keys):
+    field = target(role="textbox", name="Message", editable=True, in_form=True)
+    assert decide("key", field, keys=keys).outcome == "run"

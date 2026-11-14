@@ -21,6 +21,7 @@ import socket
 import stat
 import struct
 import threading
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
@@ -39,6 +40,8 @@ RECORD: Final = "browser-relay.json"
 CONNECTIONS: Final = 16
 """Calls served at once; a commit of an outside agent holds one while it waits for the person."""
 CONNECT_SECONDS: Final = 2.0
+REQUEST_SECONDS: Final = 2.0
+"""The whole request must be here by then, however it is sent: a slow sender holds no place."""
 ANSWER_SECONDS: Final = 180.0
 """Longer than the 120 seconds an outside agent's commit waits for the person's click."""
 _SOL_LOCAL: Final = 0
@@ -71,10 +74,26 @@ def _record_directory(state_dir: Path) -> Path:
     return state_dir / "ui"
 
 
-def _receive(connection: socket.socket, limit: int) -> bytes:
+def _receive(connection: socket.socket, limit: int, seconds: float) -> bytes:
+    """One line of at most `limit` bytes, all of it within `seconds`: a sender that trickles bytes is cut off.
+
+    Raises:
+        ValueError: If it is too long, not one line, or not here in time.
+        OSError: If the connection fails.
+    """
+    deadline = time.monotonic() + seconds
     data = bytearray()
     while len(data) <= limit:
-        chunk = connection.recv(min(65536, limit + 1 - len(data)))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            msg = "The local message took too long."
+            raise ValueError(msg)
+        connection.settimeout(remaining)
+        try:
+            chunk = connection.recv(min(65536, limit + 1 - len(data)))
+        except TimeoutError:
+            msg = "The local message took too long."
+            raise ValueError(msg) from None
         if not chunk:
             break
         data.extend(chunk)
@@ -153,8 +172,7 @@ class BrowserRelay:
             with connection:
                 if peer_uid(connection) != os.getuid():
                     return  # the folder already keeps others out; this holds if a descriptor was passed along
-                connection.settimeout(CONNECT_SECONDS)
-                request = _OBJECT.validate_json(_receive(connection, REQUEST_LIMIT))
+                request = _OBJECT.validate_json(_receive(connection, REQUEST_LIMIT, REQUEST_SECONDS))
                 kind, session, tool, arguments = (request.get(key) for key in ("kind", "session", "tool", "arguments"))
                 if (
                     set(request) != _REQUEST_KEYS
@@ -230,7 +248,6 @@ def relay(  # noqa: PLR0911 - every way there is nobody to ask ends the same
     try:
         with connection:
             connection.sendall(request + b"\n")
-            connection.settimeout(ANSWER_SECONDS)
-            return _OBJECT.validate_json(_receive(connection, ANSWER_LIMIT))
+            return _OBJECT.validate_json(_receive(connection, ANSWER_LIMIT, ANSWER_SECONDS))
     except (OSError, ValueError, ValidationError):
         return {"error": "The browser call got no answer from hz; the person can see the log. Try again."}
