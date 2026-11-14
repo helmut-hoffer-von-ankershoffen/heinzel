@@ -221,6 +221,7 @@ describe("IntelligenceSection", () => {
     const configured = await screen.findByRole("radio", { name: "As set in Settings (Claude Code)" });
     expect(screen.getByRole("radio", { name: "Acme models" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Model API" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull();
     fireEvent.click(configured);
     expect(await screen.findByText("AI provider changed.")).toBeInTheDocument();
     expect(server.saved[0]).toMatchObject({ provider: "", model: "" });

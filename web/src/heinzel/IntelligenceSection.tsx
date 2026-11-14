@@ -81,8 +81,10 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
   const configured = options.find((option) => option.name === selected);
   const providerName = view.provider ?? selected;
   const offer = options.find((option) => option.name === providerName);
+  // The configured AI access is the first row ("as set in Settings"), so it is not listed a second time unless pinned.
   const providers = options.filter(
-    (option) => option.status !== "needs setup" || option.name === view.provider || option.in_use,
+    (option) =>
+      option.name === view.provider || (option.name !== selected && (option.status !== "needs setup" || option.in_use)),
   );
   const pending = save.isPending;
 
