@@ -26,7 +26,14 @@ try {
     await header.waitFor({ timeout: 30000 });
     const view = await header.getAttribute("data-view");
     assert.equal(view, "bust");
-    // Chosen look: old, long beard, rose shirt, scarf; the hat is green before the change and blue after it.
+    // Chosen look: old, long beard, rose shirt, scarf; the hat is green before the change and blue after it. The face
+    // is decoration inside the switcher button, so the look is read from its data and its drawing.
+    assert.equal(await header.getAttribute("data-age"), "old");
+    assert.equal(await header.getAttribute("data-beard"), "long");
+    assert.equal(await header.getAttribute("data-shirt"), "rose");
+    assert.match((await header.getAttribute("data-accessories")) ?? "", /\bscarf\b/);
+    assert.ok((await header.locator('[fill="#D9567C"]').count()) > 0, "the rose shirt is drawn");
+    assert.equal(await header.getAttribute("data-hat"), hatBlue ? "blue" : "green");
     assert.equal((await header.locator(hatFill).count()) > 0, hatBlue);
     assert.ok((await header.locator('[fill="#43A047"]').count()) > 0 !== hatBlue);
   };

@@ -124,6 +124,13 @@ export function HeinzelAvatar({ view = "full", label, className, alive = false, 
       data-state={state}
       data-view={view}
       data-idle={move ?? undefined}
+      // The chosen look as data, for checks: a decorative face (the chat header's) has no label that says it.
+      data-age={look.age}
+      data-beard={look.beard}
+      data-hat={look.hat}
+      data-shirt={look.shirt}
+      data-build={look.build}
+      data-accessories={accessories.length ? accessories.join(" ") : undefined}
       className={cn(view !== "full" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
     >
       <g className={state === "working" ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]" : undefined}>
