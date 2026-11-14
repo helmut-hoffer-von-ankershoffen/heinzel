@@ -11,13 +11,14 @@ from pydantic import BaseModel, Field
 
 from heinzel import ApprovalChannel, Check, HeinzelError, Kernel, SessionEvent, Status
 from heinzel.kernel import HeinzelNoticeRemoval, PersonalChatRemoval
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.heinzel import _history_fts
 from heinzel.modules.heinzel._channel_binding import ChannelBinding
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId, SessionList
 from heinzel.modules.heinzel._session_repository import SESSION_NAMESPACES
 
-logger = logging.getLogger(__name__)
+_EVENTS = get_logger("heinzel.delete")
 
 
 class HeinzelDeleted(BaseModel):
@@ -63,7 +64,7 @@ class PostedApprovals:
             binding = ChannelBinding(self.kernel, channel, "approval")
             binding.call(lambda service: cast("ApprovalChannel", service).settle(reference, "superseded"))
         except Exception:  # noqa: BLE001 - settling is best effort; an offline channel must not block a deletion
-            logger.warning("closing a %s request of a deleted Heinzel failed; it is forgotten anyway", channel)
+            log_event(_EVENTS, "heinzel.delete.settle_failed", level=logging.WARNING, channel=channel)
 
     def forget(self, channel: str, request_id: str, reference: str | None) -> None:
         """Let the plugin delete its own copies of one request, locally.
@@ -120,7 +121,7 @@ def _posts(crud: SessionCrud, session_id: str, events: list[SessionEvent]) -> li
             continue
         channel = proposed[0] if proposed is not None else receipt.get("channel")
         if not isinstance(channel, str):
-            logger.warning("a channel request of a deleted Heinzel names no channel any more; nothing to forget")
+            log_event(_EVENTS, "heinzel.delete.channel_unknown", level=logging.WARNING, request_id=event.key)
             continue
         post = {"channel": channel, "request_id": event.key}
         reference = receipt.get("reference")
@@ -253,7 +254,7 @@ class HeinzelDeletion:
             try:
                 self.posted.forget(channel, request_id, reference)
             except Exception:  # noqa: BLE001 - one plugin's failure must not hold the others or hz's removal back
-                logger.warning("the %s plugin could not forget a deleted Heinzel's request yet", channel)
+                log_event(_EVENTS, "heinzel.delete.forget_waiting", level=logging.WARNING, channel=channel)
                 waiting.add(channel)
                 continue
             repository.mark_forgotten(session_id, channel, request_id)
@@ -306,7 +307,7 @@ class HeinzelDeletion:
             try:
                 done = self.finish(session_id).state == "deleted"
             except (HeinzelError, OSError):
-                logger.warning("finishing the deletion of %s failed; it is retried later", session_id)
+                log_event(_EVENTS, "heinzel.delete.resume_failed", level=logging.WARNING, session=session_id)
                 done = False
             if done:
                 _RETRY.pop(session_id, None)

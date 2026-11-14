@@ -207,7 +207,7 @@ def test_a_failing_resume_is_logged_and_retried(crud, deletion, monkeypatch, cap
     with pytest.raises(OSError, match="disk full"):
         deletion.delete(session, "Gu")
     deletion.finish_pending(now=0.0)
-    assert "finishing the deletion" in caplog.text
+    assert "heinzel.delete.resume_failed" in caplog.text
     assert "Gu" not in caplog.text.replace(session, "")  # the session id at most, never its name
     monkeypatch.undo()
     deletion.finish_pending(now=59.0)  # backing off: a list polled again soon does not retry yet
