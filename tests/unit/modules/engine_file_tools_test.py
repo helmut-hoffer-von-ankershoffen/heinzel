@@ -1,5 +1,7 @@
 """The engine runner's read-only file tools stay inside the working directory and within their limits (ADR 0159)."""
 
+import io
+import json
 import os
 import time
 from pathlib import Path
@@ -11,6 +13,21 @@ from heinzel.modules.ai.access import _file_tools
 from heinzel.modules.ai.access._file_tools import ConfinedFiles, FileToolError
 
 pytestmark = pytest.mark.unit
+
+
+HOMES = {"/Users", "/Users/", "/home"}
+
+
+def above_home_here(*candidates: str) -> list[str]:
+    """The folders of `candidates` that exist on this machine and, for a homes folder, hold this user's home.
+
+    Chosen when the tests are collected, so a case that can't apply here isn't a skipped case.
+    """
+    return [
+        above
+        for above in candidates
+        if Path(above).is_dir() and (above not in HOMES or Path(above) in Path.home().parents)
+    ]
 
 
 @pytest.fixture
@@ -281,14 +298,19 @@ def test_walk_stops_at_the_depth_limit(tree: Path, monkeypatch: pytest.MonkeyPat
     assert "deep.txt" not in ConfinedFiles(tree).glob("*")
 
 
-def test_a_file_name_that_isnt_utf8_doesnt_fail_the_whole_answer(tree: Path) -> None:
-    try:
-        (tree / os.fsdecode(b"bad-\xff.md")).write_text("hello\n", encoding="utf-8")
-    except OSError:
-        pytest.skip("this file system refuses names that aren't UTF-8 (APFS)")
-    answer = _file_tools.run(ConfinedFiles(tree), "glob", {"pattern": "*.md"})
-    assert "README.md" in answer
-    assert "bad-" in answer
+def test_a_file_name_that_isnt_utf8_doesnt_fail_the_whole_answer(
+    tree: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A name with undecodable bytes reaches the child as a surrogate; its answer still goes out, marked."""
+    request = {"root": str(tree), "fd": 0, "tool": "glob", "arguments": {"pattern": "*.md"}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(request)))
+    monkeypatch.setattr(_file_tools, "ConfinedFiles", lambda root, root_fd: None)
+    monkeypatch.setattr(_file_tools, "call", lambda files, tool, arguments: "README.md\n" + os.fsdecode(b"bad-\xff.md"))
+
+    _file_tools._main()
+
+    answer = capfd.readouterr().out
+    assert answer == "README.md\nbad-?.md"
 
 
 def test_a_swapped_parent_folder_doesn_t_redirect_the_tools(tmp_path: Path) -> None:
@@ -338,15 +360,13 @@ def test_the_whole_disk_or_home_is_refused_by_identity(tmp_path: Path, wide: str
 
 @pytest.mark.parametrize(
     "above",
-    ["/Users", "/Users/", "/home", "/System", "/System/Volumes", "/System/Volumes/Data", "/System/Volumes/Data/Users"],
+    above_home_here(
+        "/Users", "/Users/", "/home", "/System", "/System/Volumes", "/System/Volumes/Data", "/System/Volumes/Data/Users"
+    ),
 )
 def test_every_folder_above_home_or_the_data_volume_is_refused(above: str) -> None:
     """`/Users` or `/home` holds every user's home, and the data volume holds the whole disk (ADR 0159, A3)."""
     folder = Path(above)
-    if not folder.is_dir():
-        pytest.skip(f"{above} doesn't exist here")
-    if above in {"/Users", "/Users/", "/home"} and folder not in Path.home().parents:
-        pytest.skip(f"{above} isn't above the home folder here")
 
     with pytest.raises(FileToolError, match="whole disk, your home or a folder above it"):
         ConfinedFiles(folder)
