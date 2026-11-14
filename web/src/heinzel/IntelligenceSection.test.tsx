@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { SchemaLevelView } from "@/api/client";
 import { expectAccessible, mockApi } from "@/test/render";
-import { IntelligenceSection, sourceSentence } from "./IntelligenceSection";
+import { IntelligenceSection, sourceSentence, withoutModels } from "./IntelligenceSection";
 
 const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 type Source = "exact" | "declared" | "nearest" | "provider-default";
@@ -73,7 +73,7 @@ function serve(initial: SchemaLevelView, fail: string | null = null) {
     "/api/ai/access/list": access,
     "/api/heinzel/set-level": async (request: Request) => {
       const body = (await request.json()) as Saved;
-      if (fail) return { status: 409, body: { detail: fail } };
+      if (fail) return { status: 409, body: { error: fail } };
       saved.push(body);
       stored = {
         ...stored,
@@ -255,5 +255,76 @@ describe("IntelligenceSection", () => {
     });
     show();
     expect((await screen.findByRole("alert")).textContent).toMatch(/^Could not load this Heinzel's intelligence\./);
+  });
+
+  it("never names the exact model in a problem sentence while the disclosure is closed", async () => {
+    serve(
+      view("medium", {
+        provider: "acme",
+        model: "acme-fast",
+        runs_as: null,
+        problem: "Couldn't run this Heinzel on the exact model acme-fast: it did not answer.",
+      }),
+    );
+    const { container } = show();
+    expect(
+      await screen.findByText(/It can't run on this choice now: Couldn't run this Heinzel on the exact model/),
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/acme-fast|acme-deep/);
+  });
+
+  it("never names a model in a save error while the disclosure is closed", async () => {
+    serve(view("medium", { provider: "acme", model: "acme-fast" }), "acme-fast is not offered any more");
+    const { container } = show();
+    fireEvent.click(await screen.findByRole("radio", { name: "As set in Settings (Claude Code)" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /^Could not change the AI provider\. \(see Advanced\) is not/,
+    );
+    expect(container.textContent).not.toMatch(/acme-fast/);
+    expect(withoutModels("a-b and a-bc", ["a-b", "a-bc"])).toBe("(see Advanced) and (see Advanced)");
+  });
+
+  it("keeps the keyboard in place: radios stay focusable while saving, and Undo hands focus to the level", async () => {
+    serve(view("medium", { provider: "acme" }));
+    show();
+    const configured = await screen.findByRole("radio", { name: "As set in Settings (Claude Code)" });
+    configured.focus();
+    fireEvent.click(configured);
+    expect(configured).not.toBeDisabled();
+    expect(await screen.findByText("AI provider changed.")).toBeInTheDocument();
+    expect(document.activeElement).toBe(configured);
+    const undo = screen.getByRole("button", { name: "Undo" });
+    undo.focus();
+    fireEvent.click(undo);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Undo" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(within(levels()).getByRole("radio", { name: "Medium" })));
+  });
+
+  it("keeps focus on the level group when Undo fails too", async () => {
+    serve(view("medium"));
+    show();
+    fireEvent.click(
+      within(await screen.findByRole("radiogroup", { name: "How hard it thinks" })).getByRole("radio", {
+        name: "High",
+      }),
+    );
+    const undo = await screen.findByRole("button", { name: "Undo" });
+    mockApi({
+      "/api/heinzel/level": view("high"),
+      "/api/ai/access/list": access,
+      "/api/heinzel/set-level": { status: 409, body: { detail: "changed" } },
+    });
+    undo.focus();
+    fireEvent.click(undo);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/^Could not undo the change\./);
+    expect(document.activeElement?.getAttribute("role")).toBe("radio");
+  });
+
+  it("shows a saved exact model the provider no longer offers as the checked row", async () => {
+    serve(view("medium", { provider: "acme", model: "acme-retired" }));
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Advanced: exact model" }));
+    expect(screen.getByRole("radio", { name: "acme-retired (not offered now)" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Let the level choose" })).not.toBeChecked();
   });
 });

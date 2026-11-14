@@ -731,6 +731,8 @@ const en = {
   "intelligence.advancedNote": "An exact model replaces the level's model.",
   "intelligence.modelNone": "Let the level choose",
   "intelligence.modelUnavailable": "{name} (not answering)",
+  "intelligence.modelStale": "{name} (not offered now)",
+  "intelligence.theExactModel": "(see Advanced)",
   "intelligence.modelsEmpty": "This provider lists no models, so the level decides.",
   "intelligence.models": "Exact model",
   "aiAccess.title": "AI access",

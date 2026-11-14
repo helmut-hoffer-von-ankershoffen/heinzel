@@ -2,7 +2,7 @@
 // The provider defines what each level runs on, so the section says in words what was resolved and never names a model
 // outside the "Advanced: exact model" disclosure, which is the only place an exact model is chosen.
 import { BatteryFull, BatteryLow, BatteryMedium, ChevronDown, Sparkles, Undo2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { SchemaAccessOption, SchemaLevelView } from "@/api/client";
 import { type LevelChange, useAiAccess, useHeinzelLevel, useSetHeinzelLevel } from "@/api/queries";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,13 @@ const ERROR: Record<Failed, MessageKey> = {
   model: "intelligence.error.model",
   undo: "intelligence.error.undo",
 };
+/** Outside the advanced disclosure no model is named: a model id in a backend sentence becomes "(see Advanced)". */
+export function withoutModels(text: string, models: readonly string[]): string {
+  return [...new Set(models)]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .reduce((out, model) => out.split(model).join(t("intelligence.theExactModel")), text);
+}
 const ROW = "flex min-h-11 items-center gap-2 rounded-md px-2 text-ui";
 
 /** The resolved choice in words, e.g. "Your provider has no Low model, so Medium is used." Never a model name. */
@@ -66,6 +73,7 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
   const [done, setDone] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const advancedId = useId();
+  const levelBox = useRef<HTMLDivElement>(null);
   const providerLegend = useId();
   const view = level.data;
   if (level.isPending) return <p className="text-ui text-muted-foreground">{t("intelligence.loading")}</p>;
@@ -87,6 +95,9 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
       option.name === view.provider || (option.name !== selected && (option.status !== "needs setup" || option.in_use)),
   );
   const pending = save.isPending;
+  const known = [view.model ?? "", ...options.flatMap((option) => option.models ?? [])];
+  const quiet = (text: string) => withoutModels(text, known);
+  const focusLevel = () => levelBox.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus();
 
   const change = (kind: Failed, change: LevelChange, restore: LevelChange | null, message: string) => {
     setFailed(null);
@@ -100,7 +111,11 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
         },
         onError: (error) => {
           setUndo(null);
-          setFailed({ kind, reason: error.message });
+          setFailed({ kind, reason: quiet(error.message) });
+        },
+        // Undo goes away when pressed: keep the keyboard in the section, on the chosen level.
+        onSettled: () => {
+          if (kind === "undo") focusLevel();
         },
       },
     );
@@ -166,7 +181,7 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
           />
         ))}
       </fieldset>
-      <div className="space-y-1">
+      <div ref={levelBox} className="space-y-1">
         <SegmentedControl
           legend={t("intelligence.level")}
           segments={LEVELS}
@@ -177,12 +192,21 @@ export function IntelligenceSection({ sessionId }: { readonly sessionId: string 
         />
         <p className="text-ui text-muted-foreground">{t(MEANS[view.level])}</p>
         {sentence && <p className="text-ui">{sentence}</p>}
-        {view.problem && <p className="text-ui text-warn">{t("intelligence.problem", { problem: view.problem })}</p>}
+        {view.problem && (
+          <p className="text-ui text-warn">{t("intelligence.problem", { problem: quiet(view.problem) })}</p>
+        )}
       </div>
       <div aria-live="polite" className="flex min-h-11 flex-wrap items-center gap-2">
         {done && !failed && <span className="text-ui">{done}</span>}
         {undo && !failed && (
-          <Button type="button" variant="ghost" size="sm" className="min-h-11" disabled={pending} onClick={undoLast}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="min-h-11"
+            aria-disabled={pending || undefined}
+            onClick={undoLast}
+          >
             <Undo2 aria-hidden className="size-4" />
             {t("intelligence.undo")}
           </Button>
@@ -228,7 +252,7 @@ function ProviderRow(props: {
         name="intelligence-provider"
         className="size-4"
         checked={props.checked}
-        disabled={props.disabled}
+        aria-disabled={props.disabled || undefined}
         onChange={() => props.onPick(props.name)}
       />
       {props.label}
@@ -256,11 +280,17 @@ function Offers(props: {
           name="intelligence-model"
           className="size-4"
           checked={!props.model}
-          disabled={props.disabled}
+          aria-disabled={props.disabled || undefined}
           onChange={() => props.onPick("")}
         />
         {t("intelligence.modelNone")}
       </label>
+      {props.model && !models.includes(props.model) && (
+        <label className={ROW}>
+          <input type="radio" name="intelligence-model" className="size-4" checked readOnly />
+          {t("intelligence.modelStale", { name: props.model })}
+        </label>
+      )}
       {models.map((name) => {
         const gone = silent.has(name);
         return (
@@ -270,7 +300,8 @@ function Offers(props: {
               name="intelligence-model"
               className="size-4"
               checked={props.model === name}
-              disabled={props.disabled || (gone && props.model !== name)}
+              disabled={gone && props.model !== name}
+              aria-disabled={props.disabled || undefined}
               onChange={() => {
                 if (!gone) props.onPick(name);
               }}
