@@ -2491,15 +2491,14 @@ def test_a_local_ref_pins_that_commit_not_head(make_kernel, tool_env, monkeypatc
     first = git_repository(repository, PLUGIN_FILES, tag="v0.1.0")
     (repository / "crm" / "more.py").write_text("x = 1\n", encoding="utf-8")
     env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
         "GIT_AUTHOR_NAME": "A",
         "GIT_AUTHOR_EMAIL": "a@e.org",
         "GIT_COMMITTER_NAME": "A",
         "GIT_COMMITTER_EMAIL": "a@e.org",
     }
     for step in (["add", "."], ["commit", "-q", "-m", "more"]):
-        subprocess.run(
-            ["git", "-C", str(repository), *step], check=True, env={**os.environ, **env}, capture_output=True
-        )
+        subprocess.run(["git", "-C", str(repository), *step], check=True, env=env, capture_output=True)
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     candidate = service.candidate(f"git+{repository.resolve().as_uri()}@v0.1.0")
     assert candidate.revision == first
