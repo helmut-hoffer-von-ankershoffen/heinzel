@@ -146,6 +146,41 @@ Checkable statements:
     "method"}`. In a chat on the engine, a connected read the connector can't do shows as unavailable to the model,
     like any failed read. Nothing retries it. The conformance kit accepts it for any method.
 
+**The engine runner (Head C)**
+
+17. **History.** The `engine` runner keeps each chat's Pydantic AI message history, serialized with
+    `ModelMessagesTypeAdapter`, in `<state_dir>/ai/engine-sessions/<chat>.json`: written atomically, mode 0600 in a
+    0700 folder, never through a symbolic link, and kept across a restart. It is capped at 60 % of the offer's
+    `context_window`, at four characters a token, by dropping whole turns, oldest first; the newest turn is always
+    kept. Without a known context window it keeps at most 200 messages; the built-in Model API option has none, so
+    it uses that cap. A chat that sends a transcript continues the stored history only when the transcript's last
+    answer matches it; otherwise the runner starts a fresh history from the whole transcript. A stopped reply keeps
+    its partial answer, marked `[stopped: <why>]`.
+18. **Coding tools.** On the `engine` runner a coding session gets `read`, `grep` and `glob` (the read-only set of
+    Claude Code's Read, Grep and Glob) and the run's MCP servers as `mcp__<server>__<tool>`, nothing else. The tools
+    are confined to the working directory:
+    - no `..`, no symbolic link anywhere on the path (each component opened with `O_NOFOLLOW` from a directory
+      handle held for the session), no hard-linked file, no `.git`, regular files only;
+    - `/` and the home directory are refused as working directories;
+    - each call runs in an isolated child process (`python -I`, no environment, only the directory handle), stopped
+      at 20 s or the run's remaining time, whichever is sooner;
+    - each call reads at most 64 MiB and visits at most 20,000 entries; `read` returns at most 2,000 lines or
+      256 KiB, `grep` at most 200 matches, `glob` at most 1,000 files.
+19. **Gaps against Claude Code, exactly.**
+    1. Symbolic and hard links inside the folder are refused; Claude Code follows in-folder links.
+    2. `grep` uses Python regular expressions, not ripgrep: it doesn't honour `.gitignore`, has no multiline,
+       context, count or output modes, and skips binaries and files over 2 MiB.
+    3. Text only: no images, PDFs or notebooks.
+    4. The dollar budget is not enforced, because the models report tokens only; it is a warning in the result.
+    5. MCP goes through a minimal stdio JSON-RPC client (`initialize`, `tools/list`, `tools/call`). A server's own
+       requests (sampling, roots, elicitation) are answered as not supported, and only text content is returned.
+    6. `ANTHROPIC_CUSTOM_HEADERS` in hz's environment is still applied by Anthropic's client at an `api = "anthropic"`
+       endpoint.
+20. **The built-in Model API option at an Anthropic endpoint.** With `[ai.access] api = "anthropic"` it speaks the
+    Messages API at `base_url`, with the stored key as a bearer token, and lists no models. There is no token
+    command (owner decision). `run_granted` refuses any binding that no pricing policy covers (any plugin, any
+    endpoint) before building a model; `run_connected`, which is bounded by tokens, serves them.
+
 **Hard-wiring found, and where each is answered**
 
 | Where | What was hard-wired | Answer |
