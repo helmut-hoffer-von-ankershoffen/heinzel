@@ -25,13 +25,15 @@ const DIAGNOSTIC_STATUS = {
 
 type Props = {
   connectors: Connector[];
+  /** The installed plugins are still loading: say so, never "no connector installed". */
+  loading?: boolean;
   open: Connector | undefined;
   settings: SchemaSettingInfo[];
   onOpen: (id: string) => void;
   renderSettings: (settings: SchemaSettingInfo[], heading: string) => ReactNode;
 };
 
-export function ConnectorsSection({ connectors, open, settings, onOpen, renderSettings }: Props) {
+export function ConnectorsSection({ connectors, loading = false, open, settings, onOpen, renderSettings }: Props) {
   const capabilities = useCapabilities();
   const report = useConnectorReport(open !== undefined);
   /** The capabilities bound to one of `connector`'s adapters, from `[capabilities]`. */
@@ -135,7 +137,9 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
       <h3 className="mb-1 text-ui font-medium">{t("connectors.title")}</h3>
       <p className="mb-4 text-sm text-muted-foreground">{t("connectors.intro")}</p>
       {connectors.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t("connectors.none")}</p>
+        <p role={loading ? "status" : undefined} className="text-sm text-muted-foreground">
+          {t(loading ? "connectors.loading" : "connectors.none")}
+        </p>
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
           {connectors.map((connector) => {
