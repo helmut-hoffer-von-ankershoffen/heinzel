@@ -1,6 +1,7 @@
 """Shared fixtures. The test-suite policy (one level per test, in order, with timeouts) and the isolation of every
 test from the developer's HZ_* variables, config and state (`hz_isolation`) are heinzel.testing's."""
 
+import functools
 import importlib.util
 import math
 import os
@@ -190,6 +191,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         help="Import every test level before marker selection (diagnostic comparison).",
     )
+    parser.addoption(
+        "--integration-half",
+        type=int,
+        choices=(0, 1, 2),
+        default=0,
+        help="Run one of two sessions of the integration level (CI's integration-1 and integration-2); 0 runs all.",
+    )
 
 
 def _level_layout(config: pytest.Config) -> bool:
@@ -204,6 +212,18 @@ def _path_level(path: Path) -> str | None:
     if relative.as_posix() in _INTEGRATION_FILES:
         return "integration"
     return relative.parts[0] if relative.parts and relative.parts[0] in _LEVELS else None
+
+
+@functools.cache
+def integration_files() -> list[str]:
+    """Every integration test file, relative to tests/, in the sorted order the two CI sessions are cut from."""
+    found = {p.relative_to(_ROOT / "tests").as_posix() for p in (_ROOT / "tests" / "integration").rglob("*_test.py")}
+    return sorted(found | _INTEGRATION_FILES)
+
+
+def integration_half(relative: str) -> int:
+    """1 or 2: alternate sorted files, so neighbours of one feature (and their cost) spread over both sessions."""
+    return integration_files().index(relative) % 2 + 1
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
@@ -221,6 +241,8 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
     # collecting a second pytest session inside its test deadline. E2E fixture bodies remain deselected normally.
     if level == "e2e" and _inventory_requested(config):
         return None
+    if level == "integration" and (half := config.getoption("integration_half")):
+        return True if integration_half(collection_path.relative_to(_ROOT / "tests").as_posix()) != half else None
     return True if level is not None and level != "integration" else None
 
 

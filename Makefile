@@ -210,9 +210,11 @@ ifeq ($(shell uname -s),Linux)
 SERIAL_RETIREMENT_TEST := $(if $(filter unit,$(TEST_LEVELS)),tests/unit/modules/daemon_legacy_retirement_test.py)
 PARALLEL_STEPS := @STEP_TIMEOUT=420 $(patsubst @%,%,$(STEPS))
 endif
+# The integration level runs as two sequential pytest sessions (--integration-half 1 and 2), each under its own cap,
+# in the one CI job, so the job names and counts stay as they were.
 test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(PARALLEL_STEPS) "tests=$(if $(SERIAL_RETIREMENT_TEST),uv run pytest $(SERIAL_RETIREMENT_TEST) -m '($(TEST_LEVELS)) and not perf' -n 1 --max-worker-restart=0 -x -q --session-timeout=420 --durations=20 && )uv run pytest -m '($(TEST_LEVELS)) and not perf' $(if $(SERIAL_RETIREMENT_TEST),--ignore=$(SERIAL_RETIREMENT_TEST) )-n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"
+	$(PARALLEL_STEPS) $(if $(filter-out integration,$(TEST_LEVELS)),"tests=$(if $(SERIAL_RETIREMENT_TEST),uv run pytest $(SERIAL_RETIREMENT_TEST) -m '($(TEST_LEVELS)) and not perf' -n 1 --max-worker-restart=0 -x -q --session-timeout=420 --durations=20 && )uv run pytest -m '($(TEST_LEVELS)) and not perf' $(if $(SERIAL_RETIREMENT_TEST),--ignore=$(SERIAL_RETIREMENT_TEST) )-n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20",$(foreach half,1 2,"integration-$(half)=uv run pytest -m '(integration) and not perf' --integration-half=$(half) -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"))
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
