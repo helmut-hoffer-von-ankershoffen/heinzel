@@ -908,7 +908,15 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
     )
-    service.questions = QuestionRelay(service, crud, current, kernel.self_chat, kernel.settings.state_dir)
+    service.questions = QuestionRelay(
+        service,
+        crud,
+        current,
+        kernel.self_chat,
+        kernel.settings.state_dir,
+        forget_notices=lambda listed: kernel.resolve(Notifications).forget_chats(listed),
+        log_dir=kernel.settings.log_dir,
+    )
     return service
 
 
