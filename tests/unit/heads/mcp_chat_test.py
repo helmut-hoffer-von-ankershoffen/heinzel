@@ -17,6 +17,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from heinzel import ActionGate, CurrentUser, HeinzelError, Module
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
+from heinzel.kernel import ChatTool
+from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit
@@ -49,7 +51,7 @@ def notes(ran: list[str]) -> Module:
     @module.operation
     def everything() -> str:
         """Show a lot."""
-        return "mira.sato@example.org " + "x" * mcp.RESULT_LIMIT
+        return "mira.sato@example.org " + "x" * RESULT_LIMIT
 
     @module.operation
     def broken() -> str:
@@ -103,7 +105,7 @@ def kernel(make_kernel, ran):
 
 
 def tools(kernel, session="0123456789abcdef"):
-    return {item.name: mcp.chat_tool(kernel, item, session, local=True) for item in exposed(kernel, mcp.HEAD)}
+    return {item.name: mcp.chat_tool(ChatTool(kernel, item, session)) for item in exposed(kernel, mcp.HEAD)}
 
 
 def open_chat(kernel) -> str:
@@ -400,7 +402,8 @@ def test_a_write_is_refused_and_only_proposed_with_its_exact_arguments(kernel, r
 def test_a_write_that_also_spends_is_only_proposed_too(kernel):
     tools(kernel)["system_config_set"](key="system.runner.ask_max_usd", value="100")
     [call] = kernel.resolve(ActionGate).calls
-    assert call.command == "hz system config set --key system.runner.ask_max_usd --value 100"
+    # With the defaults the agent left out, as MCP passes them: what the person confirms is the whole call.
+    assert call.command == "hz system config set --key system.runner.ask_max_usd --value 100 --scope user"
 
 
 def test_the_chat_server_never_listens_on_a_port():
@@ -412,7 +415,7 @@ def test_a_cut_result_is_redacted_first_and_says_it_was_cut(kernel):
     result = tools(kernel)["notes_everything"]()
     assert result.startswith('"[email] ')
     assert result.endswith("…(cut)")
-    assert len(result) == mcp.RESULT_LIMIT + len("…(cut)")
+    assert len(result) == RESULT_LIMIT + len("…(cut)")
 
 
 def test_errors_reach_the_agent_without_email_addresses(kernel):
