@@ -24,6 +24,7 @@ import {
 } from "@/api/queries";
 import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
 import { CopyCommand } from "@/components/common";
+import { Button } from "@/components/ui/button";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
 import {
@@ -286,9 +287,11 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
           const down = unavailable.has(model);
           return (
             // biome-ignore lint/a11y/useSemanticElements: a pickable row with an "unavailable" note, like the option cards
-            <button
+            <Button
               key={model}
               type="button"
+              variant="outline"
+              size="sm"
               role="radio"
               aria-checked={chosen === model}
               data-model={model}
@@ -296,13 +299,13 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
               title={down ? t("aiAccess.models.unavailableNote", { title: option.title }) : undefined}
               onClick={() => void pick(model).catch(() => undefined)}
               className={cn(
-                "flex items-center gap-2 rounded-md border border-border px-2 py-1 text-left font-mono text-ui-sm",
+                "w-full justify-start font-mono text-ui-sm font-normal",
                 chosen === model && "border-primary bg-accent/40",
               )}
             >
-              <span className="flex-1 [overflow-wrap:anywhere]">{model}</span>
+              <span className="flex-1 text-left [overflow-wrap:anywhere]">{model}</span>
               {down && <span className="font-sans text-warn">{t("aiAccess.models.unavailable")}</span>}
-            </button>
+            </Button>
           );
         })}
       </div>
