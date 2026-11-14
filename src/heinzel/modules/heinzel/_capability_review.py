@@ -30,8 +30,12 @@ class CapabilityReadDescriptor:
     binding_sha256: str
 
 
-def describe_capability_read(kernel: Kernel, capability: str, method: str) -> CapabilityReadDescriptor:
+def describe_capability_read(
+    kernel: Kernel, capability: str, method: str, adapter: str | None = None
+) -> CapabilityReadDescriptor:
     """Describe the selected registered provider and the kernel protocol's exact read-method schema.
+
+    `adapter` is which of several bound adapters serves the read (ADR 0161), as `Kernel.capability_route` chose it.
 
     The descriptor is not executable. Human approval, data/account binding, implementation continuity and current
     configuration must be separately checked by the caller before any provider is invoked.
@@ -44,7 +48,7 @@ def describe_capability_read(kernel: Kernel, capability: str, method: str) -> Ca
     if spec is None or spec.methods.get(method) != "read":
         msg = "The selected capability method is not an available read"
         raise HeinzelError(msg)
-    record, provider = kernel.selected_capability_provider(capability)
+    record, provider = kernel.selected_capability_provider(capability, adapter)
     function = getattr(spec.protocol, method, None)
     try:
         if function is None:

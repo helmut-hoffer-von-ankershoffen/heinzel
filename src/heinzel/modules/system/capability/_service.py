@@ -42,6 +42,8 @@ class CapabilityService:
                     summary=spec.summary,
                     modes=[mode for mode in MODES if mode in spec.modes],
                     bound=self.capabilities.bound(spec.name),
+                    adapters=list(self.capabilities.bindings(spec.name)[0]),
+                    multiple=spec.multiple,
                 )
                 for spec in sorted(CAPABILITIES.values(), key=lambda spec: spec.name)
             ],
@@ -51,6 +53,7 @@ class CapabilityService:
                     capability=adapter.let.capability,
                     modes=[mode for mode in MODES if mode in adapter.let.modes],
                     hosts=list(self.capabilities.hosts(adapter)[0]) or [UNKNOWN_HOSTS],
+                    links=list(self.capabilities.links(adapter)),
                     module=adapter.module,
                     distribution=adapter.distribution,
                 )

@@ -567,6 +567,8 @@ class SourceBinding[T]:
     record: ModuleRecord
     contract: type[T]
     capability: str
+    adapter: str | None = None
+    """Which of several bound adapters it is (ADR 0161); None for the default."""
 
 
 class CaptureCatalog:
@@ -608,22 +610,23 @@ class CaptureCatalog:
         Raises:
             HeinzelError: If the result was produced after the source or instance changed.
         """
-        capture, kernel, record, contract, capability = (
+        capture, kernel, record, contract, capability, adapter = (
             binding.capture,
             binding.kernel,
             binding.record,
             binding.contract,
             binding.capability,
+            binding.adapter,
         )
         if not any(stored[-1] is capture for stored in self._entries.values()):
             msg = "The source capture is not owned by this host catalog"
             raise HeinzelError(msg)
-        if kernel.selected_capability_provider(capability)[0] is not record:
+        if kernel.selected_capability_provider(capability, adapter)[0] is not record:
             msg = "The selected capability changed"
             raise HeinzelError(msg)
         instance = capture.service(kernel, record, contract)
         result = call(instance)
-        if kernel.selected_capability_provider(capability)[0] is not record:
+        if kernel.selected_capability_provider(capability, adapter)[0] is not record:
             msg = "The selected capability changed during the operation"
             raise HeinzelError(msg)
         if capture.service(kernel, record, contract) is not instance:
@@ -824,13 +827,17 @@ class SourceDiscovery:
         capture.service(kernel, record, contract)
         return capture
 
-    def binding[T](self, kernel: Kernel, capability: str, contract: type[T]) -> SourceBinding[T]:
+    def binding[T](
+        self, kernel: Kernel, capability: str, contract: type[T], adapter: str | None = None
+    ) -> SourceBinding[T]:
         """Bind the host-selected record to the exact catalog-owned captured provider.
+
+        `adapter` picks one of several bound adapters (ADR 0161); None is the default.
 
         Raises:
             HeinzelError: If no captured source matches the current capability selection.
         """
-        record, provider = kernel.selected_capability_provider(capability)
+        record, provider = kernel.selected_capability_provider(capability, adapter)
         matches = [capture for capture in self._captured.values() if any(item is record for item in capture.records)]
         if len(matches) != 1:
             msg = "The selected provider has no reviewed source capture"
@@ -844,7 +851,7 @@ class SourceDiscovery:
         ):
             msg = "The selected capability implementation is outside the captured source"
             raise HeinzelError(msg)
-        binding = SourceBinding(capture, kernel, record, contract, capability)
+        binding = SourceBinding(capture, kernel, record, contract, capability, adapter)
         self._catalog.guarded_call(binding, lambda service: service)
         return binding
 

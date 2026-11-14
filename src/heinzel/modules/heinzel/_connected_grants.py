@@ -250,8 +250,9 @@ class ConnectedReadGrants:
         descriptor = None
         try:
             self._check_current_config(proposal.capability)
-            desc = describe_capability_read(self.kernel, proposal.capability, proposal.method)
-            self._selected(proposal.capability, proposal.method)
+            adapter = self._route(proposal)
+            desc = describe_capability_read(self.kernel, proposal.capability, proposal.method, adapter)
+            self._selected(proposal.capability, proposal.method, adapter)
             if desc.binding_sha256 == proposal.binding_sha256:
                 descriptor = ConnectedReadOption(
                     capability=proposal.capability,
@@ -279,18 +280,24 @@ class ConnectedReadGrants:
             msg = "The connected read review requires its authenticated owner"
             raise HeinzelError(msg)
 
-    def _selected(self, capability: str, method: str) -> tuple[ModuleRecord, ConnectedReadService]:
+    def _route(self, grant: ConnectedGrant) -> str | None:
+        """Which of several bound adapters serves `grant`'s read: the one its fixed item belongs to (ADR 0161)."""
+        return self.kernel.capability_route(grant.capability, grant.method, self._arguments(grant))
+
+    def _selected(
+        self, capability: str, method: str, adapter: str | None = None
+    ) -> tuple[ModuleRecord, ConnectedReadService]:
         try:
-            record, _provider = self.kernel.selected_capability_provider(capability)
+            record, _provider = self.kernel.selected_capability_provider(capability, adapter)
             # Default boot binds source before resolving any provider service factory.
             source_guard = self.kernel.source_discovery
             service: ConnectedReadService
             if source_guard is not None:
                 service = SourceGuardedConnectedService(
-                    source_guard, source_guard.binding(self.kernel, capability, ConnectedReadService)
+                    source_guard, source_guard.binding(self.kernel, capability, ConnectedReadService, adapter)
                 )
             else:
-                record, service = self.kernel.selected_capability_service(ConnectedReadService, capability)
+                record, service = self.kernel.selected_capability_service(ConnectedReadService, capability, adapter)
             claims = service.supported_reads()
             if type(claims) is not tuple or len(claims) > _MAX_SUPPORTED_READS:
                 raise ValueError  # noqa: TRY301
@@ -307,7 +314,7 @@ class ConnectedReadGrants:
                 seen.add(key)
             if (capability, method) not in seen:
                 raise ValueError  # noqa: TRY301
-            selected, _provider = self.kernel.selected_capability_provider(capability)
+            selected, _provider = self.kernel.selected_capability_provider(capability, adapter)
             if selected is not record:
                 raise ValueError  # noqa: TRY301
         except Exception:  # noqa: BLE001 - provider diagnostics and malformed claims are private
@@ -326,7 +333,7 @@ class ConnectedReadGrants:
         fresh = config.settings(CapabilitySettings, "capabilities")
         original = self.kernel.capability_settings
         if (
-            fresh.bound(capability) != original.bound(capability)
+            fresh.bound_all(capability) != original.bound_all(capability)
             or fresh.configured(capability) != original.configured(capability)
             or fresh.defaulted(capability) != original.defaulted(capability)
             or config.settings(Settings, "hz").disabled_modules != self.kernel.settings.disabled_modules
@@ -340,8 +347,9 @@ class ConnectedReadGrants:
         self._check_current_config(capability)
         fixed = validate_capability_read_arguments(capability, method, fixed)
         fixed_hash = arguments_hash(fixed)
-        descriptor = describe_capability_read(self.kernel, capability, method)
-        record, service = self._selected(capability, method)
+        adapter = self.kernel.capability_route(capability, method, fixed)
+        descriptor = describe_capability_read(self.kernel, capability, method, adapter)
+        record, service = self._selected(capability, method, adapter)
         if record.qualname != descriptor.owner_module:
             msg = "The selected connected read changed"
             raise HeinzelError(msg)
@@ -767,8 +775,9 @@ class ConnectedReadGrants:
         try:
             grant = self.approved(session)
             self._check_current_config(grant.capability)
-            descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
-            self._selected(grant.capability, grant.method)
+            adapter = self._route(grant)
+            descriptor = describe_capability_read(self.kernel, grant.capability, grant.method, adapter)
+            self._selected(grant.capability, grant.method, adapter)
             if descriptor.binding_sha256 != grant.binding_sha256:
                 return None
         except HeinzelError:
@@ -813,8 +822,9 @@ class ConnectedReadGrants:
             raise HeinzelError(msg)
         grant = self.approved(session)
         self._check_current_config(grant.capability)
-        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
-        record, service = self._selected(grant.capability, grant.method)
+        adapter = self._route(grant)
+        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method, adapter)
+        record, service = self._selected(grant.capability, grant.method, adapter)
         if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
             msg = "The connected read provider changed"
             raise HeinzelError(msg)
@@ -923,8 +933,9 @@ class ConnectedReadGrants:
         key, key_id = set_input_key(self.current, self.crud, session)
         start_set_call(self.crud, session, call)
         self._check_current_config(grant.capability)
-        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
-        record, service = self._selected(grant.capability, grant.method)
+        adapter = self._route(grant)
+        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method, adapter)
+        record, service = self._selected(grant.capability, grant.method, adapter)
         if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
             msg = "The connected read provider changed"
             raise HeinzelError(msg)

@@ -586,8 +586,15 @@ class UserChatService:
         self, session: str, turn: str, connected: ConnectedReadGrants | None, writer: SessionWriter
     ) -> DocumentDraftTools | None:
         """Offer inert proposals only through the source-bound default-off write service."""
-        if connected is None or self._playbook_kernel is None:
+        kernel = self._playbook_kernel
+        if connected is None or kernel is None:
             return None
+        try:
+            selected = kernel.resolve(SelectedWriteService)
+            selected.check_available()
+        except HeinzelError:
+            return None
+        writes_to = selected.registration.adapter
 
         def approved_reference() -> str | None:
             try:
@@ -596,13 +603,16 @@ class UserChatService:
             except HeinzelError:
                 return None
             ref = grant.review.fixed_arguments.get("ref")
-            return ref if grant.capability == "documents" and grant.method == "read" and isinstance(ref, str) else None
+            if grant.capability != "documents" or grant.method != "read" or not isinstance(ref, str):
+                return None
+            # Drafts are written by the default documents connector: offer them only for a document it holds, never
+            # for one another connector that is on holds (ADR 0161).
+            try:
+                routed = kernel.capability_route("documents", "read", {"ref": ref})
+            except HeinzelError:
+                return None
+            return ref if routed in {None, writes_to} else None
 
-        try:
-            selected = self._playbook_kernel.resolve(SelectedWriteService)
-            selected.check_available()
-        except HeinzelError:
-            return None
         return DocumentDraftTools(
             self._crud,
             self.current,
