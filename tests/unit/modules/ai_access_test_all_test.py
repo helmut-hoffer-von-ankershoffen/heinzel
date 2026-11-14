@@ -336,3 +336,17 @@ def test_the_terminal_shows_each_model_and_the_tokens_spent(tmp_path):
     assert text.splitlines()[-1] == (
         "acme: 1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped; tokens: 10 in, 1 out"
     )
+
+
+def test_a_library_failure_before_the_request_is_a_failed_check(tmp_path, monkeypatch):
+    import pydantic_ai
+
+    def refuse(*args: object, **kwargs: object) -> object:
+        msg = "unsupported model"
+        raise TypeError(msg)
+
+    monkeypatch.setattr(pydantic_ai, "Agent", refuse)
+    access, found = option(tmp_path, Models())
+    result = access.test_model("ok", 1.0)
+    assert (result.ok, result.detail, result.model) == (False, "TypeError: unsupported model", "ok")
+    assert marked(found)["ok"] is False
