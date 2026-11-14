@@ -84,9 +84,24 @@ try {
   assert.equal(await page.getByText("Back to chat", { exact: true }).count(), 0, "no Back to chat");
   await accessible('[aria-label="Chat"] .chat-panel-header');
 
+  // The state is computed by the backend; this fixture patches the list the browser gets (the profile's own hz, not
+  // the live one) so a waiting Heinzel shows its word and pose in the header and the switcher.
+  await page.route("**/heinzel/sessions*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const session of body.sessions ?? []) session.activity = "waiting_for_you";
+    await route.fulfill({ response, json: body });
+  });
   await face.click();
   const list = page.getByRole("dialog", { name: "Your Heinzels" });
   await list.getByRole("button", { name: /Helmi/ }).waitFor();
+  await list.getByText("Waiting for you").waitFor();
+  assert.equal(await list.locator('svg[data-state="waiting"]').count(), 1, "the row shows the waiting pose");
+  await face.getByText("Waiting for you").waitFor();
+  assert.equal(await face.locator('svg[data-state="waiting"]').count(), 1, "the header shows the waiting pose");
+  await accessible('[role="dialog"]');
+  await accessible('[aria-label="Chat"] .chat-panel-header');
+  await page.unroute("**/heinzel/sessions*");
   await list.getByRole("button", { name: "New Heinzel" }).waitFor();
   await page.keyboard.press("Escape");
   assert.ok(await face.evaluate((node) => node === document.activeElement), "focus returns to the name");

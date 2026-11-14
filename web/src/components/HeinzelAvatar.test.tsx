@@ -93,7 +93,7 @@ describe("Heinzelmännchen's drawing", () => {
             const shapes = heinzelShapes({ age, beard, build, state, hat: "rust", shirt: "rose" });
             expect(fills(shapes)).toContain(SHIRTS.rose);
             expect(fills(shapes).includes(HATS.rust)).toBe(age !== "baby");
-            expect(shapes.some((shape) => shape.part === "badge")).toBe(!["idle", "working"].includes(state));
+            expect(shapes.some((shape) => shape.part === "badge")).toBe(!["idle", "working", "dozing"].includes(state));
           }
   });
 

@@ -32,12 +32,13 @@ export function usePreviewFeature(name: string): boolean {
   return Array.isArray(features) && features.includes(name);
 }
 /** `hz heinzel sessions`: your durable Heinzels, newest first; the chat's header and default Heinzel read it. */
-export const useHeinzelSessions = (enabled = true) =>
+export const useHeinzelSessions = (enabled = true, pollMs: number | false = false) =>
   useQuery({
     queryKey: ["heinzel", "sessions"],
     queryFn: () => unwrap(api.GET("/heinzel/sessions")),
     enabled,
     retry: false,
+    refetchInterval: pollMs,
   });
 /** `hz heinzel level`: a Heinzel's level, AI provider and exact model, and what a turn would run on now (ADR 0158). */
 export const useHeinzelLevel = (sessionId: string) =>

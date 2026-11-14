@@ -1,7 +1,7 @@
 // One Heinzelmännchen as the app shows it, styled by its five choices (age, beard, hat and shirt colour, build), any
 // accessories (umbrella, sunglasses, scarf: a data-only list) and showing its state: the whole figure by default (its page, the profile editor, the chat's header), or its bust for
 // small slots up to 28 pixels (chat messages, lists, graph nodes). Both are the same drawing (heinzel.ts), drawn
-// inline, so it needs no request. Motion is subtle and only without reduced motion: the badge breathes, a working
+// inline, so it needs no request. Motion is subtle and only without reduced motion: only a thinking badge breathes, a working
 // one bobs.
 import { cn } from "@/lib/utils";
 import { useAvatarTheme } from "./AvatarTheme";
@@ -18,12 +18,17 @@ import { type IdleMove, useIdleLife } from "./useIdleLife";
 
 const STATE_LABEL = {
   idle: "",
-  sleeping: "asleep",
   working: "working",
   thinking: "thinking",
   waiting: "waiting for you",
   blocked: "blocked",
   done: "done",
+  hammering: "working",
+  overloaded: "overloaded",
+  watching: "waiting on others",
+  paused: "paused",
+  asleep: "asleep",
+  dozing: "",
 } as const;
 
 type Props = HeinzelLook & {
@@ -133,11 +138,17 @@ export function HeinzelAvatar({ view = "full", label, className, alive = false, 
       data-accessories={accessories.length ? accessories.join(" ") : undefined}
       className={cn(view !== "full" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
     >
-      <g className={state === "working" ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]" : undefined}>
+      <g
+        className={
+          state === "working" || state === "hammering"
+            ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]"
+            : undefined
+        }
+      >
         <Parts shapes={body} />
       </g>
       {badge.length > 0 && (
-        <g className="motion-safe:animate-[hz-breathe_2.4s_ease-in-out_infinite]">
+        <g className={state === "thinking" ? "motion-safe:animate-[hz-breathe_2.4s_ease-in-out_infinite]" : undefined}>
           <Parts shapes={badge} />
         </g>
       )}

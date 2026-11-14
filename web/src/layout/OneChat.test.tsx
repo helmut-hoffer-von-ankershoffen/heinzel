@@ -117,8 +117,8 @@ describe("one kind of chat", () => {
     await user.click(trigger);
     const list = within(await screen.findByRole("dialog", { name: "Your Heinzels" }));
     expect(list.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "FritzActive",
-      "HelmiActive",
+      "FritzIdle",
+      "HelmiIdle",
       "New Heinzel",
     ]);
     expect(list.getByRole("button", { name: /Helmi/ })).toHaveAttribute("aria-current", "true");
@@ -220,5 +220,41 @@ describe("one kind of chat", () => {
     await user.click(face);
     const list = within(await screen.findByRole("dialog", { name: "Your Heinzels" }));
     expect(await list.findByRole("button", { name: /Fritz/ })).toBeInTheDocument();
+  });
+});
+
+describe("the state of each Heinzel in the header and the switcher", () => {
+  const withActivity = (session_id: string, activity: string) => ({ ...summary(session_id), activity });
+
+  it("shows the computed word and pose, and the switcher lists every Heinzel's own", async () => {
+    mockOneChat([withActivity(helmi, "working"), withActivity(fritz, "waiting_for_you")]);
+    const user = userEvent.setup();
+    renderAt(`/doctor?chat=${helmi}`);
+    const chat = await panel();
+    const face = await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
+    await waitFor(() => expect(face).toHaveAccessibleDescription("Working"));
+    expect(face.querySelector("svg")).toHaveAttribute("data-state", "hammering");
+    await user.click(face);
+    const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
+    const row = within(list).getByRole("button", { name: /Fritz/ });
+    expect(within(row).getByText("Waiting for you")).toBeInTheDocument();
+    expect(row.querySelector("svg")).toHaveAttribute("data-state", "waiting");
+    await expectAccessible(list);
+  });
+
+  it("is awake when idle in the open chat and dozing in the list", async () => {
+    mockOneChat([withActivity(helmi, "idle"), withActivity(fritz, "idle")]);
+    const user = userEvent.setup();
+    renderAt(`/doctor?chat=${helmi}`);
+    const chat = await panel();
+    const face = await chat.findByRole("button", { name: "Helmi. Switch Heinzel" });
+    expect(face.querySelector("svg")).toHaveAttribute("data-state", "idle");
+    await user.click(face);
+    const list = await screen.findByRole("dialog", { name: "Your Heinzels" });
+    expect(within(within(list).getByRole("button", { name: /Fritz/ })).getByText("Idle")).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: /Fritz/ }).querySelector("svg")).toHaveAttribute(
+      "data-state",
+      "dozing",
+    );
   });
 });

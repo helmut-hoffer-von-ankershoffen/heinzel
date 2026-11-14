@@ -14,7 +14,9 @@ import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
-import { appearanceLook, stateLabel } from "@/heinzel/look";
+import { ActivityFace } from "@/heinzel/ActivityFace";
+import { sessionWord } from "@/heinzel/activity";
+import { appearanceLook } from "@/heinzel/look";
 import { StartHelper } from "@/heinzel/StartHelper";
 import { type MessageKey, t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
@@ -217,14 +219,14 @@ export function PersonalHeinzels() {
                 !drafting && item.session_id === selected && "border-primary bg-accent text-accent-foreground",
               )}
             >
-              <HeinzelAvatar
-                view="bust"
-                {...appearanceLook(item.appearance)}
+              <ActivityFace
+                appearance={item.appearance}
+                activity={item.activity}
                 className="size-10 shrink-0 overflow-hidden"
               />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{item.name}</span>
-                <span className="block text-xs text-muted-foreground">{stateLabel(item.state)}</span>
+                <span className="block text-xs text-muted-foreground">{sessionWord(item)}</span>
               </span>
             </Button>
           ))}

@@ -5,7 +5,9 @@ import { api, unwrap } from "@/api/client";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction } from "@/components/PaneActions";
-import { appearanceLook, stateLabel } from "@/heinzel/look";
+import { ActivityFace } from "@/heinzel/ActivityFace";
+import { sessionWord } from "@/heinzel/activity";
+import { appearanceLook } from "@/heinzel/look";
 import { t } from "@/i18n";
 import { createDraftPath } from "@/lib/chatIntent";
 
@@ -87,13 +89,13 @@ export function DurableHeinzelStatus() {
               {sessions.map((session) => (
                 <li key={session.session_id}>
                   <div className="flex min-h-8 items-center gap-2 px-1.5 py-1">
-                    <HeinzelAvatar
-                      view="bust"
-                      {...appearanceLook(session.appearance)}
+                    <ActivityFace
+                      appearance={session.appearance}
+                      activity={session.activity}
                       className="size-6 shrink-0 overflow-hidden"
                     />
                     <span className="min-w-0 flex-1 truncate">{session.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{stateLabel(session.state)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{sessionWord(session)}</span>
                   </div>
                 </li>
               ))}
