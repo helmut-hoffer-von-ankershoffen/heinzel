@@ -83,8 +83,10 @@ Chosen option 1. Checkable statements:
    a sentence that names the action and the way out ("clear the exact model on the Heinzel's page"). On a provider
    that lists no models it is refused, since hz can't hold the provider to it.
 10. **A level never widens a grant.** Where a model grant binds a run, only granted models count as marked, and an
-    exact model the grant doesn't cover is refused. A level changes neither caps, budget mode, tools nor approvals;
-    the dollar-cap checks of ADR 0159 still run before the turn.
+    exact model the grant doesn't cover is refused. Today's granted runs (`run_granted`) run the grant's exact model
+    and resolve no level at all, so this holds by construction; the resolver's `granted` input is for a granted path
+    that resolves a level. A level changes neither caps, budget mode, tools nor approvals; the dollar-cap checks of
+    ADR 0159 still run before the turn.
 
 **Claude Code**
 
@@ -99,13 +101,18 @@ Chosen option 1. Checkable statements:
 12. **Always, for a turn of a Heinzel.** There is no feature flag. A chat turn of a Heinzel resolves its model through
     its intelligence: the provider is the Heinzel's `provider`, or else the configured AI access. A provider that is
     neither the configured AI access nor an installed plugin's models refuses the turn, naming the Heinzel's page.
-13. **Recorded per turn.** The turn's backend binding records the level asked, the level it ran as, the rule and how
-    the model was chosen, next to the model and effort. Before every request of a turn hz checks that the provider,
-    plugin version, pinned default, intelligence and budget mode still hold, from the configuration and the profile
-    only, without calling the plugin; a change ends the turn as a change of access does.
-14. **No model names in the chat, and no picker by the chat input.** Release 0.9.44 removes 0.9.43's picker. The
-    level may be shown in the chat (the time line) and on the Heinzel's page; the exact model only on the Heinzel's
-    page. `hz chat send --model` stays for the command line.
+13. **Recorded per turn, and bound by approvals.** The turn's backend binding records the level asked, the level it
+    ran as, the rule and how the model was chosen, next to the model and effort. Before every request of a turn, on
+    Claude Code and on a plugin, hz checks that the provider, plugin version, pinned default, intelligence and budget
+    mode still hold, from the configuration and the profile only, without calling the plugin; a change ends the turn
+    as a change of access does. An approved schedule or draft publication binds the model the Heinzel's level
+    chooses (the plugin's model and effort, or Claude Code's alias), so a level or provider change that moves it to
+    another model, or to another access, asks for a new review.
+14. **No model names in the chat, and no picker by the chat input.** Release 0.9.44 removes 0.9.43's picker, and an
+    answer's details in the chat name the access, never the model or its effort. The level may be shown in the chat
+    (the time line) and on the Heinzel's page; the exact model only on the Heinzel's page. Every web chat message
+    asks for the default model and effort, which clears a per-chat model the interim picker left on a session.
+    `hz chat send --model` stays for the command line.
 
 ### Consequences
 
@@ -113,7 +120,8 @@ Chosen option 1. Checkable statements:
   person relearning names, and the provider stays the authority on its own models.
 - Good: what ran is decided before the turn and recorded with it, so cost reviews can explain every turn.
 - Bad: a plugin that marks no level gives every level the same model; only the effort differs.
-- Bad: on Claude Code, Auto now runs `sonnet`, where it ran Claude Code's own default before.
+- Bad: on Claude Code, Auto now runs `sonnet`, where it ran Claude Code's own default before; so schedules and
+  draft publications approved before this release ask for a new review once.
 - Neutral: Auto asks for Medium until the router ships; the turn record says so.
 
 ### Confirmation

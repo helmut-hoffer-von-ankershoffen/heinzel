@@ -48,6 +48,48 @@ class HeinzelIntelligence(BaseModel):
     )
 
 
+class LevelChange(BaseModel):
+    """What `set-level` asks to change: only the given fields; an empty provider or model clears it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    level: Level | None = None
+    provider: str | None = None
+    model: str | None = None
+
+    def applied(self, current: HeinzelIntelligence) -> HeinzelIntelligence:
+        """`current` with the given fields set.
+
+        Raises:
+            HeinzelError: If nothing is given, or a provider or model isn't a valid name.
+        """
+        if self.level is None and self.provider is None and self.model is None:
+            msg = "Couldn't set this Heinzel's level: give a level, a provider or an exact model"
+            raise HeinzelError(msg)
+        fields = current.model_dump()
+        if self.level is not None:
+            fields["level"] = self.level
+        if self.provider is not None:
+            fields["provider"] = self.provider or None
+        if self.model is not None:
+            fields["model"] = self.model or None
+        try:
+            return HeinzelIntelligence.model_validate(fields)
+        except ValueError:
+            msg = "Couldn't set this Heinzel's level: the provider or model isn't a valid name"
+            raise HeinzelError(msg) from None
+
+
+def changed(
+    current: HeinzelIntelligence, level: Level | None = None, provider: str | None = None, model: str | None = None
+) -> HeinzelIntelligence:
+    """`current` with the given fields set (`LevelChange.applied`).
+
+    Raises:
+        HeinzelError: If nothing is given, or a provider or model isn't a valid name.
+    """
+    return LevelChange(level=level, provider=provider, model=model).applied(current)
+
+
 class TurnLevel(BaseModel):
     """What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen."""
 

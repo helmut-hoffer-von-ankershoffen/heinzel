@@ -28,13 +28,8 @@ export function MessageInfo({ message, first }: { message: SchemaChatMessage; fi
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const via = [
-    message.access || message.runner || t("chat.agent"),
-    message.model,
-    message.effort && t("chat.effortIs", { effort: message.effort }),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // Never the model's name: the chat shows the Heinzel, not its vendor's models (ADR 0158).
+  const via = message.access || message.runner || t("chat.agent");
   const counts = [
     message.input_tokens != null && t("chat.tokensIn", { count: tokens.format(message.input_tokens) }),
     message.output_tokens != null && t("chat.tokensOut", { count: tokens.format(message.output_tokens) }),

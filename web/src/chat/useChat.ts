@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { chatKey, chatListKey, type ModelChoice, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
+import { chatKey, chatListKey, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
 import type { SchemaChatSession } from "@/api/client";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 
@@ -105,7 +105,7 @@ export function useChat() {
   }, [chat.error, sessionId]);
 
   /** Send `text`; without a session, open one about `context` first. False when it failed. */
-  const send = async (text: string, context: string, choice: ModelChoice = {}): Promise<boolean> => {
+  const send = async (text: string, context: string): Promise<boolean> => {
     if (!text.trim() || live || loading) return false;
     // Moving to another chat while this turn runs leaves it to finish in its own session, out of view.
     const view = shown.current;
@@ -118,22 +118,17 @@ export function useChat() {
         target = await openChat(context);
         if (here()) adopt(target);
       }
-      const answered = await sendChat(
-        target.id,
-        text,
-        ({ event, data }) => {
-          if (!here()) return;
-          if (event === "text" && typeof data.text === "string") {
-            const delta = data.text;
-            setLive((current) => current && { ...current, text: current.text + delta });
-          }
-          if (event === "tool" && typeof data.name === "string") {
-            const name = data.name;
-            setLive((current) => current && { ...current, tools: [...current.tools, name] });
-          }
-        },
-        choice,
-      );
+      const answered = await sendChat(target.id, text, ({ event, data }) => {
+        if (!here()) return;
+        if (event === "text" && typeof data.text === "string") {
+          const delta = data.text;
+          setLive((current) => current && { ...current, text: current.text + delta });
+        }
+        if (event === "tool" && typeof data.name === "string") {
+          const name = data.name;
+          setLive((current) => current && { ...current, tools: [...current.tools, name] });
+        }
+      });
       if (here()) adopt(answered);
       else client.setQueryData(chatKey(answered.id), answered);
       return true;

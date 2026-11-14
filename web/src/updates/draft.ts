@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import type { ModelChoice } from "@/api/chat";
+import { useEffect, useState } from "react";
 import { registerReloadHold, registerUpdatePreparation } from "./work";
 
 const KEY = "hz.update.composer";
-type Draft = { context: string; session: string | null; message: string; picked: ModelChoice | null };
+type Draft = { context: string; session: string | null; message: string };
 
 function restored(context: string, session: string | null): Draft | null {
   try {
@@ -13,15 +12,8 @@ function restored(context: string, session: string | null): Draft | null {
     const current = session ?? sessionStorage.getItem("hz.chat");
     if (draft.context !== context || draft.session !== current || typeof draft.message !== "string") return null;
     if (draft.message.length > 4000) return null;
-    if (
-      draft.picked !== null &&
-      (!draft.picked ||
-        typeof draft.picked !== "object" ||
-        (draft.picked.model != null && typeof draft.picked.model !== "string") ||
-        (draft.picked.effort != null && typeof draft.picked.effort !== "string"))
-    )
-      return null;
-    return draft as Draft;
+    // A draft saved by an older release may carry its model pick: only the text comes back.
+    return { context: draft.context, session: draft.session ?? null, message: draft.message };
   } catch {
     return null;
   }
@@ -31,29 +23,21 @@ function restored(context: string, session: string | null): Draft | null {
 export function useUpdateDraft(context: string, session: string | null, busy = false) {
   const [initial] = useState(() => restored(context, session));
   const [message, setMessage] = useState(initial?.message ?? "");
-  const [picked, setPicked] = useState<ModelChoice | null>(initial?.picked ?? null);
-  const previous = useRef(session);
   useEffect(() => {
     if (initial) sessionStorage.removeItem(KEY);
   }, [initial]);
-  useEffect(() => {
-    if (previous.current !== session) {
-      previous.current = session;
-      setPicked(null);
-    }
-  }, [session]);
   useEffect(
     () =>
       registerUpdatePreparation(() => {
         if (busy) throw new Error("Wait for the current chat turn before updating; its work will stay here.");
-        const draft: Draft = { context, session, message, picked };
+        const draft: Draft = { context, session, message };
         const encoded = JSON.stringify(draft);
         sessionStorage.setItem(KEY, encoded);
         if (sessionStorage.getItem(KEY) !== encoded) throw new Error("The chat draft could not be preserved.");
       }),
-    [context, session, message, picked, busy],
+    [context, session, message, busy],
   );
   // Unsent text or a running turn holds off the reload an automatic update needs.
   useEffect(() => registerReloadHold(() => busy || message.trim() !== ""), [busy, message]);
-  return { message, setMessage, picked, setPicked };
+  return { message, setMessage };
 }

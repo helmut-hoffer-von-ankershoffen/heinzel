@@ -37,7 +37,9 @@ describe("An answer's details", () => {
     await user.hover(about);
     const panel = screen.getByRole("tooltip");
     expect(panel).toHaveTextContent("3.2 s");
-    expect(panel).toHaveTextContent("claude-code · claude-opus-5-5 · effort medium");
+    expect(panel).toHaveTextContent("claude-code");
+    expect(panel).not.toHaveTextContent("claude-opus-5-5"); // no model names in the chat (ADR 0158)
+    expect(panel).not.toHaveTextContent("effort");
     expect(panel).toHaveTextContent("2 in · 120 out · 15,000 cache read · 800 cache write");
     expect(panel).toHaveTextContent("uses your plan · ≈ $0.1337 at API prices");
     expect(panel).toHaveTextContent("system prompt and tool list with every request");

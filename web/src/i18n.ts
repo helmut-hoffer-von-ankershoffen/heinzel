@@ -1185,7 +1185,6 @@ const en = {
   "chat.generated": "Generated",
   "chat.took": "Took",
   "chat.via": "Through",
-  "chat.effortIs": "effort {effort}",
   "chat.tokens": "Tokens",
   "chat.tokensIn": "{count} in",
   "chat.tokensOut": "{count} out",

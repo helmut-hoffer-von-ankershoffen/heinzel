@@ -6,19 +6,22 @@ import { preserveUpdateWork, reloadHeld } from "./work";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("preserves unsent text and model for an explicit update and restores under StrictMode", () => {
+it("preserves unsent text for an explicit update and restores under StrictMode", () => {
   const first = renderHook(() => useUpdateDraft("route:/", null));
-  act(() => {
-    first.result.current.setMessage("Keep my unsent thought");
-    first.result.current.setPicked({ model: "demo/model", effort: "high" });
-  });
+  act(() => first.result.current.setMessage("Keep my unsent thought"));
   expect(sessionStorage.getItem("hz.update.composer")).toBeNull();
   preserveUpdateWork();
   first.unmount();
   const next = renderHook(() => useUpdateDraft("route:/", null), { wrapper: StrictMode });
   expect(next.result.current.message).toBe("Keep my unsent thought");
-  expect(next.result.current.picked).toEqual({ model: "demo/model", effort: "high" });
   expect(sessionStorage.getItem("hz.update.composer")).toBeNull();
+});
+
+it("restores an older release's draft without its model pick", () => {
+  const draft = { context: "route:/", session: null, message: "From before", picked: { model: "demo/model" } };
+  sessionStorage.setItem("hz.update.composer", JSON.stringify(draft));
+  const next = renderHook(() => useUpdateDraft("route:/", null));
+  expect(next.result.current).toEqual({ message: "From before", setMessage: expect.any(Function) });
 });
 
 it("never restores a snapshot into another route or conversation", () => {

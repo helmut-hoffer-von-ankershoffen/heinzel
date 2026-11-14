@@ -29,19 +29,19 @@ export async function openChat(context: string | null, detail?: string): Promise
   return unwrap(api.POST("/system/runner/chat/open", { params: { query: { context, detail: detail || null } } }));
 }
 
-/** The model and effort the composer's picker chose; kept by the session for its later messages too. */
-export type ModelChoice = { model?: string | null; effort?: string | null };
-
+/**
+ * Send one message. The web chat has no model picker (ADR 0158): every message asks for the default model and
+ * effort, which also clears a per-chat model an earlier release's picker left on the session.
+ */
 export async function sendChat(
   session: string,
   message: string,
   onEvent: (event: StreamEvent) => void,
-  choice: ModelChoice = {},
   requestId?: string,
 ): Promise<SchemaChatSession> {
   return stream<SchemaChatSession>(
     "/system/runner/chat/send",
-    { session, message, model: choice.model, effort: choice.effort, request_id: requestId },
+    { session, message, model: "", effort: "", request_id: requestId },
     onEvent,
   );
 }

@@ -7,8 +7,8 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError, ModelOffer, UsageEntry
 from heinzel.kernel import OperationLet
-from heinzel.modules.heinzel._level_operations import changed, level_view
-from heinzel.modules.heinzel._levels import HeinzelIntelligence
+from heinzel.modules.heinzel._level_operations import level_view
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, LevelChange, changed
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 from tests.unit.modules.user_chat_plugin_test import Models, Plugin, Settings
@@ -41,8 +41,8 @@ def chat_service(crud, current, settings: Settings, plugin: Plugin | None = None
 
 
 def set_level(crud, session, request, **fields):
-    current, revision = crud.intelligence(session)
-    return crud.profile(session, request, revision, intelligence=changed(current, **fields))
+    _current, revision = crud.intelligence(session)
+    return crud.profile(session, request, revision, level=LevelChange(**fields))
 
 
 def stored_profile(crud, session) -> dict:
@@ -79,14 +79,19 @@ def test_setting_the_level_is_idempotent_and_checks_the_revision(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         _current, crud, session = setup_chat(current)
-        wanted = HeinzelIntelligence(level="low")
-        crud.profile(session, "lvl-1", 1, intelligence=wanted)
-        crud.profile(session, "lvl-1", 1, intelligence=wanted)
-        assert crud.intelligence(session) == (wanted, 2)
+        wanted = LevelChange(level="low")
+        crud.profile(session, "lvl-1", 1, level=wanted)
+        crud.profile(session, "lvl-1", 1, level=wanted)
+        assert crud.intelligence(session) == (HeinzelIntelligence(level="low"), 2)
+        crud.profile(session, "lvl-2", 2, level=LevelChange(provider="acme"))
+        crud.profile(session, "lvl-1", 1, level=wanted)  # an exact retry replays after a later change
+        assert crud.intelligence(session) == (HeinzelIntelligence(level="low", provider="acme"), 3)
         with pytest.raises(HeinzelError, match="already identifies a different profile update"):
-            crud.profile(session, "lvl-1", 1, intelligence=HeinzelIntelligence(level="high"))
+            crud.profile(session, "lvl-1", 1, level=LevelChange(level="high"))
         with pytest.raises(HeinzelError, match="reload before setting its level"):
-            crud.profile(session, "lvl-2", 1, intelligence=HeinzelIntelligence(level="high"))
+            crud.profile(session, "lvl-3", 1, level=LevelChange(level="high"))
+        with pytest.raises(HeinzelError, match="give a level"):
+            crud.profile(session, "lvl-4", 3, level=LevelChange())
         with pytest.raises(HeinzelError, match="reload before saving your appearance"):
             crud.profile(session, "name-2", 1, name="Stale")
 
