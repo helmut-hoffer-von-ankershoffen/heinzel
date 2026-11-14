@@ -441,14 +441,17 @@ class UserChatService:
         The person sends the message again; nothing is retried behind their back. Only for a person's own turn: a
         scheduled one stays as it is, for the schedule's own recovery.
         """
-        origin = self.current.context().authentication
-        if origin not in _HEADS:
-            return
-        turn = interactive_turn_id(request)
+        context = self.current.context()
+        origin = context.authentication
         repo = self._crud.repository
+        if origin not in _HEADS or context.principal.id != repo.principal_id:
+            return  # only the turn's own owner's request sets it aside
+        turn = interactive_turn_id(request)
         with repo.control_writer(session) as writer:
             events = repo.control_read(session).events
             if any(e.kind in {"interactive.abandoned", "message.replied"} and e.key == turn for e in events):
+                return
+            if not any(e.kind == "message.accepted" and e.key == f"message-{request}" for e in events):
                 return
             writer.append(
                 "interactive.abandoned",

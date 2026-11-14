@@ -20,6 +20,7 @@ and ignores fields it doesn't know. The protocol gains optional methods only, wh
 import logging
 import threading
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
@@ -217,7 +218,10 @@ class _Listing:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-_listings: dict[tuple[str, int], _Listing] = {}
+_listings: "weakref.WeakKeyDictionary[object, _Listing]" = weakref.WeakKeyDictionary()
+"""Per adapter object, never per id: a rebuilt adapter starts with a list of its own, and a freed one's goes away."""
+_pinned: dict[int, tuple[object, _Listing]] = {}
+"""For an adapter that can't be weakly referenced (`__slots__` without `__weakref__`): kept with its listing."""
 _listings_lock = threading.Lock()
 
 
@@ -268,6 +272,20 @@ def _fetch(source: AiModelsSource, listing: _Listing, done: threading.Event) -> 
         done.set()
 
 
+def _listing_of(adapter: object) -> _Listing:
+    """The listing of `adapter`, made on first use; the caller holds `_listings_lock`."""
+    try:
+        found = _listings.get(adapter)
+        if found is None:
+            found = _listings[adapter] = _Listing()
+    except TypeError:  # not weakly referenceable: keep the adapter itself, so its id can't be reused meanwhile
+        kept = _pinned.get(id(adapter))
+        if kept is None or kept[0] is not adapter:
+            kept = _pinned[id(adapter)] = (adapter, _Listing())
+        found = kept[1]
+    return found
+
+
 def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[list[ModelOffer], str]:
     """What `source` offers now, and a note on what was skipped, or that this is the last good list (ADR 0159).
 
@@ -276,8 +294,7 @@ def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[
     good list yet, a failure is an empty list and the note says why.
     """
     with _listings_lock:
-        # Per adapter instance: a kernel built again (tests, a reload) starts with a list of its own.
-        listing = _listings.setdefault((source.name, id(source.adapter)), _Listing())
+        listing = _listing_of(source.adapter)
     with listing.lock:
         fresh = listing.offers is not None and not listing.problem and time.monotonic() - listing.at < LIST_TTL
         if fresh:

@@ -244,8 +244,9 @@ def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkey
     assert hung[0].daemon, "a hung plugin never blocks exit"
     flaky.release.set()
     hung[0].join(5)
-    flaky.mode = "junk"
-    offers, note = list_offers(_source(flaky, name="never-good"))
+    junk = Flaky()
+    junk.mode = "junk"
+    offers, note = list_offers(_source(junk, name="never-good"))
     assert offers == []
     assert note == "its model list failed (TypeError: models() returned str, not a list of ModelOffer)"
 
