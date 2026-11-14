@@ -2,6 +2,7 @@
 // after a full confirmation, and the resume only through hz's own approval of exactly that schedule.
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { posted, renderPage, schedule, sessionId, snapshot } from "@/test/heinzelPage";
@@ -109,6 +110,9 @@ describe("pause and retire", () => {
     await waitFor(() => expect(posted(calls, "/chat/confirm")).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(posted(calls, "/heinzel/schedule-control")).toHaveLength(0);
+    // The page reads the Heinzel again and focus lands on what changed; the confirmed approval is never declined.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
+    expect(posted(calls, "/chat/decline")).toHaveLength(0);
   });
 
   it("declines the prepared approval when the person keeps it paused", async () => {
@@ -258,5 +262,38 @@ describe("pause and retire", () => {
     expect(within(dialog).getByRole("button", { name: "Keep Helmi" })).toHaveFocus();
     await user.tab({ shift: true });
     expect(within(dialog).getByRole("button", { name: "Retire Helmi" })).toHaveFocus();
+  });
+
+  it("declines only its own prepared approval when the dialog's effect runs twice", async () => {
+    let made = 0;
+    const declined: string[] = [];
+    const { calls } = mockApi({
+      "/api/heinzel/session": paused,
+      "/api/system/runner/chat/propose-schedule-control": () => {
+        made += 1;
+        return { ...approval(), id: `000000000000000${made}` };
+      },
+      "/api/system/runner/chat/decline": (request: Request) => {
+        declined.push(new URL(request.url).searchParams.get("session") ?? "");
+        return approval("declined");
+      },
+      "/api/system/runner/chat/confirm": approval("done"),
+    });
+    // StrictMode mounts, unmounts and mounts again: two approvals are prepared, the first is declined, never the second.
+    renderPage(
+      <StrictMode>
+        <LifecycleSection snapshot={paused} />
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    const dialog = within(await screen.findByRole("alertdialog"));
+    const confirm = dialog.getByRole("button", { name: "Resume Helmi" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await waitFor(() => expect(made).toBe(2));
+    await waitFor(() => expect(declined).toEqual(["0000000000000001"]));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted(calls, "/chat/confirm")).toHaveLength(1));
+    expect(new URL(posted(calls, "/chat/confirm")[0]?.url ?? "").searchParams.get("session")).toBe("0000000000000002");
+    expect(declined).toEqual(["0000000000000001"]);
   });
 });

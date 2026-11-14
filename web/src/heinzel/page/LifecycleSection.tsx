@@ -39,14 +39,14 @@ function resumeAction(chat: ChatSession | null, sessionId: string, schedule: Sch
 
 type Prepared = { chat: string; action: string };
 
-/** Decline the prepared approval, so no pending resume is left behind for anyone to confirm later. */
-function declinePrepared(undecided: { current: Prepared | null }) {
-  const prepared = undecided.current;
-  undecided.current = null;
-  if (prepared)
-    void api.POST("/system/runner/chat/decline", {
-      params: { query: { session: prepared.chat, action: prepared.action } },
-    });
+/**
+ * Decline a prepared approval, so no pending resume is left behind for anyone to confirm later. Best effort: when hz
+ * cannot be reached the approval stays pending, and it still runs only on a person's explicit confirmation.
+ */
+function declinePrepared(prepared: Prepared) {
+  api
+    .POST("/system/runner/chat/decline", { params: { query: { session: prepared.chat, action: prepared.action } } })
+    .catch(() => undefined);
 }
 
 function ResumeDialog({
@@ -67,15 +67,23 @@ function ResumeDialog({
   onUncertain: () => void;
   onClose: () => void;
 }) {
-  // The prepared approval while it is undecided: declined if the dialog goes away by any path but Confirm.
-  const undecided = useRef<Prepared | null>(null);
+  // The action the person confirmed: the only prepared approval that is never declined when its dialog goes away.
+  const confirmed = useRef<string | null>(null);
+  // The schedule as it was when the dialog opened: the approval is prepared for exactly that one, once.
+  const [target] = useState(schedule);
   const [chat, setChat] = useState<ChatSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const action = resumeAction(chat, sessionId, schedule);
+  const action = resumeAction(chat, sessionId, target);
   // Opening the dialog asks hz to prepare the approval of exactly this schedule; nothing changes until Confirm.
   useEffect(() => {
     let live = true;
+    // This run's own prepared approval: another run (a new schedule revision, StrictMode) declines only its own.
+    let mine: Prepared | null = null;
+    const decline = () => {
+      if (mine && confirmed.current !== mine.action) declinePrepared(mine);
+      mine = null;
+    };
     // A fresh request each time the dialog opens: an earlier one was declined when its dialog went away.
     const request = crypto.randomUUID();
     void result(
@@ -84,30 +92,30 @@ function ResumeDialog({
           query: {
             durable_session: sessionId,
             request_id: request,
-            expected_revision: schedule.revision,
+            expected_revision: target.revision,
             action: "resume",
-            expected_contract_version: schedule.contract_version,
-            expected_preview_hash: schedule.preview_hash,
+            expected_contract_version: target.contract_version,
+            expected_preview_hash: target.preview_hash,
           },
         },
       }),
     ).then(
       (proposed) => {
-        const prepared = resumeAction(proposed, sessionId, schedule);
-        if (prepared) undecided.current = { chat: proposed.id, action: prepared.id };
+        const prepared = resumeAction(proposed, sessionId, target);
+        if (prepared) mine = { chat: proposed.id, action: prepared.id };
         if (live) setChat(proposed);
-        else declinePrepared(undecided);
+        else decline();
       },
       () => live && setFailed(true),
     );
     return () => {
       live = false;
-      declinePrepared(undecided);
+      decline();
     };
-  }, [sessionId, schedule]);
+  }, [sessionId, target]);
   const confirm = async () => {
     if (!chat || !action || busy) return;
-    undecided.current = null;
+    confirmed.current = action.id;
     setBusy(true);
     setFailed(false);
     try {
