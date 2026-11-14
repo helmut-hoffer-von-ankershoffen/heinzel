@@ -82,3 +82,31 @@ def test_the_doctor_says_plainly_how_a_newer_python_is_handled():
     assert detail.startswith(f"{version} (the uv tool's interpreter")
     assert "uv-managed" in detail
     assert "keeps working" in detail
+
+
+class Highest(Releases):
+    def __init__(self, highest: str | Exception) -> None:
+        super().__init__()
+        self.highest = highest
+
+    def highest_version(self, timeout, *, prereleases=False):
+        if isinstance(self.highest, Exception):
+            raise self.highest
+        return self.highest
+
+
+def pin(kind, git=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(kind=kind, git=git)
+
+
+def test_the_release_an_install_moves_to_is_the_one_asked():
+    updates = service(Highest("0.9.44"))
+    assert updates._target_release(pin("release", "g"), "0.9.43", "0.9.44", "v0.9.44") == "0.9.44"
+    assert updates._target_release(pin("release", "g"), "0.9.43", None, "v0.9.45") == "0.9.45"
+    assert updates._target_release(pin("ref", "g"), "0.9.43", None, "git+https://example.test/x@main") is None
+    assert updates._target_release(pin("index"), "0.9.43", None, None) == "0.9.44"  # uv resolves the newest
+    assert updates._target_release(pin("default"), "0.9.44", None, None) is None  # nothing newer to move to
+    assert updates._target_release(pin("default", "g"), "0.9.43", None, None) is None  # a branch: unknown
+    assert service(Highest(OSError("offline")))._target_release(pin("index"), "0.9.43", None, None) is None

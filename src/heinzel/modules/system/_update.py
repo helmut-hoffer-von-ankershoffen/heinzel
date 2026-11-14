@@ -387,6 +387,19 @@ class UpdateService:
             heads=heads,
         )
 
+    def _target_release(self, pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
+        """The release an install moves to, whose Python requirement decides the interpreter; None if unknown.
+
+        An installation that follows the package index resolves the newest release uv finds for the interpreter it
+        names, so the highest release is asked for there: a release for a newer Python is reached only that way.
+        """
+        if latest is not None and target in {f"v{latest}", None}:
+            return latest
+        if target is None and pin.kind in ("default", "index") and pin.git is None:
+            highest = self._asked_latest(current)
+            return highest if highest is not None and Version(highest) > _version(current) else None
+        return _release_version(target)
+
     def needed_python(self, version: str | None) -> str | None:
         """The newer Python (`X.Y`) release `version` requires than this one runs on; None if this one will do.
 
@@ -1092,8 +1105,7 @@ class UpdateService:
         automatic: bool = True,
         generation: str | None = None,
     ) -> UpdateResult:
-        release = latest if latest is not None and target in {f"v{latest}", None} else _release_version(target)
-        with self._interpreter_for(release), self._mutation() as scope:
+        with self._interpreter_for(self._target_release(pin, current, latest, target)), self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 self._verify_selection(pin, plugins, scope)
