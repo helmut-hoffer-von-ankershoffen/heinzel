@@ -1,6 +1,7 @@
 """The conformance kit (ADR 0159): what it accepts, what it reports, and that its messages say what to fix."""
 
 import contextlib
+import socket
 import threading
 import warnings
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,9 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from heinzel import (
+    Check,
+    Grant,
+    GrantStatus,
     Message,
     ModelOffer,
     ModelUnavailableError,
@@ -19,6 +23,8 @@ from heinzel import (
     NotSupportedError,
     Participant,
     PostedMessage,
+    SignInStatus,
+    Status,
 )
 from heinzel.conformance import (
     UNKNOWN_MODEL_ID,
@@ -422,3 +428,149 @@ def test_a_hosts_function_is_evaluated_through_the_kernel(make_kernel):
     assert hosts_of(bad_hosts) == ["its hosts function returned no valid host name or URL with default settings"]
     assert hosts_of(broken_hosts) == ["its hosts function failed with default settings: KeyError: 'cache missing'"]
     assert hosts_of(bad_hosts, with_kernel=False) == [], "without a kernel it isn't called"
+
+
+# --- sign-in and health
+
+
+READ = Grant(id="chat-read", title="Read your channels", explanation="Lets Heinzels read channels you pick.")
+WRITE = Grant(id="chat-write", title="Post for you", explanation="Lets Heinzels post drafts you approve.")
+
+
+class SignIn:
+    """A sign-in provider reading local evidence only."""
+
+    account = "ada@acme.example"
+    grants = (READ, WRITE)
+    live = False
+
+    def status(self, *, live: bool) -> SignInStatus:
+        states = [GrantStatus(grant=grant, state="granted", needed=True) for grant in self.grants]
+        return SignInStatus(signed_in=True, account=self.account, grants=states, live=self.live)
+
+    def sign_in(self, grants: frozenset[str], progress: object, stop: threading.Event) -> object:
+        raise AssertionError  # never called by the kit
+
+    def sign_out(self) -> str:
+        raise AssertionError  # never called by the kit
+
+
+def signed_in_module(provider: type, checks: object = None) -> Module:
+    module = Module("acme-chat", "Acme chat.")
+    module.sign_in(grants=[READ, WRITE])(provider)
+    if checks is not None:
+        module.health(checks)  # type: ignore[arg-type]
+    return module
+
+
+def sign_in_messages(provider: type) -> list[str]:
+    return [f"{f.check}: {f.message}" for f in check_module(signed_in_module(provider)).findings]
+
+
+def test_a_sign_in_status_offline_with_every_grant_passes():
+    report = check_module(signed_in_module(SignIn))
+    assert report.findings == []
+    assert report.checked == ["acme-chat (sign-in)"]
+
+
+def test_a_sign_in_status_must_name_every_declared_grant_and_no_other():
+    class Partial(SignIn):
+        grants = (READ, Grant(id="files-read", title="Read files", explanation="Lets it read files."))
+
+    assert sign_in_messages(Partial) == [
+        "sign-in: status() leaves out the declared grants chat-write",
+        "sign-in: status() reports grants it doesn't declare: files-read",
+    ]
+
+
+def test_a_sign_in_account_must_not_look_like_a_token_and_offline_is_not_live():
+    class Leaky(SignIn):
+        account = "ghp_" + "a1B2" * 9
+        live = True
+
+    assert sign_in_messages(Leaky) == [
+        "sign-in: status().account looks like a token or key; name the account",
+        "sign-in: status(live=False) says live=True: it must not ask the vendor",
+    ]
+
+
+def test_a_sign_in_status_that_goes_online_fails_even_when_it_swallows_the_error():
+    class Online(SignIn):
+        def status(self, *, live: bool) -> SignInStatus:
+            with contextlib.suppress(OSError):
+                socket.create_connection(("login.acme.example", 443), timeout=1)
+            return super().status(live=live)
+
+    (message,) = sign_in_messages(Online)
+    assert message == "offline: status(live=False) went online: look up 'login.acme.example'"
+    assert socket.getaddrinfo("localhost", None), "the network is back after the check"
+
+
+def test_a_sign_in_status_that_fails_hangs_or_returns_something_else_is_reported(monkeypatch: pytest.MonkeyPatch):
+    release = threading.Event()
+
+    class Failing(SignIn):
+        def status(self, *, live: bool) -> SignInStatus:
+            raise RuntimeError(NO_CACHE)
+
+    class Hanging(SignIn):
+        def status(self, *, live: bool) -> SignInStatus:
+            release.wait(2)
+            return super().status(live=live)
+
+    class Plain(SignIn):
+        def status(self, *, live: bool) -> SignInStatus:
+            return {"signed_in": True}  # type: ignore[return-value]
+
+    monkeypatch.setattr("heinzel.conformance.OFFLINE_TIMEOUT", 0.05)
+    try:
+        assert sign_in_messages(Failing) == ["sign-in: status(live=False) failed: RuntimeError: cache missing"]
+        assert sign_in_messages(Hanging) == ["sign-in: status(live=False) took longer than 0.05s"]
+    finally:
+        release.set()
+    assert sign_in_messages(Plain) == ["sign-in: status(live=False) returned dict"]
+
+
+def ok_checks() -> list[Check]:
+    return [Check(name="acme chat", status=Status.UP)]
+
+
+def online_checks() -> list[Check]:
+    with contextlib.suppress(OSError):
+        socket.getaddrinfo("api.acme.example", 443)
+    return []
+
+
+def wrong_checks() -> list[Check]:
+    return ["up"]  # type: ignore[list-item]
+
+
+def broken_checks() -> list[Check]:
+    raise RuntimeError(NO_CACHE)
+
+
+def test_health_checks_run_offline_and_return_checks():
+    def health(checks: object) -> list[str]:
+        report = check_module(signed_in_module(SignIn, checks))
+        return [f"{f.check}: {f.message}" for f in report.findings]
+
+    assert health(ok_checks) == []
+    assert health(online_checks) == ["offline: the health checks went online: look up 'api.acme.example'"]
+    assert health(wrong_checks) == ["health: the health checks must return a list of Check, not list[str]"]
+    assert health(broken_checks) == ["health: the health checks failed: RuntimeError: cache missing"]
+
+
+def test_a_live_health_check_is_never_called():
+    module = Module("acme-chat", "Acme chat.")
+    module.health(live=True)(broken_checks)
+    assert failures(check_module(module)) == ["acme-chat build: module acme-chat provides no adapter"]
+
+
+def test_local_sockets_still_work_offline(tmp_path):
+    from heinzel.conformance import offline
+
+    a, b = socket.socketpair()
+    with offline() as attempts, a, b:
+        a.sendall(b"x")
+        assert b.recv(1) == b"x"
+    assert attempts == []

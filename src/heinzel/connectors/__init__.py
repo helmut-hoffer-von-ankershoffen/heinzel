@@ -34,6 +34,9 @@ def claude_mcp_servers(
     by name. hz's own server is never listed. A plugin uses it to see whether a server it builds on, such as a company
     MCP gateway's launcher, is set up, before it tells the person how to set it up; it starts its own launcher.
 
+    Which servers are off comes from hz's own switch file in your state folder, whatever `home` is;
+    `HZ_CLAUDE_SWITCH_DIR` moves it, as the `heinzel.testing` fixtures do for every test.
+
     Args:
         home: The home directory to read; yours when None. Tests pass a fake one.
         sources: Only servers from these sources, such as `code-user` and `code-project` for Claude Code's own; all

@@ -15,6 +15,9 @@ pins, and checks what Core relies on, for every adapter a module provides:
 - **AI models** (`ai-models`, interface `AI_MODELS_INTERFACE`). `models()` answers within Core's time limit with valid
   `ModelOffer`s and unique ids; `model(id)` returns a `pydantic_ai.models.Model`; an unknown or unavailable id is
   refused. With `live_request=True` one request through the model must answer.
+- **Sign-in and health** (ADR 0055, 0136). A `@module.sign_in` provider's `status(live=False)` answers quickly and
+  without the network, with a valid `SignInStatus` naming every declared grant and an account that isn't a token.
+  Offline `@module.health` checks run without the network and return `Check`s. Nothing live is called.
 
 In a plugin's tests, through the `hz_conformance` fixture (`heinzel.testing`, loaded by pytest automatically):
 
@@ -36,22 +39,26 @@ Core tolerates but you should fix. Works on Python 3.12 and later.
 
 import asyncio
 import concurrent.futures
+import contextlib
 import contextvars
 import importlib.metadata
 import inspect
 import re
+import socket
+import threading
 import typing
 import warnings
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self
 
 if TYPE_CHECKING:
     from heinzel.kernel import Capability, Kernel, Module, ProviderLet
 
 __all__ = [
     "CALL_TIMEOUT",
+    "OFFLINE_TIMEOUT",
     "UNKNOWN_MODEL_ID",
     "ConformanceError",
     "ConformanceWarning",
@@ -60,9 +67,7 @@ __all__ = [
     "assert_conformant",
     "check_adapter",
     "check_module",
-    "parameters",
-    "reading",
-    "versions",
+    "offline",
 ]
 
 reading: ContextVar[str | None] = ContextVar("heinzel_conformance_reading", default=None)
@@ -188,21 +193,21 @@ def check_module(  # noqa: PLR0913 - the module and the check's knobs, all keywo
         live_request: Send one request through each `ai-models` adapter's first model.
         timeout: Seconds one call may take.
     """
-    from heinzel.kernel import ProviderLet  # noqa: PLC0415 - imported when used, see heinzel.testing
+    from heinzel.kernel import HealthLet, ProviderLet, SignInLet  # noqa: PLC0415 - imported when used
 
     report = Report(versions=versions())
     providers = [let for let in module.lets if isinstance(let, ProviderLet)]
-    if not providers:
+    sign_ins = [let for let in module.lets if isinstance(let, SignInLet)]
+    health = [let for let in module.lets if isinstance(let, HealthLet) and not let.live]
+    if not (providers or sign_ins or health):
         report.findings.append(Finding(module.name, "build", f"module {module.name} provides no adapter"))
     for let in providers:
         label = f"{let.adapter} ({let.capability})"
         report.findings += _hosts(let, label, kernel)
-        try:
-            adapter = kernel.call(let.factory) if kernel is not None else let.factory()
-        except Exception as exc:  # noqa: BLE001 - a broken factory is a finding, not a crash of the kit
-            hint = "" if kernel is not None else " Pass kernel= (the hz_kernel fixture) to inject settings."
+        adapter, problem = _build(let.factory, label, kernel)
+        if problem is not None:
             report.checked.append(label)
-            report.findings.append(Finding(label, "build", f"couldn't build it: {_detail(exc)}.{hint}"))
+            report.findings.append(problem)
             continue
         report.extend(
             check_adapter(
@@ -216,7 +221,25 @@ def check_module(  # noqa: PLR0913 - the module and the check's knobs, all keywo
                 timeout=timeout,
             )
         )
+    for sign_in in sign_ins:
+        label = f"{module.name} (sign-in)"
+        report.checked.append(label)
+        provider, problem = _build(sign_in.factory, label, kernel)
+        report.findings += [problem] if problem is not None else _sign_in_status(provider, sign_in.grants, label)
+    for checks in health:
+        label = f"{module.name} (health)"
+        report.checked.append(label)
+        report.findings += _health(checks.provider, label, kernel)
     return report
+
+
+def _build(factory: Callable[..., object], label: str, kernel: "Kernel | None") -> tuple[Any, Finding | None]:
+    """Build an adapter or provider as hz does; a factory that fails is a finding, not a crash of the kit."""
+    try:
+        return (kernel.call(factory) if kernel is not None else factory()), None
+    except Exception as exc:  # noqa: BLE001 - reported as a finding
+        hint = "" if kernel is not None else " Pass kernel= (the hz_kernel fixture) to inject settings."
+        return None, Finding(label, "build", f"couldn't build it: {_detail(exc)}.{hint}")
 
 
 def check_adapter(  # noqa: PLR0913 - the adapter, its declaration and the check's knobs, all keyword-only
@@ -462,16 +485,23 @@ def _timed(
             reading.set(read)
         return func(**arguments)
 
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="hz-conformance")
-    future = pool.submit(contextvars.copy_context().run, run)
+    # A daemon thread, not an executor: a call that never returns must not keep the test process from exiting.
+    future: concurrent.futures.Future[object] = concurrent.futures.Future()
+    context = contextvars.copy_context()
+
+    def work() -> None:
+        try:
+            future.set_result(context.run(run))
+        except BaseException as exc:  # noqa: BLE001 - handed to the caller through the future
+            future.set_exception(exc)
+
+    threading.Thread(target=work, name="hz-conformance", daemon=True).start()
     try:
         return "ok", future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
         return "timeout", None
     except Exception as exc:  # noqa: BLE001 - the caller judges the error
         return "error", exc
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _required(method: Callable[..., object]) -> bool:
@@ -653,3 +683,121 @@ def _refused(adapter: object, model_id: str, why: str, label: str, timeout: floa
             "warn",
         )
     ]
+
+
+# --- sign-in and health (ADR 0055, ADR 0136): offline, quick, never a secret
+
+
+OFFLINE_TIMEOUT = 5.0
+"""Seconds an offline sign-in status or health check may take: it reads local evidence only."""
+
+_network_lock = threading.Lock()
+
+
+class _NetworkRefusedError(OSError):
+    def __init__(self, what: str) -> None:
+        super().__init__(f"conformance check: no network while offline ({what})")
+
+
+@contextlib.contextmanager
+def offline() -> Generator[list[str]]:
+    """Refuse every internet connection and name lookup in this process meanwhile, recording each attempt.
+
+    Local sockets (Unix domain) still work. A subprocess isn't covered: an offline check shouldn't start a vendor
+    tool that goes online, and the time limit catches one that waits for the network.
+
+    Yields:
+        The attempts so far, as `connect to ...` or `look up ...`.
+    """
+    attempts: list[str] = []
+    original_connect, original_connect_ex = socket.socket.connect, socket.socket.connect_ex
+    original_lookup = socket.getaddrinfo
+
+    def refuse(action: str, target: object) -> NoReturn:
+        attempts.append(f"{action} {target!r}")
+        raise _NetworkRefusedError(attempts[-1])
+
+    def connect(sock: socket.socket, address: Any) -> None:  # noqa: ANN401 - any socket address
+        if sock.family in {socket.AF_INET, socket.AF_INET6}:
+            refuse("connect to", address)
+        original_connect(sock, address)
+
+    def connect_ex(sock: socket.socket, address: Any) -> int:  # noqa: ANN401 - any socket address
+        if sock.family in {socket.AF_INET, socket.AF_INET6}:
+            refuse("connect to", address)
+        return original_connect_ex(sock, address)
+
+    def lookup(host: object, *_: object, **__: object) -> Any:  # noqa: ANN401 - socket.getaddrinfo's result
+        refuse("look up", host)
+
+    with _network_lock:
+        socket.socket.connect = connect  # type: ignore[method-assign, assignment]
+        socket.socket.connect_ex = connect_ex  # type: ignore[method-assign, assignment]
+        socket.getaddrinfo = lookup
+        try:
+            yield attempts
+        finally:
+            socket.socket.connect, socket.socket.connect_ex = original_connect, original_connect_ex  # type: ignore[method-assign]
+            socket.getaddrinfo = original_lookup
+
+
+def _offline_call(func: Callable[..., object], arguments: Mapping[str, object]) -> tuple[str, Any, list[str]]:
+    with offline() as attempts:
+        outcome, value = _timed(func, arguments, OFFLINE_TIMEOUT)
+    return outcome, value, attempts
+
+
+def _sign_in_status(provider: object, grants: "tuple[Any, ...]", label: str) -> list[Finding]:
+    from heinzel.kernel import SignInStatus  # noqa: PLC0415
+    from heinzel.kernel._telemetry import looks_like_credential  # noqa: PLC0415 - Core's own credential shapes
+
+    status = getattr(provider, "status", None)
+    if not callable(status):
+        return [Finding(label, "sign-in", "the provider has no status(*, live) method")]
+    outcome, value, attempts = _offline_call(status, {"live": False})
+    findings = [
+        Finding(label, "offline", f"status(live=False) went online: {', '.join(attempts[:3])}") for _ in attempts[:1]
+    ]
+    if outcome == "timeout":
+        return [*findings, Finding(label, "sign-in", f"status(live=False) took longer than {OFFLINE_TIMEOUT:g}s")]
+    if outcome == "error":
+        return [*findings, Finding(label, "sign-in", f"status(live=False) failed: {_detail(value)}")]
+    if not isinstance(value, SignInStatus):
+        return [*findings, Finding(label, "sign-in", f"status(live=False) returned {type(value).__name__}")]
+    if looks_like_credential(value.account, free_text=True):
+        findings.append(Finding(label, "sign-in", "status().account looks like a token or key; name the account"))
+    if value.live:
+        findings.append(Finding(label, "sign-in", "status(live=False) says live=True: it must not ask the vendor"))
+    declared = [grant.id for grant in grants]
+    reported = {state.grant.id for state in value.grants}
+    if missing := [grant for grant in declared if grant not in reported]:
+        findings.append(Finding(label, "sign-in", f"status() leaves out the declared grants {', '.join(missing)}"))
+    if extra := sorted(reported - set(declared)):
+        findings.append(Finding(label, "sign-in", f"status() reports grants it doesn't declare: {', '.join(extra)}"))
+    return findings
+
+
+def _health(provider: Callable[..., object], label: str, kernel: "Kernel | None") -> list[Finding]:
+    from heinzel.kernel import Check  # noqa: PLC0415
+
+    def run() -> object:
+        return kernel.call(provider) if kernel is not None else provider()
+
+    outcome, value, attempts = _offline_call(run, {})
+    findings = [Finding(label, "offline", f"the health checks went online: {', '.join(attempts[:3])}")][: len(attempts)]
+    if outcome == "timeout":
+        return [*findings, Finding(label, "health", f"the health checks took longer than {OFFLINE_TIMEOUT:g}s")]
+    if outcome == "error":
+        return [*findings, Finding(label, "health", f"the health checks failed: {_detail(value)}")]
+    if not isinstance(value, list) or not all(isinstance(c, Check) for c in typing.cast("list[object]", value)):
+        shape = _shape_of(typing.cast("object", value))
+        return [*findings, Finding(label, "health", f"the health checks must return a list of Check, not {shape}")]
+    return findings
+
+
+def _shape_of(value: object) -> str:
+    """`list[str]` for a list of strings, else the type's name: what a wrong return value is."""
+    if isinstance(value, list):
+        kinds = sorted({type(item).__name__ for item in typing.cast("list[object]", value)})
+        return f"list[{' | '.join(kinds)}]"
+    return type(value).__name__

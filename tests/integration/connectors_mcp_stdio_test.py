@@ -1,6 +1,7 @@
 """`McpConnector` over stdio with a real launcher subprocess: start, call, stop, and every way starting fails."""
 
 import os
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -80,3 +81,72 @@ def test_a_launcher_that_never_answers_times_out_and_is_stopped(tmp_path: Path):
         connector.start()
     children = [p for p in psutil.Process(os.getpid()).children(recursive=True) if str(script) in " ".join(p.cmdline())]
     assert children == []
+
+
+GRANDCHILD = textwrap.dedent(
+    """
+    import os, subprocess, time
+    from mcp.server import MCPServer
+
+    mcp = MCPServer("launcher")
+
+    @mcp.tool()
+    def hang() -> str:
+        child = subprocess.Popen(["sleep", "300"])
+        with open(os.environ["PID_FILE"], "w") as file:
+            file.write(str(child.pid))
+        time.sleep(300)
+        return ""
+
+    if __name__ == "__main__":
+        mcp.run("stdio")
+    """
+)
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("attempt", range(3))
+def test_stop_kills_the_whole_launcher_group_even_with_a_short_stop_timeout(tmp_path: Path, attempt: int):
+    script, pid_file = tmp_path / "hang.py", tmp_path / f"grandchild-{attempt}"
+    script.write_text(GRANDCHILD, encoding="utf-8")
+    connector = McpConnector(
+        [sys.executable, str(script)], tools=["hang"], env={"PID_FILE": str(pid_file)}, timeout=1, stop_timeout=1
+    )
+    with connector, pytest.raises(McpConnectorError, match="didn't answer"):
+        connector.call("hang")
+    grandchild = int(pid_file.read_text(encoding="utf-8"))
+    assert not _alive(grandchild), "the launcher's grandchild outlived stop()"
+
+
+def _alive(pid: int) -> bool:
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+HANGING_KIT = textwrap.dedent(
+    """
+    import threading
+    from heinzel.conformance import check_adapter
+
+    class Hanging:
+        def models(self):
+            threading.Event().wait()
+
+        def model(self, model_id):
+            raise AssertionError
+
+    import heinzel.kernel._ai_models as ai_models
+    ai_models.LIST_TIMEOUT = 0.2
+    print(check_adapter(Hanging(), "ai-models", name="acme").failures[0])
+    """
+)
+
+
+def test_the_kit_finishes_and_the_process_exits_after_a_call_that_never_returns(tmp_path: Path):
+    script = tmp_path / "hanging_kit.py"
+    script.write_text(HANGING_KIT, encoding="utf-8")
+    finished = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30, check=False)
+    assert finished.returncode == 0, finished.stderr
+    assert "models() took longer than 0.2s" in finished.stdout
