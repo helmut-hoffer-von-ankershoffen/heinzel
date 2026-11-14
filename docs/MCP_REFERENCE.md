@@ -45,7 +45,7 @@ Module `ai`. Read-only. Result: `UsageReport {period: 'today' \| 'week', by: 'ac
 
 ## `ai_models`
 
-List the models and efforts of the AI access in use, for the chat's model and effort picker.
+List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.
 
 Module `ai`. Read-only. Result: `ModelList {access: string \| null, title: string, billing: 'plan' \| 'api' \| null, models: list[ModelChoice], efforts: list[EffortChoice], note: string \| null}`.
 
@@ -67,6 +67,61 @@ Module `ai.access`. Read-only. Result: `AccessList {selected: string \| null, op
 {
   "properties": {},
   "title": "ai_access_listArguments",
+  "type": "object"
+}
+```
+
+## `document_read`
+
+Read a document's text through the connector it belongs to.
+
+Module `document`. Read-only. Result: `Document {ref: string, title: string, text: string, url: string \| null, revision: string \| null, source: string \| null}`.
+
+```json
+{
+  "properties": {
+    "ref": {
+      "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "title": "document_readArguments",
+  "type": "object"
+}
+```
+
+## `document_search`
+
+Search every documents connector at once; one that fails or is slow is reported, not fatal.
+
+Module `document`. Read-only. Result: `DocumentSearch {query: string, hits: list[DocumentHit], failures: list[SourceFailure]}`.
+
+```json
+{
+  "properties": {
+    "query": {
+      "description": "What to look for in titles and text.",
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "limit": {
+      "default": 20,
+      "description": "At most this many results.",
+      "maximum": 50,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "title": "document_searchArguments",
   "type": "object"
 }
 ```
@@ -2728,6 +2783,131 @@ Module `system.agent`. Changes state. Result: `list[InstalledSkill] {name: strin
 }
 ```
 
+## `system_bookmark_list`
+
+List the bookmarks and folders in their order, with each entry's id and folder.
+
+Module `system.bookmark`. Read-only. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {},
+  "title": "system_bookmark_listArguments",
+  "type": "object"
+}
+```
+
+## `system_bookmark_add`
+
+Add a bookmark; an address already in that folder is kept once.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "url": {
+      "description": "The page's https:// address.",
+      "title": "Url",
+      "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The name shown; the host when left out.",
+      "title": "Title"
+    },
+    "parent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The folder's id to put it in; the top level when left out.",
+      "title": "Parent"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The id of the entry in that folder to put it before; else last.",
+      "title": "Before"
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "title": "system_bookmark_addArguments",
+  "type": "object"
+}
+```
+
+## `system_bookmark_folder`
+
+Add an empty bookmark folder.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "title": {
+      "description": "The folder's name.",
+      "title": "Title",
+      "type": "string"
+    },
+    "parent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The folder's id to put it in; the top level when left out.",
+      "title": "Parent"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The id of the entry in that folder to put it before; else last.",
+      "title": "Before"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "title": "system_bookmark_folderArguments",
+  "type": "object"
+}
+```
+
 ## `system_capability_list`
 
 List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.
@@ -3265,11 +3445,25 @@ Module `system.notify`. Changes state. Result: `Delivered {delivered: list[strin
 }
 ```
 
+## `system_notify_chat`
+
+Show whether notices and questions also reach you in chat, and through which connector.
+
+Module `system.notify`. Read-only. Result: `SelfChatStatus {adapter: string \| null, notifications: SelfChatUse, questions: SelfChatUse, wait_minutes: integer, detail: string}`.
+
+```json
+{
+  "properties": {},
+  "title": "system_notify_chatArguments",
+  "type": "object"
+}
+```
+
 ## `system_plugin_list`
 
 List installed plugins, enabled or not, with their source and the modules and adapters they bring.
 
-Module `system.plugin`. Read-only. Result: `list[PluginInfo] {distribution: string, version: string, modules: list[string], name: string, summary: string, source_kind: 'pypi' \| 'git' \| 'path' \| null, source_url: string \| null, revision: string \| null, homepage: string \| null, first_party: boolean, private_repository: boolean \| null, enabled: boolean, error: string \| null, layers: list[PluginLayer], capabilities: list[string], playbooks: list[string], themes: list[string], kinds: list['connector' \| 'theme' \| 'capability' \| 'playbook']}`.
+Module `system.plugin`. Read-only. Result: `list[PluginInfo] {distribution: string, version: string, modules: list[string], name: string, summary: string, source_kind: 'pypi' \| 'git' \| 'path' \| null, source_url: string \| null, source_path: string \| null, revision: string \| null, homepage: string \| null, first_party: boolean, private_repository: boolean \| null, enabled: boolean, error: string \| null, layers: list[PluginLayer], capabilities: list[string], playbooks: list[string], themes: list[string], kinds: list['connector' \| 'theme' \| 'capability' \| 'playbook']}`.
 
 ```json
 {
@@ -3319,7 +3513,7 @@ Module `system.plugin`. Changes state. Result: `PluginChange {action: 'add' \| '
 {
   "properties": {
     "spec": {
-      "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
+      "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
       "title": "Spec",
       "type": "string"
     },

@@ -274,6 +274,7 @@ Keep the built-in browser's bookmarks: a tree of folders and bookmarks.
 | Move a bookmark or folder into another folder or to another place in its own. | `hz system bookmark move` | — | — | `POST /api/system/bookmark/move` | yes | expert |
 | Remove a bookmark, or a folder with everything in it; `restore` brings it back. | `hz system bookmark remove` | — | — | `POST /api/system/bookmark/remove` | yes | expert |
 | Bring back a removed bookmark or folder to where it was. | `hz system bookmark restore` | — | — | `POST /api/system/bookmark/restore` | yes | expert |
+| Keep the small icon a bookmarked site showed, per origin. | — | — | — | `POST /api/system/bookmark/favicon` | yes | expert |
 
 ## `system.capability`
 
