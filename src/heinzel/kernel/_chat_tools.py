@@ -88,6 +88,11 @@ class ChatTool:
     session: str
     kind: Kind = "operation"
 
+    def __post_init__(self) -> None:
+        """Hold the operation as an agent may call it, however the tool was built (never with an approval proof)."""
+        if self.kind == "operation":
+            object.__setattr__(self, "item", agent_item(self.item))
+
     @property
     def name(self) -> str:
         """The tool's flat name, `system_doctor` for `hz system doctor`."""
@@ -115,6 +120,10 @@ class ChatTool:
         Raises:
             ChatToolError: If the call is refused or fails; the message holds no email address.
         """
+        if self.kind == "operation" and self.item.operation.private and self.item.operation.read_only:
+            # The durable engine grants private data; a chat's local read identity must never reach it.
+            msg = f"{self.name} reads private data, which no chat tool may"
+            raise ChatToolError(msg)
         user = self.kernel.resolve(CurrentUser)
         try:
             arguments = self.arguments(arguments)
@@ -154,7 +163,7 @@ class ChatTool:
             f"{self.name}_arguments", __config__=ConfigDict(extra="ignore", arbitrary_types_allowed=True), **fields
         )
         try:
-            checked = model.model_validate(dict(arguments))
+            checked = model.model_validate(_pre_parsed(dict(arguments), fields))
         except ValidationError as exc:
             problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'input'}: {e['msg']}" for e in exc.errors())
             msg = redact_emails(f"Invalid arguments for {self.name}: {problems}")
@@ -200,6 +209,24 @@ class ChatTool:
             raise ChatToolError(msg) from exc
 
 
+def _pre_parsed(arguments: dict[str, Any], fields: Mapping[str, tuple[Any, Any]]) -> dict[str, Any]:
+    """Parse a list or object an agent sent as a JSON string, as the MCP SDK does, so both paths read it alike.
+
+    Only for a parameter that is not a plain string, and never to a bare string or number: `"5"` stays as it came.
+    """
+    parsed = dict(arguments)
+    for name, value in arguments.items():
+        if name not in fields or not isinstance(value, str) or fields[name][0] is str:
+            continue
+        try:
+            decoded = json.loads(value)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(decoded, str | int | float):
+            parsed[name] = decoded
+    return parsed
+
+
 def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") -> list[ChatTool]:
     """The tools of one chat session's agent, on whichever path the turn calls them.
 
@@ -227,7 +254,7 @@ def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") ->
         if (item.record.qualname, item.operation.name) == CONFIRM_AUTHORIZED:
             selected.append(ChatTool(kernel, item, session, "confirm-authorized"))
         elif not item.operation.private and (tools == "all" or item.operation.audience == "everyday"):
-            selected.append(ChatTool(kernel, agent_item(item), session))
+            selected.append(ChatTool(kernel, item, session))
     return selected
 
 

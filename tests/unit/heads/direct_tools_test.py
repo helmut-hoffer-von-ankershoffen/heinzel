@@ -15,9 +15,11 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from heinzel import ActionGate, CurrentUser, HeinzelError, Module
 from heinzel.heads import mcp
+from heinzel.heads._exposure import exposed
 from heinzel.kernel import (
     AgentResult,
     Budget,
+    ChatTool,
     ChatToolError,
     HzTools,
     McpServer,
@@ -26,6 +28,7 @@ from heinzel.kernel import (
     direct_tools,
     pydantic_ai_tools,
 )
+from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.kernel._identity import CallIdentity
 from heinzel.modules.system.runner.chat._service import ChatService
 
@@ -74,6 +77,17 @@ def notes(ran: list[str]) -> Module:
         identity = current.context()
         return f"{identity.authentication}:{','.join(sorted(identity.permissions))}"
 
+    @module.operation(audience="everyday")
+    def everything() -> str:
+        """Show a lot."""
+        return "mira.sato@example.org " + "x" * RESULT_LIMIT
+
+    @module.operation(read_only=False, audience="everyday")
+    def tag(tags: list[str]) -> str:
+        """Tag the notes."""
+        ran.append("tag")
+        return "tagged"
+
     @module.operation(private=True, audience="everyday")
     def personal() -> str:
         """Private data is never an ambient chat tool."""
@@ -98,6 +112,8 @@ def open_chat(kernel) -> str:
     return kernel.resolve(ChatService).open(None).id
 
 
+SELF = "<this chat>"
+CONFIRM = "system_runner_chat_confirm_authorized_mcp"
 CALLS = [
     ("notes_owner", {}, "ran"),
     ("notes_publish", {"title": "Week 43", "pages": 2}, "proposed"),
@@ -107,24 +123,32 @@ CALLS = [
     ("notes_broken", {}, "refused"),
     ("notes_buggy", {}, "refused"),
     ("notes_who", {}, "ran"),
+    ("notes_everything", {}, "ran"),
+    ("notes_tag", {"tags": '["a", "b"]'}, "proposed"),  # a list sent as a JSON string, as some clients do
+    (CONFIRM, {"session": "fedcba9876543210", "action": "a1"}, "refused"),  # another chat's
+    (CONFIRM, {"session": SELF, "action": "a99"}, "refused"),  # this chat's, never authorized
 ]
 """One table of calls; both paths must give each the outcome on the right, with the same text."""
+CHECKED_FIRST = {3, 4}
+"""Rows the MCP SDK refuses itself, before the policy, in its own words: only their outcome must match."""
 
 
-def outcome(kernel, before: int, text: str, *, error: bool) -> tuple[str, str]:
-    proposed = len(kernel.resolve(ActionGate).calls) > before
-    kind = "refused" if error else "proposed" if proposed else "ran"
+def outcome(text: str, *, error: bool) -> tuple[str, str]:
+    kind = "refused" if error else "proposed" if text.startswith("Not run: ") else "ran"
     return kind, re.sub(r"\(action a\d+\)", "(action …)", text)
+
+
+def bound(arguments: dict, session: str) -> dict:
+    return {name: session if value == SELF else value for name, value in arguments.items()}
 
 
 def direct_outcomes(kernel, session: str) -> list[tuple[str, str]]:
     tools = {tool.name: tool for tool in pydantic_ai_tools(chat_tools(kernel, session))}
     results = []
     for name, arguments, _ in CALLS:
-        before = len(kernel.resolve(ActionGate).calls)
-        text = tools[f"mcp__hz__{name}"].function(**arguments)
+        text = tools[f"mcp__hz__{name}"].function(**bound(arguments, session))
         error = text.startswith("Error: ")
-        results.append(outcome(kernel, before, text.removeprefix("Error: "), error=error))
+        results.append(outcome(text.removeprefix("Error: "), error=error))
     return results
 
 
@@ -133,18 +157,25 @@ def mcp_outcomes(kernel, session: str) -> list[tuple[str, str]]:
         results = []
         async with Client(mcp.build(kernel, chat=session)) as client:
             for name, arguments, _ in CALLS:
-                before = len(kernel.resolve(ActionGate).calls)
-                result = await client.call_tool(name, arguments)
+                result = await client.call_tool(name, bound(arguments, session))
                 text = result.content[0].text
                 if result.is_error:
                     # The MCP SDK frames every tool error so; the words inside are the policy's own.
                     frame = f"Error executing tool {name}: "
                     assert text.startswith(frame), text
                     text = text.removeprefix(frame)
-                results.append(outcome(kernel, before, text, error=bool(result.is_error)))
+                results.append(outcome(text, error=bool(result.is_error)))
         return results
 
     return anyio.run(run)
+
+
+def same(direct: list[tuple[str, str]], over_mcp: list[tuple[str, str]]) -> None:
+    assert [kind for kind, _ in direct] == [kind for _, _, kind in CALLS]
+    assert [kind for kind, _ in over_mcp] == [kind for kind, _ in direct]
+    assert [o for i, o in enumerate(over_mcp) if i not in CHECKED_FIRST] == [
+        o for i, o in enumerate(direct) if i not in CHECKED_FIRST
+    ]
 
 
 def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pipe(kernel, ran):
@@ -152,15 +183,8 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
     direct = direct_outcomes(kernel, session)
     direct_ran = list(ran)
     proposals = [(call.tool, call.arguments, call.command) for call in kernel.resolve(ActionGate).calls]
-    assert [kind for kind, _ in direct] == [kind for _, _, kind in CALLS]
     over_mcp = mcp_outcomes(kernel, session)
-    assert [kind for kind, _ in over_mcp] == [kind for kind, _ in direct]
-    # The same words too, except where the MCP SDK checks the arguments first and words a bad one its own way.
-    checked_first = {3, 4}
-    assert [o for i, o in enumerate(over_mcp) if i not in checked_first] == [
-        o for i, o in enumerate(direct) if i not in checked_first
-    ]
-    assert direct[3][1].startswith("Invalid arguments for notes_publish: title")
+    same(direct, over_mcp)
     assert ran == direct_ran * 2  # only the reads ran, on both paths
     assert direct_ran == ["owner"]
     assert [(c.tool, c.arguments, c.command) for c in kernel.resolve(ActionGate).calls] == proposals * 2
@@ -170,12 +194,28 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
         {"title": "Week 44", "pages": 1},
         "hz notes publish --title 'Week 44' --pages 1",
     )
-    owner, who = direct[0][1], direct[-1][1]
+    assert proposals[2][1] == {"tags": ["a", "b"]}
+    assert direct[3][1].startswith("Invalid arguments for notes_publish: title")
+    owner, who = direct[0][1], direct[7][1]
     assert json.loads(owner) == {"name": "Mira", "email": "[email]"}
     assert json.loads(who) == "mcp-stdio:private:read"
     assert "mira" not in direct[6][1]
     assert "KeyError" in direct[6][1]
     assert direct[5][1] == "No access for [email]"
+    assert direct[8][1].startswith('"[email] ')
+    assert direct[8][1].endswith("…(cut)")
+    assert len(direct[8][1]) == RESULT_LIMIT + len("…(cut)")
+    assert direct[10][1] == "This confirmation is limited to the MCP chat session"
+
+
+def test_the_table_holds_with_the_chat_s_own_gate_too(make_kernel, ran):
+    kernel = make_kernel(builtins=True, notes=notes(ran))  # no fake: the chat module's ActionGate keeps proposals
+    service = kernel.resolve(ChatService)
+    session = service.open(None).id
+    same(direct_outcomes(kernel, session), mcp_outcomes(kernel, session))
+    assert ran == ["owner", "owner"]
+    proposed = sum(kind == "proposed" for _, _, kind in CALLS)
+    assert len(service._store.load(session).actions) == 2 * proposed
 
 
 def test_both_paths_list_the_same_tools_with_the_same_schemas(kernel):
@@ -217,6 +257,15 @@ def test_the_scoped_confirmation_runs_only_for_its_own_chat(kernel):
     assert not confirm.read_only
     with pytest.raises(ChatToolError, match="limited to the MCP chat session"):
         confirm.call({"session": "fedcba9876543210", "action": "a1"})
+
+
+def test_a_hand_built_tool_keeps_the_policy_of_the_selected_ones(kernel):
+    items = {item.name: item for item in exposed(kernel, mcp.HEAD)}
+    session = open_chat(kernel)
+    with pytest.raises(ChatToolError, match="reads private data"):
+        ChatTool(kernel, items["notes_personal"], session).call({})
+    schedule = next(item for name, item in items.items() if name == "heinzel_schedule_control")
+    assert "approval_proof" not in {p.name for p in ChatTool(kernel, schedule, session).item.parameters}
 
 
 def test_a_profile_without_hz_tools_is_left_as_it_is(kernel):
