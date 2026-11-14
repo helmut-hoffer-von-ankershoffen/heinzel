@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { createHeinzelWithMessage, openDetails, recurringTurns } from "./chat-ready.mjs";
+import { openDetails, openOrCreateHeinzelWithMessage, recurringTurns } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
+/** The Heinzel in the link (`?chat=`), or the one whose page is open (`/heinzel/<id>`) when the chat opened on it. */
+const heinzelOf = (href) => {
+  const here = new URL(href);
+  return here.searchParams.get("chat") ?? /^\/heinzel\/(hz-[0-9A-Z]{26})/.exec(here.pathname)?.[1] ?? null;
+};
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
 url.pathname = "/doctor";
 const browser = await chromium.launch({ headless: true });
@@ -26,7 +31,8 @@ try {
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   const sentence = "Help me keep a private summary of my source current";
-  await createHeinzelWithMessage(page, sentence);
+  // Its fixture already made the Heinzel the template schedules for: the chat opens on it, as for a returning person.
+  await openOrCreateHeinzelWithMessage(page, sentence);
   const assistantReply = page.locator('[data-message-speaker="heinzel"]').filter({ hasText: "Done" });
   await assistantReply.waitFor({ timeout: 30000 });
   // The reply is exactly the model's word, rendered as prose beside the Heinzel's face.
@@ -86,8 +92,8 @@ try {
       exact: true,
     })
     .waitFor();
-  const session = new URL(page.url()).searchParams.get("chat");
-  assert.ok(session);
+  const session = heinzelOf(page.url());
+  assert.ok(session, `no Heinzel in ${page.url().split("#")[0]}`);
   writeFileSync(join(directory, "wake.tmp"), JSON.stringify({ session }));
   renameSync(join(directory, "wake.tmp"), join(directory, "wake.json"));
   for (let i = 0; i < 600 && !existsSync(join(directory, "wake-result.json")); i++)
@@ -100,7 +106,7 @@ try {
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();
   await openDetails(page);
-  assert.equal(new URL(page.url()).searchParams.get("chat"), session);
+  assert.equal(heinzelOf(page.url()), session, "the reload keeps the same Heinzel");
   assert.match(result.first_turn_id, /^interactive-/);
   const replies = page.locator('[data-message-speaker="heinzel"], [data-message-speaker="daemon"]');
   const firstWakeReply = replies.nth(result.first_reply_index);

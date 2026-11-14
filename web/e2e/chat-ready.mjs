@@ -119,6 +119,35 @@ export function recurringTurns(page) {
 /** Name the first Heinzel at the chat's first start, open its page and send it this sentence; returns the composer. */
 export async function createHeinzelWithMessage(page, sentence) {
   await createHeinzelWith(page, sentence);
+  return sendFromPage(page, sentence);
+}
+
+/**
+ * The chat as a returning person finds it: with no Heinzel yet, the first start names one (`createHeinzelWith`); with
+ * one already there (a fixture made it), the chat opens on it, and the sentence goes into its composer, unsent.
+ */
+export async function openOrCreateHeinzel(page, text) {
+  const chat = page.getByRole("complementary", { name: "Chat" });
+  const name = chat.getByLabel("What do you call it?");
+  const composer = heinzelComposer(page);
+  const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
+  await name.or(composer).or(chatTab).first().waitFor({ timeout: 30000 });
+  if (!(await name.isVisible()) && !(await composer.isVisible())) await chatTab.click();
+  await name.or(composer).first().waitFor({ timeout: 30000 });
+  if (await name.isVisible()) return createHeinzelWith(page, text);
+  await appTakesInput(page);
+  await composer.fill(text);
+  assert.equal(await composer.inputValue(), text, "The composer did not take the first message");
+}
+
+/** `createHeinzelWithMessage` for a profile that may already have a Heinzel: opens it, or names the first one. */
+export async function openOrCreateHeinzelWithMessage(page, sentence) {
+  await openOrCreateHeinzel(page, sentence);
+  return sendFromPage(page, sentence);
+}
+
+/** Open the Heinzel's page beside the chat, check the composer still holds the sentence, and send it. */
+async function sendFromPage(page, sentence) {
   const message = heinzelComposer(page);
   await openDetails(page);
   assert.equal(await message.inputValue(), sentence);
