@@ -8,6 +8,7 @@ import { DAEMON_INSTALL, DAEMON_PAUSE, DAEMON_RESTART, DAEMON_UNINSTALL } from "
 import {
   dismissOperation,
   getRun,
+  LONG_FORM_VALUE,
   OperationRecoveryRequired,
   type Phase,
   recoverOperation,
@@ -515,5 +516,40 @@ describe("OperationDialog", () => {
       expect(getRun().stage).toBe("confirm");
       expect(run).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("Show all for a shortened value", () => {
+  it("reveals the full value, equal to the body that is sent", async () => {
+    const value = `${"A".repeat(LONG_FORM_VALUE)}END`;
+    const body = { text: "x", file_data: value };
+    const call = {
+      path: "/org/report",
+      method: "POST",
+      summary: "Send report",
+      command: `hz report --text 'x' --file-data '${"A".repeat(200)}…' (2,004 characters)`,
+      body,
+    } as unknown as Parameters<typeof requestOperation>[0];
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <OperationDialog />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    act(() => void requestOperation(call));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    const summary = within(dialog).getByText("Show all");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    await userEvent.click(summary);
+    expect(summary.closest("details")).toHaveAttribute("open");
+    const boxes = within(dialog).getAllByRole("textbox") as HTMLTextAreaElement[];
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toHaveAttribute("readonly");
+    expect(boxes[0].value).toBe((getRun() as { call: { body: Record<string, string> } }).call.body.file_data);
+    expect(boxes[0].value).toBe(value);
+    dismissOperation();
   });
 });

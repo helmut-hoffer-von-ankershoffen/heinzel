@@ -14,6 +14,7 @@ import { daemonRestartResult } from "@/lib/daemonRestart";
 import {
   dismissOperation,
   getRun,
+  LONG_FORM_VALUE,
   type OperationRun,
   type Phase,
   type PhaseState,
@@ -164,6 +165,36 @@ function stepText(phases: Phase[]): string {
   return phase ? t("op.stepOf", { done: at + 1, total: phases.length, label: phase.label }) : "";
 }
 
+/** Each string in the body that will be sent and that the command shows shortened: built from the body, never from page text. */
+function shortenedValues(run: Exclude<OperationRun, { stage: "idle" }>): [string, string][] {
+  const body = run.call.body ?? {};
+  return Object.entries(body).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > LONG_FORM_VALUE,
+  );
+}
+
+/** "Show all": every shortened value in full, scrollable and read-only, as it will be sent. */
+function ShowAll({ values }: Readonly<{ values: [string, string][] }>) {
+  if (!values.length) return null;
+  return (
+    <details className="mt-2">
+      <summary className="cursor-pointer text-xs text-muted-foreground">{t("op.showAll")}</summary>
+      <p className="mt-1 text-xs text-muted-foreground">{t("op.showAllNote")}</p>
+      {values.map(([name, value]) => (
+        <label key={name} className="mt-2 block text-xs">
+          <span className="font-mono">{name}</span>
+          <textarea
+            readOnly
+            value={value}
+            rows={6}
+            className="mt-1 block max-h-48 w-full resize-none overflow-y-auto rounded bg-muted px-2 py-1 font-mono text-xs break-all"
+          />
+        </label>
+      ))}
+    </details>
+  );
+}
+
 /** Mount once per place that can start a write; only the first mounted shows the dialog. */
 export function OperationDialog() {
   const run = useOperationRun();
@@ -280,6 +311,7 @@ export function OperationDialog() {
               {run.call.command}
             </code>
           )}
+          <ShowAll values={shortenedValues(run)} />
           <PaneActions align="end" words="all">
             <PaneAction key="cancel" icon={X} autoFocus onClick={close}>
               {t("contrib.cancel")}

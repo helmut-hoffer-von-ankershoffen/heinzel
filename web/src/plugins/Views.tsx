@@ -7,6 +7,7 @@ import { useLocation } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { token } from "@/api/token";
 import { type Effect, useEffectRunner } from "@/components/Contributions";
+import { LONG_FORM_VALUE } from "@/lib/operationRun";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
@@ -46,8 +47,7 @@ export type FormValue = string | number | boolean;
 const quoted = (value: FormValue) =>
   typeof value === "string" ? `'${value.replaceAll("'", `'"'"'`)}'` : JSON.stringify(value);
 
-/** A typed value longer than this is shown shortened in the confirmation; the call still sends all of it. */
-export const LONG_FORM_VALUE = 2000;
+export { LONG_FORM_VALUE };
 const SHOWN_OF_LONG = 200;
 // A file a view sends as text (base64) would fill the dialog with noise; its start and its length say enough.
 const shown = (value: FormValue) =>
