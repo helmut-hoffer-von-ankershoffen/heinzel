@@ -2082,7 +2082,8 @@ it("reads as a chat: formatted replies, the sent message at once, and the Heinze
 });
 
 it("shows the reply as the Heinzel writes it, then only the final message from the journal", async () => {
-  let release: (() => void) | null = null;
+  const releases: Array<() => void> = [];
+  const next = () => new Promise<void>((resolve) => releases.push(resolve));
   let stored: Record<string, unknown> = { ...snapshot, name: "Bruno", profile_revision: 1, messages: [] };
   const reply = {
     id: "a1",
@@ -2101,13 +2102,12 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
     "/api/stream/heinzel/answer-chat": async (request: Request) => {
       const body = await request.json();
       const encoder = new TextEncoder();
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           controller.enqueue(encoder.encode(frame("text", { text: "Hello " }) + frame("text", { text: "from" })));
-          await held;
+          await next();
+          controller.enqueue(encoder.encode(frame("text", { text: " the model, word" })));
+          await next();
           stored = {
             ...stored,
             messages: [{ id: body.request_id, seq: 1, role: "user", text: "Hi", status: "completed" }, reply],
@@ -2137,8 +2137,13 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
   expect(screen.getByText("Sending…")).toBeInTheDocument();
   const sent = calls.find((call) => new URL(call.url).pathname === "/api/stream/heinzel/answer-chat");
   expect(sent?.method).toBe("POST");
-  await waitFor(() => expect(release).not.toBeNull());
-  await act(async () => release?.());
+  // It grows in place with the next piece, still before any final message.
+  await waitFor(() => expect(releases).toHaveLength(1));
+  await act(async () => releases[0]?.());
+  expect(await screen.findByText("Hello from the model, word")).toBe(within(partial).getByText(/^Hello from/));
+  expect(screen.queryByText("Hello from the model, word by word")).not.toBeInTheDocument();
+  await waitFor(() => expect(releases).toHaveLength(2));
+  await act(async () => releases[1]?.());
   // The journal's final message replaces the partial one, once.
   await screen.findByText("Hello from the model, word by word");
   await waitFor(() => expect(document.querySelector("[data-streaming]")).toBeNull());
