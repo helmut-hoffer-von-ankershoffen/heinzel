@@ -1162,6 +1162,23 @@ def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environ
 
 
 @pytest.mark.timeout(600)
+def test_bookmarks_are_managed_listed_as_a_tree_and_opened_on_desktop_and_phone(environment, tmp_path):
+    """Folder, add, move, drag, remove and Undo in the manager; the navigation tree by mouse, keys and touch."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "bookmarks.mjs")
+    assert result == {
+        "created": True,
+        "moved": True,
+        "undone": True,
+        "remembered": True,
+        "keyboard": True,
+        "pwaTab": True,
+        "desktopTab": True,
+        "phone": True,
+    }
+
+
+@pytest.mark.timeout(600)
 def test_right_sidebar_resizes_by_drag_and_keys_and_keeps_its_width(environment, tmp_path):
     """The divider drags and answers keys, the width survives a reload, the terminal refits, a phone has no handle."""
     env, _recorded = environment
