@@ -175,10 +175,11 @@ request id with the same payload returns the first result; a different payload i
 restores the defaults. The web app's Heinzelmännchen page does the same, with a preview.
 
 Retire a Heinzel you no longer need. It leaves your list and never wakes (no check-in, schedule or draft workflow
-runs), and it takes no new message, not even one sent just before you retired it; its whole history stays. Restore
-brings it back as it was: schedules you approved resume from the next slot (missed slots are not caught up) without
-a new approval, from any head, MCP included, since retiring never revoked them. Pause a schedule first if it should
-stay off:
+runs), and it takes no new message, not even one sent before you retired it; its whole history stays. Retiring
+pauses everything that ran on its own: its check-in, its agent schedules and its draft workflows. Restore brings it
+back with its history and all of those still paused; each runs again only after you approve it again, the same way as
+a resume after a pause (missed slots are not caught up). Only you retire or restore it, through the CLI or the app;
+an MCP client cannot:
 
 ```bash
 hz heinzel retire <session-id> retire-1 --json

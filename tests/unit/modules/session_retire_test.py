@@ -76,3 +76,35 @@ def test_a_retired_heinzel_does_not_check_in(service):
 def test_retire_needs_a_completed_heinzel_of_this_owner(service):
     with pytest.raises(HeinzelError):
         service.retire("hz-01JC0000000000000000000000", "retire-1")
+
+
+def test_retiring_a_retired_heinzel_or_restoring_an_active_one_records_nothing(service):
+    created = service.new_chat("create-eb", "Eb")
+    before = len(service.repository.control_read(created.session_id).events)
+    assert service.retire(created.session_id, "restore-active", retired=False).state == "proposed"
+    assert len(service.repository.control_read(created.session_id).events) == before
+    service.retire(created.session_id, "retire-1")
+    retired = len(service.repository.control_read(created.session_id).events)
+    assert service.retire(created.session_id, "retire-2").state == "retired"
+    assert len(service.repository.control_read(created.session_id).events) == retired
+
+
+def test_a_retire_records_who_retired_and_through_which_head(service):
+    created = service.new_chat("create-fa", "Fa")
+    service.retire(created.session_id, "retire-1", origin="web-session")
+    event = service.repository.control_read(created.session_id).events[-1]
+    assert event.kind == "heinzel.retired"
+    assert event.data == {"owner": service.repository.principal_id, "origin": "web-session"}
+
+
+def test_retired_after_reads_only_a_retire_later_than_the_position():
+    from heinzel.modules.heinzel._session_crud import retired_after
+
+    class Event:
+        def __init__(self, kind, seq):
+            self.kind, self.seq = kind, seq
+
+    events = [Event("schedule.activated", 3), Event("heinzel.retired", 5), Event("heinzel.restored", 6)]
+    assert retired_after(events, 3)
+    assert not retired_after(events, 5)
+    assert not retired_after([], 0)

@@ -104,8 +104,10 @@ Your Heinzelmännchen: durable Heinzels that draft your team's recurring work fo
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
 | Create a Heinzel, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
-| Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it. | `hz heinzel retire` | `heinzel_retire` | — | `POST /api/heinzel/retire` | yes |  |
-| Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved. | `hz heinzel restore` | `heinzel_restore` | — | `POST /api/heinzel/restore` | yes |  |
+| Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now. | `hz heinzel level` | — | — | `GET /api/heinzel/level` |  |  |
+| Set this Heinzel's level, provider or exact model against the exact profile revision you saw. | `hz heinzel set-level` | — | — | `POST /api/heinzel/set-level` | yes |  |
+| Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it. | `hz heinzel retire` | — | — | `POST /api/heinzel/retire` | yes |  |
+| Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval. | `hz heinzel restore` | — | — | `POST /api/heinzel/restore` | yes |  |
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |

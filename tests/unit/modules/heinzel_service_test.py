@@ -1653,7 +1653,7 @@ def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
     assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
 
 
-def test_a_retired_heinzel_compiles_no_check_in_and_a_restore_resumes_from_now(make):
+def test_a_restore_brings_the_check_in_back_paused_and_only_its_resume_approval_runs_it(make):
     service = make()
     current = service._kernel.resolve(CurrentUser)
     now = [NOW]
@@ -1678,17 +1678,89 @@ def test_a_retired_heinzel_compiles_no_check_in_and_a_restore_resumes_from_now(m
             proposed.schedule.contract_version,
             proposed.schedule.preview_hash,
         )
-        now[0] = NOW + timedelta(minutes=5)
+        now[0] = NOW + timedelta(minutes=1)
         sessions.retire(created.session_id, "retire-it")
     name = f"check-in-{created.session_id.lower()}"
     with current.local("daemon"):
         assert name not in [item.name for item in service.compiled(sessions=sessions).jobs]
-    now[0] = NOW + timedelta(minutes=12)
+    now[0] = NOW + timedelta(minutes=2)
     with current.local("cli"):
-        sessions.retire(created.session_id, "restore-it", retired=False)
+        restored = sessions.retire(created.session_id, "restore-it", retired=False)
+        # The retire paused it; the restore does not resume it.
+        assert restored.schedule is not None
+        assert (restored.state, restored.schedule.status) == ("paused", "paused")
+    with current.local("daemon"):
+        assert name not in [item.name for item in service.compiled(sessions=sessions).jobs]
+    now[0] = NOW + timedelta(minutes=3)
+    with current.local("cli"):
+        with pytest.raises(HeinzelError, match="Approval"):
+            sessions.schedule_control(
+                created.session_id,
+                "resume-unproven",
+                restored.schedule.revision,
+                "resume",
+                None,
+                1,
+                restored.schedule.preview_hash,
+            )
+        proof = _approve_test_schedule(
+            sessions,
+            current,
+            created.session_id,
+            "resume-it",
+            restored.schedule.revision,
+            "resume",
+            restored.schedule.preview_hash,
+        )
+        sessions.schedule_control(
+            created.session_id,
+            "resume-it",
+            restored.schedule.revision,
+            "resume",
+            proof,
+            restored.schedule.contract_version,
+            restored.schedule.preview_hash,
+        )
     with current.local("daemon"):
         job = next(item for item in service.compiled(sessions=sessions).jobs if item.name == name)
-        # The slot missed while retired is not caught up; the next one after the restore runs.
-        missed = job.run_for_slot(NOW + timedelta(minutes=10))
+        # A slot before the approved resume is not caught up; the next one after it runs.
+        missed = job.run_for_slot(NOW)
         assert missed.__class__.__name__ == "JobInactive"
-        assert job.run_for_slot(NOW + timedelta(minutes=15))["notice"] is True
+        assert job.run_for_slot(NOW + timedelta(minutes=5))["notice"] is True
+
+
+def test_a_retired_heinzel_compiles_no_agent_schedule_job(make, tmp_path):
+    from heinzel.kernel._approval import ApprovalConfirmation
+    from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+    from heinzel.modules.heinzel._contract_review import ContractReview
+    from heinzel.modules.heinzel._user_chat import UserChatService
+    from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
+    from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
+
+    service = make()
+    current = service._kernel.resolve(CurrentUser)
+    with current.local("cli"):
+        sessions = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = sessions.new_chat("agent-retire").session_id
+        sessions.propose_scheduled_agent(session, "contract", "Make a short status report", None, 30)
+        contract = ContractReview(sessions)
+        contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
+        chat = UserChatService(
+            sessions, current, RunnerSnapshotService(), load=lambda: FixtureConfig(fake_claude(tmp_path))
+        )
+        schedules = AutonomousSchedules(sessions, chat)
+        binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
+        proof = schedules.issue(session, "schedule", "chat-confirm:test:schedule")
+        review = binding.model_dump(mode="json")
+        marker = ApprovalConfirmation()
+        args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
+        with marker.using("heinzel", "approve-agent-schedule", args):
+            schedules.approve(session, "schedule", review, proof, marker)
+    with current.local("daemon"):
+        assert len(service._autonomous_jobs(sessions, schedules)) == 1
+    with current.local("cli"):
+        sessions.retire(session, "retire-agent")
+    with current.local("daemon"):
+        assert service._autonomous_jobs(sessions, schedules) == []

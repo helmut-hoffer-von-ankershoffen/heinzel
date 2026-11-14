@@ -27285,7 +27285,7 @@
     },
     "/heinzel/restore": {
       "post": {
-        "description": "Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.",
+        "description": "Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.",
         "operationId": "heinzel_restore",
         "requestBody": {
           "content": {
@@ -27319,7 +27319,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.",
+        "summary": "Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.",
         "tags": [
           "heinzel"
         ]
@@ -27327,7 +27327,7 @@
     },
     "/heinzel/retire": {
       "post": {
-        "description": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
+        "description": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
         "operationId": "heinzel_retire",
         "requestBody": {
           "content": {
@@ -27361,7 +27361,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.",
+        "summary": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
         "tags": [
           "heinzel"
         ]

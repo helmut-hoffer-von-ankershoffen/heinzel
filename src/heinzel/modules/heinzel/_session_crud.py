@@ -517,6 +517,15 @@ def is_retired(events: list[SessionEvent]) -> bool:
     return last is not None and last.kind == "heinzel.retired"
 
 
+def retired_after(events: list[SessionEvent], seq: int) -> bool:
+    """Whether the Heinzel was retired after journal position `seq`: what it stopped stays stopped after a restore.
+
+    A retire pauses every recurring authority approved before it (check-ins, agent schedules, draft workflows); a
+    restore brings the Heinzel back with them paused, so only a new approval through its own proof path resumes one.
+    """
+    return any(event.kind == "heinzel.retired" and event.seq > seq for event in events)
+
+
 def _session_state(
     schedule: WakeScheduleView | None, *, retired: bool = False
 ) -> Literal["proposed", "awake", "paused", "retired"]:
@@ -687,11 +696,13 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
-    def retire(self, session_id: str, request_id: str, *, retired: bool = True) -> SessionSnapshot:
+    def retire(self, session_id: str, request_id: str, *, retired: bool = True, origin: str = "cli") -> SessionSnapshot:
         """Retire (hide, never wake) or restore this Heinzel; its whole history stays, and an exact retry is a no-op.
 
-        An exact retry returns the current snapshot, so replaying an old retire after a later restore reports the
-        restored Heinzel; it does not retire it again. A restore resumes check-ins from now, without catch-up.
+        A retire pauses every recurring authority it had: after a restore, each check-in, agent schedule and draft
+        workflow waits for a new approval through its own proof path. Retiring a retired Heinzel, or restoring one that
+        is not retired, records nothing. An exact retry returns the current snapshot, so replaying an old retire after a
+        later restore reports the restored Heinzel; it does not retire it again.
 
         Raises:
             HeinzelError: If the request already identifies the opposite change or the creation is incomplete.
@@ -708,7 +719,8 @@ class SessionCrud(ApprovalIssuer):
                     raise HeinzelError(msg)
             else:
                 self._profile(session_id, events)
-                writer.append(kind, key=key, data={})
+                if is_retired(events) != retired:
+                    writer.append(kind, key=key, data={"owner": self.repository.principal_id, "origin": origin})
         return self.snapshot(session_id)
 
     def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
@@ -815,6 +827,9 @@ class SessionCrud(ApprovalIssuer):
                 state = _CheckInRecord.model_validate(self.read_body(session_id, event)).schedule
             else:
                 state = _ScheduleState.model_validate(self.read_body(session_id, event))
+            if state.status == "active" and retired_after(events, event.seq):
+                # A retire paused it; a restore never resumes it: the person resumes it with its approval.
+                state = state.model_copy(update={"status": "paused"})
             return _validate_schedule_state(state, self._contracts(session_id, events))
         except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError, ValidationError):
             msg = "This Heinzel's saved schedule is invalid; restore its private snapshot"
@@ -1748,11 +1763,7 @@ class SessionCrud(ApprovalIssuer):
                 return JobInactive(reason="the check-in schedule changed before this slot ran")
             active_since = next(
                 # A restore resumes from now, like a resume: no catch-up for slots missed while retired.
-                (
-                    event.ts
-                    for event in reversed(events)
-                    if event.kind in {"schedule.activated", "schedule.resume", "heinzel.restored"}
-                ),
+                (event.ts for event in reversed(events) if event.kind in {"schedule.activated", "schedule.resume"}),
                 None,
             )
             if slot.tzinfo is None or slot.utcoffset() is None or active_since is None:

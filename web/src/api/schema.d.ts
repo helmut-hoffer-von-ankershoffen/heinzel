@@ -1635,8 +1635,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.
-         * @description Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.
+         * Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.
+         * @description Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.
          */
         post: operations["heinzel_restore"];
         delete?: never;
@@ -1655,8 +1655,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
-         * @description Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+         * Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
+         * @description Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
          */
         post: operations["heinzel_retire"];
         delete?: never;

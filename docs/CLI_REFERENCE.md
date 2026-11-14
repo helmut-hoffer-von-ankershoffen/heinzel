@@ -1415,7 +1415,7 @@ $ hz heinzel release-workflow [OPTIONS] {session_id}
 
 ### `hz heinzel restore`
 
-Bring a retired Heinzel back with its history; its approved schedules resume from now, as approved.
+Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.
 
 **Usage**:
 
@@ -1436,7 +1436,7 @@ $ hz heinzel restore [OPTIONS] {session_id} {request_id}
 
 ### `hz heinzel retire`
 
-Retire this Heinzel: it leaves your list and never wakes; its history stays and `restore` brings it back.
+Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
 
 **Usage**:
 
