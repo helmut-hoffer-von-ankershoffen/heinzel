@@ -15,9 +15,13 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         self.endpoint = endpoint
         switch request["action"] as? String {
         case "navigate":
-            guard let value = request["url"] as? String, value.utf8.count <= 4096,
-                  let url = URL(string: value), permits(url) else { return ["status": "unavailable"] }
             guard !opening else { break }
+            guard let value = request["url"] as? String, value.utf8.count <= 4096,
+                  let url = URL(string: value), permits(url) else {
+                surface?.stopLoading()
+                markUnavailable()
+                return state
+            }
             status = "loading"
             let revision = generation
             opening = true
@@ -40,7 +44,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             let frame = CGRect(x: x, y: top, width: width, height: height)
             guard workspace.bounds.contains(frame) else { surface?.isHidden = true; break }
             surface?.frame = frame
-            surface?.isHidden = false
+            surface?.isHidden = status == "unavailable"
         case "hide": surface?.isHidden = true
         case "close": reset(status: "empty")
         case "back": surface?.goBack()
@@ -49,11 +53,15 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         default: break
         }
 
-        var state: [String: Any] = [
+        return state
+    }
+
+    private var state: [String: Any] {
+        var result: [String: Any] = [
             "status": status, "canGoBack": surface?.canGoBack == true, "canGoForward": surface?.canGoForward == true,
         ]
-        if let url = surface?.url { state["url"] = url.absoluteString }
-        return state
+        if status != "unavailable", let url = surface?.url { result["url"] = url.absoluteString }
+        return result
     }
 
     func reset(status: String = "empty") {
@@ -137,19 +145,52 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         return true
     }
 
+    private func markUnavailable() {
+        status = "unavailable"
+        surface?.isHidden = true
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard action.targetFrame != nil, action.request.url.map(permits) == true else { return .cancel }
+        guard webView === surface, let frame = action.targetFrame else { return .cancel }
+        guard action.request.url.map(permits) == true else {
+            if frame.isMainFrame { markUnavailable() }
+            return .cancel
+        }
         return .allow
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        response.response.url.map(permits) == true && response.canShowMIMEType ? .allow : .cancel
+        guard webView === surface else { return .cancel }
+        guard response.response.url.map(permits) == true, response.canShowMIMEType else {
+            if response.isForMainFrame { markUnavailable() }
+            return .cancel
+        }
+        return .allow
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { status = "loading" }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { status = "ready" }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        if webView === surface { status = "loading" }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === surface, status == "loading" { status = "ready" }
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { status = "unavailable" }
+        navigationFailed(webView, error: error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        navigationFailed(webView, error: error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if webView === surface { reset(status: "unavailable") }
+    }
+
+    private func navigationFailed(_ view: WKWebView, error: Error) {
+        guard view === surface, (error as NSError).code != NSURLErrorCancelled else { return }
+        markUnavailable()
     }
 
     func webView(
