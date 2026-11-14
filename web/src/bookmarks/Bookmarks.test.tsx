@@ -188,6 +188,7 @@ describe("the bookmark manager", () => {
     expect(rows()[0]?.querySelector('img[data-favicon="image"]')).toHaveAttribute("src", ICON);
     expect(rows()[2]?.querySelector('[data-favicon="fallback"]')).not.toBeNull();
     expect(within(rows()[2] as HTMLElement).getByRole("link", { name: "Tracker" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("button", { name: "Bookmarks" })).toBeVisible(); // the top bar names the screen
     await expectAccessible(container);
   });
 
@@ -203,7 +204,7 @@ describe("the bookmark manager", () => {
     await user.type(screen.getByRole("textbox", { name: "Folder name" }), "Reading");
     await user.click(screen.getByRole("button", { name: "New folder" }));
     await waitFor(() => expect(writes).toContainEqual(["folder", { title: "Reading" }]));
-    expect(await screen.findByText("Reading")).toBeVisible();
+    expect(await screen.findByText("Reading", { selector: "li > span" })).toBeVisible();
   });
 
   it("renames an entry in place", async () => {
@@ -216,7 +217,7 @@ describe("the bookmark manager", () => {
     await user.type(name, "Office");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(writes).toContainEqual(["edit", { entry: "b-2", title: "Office" }]));
-    expect(await screen.findByText("Office")).toBeVisible();
+    expect(await screen.findByText("Office", { selector: "li > span" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Rename Docs" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();

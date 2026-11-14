@@ -14,14 +14,15 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import Module
+from heinzel.kernel import MCP_STDIO
 from heinzel.modules.system.bookmark._models import Bookmark, BookmarkList
 from heinzel.modules.system.bookmark._service import BookmarkService
 
 module = Module("bookmark", "Keep the built-in browser's bookmarks: a tree of folders and bookmarks.")
 module.service(BookmarkService)
 
-# Bookmarks are as private as a browsing habit: the unauthenticated REST head gets none of it.
-READ_ADD = {"cli", "mcp", "web"}
+# Bookmarks are as private as a browsing habit: the unauthenticated REST and HTTP MCP heads get none of it.
+READ_ADD = {"cli", MCP_STDIO, "web"}
 # Rename, move, remove, restore and the favicon cache stay with the person: no MCP tool, so no agent proposes them.
 PERSON = {"cli", "web"}
 

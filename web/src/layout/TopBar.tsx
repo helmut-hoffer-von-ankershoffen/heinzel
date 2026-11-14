@@ -24,6 +24,7 @@ const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/inventory/types", title: "nav.assetTypes", command: "hz heinzel playbooks" },
   { path: "/inventory/assets", title: "nav.assets", command: "hz heinzel discover" },
   { path: "/doctor", title: "nav.doctor", command: "hz system doctor" },
+  { path: "/bookmarks", title: "bookmarks.title", command: "hz system bookmark list" },
   { path: "/profile", title: "nav.profile", command: "hz org show" },
 ];
 

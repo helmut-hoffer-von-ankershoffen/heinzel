@@ -7,7 +7,7 @@ import pytest
 from rich.console import Console
 
 from heinzel import HeinzelError
-from heinzel.kernel import OperationLet, restricts
+from heinzel.kernel import OperationLet, exposed, restricts
 from heinzel.modules.system import bookmark
 from heinzel.modules.system.bookmark import BookmarkService, render
 from heinzel.modules.system.bookmark._service import (
@@ -257,11 +257,26 @@ def test_agents_read_and_add_but_never_change_or_remove():
     assert set(heads) == {"list", "add", "folder", "edit", "move", "remove", "restore", "favicon"}
     for name in ("list", "add", "folder"):
         assert not restricts(heads[name], "mcp")
+        assert restricts(heads[name], "mcp-http")  # no authentication there
+        assert heads[name] & {"mcp", "mcp-stdio"}  # what a chat's agent may propose
     for name in ("edit", "move", "remove", "restore", "favicon"):
         assert restricts(heads[name], "mcp")
         assert restricts(heads[name], "mcp-http")
-        assert restricts(heads[name], "mcp-check-in")
+        assert not heads[name] & {"mcp", "mcp-stdio", "mcp-check-in"}
     assert all(restricts(found, "api") for found in heads.values())
+
+
+def test_each_head_offers_exactly_its_bookmark_operations(make_kernel):
+    kernel = make_kernel(builtins=True)
+
+    def offered(head: str) -> set[str]:
+        return {item.path[-1] for item in exposed(kernel, head) if item.path[:2] == ("system", "bookmark")}
+
+    assert offered("mcp") == {"list", "add", "folder"}
+    assert offered("mcp-http") == set()
+    assert offered("api") == set()
+    assert offered("cli") == {"list", "add", "folder", "edit", "move", "remove", "restore"}
+    assert offered("web") == {"list", "add", "folder", "edit", "move", "remove", "restore", "favicon"}
 
 
 def test_the_tree_renders_indented(service):
