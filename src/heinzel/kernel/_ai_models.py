@@ -27,7 +27,7 @@ import tempfile
 import threading
 import time
 import weakref
-from collections.abc import Callable, Collection, Iterator
+from collections.abc import Callable, Collection, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
@@ -516,7 +516,7 @@ def mark_answered(
 
 
 @contextlib.contextmanager
-def _locked(path: Path) -> Iterator[None]:
+def _locked(path: Path) -> Generator[None]:
     """Hold an exclusive lock on `path`, a private lock file, across processes."""
     handle = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:

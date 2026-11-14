@@ -5,7 +5,7 @@ import logging
 import os
 import re
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -414,7 +414,7 @@ class AccessService:
         return self._summary(name, rows, untested)
 
     @contextmanager
-    def _one_run(self) -> Iterator[None]:
+    def _one_run(self) -> Generator[None]:
         """Hold the one check of every model this profile may run at a time, across processes.
 
         Raises:
