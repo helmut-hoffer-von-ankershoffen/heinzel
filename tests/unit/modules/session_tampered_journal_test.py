@@ -1,4 +1,4 @@
-"""A private session journal that was edited, truncated or mis-shaped is refused with a restore hint, never trusted."""
+"""A private session journal that was edited, truncated or malformed is refused with a restore hint, never trusted."""
 
 from datetime import UTC, datetime
 
