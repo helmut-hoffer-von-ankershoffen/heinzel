@@ -112,7 +112,7 @@ describe("message states", () => {
 
   it("shows Queued under a message that waits for the one above", async () => {
     mockHelmi([
-      { id: "m1", seq: 1, role: "user", text: "First", status: "completed" },
+      { id: "m1", seq: 1, role: "user", text: "First", status: "pending" },
       { id: "m2", seq: 2, role: "user", text: "Second", status: "pending" },
     ]);
     renderAt("/doctor");
@@ -121,6 +121,8 @@ describe("message states", () => {
     expect(queued.closest("[data-message-state]")).toHaveAttribute("data-message-state", "queued");
     // The word stands under the bubble, not a second time inside it.
     expect(chat.queryByText("Queued")).not.toBeInTheDocument();
+    // Only the second waits; the first is being answered and has nothing above it.
+    expect(document.querySelectorAll("[data-message-state=queued]")).toHaveLength(1);
   });
 
   it("shows a failure found on reopening without announcing it", async () => {
@@ -166,5 +168,33 @@ describe("message states", () => {
     expect(chat.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(chat.queryByRole("button", { name: "Retry the same message" })).not.toBeInTheDocument();
     expect(turns).toHaveLength(1);
+  });
+
+  describe.each([
+    ["unresolved", 0],
+    ["abandoned", 0],
+    ["completed", 1],
+    ["pending", 1],
+  ])("after a reload with turn state %s", (status, tryAgain) => {
+    it(`shows ${tryAgain} Try again button(s)`, async () => {
+      sessionStorage.setItem(
+        `hz.durable.composer.${helmi}`,
+        JSON.stringify({
+          version: 1,
+          session_id: helmi,
+          text: "",
+          pending: { request_id: "req-1", message: "Check my notes", accepted: true },
+          agentPending: null,
+          checkInRequest: null,
+        }),
+      );
+      mockHelmi([], {
+        "/api/heinzel/chat-turn-state": () => ({ session_id: helmi, request_id: "req-1", status }),
+      });
+      renderAt("/doctor");
+      const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+      await chat.findByText("Check my notes");
+      await waitFor(() => expect(chat.queryAllByRole("button", { name: "Try again" })).toHaveLength(tryAgain));
+    });
   });
 });

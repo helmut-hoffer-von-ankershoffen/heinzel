@@ -34,7 +34,7 @@ import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { ReleaseDraftActivity, ReleaseDraftReviewDetails, releaseDraftReview } from "@/chat/ReleaseDraftActivity";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
-import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
+import { UncertainTurnRecovery, useTurnState } from "@/chat/UncertainTurnRecovery";
 import { isDurableSession } from "@/chat/useChat";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction } from "@/components/PaneActions";
@@ -370,7 +370,15 @@ function DurableSessionView({
       : undefined;
   const agentChatUnavailable = agentChatId !== null && !agentChat;
   // An uncertain turn (a usage limit after acceptance) is never a plain retry: it keeps its own notice (T2).
-  const uncertain = pending?.outcome === "subscription_usage_limit";
+  // The server's turn state decides, not the error kind: unresolved (crashed, still running) or abandoned turns have
+  // unknown effects, so they never get Try again. Only a turn known not to have started may be tried again.
+  const turnState = useTurnState(sessionId, pending?.request_id ?? "", oneChat !== undefined && !!pending?.accepted);
+  const uncertain =
+    pending?.outcome === "subscription_usage_limit" ||
+    (oneChat !== undefined &&
+      !!pending?.accepted &&
+      (turnState.data?.status === "unresolved" || turnState.data?.status === "abandoned"));
+  const turnStateLoading = oneChat !== undefined && !!pending?.accepted && turnState.isFetching;
   const approvalQuery = useQuery({
     queryKey: scopedChatKey(approvalChatId ?? ""),
     queryFn: ({ signal }) => readScopedChat(approvalChatId ?? "", signal),
@@ -893,7 +901,8 @@ function DurableSessionView({
     </>
   );
   const heinzelName = query.data?.name ?? t("durable.title");
-  const retryBlocked = busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || uncertain;
+  const retryBlocked =
+    busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || uncertain || turnStateLoading;
   const opened = query.data?.session_id === sessionId;
   useEffect(() => {
     if (oneChat && opened) rememberHeinzel(sessionId);
@@ -1178,7 +1187,12 @@ function DurableSessionView({
                     onRetry={() => void send()}
                     retryDisabled={retryBlocked}
                   />
-                ) : oneChat && own && message.status === "pending" ? (
+                ) : oneChat &&
+                  own &&
+                  message.status === "pending" &&
+                  (query.data?.messages ?? []).some(
+                    (other) => other.seq < message.seq && other.role === "user" && other.status === "pending",
+                  ) ? (
                   <MessageState kind="queued" />
                 ) : null}
                 {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
