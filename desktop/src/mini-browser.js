@@ -75,6 +75,10 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const generations = new WeakMap();
   let partition = null;
   let shared = null;
+  // Other guests on the website partition (the media player) hold a lease, so the broker outlives the panel.
+  let leases = 0;
+  // Pages of leased guests: clear takes them off their sites too, then lets each restore itself.
+  const leasedPages = new Set();
   let stopped = false;
   // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
   const grants = new Set();
@@ -152,7 +156,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     return shared;
   };
   const releaseNetwork = () => {
-    if (guests.size || opening.size || !shared) return;
+    if (guests.size || opening.size || leases || !shared) return;
     const ending = shared;
     shared = null;
     void ending.then((network) => network.close(), () => {});
@@ -178,7 +182,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     await Promise.allSettled([...opening.values()]);
     grants.clear();
     const pages = [...guests.values()].map((guest) => [guest, guest.view.webContents.getURL()]);
-    await Promise.allSettled(pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")));
+    const others = [...leasedPages];
+    await Promise.allSettled([...pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")),
+      ...others.map((page) => page.blank())]);
     const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
       partition.clearAuthCache?.()]);
     const failed = results.some((result) => result.status === "rejected");
@@ -189,6 +195,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (url && !guest.view.webContents.isDestroyed())
         void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
     }
+    for (const page of others) if (leasedPages.has(page)) page.restore();
     if (failed) throw new Error("Browsing data could not be cleared.");
   };
   const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
@@ -358,6 +365,29 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
       if (request.action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
       return state(guest);
+    },
+    /** The website partition with its configured broker for another guest; `release()` once that guest closes. */
+    async lease(page) {
+      if (stopped) throw new Error("Browser surface is closed.");
+      const session = partitionFor();
+      leases += 1;
+      let released = false;
+      const pages = new Set();
+      const release = () => {
+        if (released) return;
+        released = true;
+        for (const page of pages) leasedPages.delete(page);
+        leases -= 1;
+        releaseNetwork();
+      };
+      // `attach({ blank, restore })`: how clear takes this guest's page off its site and brings it back.
+      const attach = (entry) => { if (!released) { pages.add(entry); leasedPages.add(entry); } };
+      // Attached before the broker await, so a clear during opening still blanks and restores this page.
+      if (page) attach(page);
+      try {
+        const network = await networkFor(session);
+        return { session, network, release, attach };
+      } catch (error) { release(); throw error; }
     },
     closeAll() { stopped = true; for (const window of [...guests.keys()]) close(window); },
   };
