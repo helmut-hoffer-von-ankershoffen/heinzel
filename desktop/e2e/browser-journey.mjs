@@ -76,6 +76,32 @@ function api(page, method, path, { query = {}, body } = {}) {
 const panel = (page, request) => page.evaluate((command) => window.heinzelDesktop.browser(command), request);
 const agentTabs = async (page) => (await panel(page, { action: "tabs" })).tabs.filter((tab) => tab.agent);
 
+/** For a failure report only: every guest page of the shop, asked directly from the main process. */
+function guestFacts() {
+  return withTimeout(app.evaluate(async ({ webContents }, host) => {
+    const facts = [];
+    for (const contents of webContents.getAllWebContents()) {
+      if (contents.isDestroyed() || !contents.getURL().includes(host)) continue;
+      const fact = { url: contents.getURL(), attached: contents.debugger.isAttached() };
+      try {
+        fact.page = await contents.executeJavaScript(`(() => {
+          const button = document.querySelector("[data-watch=note]");
+          const box = button ? button.getBoundingClientRect() : null;
+          const hit = box ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) : null;
+          return { visibility: document.visibilityState, inner: [innerWidth, innerHeight], ratio: devicePixelRatio,
+            box: box ? [box.left, box.top, box.width, box.height] : null, hit: hit ? hit.tagName : null,
+            frames: document.querySelectorAll("iframe").length };
+        })()`);
+        const [left, top, width, height] = fact.page.box ?? [0, 0, 0, 0];
+        fact.node = await contents.debugger.sendCommand("DOM.getNodeForLocation",
+          { x: Math.round(left + width / 2), y: Math.round(top + height / 2), includeUserAgentShadowDOM: false, ignorePointerEventsNone: true });
+      } catch (error) { fact.error = String(error?.message ?? error); }
+      facts.push(fact);
+    }
+    return facts;
+  }, SHOP), 15_000, "The guest did not answer.");
+}
+
 /** What both journeys must have left behind once the agent did the free and the forbidden steps. */
 async function assertInputs(tab) {
   await settled("press:mousedown", 1);
@@ -317,8 +343,14 @@ try {
   assert.equal(new URL(origin).hostname, "127.0.0.1");
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), false,
     "The journey's app must stay hidden.");
-  if (journey === "heinzel") await heinzelJourney(page, origin);
-  else await mcpJourney(page, origin);
+  try {
+    if (journey === "heinzel") await heinzelJourney(page, origin);
+    else await mcpJourney(page, origin);
+  } catch (error) {
+    // What the guest itself says when a step failed: its size, its visibility and what lies at the first button.
+    console.error(`Guest facts: ${JSON.stringify(await guestFacts().catch((failed) => String(failed)))}`);
+    throw error;
+  }
   assertNothingElseDialled();
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), false,
     "The journey's app must stay hidden.");
