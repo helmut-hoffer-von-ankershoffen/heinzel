@@ -24,7 +24,7 @@ function deviceChoice(device) {
  * partition, so sign-ins survive closing the panel and restarting the app until the person clears browsing data.
  * `chooseDevice({ window, host, devices })` shows the person a native chooser and resolves to a device id or null.
  */
-export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, enabled,
+export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
   createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => {} }) {
   const guests = new Map();
   const opening = new Map();
@@ -207,7 +207,6 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
           const onNavigation = (details) => { if (isNewDocument(details)) navigated = true; };
           event.sender.on("did-start-navigation", onNavigation);
           try {
-            if (!(await enabled())) throw new Error("Browser panel is not enabled.");
             if (stopped || navigated || (generations.get(window) ?? 0) !== generation)
               throw new Error("Browser surface is closed.");
             if (!guests.has(window)) {
