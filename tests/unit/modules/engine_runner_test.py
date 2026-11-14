@@ -492,10 +492,77 @@ def test_a_model_chosen_regex_never_holds_the_run_past_its_timeout(work: Path) -
 
 def test_the_whole_disk_or_home_is_no_working_directory(tmp_path: Path) -> None:
     for wide in (Path("/"), Path.home()):
-        with pytest.raises(HeinzelError, match="whole disk or your home"):
+        with pytest.raises(HeinzelError, match="whole disk, your home or a folder above it"):
             runner(TestModel()).run(
                 "x", contract="", tools=ToolProfile(working_dir=wide), timeout=MINUTE, budget=Budget()
             )
     runner(TestModel()).run(
         "x", contract="", tools=ToolProfile(working_dir=Path.home(), read_files=False), timeout=MINUTE, budget=Budget()
     )
+
+
+def test_home_swapped_in_after_the_early_check_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The early check is by name; the folder the tools open is checked again by identity (ADR 0159, A3)."""
+    from heinzel.modules.ai.access import _engine_runner
+
+    alias = tmp_path / "project"
+    alias.symlink_to(Path.home())
+
+    def checked_by_name_only(_directory: Path) -> bool:
+        return False  # as if the folder were swapped after the early check
+
+    monkeypatch.setattr(_engine_runner, "_too_wide", checked_by_name_only)
+
+    for wide in (Path("/"), Path.home(), Path.home().parent, alias):
+        with pytest.raises(HeinzelError, match="whole disk, your home or a folder above it"):
+            runner(TestModel()).run(
+                "x", contract="", tools=ToolProfile(working_dir=wide), timeout=MINUTE, budget=Budget()
+            )
+
+
+def test_the_folder_is_let_go_when_the_run_fails_before_its_turn(work: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+
+    from heinzel.modules.ai.access._file_tools import ConfinedFiles
+
+    closed: list[int] = []
+    real = ConfinedFiles.close
+
+    def close(files: ConfinedFiles) -> None:
+        closed.append(files.root_fd)
+        real(files)
+
+    def broken() -> Any:
+        raise RuntimeError
+
+    progress = Progress()
+    monkeypatch.setattr(ConfinedFiles, "close", close)
+    monkeypatch.setattr(progress, "emitter", broken)
+    engine = runner(TestModel(), progress=progress)
+
+    with pytest.raises(RuntimeError):
+        engine.run("x", contract="", tools=ToolProfile(working_dir=work), timeout=MINUTE, budget=Budget())
+
+    assert len(closed) == 1
+    assert closed[0] >= 0
+
+
+@pytest.mark.parametrize("above", ["/Users", "/Users/", "/home", "/System/Volumes", "/System/Volumes/Data/Users"])
+def test_a_folder_above_home_is_no_working_directory(above: str) -> None:
+    """Above the home folder lie every user's homes: as wide as the home itself (ADR 0159, A3)."""
+    folder = Path(above)
+    if not folder.is_dir():
+        pytest.skip(f"{above} doesn't exist here")
+    if above in {"/Users", "/Users/", "/home"} and folder not in Path.home().parents:
+        pytest.skip(f"{above} isn't above the home folder here")
+    with pytest.raises(HeinzelError, match="whole disk, your home or a folder above it"):
+        runner(TestModel()).run(
+            "x", contract="", tools=ToolProfile(working_dir=folder), timeout=MINUTE, budget=Budget()
+        )
+
+
+def test_a_folder_that_cannot_be_read_is_left_to_the_tools(tmp_path: Path) -> None:
+    from heinzel.modules.ai.access import _engine_runner
+
+    assert not _engine_runner._too_wide(tmp_path / "missing")

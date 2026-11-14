@@ -41,7 +41,7 @@ from heinzel import (
 from heinzel.kernel import Effort, clean_text
 from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers, model_failure
 from heinzel.modules.ai.access._engine_history import SessionHistory, capped, session_of, stopped
-from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError
+from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError, too_wide
 from heinzel.modules.ai.access._file_tools import run as run_file_tool
 from heinzel.modules.ai.access._mcp_stdio import McpError, StdioMcp, tool_name
 from heinzel.modules.ai.access._models import AccessSettings, Bindings
@@ -122,14 +122,14 @@ class _Session:
     def __init__(self, tools: ToolProfile, cwd: Path) -> None:
         self.calls: Counter[str] = Counter()
         self.deadline = time.monotonic() + TOOL_SECONDS  # the turn sets the run's own deadline
-        try:
-            self.files = ConfinedFiles(cwd) if tools.read_files else None
-        except FileToolError as exc:
-            raise HeinzelError(str(exc)) from None
         self.wanted: set[str] = (
             {TOOL_NAMES[t] for t in (tools.tools or list(TOOL_NAMES))} if tools.read_files else set()
         )
         self.servers = [StdioMcp(name, s.command, s.env, cwd) for name, s in sorted(tools.mcp_servers.items())]
+        try:  # last: from here on the folder is held open until `close`
+            self.files = ConfinedFiles(cwd) if tools.read_files else None
+        except FileToolError as exc:
+            raise HeinzelError(str(exc)) from None
 
     def _file_tool(self, files: ConfinedFiles, name: str) -> Callable[..., str]:
         def call(**arguments: Any) -> str:  # noqa: ANN401 - the model's arguments, validated by the schema
@@ -193,6 +193,10 @@ class _Session:
     async def stop(self) -> None:
         for server in self.servers:
             await server.stop()
+        self.close()
+
+    def close(self) -> None:
+        """Let go of the working directory; again is a no-op."""
         if self.files is not None:
             self.files.close()
             self.files = None
@@ -319,7 +323,10 @@ class EngineRunner:
             msg = f"The run's working directory {tools.working_dir} does not exist or is not a directory."
             raise HeinzelError(msg)
         if tools.working_dir is not None and tools.read_files and _too_wide(tools.working_dir):
-            msg = f"The run's working directory {tools.working_dir} is the whole disk or your home; pick a project."
+            msg = (
+                f"The run's working directory {tools.working_dir} is the whole disk, your home or a folder above it; "
+                "pick a project."
+            )
             raise HeinzelError(msg)
         chosen = self._models(model, effort)
         warnings = list(chosen.warnings)
@@ -329,12 +336,15 @@ class EngineRunner:
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:
             cwd = tools.working_dir or Path(directory)
             session = _Session(tools, cwd)
-            chat = _chat_session(tools)
-            # The emitter is taken here, on the operation's thread, where a head routes events by request.
-            work = self._turn(session, chosen, Turn(prompt, contract, timeout, chat), self._progress.emitter())
-            # Its own thread and event loop: a head may call this from a thread whose loop is already running.
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                result = pool.submit(asyncio.run, work).result()
+            try:
+                chat = _chat_session(tools)
+                # The emitter is taken here, on the operation's thread, where a head routes events by request.
+                work = self._turn(session, chosen, Turn(prompt, contract, timeout, chat), self._progress.emitter())
+                # Its own thread and event loop: a head may call this from a thread whose loop is already running.
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    result = pool.submit(asyncio.run, work).result()
+            finally:
+                session.close()  # the turn closes it; this covers a failure before the turn ran
         duration = time.monotonic() - started
         return result.model_copy(
             update={
@@ -463,9 +473,14 @@ class EngineRunner:
 
 
 def _too_wide(directory: Path) -> bool:
-    """Whether reading `directory` would expose everything: the filesystem's root or the home folder itself."""
-    real = directory.resolve()
-    return real == Path(real.anchor) or real == Path.home().resolve()
+    """Whether reading `directory` would expose everything: the filesystem's root, the home folder or one above it.
+
+    An early, clear refusal; `ConfinedFiles` checks the folder it opens again, by identity.
+    """
+    try:
+        return too_wide(directory.stat())
+    except OSError:
+        return False
 
 
 def _chat_session(tools: ToolProfile) -> str | None:

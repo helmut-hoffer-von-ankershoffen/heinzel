@@ -93,7 +93,7 @@ class ConfinedFiles:
         of it already open, as the child process gets it.
 
         Raises:
-            FileToolError: If `root` isn't a directory.
+            FileToolError: If `root` isn't a directory, or is the filesystem's root, the home folder or one above it.
         """
         real = Path(os.path.realpath(root))
         if root_fd is None:
@@ -102,6 +102,10 @@ class ConfinedFiles:
             except OSError:
                 msg = f"{root} is not a directory"
                 raise FileToolError(msg) from None
+            if too_wide(os.fstat(root_fd)):
+                os.close(root_fd)
+                msg = f"{root} is the whole disk, your home or a folder above it; pick a project"
+                raise FileToolError(msg)
         self.root = real
         self.given = Path(root)
         self.root_fd = root_fd
@@ -109,8 +113,10 @@ class ConfinedFiles:
         self._budget = _Budget()
 
     def close(self) -> None:
-        """Let go of the directory."""
-        os.close(self.root_fd)
+        """Let go of the directory; again is a no-op."""
+        if self.root_fd >= 0:
+            os.close(self.root_fd)
+            self.root_fd = -1
 
     def _parts(self, path: str) -> list[str]:
         """The components of `path` below the root; never `..`, never outside.
@@ -390,6 +396,43 @@ class ConfinedFiles:
                 if len(found) >= room:
                     break
         return found
+
+
+WIDE_FOLDERS = ("/", "/System/Volumes/Data")
+"""Folders that hold everything: the filesystem's root, and on macOS the volume behind it; the home folder too."""
+DATA_VOLUME = Path("/System/Volumes/Data")
+
+
+def _wide_folders() -> list[Path]:
+    """The root, the data volume, the home folder, and every folder above the home folder or the data volume.
+
+    Above the home folder (`/Users`, `/home`) lies every user's home, so those are as wide as the home itself. On
+    macOS each is also reachable through the data volume (`/System/Volumes/Data/Users`).
+    """
+    home = Path.home()
+    homes = [home, home.resolve()]
+    wide = {Path(path) for path in WIDE_FOLDERS} | set(DATA_VOLUME.parents)
+    for folder in homes:
+        for above in (folder, *folder.parents):
+            wide.add(above)
+            wide.add(DATA_VOLUME / above.relative_to(above.anchor))
+    return sorted(wide)
+
+
+def too_wide(folder: os.stat_result) -> bool:
+    """Whether `folder`, as opened, is the filesystem's root, the data volume, the home folder, or one above them.
+
+    By identity (device and inode), not by name: another spelling, a different case on a case-blind disk, or a
+    symlink swapped in after a check by name is still the same folder.
+    """
+    for path in _wide_folders():
+        try:
+            info = path.stat()
+        except OSError:
+            continue
+        if (info.st_dev, info.st_ino) == (folder.st_dev, folder.st_ino):
+            return True
+    return False
 
 
 def _open_at(name: str, flags: int, directory: int, shown: str) -> int:

@@ -61,6 +61,8 @@ VENDOR_PACKAGES = {
 }
 """The client package Pydantic AI needs for a vendor; `heinzel[<extra>]` installs it."""
 EXTRAS = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai", ANTHROPIC_ENDPOINT: "anthropic"}
+ANTHROPIC_CUSTOM_HEADERS = "ANTHROPIC_CUSTOM_HEADERS"
+"""Extra headers Anthropic's client adds to every request; never sent to an `api = "anthropic"` endpoint."""
 TEST_INSTRUCTIONS = "Reply with the single word OK."
 TEST_OUTPUT_TOKENS = 16
 DETAIL_LIMIT = 300
@@ -84,15 +86,62 @@ def _local_client(base_url: str) -> Any:  # noqa: ANN401 - httpx2, lazily import
     return httpx2.AsyncClient(trust_env=False)
 
 
+def _ambient_headers() -> set[tuple[str, str]]:
+    """The headers Anthropic's client adds from `ANTHROPIC_CUSTOM_HEADERS`, parsed as it parses them.
+
+    One `Name: value` per line; a line without a colon is ignored. Names are lowercased, as HTTP compares them.
+    """
+    text = os.environ.get(ANTHROPIC_CUSTOM_HEADERS)
+    if text is None:
+        return set()
+    return {
+        (line[:colon].strip().lower(), line[colon + 1 :].strip())
+        for line in text.split("\n")
+        if (colon := line.find(":")) >= 0
+    }
+
+
+def _without_ambient_headers(client: Any, key: str) -> Any:  # noqa: ANN401 - httpx2.AsyncClient, lazily imported
+    """`client`, made to drop every header `ANTHROPIC_CUSTOM_HEADERS` adds before a request leaves, with `key` kept.
+
+    Anthropic's client reads that variable each time it is built or copied (a copy per request with retries set),
+    so a gateway setup meant for Claude Code would send its headers, often a token, to this endpoint. Only the
+    headers the variable names with the value it gives (then or now) go; a value the request appends to one, as
+    `anthropic-beta` does, loses only that item; a header hz itself sends with the same value goes too. The
+    variable may name `Authorization` and so replace hz's own: `Bearer <key>` is put back after the strip. The
+    client hz builds sends only what hz chose (ADR 0159).
+    """
+    built = _ambient_headers()
+
+    async def drop(request: Any) -> None:  # noqa: ANN401 - httpx2.Request
+        for name, value in built | _ambient_headers():
+            sent = request.headers.get(name)
+            if sent is None:
+                continue
+            items = [item.strip() for item in sent.split(",")]
+            if sent.strip() == value:
+                del request.headers[name]
+            elif value in items:
+                kept = [item for item in items if item != value]
+                request.headers[name] = ", ".join(kept)
+        request.headers["authorization"] = f"Bearer {key}"
+
+    client.event_hooks = {**client.event_hooks, "request": [*client.event_hooks["request"], drop]}
+    return client
+
+
 def _anthropic_endpoint(model: str, key: str | None, base_url: str) -> Any:  # noqa: ANN401 - a pydantic_ai Model
     """An Anthropic Messages model at `base_url`, with the key as `Authorization: Bearer`.
 
-    The client gets an explicit key, so it never reads `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`.
+    The client gets an explicit key, so it never reads `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, and an HTTP
+    client of hz's own, which drops what `ANTHROPIC_CUSTOM_HEADERS` adds (`_without_ambient_headers`).
     """
-    from pydantic_ai.models.anthropic import AnthropicModel  # noqa: PLC0415 - a heavy import, only when built
+    from pydantic_ai.models import create_async_httpx2_client  # noqa: PLC0415 - a heavy import, only when built
+    from pydantic_ai.models.anthropic import AnthropicModel  # noqa: PLC0415
     from pydantic_ai.providers.anthropic import AnthropicProvider  # noqa: PLC0415
 
-    provider = AnthropicProvider(api_key=key or NO_KEY, base_url=base_url, http_client=_local_client(base_url))
+    client = _without_ambient_headers(_local_client(base_url) or create_async_httpx2_client(), key or NO_KEY)
+    provider = AnthropicProvider(api_key=key or NO_KEY, base_url=base_url, http_client=client)
     return AnthropicModel(endpoint_model(model), provider=provider)
 
 
