@@ -29,6 +29,7 @@ set of modules truly needs a restart.
 | `hz.disabled_modules` | yes | Which modules exist is decided once, when the server starts. |
 | `hz.ui_port` | yes | The server's socket is opened once. |
 | `hz.ui_allowed_origins` | yes | The origin check is built once, when the server starts. |
+| `hz.mcp_http` | no | The web server reads it again with every `/mcp` request (at most once a second) and ends the open MCP sessions when it goes off. |
 | `hz.api_allowed_hosts` | yes | The host check is built once, when the server starts. |
 | `capabilities.agent_runner` | yes | The choice is bound to its adapter once, when the server starts. Rereading it is a follow-up. |
 | `capabilities.ai_access` | yes | The choice is bound to its adapter once, when the server starts. Rereading it is a follow-up. |
