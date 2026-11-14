@@ -1,10 +1,9 @@
-// One kind of chat (flag `one_chat`, bead agqz): every chat is with a Heinzel, there is no "Back to chat", and the
-// header carries the face, the name with its switcher, More and Close.
+// One kind of chat (ADR 0157, bead agqz): every chat is with a Heinzel, there is no general chat and no "Back to chat",
+// and the header carries the face, the name with its switcher, More and Close.
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { base, empty } from "@/test/chat";
-import { config } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -22,18 +21,9 @@ const snapshot = (request: Request) => {
   const id = new URL(request.url).searchParams.get("session_id") ?? "";
   return { session_id: id, heinzel_id: id, name: names[id] ?? "New", messages: [] };
 };
-const flagged = (features: string[]) => ({
-  ...config,
-  settings: [
-    ...config.settings,
-    { section: "hz", key: "features", value: features, description: "", env: "HZ_FEATURES" },
-  ],
-});
-
 function mockOneChat(sessions: object[], extra: Record<string, unknown> = {}) {
   return mockApi({
     ...base,
-    "/api/system/config/show": flagged(["one_chat"]),
     "/api/heinzel/sessions": { sessions },
     "/api/heinzel/session": snapshot,
     ...extra,
@@ -148,11 +138,15 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    const more = await chat.findByRole("button", { name: "More: search, details, earlier chats" });
+    const more = await chat.findByRole("button", { name: "More: search, details" });
     // Details and search wait in More instead of standing among the messages.
     await waitFor(() => expect(chat.getByText("Details").closest("details")).not.toBeVisible());
     expect(chat.queryByRole("region", { name: "Search conversation" })).not.toBeInTheDocument();
     await user.click(more);
+    // No earlier general chats: More holds search and details only.
+    expect(
+      within(await screen.findByRole("dialog", { name: "More" })).queryByRole("button", { name: "Earlier chats" }),
+    ).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(more).toHaveFocus();
     await user.click(more);
@@ -168,20 +162,6 @@ describe("one kind of chat", () => {
     await expectAccessible(inside(chat.getByRole("button", { name: "Helmi. Switch Heinzel" }), ".chat-panel-header"));
   });
 
-  it("keeps the earlier general chats one step away, with the way back to the Heinzel", async () => {
-    mockOneChat([summary(helmi)], { "/api/system/runner/chat/show": { status: 404, body: {} } });
-    const user = userEvent.setup();
-    renderAt("/doctor");
-    const chat = await panel();
-    await user.click(await chat.findByRole("button", { name: "More: search, details, earlier chats" }));
-    await user.click(
-      within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: "Earlier chats" }),
-    );
-    expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
-    await user.click(chat.getByRole("button", { name: "Chat with Helmi" }));
-    expect(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
-  });
-
   it("closes the chat from the header", async () => {
     mockOneChat([summary(helmi)]);
     const user = userEvent.setup();
@@ -192,53 +172,20 @@ describe("one kind of chat", () => {
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument());
   });
 
-  it("leaves today's chat unchanged with the flag off", async () => {
-    mockApi({ ...base, "/api/heinzel/sessions": { sessions: [summary(helmi)] }, "/api/heinzel/session": snapshot });
-    renderAt(`/doctor?chat=${helmi}`);
-    const chat = await panel();
-    expect(await chat.findByRole("button", { name: "Back to chat" })).toBeInTheDocument();
-    expect(chat.queryByRole("button", { name: "Helmi. Switch Heinzel" })).not.toBeInTheDocument();
-  });
-  it("still opens the general chat a notification links to, and leads back to the Heinzel", async () => {
-    const about = { ...empty, context: { kind: "event" as const, ref: "ev42", detail: "" } };
-    mockOneChat([summary(helmi)], {
-      "/api/system/runner/chat/open": about,
-      "/api/system/runner/chat/show": about,
-    });
-    const user = userEvent.setup();
-    renderAt("/?chat-context=event:ev42");
-    const chat = await panel();
-    expect(await chat.findByText("About: event ev42")).toBeInTheDocument();
-    await user.click(await chat.findByRole("button", { name: "Chat with Helmi" }));
-    expect(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
-  });
-
-  it("opens a general chat linked by its id", async () => {
-    mockOneChat([summary(helmi)], { "/api/system/runner/chat/show": empty });
-    renderAt(`/doctor?chat=${empty.id}`);
-    const chat = await panel();
-    expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
-    expect(chat.queryByRole("button", { name: "Helmi. Switch Heinzel" })).not.toBeInTheDocument();
-  });
-
-  it("shows neither chat until the settings say which one, so the old chat never flashes", async () => {
-    let seenOld = false;
-    const observer = new MutationObserver(() => {
-      // Laid out while the settings load is fine; shown is not.
-      const old = screen.queryByLabelText("Your message");
-      if (old && !old.closest(".invisible")) seenOld = true;
-    });
-    observer.observe(document.body, { subtree: true, childList: true });
-    mockOneChat([summary(helmi)], {
-      "/api/system/config/show": async () => {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        return flagged(["one_chat"]);
-      },
-    });
-    renderAt("/doctor");
+  it("opens the default Heinzel for an old general-chat context link, and opens no general chat", async () => {
+    const { calls } = mockOneChat([summary(helmi)]);
+    renderAt("/doctor?chat-context=event:ev42");
     expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
-    observer.disconnect();
-    expect(seenOld).toBe(false);
+    expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).pathname.includes("/runner/chat/open"))).toBe(false);
+  });
+
+  it("opens the default Heinzel for an old general chat's id, and never reads that chat", async () => {
+    const { calls } = mockOneChat([summary(helmi)], { "/api/system/runner/chat/show": empty });
+    renderAt(`/doctor?chat=${empty.id}`);
+    expect(await (await panel()).findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/runner/chat/show"))).toBe(false);
   });
 
   it("settles a first-start request once the list shows a Heinzel, after a lost answer and a reload", async () => {
@@ -263,13 +210,6 @@ describe("one kind of chat", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Your Heinzels" })).not.toBeInTheDocument());
   });
 
-  it("shows today's general chat without a link when the flag is off", async () => {
-    mockApi({ ...base, "/api/heinzel/sessions": { sessions: [summary(helmi)] }, "/api/heinzel/session": snapshot });
-    renderAt("/doctor");
-    const chat = await panel();
-    expect(await chat.findByLabelText("Your message")).toBeInTheDocument();
-    expect(chat.queryByRole("button", { name: /Switch Heinzel/ })).not.toBeInTheDocument();
-  });
   it("asks for the list again when the switcher opens, so a Heinzel made elsewhere shows", async () => {
     let sessions = [summary(helmi)];
     mockOneChat([], { "/api/heinzel/sessions": () => ({ sessions }) });

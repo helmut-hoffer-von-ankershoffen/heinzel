@@ -447,17 +447,17 @@ describe("personal identities", () => {
   });
 
   it("reloads the server profile after a stale revision without overwriting it", async () => {
-    let loads = 0;
+    // The server's profile changes when the save is refused; the chat beside the page reads the same Heinzel too.
+    let changed = false;
     mockApi({
       ...shell,
       "/api/heinzel/sessions": { sessions },
-      "/api/heinzel/session": () => {
-        loads += 1;
-        return loads === 1
-          ? snapshot(first, "Alpha")
-          : { ...snapshot(first, "Updated elsewhere"), profile_revision: 2 };
+      "/api/heinzel/session": () =>
+        changed ? { ...snapshot(first, "Updated elsewhere"), profile_revision: 2 } : snapshot(first, "Alpha"),
+      "/api/heinzel/profile": () => {
+        changed = true;
+        return { status: 400, body: { error: "This Heinzel's profile changed" } };
       },
-      "/api/heinzel/profile": { status: 400, body: { error: "This Heinzel's profile changed" } },
     });
     const { container } = renderAt("/heinzel");
     const section = await openAlpha();

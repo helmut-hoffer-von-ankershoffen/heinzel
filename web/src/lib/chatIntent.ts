@@ -2,6 +2,9 @@
 export const OPEN_CHAT = "hz:open-chat";
 export const OPEN_NEW_CHAT = "hz:open-new-chat";
 
+/** A Heinzel's chat (`?chat=hz-<ULID>`); every chat in the app is with a Heinzel (ADR 0157). */
+export const isDurableSession = (id: string) => /^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(id);
+
 /** Leave the linked personal conversation and any nested chat. */
 export function clearChatLink(params: URLSearchParams) {
   for (const key of [

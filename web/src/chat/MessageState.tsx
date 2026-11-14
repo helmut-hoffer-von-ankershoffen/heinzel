@@ -1,10 +1,11 @@
-// One quiet line under the person's own message when every chat is with a Heinzel (flag `one_chat`, canvas board 7):
+// One quiet line under the person's own message when every chat is with a Heinzel (ADR 0157, canvas board 7):
 // "Sending…", "✖ Not sent · Try again", "✖ Not answered · Try again" or "Queued · after the one above". The
 // symbol is decoration beside the word. Only a failure that happens in front of the person is announced as an alert;
 // one found on reopening is shown, not shouted. An uncertain turn never gets here: it keeps its own recovery card.
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 export type MessageStateKind = "sending" | "not-sent" | "not-answered" | "queued";
 
@@ -32,9 +33,10 @@ export function MessageState({
     <div
       role={failed ? (announce ? "alert" : undefined) : kind === "queued" ? "status" : undefined}
       data-message-state={kind}
-      className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
     >
-      <span className={failed ? "font-medium text-bad" : undefined}>
+      {/* The first item's auto margin keeps the line at the bubble's right edge. */}
+      <span className={cn("ml-auto", failed && "font-medium text-bad")}>
         {failed && <span aria-hidden="true">✖ </span>}
         {t(WORDS[kind])}
       </span>

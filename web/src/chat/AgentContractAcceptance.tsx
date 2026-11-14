@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { chatKey } from "@/api/chat";
 import { api, problem, type SchemaChatSession, type SchemaScheduledAgentProposal } from "@/api/client";
-import { ActionCard } from "@/chat/Conversation";
+import { ActionCard } from "@/chat/ActionCard";
 import { Button } from "@/components/ui/button";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {

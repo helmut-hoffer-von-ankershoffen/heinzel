@@ -18,7 +18,7 @@ function show(onCreated: (id: string) => void = () => {}) {
   );
 }
 
-const hat = () => screen.getByRole("button", { name: /^Hat/ });
+const hat = () => screen.getByRole("radio", { name: /^Hat/ });
 const nameField = () => screen.getByLabelText("What do you call it?") as HTMLInputElement;
 const figure = () => document.querySelector("svg[role=img]")?.outerHTML ?? "";
 
@@ -65,21 +65,21 @@ describe("Meet your first Heinzelmännchen", () => {
     const user = userEvent.setup();
     show();
     const before = figure();
-    await user.click(screen.getByRole("button", { name: "Change the hat" }));
-    expect(screen.getByRole("button", { name: "Change the hat" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("radio", { name: "Change the hat" }));
+    expect(screen.getByRole("radio", { name: "Change the hat" })).toHaveAttribute("aria-checked", "true");
     const hats = screen.getByRole("radiogroup", { name: "Hat" });
     await user.click(within(hats).getByRole("radio", { name: "Blue" }));
     expect(hat()).toHaveTextContent("Blue");
     const afterHat = figure();
     expect(afterHat).not.toBe(before);
     const list = screen.getByRole("heading", { name: "Everything you can change" }).closest("section") as HTMLElement;
-    await user.click(within(list).getByRole("button", { name: /^Build/ }));
+    await user.click(within(list).getByRole("radio", { name: /^Build/ }));
     await user.click(within(screen.getByRole("radiogroup", { name: "Build" })).getByRole("radio", { name: "Round" }));
-    expect(within(list).getByRole("button", { name: /^Build/ })).toHaveTextContent("Round");
+    expect(within(list).getByRole("radio", { name: /^Build/ })).toHaveTextContent("Round");
     expect(figure()).not.toBe(afterHat);
-    await user.click(within(list).getByRole("button", { name: /^Accessories/ }));
+    await user.click(within(list).getByRole("radio", { name: /^Accessories/ }));
     await user.click(screen.getByRole("checkbox", { name: "Scarf" }));
-    expect(within(list).getByRole("button", { name: /^Accessories/ })).toHaveTextContent("Scarf");
+    expect(within(list).getByRole("radio", { name: /^Accessories/ })).toHaveTextContent("Scarf");
     expect(figure()).toContain("with a scarf".replace("with a ", "wearing a "));
   });
 
@@ -104,7 +104,7 @@ describe("Meet your first Heinzelmännchen", () => {
     const user = userEvent.setup();
     const created: string[] = [];
     show((id) => created.push(id));
-    await user.click(screen.getByRole("button", { name: "Change the hat" }));
+    await user.click(screen.getByRole("radio", { name: "Change the hat" }));
     await user.click(within(screen.getByRole("radiogroup", { name: "Hat" })).getByRole("radio", { name: "Teal" }));
     await user.click(screen.getByRole("button", { name: "Start" }));
     await screen.findByRole("button", { name: "Start" });

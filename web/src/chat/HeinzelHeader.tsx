@@ -1,8 +1,8 @@
-// The chat's header when every chat is with a Heinzel (flag `one_chat`, canvas boards ChatDefault and Switch): the
-// face, the name with ▾ that opens your Heinzels and New Heinzel, More (search, details, earlier chats) and Close.
+// The chat's header, and every chat is with a Heinzel (ADR 0157, canvas boards ChatDefault and Switch): the face, the
+// name with ▾ that opens your Heinzels and New Heinzel, More (search, details) and Close.
 // There is no "Back to chat": switching Heinzels is the only way between chats. Both popovers keep the keyboard path of
 // the session switcher: Escape closes and focus returns to the button that opened them; Tab out closes too.
-import { ChevronDown, Ellipsis, History, PanelRightClose, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Ellipsis, PanelRightClose, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useHeinzelSessions } from "@/api/queries";
@@ -25,7 +25,6 @@ type Props = {
   detailsOpen: boolean;
   onSearch: () => void;
   onDetails: () => void;
-  onEarlier: () => void;
   onClose: () => void;
   /** Switching is held while a profile save is in flight, as the old "Back to chat" was. */
   locked?: boolean;
@@ -99,7 +98,6 @@ export function HeinzelHeader({
   detailsOpen,
   onSearch,
   onDetails,
-  onEarlier,
   onClose,
   locked = false,
 }: Props) {
@@ -194,9 +192,10 @@ export function HeinzelHeader({
             </li>
           ))}
         </ul>
+        <hr className="my-1 border-border" />
         <button
           type="button"
-          className={cn(rowClass, "mt-1 border-t border-border")}
+          className={rowClass}
           onClick={() => {
             setSwitchOpen(false);
             navigate(createDraftPath(params));
@@ -236,10 +235,6 @@ export function HeinzelHeader({
         <button type="button" className={rowClass} aria-pressed={detailsOpen} onClick={pick(onDetails)}>
           <SlidersHorizontal aria-hidden className="size-4" />
           {t("oneChat.details")}
-        </button>
-        <button type="button" className={rowClass} disabled={locked} onClick={pick(onEarlier)}>
-          <History aria-hidden className="size-4" />
-          {t("oneChat.earlier")}
         </button>
       </Menu>
       <Button

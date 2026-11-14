@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, problem, type SchemaChatAction, type SchemaChatSession, type SchemaReadSetSelection } from "@/api/client";
-import { ActionCard } from "@/chat/Conversation";
+import { ActionCard } from "@/chat/ActionCard";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 

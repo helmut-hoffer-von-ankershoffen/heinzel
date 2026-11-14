@@ -1,4 +1,4 @@
-// Which Heinzel the chat opens when no link names one (flag `one_chat`): the one you talked to last in this browser,
+// Which Heinzel the chat opens when no link names one (ADR 0157): the one you talked to last in this browser,
 // else your first Heinzel that is not retired. A retired or removed Heinzel is never the default.
 import type { SchemaSessionSummary } from "@/api/client";
 

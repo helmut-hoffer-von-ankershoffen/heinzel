@@ -1,10 +1,10 @@
-// Meet your first Heinzelmännchen (flag `one_chat`, canvas boards 17, 17b and 18): a name, the figure with its look
+// Meet your first Heinzelmännchen (ADR 0157, canvas boards 17, 17b and 18): a name, the figure with its look
 // editor (click a part, or use the list "Everything you can change"), Surprise me with Undo, and the first mission.
-// Used by the chat's first start and by the onboarding step "Your first Heinzelmännchen": one first start, not two.
+// Used by the chat's first start and by the onboarding step 7: one first start, not two.
 // The request id is kept until hz confirms, so a lost answer recovers the same Heinzel instead of making a second.
 import { useQueryClient } from "@tanstack/react-query";
 import { Shuffle, Undo2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, headTop, SHIRTS, viewBox } from "@/components/heinzel";
@@ -86,6 +86,42 @@ function summary(part: PartId, look: Look): string {
         ? (look.accessories ?? []).map((item) => t(`personal.accessory.${item}`)).join(", ")
         : t("personal.beard.none");
   }
+}
+
+/** One part of the figure or the list as a radio: which part to change is one choice (design/README.md, Choices). */
+function PartRadio({
+  id,
+  checked,
+  label,
+  onPick,
+  style,
+  className,
+  children,
+}: {
+  id: PartId;
+  checked: boolean;
+  label?: string;
+  onPick: (id: PartId) => void;
+  style?: CSSProperties;
+  className: string;
+  children?: ReactNode;
+}) {
+  return (
+    // The shared button as a radio, as the Heinzel cards are: the figure's parts hold no radio input.
+    <Button
+      type="button"
+      variant="ghost"
+      role="radio"
+      aria-checked={checked}
+      aria-label={label}
+      title={label ? partLabel(id) : undefined}
+      onClick={() => onPick(id)}
+      style={style}
+      className={cn("h-auto font-normal", className)}
+    >
+      {children}
+    </Button>
+  );
 }
 
 function Choices({ part, look, onLook }: { part: PartId; look: Look; onLook: (look: Look) => void }) {
@@ -247,21 +283,23 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
               {...appearanceLook(look)}
               className="h-full w-full"
             />
-            {PARTS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                aria-label={t("meet.change", { part: partLabel(id).toLowerCase() })}
-                aria-pressed={part === id}
-                title={partLabel(id)}
-                onClick={() => setPart(id)}
-                style={{ top: `${place[id].top}%`, height: `${place[id].height}%` }}
-                className={cn(
-                  "absolute inset-x-0 rounded-md focus-visible:outline-2 focus-visible:outline-primary",
-                  part === id ? "bg-primary/10 ring-2 ring-primary/60" : "hover:bg-primary/5",
-                )}
-              />
-            ))}
+            {/* The part to change is one choice: the figure's parts are its radios, as the list below is. */}
+            <div role="radiogroup" aria-label={t("meet.figureParts")} className="absolute inset-0">
+              {PARTS.map((id) => (
+                <PartRadio
+                  key={id}
+                  id={id}
+                  checked={part === id}
+                  label={t("meet.change", { part: partLabel(id).toLowerCase() })}
+                  onPick={setPart}
+                  style={{ top: `${place[id].top}%`, height: `${place[id].height}%` }}
+                  className={cn(
+                    "absolute inset-x-0 rounded-md focus-visible:outline-2 focus-visible:outline-primary",
+                    part === id ? "bg-primary/10 ring-2 ring-primary/60" : "hover:bg-primary/5",
+                  )}
+                />
+              ))}
+            </div>
           </div>
           <p className="max-w-44 text-center text-xs text-muted-foreground">{t("meet.figureHelp")}</p>
         </div>
@@ -297,24 +335,23 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
             <h3 id={`${group}-parts`} className="text-sm font-medium">
               {t("meet.parts")}
             </h3>
-            <ul className="flex flex-col gap-1">
+            <div role="radiogroup" aria-labelledby={`${group}-parts`} className="flex flex-col gap-1">
               {PARTS.map((id) => (
-                <li key={id}>
-                  <button
-                    type="button"
-                    aria-pressed={part === id}
-                    onClick={() => setPart(id)}
-                    className={cn(
-                      "flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3 text-sm",
-                      part === id ? "border-primary bg-primary/10" : "border-border",
-                    )}
-                  >
-                    <span>{partLabel(id)}</span>
-                    <span className="text-muted-foreground">{summary(id, look)}</span>
-                  </button>
-                </li>
+                <PartRadio
+                  key={id}
+                  id={id}
+                  checked={part === id}
+                  onPick={setPart}
+                  className={cn(
+                    "flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3 text-sm",
+                    part === id ? "border-primary bg-primary/10" : "border-border",
+                  )}
+                >
+                  <span>{partLabel(id)}</span>
+                  <span className="text-muted-foreground">{summary(id, look)}</span>
+                </PartRadio>
               ))}
-            </ul>
+            </div>
             <Choices part={part} look={look} onLook={(next) => change({ ...meeting, look: next })} />
           </section>
         </div>

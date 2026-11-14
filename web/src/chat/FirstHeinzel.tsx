@@ -1,4 +1,4 @@
-// The first start when every chat is with a Heinzel (flag `one_chat`, canvas boards 1, 17, 17b and 18): with no Heinzel
+// The first start when every chat is with a Heinzel (ADR 0157, canvas boards 1, 17, 17b and 18): with no Heinzel
 // yet the chat shows "Meet your first Heinzelmännchen": name, look, mission. The same form is step 7 of the onboarding.
 import { PanelRightClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,8 @@ export { settleFirstHeinzel };
 export function FirstHeinzel({ onCreated, onClose }: { onCreated: (sessionId: string) => void; onClose: () => void }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="chat-panel-header flex h-12 shrink-0 items-center justify-end border-b border-border px-2">
+      <div className="chat-panel-header flex h-12 shrink-0 items-center border-b border-border px-2">
+        <span className="flex-1" />
         <Button
           type="button"
           variant="ghost"

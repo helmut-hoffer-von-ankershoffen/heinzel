@@ -1,29 +1,20 @@
-// Message states under the bubble (flag `one_chat`, canvas board 7): "Not sent · Try again", "Not answered · Try
+// Message states under the bubble (ADR 0157, canvas board 7): "Not sent · Try again", "Not answered · Try
 // again" and "Queued" stand under the person's own message; the composer has no "Retry the same message" any more, and
 // an uncertain turn never gets a plain retry.
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { base } from "@/test/chat";
-import { config } from "@/test/fixtures";
 import { mockApi, renderAt } from "@/test/render";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const at = "2026-11-14T09:00:00Z";
-const flagged = {
-  ...config,
-  settings: [
-    ...config.settings,
-    { section: "hz", key: "features", value: ["one_chat"], description: "", env: "HZ_FEATURES" },
-  ],
-};
 
 type Message = { id: string; seq: number; role: string; text: string; status?: string };
 
 function mockHelmi(messages: Message[], extra: Record<string, unknown> = {}) {
   return mockApi({
     ...base,
-    "/api/system/config/show": flagged,
     "/api/heinzel/sessions": {
       sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: at }],
     },
