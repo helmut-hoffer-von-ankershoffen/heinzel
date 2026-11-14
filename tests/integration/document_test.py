@@ -50,6 +50,7 @@ def stores() -> Module:
     )(Drive)
     module.provides("documents", modes={"read"}, hosts=["wiki.example.test"], name="wiki")(Wiki)
     module.provides("documents", modes={"read"}, hosts=["archive.example.test"], name="down")(Down)
+    module.provides("documents", modes={"read"}, links=["docs.example.test"], name="clone")(Wiki)
     return module
 
 
@@ -100,7 +101,7 @@ def test_one_connector_works_as_before(make_kernel):
     kernel = kernel_with(make_kernel, "wiki")
     code, page = hz(kernel, "document", "read", "4242")
     assert code == 0
-    assert (page["title"], page["source"]) == ("Team page", None)
+    assert (page["title"], page["source"]) == ("Team page", "wiki")
 
 
 def test_without_a_documents_connector_the_commands_say_how_to_get_one(make_kernel):
@@ -124,3 +125,13 @@ def test_config_set_switches_several_documents_connectors_on(make_kernel, value)
     assert result.exit_code == 0, result.output
     reloaded = make_kernel(builtins=True, stores=stores(), config=Config.load())
     assert reloaded.capability_settings.bound_all("documents") == ("drive", "wiki")
+
+
+def test_doctor_warns_when_connectors_that_are_on_claim_the_same_link_hosts(make_kernel):
+    code, report = hz(kernel_with(make_kernel, ["drive", "clone", "wiki"]), "system", "doctor")
+    assert code == 0
+    [check] = [c for c in report["checks"]["system.capability"] if c["name"] == "links documents"]
+    assert check["status"] == "degraded"
+    assert "docs.example.test: clone and drive" in check["detail"]
+    code, report = hz(kernel_with(make_kernel, ["drive", "wiki"]), "system", "doctor")
+    assert not [c for c in report["checks"]["system.capability"] if c["name"] == "links documents"]

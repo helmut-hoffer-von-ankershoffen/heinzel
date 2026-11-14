@@ -94,6 +94,33 @@ class Plain:
         return Document(ref=ref, title=f"plain:{ref}", text="")
 
 
+class Twin(Drive):
+    """A test-only drive-like adapter that gives out the same ids as Drive, on its own host, and writes."""
+
+    def read(self, ref: str) -> Document:
+        return Document(ref=ref, title=f"twin:{ref}", text="", source="drive")
+
+
+class Spoofing:
+    """A test-only adapter that claims another source for what it returns."""
+
+    def read(self, ref: str) -> Document:
+        return Document(ref=ref, title="spoof", text="", source="drive")
+
+    def search(self, query: str, limit: int) -> list[DocumentHit]:
+        return [DocumentHit(ref="s1", title="spoof", source="drive")]
+
+
+class Malformed:
+    """A test-only adapter whose search answers in the wrong shape."""
+
+    def read(self, ref: str) -> Document:
+        return Document(ref=ref, title="", text="")
+
+    def search(self, query: str, limit: int) -> object:
+        return "not a list of hits"
+
+
 class WikiSettings(ModuleSettings):
     site: str = "https://wiki.example.test"
 
@@ -117,6 +144,9 @@ def adapters() -> Module:
     module.provides("documents", modes={"read"}, hosts=["crash.example.test"], name="crashing")(Crashing)
     module.provides("documents", modes={"read"}, hosts=["hang.example.test"], name="hanging")(Hanging)
     module.provides("documents", modes={"read"}, hosts=["drive.example.test"], name="plain")(Plain)
+    module.provides("documents", modes={"read", "write"}, links=["twin.example.test"], name="twin")(Twin)
+    module.provides("documents", modes={"read"}, links=["spoof.example.test"], name="spoofing")(Spoofing)
+    module.provides("documents", modes={"read"}, links=["bad.example.test"], name="malformed")(Malformed)
     return module
 
 
@@ -268,7 +298,8 @@ def test_one_bound_adapter_behaves_as_before(make_kernel):
     kernel = make(make_kernel, "wiki")
     assert kernel._capabilities.bindings("documents") == (("wiki",), "configured")
     document = call(kernel, "show", ref="anything")
-    assert (document.title, document.source) == ("wiki:anything", None)
+    # The core labels the source, also for one connector alone (ADR 0161).
+    assert (document.title, document.source) == ("wiki:anything", "wiki")
     assert [hit.source for hit in call(kernel, "find", query="q")] == ["wiki", "wiki"]
 
 
@@ -361,4 +392,111 @@ def test_only_the_newest_ids_are_remembered(two, monkeypatch):
     two._capabilities.remember("documents", ["a", "b", None, "c"], "wiki")
     assert list(two._capabilities._issued) == [("documents", "b"), ("documents", "c")]
     two._capabilities.remember("documents", ["b"], "drive")
-    assert two._capabilities._issued == {("documents", "c"): "wiki", ("documents", "b"): "drive"}
+    assert two._capabilities._issued == {("documents", "c"): {"wiki"}, ("documents", "b"): {"wiki", "drive"}}
+
+
+def test_an_id_two_connectors_gave_out_is_refused_for_reads_and_writes(make_kernel):
+    """Review R1: drive and twin both give out d1; naming d1 alone never goes to the newest."""
+    kernel = make(make_kernel, ["drive", "twin"])
+    call(kernel, "find", query="plan")
+    for name in ("show", "publish"):
+        with pytest.raises(HeinzelError, match=r"'d1' came from both drive and twin: .* e\.g\. drive:d1"):
+            call(kernel, name, ref="d1")
+    assert call(kernel, "show", ref="twin:d1").source == "twin"
+    assert kernel._capabilities._instances["documents", "twin"].written == []
+    assert call(kernel, "publish", ref="twin:d1") == "d1"
+    assert kernel._capabilities._instances["documents", "twin"].written == ["d1"]
+    assert kernel._capabilities._instances["documents", "drive"].written == []
+
+
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        ("drive:https://evil.example/x", "drive doesn't open links on evil.example"),
+        ("wiki:https://drive.example.test/d/1", "wiki doesn't open links on drive.example.test"),
+    ],
+)
+def test_naming_a_connector_never_overrides_the_host_of_a_link(two, ref, message):
+    """Review R2: the prefix only picks among connectors for an id; a link still needs a matching host."""
+    for name in ("show", "publish"):
+        with pytest.raises(HeinzelError, match=message):
+            call(two, name, ref=ref)
+    assert call(two, "show", ref="drive:https://drive.example.test/d/1").source == "drive"
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "https://evil.example\\@drive.example.test/x",
+        "https://evil.example%5C@drive.example.test/x",
+        "https://drive.example.test@evil.example/x",
+        "https://user@drive.example.test/x",
+        "https://drive.example.test\\x",
+        "https:drive.example.test/x",
+        "https://drive.example.test/x\nmore",
+        "https://drive.example.test/a b",
+    ],
+)
+def test_links_a_browser_reads_differently_are_refused(two, ref):
+    """Review R3: user information, backslashes, escapes and whitespace never route by a host a browser won't use."""
+    with pytest.raises(HeinzelError, match="not a link that can be opened safely"):
+        call(two, "show", ref=ref)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "file://drive.example.test/etc/passwd",
+        "javascript://drive.example.test/%0aalert(1)",
+        "ftp://drive.example.test/x",
+    ],
+)
+def test_only_http_and_https_links_are_routed(two, ref):
+    with pytest.raises(HeinzelError, match="Only http and https links open documents"):
+        call(two, "show", ref=ref)
+
+
+@pytest.mark.parametrize(
+    "ref", ["https://x.drive.example.test/d", "https://drive.example.test./d", "https://xn--drive-9ua.example.test/d"]
+)
+def test_lookalike_hosts_route_nowhere(two, ref):
+    with pytest.raises(
+        HeinzelError, match=r"(No documents connector that is on opens links|not a link that can be opened)"
+    ):
+        call(two, "show", ref=ref)
+
+
+def test_surrounding_whitespace_is_stripped_as_a_browser_does(two):
+    document = call(two, "show", ref="  https://drive.example.test/d/1 ")
+    assert (document.ref, document.source) == ("https://drive.example.test/d/1", "drive")
+
+
+def test_a_hung_connector_never_piles_up_threads(make_kernel):
+    """Review R4: twenty searches against a hung connector keep its threads at the cap; the rest say it is busy."""
+    kernel = make(make_kernel, ["hanging", "wiki"])
+    kernel._capabilities.fan_out_timeout = 0.05
+    RELEASE.clear()
+    before = threading.active_count()
+    try:
+        for _ in range(20):
+            assert [hit.source for hit in call(kernel, "find", query="plan")] == ["wiki", "wiki"]
+        assert threading.active_count() - before <= kernel._capabilities.fan_out_cap
+        assert failures(kernel) == [("hanging", "still busy with earlier requests")]
+    finally:
+        RELEASE.set()
+
+
+def test_the_core_sets_the_source_whatever_the_connector_claims(make_kernel):
+    """Review R5: a connector can't label its results as another's, alone or with others."""
+    alone = make(make_kernel, "spoofing")
+    assert call(alone, "show", ref="x").source == "spoofing"
+    assert [hit.source for hit in call(alone, "find", query="q")] == ["spoofing"]
+    several = make(make_kernel, ["spoofing", "wiki"])
+    assert call(several, "show", ref="https://spoof.example.test/1").source == "spoofing"
+    assert [hit.source for hit in call(several, "find", query="q")] == ["spoofing", "wiki", "wiki"]
+
+
+def test_a_connector_answering_in_the_wrong_shape_is_reported_not_fatal(make_kernel):
+    kernel = make(make_kernel, ["malformed", "wiki"])
+    assert [hit.source for hit in call(kernel, "find", query="q")] == ["wiki", "wiki"]
+    assert failures(kernel) == [("malformed", "answered in a shape search doesn't return")]

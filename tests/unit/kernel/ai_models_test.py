@@ -327,14 +327,15 @@ class Docs:
 
 def test_declared_gaps_are_methods_of_the_capability_only():
     spec = CAPABILITIES["documents"]
-    assert declared_unsupported(Docs, spec) == {"replace_section"}
-    assert declared_unsupported(Docs(), spec) == {"replace_section"}
+    # `search` is optional (ADR 0161): an adapter without it doesn't support it, declared or not.
+    assert declared_unsupported(Docs, spec) == {"replace_section", "search"}
+    assert declared_unsupported(Docs(), spec) == {"replace_section", "search"}
 
     class Odd:
         unsupported = "replace_section"
 
-    assert declared_unsupported(Odd, spec) == frozenset()
-    assert declared_unsupported(object(), spec) == frozenset()
+    assert declared_unsupported(Odd, spec) == {"search"}
+    assert declared_unsupported(object(), spec) == {"search"}
 
 
 def test_a_declared_gap_needs_no_method_and_its_handle_says_not_supported(make_kernel):

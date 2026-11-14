@@ -15,14 +15,15 @@ import contextvars
 import inspect
 import itertools
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast, get_type_hints
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
 from heinzel.kernel._capabilities import (
     CAPABILITIES,
@@ -373,11 +374,40 @@ def _labelled(value: object, source: str) -> object:
     return value
 
 
-def _gather(calls: Mapping[str, Callable[[], object]], timeout: float) -> list[tuple[str, object | BaseException]]:
+class _Busy(Exception):  # noqa: N818 - an outcome, not an error anyone raises
+    """An adapter still working on as many earlier calls as it may have at once."""
+
+
+class _InFlight:
+    """How many fan-out calls each adapter has running, capped, so a stuck adapter can't pile up threads (ADR 0161)."""
+
+    def __init__(self, cap: int) -> None:
+        self._cap = cap
+        self._running: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def take(self, name: str) -> bool:
+        """Count one more call of `name`, unless it already has `cap` running."""
+        with self._lock:
+            if self._running.get(name, 0) >= self._cap:
+                return False
+            self._running[name] = self._running.get(name, 0) + 1
+            return True
+
+    def give(self, name: str) -> None:
+        """Count one call of `name` less."""
+        with self._lock:
+            self._running[name] -= 1
+
+
+def _gather(
+    calls: Mapping[str, Callable[[], object]], timeout: float, in_flight: _InFlight
+) -> list[tuple[str, object | BaseException]]:
     """Run `calls` at once, each in a daemon thread with the caller's context; what each returned or raised, in order.
 
     One that hasn't finished after `timeout` seconds yields a `TimeoutError`; its thread is left behind, as a daemon,
-    so a hanging adapter neither holds the caller nor keeps the process alive.
+    so a hanging adapter neither holds the caller nor keeps the process alive. An adapter with as many calls still
+    running as `in_flight` allows gets no new thread and yields `_Busy`: threads stay bounded per adapter.
     """
     outcomes: dict[str, object | BaseException] = {}
     done = threading.Condition()
@@ -387,11 +417,16 @@ def _gather(calls: Mapping[str, Callable[[], object]], timeout: float) -> list[t
             outcome: object | BaseException = call()
         except BaseException as exc:  # noqa: BLE001 - reported per adapter, never raised into the caller
             outcome = exc
+        finally:
+            in_flight.give(name)
         with done:
             outcomes[name] = outcome
             done.notify_all()
 
     for name, call in calls.items():
+        if not in_flight.take(name):
+            outcomes[name] = _Busy()
+            continue
         context = contextvars.copy_context()
         threading.Thread(target=context.run, args=(run, name, call), name=f"fan-out-{name}", daemon=True).start()
     deadline = time.monotonic() + timeout
@@ -407,6 +442,10 @@ def _reason(name: str, outcome: BaseException, method: str, timeout: float) -> s
         return f"can't {method.replace('_', ' ')}"
     if isinstance(outcome, TimeoutError):
         return f"didn't answer within {timeout:g} s"
+    if isinstance(outcome, _Busy):
+        return "still busy with earlier requests"
+    if isinstance(outcome, _Malformed):
+        return f"answered in a shape {method.replace('_', ' ')} doesn't return"
     if isinstance(outcome, HeinzelError):
         return clean_text(str(outcome))[:_REASON]
     # Never the message of an unexpected error: it may repeat a URL with a token in it, as `hosts_of` says.
@@ -420,6 +459,19 @@ def _interleaved(results: list[tuple[str, list[object]]]) -> list[object]:
     for row in itertools.zip_longest(*(items for _, items in results), fillvalue=_GAP):
         merged.extend(item for item in row if item is not _GAP)
     return merged
+
+
+class _Malformed(Exception):  # noqa: N818 - an outcome, not an error anyone raises
+    """An adapter answered a fan-out read with something its protocol method doesn't return."""
+
+
+def _checked(capability: Capability, method: str, outcome: object) -> list[object] | _Malformed:
+    """`outcome` as the protocol method's list, validated item by item; `_Malformed` if it isn't one (ADR 0161)."""
+    hint: Any = get_type_hints(getattr(capability.protocol, method)).get("return", list[object])
+    try:
+        return list(cast("Iterable[object]", TypeAdapter(hint).validate_python(outcome, strict=True)))
+    except (ValidationError, TypeError):
+        return _Malformed()
 
 
 class _RoutedHandle:
@@ -484,11 +536,12 @@ class _RoutedHandle:
         calls = {name: partial(getattr(handle, method), *args, **kwargs) for name, (_, handle) in self._handles.items()}
         results: list[tuple[str, list[object]]] = []
         failures: list[SourceFailure] = []
-        for name, outcome in _gather(calls, timeout):
-            if isinstance(outcome, BaseException):
-                failures.append(SourceFailure(source=name, reason=_reason(name, outcome, method, timeout)))
+        for name, outcome in _gather(calls, timeout, self._capabilities.in_flight):
+            checked = outcome if isinstance(outcome, BaseException) else _checked(capability, method, outcome)
+            if isinstance(checked, BaseException):
+                failures.append(SourceFailure(source=name, reason=_reason(name, checked, method, timeout)))
                 continue
-            items = list(cast("Iterable[object]", outcome))
+            items = [_labelled(item, name) for item in checked]
             self._capabilities.remember(capability.name, (ref for item in items for ref in _refs(item)), name)
             results.append((name, items))
         if not results:
@@ -501,6 +554,39 @@ class _RoutedHandle:
         if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0:
             merged = merged[:limit]
         return Gathered(merged, failures)
+
+
+_SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
+_WEB = frozenset({"http", "https"})
+
+
+def _link_host(ref: str, capability: str) -> str | None:
+    """The host of `ref` if it is a link, None if it is an id (ADR 0161).
+
+    Strict where browsers and Python's parser disagree: only `http` and `https`, written `scheme://host`, with no user
+    information, no backslash, no percent escape or whitespace in the host part and no tab or newline anywhere; such a
+    link is refused rather than routed by a host a browser wouldn't open.
+
+    Raises:
+        HeinzelError: If `ref` has another scheme, or is a link of a form that can't be routed safely.
+    """
+    scheme = _SCHEME.match(ref)
+    if scheme is None:
+        return None
+    if scheme.group(1).lower() not in _WEB:
+        msg = (
+            f"Only http and https links open {capability}, not {scheme.group(1).lower()}: ones; for an id with a "
+            f"colon, name the connector first, e.g. <connector>:{clean_text(ref)[:_SHOWN]}."
+        )
+        raise HeinzelError(msg)
+    after = ref[scheme.end() :]
+    authority = after[2:].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0] if after.startswith("//") else ""
+    host = host_of(f"https://{authority}") if authority else None
+    unsafe = any(c in authority for c in "@\\%") or any(c.isspace() for c in ref) or "\\" in ref
+    if host is None or unsafe:
+        msg = f"{clean_text(ref)[:_SHOWN]!r} is not a link that can be opened safely: pass it as https://host/path."
+        raise HeinzelError(msg)
+    return host
 
 
 def _refs(value: object) -> tuple[str, ...]:
@@ -518,9 +604,12 @@ def _wrap(
             # Declared unsupported (ADR 0159), or an optional method it leaves out (ADR 0161).
             raise NotSupportedError(capability.name, name)
         result = method(*args, **kwargs)
-        if source is not None and name in capability.fan_out:
+        if source is None or not capability.multiple:
+            return result
+        # The core says where a result came from, never the adapter (ADR 0161): one serving alone is labelled too.
+        if name in capability.fan_out:
             return Gathered(_labelled(item, source) for item in cast("Iterable[object]", result))
-        return result
+        return _labelled(result, source)
 
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
@@ -548,6 +637,8 @@ class Capabilities:
 
     fan_out_timeout: float = 20.0
     """Seconds each adapter has to answer a read asked of several at once; one that takes longer is reported."""
+    fan_out_cap: int = 4
+    """Fan-out calls one adapter may have running at once; more are reported busy, so threads stay bounded."""
 
     def __init__(  # noqa: PLR0913, PLR0917 - everything the kernel registered
         self,
@@ -587,9 +678,10 @@ class Capabilities:
         # By adapter, not by name: two adapters may share a name (an ambiguous binding) and differ in hosts.
         self._hosts: dict[Adapter, tuple[tuple[str, ...], str | None]] = {}
         self._links: dict[tuple[Adapter, str], tuple[str, ...]] = {}
-        # Which adapter gave out an id, newest last, so an id without a link goes back to it (ADR 0161).
-        self._issued: dict[tuple[str, str], str] = {}
+        # Which adapters gave out an id, newest last, so an id without a link goes back to it (ADR 0161).
+        self._issued: dict[tuple[str, str], frozenset[str]] = {}
         self._issuing = threading.Lock()  # the web head routes from several threads at once
+        self.in_flight = _InFlight(self.fan_out_cap)
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
@@ -727,60 +819,66 @@ class Capabilities:
         return serving
 
     def remember(self, capability: str, refs: Iterable[str | None], source: str) -> None:
-        """Note that `source` gave out `refs`, so a later call naming one without a link goes back to it."""
+        """Note that `source` gave out `refs`, so a later call naming one without a link goes back to it.
+
+        An id two adapters gave out is remembered with both, so naming it alone is refused, never guessed.
+        """
         with self._issuing:
             for ref in refs:
                 if ref:
-                    self._issued.pop((capability, ref), None)
-                    self._issued[capability, ref] = source
+                    sources = self._issued.pop((capability, ref), frozenset[str]())
+                    self._issued[capability, ref] = sources | {source}
             while len(self._issued) > _ISSUED:
                 del self._issued[next(iter(self._issued))]
 
     def pick(self, capability: str, ref: str, names: Iterable[str]) -> tuple[str, str]:
         """The adapter of `names` that `ref` belongs to, and `ref` as that adapter takes it (ADR 0161).
 
-        `<adapter>:<id>` names the adapter; a link goes to the one whose links match its host; an id another call
-        returned goes back to the adapter that returned it.
+        A link (http or https only, read as a browser reads it) goes to the one adapter whose links hold its host;
+        `<adapter>:<id>` names the adapter for an id, and for a link only if that adapter opens its host; an id goes
+        back to the one adapter that gave it out.
 
         Raises:
-            HeinzelError: If none or several of `names` could hold it; the message names them and what to pass.
+            HeinzelError: If none or several of `names` could hold it, or it is a link no adapter may open; the
+                message names the choices and what to pass.
         """
         names = tuple(names)
-        head, colon, rest = ref.partition(":")
-        if colon and head in names and rest and not rest.startswith("//"):
-            return head, rest
-        shown = clean_text(ref)[:_SHOWN]
-        if "://" in ref:
-            host = host_of(ref)
-            matches = [
-                adapter.let.adapter
-                for name in names
-                for adapter in self.adapters.get((capability, name), [])[:1]
-                if host is not None and host in self.links_of(adapter)
-            ]
+        text = ref.strip()
+        head, colon, rest = text.partition(":")
+        named = head if colon and head in names and rest else None
+        target = rest if named else text
+        host = _link_host(target, capability)
+        if host is not None:
+            adapters = [a for name in names for a in self.adapters.get((capability, name), [])[:1]]
+            matches = [a.let.adapter for a in adapters if host in self.links_of(a)]
+            if named is not None:
+                if named in matches:
+                    return named, target
+                msg = f"{named} doesn't open links on {host}, so it can't be named for one; pass the link alone."
+                raise HeinzelError(msg)
             if len(matches) == 1:
-                return matches[0], ref
+                return matches[0], target
             if matches:
                 msg = (
                     f"Links on {host} could belong to {' or '.join(matches)}: their {capability} connectors both open "
-                    f"them. Name one, e.g. {matches[0]}:<id>."
+                    f"them. Switch one of them off, or fix its declared links."
                 )
                 raise HeinzelError(msg)
             known = "; ".join(
-                f"{adapter.let.adapter} opens {', '.join(self.links_of(adapter)) or 'no declared hosts'}"
-                for name in names
-                for adapter in self.adapters.get((capability, name), [])[:1]
+                f"{a.let.adapter} opens {', '.join(self.links_of(a)) or 'no declared hosts'}" for a in adapters
             )
-            msg = f"No {capability} connector that is on opens links on {host or 'that address'} ({known})."
+            msg = f"No {capability} connector that is on opens links on {host} ({known})."
             raise HeinzelError(msg)
+        if named is not None:
+            return named, target
+        shown = clean_text(text)[:_SHOWN]
         with self._issuing:
-            owner = self._issued.get((capability, ref))
-        if owner is not None and owner in names:
-            return owner, ref
-        msg = (
-            f"{shown!r} could be in {' or '.join(names)}: pass its link, or name the connector, "
-            f"e.g. {names[0]}:{shown}."
-        )
+            owners = sorted(self._issued.get((capability, text), frozenset[str]()) & set(names))
+        if len(owners) == 1:
+            return owners[0], text
+        choices = owners or list(names)
+        where = f"came from both {' and '.join(choices)}" if owners else f"could be in {' or '.join(choices)}"
+        msg = f"{shown!r} {where}: pass its link, or name the connector, e.g. {choices[0]}:{shown}."
         raise HeinzelError(msg)
 
     def route(self, capability: str, method: str, arguments: Mapping[str, object]) -> str | None:

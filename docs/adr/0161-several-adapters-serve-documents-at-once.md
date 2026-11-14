@@ -48,7 +48,8 @@ Chosen option 3.
 `["none"]`, binds nothing; `none` can't be listed with adapters.
 
 Settings shows a switch per installed documents connector instead of one choice, says which one is the default, and
-counts every connector that is on as in use. Only capabilities with `Capability.multiple` take a list. The others refuse one, as before.
+counts every connector that is on as in use. Only capabilities with `Capability.multiple` take a list. The others
+refuse one, as before.
 
 **Declarations.** `Capability` gains:
 
@@ -56,8 +57,8 @@ counts every connector that is on as in use. Only capabilities with `Capability.
 - `routes`: methods that act on one item, mapped to the parameter that names it. For documents, `read` and
   `replace_section` route on `ref`.
 - `fan_out`: read methods that return a list and are asked of every adapter. For documents, `search`.
-- `optional`: methods an adapter may leave out, the field [ADR 0160](0160-chat-is-an-extra-place-for-notices-and-questions.md)
-  added. For documents, `search`.
+- `optional`: methods an adapter may leave out, the field
+  [ADR 0160](0160-chat-is-an-extra-place-for-notices-and-questions.md) added. For documents, `search`.
 
 `module.provides(..., links=...)` declares the **hosts of the links** an adapter opens, such as `docs.google.com`, as
 a static list or as a function of the module's settings, like `hosts=`. Declared `hosts` are where an adapter sends
@@ -72,32 +73,48 @@ when asked alone, and is reported as "can't search" in a fan-out.
 
 **Routing.** With more than one adapter bound and no pinned requirement, a requester's handle routes each call:
 
-1. `<adapter>:<id>`, where `<adapter>` is one of the bound adapters, goes to that adapter, which gets `<id>`.
-2. A URL goes to the one adapter whose links contain its host, matched exactly. If none or several match, Core refuses
-   and names each adapter with the hosts it opens.
-3. An id goes to the adapter that returned it earlier in this process, as a `ref` or `url` of a result. The last 4096
-   are remembered.
+1. A link goes to the one adapter whose links contain its host, matched exactly. If none or several match, Core
+   refuses and names each adapter with the hosts it opens. Links are read strictly, where browsers and Python's
+   parser disagree: only `http` and `https` written `scheme://host`; no user information, backslash, percent escape
+   or whitespace in the host part, and no tab or newline anywhere. Anything else is refused, never routed. Whitespace
+   around the whole reference is stripped, as a browser does.
+2. `<adapter>:<id>`, where `<adapter>` is one of the bound adapters, goes to that adapter, which gets `<id>`. For a
+   link, the prefix only confirms: the named adapter must open its host, or Core refuses. The prefix never overrides
+   a host.
+3. An id goes to the adapter that returned it earlier in this process, as a `ref` or `url` of a result. Core remembers
+   every adapter that gave an id out, for the last 4096 ids. An id more than one adapter gave out is refused, naming
+   them: it never goes to whichever answered last. This memory is per process and shared by every requester. It is
+   lost on restart, so a bare id then needs the prefix again, and a chat grant on one fails closed.
 4. Otherwise Core refuses: "'4242' could be in google or atlassian: pass its link, or name the connector, e.g.
    google:4242."
 
 A write routes the same way. If the owning adapter can't write, Core says so, naming the adapter. A method that names
 no item, such as a future `create`, goes to the default.
 
-**Fan-out.** Core asks each adapter at once, each in its own daemon thread with the caller's context. Every adapter
-has `Capabilities.fan_out_timeout` (20 s). Results are merged in turns, binding order first, which is stable and fair,
-and are cut to `limit`. The result is a `Gathered` list, still a plain list, whose `failures` name each adapter that
-failed and why:
+`hz system doctor` warns when connectors that are on declare the same link host: such links are refused, so one
+connector claiming another's host breaks its links.
+
+**Fan-out.** Core asks each adapter at once, each in a daemon thread with the caller's context. Every adapter has
+`Capabilities.fan_out_timeout` (20 s). An adapter may have at most `fan_out_cap` (4) calls running; a hung one gets no
+new thread and is reported busy, so threads stay bounded.
+
+Each answer is validated against the method's return type, and one in the wrong shape is that adapter's failure.
+Results are merged in turns, binding order first, which is stable and fair, and are cut to `limit`. The result is a
+`Gathered` list, still a plain list, whose `failures` name each adapter that failed and why:
 
 - a `HeinzelError`'s own message;
 - the type only for any other error, since its message may hold a token;
-- "didn't answer within 20 s";
+- "didn't answer within 20 s", or "still busy with earlier requests";
+- "answered in a shape search doesn't return";
 - "can't search".
 
-Only when every adapter fails does the call fail, with every reason. A hanging adapter's thread is left behind as a
-daemon, so it holds neither the caller nor the process.
+Only when every adapter fails does the call fail, with every reason.
 
-**One adapter.** With one bound, the handle is today's `_Handle`. The only change: a fan-out method's results are
-labelled with their `source` and come back as `Gathered`.
+**Labels.** Core sets `source` on every `Document` and `DocumentHit` an adapter returns, also when one adapter serves
+alone, and never keeps what the adapter put there.
+
+**One adapter.** With one bound, the handle is today's `_Handle`, and it routes nothing. Its results carry `source`,
+and a fan-out method's results come back as `Gathered`.
 
 **Features that use documents:**
 
@@ -137,6 +154,8 @@ once the need is concrete.
 - Bad: an id without a link is routed only within one process. The CLI asks again in a new process, and the error
   says how to name the connector.
 - Bad: chat drafts and captured writes still use the default connector only.
+- Bad: a configuration with a list can't be read by an older hz. Single-name configurations load unchanged, so
+  the release notes say that switching on a second documents connector is one-way.
 - Neutral: the public API gains `DocumentHit`, `Gathered` and `SourceFailure`, and `Document.source`
   ([ADR 0026](0026-plugin-api-versioned-with-semver.md)).
 

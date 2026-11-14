@@ -113,6 +113,7 @@ class CapabilityService:
                 )
             )
         checks.extend(self._default_checks())
+        checks.extend(self._overlap_checks())
         uses = self.uses()
         checks.extend(self._host_checks(uses))
         for use in uses:
@@ -160,6 +161,35 @@ class CapabilityService:
                 command=self.capabilities.command(capability),
             ),
         )
+
+    def _overlap_checks(self) -> list[Check]:
+        """A warning per capability whose switched-on adapters open links on the same host (ADR 0161).
+
+        Such links are refused, never misrouted, but a connector that claims another's host breaks its links.
+        """
+        checks: list[Check] = []
+        for spec in sorted(CAPABILITIES.values(), key=lambda spec: spec.name):
+            names = self.capabilities.bindings(spec.name)[0]
+            if len(names) < 2:  # noqa: PLR2004 - several
+                continue
+            claimed: dict[str, list[str]] = {}
+            for adapter in self.capabilities.adapters:
+                if adapter.let.capability == spec.name and adapter.let.adapter in names:
+                    for host in self.capabilities.links(adapter):
+                        claimed.setdefault(host, []).append(adapter.let.adapter)
+            shared = {host: owners for host, owners in sorted(claimed.items()) if len(owners) > 1}
+            if shared:
+                where = "; ".join(f"{host}: {' and '.join(owners)}" for host, owners in shared.items())
+                checks.append(
+                    Check(
+                        name=f"links {spec.name}",
+                        status=Status.DEGRADED,
+                        detail=f"{spec.name} connectors that are on open links on the same hosts ({where}), "
+                        "so those links are refused",
+                        fix=f"Switch one of them off in [capabilities] {spec.name}, or ask its plugin to fix its links",
+                    )
+                )
+        return checks
 
     def _default_checks(self) -> list[Check]:
         """A check per capability served by the core's default while another module's adapter could serve it.
