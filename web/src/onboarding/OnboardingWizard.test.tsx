@@ -334,3 +334,29 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
     expect(await within(dialog).findByText(/Installed, but not running yet/)).toBeInTheDocument();
   });
 });
+
+describe("Onboarding step 7 with one_chat", { timeout: 20_000 }, () => {
+  it("is Meet your first Heinzelmännchen, one first start with the chat's form", async () => {
+    mockApi({
+      ...answers,
+      "/api/org/show": newcomer,
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          ...config.settings,
+          { section: "hz", key: "features", value: ["one_chat"], description: "", env: "HZ_FEATURES" },
+        ],
+      },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    const steps = within(dialog).getByRole("navigation", { name: "Setup steps" });
+    await user.click(within(steps).getByRole("button", { name: /Your first Heinzelmännchen/ }));
+    expect(await within(dialog).findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("What do you call it?")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Surprise me" })).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Or in one sentence")).not.toBeInTheDocument();
+  });
+});

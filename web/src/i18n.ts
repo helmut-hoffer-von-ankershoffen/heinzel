@@ -23,7 +23,6 @@ const en = {
   "oneChat.createError": "Could not confirm your Heinzel. Start again to recover the same one.",
   "oneChat.loadError": "Your Heinzels could not be loaded.",
   "oneChat.retry": "Try again",
-  "meet.name": "Its name",
   "meet.nameHelp": "A suggestion: type your own, or let Surprise me pick.",
   "meet.look": "Its look",
   "meet.figure": "{name}, as it looks now",

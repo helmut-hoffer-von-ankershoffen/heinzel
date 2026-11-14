@@ -251,7 +251,7 @@ export function MeetHeinzel({ onCreated }: { onCreated: (sessionId: string) => v
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-1">
             <label htmlFor={field} className="text-sm font-medium">
-              {t("meet.name")}
+              {t("oneChat.nameLabel")}
             </label>
             <input
               id={field}

@@ -70,7 +70,8 @@ describe("one kind of chat", () => {
     renderAt("/doctor");
     const chat = await panel();
     expect(await chat.findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
-    await expectAccessible(inside(chat.getByRole("heading", { name: "Meet your first Heinzelmännchen" }), "form"));
+    await expectAccessible(inside(chat.getByLabelText("What do you call it?"), "[data-pane], form"));
+    await user.clear(chat.getByLabelText("What do you call it?"));
     await user.type(chat.getByLabelText("What do you call it?"), "Helmi");
     await user.click(chat.getByRole("button", { name: "Start" }));
     expect(await chat.findByRole("button", { name: "Helmi. Switch Heinzel" })).toBeInTheDocument();
@@ -94,7 +95,8 @@ describe("one kind of chat", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const chat = await panel();
-    await user.type(await chat.findByLabelText("What do you call it?"), "Helmi");
+    await user.clear(await chat.findByLabelText("What do you call it?"));
+    await user.type(chat.getByLabelText("What do you call it?"), "Helmi");
     await user.click(chat.getByRole("button", { name: "Start" }));
     expect(await chat.findByRole("alert")).toHaveTextContent("Start again to recover the same one");
     await user.click(chat.getByRole("button", { name: "Start" }));
