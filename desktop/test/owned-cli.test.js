@@ -29,6 +29,17 @@ function makeChild() {
   return child;
 }
 
+test("a secret for the service goes into the service's environment only", () => {
+  const child = makeChild();
+  let spawned;
+  const owned = createOwnedCli({ spawn: (...args) => { spawned = args; return child; }, env: { HEINZEL_UI_BROWSER_BRIDGE: "b".repeat(43) } });
+  void owned.start().catch(() => {});
+  assert.equal(spawned[2].env.HEINZEL_UI_BROWSER_BRIDGE, "b".repeat(43));
+  assert.equal(spawned[2].env.PATH, process.env.PATH);
+  assert.equal(process.env.HEINZEL_UI_BROWSER_BRIDGE, undefined);
+  assert(!spawned[1].join(" ").includes("b".repeat(43)));
+});
+
 test("launches the installed CLI with fixed arguments and returns its verified URL", async () => {
   const child = makeChild();
   let spawned;

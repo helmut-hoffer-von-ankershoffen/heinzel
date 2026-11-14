@@ -310,3 +310,34 @@ it("a refused link without an external way out has only Dismiss", async () => {
   expect(screen.queryByRole("button", { name: "Open this link in your browser" })).toBeNull();
   expect(screen.getByRole("button", { name: "Dismiss" })).toBeVisible();
 });
+
+it("an agent's tab shows the agent's name and does not use up the person's tabs", async () => {
+  const person = Array.from({ length: 7 }, (_, index) => ({
+    id: `t-0000001${index}`,
+    owner: "person",
+    selected: index === 0,
+    status: "ready",
+    url: `https://p${index}.example.com/`,
+    title: `Page ${index}`,
+  }));
+  const agent = {
+    id: "t-000000aa",
+    owner: "agent:chat-1",
+    agent: { name: "Ada", kind: "heinzel" },
+    selected: false,
+    status: "ready",
+    url: "https://shop.example.com/",
+    title: "Shop",
+  };
+  const browser = vi.fn(async () => ({
+    status: "ready",
+    url: "https://p0.example.com/",
+    tabs: [...person, agent],
+    selected: "t-00000010",
+  }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(8));
+  expect(screen.getByRole("tab", { name: "Ada: Shop" })).toHaveAttribute("aria-selected", "false");
+  expect(screen.getByRole("button", { name: "New tab" })).toBeEnabled();
+});

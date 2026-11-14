@@ -42,6 +42,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`ui`](#ui) | Open the web workspace or manage its optional persistent service. |
+| [`ui.browser`](#uibrowser) | Let a Heinzel or an outside agent use its own tabs in the desktop app's browser. |
 
 ## `ai`
 
@@ -619,3 +620,7 @@ Open the web workspace or manage its optional persistent service.
 | Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
 | Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
 | Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |
+
+## `ui.browser`
+
+Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.

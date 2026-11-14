@@ -8,14 +8,27 @@ export const BROWSER_PARTITION = "persist:hz-browser";
 // Device APIs a site may ask for; the person then picks the device in a chooser. Camera, microphone, screen stay refused.
 const DEVICE_PERMISSIONS = new Set(["hid", "serial", "usb"]);
 const MAX_DEVICES = 8;
-/** The person's own tabs per window. Agent tabs (a later head) count against their own limits, tagged by `owner`. */
+/** The person's own tabs per window. Agent tabs count against their own limits, tagged by `owner`. */
 export const MAX_PERSON_TABS = 8;
+/** ADR 0162: 4 tabs per agent and 16 tabs in all per window. Agents share what the person's 8 leave, so the person is never refused a tab. */
+export const MAX_AGENT_TABS = 4;
+export const MAX_WINDOW_TABS = 16;
+/** An agent tab closes after this long without a call from its agent. */
+export const AGENT_IDLE_MS = 30 * 60 * 1000;
+const AGENT_ID = /^[A-Za-z0-9_.:-]{1,80}$/;
+const AGENT_KINDS = new Set(["heinzel", "external"]);
+// Until the panel was laid out once, an agent tab still needs a size to render and to be captured.
+const DEFAULT_BOUNDS = Object.freeze({ x: 0, y: 0, width: 1280, height: 800 });
+/** The owner tag of an agent's tabs; never equal to "person", whatever the agent calls itself. */
+export const agentOwner = (id) => `agent:${id}`;
 const TAB_ID = /^t-[0-9a-f]{8}$/;
 // The shape of each command; a command may also carry one optional key (a tab id, or a first address).
 const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
   state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
   tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"],
-  "link-external": ["action"], "link-dismiss": ["action"] };
+  "link-external": ["action"], "link-dismiss": ["action"],
+  "take-over": ["action", "tab"], "hand-back": ["action", "tab"], "stop-agent": ["action", "tab"],
+  "commit-approve": ["action", "tab"], "commit-refuse": ["action", "tab"] };
 const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", reload: "tab", external: "tab", "new-tab": "url" };
 // A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
@@ -120,6 +133,15 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   let stopped = false;
   // Devices the person picked, per requesting origin and device type; "Clear browsing data" revokes them all.
   const grants = new Set();
+  // Agents the person stopped: their calls are refused until the daemon reports the person allowed them again.
+  const stoppedAgents = new Set();
+  const agentPending = new Map();
+  const agentListeners = new Set();
+  const tell = (event, guest) => {
+    for (const listener of agentListeners) {
+      try { listener({ event, agent: guest.agent.id, tab: event === "stop" ? null : guest.id }); } catch { /* a listener never breaks a tab */ }
+    }
+  };
   const grantKey = (origin, identity) => JSON.stringify([origin, identity]);
   const originOf = (value) => { try { return new URL(value).origin; } catch { return ""; } };
   // origin -> data: URL of the icon a page of that origin showed; emptied with the browsing data.
@@ -270,7 +292,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const surfaceOf = (window) => {
     let surface = surfaces.get(window);
     if (surface) return surface;
-    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, link: null };
+    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, pendingAgents: 0, link: null };
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
     const onBlur = () => { for (const guest of surface.tabs.values()) guest.view.setVisible(false); };
@@ -286,6 +308,13 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     return surface;
   };
   const dispose = (window, guest) => {
+    clearTimeout(guest.idle);
+    guest.commit?.answer(false);
+    if (guest.agent) {
+      // The debugger is only ever attached to an agent tab, and leaves with it.
+      try { if (guest.view.webContents.debugger?.isAttached?.()) guest.view.webContents.debugger.detach(); } catch { /* gone */ }
+      tell("closed", guest);
+    }
     if (!window.isDestroyed()) window.contentView.removeChildView(guest.view);
     if (!guest.view.webContents.isDestroyed()) guest.view.webContents.close({ waitForBeforeUnload: false });
   };
@@ -340,7 +369,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     for (const page of others) if (leasedPages.has(page)) page.restore();
     if (failed) throw new Error("Browsing data could not be cleared.");
   };
-  const open = async (window) => {
+  const open = async (window, agent = null) => {
     const partition = partitionFor();
     let view, network;
     try {
@@ -351,8 +380,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { id: newTabId(window), owner: "person", blank: true, view, session: partition,
-        network, status: "empty", notice: null };
+      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false,
+        blank: true, view, session: partition, network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
       const refuseCredentials = (event, ...args) => {
@@ -405,6 +434,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       contents.setWindowOpenHandler((details) => {
         const target = builtInBrowserLink(details?.url, connection()?.origin);
         const time = Date.now();
+        // An agent's page opens nothing: popups stay refused for agent tabs (ADR 0162), whoever clicked.
+        if (guest.agent) { guest.status = "unsupported"; return { action: "deny" }; }
         if (!target || !activation.consume() || time - lastPopup < 500) { guest.status = "unsupported"; return { action: "deny" }; }
         lastPopup = time;
         void openLink(window, target).catch(() => {});
@@ -431,7 +462,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       view.setVisible(false);
       const surface = surfaceOf(window);
       surface.tabs.set(guest.id, guest);
-      surface.selected = guest.id;
+      // An agent's new tab never takes the person's view; the person selects it to watch.
+      if (agent) view.setBounds(surface.bounds ?? DEFAULT_BOUNDS);
+      else surface.selected = guest.id;
       apply(window, surface);
       return guest;
     } catch {
@@ -444,6 +477,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const tabInfo = (guest, selected) => {
     const url = guest.view.webContents.getURL();
     return { id: guest.id, owner: guest.owner, selected, status: guest.status, url,
+      agent: guest.agent ? { name: guest.agent.name, kind: guest.agent.kind } : null, paused: guest.paused,
+      commit: guest.commit ? { summary: guest.commit.summary } : null,
       title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200), favicon: icons.get(originOf(url)) ?? null };
   };
   // The selected tab's state, plus the whole strip.
@@ -465,7 +500,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     };
   };
   /** A new guest for this window, or the one already opening when a first page is asked twice. */
-  const create = async (event, window, { reuse = false } = {}) => {
+  const create = async (event, window, { reuse = false, agent = null } = {}) => {
     const surface = surfaceOf(window);
     if (reuse && surface.opening) return surface.opening;
     const generation = generations.get(window) ?? 0;
@@ -475,10 +510,24 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     try {
       const changed = () => navigated || stopped || (generations.get(window) ?? 0) !== generation;
       if (changed()) throw new Error("Browser surface is closed.");
-      const mine = [...surface.tabs.values()].filter((tab) => tab.owner === "person").length;
-      if (mine + surface.pending >= MAX_PERSON_TABS) throw new Error("Too many tabs.");
-      surface.pending += 1;
-      const pending = open(window).finally(() => { surface.pending -= 1; opening.delete(pending); if (surface.opening === pending) surface.opening = null; releaseNetwork(); });
+      const tabs = [...surface.tabs.values()];
+      const mine = tabs.filter((tab) => tab.owner === "person").length;
+      if (agent) {
+        const owner = agentOwner(agent.id);
+        const theirs = everyGuest().filter(([, tab]) => tab.owner === owner).length + (agentPending.get(agent.id) ?? 0);
+        const agents = tabs.length - mine + surface.pendingAgents;
+        if (theirs >= MAX_AGENT_TABS || agents >= MAX_WINDOW_TABS - MAX_PERSON_TABS) throw new Error("Too many tabs.");
+        surface.pendingAgents += 1;
+        agentPending.set(agent.id, (agentPending.get(agent.id) ?? 0) + 1);
+      } else {
+        if (mine + surface.pending >= MAX_PERSON_TABS) throw new Error("Too many tabs.");
+        surface.pending += 1;
+      }
+      const pending = open(window, agent).finally(() => {
+        if (agent) { surface.pendingAgents -= 1; agentPending.set(agent.id, agentPending.get(agent.id) - 1); }
+        else surface.pending -= 1;
+        opening.delete(pending); if (surface.opening === pending) surface.opening = null; releaseNetwork();
+      });
       opening.add(pending);
       if (reuse) surface.opening = pending;
       const guest = await pending;
@@ -517,7 +566,80 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     if (typeof id !== "string" || !TAB_ID.test(id) || !surface?.tabs.has(id)) throw new Error("Unknown tab.");
     return surface.tabs.get(id);
   };
+  const closeAgent = (id) => {
+    const owner = agentOwner(id);
+    for (const [window, guest] of everyGuest()) if (guest.owner === owner) closeTab(window, guest.id);
+  };
+  const touch = (guest) => {
+    clearTimeout(guest.idle);
+    const window = everyGuest().find(([, tab]) => tab === guest)?.[0];
+    if (!window) return;
+    guest.idle = setTimeout(() => closeTab(window, guest.id), AGENT_IDLE_MS);
+    guest.idle.unref?.();
+  };
+  const validAgent = (agent) => {
+    if (!agent || typeof agent !== "object" || !hasExactKeys(agent, ["id", "kind", "name"]) ||
+        typeof agent.id !== "string" || !AGENT_ID.test(agent.id) || !AGENT_KINDS.has(agent.kind) ||
+        typeof agent.name !== "string" || !agent.name.trim() || agent.name.length > 60 || /[\u0000-\u001f\u007f]/u.test(agent.name))
+      throw new Error("Invalid agent.");
+    return Object.freeze({ id: agent.id, name: agent.name.trim(), kind: agent.kind });
+  };
+  /**
+   * What the bridge's agent engine may do (ADR 0162). It names tabs by agent and tab id only and gets guests of this
+   * table: never a window's own webContents, never the person's tab and never another agent's.
+   */
+  const agents = {
+    /** The checked, frozen `{id, name, kind}` of an agent, or an error. */
+    identify: validAgent,
+    stopped: (id) => stoppedAgents.has(id),
+    allow: (id) => { stoppedAgents.delete(id); },
+    list: (id) => everyGuest().filter(([, guest]) => guest.owner === agentOwner(id)).map(([, guest]) => guest),
+    /** The agent's own tab, or the same "Unknown tab." a tab of the person or of another agent gets. */
+    find(id, tab) {
+      const guest = typeof tab === "string" && TAB_ID.test(tab) ? agents.list(id).find((entry) => entry.id === tab) : null;
+      if (!guest || guest.view.webContents.isDestroyed()) throw new Error("Unknown tab.");
+      touch(guest);
+      return guest;
+    },
+    /** True only for a live guest of the tab table that this agent owns: the engine checks it before every protocol call. */
+    holds: (id, guest) => everyGuest().some(([window, entry]) => entry === guest && entry.owner === agentOwner(id) &&
+      Boolean(entry.agent) && entry.view.webContents !== window.webContents && !entry.view.webContents.isDestroyed()),
+    async open(window, agent) {
+      const who = validAgent(agent);
+      if (stopped || !window || !windows.has(window) || window.isDestroyed()) throw new Error("Browser surface is closed.");
+      const guest = await create({ sender: window.webContents }, window, { agent: who });
+      touch(guest);
+      return guest;
+    },
+    close(id, tab) {
+      const guest = agents.find(id, tab);
+      const window = everyGuest().find(([, entry]) => entry === guest)[0];
+      closeTab(window, guest.id);
+    },
+    /**
+     * The commit card of an outside agent (ADR 0162, safety 3): shown on that tab until the person answers in the
+     * product window. Resolves to true only on their yes; no answer in time, a newer card or a closed tab is a no.
+     */
+    confirm(id, tab, summary, seconds) {
+      const guest = agents.find(id, tab);
+      guest.commit?.answer(false);
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => entry.answer(false), seconds * 1000);
+        timer.unref?.();
+        const entry = { summary, answer: (approved) => {
+          clearTimeout(timer);
+          if (guest.commit === entry) guest.commit = null;
+          resolve(approved === true);
+        } };
+        guest.commit = entry;
+      });
+    },
+    /** The address policy of every navigation, for the engine's own loads. */
+    url: (value) => browserUrl(value, connection()?.origin),
+    listen(listener) { agentListeners.add(listener); return () => agentListeners.delete(listener); },
+  };
   return {
+    agents,
     async handle(event, request) {
       if (stopped) throw new Error("Browser surface is closed.");
       const window = browserOwner(event, { windows, fromWebContents, connection });
@@ -547,7 +669,32 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         apply(window, surface);
         return state(window);
       }
+      if (action === "commit-approve" || action === "commit-refuse") {
+        const tab = tabOf(surface, request.tab);
+        if (!tab.commit) throw new Error("Unknown tab.");
+        tab.commit.answer(action === "commit-approve");
+        return state(window);
+      }
+      if (action === "take-over" || action === "hand-back" || action === "stop-agent") {
+        const tab = tabOf(surface, request.tab);
+        if (!tab.agent) throw new Error("Unknown tab.");
+        if (action === "stop-agent") {
+          // Stop closes every tab of that agent, in every window, and refuses its calls until it is allowed again.
+          stoppedAgents.add(tab.agent.id);
+          tell("stop", tab);
+          closeAgent(tab.agent.id);
+        } else if (tab.paused !== (action === "take-over")) {
+          tab.paused = action === "take-over";
+          tell(action, tab);
+        }
+        return state(window);
+      }
       let guest = request.tab === undefined ? surface?.tabs.get(surface.selected) : tabOf(surface, request.tab);
+      // The person steering an agent's tab takes it over, as their own input in the page does.
+      if (guest?.agent && !guest.paused && ["navigate", "back", "forward", "reload"].includes(action)) {
+        guest.paused = true;
+        tell("take-over", guest);
+      }
       const generation = generations.get(window) ?? 0;
       if (action === "new-tab" || action === "navigate") {
         // Check the address before a tab is made for it.
@@ -613,6 +760,6 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       } catch (error) { release(); throw error; }
     },
     openLink,
-    closeAll() { stopped = true; for (const window of [...surfaces.keys()]) close(window); },
+    closeAll() { stopped = true; agentListeners.clear(); for (const window of [...surfaces.keys()]) close(window); },
   };
 }

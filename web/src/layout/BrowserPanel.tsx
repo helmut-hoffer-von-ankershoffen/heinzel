@@ -17,6 +17,8 @@ type BrowserTab = {
   title: string;
   /** The page's own icon as a small `data:` image, once the desktop read it. */
   favicon?: string | null;
+  /** Set on a tab an agent opened (ADR 0162): the name the tab shows. */
+  agent?: { name: string; kind: string } | null;
 };
 /** The person's own tabs per window, as the desktop enforces. */
 const MAX_TABS = 8;
@@ -45,8 +47,12 @@ function bridge(): BrowserBridge | undefined {
 export function desktopBrowserAvailable(): boolean {
   return bridge() !== undefined;
 }
-/** A tab's label: its page title, else its host, else "New tab". */
+/** A tab's label: its page title, else its host, else "New tab"; an agent's tab starts with the agent's name. */
 function tabLabel(tab: BrowserTab): string {
+  const page = pageLabel(tab);
+  return tab.agent ? `${tab.agent.name}: ${page}` : page;
+}
+function pageLabel(tab: BrowserTab): string {
   if (tab.title) return tab.title;
   try {
     return new URL(tab.url).host || t("browser.newTabTitle");
@@ -109,6 +115,8 @@ export function BrowserPanel({
   const panel = useRef<HTMLElement>(null);
   const native = bridge();
   const tabs = state.tabs ?? [];
+  // Agents' tabs have their own limit: only the person's count against the person's.
+  const ownTabs = tabs.filter((tab) => !tab.agent).length;
   const request = async (command: Record<string, unknown>) => {
     try {
       const result = await native?.browser(command);
@@ -153,7 +161,7 @@ export function BrowserPanel({
     if (current?.url) setAddress(current.url);
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
-    if (!native || tabs.length >= MAX_TABS) return;
+    if (!native || ownTabs >= MAX_TABS) return;
     setAddress("");
     setRefused(false);
     void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
@@ -366,7 +374,7 @@ export function BrowserPanel({
               size="icon"
               aria-label={t("browser.newTab")}
               title={t("browser.newTab")}
-              disabled={tabs.length >= MAX_TABS}
+              disabled={ownTabs >= MAX_TABS}
               onClick={newTab}
             >
               <Plus aria-hidden />
