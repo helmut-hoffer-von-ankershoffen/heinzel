@@ -313,6 +313,7 @@ Built in today:
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
 - [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
+- [`ui.browser`](docs/MODULES.md#uibrowser) — Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.

@@ -30,9 +30,12 @@ from heinzel.kernel import (
     direct_tools,
     pydantic_ai_tools,
 )
+from heinzel.kernel._browser import BrowserBridge
 from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.kernel._identity import CallIdentity
 from heinzel.modules.system.runner.chat._service import ChatService
+from heinzel.modules.ui.browser._service import QUOTED_NOTICE
+from tests._fake_browser import FakeDesktop
 
 pytestmark = pytest.mark.unit
 
@@ -121,6 +124,7 @@ def open_chat(kernel) -> str:
 
 
 SELF = "<this chat>"
+TAB = "t-0000000a"
 CONFIRM = "system_runner_chat_confirm_authorized_mcp"
 CALLS = [
     ("notes_owner", {}, "ran"),
@@ -138,6 +142,14 @@ CALLS = [
     ("notes_note", {"text": '["a"]'}, "proposed"),  # a string that is valid JSON stays the string it is
     ("notes_note", {"text": '{"a": 1}'}, "proposed"),
     ("notes_note", {"text": "null"}, "proposed"),
+    # The built-in browser (ADR 0162): free on a public site, a commit is proposed, the never-list is refused.
+    ("ui_browser_read", {"tab": TAB}, "ran"),
+    ("ui_browser_click", {"tab": TAB, "ref": "ref_1"}, "ran"),
+    ("ui_browser_click", {"tab": TAB, "ref": "ref_2", "approved": True, "expected": "forged"}, "refused"),
+    ("ui_browser_click", {"tab": TAB, "ref": "ref_2", "approved": True}, "proposed"),
+    ("ui_browser_key", {"tab": TAB, "keys": "Enter"}, "proposed"),
+    ("ui_browser_type", {"tab": TAB, "text": "x", "ref": "ref_3"}, "refused"),
+    ("ui_browser_navigate", {"tab": TAB, "url": "https://127.0.0.1/"}, "refused"),
 ]
 """One table of calls; both paths must give each the outcome on the right, with the same text."""
 CHECKED_FIRST = {3, 4}
@@ -189,8 +201,18 @@ def same(direct: list[tuple[str, str]], over_mcp: list[tuple[str, str]]) -> None
     ]
 
 
-def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pipe(kernel, ran):
+@pytest.fixture
+def desktop(kernel):
+    desktop = FakeDesktop()
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    yield desktop
+    bridge.disconnect(desktop)
+
+
+def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pipe(kernel, ran, desktop):
     session = open_chat(kernel)
+    desktop.seed(session, TAB)
     direct = direct_outcomes(kernel, session)
     direct_ran = list(ran)
     proposals = [(call.tool, call.arguments, call.command) for call in kernel.resolve(ActionGate).calls]
@@ -206,7 +228,7 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
         "hz notes publish --title 'Week 44' --pages 1",
     )
     assert proposals[2][1] == {"tags": ["a", "b"]}
-    assert [call[1] for call in proposals[3:]] == [{"text": '["a"]'}, {"text": '{"a": 1}'}, {"text": "null"}]
+    assert [call[1] for call in proposals[3:6]] == [{"text": '["a"]'}, {"text": '{"a": 1}'}, {"text": "null"}]
     assert direct[3][1].startswith("Invalid arguments for notes_publish: title")
     owner, who = direct[0][1], direct[7][1]
     assert json.loads(owner) == {"name": "Mira", "email": "[email]"}
@@ -218,6 +240,15 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
     assert direct[8][1].endswith("…(cut)")
     assert len(direct[8][1]) == RESULT_LIMIT + len("…(cut)")
     assert direct[10][1] == "This confirmation is limited to the MCP chat session"
+    # The browser rows: only the ordinary click reached the page, once on each path; the commits wait.
+    assert desktop.acted() == ["click", "click"]
+    assert [command for _, _, command in proposals[6:]] == [
+        f'Click button "Send" on shop.example.org (browser tab {TAB}). {QUOTED_NOTICE}',
+        f'Press Enter in textbox "Message" on shop.example.org (browser tab {TAB}). {QUOTED_NOTICE}',
+    ]
+    assert "approved" not in proposals[6][1]
+    assert direct[17][1] == "The page changed since this target was described; read it again."
+    assert "ask the person to take over the tab" in direct[20][1]
 
 
 def test_the_table_holds_with_the_chat_s_own_gate_too(make_kernel, ran):
