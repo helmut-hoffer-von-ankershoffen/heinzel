@@ -11,9 +11,11 @@ import {
   problem,
   type SchemaChatSession,
   type SchemaSessionSnapshot,
+  type SchemaUserChatAnswer,
 } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { useConfig, usePreviewFeature } from "@/api/queries";
+import { type StreamEvent, stream } from "@/api/stream";
 import { authorityEpoch, subscribeAuthority } from "@/api/token";
 import { ActionCard } from "@/chat/ActionCard";
 import { AgentProposal } from "@/chat/AgentProposal";
@@ -135,6 +137,12 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
   );
 }
 
+/** The reply so far after one streamed `text` event: its delta appended, or the whole text when it starts over. */
+export function grownReply(previous: string, event: StreamEvent): string {
+  if (event.event !== "text" || typeof event.data.text !== "string") return previous;
+  return event.data.replace === true ? event.data.text : previous + event.data.text;
+}
+
 /** What a row says: a tool event by a fixed line, a reply as prose, anything else as it was written. */
 function MessageText({ role, text }: { role: string; text: string }) {
   if (role === "tool") return <p>{t("durable.toolEvent")}</p>;
@@ -209,6 +217,8 @@ function DurableSessionView({
   const [profileLocked, setProfileLocked] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The reply a turn is writing, shown while it streams; the journal's final message replaces it (ADR 0122).
+  const [partial, setPartial] = useState<{ requestId: string; text: string } | null>(null);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState(false);
   const [scheduleErrorMessage, setScheduleErrorMessage] = useState<string | null>(null);
@@ -679,8 +689,17 @@ function DurableSessionView({
         if (!updateComposer({ pending: { ...request, accepted: true } }))
           throw new Error("The accepted request could not be preserved in this tab.");
       }
-      const answered = await result(
-        api.POST("/heinzel/answer-chat", { body: { session_id: sessionId, request_id: request.request_id } }),
+      // Streamed: the reply shows as the model writes it. The result is the same answer the plain call returns.
+      const answered = await stream<SchemaUserChatAnswer>(
+        "/heinzel/answer-chat",
+        {},
+        (event) =>
+          setPartial((previous) => {
+            const text = grownReply(previous?.requestId === request.request_id ? previous.text : "", event);
+            return text ? { requestId: request.request_id, text } : previous;
+          }),
+        undefined,
+        { session_id: sessionId, request_id: request.request_id },
       );
       if (
         answered.session_id !== sessionId ||
@@ -707,6 +726,7 @@ function DurableSessionView({
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } finally {
       running.current = false;
+      setPartial(null);
       setBusy(false);
     }
   };
@@ -1214,11 +1234,22 @@ function DurableSessionView({
             </div>
           </div>
         ) : null}
-        {sending && (
-          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-            <HeinzelAvatar view="bust" {...look} state="thinking" className="size-6 shrink-0 overflow-hidden" />
-            <p role="status">{t("durable.thinking", { name: heinzelName })}</p>
+        {sending && partial !== null && partial.requestId === pending?.request_id ? (
+          // Not a live region: a screen reader hears the final message once, not every word (it is in the list).
+          <div data-message-speaker="heinzel" data-streaming="" aria-busy="true" className="flex min-w-0 gap-2 text-sm">
+            <HeinzelAvatar view="bust" {...look} state="thinking" className="mt-1 size-6 shrink-0 overflow-hidden" />
+            <div className="min-w-0 flex-1 break-words rounded-lg border border-border px-3 py-2">
+              <p className="text-xs font-medium">{heinzelName}</p>
+              <Prose>{partial.text}</Prose>
+            </div>
           </div>
+        ) : (
+          sending && (
+            <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+              <HeinzelAvatar view="bust" {...look} state="thinking" className="size-6 shrink-0 overflow-hidden" />
+              <p role="status">{t("durable.thinking", { name: heinzelName })}</p>
+            </div>
+          )
         )}
         <div ref={newest} data-newest="" aria-hidden="true" />
         {activity.isError && (
