@@ -87,10 +87,10 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
   const shown = shownEntries(bookmarks.data, open);
   // One item of the tree is in the tab order: the one last focused, else the first.
   const tabStop = shown.some((entry) => entry.id === focused) ? focused : shown[0]?.id;
+  // A step either moves or folds, never both: the item to focus is drawn already.
   const focus = (id: string) => {
     setFocused(id);
-    // After a folder opened or closed, the item to focus is drawn in the next frame.
-    requestAnimationFrame(() => tree.current?.querySelector<HTMLElement>(`[data-bookmark="${id}"]`)?.focus());
+    tree.current?.querySelector<HTMLElement>(`[data-bookmark="${id}"]`)?.focus();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const current = (event.target as HTMLElement).dataset?.bookmark;
