@@ -231,7 +231,8 @@ class AcmeModels:
 ```
 
 The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
-`hz ai access use acme`, then pick a model per chat in the chat's model picker. Reference
+`hz ai access use acme`, then pick a default model in Settings; each Heinzel then runs on the model the plugin
+marks for its intelligence level (ADR 0158). Reference
 (`from heinzel import ...`, interface `AI_MODELS_INTERFACE = "1.0"`):
 
 | Name | What it is |

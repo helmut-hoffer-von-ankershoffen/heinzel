@@ -972,13 +972,6 @@ try {
       composerBox.y + composerBox.height <= spec.height + 1,
       `${spec.name}: composer exceeds viewport height: ${JSON.stringify(composerBox)}`,
     );
-    const modelPicker = page.getByRole("button", { name: /^Model and effort:/ });
-    if (await modelPicker.isVisible()) {
-      await modelPicker.click();
-      const modelMenu = page.getByRole("group", { name: /^Models of/ }).locator("..");
-      await assertContained(page, modelMenu, `${spec.name}: model and effort menu`);
-      await page.keyboard.press("Escape");
-    }
     await composer.tap();
     assert.equal(
       await composer.evaluate((element) => element === document.activeElement),

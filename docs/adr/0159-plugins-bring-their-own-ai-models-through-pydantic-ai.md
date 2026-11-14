@@ -90,10 +90,12 @@ Checkable statements:
    with the same hosts. An adapter named like another distribution's AI access option (such as `claude-code`) is
    skipped and reported, so it can never take over chat. `ai-models` is never automatic, can't be bound in
    `[capabilities]`, isn't on the connector page, and isn't an input a contract can read.
-7. **The model is pinned, and picked per chat.** `hz ai access use <plugin>` writes the model in use to
-   `[ai.access] plugin_model`, so a new first row in the plugin's list never changes it or the schedules bound to
-   it. People pick a model per chat in the chat's model picker, which lists the plugin's models with unavailable
-   ones marked. Settings shows the same list and sets the default. `plugin_effort` sets the default effort.
+7. **The model is pinned.** `hz ai access use <plugin>` writes the model in use to `[ai.access] plugin_model`, so
+   a new first row in the plugin's list never changes it or the schedules bound to it. Settings lists the plugin's
+   models with unavailable ones marked and sets the default; `plugin_effort` sets the default effort. The chat has
+   no model picker: a Heinzel's intelligence level chooses its model
+   ([ADR 0158](0158-intelligence-level-per-heinzel-auto-routed-by-code.md)), and release 0.9.44 removes the
+   interim picker by the chat input that 0.9.43 shipped.
 8. **Unavailable is a clear refusal.** A model that isn't listed, is marked unavailable or calls no tools is
    refused before the turn starts and before `model()` is called. `ModelUnavailableError` names the models to
    pick instead. A model the provider answers 404 for gives the same error.

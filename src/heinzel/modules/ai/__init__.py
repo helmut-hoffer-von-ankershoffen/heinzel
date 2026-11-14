@@ -98,7 +98,7 @@ def render_models(result: ModelList) -> RenderableType:
 # unauthenticated REST head (ADR 0039).
 @module.operation(render=render_models, heads={"cli", "mcp", "web"})
 def models(options: Adapters[AiAccess], view: CapabilityView) -> ModelList:
-    """List the models and efforts of the AI access in use, for the chat's model and effort picker."""
+    """List the models and efforts of the AI access in use, to pick from with `hz chat send --model`."""
     return listed(options, view)
 
 

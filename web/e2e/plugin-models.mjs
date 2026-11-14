@@ -1,6 +1,7 @@
 // A plugin's own AI models in the real Settings (ADR 0159): the made-up plugin's option sits next to Claude Code,
-// picking it makes it the AI access in use, and its model picker lists what the plugin offers with an unavailable one
-// marked. Picking a model saves it and the live check answers through the plugin's model. Real Chromium against a real
+// picking it makes it the AI access in use, and its model picker in Settings lists what the plugin offers with an
+// unavailable one marked. Picking a model saves it, the live check answers through the plugin's model, and the chat,
+// which has no model picker of its own, answers on it. Real Chromium against a real
 // isolated `hz ui serve` with the fixture plugin installed; nothing is mocked.
 // Usage: node e2e/plugin-models.mjs URL SCREENSHOT_DIR (prints one JSON object)
 import assert from "node:assert/strict";
@@ -57,15 +58,8 @@ try {
   await page.goto(url);
   await page.locator("#splash").waitFor({ state: "hidden" });
 
-  // The chat's own model picker lists the plugin's models; pick one per chat, then watch the answer stream in.
-  const picker = page.getByRole("button", { name: /^Model and effort: / });
-  await picker.click();
-  const menu = page.getByRole("group", { name: "Models of Demo models" });
-  await menu.waitFor();
-  const retiredInChat = menu.getByRole("button", { name: /Demo Retired/ });
-  assert.match((await retiredInChat.textContent()) ?? "", /unavailable/);
-  await page.screenshot({ path: join(shots, "plugin-models-4-chat-picker.png") });
-  await menu.getByRole("button", { name: /^Demo Fast/ }).click();
+  // The chat has no model picker (ADR 0158): it answers on the model picked in Settings; watch the answer stream in.
+  assert.equal(await page.getByRole("button", { name: /^Model and effort: / }).count(), 0);
   await page.getByPlaceholder(/Ask about this screen/).fill("Hello, demo models");
   await page.getByRole("button", { name: "Send" }).click();
   const reply = page.getByText(/Hello from the demo models/);

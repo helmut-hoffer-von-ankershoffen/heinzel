@@ -2,7 +2,6 @@
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Plus, Send, X } from "lucide-react";
 import { type FormEvent, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
-import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
@@ -14,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { typed } from "@/sound/store";
 import { useUpdateDraft } from "@/updates/draft";
 import { MessageInfo } from "./MessageInfo";
-import { ModelPicker } from "./ModelPicker";
 import type { Chat } from "./useChat";
 
 export const MESSAGE_LIMIT = 4000;
@@ -137,7 +135,7 @@ export function costState(spent: number, cap: number | null): "ok" | "near" | "o
 }
 
 /**
- * The caps before anything is sent, and what this chat has cost: an info icon beside the model picker. The text is a
+ * The caps before anything is sent, and what this chat has cost: an info icon below the composer. The text is a
  * tooltip (hover, keyboard focus, a tap focuses it; Escape hides it) and the button's accessible description, so it
  * is never persistent text. Near or over the chat's cap the icon turns warn or bad and carries a badge.
  */
@@ -284,7 +282,7 @@ export function Composer({
 }) {
   const [creating, setCreating] = useState(false);
   const sessionId = chat.session?.id;
-  const { message, setMessage, picked, setPicked } = useUpdateDraft(
+  const { message, setMessage } = useUpdateDraft(
     context,
     sessionId ?? null,
     chat.live != null || chat.deciding || chat.loading,
@@ -292,7 +290,6 @@ export function Composer({
   useEffect(() => {
     if (initialPersonalMessage) setMessage((current) => current || initialPersonalMessage);
   }, [initialPersonalMessage, setMessage]);
-  const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
   const createPersonal = async () => {
     const text = message;
@@ -309,9 +306,7 @@ export function Composer({
     const text = message.trim();
     if (!text || chat.live || chat.loading || creating || initialPersonalMessage) return;
     setMessage("");
-    if (!(await chat.send(text, context, picked ?? {})))
-      setMessage((current) => current || text); // nothing lost
-    else setPicked(null);
+    if (!(await chat.send(text, context))) setMessage((current) => current || text); // nothing lost
   };
   return (
     <div className={cn("flex flex-col gap-1", className)}>
@@ -371,7 +366,6 @@ export function Composer({
         </p>
       )}
       <div className="flex items-center gap-0.5">
-        <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
         <Costs chat={chat} />
       </div>
     </div>

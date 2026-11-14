@@ -161,7 +161,7 @@ $ hz ai access use [OPTIONS] {name}
 
 ### `hz ai models`
 
-(expert) List the models and efforts of the AI access in use, for the chat&#x27;s model and effort picker.
+(expert) List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.
 
 **Usage**:
 
