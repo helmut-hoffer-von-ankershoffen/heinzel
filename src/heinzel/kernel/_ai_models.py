@@ -18,6 +18,7 @@ and ignores fields it doesn't know. The protocol gains optional methods only, wh
 """
 
 import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -26,7 +27,7 @@ import tempfile
 import threading
 import time
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
@@ -489,32 +490,56 @@ def _unanswered(path: Path) -> frozenset[str]:
     return found
 
 
-def mark_answered(source: AiModelsSource, model_id: str, *, answered: bool) -> None:
+def mark_answered(
+    source: AiModelsSource, model_id: str, *, answered: bool, offered: Collection[str] | None = None
+) -> None:
     """Keep whether `model_id` answered a test, so every head's picker marks it; never raises (ADR 0159).
 
-    Only a person's `hz ai access test --all` calls it. A model that didn't answer is marked unavailable until a later
-    test answers; the plugin's own `available=False` is never cleared by it. Ids only, mode 0600, replaced atomically.
+    Only a person's test calls it. A model that didn't answer is marked unavailable until a later test answers; the
+    plugin's own `available=False` is never cleared by it. With `offered`, the plugin's current ids, a mark of a model
+    it no longer offers is dropped. Ids only, mode 0600, replaced atomically; one writer at a time across processes,
+    so a terminal's test and the daemon's never lose each other's marks.
     """
     path = source.unanswered
     if path is None:
         return
-    with _mark_lock:  # one writer at a time in this process; a later test wins
-        before = _unanswered(path)
-        after = (before - {model_id}) if answered else (before | {model_id})
-        if after == before:
-            return
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".json")
-            try:
-                with os.fdopen(handle, "w", encoding="utf-8") as file:
-                    file.write(json.dumps(sorted(after)[:MAX_OFFERS]))
-                Path(temporary).replace(path)
-            finally:
-                with contextlib.suppress(OSError):
-                    Path(temporary).unlink(missing_ok=True)
-        except OSError as exc:
-            log_event(logger, "ai.models.mark_failed", level=logging.WARNING, error=type(exc).__name__)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with _mark_lock, _locked(path.with_name(f".{path.name}.lock")):
+            before = _unanswered(path)
+            kept = before & frozenset(offered) if offered is not None else before
+            after = (kept - {model_id}) if answered else (kept | {model_id})
+            if after != before:
+                _write_ids(path, sorted(after))
+    except OSError as exc:
+        log_event(logger, "ai.models.mark_failed", level=logging.WARNING, error=type(exc).__name__)
+
+
+@contextlib.contextmanager
+def _locked(path: Path) -> Iterator[None]:
+    """Hold an exclusive lock on `path`, a private lock file, across processes."""
+    handle = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(handle)  # closing releases the lock
+
+
+def _write_ids(path: Path, ids: list[str]) -> None:
+    """Replace `path` with `ids` as JSON, mode 0600, atomically.
+
+    Raises:
+        OSError: If it can't be written.
+    """
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".json")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as file:
+            file.write(json.dumps(ids))
+        Path(temporary).replace(path)
+    finally:
+        with contextlib.suppress(OSError):
+            Path(temporary).unlink(missing_ok=True)
 
 
 def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None = None) -> ModelOffer:

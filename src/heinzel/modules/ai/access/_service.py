@@ -1,10 +1,12 @@
 """Service of the access module: every installed AI access option, the one in use, live tests and the switch."""
 
+import fcntl
 import logging
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -58,6 +60,8 @@ DETAIL_LIMIT = 300
 MAX_MODELS_TESTED = 24
 """The most models one `hz ai access test --all` asks, so a long list never runs for long or spends much."""
 MODEL_TEST_TIMEOUT = 15.0
+RUN_LOCK = ".test-all.lock"
+"""Held while `hz ai access test --all` runs, so a second run, from any head, is refused instead of spending twice."""
 """How long one model has to answer in `hz ai access test --all` before it counts as unanswered."""
 
 
@@ -384,11 +388,12 @@ class AccessService:
 
         Only when a person asks. At most `MAX_MODELS_TESTED` models, each within `MODEL_TEST_TIMEOUT`; the option
         keeps which answered, so the picker marks the others unavailable until a later test answers. Each request is
-        recorded as usage, cause `test`. Ctrl-C stops between or during models; what was learned so far is kept.
+        recorded as usage, cause `test`. Ctrl-C stops between or during models; what was learned so far is kept. One
+        run at a time per profile, whichever head starts it.
 
         Raises:
             HeinzelError: If no installed option has that name, none is in use and none was named, its models can't
-                be listed, or it can't test its models one by one.
+                be listed, it can't test its models one by one, or another run is going on.
         """
         name = self._tested(name)
         option = options[name]
@@ -401,10 +406,31 @@ class AccessService:
             raise HeinzelError(msg)
         asked, untested = status.models[:MAX_MODELS_TESTED], status.models[MAX_MODELS_TESTED:]
         rows: list[ModelTestResult] = []
-        for index, model_id in enumerate(asked, 1):
-            with progress.task(f"Testing {model_id} ({index}/{len(asked)})"):
-                rows.append(self._test_model(name, option, model_id, status.title))
+        with self._one_run():
+            for index, model_id in enumerate(asked, 1):
+                with progress.task(f"Testing {model_id} ({index}/{len(asked)})"):
+                    rows.append(self._test_model(name, option, model_id, status.title))
         return self._summary(name, rows, untested)
+
+    @contextmanager
+    def _one_run(self) -> Iterator[None]:
+        """Hold the one check of every model this profile may run at a time, across processes.
+
+        Raises:
+            HeinzelError: If another check of every model runs now, in a terminal or the app.
+        """
+        root = self._tests.path.parent
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle = os.open(root / RUN_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                msg = "A check of every model is already running, in a terminal or the app; wait for it to finish."
+                raise HeinzelError(msg) from None
+            yield
+        finally:
+            os.close(handle)  # closing releases the lock
 
     def _test_model(self, name: str, option: AiAccess, model_id: str, title: str) -> ModelTestResult:
         """One model's tiny request through `option`, recorded as usage when one was sent.
@@ -420,7 +446,7 @@ class AccessService:
         except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
             detail = clean_text(f"its test failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
             result = AccessTest(ok=False, detail=detail, model=model_id)
-        if not result.skipped:
+        if not result.skipped or result.input_tokens or result.output_tokens:
             self._usage.record(
                 UsageEntry(
                     at=datetime.now(UTC),

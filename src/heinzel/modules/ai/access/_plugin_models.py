@@ -99,12 +99,13 @@ class PluginModelsAccess:
         note = ""
         try:
             source = self._source()
-            offers, note = list_offers(source)
+            # The plugin's own flags only: a person's test of the chosen model may clear a mark an earlier test left.
+            offers, note = list_offers(source, raw=True)
             settings = self._settings()
             offer = choose(offers, settings.plugin_model, settings.plugin_effort)
             own = getattr(source.adapter, "test", None)
             if callable(own):  # the plugin's own live check, when it has one (interface 1.0, optional)
-                return self._own_test(own, offer.id, started)
+                return self._cleared(source, self._own_test(own, offer.id, started))
             model = build_model(source, offer)
         except ModelUnavailableError as exc:
             fix = f"hz system config set ai.access.plugin_model {exc.others[0]}" if exc.others else ""
@@ -112,7 +113,15 @@ class PluginModelsAccess:
         except HeinzelError as exc:
             detail = str(exc) + (f"; {note}" if note else "")
             return AccessTest(ok=False, detail=detail[:DETAIL_LIMIT])
-        return _ask(model, offer.id, effort_settings(offer, settings.plugin_effort), TEST_TIMEOUT, started)
+        result = _ask(model, offer.id, effort_settings(offer, settings.plugin_effort), TEST_TIMEOUT, started)
+        return self._cleared(source, result)
+
+    @staticmethod
+    def _cleared(source: AiModelsSource, result: AccessTest) -> AccessTest:
+        """`result`, after an answer cleared its model's mark; a failure of the single check marks nothing."""
+        if result.ok and result.model and not result.skipped:
+            mark_answered(source, result.model, answered=True)
+        return result
 
     def test_model(self, model_id: str, timeout: float) -> AccessTest:
         """One tiny request to `model_id`, within `timeout` seconds, and keep whether it answered for the picker.
@@ -130,6 +139,9 @@ class PluginModelsAccess:
         if offer is None or not offer.available:
             why = "the plugin doesn't offer it now" if offer is None else "the plugin marks it unavailable"
             return AccessTest(ok=False, detail=f"{why}; not tested", model=model_id, skipped=True)
+        if _lingering() >= MAX_LINGERING:
+            why = f"{MAX_LINGERING} earlier requests still haven't returned; try again later"
+            return AccessTest(ok=False, detail=f"{why}; not tested", model=model_id, skipped=True)
         result = _bounded(lambda: self._probe(source, offer, timeout, started), timeout + 1.0)
         if result is None:
             result = AccessTest(
@@ -138,7 +150,9 @@ class PluginModelsAccess:
                 model=model_id,
                 duration_seconds=time.monotonic() - started,
             )
-        mark_answered(source, model_id, answered=result.ok)
+        result = result.model_copy(update={"model": model_id})
+        if not result.skipped:  # the plugin's own check may say it didn't ask: then nothing was learned
+            mark_answered(source, model_id, answered=result.ok, offered=[o.id for o in offers])
         return result
 
     def _probe(self, source: AiModelsSource, offer: ModelOffer, timeout: float, started: float) -> AccessTest:
@@ -170,18 +184,41 @@ class PluginModelsAccess:
         return result.model_copy(update=update)
 
 
+MAX_LINGERING = 24
+"""How many cut-off requests may still run before `test_model` sends no more: a hung plugin's threads stay bounded."""
+_live = 0
+_live_lock = threading.Lock()
+
+
+def _lingering() -> int:
+    """How many requests of earlier checks are still running."""
+    with _live_lock:
+        return _live
+
+
 def _bounded(call: Callable[[], AccessTest], timeout: float) -> AccessTest | None:
     """`call()` on a daemon thread, or None when it takes longer than `timeout`: a hung plugin holds one thread only.
 
-    The wait is interruptible, so Ctrl-C stops `hz ai access test --all` between and during models.
+    The wait is interruptible, so Ctrl-C stops `hz ai access test --all` between and during models. A request cut off
+    may still finish later and spend tokens hz never hears of; `MAX_LINGERING` bounds how many may run at once.
     """
     found: list[AccessTest] = []
     done = threading.Event()
 
     def run() -> None:
+        global _live  # noqa: PLW0603 - one counter of the threads this module started
+        with _live_lock:
+            _live += 1
         try:
             found.append(call())
+        except KeyboardInterrupt:
+            raise
+        except BaseException as exc:  # noqa: BLE001 - e.g. a plugin's SystemExit: a failed check, never a dead thread
+            detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
+            found.append(AccessTest(ok=False, detail=detail))
         finally:
+            with _live_lock:
+                _live -= 1
             done.set()
 
     threading.Thread(target=run, name="ai-models-test", daemon=True).start()

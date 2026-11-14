@@ -1,6 +1,7 @@
 """`hz ai access test --all`: one tiny request per model, bounded, recorded and kept for the picker (ADR 0159)."""
 
 import asyncio
+import json
 import threading
 import time
 from contextlib import contextmanager
@@ -350,3 +351,109 @@ def test_a_library_failure_before_the_request_is_a_failed_check(tmp_path, monkey
     result = access.test_model("ok", 1.0)
     assert (result.ok, result.detail, result.model) == (False, "TypeError: unsupported model", "ok")
     assert marked(found)["ok"] is False
+
+
+class OwnSkips(Models):
+    """Its own check says it didn't ask the model (the review's probe)."""
+
+    def test(self, model_id: str) -> dict[str, object]:
+        return {"ok": False, "detail": "x" * 10_000, "skipped": True}
+
+
+class OwnExits(Models):
+    """Its own check raises what isn't an `Exception` (the review's probe)."""
+
+    def test(self, model_id: str) -> AccessTest:
+        raise SystemExit(3)
+
+
+def test_a_plugins_own_skip_marks_nothing_and_is_reported_skipped(tmp_path):
+    access, found = option(tmp_path, OwnSkips())
+    result = access.test_model("ok", 1.0)
+    assert (result.ok, result.skipped, len(result.detail), result.model) == (False, True, 300, "ok")
+    assert marked(found)["ok"] is True, "nothing was learned, so nothing is marked"
+    assert found.unanswered is not None
+    assert not found.unanswered.exists()
+    service_, usage = service(tmp_path, {"acme": access})
+    report = service_.test_all("acme", {"acme": access}, Progress())  # type: ignore[arg-type]
+    assert [(r.model, r.outcome) for r in report.models if r.model == "ok"] == [("ok", "skipped")]
+    assert [e.model for e in usage.entries if e.model == "ok"] == [], "no request, no usage"
+
+
+def test_a_plugins_own_check_that_exits_is_a_failed_check_with_its_cause(tmp_path, capsys):
+    access, found = option(tmp_path, OwnExits())
+    result = access.test_model("ok", 1.0)
+    assert (result.ok, result.detail, result.model) == (False, "SystemExit: 3", "ok")
+    assert marked(found)["ok"] is False
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_marks_of_models_the_plugin_dropped_are_pruned_and_never_crowd_out_new_ones(tmp_path):
+    from heinzel.kernel._ai_models import mark_answered
+
+    access, found = option(tmp_path, Models())
+    for i in range(600):
+        mark_answered(found, f"a{i:04d}", answered=False)
+    access.test_model("boom", 1.0)
+    assert found.unanswered is not None
+    assert json.loads(found.unanswered.read_text()) == ["boom"], "only ids the plugin offers now are kept"
+
+
+def test_cut_off_requests_are_bounded_across_runs(tmp_path, monkeypatch):
+    from heinzel.modules.ai.access import _plugin_models
+
+    adapter = Models()
+    access, _found = option(tmp_path, adapter)
+    monkeypatch.setattr(_plugin_models, "_lingering", lambda: _plugin_models.MAX_LINGERING)
+    result = access.test_model("ok", 1.0)
+    assert (result.skipped, result.detail) == (
+        True,
+        "24 earlier requests still haven't returned; try again later; not tested",
+    )
+    assert adapter.built == []
+
+
+def test_a_second_run_is_refused_while_one_is_going_on(tmp_path):
+    started, release = threading.Event(), threading.Event()
+
+    class Slow(Fake):
+        def test_model(self, model_id: str, timeout: float) -> AccessTest:
+            started.set()
+            release.wait(10)
+            return AccessTest(ok=True, detail="OK")
+
+    slow = Slow({"a": AccessTest(ok=True)})
+    first, _ = service(tmp_path, {"acme": slow})
+    second, _usage = service(tmp_path, {"acme": slow})
+    reports: list[object] = []
+    worker = threading.Thread(target=lambda: reports.append(first.test_all("acme", {"acme": slow}, Progress())))
+    worker.start()
+    try:
+        assert started.wait(5)
+        with pytest.raises(HeinzelError, match="A check of every model is already running"):
+            second.test_all("acme", {"acme": slow}, Progress())  # type: ignore[arg-type]
+    finally:
+        release.set()
+        worker.join(10)
+    assert len(reports) == 1
+    assert second.test_all("acme", {"acme": slow}, Progress()).ok, "free again once the first ended"  # type: ignore[arg-type]
+
+
+def test_the_single_check_of_the_chosen_model_clears_its_mark_but_never_sets_one(tmp_path, monkeypatch):
+    from heinzel.kernel._ai_models import mark_answered
+
+    adapter = Models()
+    found = option(tmp_path, adapter)[1]
+    mark_answered(found, "ok", answered=False)
+    access = PluginModelsAccess("acme", lambda: found, lambda: AccessSettings(plugin_model="ok"))
+    monkeypatch.setattr(adapter, "model", lambda model_id: FunctionModel(_plain, model_name=model_id))
+    assert access.test().ok
+    assert marked(found)["ok"] is True
+    failing = PluginModelsAccess("acme", lambda: found, lambda: AccessSettings(plugin_model="boom"))
+    monkeypatch.setattr(adapter, "model", lambda model_id: FunctionModel(_raises, model_name=model_id))
+    assert not failing.test().ok
+    assert marked(found)["boom"] is True, "a single check marks nothing"
+
+
+async def _plain(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    return ModelResponse(parts=[TextPart("OK")])
