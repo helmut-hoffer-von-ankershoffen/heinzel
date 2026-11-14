@@ -116,10 +116,11 @@ export function ChatSearch({
     setBusy(true);
     setFailed(false);
     try {
+      const { scope: where, ...terms } = request;
       const page =
-        request.scope === "chat"
-          ? await searchChat(sessionId, request, cursor, abort.signal)
-          : await searchAll(request, cursor, abort.signal);
+        where === "chat"
+          ? await searchChat(sessionId, terms, cursor, abort.signal)
+          : await searchAll(terms, cursor, abort.signal);
       if (generation.current !== run) return;
       setHits((current) => (cursor ? [...current, ...page.hits] : page.hits));
       setNext(page.next);

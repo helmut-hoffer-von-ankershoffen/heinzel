@@ -62,6 +62,7 @@ describe("chat search", () => {
       ?.clone()
       .json();
     expect(body.request).toMatchObject({ session_id: here, query: "needle", cursor: null });
+    expect(Object.keys(body.request).sort()).toEqual(["cursor", "query", "session_id", "since", "until"]);
   });
 
   it("switches scope to all Heinzels, names the Heinzel and jumps into its chat", async () => {
