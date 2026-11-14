@@ -9,7 +9,17 @@ import { ArrowLeft, ArrowRight, Check, ChevronsRight, Play, X } from "lucide-rea
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
-import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useSetting } from "@/api/queries";
+import {
+  keys,
+  useConfig,
+  useHeinzelSessions,
+  usePlaybooks,
+  usePreviewFeature,
+  useProfile,
+  useSetSetting,
+  useSetting,
+} from "@/api/queries";
+import { MeetHeinzel } from "@/chat/MeetHeinzel";
 import { runCommand } from "@/components/CommandActions";
 import { Gnome } from "@/components/Gnome";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -79,6 +89,7 @@ const shown = (element: HTMLElement) =>
 
 export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
   const titleId = useId();
+  const meet = usePreviewFeature("one_chat") && progress.step === "first";
   const dialog = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const index = STEPS.indexOf(progress.step);
@@ -184,10 +195,12 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
           </header>
           <section aria-labelledby={`${titleId}-step`} className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8">
             <h2 id={`${titleId}-step`} ref={heading} tabIndex={-1} className="text-lg font-medium focus:outline-none">
-              {t(`onboarding.${progress.step}.title`)}
+              {meet ? t("oneChat.meet") : t(`onboarding.${progress.step}.title`)}
             </h2>
-            <p className="mt-1 mb-5 text-sm text-muted-foreground">{t(`onboarding.${progress.step}.intro`)}</p>
-            <Step id={progress.step} onClose={onClose} />
+            <p className="mt-1 mb-5 text-sm text-muted-foreground">
+              {meet ? t("onboarding.first.meetIntro") : t(`onboarding.${progress.step}.intro`)}
+            </p>
+            <Step id={progress.step} onClose={onClose} meet={meet} />
           </section>
           <PaneActions align="end" words="all" className="mt-0 shrink-0 px-5 py-3">
             <PaneAction
@@ -213,7 +226,7 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
   );
 }
 
-function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
+function Step({ id, onClose, meet }: { id: StepId; onClose: () => void; meet: boolean }) {
   switch (id) {
     case "you":
       return <You />;
@@ -228,7 +241,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "notifications":
       return <Notifications onClose={onClose} />;
     case "first":
-      return <FirstHeinzel />;
+      return meet ? <MeetStep /> : <FirstHeinzel />;
   }
 }
 
@@ -615,4 +628,13 @@ function FirstHeinzel() {
       <Confirmed command={command} label={t("onboarding.first.create")} disabled={!command} />
     </div>
   );
+}
+
+/** Step 7 with the flag `one_chat`: the same "Meet your first Heinzelmännchen" as the chat's first start. */
+function MeetStep() {
+  const [created, setCreated] = useState(false);
+  const heinzels = useHeinzelSessions();
+  // A Heinzel that already exists is the first one: the wizard never asks for a second first start.
+  if (created || (heinzels.data?.sessions?.length ?? 0) > 0) return <p role="status">{t("meet.created")}</p>;
+  return <MeetHeinzel onCreated={() => setCreated(true)} />;
 }
