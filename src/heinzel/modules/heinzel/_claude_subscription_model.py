@@ -52,6 +52,7 @@ from heinzel.kernel._claude_code import (
     _structured,
     check_access,
     executable_digest,
+    in_supported_range,
     prove_contract,
     require_no_model_override,
     require_subscription_login,
@@ -79,6 +80,7 @@ __all__ = [
     "SubscriptionVerifier",
     "check_access",
     "executable_digest",
+    "in_supported_range",
     "prove_contract",
     "require_no_model_override",
     "require_subscription_login",
@@ -107,7 +109,10 @@ class SubscriptionVerifier(Protocol):
     def verify(
         self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: SubscriptionAdmission
     ) -> bool:
-        """Admit exact identity, subscription billing, isolation and current owner authority."""
+        """Admit exact identity, subscription billing, isolation and current owner authority.
+
+        `version` is the reviewed range label (VERSION) before the executable runs, then the release it reported.
+        """
         ...
 
 
@@ -297,12 +302,12 @@ class ClaudeSubscriptionModel(Model):
                 raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
             environment = subscription_environment()
             with tempfile.TemporaryDirectory(prefix="hz-model-") as directory:
-                await _admit(self._execute, executable, digest, Path(directory), environment)
+                version = await _admit(self._execute, executable, digest, Path(directory), environment)
                 if self._current_policy() != self._policy:
                     raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
                 if executable_digest(executable) != digest:
                     raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)  # noqa: TRY301
-                if not self._verifier.verify(executable, digest, VERSION, COMMAND_FLAGS, self._policy):
+                if not self._verifier.verify(executable, digest, version, COMMAND_FLAGS, self._policy):
                     raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
                 self._slots.reserve(
                     self._policy.owner,
@@ -352,7 +357,13 @@ class ClaudeSubscriptionModel(Model):
             if isinstance(error, SubscriptionUsageLimitError):
                 logger.warning("Claude Code subscription request refused: usage-limit")
                 raise SubscriptionUsageLimitError from None
-            reason = error.reason if isinstance(error, SubscriptionDeniedError) else Denial.REFUSED
+            reason = (
+                error.reason
+                if isinstance(error, SubscriptionDeniedError)
+                else Denial.UNAVAILABLE
+                if isinstance(error, OSError)
+                else Denial.REFUSED
+            )
             logger.warning("Claude Code subscription request refused: %s", reason.value)
             if isinstance(error, SubscriptionDeniedError):
                 raise SubscriptionDeniedError(reason, error.version, older=error.older) from None

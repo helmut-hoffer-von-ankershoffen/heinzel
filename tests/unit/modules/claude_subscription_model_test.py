@@ -451,7 +451,7 @@ def test_a_newer_reviewed_release_with_its_real_options_is_admitted(tmp_path):
     model = fixture_model(executable, policy, verifier, lambda: policy)
     response = asyncio.run(model.request(_message(), None, parameters()))
     assert isinstance(response.parts[0], ToolCallPart)
-    assert {seen[2] for seen in verifier.seen} == {"2.1.312 to before 2.2.0"}
+    assert [seen[2] for seen in verifier.seen] == ["2.1.312 to before 2.2.0", "2.1.321"]
 
 
 @pytest.mark.parametrize("version", ["2.1.311", "2.2.0", "3.0.0", "2.1.321-beta", "2.1.0321", "Claude Code"])
@@ -591,3 +591,46 @@ def test_the_access_check_runs_the_same_admission_as_chat(tmp_path):
     with pytest.raises(SubscriptionDeniedError) as error:
         check_access(executable, lambda command, **_: Outcome(0, "2.2.1 (Claude Code)\n", ""), "Reply OK", 5)
     assert error.value.reason == "version-unsupported"
+
+
+def test_an_option_named_only_in_another_options_description_is_not_proven():
+    from heinzel.modules.heinzel._claude_subscription_model import prove_contract
+    from heinzel.modules.system.runner._process import Outcome
+
+    prove_contract(Outcome(0, REAL_2_1_321_OPTIONS, ""), "2.1.321")
+    lines = REAL_2_1_321_OPTIONS.splitlines()
+    for option in ("--strict-mcp-config", "--tools", "-p"):
+        kept = [line for line in lines if not line.lstrip().startswith((f"{option} ", f"{option},"))]
+        text = "\n".join([*kept, f"  --restricted                          Restricted mode, like {option}"])
+        with pytest.raises(SubscriptionDeniedError) as error:
+            prove_contract(Outcome(0, text, ""), "2.1.321")
+        assert error.value.reason == "contract-unproven"
+    described = "  --other   " + " ".join(CONTRACT_OPTIONS)
+    with pytest.raises(SubscriptionDeniedError):
+        prove_contract(Outcome(0, described, ""), "2.1.321")
+
+
+def test_a_process_that_cannot_start_is_unavailable_without_errno_or_path(tmp_path):
+    from heinzel.modules.heinzel._claude_subscription_model import check_access
+
+    executable = fake_cli(tmp_path)
+
+    def refuse(command, **_kwargs):
+        raise PermissionError(13, "Permission denied", "/private/path/claude")
+
+    with pytest.raises(SubscriptionDeniedError) as error:
+        check_access(executable, refuse, "Reply OK", 5)
+    assert error.value.reason == "unavailable"
+    assert "private" not in str(error.value)
+    assert error.value.__cause__ is None
+    policy = admission()
+    model = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=refuse)
+    with pytest.raises(SubscriptionDeniedError) as error:
+        asyncio.run(model.request(_message(), None, parameters()))
+    assert error.value.reason == "unavailable"
+    assert "private" not in str(error.value)
+
+
+def test_a_cli_error_says_what_to_do():
+    words = str(SubscriptionDeniedError("cli-error"))
+    assert words.endswith("then send the message again if it is still needed.")

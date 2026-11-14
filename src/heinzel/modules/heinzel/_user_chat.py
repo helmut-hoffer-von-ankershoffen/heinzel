@@ -82,17 +82,27 @@ class _ClaudeVerifier:
 
     def __init__(self, check: Callable[[], bool], path: Path, digest: str, policy: "SubscriptionAdmission") -> None:
         self._check, self._path, self._digest, self._policy = check, path, digest, policy
+        self._release: str | None = None
 
     def verify(
         self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: "SubscriptionAdmission"
     ) -> bool:
-        from heinzel.modules.heinzel._claude_subscription_model import COMMAND_FLAGS, VERSION  # noqa: PLC0415 - model runtime only during an admitted turn
+        from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model runtime only during an admitted turn
+            COMMAND_FLAGS,
+            VERSION,
+            in_supported_range,
+        )
 
+        # Before launch the bridge names the reviewed range; after `--version` the observed release, which must lie
+        # inside it and stay the same for the whole turn (the digest is bound too).
+        if version != VERSION:
+            if not in_supported_range(version) or self._release not in {None, version}:
+                return False
+            self._release = version
         return (
             self._check()
             and executable == self._path
             and digest == self._digest
-            and version == VERSION
             and flags == COMMAND_FLAGS
             and policy == self._policy
         )

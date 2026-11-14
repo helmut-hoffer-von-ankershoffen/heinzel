@@ -258,7 +258,7 @@ def test_executable_size_boundary_accepts_installed_cli_without_large_fixture():
     from stat import S_IFIFO, S_IFREG
     from types import SimpleNamespace
 
-    from heinzel.modules.heinzel._claude_subscription_model import _allowed_executable_stat
+    from heinzel.kernel._claude_code import _allowed_executable_stat
 
     assert _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=275_988_512))
     assert _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=512 * 1024 * 1024))
@@ -364,3 +364,25 @@ def test_fake_model_suggests_inert_schedule_in_personal_turn(tmp_path):
             ("schedule:propose", "requested"),
             ("schedule:propose", "completed"),
         ]
+
+
+def test_the_turn_verifier_binds_the_observed_release_inside_the_reviewed_range(tmp_path):
+    from heinzel.modules.heinzel._claude_subscription_model import COMMAND_FLAGS, VERSION, SubscriptionAdmission
+    from heinzel.modules.heinzel._user_chat import _ClaudeVerifier
+
+    policy = SubscriptionAdmission("u-" + "a" * 32, "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", 1, 2, 5, 1024)
+    path = tmp_path / "claude"
+
+    def verifier():
+        return _ClaudeVerifier(lambda: True, path, "d" * 64, policy)
+
+    def admits(target, version):
+        return target.verify(path, "d" * 64, version, COMMAND_FLAGS, policy)
+
+    turn = verifier()
+    assert admits(turn, VERSION)
+    assert admits(turn, "2.1.321")
+    assert admits(turn, "2.1.321")
+    assert not admits(turn, "2.1.322")  # the release cannot change inside one turn
+    for outside in ("2.1.311", "2.2.0", "2.1.321 (Claude Code)", "latest"):
+        assert not admits(verifier(), outside)

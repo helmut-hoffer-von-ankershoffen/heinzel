@@ -172,7 +172,10 @@ _DENIALS: dict[str, str] = {  # by Denial value; version-older is the older-rele
         "Claude Code answered in a form Heinzel cannot verify. Send the message again; if it repeats, re-check AI "
         "access in Settings."
     ),
-    "cli-error": "Claude Code reported an error; the turn outcome is uncertain",
+    "cli-error": (
+        "Claude Code reported an error, so this answer is uncertain and was not repeated. Check the conversation, "
+        "then send the message again if it is still needed."
+    ),
     "login-unconfirmed": (
         "Claude Code is not signed in with a Claude subscription. Run `claude auth login`, then re-check AI access "
         "in Settings."
@@ -217,6 +220,20 @@ def supported_version(outcome: Outcome) -> str:
     return version
 
 
+_DEFINITION = re.compile(r" {0,8}-")
+"""A help line that defines options starts with them; a description continues indented much further."""
+_OPTION = re.compile(r"(?<![\w-])(--?[A-Za-z][\w-]*)")
+
+
+def in_supported_range(version: str) -> bool:
+    """Whether `version` is exactly a release inside SUPPORTED_VERSIONS, written as `--version` reports it."""
+    match = _VERSION_LINE.fullmatch(f"{version} (Claude Code)")
+    if match is None:
+        return False
+    low, high = SUPPORTED_VERSIONS
+    return low <= (int(match[1]), int(match[2]), int(match[3])) < high
+
+
 def prove_contract(outcome: Outcome, version: str) -> None:
     """Require the exact executable's own help to list every option the bridge passes.
 
@@ -227,9 +244,13 @@ def prove_contract(outcome: Outcome, version: str) -> None:
         raise SubscriptionDeniedError(Denial.TIMEOUT)
     if outcome.returncode != 0 or outcome.truncated:
         raise SubscriptionDeniedError(Denial.CONTRACT_UNPROVEN, version)
-    for option in CONTRACT_OPTIONS:
-        if re.search(rf"(?<![\w-]){re.escape(option)}(?![\w-])", outcome.stdout) is None:
-            raise SubscriptionDeniedError(Denial.CONTRACT_UNPROVEN, version)
+    defined: set[str] = set()
+    for line in outcome.stdout.splitlines():
+        if _DEFINITION.match(line):  # an option's own entry, never another option's description
+            head = re.split(r"\s{2,}", line.strip(), maxsplit=1)[0]
+            defined.update(_OPTION.findall(head))
+    if not set(CONTRACT_OPTIONS) <= defined:
+        raise SubscriptionDeniedError(Denial.CONTRACT_UNPROVEN, version)
 
 
 def _proven_before(executable: Path, digest: str) -> bool:
@@ -363,21 +384,25 @@ def check_access(executable: Path, execute: Callable[..., Outcome], prompt: str,
         separators=(",", ":"),
     )
     environment = subscription_environment()
+
+    def run(command: list[str], *, stdin: str | None, timeout: float, limit: int) -> Outcome:
+        try:
+            return execute(command, input=stdin, cwd=cwd, env=environment, timeout=timeout, limit=limit)
+        except OSError:  # errno and path stay out of the reply
+            raise SubscriptionDeniedError(Denial.UNAVAILABLE) from None
+
     with tempfile.TemporaryDirectory(prefix="hz-ai-test-") as directory:
         cwd = Path(directory)
-        version = supported_version(
-            execute([str(resolved), "--version"], input=None, cwd=cwd, env=environment, timeout=5, limit=1024)
-        )
-        prove_contract(
-            execute([str(resolved), "--help"], input=None, cwd=cwd, env=environment, timeout=10, limit=_MAX_HELP),
-            version,
-        )
-        if executable_digest(resolved) != digest:
+        version = supported_version(run([str(resolved), "--version"], stdin=None, timeout=5, limit=1024))
+        prove_contract(run([str(resolved), "--help"], stdin=None, timeout=10, limit=_MAX_HELP), version)
+        try:
+            unchanged = executable_digest(resolved) == digest
+        except HeinzelError:
+            raise SubscriptionDeniedError(Denial.UNAVAILABLE) from None
+        if not unchanged:
             raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)
         _remember_proof(resolved, digest)
-        outcome = execute(
-            [str(resolved), *COMMAND_FLAGS], input=payload, cwd=cwd, env=environment, timeout=timeout, limit=16_384
-        )
+        outcome = run([str(resolved), *COMMAND_FLAGS], stdin=payload, timeout=timeout, limit=16_384)
     wire = _structured(outcome)
     if wire.kind != "text" or not wire.text or wire.name is not None or wire.arguments is not None:
         raise SubscriptionDeniedError(Denial.OUTPUT_INVALID)
