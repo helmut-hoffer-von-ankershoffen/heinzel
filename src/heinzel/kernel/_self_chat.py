@@ -10,9 +10,14 @@ text cleaned of control and invisible characters) and checks what comes back: an
 offered, and every string is cleaned. What the user wrote is still untrusted input, like anything typed in a head.
 """
 
+import fcntl
+import json
+import os
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, cast
 
 from heinzel.kernel._errors import HeinzelError, NotSupportedError
@@ -35,6 +40,8 @@ MAX_SELF_TEXT = 3000
 """Longest text hz sends in one self message; longer text is cut with an ellipsis and the app keeps the whole."""
 MAX_ANSWER = 32000
 """Longest typed answer taken from chat: what the app's composer lets you send to a Heinzel."""
+MAX_LEDGER = 500
+"""Most entries one part of a self-chat ledger keeps; the oldest go first."""
 MAX_TIMEOUT = 3600.0
 """Longest a question waits in chat, in seconds."""
 
@@ -177,3 +184,57 @@ def _handle(thread: str | None) -> str | None:
 
 def _cleaned(value: str | None) -> str | None:
     return None if value is None else clean_text(value)
+
+
+class SelfChatLedger:
+    """A small private JSON file of string maps, changed under an exclusive lock across processes (ADR 0160).
+
+    What went to chat and the thread of each Heinzel chat: the web app's process and the daemon's tick both use it.
+    Each part keeps at most `MAX_LEDGER` entries; a damaged file reads as empty.
+    """
+
+    def __init__(self, directory: Path, name: str, parts: Sequence[str]) -> None:
+        """Keep `name.json` under `directory` with these parts; nothing is written until something changes."""
+        self.directory = directory
+        self.path = directory / f"{name}.json"
+        self._lock = directory / f"{name}.lock"
+        self._parts = tuple(parts)
+
+    @contextmanager
+    def locked(self) -> Generator[dict[str, dict[str, str]]]:
+        """The ledger under an exclusive lock; what the block leaves in it is written back.
+
+        Yields:
+            Each part's entries by key.
+        """
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        descriptor = os.open(self._lock, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(descriptor, "a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                state = self._read()
+                yield state
+                self._write(state)
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def _read(self) -> dict[str, dict[str, str]]:
+        try:
+            data: object = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        state: dict[str, dict[str, str]] = {part: {} for part in self._parts}
+        if isinstance(data, dict):
+            for part in self._parts:
+                value: object = cast("dict[str, object]", data).get(part)
+                if isinstance(value, dict):
+                    state[part] = {str(k): str(v) for k, v in cast("dict[object, object]", value).items()}
+        return state
+
+    def _write(self, state: dict[str, dict[str, str]]) -> None:
+        bounded = {part: dict(list(state[part].items())[-MAX_LEDGER:]) for part in self._parts}
+        partial = self.path.with_name(f".{self.path.name}.{os.getpid()}.{threading.get_ident()}")
+        descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(bounded, handle)
+        partial.replace(self.path)

@@ -144,7 +144,7 @@ class NotifyService(Notifications):
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
         self.self_chat: Callable[[], SelfChat | None] = lambda: None
         """The bound chat adapter's self channel (ADR 0160); set by `for_user`, None sends nothing to chat."""
-        self.chat_ledger = _chat.Ledger(settings.state_dir / "self-chat")
+        self.chat_ledger = _chat.notice_ledger(settings.state_dir / "self-chat")
         self._chat_busy = threading.Lock()
         self._chat_again = threading.Event()
 

@@ -74,6 +74,7 @@ from heinzel.modules.heinzel._scheduled_notifications import (
     ScheduledNotificationRecovery,
     ScheduledNotificationView,
 )
+from heinzel.modules.heinzel._self_chat_questions import QuestionRelay
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
@@ -897,7 +898,7 @@ class KernelPluginModels:
 
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
-    return UserChatService(
+    service = UserChatService(
         crud,
         current,
         runner,
@@ -907,6 +908,8 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
     )
+    service.questions = QuestionRelay(service, crud, current, kernel.self_chat, kernel.settings.state_dir)
+    return service
 
 
 def _register_notification_operations(module: Module) -> None:

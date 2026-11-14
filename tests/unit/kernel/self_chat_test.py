@@ -32,7 +32,7 @@ pytestmark = pytest.mark.unit
 
 
 class SelfOnly:
-    """What a company CLI offers: only messages to oneself."""
+    """An adapter that supports only messages to oneself."""
 
     unsupported = ("messages", "post")
     sent: ClassVar[list[dict[str, object]]] = []

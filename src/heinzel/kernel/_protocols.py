@@ -363,7 +363,7 @@ class Chat(Protocol):
         """
         ...
 
-    def ask_self(  # noqa: PLR0913 - the question and its keyword-only knobs, as the chat CLIs take them
+    def ask_self(  # noqa: PLR0913 - the question and its keyword-only knobs
         self,
         question: str,
         *,

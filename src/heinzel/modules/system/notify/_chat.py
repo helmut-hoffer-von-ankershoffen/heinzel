@@ -10,26 +10,18 @@ share one thread per Heinzel chat. Only notices that became due within `WINDOW` 
 replay a backlog.
 """
 
-import fcntl
-import json
 import logging
-import os
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from heinzel import Notice, NoticeKind, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import SelfChat
+from heinzel.kernel._self_chat import SelfChat, SelfChatLedger
 
 _EVENTS = get_logger("system.notify")
 WINDOW = timedelta(hours=1)
 """Only notices that became due this recently go to chat."""
-MAX_LEDGER = 500
-"""Most notice ids and threads the ledger keeps; the oldest go first."""
-PRIVATE_DIR = 0o700
-PRIVATE_FILE = 0o600
 KIND_LABEL: dict[NoticeKind, str] = {
     NoticeKind.DRAFT: "Draft",
     NoticeKind.FAILED: "Failed run",
@@ -43,53 +35,9 @@ KIND_LABEL: dict[NoticeKind, str] = {
 """The context label of a notice no Heinzel sent: where it comes from, in a word or two."""
 
 
-class Ledger:
-    """Which notices went to chat, and the thread of each Heinzel chat: `self-chat/notices.json`, private."""
-
-    def __init__(self, directory: Path) -> None:
-        """Keep it under `directory`; nothing is written until something is sent."""
-        self.directory = directory
-        self._file = directory / "notices.json"
-        self._lock = directory / "notices.lock"
-
-    @contextmanager
-    def locked(self) -> Generator[dict[str, dict[str, str]]]:
-        """The ledger under an exclusive lock; what the block leaves in it is written back.
-
-        Yields:
-            The ledger: `sent` notice ids with when they were claimed, and `threads` by Heinzel chat route.
-        """
-        self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        descriptor = os.open(self._lock, os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
-        with os.fdopen(descriptor, "a") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            try:
-                state = self._read()
-                yield state
-                self._write(state)
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
-
-    def _read(self) -> dict[str, dict[str, str]]:
-        try:
-            data: object = json.loads(self._file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        state: dict[str, dict[str, str]] = {"sent": {}, "threads": {}}
-        if isinstance(data, dict):
-            for part in state:
-                value: object = data.get(part)
-                if isinstance(value, dict):
-                    state[part] = {str(k): str(v) for k, v in value.items()}
-        return state
-
-    def _write(self, state: dict[str, dict[str, str]]) -> None:
-        bounded = {part: dict(list(entries.items())[-MAX_LEDGER:]) for part, entries in state.items()}
-        partial = self._file.with_name(f".{self._file.name}.{os.getpid()}")
-        descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_FILE)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(bounded, handle)
-        partial.replace(self._file)
+def notice_ledger(directory: Path) -> SelfChatLedger:
+    """Which notices went to chat (`sent`), and the thread of each Heinzel chat (`threads`)."""
+    return SelfChatLedger(directory, "notices", ("sent", "threads"))
 
 
 def chat_text(notice: Notice, url: str | None) -> str:
@@ -109,7 +57,7 @@ def chat_context(notice: Notice) -> str:
 def send(
     notices: list[Notice],
     channel: SelfChat,
-    ledger: Ledger,
+    ledger: SelfChatLedger,
     now: datetime,
     url: Callable[[Notice], str | None],
 ) -> int:

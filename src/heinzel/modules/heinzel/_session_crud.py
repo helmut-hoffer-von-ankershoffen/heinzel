@@ -660,6 +660,22 @@ class SessionCrud(ApprovalIssuer):
         with self.repository.control_writer(session_id) as writer:
             return self._accept_locked(session_id, request, writer)
 
+    def accept_answer(self, session_id: str, request: MessageRequest, question: int) -> MessageAccepted | None:
+        """Accept a chat answer to the reply at `question` only if nothing came after it (ADR 0160); else None.
+
+        One compare-and-set under the control lock that every accepted message takes: an answer typed in a head and
+        an answer from chat can't both answer one question; the later one is refused here or is a follow-up there.
+
+        Raises:
+            HeinzelError: If the request repeats a different accepted message.
+        """
+        request = MessageRequest.model_validate_json(request.model_dump_json())
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            if any(e.seq > question and e.kind in {"message.accepted", "message.replied"} for e in events):
+                return None
+            return self._accept_locked(session_id, request, writer)
+
     def _accept_locked(self, session_id: str, request: MessageRequest, writer: SessionWriter) -> MessageAccepted:
         """Accept under the owning control lock, retaining a creation prompt's first inbox position.
 

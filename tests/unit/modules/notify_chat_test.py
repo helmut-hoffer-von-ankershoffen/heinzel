@@ -11,7 +11,7 @@ import pytest
 from heinzel import HeinzelError, NoticeHelper, NoticeKind, SelfMessage
 from heinzel.kernel._self_chat import SelfChat
 from heinzel.modules.system.notify import NotifyService, NotifySettings
-from heinzel.modules.system.notify._chat import WINDOW, Ledger, chat_context, chat_text
+from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, notice_ledger
 from heinzel.modules.system.notify._native import Native
 
 pytestmark = pytest.mark.unit
@@ -38,7 +38,7 @@ class Inbox:
 
     def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
         if self.fail:
-            msg = "the company CLI is down"
+            msg = "the chat service is down"
             raise HeinzelError(msg)
         with self.lock:
             self.sent.append({"text": text, "thread": thread, "context": context})
@@ -200,7 +200,7 @@ def test_two_senders_never_send_one_notice_twice(make):
 
 
 def test_the_ledger_is_private_bounded_and_survives_damage(settings):
-    ledger = Ledger(settings.state_dir / "self-chat")
+    ledger = notice_ledger(settings.state_dir / "self-chat")
     with ledger.locked() as state:
         state["sent"].update({str(n): "x" for n in range(600)})
     data = json.loads((ledger.directory / "notices.json").read_text())
