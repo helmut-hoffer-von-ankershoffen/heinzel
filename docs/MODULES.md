@@ -10,6 +10,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
+| [`documents`](#documents) | Open and search your documents in every documents connector that is on. |
 | [`graph`](#graph) | Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
@@ -67,6 +68,15 @@ Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plug
 Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 
 Health checks: reported by `hz system doctor`.
+
+## `documents`
+
+Open and search your documents in every documents connector that is on.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Read a document's text through the connector it belongs to. | `hz documents read` | `documents_read` | — | `GET /api/documents/read` |  | expert |
+| Search every documents connector that is on at once; one that fails or is slow is reported, not fatal. | `hz documents search` | `documents_search` | — | `GET /api/documents/search` |  | expert |
 
 ## `graph`
 

@@ -167,6 +167,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
             "capability": "documents",
             "modes": ["read", "write"],
             "hosts": ["notes.invalid"],
+            "links": ["notes.invalid"],
             "module": "notes",
             "distribution": "heinzel-test",
         }
@@ -242,6 +243,18 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
     assert code == 0
     assert report["checks"]["system.capability"] == [
         {"name": "ai-access:read for ai.access test", "status": "up", "detail": "served by claude-code", "fix": ""},
+        {
+            "name": "documents:read for documents read",
+            "status": "up",
+            "detail": "optional: not connected; to use it: hz system plugin search --text documents",
+            "fix": "",
+        },
+        {
+            "name": "documents:read for documents search",
+            "status": "up",
+            "detail": "optional: not connected; to use it: hz system plugin search --text documents",
+            "fix": "",
+        },
         {
             "name": "calendar:read for org agenda",
             "status": "up",
@@ -460,6 +473,8 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
     }
     assert [(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]] == [
         ("ai.access test", "ai-access:read", "claude-code"),
+        ("documents read", "documents:read", None),
+        ("documents search", "documents:read", None),
         ("org agenda", "calendar:read", "agenda"),
         ("org calendar", "calendar:read", "agenda"),
         ("prep", "chat:read", "talk"),

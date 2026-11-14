@@ -102,13 +102,14 @@ class ConnectorService:
         for let in adapters:
             spec = CAPABILITIES[let.capability]
             bound, how = self._view.binding(let.capability)
+            serving = self._view.bindings(let.capability)[0]
             uses.append(
                 ConnectorCapability(
                     capability=let.capability,
                     title=spec.title or let.capability,
                     adapter=let.adapter,
                     modes=[mode for mode in MODES if mode in let.modes],
-                    used=bound == let.adapter,
+                    used=let.adapter in serving,
                     bound=bound,
                     how=how,
                 )
@@ -228,3 +229,4 @@ class ConnectorService:
 
 def _key(capability: str) -> str:
     return f"capabilities.{capability.replace('-', '_')}"
+

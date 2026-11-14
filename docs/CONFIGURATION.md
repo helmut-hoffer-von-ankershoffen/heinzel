@@ -45,7 +45,7 @@ does not inherit it.
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | The connector for team chat, such as Slack. Never read from a project's hz.toml. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | The connector for pull requests and code, such as GitHub. Never read from a project's hz.toml. |
 | `directory` | `HZ_CAPABILITIES__DIRECTORY` | `'one-on-ones'` | Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each guess for you to confirm), or read from a directory a plugin connects. Never read from a project's hz.toml. |
-| `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | The connector for documents and pages, such as Confluence. Never read from a project's hz.toml. |
+| `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | The connectors for documents and pages, such as Google Docs and Confluence. Switch on several: a link opens in the one it belongs to, a search asks them all, and the first is where new documents go. Never read from a project's hz.toml. |
 | `mail` | `HZ_CAPABILITIES__MAIL` | `None` | The connector that reads your mail, such as Google. Never read from a project's hz.toml. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | The connector for meeting summaries, such as Zoom. Never read from a project's hz.toml. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | The connector for issues, such as GitHub or Jira. Never read from a project's hz.toml. |

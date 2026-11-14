@@ -21,6 +21,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `ai`: (expert) How hz reaches AI, and what it...
 * `app`: Manage the native Heinzel desktop app.
 * `chat`: Chat with the agent runner in this...
+* `documents`: (expert) Open and search your documents in...
 * `graph`: Show your team&#x27;s contracts: who keeps...
 * `heinzel`: Your Heinzelmännchen: durable Heinzels...
 * `join`: Join a team from its invite line: finds...
@@ -730,6 +731,66 @@ $ hz chat show [OPTIONS] {session}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz documents`
+
+(expert) Open and search your documents in every documents connector that is on.
+
+**Usage**:
+
+```console
+$ hz documents [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `read`: (expert) Read a document&#x27;s text through...
+* `search`: (expert) Search every documents connector...
+
+### `hz documents read`
+
+(expert) Read a document&#x27;s text through the connector it belongs to.
+
+**Usage**:
+
+```console
+$ hz documents read [OPTIONS] {ref}
+```
+
+**Arguments**:
+
+* `ref <str>`: The document: its link, an id a search returned, or `&lt;connector&gt;:&lt;id&gt;`, e.g. `wiki:123456`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz documents search`
+
+(expert) Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.
+
+**Usage**:
+
+```console
+$ hz documents search [OPTIONS] {query}
+```
+
+**Arguments**:
+
+* `query <str>`: What to look for in titles and text.  [required]
+
+**Options**:
+
+* `--limit <int>`: At most this many results.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
