@@ -126,14 +126,48 @@ struct WorkspaceView: WebRepresentable {
 
     #if os(macOS)
     private static let windowDragScript = """
-    addEventListener("mousedown", event => {
-        if (!event.isTrusted || event.button !== 0 || !document.documentElement.hasAttribute("data-desktop-titlebar")) return;
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        if (!target.closest("[data-titlebar], .workspace-topbar, [data-placement='beside'] > .workspace-tabs, [data-placement='beside']:not(:has(> .workspace-tabs)) .chat-panel-header")) return;
-        if (target.closest("a, button, input, select, textarea, [role='tab'], [role='menu'], [role='menuitem'], [tabindex], dialog, [role='dialog'], [aria-modal='true'], [role='listbox'], .viewport-popover, [data-pane], [data-sidebar-resizer]")) return;
-        window.webkit.messageHandlers.heinzelDrag.postMessage("drag").catch(() => {});
-    }, true);
+    (() => {
+        const bars = "[data-titlebar], .workspace-topbar, [data-placement='beside'] > .workspace-tabs, [data-placement='beside']:not(:has(> .workspace-tabs)) .chat-panel-header";
+        const controls = "a, button, input, select, textarea, [role='tab'], [role='menuitem'], [tabindex]";
+        const overlays = "[role='dialog'], [role='menu'], [role='listbox'], .viewport-overlay, .viewport-popover, [data-pane], [data-sidebar-resizer]";
+        const rectangles = elements => Array.from(elements).flatMap(element =>
+            Array.from(element.getClientRects(), ({ x, y, width, height }) => [x, y, width, height]));
+        let last = "";
+        let frame = 0;
+        let observed = [];
+        const update = () => {
+            frame = 0;
+            const modal = Array.from(document.querySelectorAll("dialog[open], [aria-modal='true']"))
+                .some(element => element.getClientRects().length && !element.closest("[hidden], [inert]"));
+            const draggable = !modal && document.documentElement.hasAttribute("data-desktop-titlebar")
+                ? Array.from(document.querySelectorAll(bars)) : [];
+            if (draggable.length !== observed.length || draggable.some((bar, index) => bar !== observed[index])) {
+                sizes.disconnect();
+                draggable.forEach(bar => sizes.observe(bar));
+                observed = draggable;
+            }
+            const excluded = draggable.flatMap(bar => Array.from(bar.querySelectorAll(controls)));
+            if (draggable.length) excluded.push(...document.querySelectorAll(overlays));
+            const layout = {
+                width: document.documentElement.clientWidth,
+                regions: rectangles(draggable),
+                excluded: rectangles(excluded),
+            };
+            const snapshot = JSON.stringify(layout);
+            if (last === snapshot) return;
+            last = snapshot;
+            window.webkit.messageHandlers.heinzelDrag.postMessage(layout).catch(() => {});
+        };
+        const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+        const sizes = new ResizeObserver(schedule);
+        new MutationObserver(schedule).observe(document, { subtree: true, attributes: true, childList: true });
+        addEventListener("resize", schedule);
+        addEventListener("scroll", schedule, true);
+        addEventListener("transitionend", schedule, true);
+        addEventListener("transitioncancel", schedule, true);
+        document.fonts.ready.then(schedule);
+        schedule();
+    })();
     """
 
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
@@ -154,6 +188,44 @@ private extension WKWebViewConfiguration {
     }
 }
 
+#if os(macOS)
+private struct TitleBarDragLayout {
+    let width: CGFloat
+    let regions: [CGRect]
+    let excluded: [CGRect]
+
+    init?(_ message: Any) {
+        guard let layout = message as? [String: Any],
+              let width = layout["width"] as? Double, width.isFinite, width > 0,
+              let regions = layout["regions"] as? [[Double]],
+              let excluded = layout["excluded"] as? [[Double]] else { return nil }
+        self.width = width
+        self.regions = regions.compactMap(Self.rectangle)
+        self.excluded = excluded.compactMap(Self.rectangle)
+    }
+
+    private static func rectangle(_ values: [Double]) -> CGRect? {
+        guard values.count == 4, values.allSatisfy(\.isFinite), values[2] > 0, values[3] > 0 else { return nil }
+        return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    }
+
+    @MainActor
+    func contains(_ event: NSEvent, in view: WKWebView) -> Bool {
+        guard let window = view.window, view.bounds.width > 0 else { return false }
+        for role in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            if let button = window.standardWindowButton(role), !button.isHiddenOrHasHiddenAncestor,
+               button.bounds.contains(button.convert(event.locationInWindow, from: nil)) { return false }
+        }
+        let local = view.convert(event.locationInWindow, from: nil)
+        guard view.bounds.contains(local) else { return false }
+        let scale = width / view.bounds.width
+        let y = view.isFlipped ? local.y - view.bounds.minY : view.bounds.maxY - local.y
+        let point = CGPoint(x: (local.x - view.bounds.minX) * scale, y: y * scale)
+        return regions.contains { $0.contains(point) } && !excluded.contains { $0.contains(point) }
+    }
+}
+#endif
+
 @MainActor
 final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
     private let endpoint: Endpoint
@@ -164,6 +236,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var lastExternalOpen: ContinuousClock.Instant?
     #if os(macOS)
     private weak var observedWindow: NSWindow?
+    private var mouseMonitor: Any?
+    private var dragLayout: TitleBarDragLayout?
     #endif
     private let reportError: (String) -> Void
 
@@ -225,11 +299,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             else { return (nil, "App details unavailable") }
             return (["version": version, "path": Bundle.main.bundleURL.path], nil)
         }
-        if message.name == "heinzelDrag", message.body as? String == "drag" {
-            guard let window = workspace.window, !window.styleMask.contains(.fullScreen),
-                  let event = NSApp.currentEvent, event.type == .leftMouseDown,
-                  event.window === window else { return (false, nil) }
-            window.performDrag(with: event)
+        if message.name == "heinzelDrag" {
+            observeWindow(workspace.window)
+            dragLayout = TitleBarDragLayout(message.body)
             return (true, nil)
         }
         #endif
@@ -266,13 +338,24 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     #if os(macOS)
     private func observeWindow(_ window: NSWindow?) {
-        guard observedWindow !== window else { return }
+        guard observedWindow !== window || (window == nil && mouseMonitor != nil) else { return }
         let center = NotificationCenter.default
         if let observedWindow { center.removeObserver(self, name: nil, object: observedWindow) }
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
         observedWindow = window
         guard let window else { return }
         for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
             center.addObserver(self, selector: #selector(windowChanged), name: name, object: window)
+        }
+        // Use WebKit's last layout while AppKit is still handling the original mouse-down.
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, let window = self.observedWindow, event.window === window,
+                  !window.styleMask.contains(.fullScreen), window.attachedSheet == nil,
+                  let view = self.workspace, view.window === window,
+                  let layout = self.dragLayout, layout.contains(event, in: view) else { return event }
+            window.performDrag(with: event)
+            return nil
         }
     }
 
@@ -313,6 +396,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        #if os(macOS)
+        dragLayout = nil
+        #endif
         stopAudio()
         browser.reset()
     }
@@ -344,6 +430,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        #if os(macOS)
+        dragLayout = nil
+        #endif
         stopAudio()
         reportError("The workspace closed unexpectedly. Reconnect to open it again.")
     }
