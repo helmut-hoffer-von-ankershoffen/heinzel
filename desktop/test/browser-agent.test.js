@@ -200,7 +200,7 @@ test("read: refs come from the accessibility tree and die with the document", as
   const f = fixture();
   const { tab, view } = await onPage(f);
   const read = await f.call(HEINZEL, "read", { tab });
-  assert.equal(read.content, '- RootWebArea "Shop" [ref_3]\n  - button "More" [ref_1]\n  - textbox "Search" value="shoes" [ref_2]\n  - textbox "Password" [ref_4]');
+  assert.equal(read.content, '- RootWebArea "Shop"\n  - button "More" [ref_1]\n  - textbox "Search" value="shoes" [ref_2]\n  - textbox "Password" [ref_3]');
   assert.equal(read.url, "https://shop.example.com/");
   assert.equal((await f.call(HEINZEL, "read", { tab, filter: "interactive", max_chars: 10 })).truncated, true);
   assert.equal((await f.call(HEINZEL, "read", { tab, ref: "ref_1" })).content, '- button "More" [ref_1]');
@@ -211,9 +211,10 @@ test("read: refs come from the accessibility tree and die with the document", as
   await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: described.fingerprint }), "stale_ref");
   await f.refused(f.call(HEINZEL, "read", { tab, ref: "ref_1" }), "stale_ref");
   await f.refused(f.call(HEINZEL, "scroll", { tab, ref: "ref_1" }), "stale_ref");
-  // The same element in the new document has a new fingerprint.
-  await f.call(HEINZEL, "read", { tab });
-  const again = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  // The new document's refs are new numbers, so an old ref never names a new element; the fingerprint is new as well.
+  const fresh = (await f.call(HEINZEL, "read", { tab })).content;
+  assert.match(fresh, /button "More" \[ref_4\]/);
+  const again = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_4" });
   assert.deepEqual(again.target, described.target);
   assert.notEqual(again.fingerprint, described.fingerprint);
 });
@@ -259,9 +260,9 @@ test("never: passwords, one-time codes and card fields are typed by the person o
   const f = fixture();
   const { tab, view } = await onPage(f);
   const typed = () => view.sent.filter(([name]) => name === "Input.insertText" || name === "Input.dispatchKeyEvent");
-  const secret = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_4" });
+  const secret = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_3" });
   assert.equal(secret.target.never, "password");
-  await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_4", text: "hunter2", expect: secret.fingerprint }), "never");
+  await f.refused(f.call(HEINZEL, "type", { tab, ref: "ref_3", text: "hunter2", expect: secret.fingerprint }), "never");
   // An ordinary field takes text...
   const search = await f.call(HEINZEL, "describe", { tab, action: "type", ref: "ref_2" });
   view.page.onFocus = (node) => { view.page.focused = view.page.elements[node]; };

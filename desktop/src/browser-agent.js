@@ -152,7 +152,7 @@ export function outline(nodes, { filter = "all", root = null, refOf }) {
     if (shown && role === "StaticText") shown = filter === "all" && Boolean(name) && name !== above;
     else if (shown) shown = filter === "all" ? Boolean(name) || interactive : interactive;
     if (shown) {
-      const ref = role !== "StaticText" && Number.isInteger(node.backendDOMNodeId) ? refOf(node.backendDOMNodeId, { role, name }) : null;
+      const ref = role !== "StaticText" && role !== "RootWebArea" && Number.isInteger(node.backendDOMNodeId) ? refOf(node.backendDOMNodeId, { role, name }) : null;
       const value = VALUED.has(role) && node.value?.value !== undefined ? ` value=${JSON.stringify(text(node.value.value, 100))}` : "";
       lines.push(`${"  ".repeat(Math.min(depth, 20))}- ${role === "StaticText" ? "text" : role}${name ? ` ${JSON.stringify(name)}` : ""}${value}${ref ? ` [${ref}]` : ""}`);
     }
