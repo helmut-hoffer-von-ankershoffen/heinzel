@@ -11,8 +11,8 @@ related: 0057, 0115, 0159
 ## Context and Problem Statement
 
 In the new chat every chat is with a Heinzel. People should not have to know model names to get a good answer, and
-a model picker by the chat input makes every message a choice about vendors and prices. The owner decided
-(2026-11-14): models are chosen by level. Per Heinzel the person picks the AI provider, for example a plugin's
+a model picker by the chat input makes every message a choice about vendors and prices. The owner decided:
+models are chosen by level. Per Heinzel the person picks the AI provider, for example a plugin's
 `ai-models` option ([ADR 0159](0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md)) or the configured AI
 access ([ADR 0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md)), and Auto, Low, Medium or High maps to
 that provider's models. An exact model is an advanced choice in the Heinzel's details, never by the chat input.
