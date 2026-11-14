@@ -140,8 +140,10 @@ function onPartKey(event: KeyboardEvent<HTMLDivElement>, part: PartId, setPart: 
   else if (event.key === "Home") next = 0;
   else if (event.key === "End") next = PARTS.length - 1;
   else return;
+  const target = PARTS[next];
+  if (target === undefined) return;
   event.preventDefault();
-  setPart(PARTS[next]);
+  setPart(target);
   event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
 }
 

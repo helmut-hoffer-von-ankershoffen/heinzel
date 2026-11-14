@@ -91,7 +91,7 @@ describe("Meet your first Heinzelmännchen", () => {
     ).getByRole("radiogroup", { name: "Everything you can change" });
     const parts = within(list).getAllByRole("radio");
     expect(parts.map((radio) => radio.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
-    parts[0].focus();
+    parts[0]?.focus();
     await user.keyboard("{ArrowDown}");
     const age = within(list).getByRole("radio", { name: /^Age/ });
     expect(age).toHaveFocus();
