@@ -55,7 +55,7 @@ from fastapi.staticfiles import StaticFiles
 from heinzel.heads import api
 from heinzel.heads._mcp_tokens import McpTokens, tokens_for_user
 from heinzel.heads._stream import StreamProgress
-from heinzel.heads.web import _terminal
+from heinzel.heads.web import _browser_bridge, _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
 from heinzel.heads.web._chatgpt_signin import ChatGptSignIn, local_callback_navigation
 from heinzel.heads.web._devices import Devices
@@ -257,6 +257,13 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         sessions=terminal_sessions,
         register_origin=runtime.register_if_origin_allowed,
     )  # before the mount, which takes /api
+    _browser_bridge.add_route(
+        app,
+        token=token,
+        port=port,
+        bridge=lambda: _browser_bridge.kernel_bridge(kernel),
+        stopping=stopping,
+    )  # the desktop app's socket for agents' browser tabs (ADR 0162); also before the mount
 
     endpoints = api_app(
         kernel,
