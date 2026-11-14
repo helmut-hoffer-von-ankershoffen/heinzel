@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version=${1:?Pass the matching stable Heinzel version}
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+out="$PWD/.build/package"
+stage="$(mktemp -d)"
+trap 'rm -rf -- "$stage"' EXIT
+xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
+    -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" build -quiet
+app="$stage/Heinzelmaennchen.app"
+/usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
+/usr/bin/codesign --verify --strict --deep "$app"
+COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" \
+    -C "$stage" Heinzelmaennchen.app
+mkdir "$stage/verified"
+/usr/bin/tar -xzf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" -C "$stage/verified"
+/usr/bin/codesign --verify --strict --deep "$stage/verified/Heinzelmaennchen.app"
+printf '%s\n' "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"

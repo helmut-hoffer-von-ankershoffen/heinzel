@@ -1,0 +1,53 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoint.swift; sourceTree = "<group>";};
+000000000000000000000028 = {isa = PBXBuildFile; fileRef = 000000000000000000000014;};
+000000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeinzelApp.swift; sourceTree = "<group>";};
+000000000000000000000029 = {isa = PBXBuildFile; fileRef = 000000000000000000000015;};
+000000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalService.swift; sourceTree = "<group>";};
+00000000000000000000002A = {isa = PBXBuildFile; fileRef = 000000000000000000000016;};
+000000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>";};
+00000000000000000000002B = {isa = PBXBuildFile; fileRef = 000000000000000000000017;};
+000000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>";};
+00000000000000000000002C = {isa = PBXBuildFile; fileRef = 000000000000000000000018;};
+000000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Heinzel.app; sourceTree = BUILT_PRODUCTS_DIR;};
+000000000000000000000004 = {isa = PBXGroup; children = (000000000000000000000014,000000000000000000000015,000000000000000000000016,000000000000000000000017,000000000000000000000018,); path = App; sourceTree = "<group>";};
+000000000000000000000005 = {isa = PBXGroup; children = (000000000000000000000006,); name = Products; sourceTree = "<group>";};
+000000000000000000000003 = {isa = PBXGroup; children = (000000000000000000000004,000000000000000000000005,); sourceTree = "<group>";};
+000000000000000000000007 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000028,000000000000000000000029,00000000000000000000002A,00000000000000000000002B,); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000008 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000002C,); runOnlyForDeploymentPostprocessing = 0;};
+00000000000000000000000C = {isa = XCBuildConfiguration; name = Debug; buildSettings = {};};
+00000000000000000000000E = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+        PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
+        SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator"; SDKROOT = auto;
+        IPHONEOS_DEPLOYMENT_TARGET = 18.0; MACOSX_DEPLOYMENT_TARGET = 15.0;
+        TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 6.0; ALWAYS_SEARCH_USER_PATHS = NO;
+        SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; CODE_SIGN_STYLE = Automatic;
+        GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = App/Info.plist;
+        CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = App/Heinzel.entitlements;
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "";
+        "INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
+        "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
+    };};
+00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {};};
+00000000000000000000000F = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+        PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
+        SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator"; SDKROOT = auto;
+        IPHONEOS_DEPLOYMENT_TARGET = 18.0; MACOSX_DEPLOYMENT_TARGET = 15.0;
+        TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 6.0; ALWAYS_SEARCH_USER_PATHS = NO;
+        SWIFT_OPTIMIZATION_LEVEL = "-O"; CODE_SIGN_STYLE = Automatic;
+        GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = App/Info.plist;
+        CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = App/Heinzel.entitlements;
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "";
+        "INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
+        "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
+    };};
+00000000000000000000000A = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000C,00000000000000000000000D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+00000000000000000000000B = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000E,00000000000000000000000F,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+000000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000007,000000000000000000000008,); buildRules = (); dependencies = (); name = Heinzel; productName = Heinzel; productReference = 000000000000000000000006; productType = "com.apple.product-type.application";};
+000000000000000000000001 = {isa = PBXProject; buildConfigurationList = 00000000000000000000000A; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 000000000000000000000003; productRefGroup = 000000000000000000000005; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000002);};
+}; rootObject = 000000000000000000000001; }
