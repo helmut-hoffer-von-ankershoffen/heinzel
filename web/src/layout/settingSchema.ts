@@ -26,7 +26,13 @@ export type JsonSchema = {
   "x-labels"?: Record<string, string>;
   "x-feature-catalog"?: Record<string, string>;
   "x-unit"?: string;
-  "x-options"?: { source: string; capability?: string; none?: string };
+  /** Choices from what is installed; `multiple`: several may be on at once, a list (ADR 0161). */
+  "x-options"?: {
+    source: string;
+    capability?: string;
+    none?: string;
+    multiple?: boolean;
+  };
   "x-hidden"?: boolean;
   /** The running server reads it again by itself: a change is saved at once, with no restart. */
   "x-live"?: boolean;
@@ -57,7 +63,13 @@ export function unwrap(schema: JsonSchema | undefined): JsonSchema | undefined {
 const typeOf = (schema: JsonSchema) => (Array.isArray(schema.type) ? undefined : schema.type);
 
 export type Control =
-  | { kind: "installed"; source: "adapters" | "modules"; capability?: string; none?: string; multiple: boolean }
+  | {
+      kind: "installed";
+      source: "adapters" | "modules";
+      capability?: string;
+      none?: string;
+      multiple: boolean;
+    }
   | { kind: "secret" }
   | { kind: "duration" }
   | { kind: "path" }
@@ -92,7 +104,7 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
       source: options.source,
       capability: options.capability,
       none: options.none,
-      multiple: type === "array",
+      multiple: type === "array" || options.multiple === true,
     };
   }
   if (schema.enum?.every((value) => typeof value === "string" || typeof value === "number")) {
@@ -105,7 +117,12 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
   if (type === "integer" || type === "number") {
     const options = steps(schema);
     if (options) return { kind: "choice", options };
-    return { kind: "number", integer: type === "integer", min: schema.minimum, max: schema.maximum };
+    return {
+      kind: "number",
+      integer: type === "integer",
+      min: schema.minimum,
+      max: schema.maximum,
+    };
   }
   if (type === "array") {
     const pair = schema.prefixItems;
@@ -115,7 +132,11 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
     }
     const item = unwrap(schema.items);
     if (item && typeOf(item) === "object" && item.properties && Object.keys(item.properties).length) {
-      return { kind: "table", item, columns: Object.entries(item.properties) };
+      return {
+        kind: "table",
+        item,
+        columns: Object.entries(item.properties),
+      };
     }
     if (item && typeOf(item) === "string" && (!item.format || item.format === "path") && !item.enum)
       return { kind: "chips" };
