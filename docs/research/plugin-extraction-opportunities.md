@@ -76,7 +76,7 @@ for Directory, Claude inventory, Report/Telemetry and Graph; their remaining int
 - Meeting data already uses generic contributions in [the agenda](../../src/heinzel/modules/org/_agenda.py), with
   special rendering in [Contributions](../../web/src/components/Contributions.tsx) and
   [StatusBar](../../web/src/layout/StatusBar.tsx).
-- Sound's remaining browser links are in [Conversation](../../web/src/chat/Conversation.tsx),
+- Sound's remaining browser links are in [DurableSession](../../web/src/chat/DurableSession.tsx),
   [SoundEngine](../../web/src/sound/SoundEngine.tsx), and the sidebar/settings/player components.
   Its Python service consumes optional `ThemeChoice` through the public contract in
   [SoundService](../../src/heinzel/modules/system/sound/_service.py).
