@@ -297,3 +297,65 @@ def turn_at_the_proxy(current: CurrentUser, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_no_own_client_is_made_for_a_remote_endpoint() -> None:
     assert _pydantic._local_client(BASE) is None
+
+
+# Today's paths, unchanged
+
+
+def test_the_factory_still_builds_openai_endpoints_and_vendor_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-ambient")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ambient")
+    endpoint = build_model("openai:llama3.1:8b", None, "http://localhost:11434/v1")
+    assert isinstance(endpoint, OpenAIChatModel)
+    assert endpoint.model_name == "llama3.1:8b"
+    assert isinstance(build_model("anthropic:claude-example-1", "sk-given"), AnthropicModel)
+    assert isinstance(build_model("anthropic:claude-example-1", None), AnthropicModel)  # the vendor's variable
+
+
+def test_the_option_reads_the_selection_and_its_settings_afresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HZ_CAPABILITIES__AI_ACCESS", "pydantic-ai")
+    monkeypatch.setenv("HZ_AI_ACCESS__MODEL", "claude-example-1")
+
+    assert _pydantic._selected_access() == "pydantic-ai"
+    assert _pydantic._current_model_settings().model == "claude-example-1"
+    assert _pydantic._installed("json") is True
+    assert _pydantic._installed("no_such_package_hz") is False
+    assert _pydantic._installed("..") is False
+
+
+def test_the_reserved_path_refuses_an_endpoint_and_another_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-proxy")
+    current = CurrentUser(tmp_path / "state" / "identity")
+    option = access(proxied())
+    with pytest.raises(HeinzelError, match="unavailable or changed"):
+        option.check_reserved_configuration("claude-example-1")
+    with current.local("cli"), pytest.raises(HeinzelError, match="not supported for reserved turns"):
+        option.priced_turn_model(current, "claude-example-1")
+    assert option.pinned("claude-example-1") is False
+    assert option.endpoint_identity() == (BASE, "anthropic")
+    assert access(AccessSettings(model="anthropic:claude-example-1")).endpoint_identity() == (
+        "https://api.anthropic.com",
+        "anthropic",
+    )
+    with pytest.raises(HeinzelError, match="unavailable or changed"):
+        access(AccessSettings()).configured_model()
+
+
+def test_a_turn_refuses_an_unsafe_endpoint_or_a_missing_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = CurrentUser(tmp_path / "state" / "identity")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with current.local("cli"):
+        monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-proxy")
+        with pytest.raises(HeinzelError, match="unavailable"):
+            access(proxied(base_url="http://ai.example.com")).turn_model(current, "claude-example-1")
+        monkeypatch.delenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY")
+        with pytest.raises(HeinzelError, match="unavailable"):
+            access(AccessSettings(model="anthropic:claude-example-1")).turn_model(current, "anthropic:claude-example-1")
+        assert isinstance(
+            access(proxied(base_url="http://localhost:8080")).turn_model(current, "claude-example-1"), TestModel
+        )

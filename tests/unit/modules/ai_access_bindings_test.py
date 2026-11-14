@@ -380,3 +380,62 @@ def test_a_text_reply_from_a_plugin_model_through_the_factory(tmp_path):
     with current.local("cli"):
         built = factory.turn_model(current, "acme-large")
     assert isinstance(built, FunctionModel)
+
+
+def test_connected_model_refuses_another_owner_and_a_non_model(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    models = Models()
+    factory = plugin(models, ["1.0.0"], ["acme"], [None], current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("c").session_id
+
+        def admit(owner: str) -> Any:
+            return connected_model(
+                repo,
+                current,
+                factory,
+                session_id=session,
+                owner=owner,
+                selected_access="acme",
+                approved_access="acme",
+                approved_model="acme-large",
+                limits=TurnLimits(requests=1, total_tokens=100, output_tokens=10),
+            )
+
+        with pytest.raises(HeinzelError, match="different authenticated owner"):
+            admit("u-" + "b" * 32)
+        models.model = lambda _model_id: "not a model"  # type: ignore[method-assign]
+        with pytest.raises(HeinzelError):
+            admit(current.principal().id)
+
+
+def test_a_grant_without_its_binding_or_for_another_owner_is_refused(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=1)
+        )
+        session = crud.new_chat("create").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="hello"))
+        grants = ModelGrants(crud)
+        grant = ModelGrant(
+            request_id="grant-one",
+            revision=1,
+            binding=None,
+            access="acme",
+            model="acme-large",
+            requests=2,
+            total_tokens=1000,
+            output_tokens=100,
+            timeout_seconds=30,
+            message_cap_usd="1",
+            session_cap_usd="2",
+            owner_cap_usd="3",
+        )
+        grants.propose(session, grant)
+        grants.approve(session, "grant-one", grants.issue(session, "grant-one", "test-human-decision"))
+        with pytest.raises(HeinzelError, match="no configured access binding"):
+            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, None))  # type: ignore[arg-type]
+        with current.using(STRANGER), pytest.raises(HeinzelError):
+            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, None))  # type: ignore[arg-type]
