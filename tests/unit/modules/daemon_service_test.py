@@ -13,6 +13,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -3253,3 +3254,88 @@ def test_the_lane_state_reads_its_heartbeat_and_tolerates_garbage(make):
     (service.state_dir / "lane.json").write_text(json.dumps({"crashes": True, "result": 3}))
     state = service.lane_state()
     assert (state.result, state.profile, state.crashes, state.beat_at) == (None, None, 0, None)
+
+
+def released_linux_install(make, bin_dir):
+    """A Linux install whose units are byte-for-byte what releases before ADR 0147 wrote."""
+    runner = Runner(bin_dir)
+    service = make(platform="linux", runner=runner)
+    service.install(FIVE_MINUTES)
+    executable = bin_dir / "hz"
+    for path, content in service._unit_files(executable, 5, released=True).items():
+        path.write_text(content, encoding="utf-8")
+    return service, runner
+
+
+def test_released_systemd_units_stay_owned_and_a_scheduled_tick_upgrades_them(make, bin_dir, monkeypatch):
+    service, runner = released_linux_install(make, bin_dir)
+    service_file = service._unit_paths()[0]
+    assert service.owned_unit_state(bin_dir)
+    assert service.status().owned
+    assert "TimeoutStartSec=30min" in service_file.read_text(encoding="utf-8")
+    service.tick()  # a manual tick never rewrites units
+    assert "TimeoutStartSec=30min" in service_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    runner.commands.clear()
+    service.tick()
+    assert "TimeoutStartSec=infinity" in service_file.read_text(encoding="utf-8")
+    assert "FixedRandomDelay=true" in service._unit_paths()[1].read_text(encoding="utf-8")
+    assert ["/usr/bin/systemctl", "--user", "daemon-reload"] in runner.commands
+    assert service.owned_unit_state(bin_dir)
+    assert "daemon units upgraded for the reminder lane" in service.log_path.read_text(encoding="utf-8")
+
+
+def test_units_are_not_upgraded_during_a_handover_or_when_changed(make, bin_dir, monkeypatch):
+    service, _ = released_linux_install(make, bin_dir)
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    (service.state_dir / "handover-request.json").write_text("{}")
+    log = Mock()
+    service._upgrade_released_units(log)
+    assert "TimeoutStartSec=30min" in service._unit_paths()[0].read_text(encoding="utf-8")
+    (service.state_dir / "handover-request.json").unlink()
+    service._unit_paths()[0].write_text("changed by hand", encoding="utf-8")
+    service._upgrade_released_units(log)
+    assert service._unit_paths()[0].read_text(encoding="utf-8") == "changed by hand"
+    assert not service.owned_unit_state(bin_dir)
+    darwin = make()
+    darwin._upgrade_released_units(log)
+    log.write.assert_not_called()
+
+
+def test_a_failed_upgrade_is_logged_and_the_tick_goes_on(make, bin_dir, monkeypatch):
+    service, _ = released_linux_install(make, bin_dir)
+
+    def refuse(*_args):
+        msg = "disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr(service, "_replace_install_files", refuse)
+    log = Mock()
+    service._upgrade_released_units(log)
+    assert "daemon units not upgraded: OSError: disk full" in log.write.call_args.args[1]
+
+
+@pytest.mark.parametrize(
+    ("platform", "second", "offset"), [("darwin", 40, 0.0), ("linux", 40, 40.0), ("linux", 0, 0.0)]
+)
+def test_the_lane_learns_how_long_after_its_slot_a_systemd_tick_starts(make, platform, second, offset):
+    clock = Clock(datetime(2026, 10, 5, 10, 5, second, tzinfo=BERLIN))
+    assert make(platform=platform, clock=clock)._timer_offset(5) == offset
+    late = Clock(datetime(2026, 10, 5, 10, 9, tzinfo=BERLIN))  # a catch-up after sleep counts at most the delay
+    assert make(platform="linux", clock=late)._timer_offset(5) == 60.0
+
+
+def test_a_handover_ends_a_lane_only_tick_before_its_kickstart(make, monkeypatch):
+    service = make()
+    stops: list[Path] = []
+    service._lane_stop = lambda directory: stops.append(directory) or True
+    pids = iter([4242, 4242, None])
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: next(pids))
+    monkeypatch.setattr("heinzel.modules.system.daemon._service.time.sleep", lambda _s: None)
+    service._end_reminder_lane()
+    assert stops == [service.state_dir]
+    with pytest.raises(StopIteration):
+        next(pids)
+    monkeypatch.setattr(service, "job_running", lambda: True)
+    service._end_reminder_lane()
+    assert stops == [service.state_dir]

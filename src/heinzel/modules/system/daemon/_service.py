@@ -72,7 +72,7 @@ from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
 from heinzel.modules.system.daemon._lane import COMMAND as LANE_COMMAND
-from heinzel.modules.system.daemon._lane import LANE_FILE, LaneSupervisor
+from heinzel.modules.system.daemon._lane import LANE_FILE, LaneSupervisor, stop_lane
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
@@ -116,6 +116,7 @@ from heinzel.modules.system.daemon._units import (
     LABEL,
     LOGIN_ITEM_HINT,
     NOTIFIER_APP,
+    RANDOMIZED_DELAY,
     SYSTEMD_NAME,
     check_interval,
     launchd_plist,
@@ -131,6 +132,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL = 5
 """Minutes between ticks unless `install --interval` says otherwise."""
+LANE_STOP_SECONDS = 20.0
+"""How long a handover waits for a reminder lane it stopped, and its tick, to end before it kickstarts anyway."""
 STALE_TICKS = 3
 """A daemon that missed this many intervals in a row is reported as degraded."""
 SESSION_STEP = "Checking this is your Mac's desktop session"
@@ -666,6 +669,7 @@ class DaemonService:
                 and interval (ADR 0147); tests replace it.
         """
         self._lane_supervisor = lane_supervisor or LaneSupervisor
+        self._lane_stop: Callable[[Path], bool] = stop_lane
         self._desktop_session = desktop_session or self._launchd_session
         self._install_notifier = install_notifier
         self._notifier_installed = notifier_installed
@@ -1387,7 +1391,7 @@ class DaemonService:
                 self._quiescence_installation.verify_tool_destination(
                     self._quiescence_installation.prefix.parent, binary
                 )
-            return all(path.read_text() == content for path, content in self._unit_files(executable, minutes).items())
+            return self._unit_generation(executable, minutes) is not None
         except (OSError, ValueError, HeinzelError):  # UnicodeError and a marker's impossible interval are ValueErrors
             return False
 
@@ -1679,6 +1683,7 @@ class DaemonService:
             command = ["/bin/launchctl", "kickstart", f"gui/{self._uid()}/{LABEL}"]
         else:
             command = ["/usr/bin/systemctl", "--user", "try-restart", f"{SYSTEMD_NAME}.timer"]
+        self._end_reminder_lane()
         request_id = secrets.token_hex(32)
         boot = self._current_boot_identity()
         fence = self._current_birth_fence()
@@ -1699,6 +1704,19 @@ class DaemonService:
             reason="The manager accepted the request; a later service tick must establish what ran.",
             request_id=request_id,
         )
+
+    def _end_reminder_lane(self) -> None:
+        """Before a handover's kickstart, end a tick that only keeps its reminder lane (ADR 0147, point 8).
+
+        The lane gets SIGTERM only when its recorded process birth matches; then the tick ends with it, and the
+        kickstart starts the new code at once instead of at the next slot. A tick still running jobs is left alone,
+        and so is a lane that does not end in time: the handover then waits for the next tick, as before.
+        """
+        if self.job_running() or not self._lane_stop(self.state_dir):
+            return
+        deadline = time.monotonic() + LANE_STOP_SECONDS
+        while self._service_manager_pid() is not None and time.monotonic() < deadline:
+            time.sleep(0.25)
 
     def handover_observation(self, request_id: str) -> DaemonHandoverObservation | None:
         """Read the current request's manager-bound tick observation, or remain pending."""
@@ -2370,7 +2388,10 @@ class DaemonService:
         handover = self._begin_handover_observation()
         log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
         try:
-            lane = self._start_lane(log) if job is None else None
+            scheduled = job is None and self._service_manager_pid() == os.getpid()
+            if scheduled:
+                self._upgrade_released_units(log)
+            lane = self._start_lane(log) if scheduled else None
             try:
                 runs = self._run(jobs, job, now, log)
             except BaseException:
@@ -2410,16 +2431,26 @@ class DaemonService:
                 NoticeKind.CALENDAR
             ):
                 return None
-            if self._service_manager_pid() != os.getpid():
-                return None
             executable = self._shim(dry_run=False)
             lane = self._lane_supervisor(self.state_dir, [str(executable), *LANE_COMMAND], recorded)
+            lane.offset = self._timer_offset(recorded)
             lane.start()
         except Exception as exc:  # noqa: BLE001 - reminders must never keep the daemon's jobs from running
             log.write(logging.WARNING, f"calendar reminder lane not started: {describe(exc)}")
             return None
         log.write(logging.INFO, "calendar reminder lane started")
         return lane
+
+    def _timer_offset(self, minutes: int) -> float:
+        """Seconds this tick started after its slot: systemd's fixed per-machine delay, which the next tick shares.
+
+        launchd has no delay. A catch-up after sleep counts at most the timer's randomized delay.
+        """
+        if self._platform != "linux":
+            return 0.0
+        now = self._clock()
+        slot = now.replace(minute=now.minute // minutes * minutes, second=0, microsecond=0)
+        return min(max((now - slot).total_seconds(), 0.0), float(RANDOMIZED_DELAY))
 
     def lane_state(self) -> ReminderLaneState:
         """The reminder lane as the last scheduled tick and the lane's heartbeat recorded it."""
@@ -2925,11 +2956,54 @@ class DaemonService:
         msg = f"The daemon supports macOS (launchd) and Linux (systemd), not {self._platform}."
         raise HeinzelError(msg)
 
-    def _unit_files(self, executable: Path, minutes: int) -> dict[Path, str]:
+    def _unit_files(self, executable: Path, minutes: int, *, released: bool = False) -> dict[Path, str]:
+        """The units this profile writes; `released`: the systemd format before ADR 0147, still owned."""
         paths = self._unit_paths()
         if self._platform == "darwin":
             return {paths[0]: launchd_plist(executable, minutes, self.log_path.parent, self._profile)}
-        return {paths[0]: systemd_service(executable, self._profile), paths[1]: systemd_timer(minutes)}
+        return {
+            paths[0]: systemd_service(executable, self._profile, released=released),
+            paths[1]: systemd_timer(minutes, released=released),
+        }
+
+    def _unit_generation(self, executable: Path, minutes: int) -> str | None:
+        """`current`, `released` (systemd before ADR 0147) or None when the files are neither."""
+        for generation in ("current", "released"):
+            if generation == "released" and self._platform != "linux":
+                return None
+            files = self._unit_files(executable, minutes, released=generation == "released")
+            if all(path.read_text() == content for path, content in files.items()):
+                return generation
+        return None
+
+    def _upgrade_released_units(self, log: TickLog) -> None:
+        """Rewrite this profile's exact pre-ADR 0147 systemd units, so no start timeout ends a reminder lane.
+
+        Only in a scheduled tick, under both daemon locks, with no handover in flight; a failure is logged and the
+        tick goes on. The manager reloads the definitions; the running tick keeps the ones it started with.
+        """
+        recorded = self._read_state("install.json")
+        minutes = recorded.get("interval_minutes")
+        if self._platform != "linux" or type(minutes) is not int or minutes <= 0:
+            return
+        try:
+            if self._handover_pending() or (self.state_dir / "handover-request.json").exists():
+                return
+            executable = self._shim(dry_run=False)
+            if not self._quiescence_unit_state(executable.parent):
+                return
+            if self._unit_generation(executable, minutes) != "released":
+                return
+            self._replace_install_files(self._capture_install_files(), self._unit_files(executable, minutes))
+            reloaded = self.owned_manager_command(["/usr/bin/systemctl", "--user", "daemon-reload"])
+        except (OSError, ValueError, HeinzelError) as exc:
+            log.write(logging.WARNING, f"daemon units not upgraded: {describe(exc)}")
+            return
+        log.write(
+            logging.INFO if reloaded.returncode == 0 else logging.WARNING,
+            "daemon units upgraded for the reminder lane"
+            + ("" if reloaded.returncode == 0 else "; systemd has not reloaded them yet"),
+        )
 
     def _command(self, executable: str, *args: str) -> list[str]:
         """A command with its executable resolved on PATH.

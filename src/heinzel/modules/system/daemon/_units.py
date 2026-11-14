@@ -17,8 +17,11 @@ INTERVALS = (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60)
 """Minutes that divide an hour, so slots fall at the same minutes every hour on both platforms."""
 TICK = ("system", "daemon", "tick")
 NICE = 10
-TICK_TIMEOUT = "30min"
-"""systemd stops a tick that runs longer; every job has its own, shorter timeout."""
+TICK_TIMEOUT = "infinity"
+"""No start timeout: a tick keeps its calendar reminder lane until a slot window (ADR 0147), so no fixed sum fits.
+Every job has its own timeout and the lane its window rule; the manager drops firings while a tick runs."""
+RELEASED_TICK_TIMEOUT = "30min"
+"""What releases before ADR 0147 wrote; their exact units are still owned and the next tick upgrades them."""
 RANDOMIZED_DELAY = "60"
 """Seconds systemd spreads ticks over, so many machines don't hit the same services at once."""
 PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -107,8 +110,8 @@ def on_calendar(minutes: int) -> str:
     return "*:00" if minutes == 60 else f"*:0/{minutes}"  # noqa: PLR2004 - an hour
 
 
-def systemd_service(executable: Path, profile: Mapping[str, str] | None = None) -> str:
-    """The oneshot service that runs one tick."""
+def systemd_service(executable: Path, profile: Mapping[str, str] | None = None, *, released: bool = False) -> str:
+    """The oneshot service that runs one tick; `released` renders the format before ADR 0147."""
     command = shlex.join([str(executable), *TICK]).replace("%", "%%")  # systemd expands % specifiers
     routing = ""
     if profile is not None:
@@ -130,12 +133,18 @@ def systemd_service(executable: Path, profile: Mapping[str, str] | None = None) 
         "StandardOutput=null\n"
         f"Nice={NICE}\n"
         "IOSchedulingClass=idle\n"
-        f"TimeoutStartSec={TICK_TIMEOUT}\n"
+        f"TimeoutStartSec={RELEASED_TICK_TIMEOUT if released else TICK_TIMEOUT}\n"
     )
 
 
-def systemd_timer(minutes: int) -> str:
-    """The timer that starts the service at every slot and catches up after sleep or downtime."""
+def systemd_timer(minutes: int, *, released: bool = False) -> str:
+    """The timer that starts the service at every slot and catches up after sleep or downtime.
+
+    The per-machine delay stays the same at every slot (`FixedRandomDelay`) and the timer fires within a second of
+    it (`AccuracySec`), so a reminder lane knows when the next tick starts (ADR 0147). `released` renders the format
+    before ADR 0147.
+    """
+    lane = "" if released else "FixedRandomDelay=true\nAccuracySec=1s\n"
     return (
         "[Unit]\n"
         f"Description=Run the Heinzelmännchen daemon tick every {minutes} minutes\n"
@@ -144,6 +153,7 @@ def systemd_timer(minutes: int) -> str:
         f"OnCalendar={on_calendar(minutes)}\n"
         "Persistent=true\n"
         f"RandomizedDelaySec={RANDOMIZED_DELAY}\n"
+        f"{lane}"
         f"Unit={SYSTEMD_NAME}.service\n"
         "\n"
         "[Install]\n"

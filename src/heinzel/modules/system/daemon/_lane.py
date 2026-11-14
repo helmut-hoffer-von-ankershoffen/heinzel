@@ -8,7 +8,9 @@ dropped firing never leaves an interval without reminders.
 
 import json
 import os
+import signal
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -16,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol, cast
 
+from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon._runtime import write_private
 
 ENVIRONMENT = "HZ_REMINDER_LANE"
@@ -64,7 +67,10 @@ class LaneSupervisor:
     start_process: Callable[[list[str], Mapping[str, str], int], Child] = spawn
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     sleep: Callable[[float], None] = time.sleep
+    birth: Callable[[int], dict[str, int] | None] = lambda pid: _process_birth.process_birth(sys.platform, pid)
     child: Child | None = None
+    offset: float = 0.0
+    """Seconds the next tick starts after its slot (systemd's fixed delay); the lane delivers that much earlier."""
     crashes: int = 0
     restarts: int = 0
     overrun: str | None = None
@@ -80,6 +86,7 @@ class LaneSupervisor:
                 "fd": reader,
                 "dir": str(self.directory),
                 "interval": self.interval,
+                "offset": self.offset,
                 "spawned": self.clock().timestamp(),
                 "crashes": self.crashes,
                 "restarts": self.restarts,
@@ -95,13 +102,14 @@ class LaneSupervisor:
         self._writer = writer
         if self._done:
             self._close()
-        write_private(
-            self.directory / MARKER,
-            json.dumps(
-                {"parent": os.getpid(), "child": self.child.pid, "started": self.clock().isoformat()}, sort_keys=True
-            )
-            + "\n",
-        )
+        marker: dict[str, object] = {
+            "parent": os.getpid(),
+            "child": self.child.pid,
+            "started": self.clock().isoformat(),
+        }
+        if (birth := self.birth(self.child.pid)) is not None:
+            marker["birth"] = birth
+        write_private(self.directory / MARKER, json.dumps(marker, sort_keys=True) + "\n")
 
     def jobs_done(self) -> None:
         """Tell the lane the tick's jobs are done, by closing its pipe."""
@@ -173,3 +181,26 @@ def _instant(value: object) -> datetime | None:
     except ValueError:
         return None
     return instant if instant.tzinfo is not None else None
+
+
+def stop_lane(
+    directory: Path,
+    birth: Callable[[int], dict[str, int] | None] = lambda pid: _process_birth.process_birth(sys.platform, pid),
+    kill: Callable[[int, int], None] = os.kill,
+) -> bool:
+    """Send SIGTERM to the lane named in the marker, only if its process birth still matches (ADR 0147, point 8).
+
+    A reused PID or a marker without a birth is never signalled. True when the lane was asked to end.
+    """
+    try:
+        marker = json.loads((directory / MARKER).read_text(encoding="utf-8"))
+        child, recorded = marker["child"], marker["birth"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if type(child) is not int or child <= 1 or not isinstance(recorded, dict) or birth(child) != recorded:
+        return False
+    try:
+        kill(child, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+    return True

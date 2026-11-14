@@ -31,6 +31,21 @@ def test_systemd_units_match_the_golden_files():
     assert systemd_timer(5) == (GOLDEN / "hz-daemon.timer").read_text(encoding="utf-8")
 
 
+def test_systemd_units_keep_the_reminder_lane_alive_and_the_released_format_is_still_rendered():
+    """ADR 0147: no start timeout kills a lane at a 30 or 60 minute interval; the timer's delay stays fixed."""
+    for minutes in (30, 60):
+        assert "AccuracySec=1s\nFixedRandomDelay=true\n" not in systemd_timer(minutes)
+        assert "FixedRandomDelay=true\nAccuracySec=1s\n" in systemd_timer(minutes)
+    service = systemd_service(Path("/home/ada/.local/bin/hz"))
+    assert "TimeoutStartSec=infinity\n" in service
+    assert "Type=oneshot\n" in service
+    released = Path("/home/ada/.local/bin/hz")
+    assert systemd_service(released, released=True) == (GOLDEN / "hz-daemon-released.service").read_text(
+        encoding="utf-8"
+    )
+    assert systemd_timer(5, released=True) == (GOLDEN / "hz-daemon-released.timer").read_text(encoding="utf-8")
+
+
 @pytest.mark.macos_specific
 def test_launchd_fires_at_every_slot_of_the_hour():
     agent = plistlib.loads(launchd_plist(Path("/x/hz"), 15, Path("/logs")).encode())

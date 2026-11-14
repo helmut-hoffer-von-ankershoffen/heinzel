@@ -40,6 +40,8 @@ READ_TIMEOUT = 8.0
 """Hard limit for one agenda read; a read starts only while more than this is left before the window end."""
 STARTUP_CAP = 90.0
 """The most a lane's measured start-up time `H` counts for early delivery."""
+OFFSET_CAP = 60.0
+"""The most systemd's fixed per-machine timer delay counts; launchd has none."""
 BEAT_AT_LEAST = 60.0
 BEAT_AT_MOST = 30.0
 FRESH = timedelta(minutes=2)
@@ -55,6 +57,7 @@ class LaneSpec:
     directory: Path
     interval: int
     spawned: float
+    offset: float = 0.0
     crashes: int = 0
     restarts: int = 0
     overrun: str | None = None
@@ -73,6 +76,7 @@ class LaneSpec:
                 directory=Path(data["dir"]),
                 interval=int(data["interval"]),
                 spawned=float(data["spawned"]),
+                offset=float(data.get("offset", 0.0)),
                 crashes=int(data.get("crashes", 0)),
                 restarts=int(data.get("restarts", 0)),
                 overrun=data.get("overrun") if isinstance(data.get("overrun"), str) else None,
@@ -93,6 +97,7 @@ class LaneSpec:
                 "dir": str(self.directory),
                 "interval": self.interval,
                 "spawned": self.spawned,
+                "offset": self.offset,
                 "crashes": self.crashes,
                 "restarts": self.restarts,
                 "overrun": self.overrun,
@@ -167,16 +172,18 @@ def run_lane(  # noqa: PLR0913 - the lane's seams, all by keyword
     interval: int,
     clock: LaneClock | None = None,
     startup: float = 0.0,
+    offset: float = 0.0,
     identity: Mapping[str, str | int | None] | None = None,
 ) -> str:
     """Run reminder cycles until the slot window after the tick's jobs; the reason it ended.
 
     Returns `window` at a slot window, `disabled` when Calendar reminders were turned off, `gate` when maintenance
-    is pending (an update waits for the lane), or `stopped` after SIGTERM.
+    is pending (an update waits for the lane), or `stopped` after SIGTERM. `offset` is how long after its slot the
+    next tick starts (systemd's fixed delay): the last cycle delivers that much further ahead.
     """
     clock = clock or LaneClock()
     beats = _Beats(hooks, clock, dict(identity or {}))
-    head = min(max(startup, 0.0), STARTUP_CAP)
+    head = min(max(startup, 0.0), STARTUP_CAP) + min(max(offset, 0.0), OFFSET_CAP)
     done = hooks.wait(0.0)
     while True:
         clock.tzset()
@@ -281,19 +288,27 @@ def _bounded(read: Callable[[], Agenda], seconds: float) -> Agenda:
     return result[0]
 
 
-def pipe_wait(fd: int) -> Callable[[float], bool]:
-    """Wait on the tick's pipe: readable at end of file once the parent closed it after its jobs."""
+def pipe_wait(fd: int, stopped: Callable[[], bool] = lambda: False) -> Callable[[float], bool]:
+    """Wait on the tick's pipe: readable at end of file once the parent closed it after its jobs.
+
+    Waits in slices of at most a second, so SIGTERM ends the lane within about a second.
+    """
     closed = False
 
     def wait(seconds: float) -> bool:
         nonlocal closed
-        if closed:
-            time.sleep(seconds)
-            return True
-        readable, _, _ = select.select([fd], [], [], seconds)
-        if readable and not os.read(fd, 1):
-            closed = True
-        return closed
+        deadline = time.monotonic() + seconds
+        while True:  # polls at least once, so a zero wait still sees a pipe the tick already closed
+            left = max(deadline - time.monotonic(), 0.0)
+            if closed:
+                time.sleep(min(left, 1.0))
+            else:
+                readable, _, _ = select.select([fd], [], [], min(left, 1.0))
+                if readable and not os.read(fd, 1):
+                    closed = True
+                    return True
+            if stopped() or deadline - time.monotonic() <= 0:
+                return closed
 
     return wait
 
@@ -383,7 +398,7 @@ def main(kernel: Kernel, read: Callable[[], Agenda]) -> str:
             read=read,
             guard=lambda: lifecycle(selected),
             gate=lambda: installation_mutation_pending(prefix, state),
-            wait=pipe_wait(spec.fd),
+            wait=pipe_wait(spec.fd, stopped),
             beat=write_beat(spec.directory),
             stopped=stopped,
         )
@@ -392,6 +407,7 @@ def main(kernel: Kernel, read: Callable[[], Agenda]) -> str:
             notifications,
             interval=spec.interval,
             startup=startup,
+            offset=spec.offset,
             identity=lane_identity(spec, selected.identity),
         )
 

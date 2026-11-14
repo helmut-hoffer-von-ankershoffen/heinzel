@@ -141,8 +141,18 @@ def current_birth(platform: str, *, stat_path: Path = Path("/proc/self/stat")) -
     return _linux_birth(stat_path)
 
 
-def _linux_birth(stat_path: Path) -> dict[str, int] | None:
-    """Inspect current-process Linux proc data, not a discovered process identifier."""
+def process_birth(platform: str, pid: int) -> dict[str, int] | None:
+    """Observe a process this one started, or recorded at its start; for the reminder lane's marker (ADR 0147)."""
+    if platform == "darwin":
+        identity = _mac_unique(pid)
+        return {"ticks": identity[0], "hz": 0, "ns_dev": 0, "ns_ino": 0} if identity is not None else None
+    if platform != "linux":
+        return None
+    return _linux_birth(Path(f"/proc/{pid}/stat"), expected=pid)
+
+
+def _linux_birth(stat_path: Path, *, expected: int | None = None) -> dict[str, int] | None:
+    """Inspect Linux proc data of the current process, or of `expected` read at its own path."""
     try:
         before = _time_namespace()
         with stat_path.open("rb") as source:
@@ -158,7 +168,7 @@ def _linux_birth(stat_path: Path) -> dict[str, int] | None:
         fields = data[right + 2 :].split()
         # proc stat field 22; fields begin with process state, field 3.
         if (
-            pid != os.getpid()
+            pid != (os.getpid() if expected is None else expected)
             or len(fields) <= _START_FIELD_INDEX
             or (start := _positive(fields[_START_FIELD_INDEX])) is None
         ):

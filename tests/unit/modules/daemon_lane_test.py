@@ -2,6 +2,7 @@
 
 import json
 import os
+import signal
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -152,3 +153,51 @@ def test_stopping_a_lane_that_never_started_only_clears_its_marker(tmp_path):
     (tmp_path / _lane.MARKER).write_text("{}")
     lane.stop()
     assert not (tmp_path / _lane.MARKER).exists()
+
+
+def test_the_marker_records_the_lane_birth_and_only_a_matching_lane_is_stopped(tmp_path):
+    lane, _, _ = supervisor(tmp_path, [Child(0, tmp_path)])
+    lane.birth = lambda pid: {"ticks": pid, "hz": 0, "ns_dev": 0, "ns_ino": 0}
+    lane.start()
+    assert json.loads((tmp_path / _lane.MARKER).read_text())["birth"]["ticks"] == 4242
+    killed: list[tuple[int, int]] = []
+
+    def kill(pid, signum):
+        killed.append((pid, signum))
+
+    assert _lane.stop_lane(tmp_path, birth=lambda pid: {"ticks": pid, "hz": 0, "ns_dev": 0, "ns_ino": 0}, kill=kill)
+    assert killed == [(4242, signal.SIGTERM)]
+    assert not _lane.stop_lane(tmp_path, birth=lambda _pid: {"ticks": 1, "hz": 0, "ns_dev": 0, "ns_ino": 0}, kill=kill)
+    assert len(killed) == 1  # a reused PID is never signalled
+
+    def gone(_pid, _signum):
+        raise ProcessLookupError
+
+    assert not _lane.stop_lane(tmp_path, birth=lambda pid: {"ticks": pid, "hz": 0, "ns_dev": 0, "ns_ino": 0}, kill=gone)
+    lane.finish()
+    assert not _lane.stop_lane(tmp_path, kill=kill)  # no marker, nothing to stop
+
+
+def test_a_marker_without_a_birth_is_never_signalled(tmp_path):
+    (tmp_path / _lane.MARKER).write_text(json.dumps({"child": 4242}))
+    assert not _lane.stop_lane(tmp_path, birth=lambda _pid: None, kill=lambda *_a: pytest.fail("signalled"))
+    lane, _, _ = supervisor(tmp_path, [Child(0, tmp_path)])
+    lane.birth = lambda _pid: None
+    lane.start()
+    assert "birth" not in json.loads((tmp_path / _lane.MARKER).read_text())
+
+
+def test_the_supervisor_passes_the_timer_offset_to_the_lane(tmp_path):
+    lane, spawner, _ = supervisor(tmp_path, [Child(0, tmp_path)])
+    lane.offset = 42.0
+    lane.start()
+    assert spawner.specs[0]["offset"] == 42.0
+
+
+def test_a_process_birth_of_this_process_matches_its_current_birth():
+    import sys
+
+    from heinzel.modules.system.daemon import _process_birth
+
+    assert _process_birth.process_birth(sys.platform, os.getpid()) == _process_birth.current_birth(sys.platform)
+    assert _process_birth.process_birth("win32", os.getpid()) is None

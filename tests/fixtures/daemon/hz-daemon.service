@@ -8,4 +8,4 @@ ExecStart=/home/ada/.local/bin/hz system daemon tick
 StandardOutput=null
 Nice=10
 IOSchedulingClass=idle
-TimeoutStartSec=30min
+TimeoutStartSec=infinity

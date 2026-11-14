@@ -503,3 +503,34 @@ def test_sigterm_sets_the_stop_flag():
         assert stopped() is True
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+def test_sigterm_cuts_a_wait_short_and_the_offset_widens_the_last_lookahead(settings):
+    reader, writer = os.pipe()
+    try:
+        started = lane.time.monotonic()
+        assert lane.pipe_wait(reader, lambda: True)(5) is False
+        assert lane.time.monotonic() - started < 2  # one slice at most
+    finally:
+        os.close(reader)
+        os.close(writer)
+    spec = lane.LaneSpec(fd=5, directory=lane.Path("/state/daemon"), interval=5, spawned=1.5, offset=42.0)
+    assert lane.LaneSpec.from_environment({lane.ENVIRONMENT: spec.environment()}).offset == 42.0
+    clock = Clock(datetime(2026, 11, 13, 10, 20, 5, tzinfo=BERLIN))
+    start = datetime(2026, 11, 13, 10, 31, tzinfo=BERLIN)  # due 10:26, after a next tick 50 s past its slot
+    near = notify(settings, clock)
+    run(clock, near, meeting(start), done_after=0, startup=10)
+    assert near.recent() == []
+    clock = Clock(datetime(2026, 11, 13, 10, 20, 5, tzinfo=BERLIN))
+    far = notify(settings, clock)
+    original = lane.run_lane
+
+    def with_offset(hooks, notifications, **kwargs):
+        return original(hooks, notifications, **kwargs, offset=50.0)
+
+    lane.run_lane = with_offset
+    try:
+        run(clock, far, meeting(start), done_after=0, startup=10)
+    finally:
+        lane.run_lane = original
+    assert [notice.title for notice in far.recent()] == ["Meeting starts soon"]
