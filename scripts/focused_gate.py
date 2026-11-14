@@ -23,14 +23,13 @@ from scripts.focused_plan import (
     ARTIFACT_PREFIX,
     FULL_JOB,
     PLAN_VARIABLE,
-    PROTECTED_FILES,
     Scope,
     git,
-    git_blob,
     last_green_main,
     plan_registry,
     pr_merge_base,
     prose_only,
+    protected_blobs,
     raw_diff,
     registry_slots,
     require_pr_base_ancestor,
@@ -288,6 +287,13 @@ def rerun_ledger(get: Callable[[str], Any], run: dict[str, Any]) -> list[str]:
     ]
 
 
+def went_full(jobs: list[dict[str, Any]]) -> bool:
+    """Whether a run took the full set: its Coverage job ran, or no gating focused lane did."""
+    ran = {job["name"] for job in jobs if job.get("conclusion") not in {"skipped", None}}
+    advisory = {f"Focused tests ({lane})" for lane in ADVISORY_LANES}
+    return "Coverage" in ran or not any(name.startswith("Focused tests (") for name in ran - advisory)
+
+
 def max_attempt(jobs: list[dict[str, Any]], name: str) -> int:
     """The latest attempt in which a job of this name ran."""
     return max(int(job.get("run_attempt", 0)) for job in jobs if job["name"] == name)
@@ -472,8 +478,9 @@ def require_reviewed_execution(scope: Scope, registry: dict[str, Any], keys: tup
     Raises:
         CandidateError: A protected file changed without a reviewed execution manifest for these exact blobs.
     """
-    tested = {path: git_blob(scope.commit, path) for path in PROTECTED_FILES}
-    changed = sorted(path for path, blob in tested.items() if git_blob(scope.workload.base, path) != blob)
+    tested = protected_blobs(scope.commit)
+    based = protected_blobs(scope.workload.base)
+    changed = sorted(path for path in tested.keys() | based.keys() if tested.get(path) != based.get(path))
     if changed:
         plans = [registry[key] for key in keys if isinstance(registry.get(key), dict)]
         require(
@@ -645,14 +652,21 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
         "main advanced or does not contain the expected aggregate base",
     )
     green = last_green_main(gate.github, gate.head)
+    # A run that took the full set is judged as the full set: a proof posted after it started can make this judge's
+    # own selection focused, and full is a superset of it. The full-set checks below then apply.
+    ran_full = went_full(latest_jobs(gate.github, run_id))
     require(
-        green is None or git("merge-base", base, green).decode().strip() == base,
+        ran_full or green is None or git("merge-base", base, green).decode().strip() == base,
         "a main base must not be newer than the last accepted green main commit",
     )
     source = WorkloadSource("push", REPOSITORY, "refs/heads/main", {}, base, gate.head, raw_diff(base, gate.head))
-    unproven = "no green main run before this push"  # CI ran the full set; this judge requires the same
+    reason = "the run took the full set" if ran_full else "no green main run before this push"
     scope = resolve(
-        source, gate.head, manifest, slots=slots, select=(lambda _c, _p: (None, unproven)) if green is None else None
+        source,
+        gate.head,
+        manifest,
+        slots=slots,
+        select=(lambda _c, _p: (None, reason)) if ran_full or green is None else None,
     )
     if not isinstance(scope, Scope):
         message = "focused main evidence cannot stand in for a full candidate"

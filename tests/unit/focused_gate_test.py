@@ -170,8 +170,10 @@ def first_attempt(focused_gate, monkeypatch):
 
     for module in (focused_plan, focused_gate):
         monkeypatch.setattr(module, "git", git)
+    # raising=False: the same fixture also drives these tests against older judges that import git_blob directly
     for module in (focused_plan, focused_gate):
-        monkeypatch.setattr(module, "git_blob", lambda *_args: blob)
+        monkeypatch.setattr(module, "git_blob", lambda *_args: blob, raising=False)
+    monkeypatch.setattr(focused_plan, "tracked_paths", lambda *_args: [], raising=False)
     monkeypatch.setattr(focused_plan, "object_id", lambda _ref: tree)
     # The judge's own selector over the tested tree; no manifest is needed.
     monkeypatch.setattr(focused_plan, "selector_lanes", lambda _commit, _changed: ({"python": [test_file]}, "focused"))
@@ -928,8 +930,7 @@ def test_a_pr_that_edits_the_workflow_needs_a_reviewed_execution_pin(
     def git_blob(commit, path):
         return edited if (commit, path) == (merge, ".github/workflows/ci.yml") else blob
 
-    for module in (focused_plan, focused_gate):
-        monkeypatch.setattr(module, "git_blob", git_blob)
+    monkeypatch.setattr(focused_plan, "git_blob", git_blob)
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
     tested = {path: git_blob(merge, path) for path in focused_plan.PROTECTED_FILES}
     plan = {"ref": focused_plan.PREOPEN_PR_REF, "selection": {"python": ["tests/unit/focused_gate_test.py"]}}
@@ -997,3 +998,166 @@ def test_a_prose_main_push_needs_no_app_jobs_in_the_full_set(focused_gate, monke
     else:
         with pytest.raises(focused_gate.CandidateError, match="did not run its matrix"):
             focused_gate._verify_workload(None, source, scope, lambda _path: b"")
+
+
+def test_shared_test_helpers_and_collection_inputs_are_protected(monkeypatch):
+    """S10: what runs inside a full-set job is pinned too: conftests, test helpers, pytest config, package scripts."""
+    from scripts import focused_plan
+
+    tree = {
+        "c": [
+            "tests/_e2e_lanes.py",
+            "tests/e2e/_mounted.py",
+            "tests/e2e/sub/_x.py",
+            "tests/unit/_y.py",
+            "tests/a_test.py",
+        ],
+        "b": ["tests/_e2e_lanes.py"],
+    }
+    monkeypatch.setattr(focused_plan, "tracked_paths", lambda commit, _prefix: tree[commit])
+    monkeypatch.setattr(focused_plan, "git_blob", lambda commit, path: f"{commit}:{path}")
+    blobs = focused_plan.protected_blobs("c")
+    assert {"tests/_e2e_lanes.py", "tests/e2e/_mounted.py"} <= blobs.keys()
+    assert not {"tests/e2e/sub/_x.py", "tests/unit/_y.py", "tests/a_test.py"} & blobs.keys()
+    for path in ("pyproject.toml", "tests/conftest.py", "tests/e2e/conftest.py", "desktop/package.json"):
+        assert path in focused_plan.PROTECTED_FILES
+    assert "tests/e2e/_mounted.py" not in focused_plan.protected_blobs("b")
+
+
+def test_an_added_test_helper_needs_the_reviewed_execution_pin(focused_gate, monkeypatch):
+    from scripts import focused_plan
+    from scripts.ci_workload import FocusedPlan
+    from scripts.focused_plan import Scope
+
+    monkeypatch.setattr(
+        focused_plan, "tracked_paths", lambda commit, _p: ["tests/e2e/_new.py"] if commit == "c" else []
+    )
+    monkeypatch.setattr(focused_plan, "git_blob", lambda *_args: "e" * 40)
+    workload = FocusedPlan("pull_request", "refs/pull/1/merge", "b", "h", "d", ("CI OK",), full=True)
+    scope = Scope(workload, "c", "t", {}, {}, "e", {}, {}, {}, "f", full=True)
+    with pytest.raises(focused_gate.CandidateError, match=r"producers changed \(tests/e2e/_new.py\)"):
+        focused_gate.require_reviewed_execution(scope, {}, ("pull_request:h",))
+    pinned = {"pull_request:h": {"execution": focused_plan.protected_blobs("c")}}
+    assert focused_gate.require_reviewed_execution(scope, pinned, ("pull_request:h",)) == ["tests/e2e/_new.py"]
+
+
+@pytest.mark.parametrize(
+    ("ran", "full"),
+    [
+        ({"Coverage", "Test (ubuntu-24.04, Python 3.12, unit)", "CI OK"}, True),
+        ({"CI OK", "Changed paths"}, True),
+        ({"CI OK", "Focused tests (consumers)"}, True),
+        ({"CI OK", "Focused tests (python)"}, False),
+        ({"CI OK", "Focused tests (python)", "Focused tests (consumers)"}, False),
+    ],
+)
+def test_a_run_that_went_full_is_recognised(focused_gate, ran, full):
+    jobs = [{"name": name, "conclusion": "success"} for name in ran] + [{"name": "Coverage", "conclusion": "skipped"}]
+    assert focused_gate.went_full(jobs) is full
+
+
+def test_a_main_run_that_went_full_is_judged_full_after_a_late_proof(focused_gate, first_attempt, monkeypatch):
+    """S9: run N+1 started before N's proof and took the full set; the proof is there by judging time."""
+    from scripts import merge_gate
+
+    gate, run_id, _manifest, _lane, rows, _logs, git_rows = first_attempt
+    base, head = "a" * 40, gate.head
+    rows[f"actions/runs/{run_id}"].update(event="push", head_branch="main", head_repository={"full_name": gate.repo})
+    rows["git/ref/heads/main"] = {"object": {"sha": head}}
+    rows[f"actions/workflows/{focused_gate.CI_WORKFLOW_ID}/runs?head_sha={head}&event=push&per_page=1"] = {
+        "workflow_runs": [rows[f"actions/runs/{run_id}"]]
+    }
+    git_rows.update(
+        {
+            ("fetch", "--no-tags", "origin", "refs/heads/main"): b"",
+            ("rev-parse", "FETCH_HEAD"): head.encode(),
+            ("merge-base", base, head): base.encode(),
+            ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, head): b"",
+        }
+    )
+    full_jobs = [{"name": "Coverage", "conclusion": "success"}, {"name": "CI OK", "conclusion": "success"}]
+    monkeypatch.setattr(focused_gate, "latest_jobs", lambda _get, _run, which="latest": full_jobs)
+    monkeypatch.setattr(focused_gate, "last_green_main", lambda _get, _head: "9" * 40)  # a proof posted meanwhile
+    seen = {}
+
+    class StopError(Exception):
+        pass
+
+    def resolve(_source, _commit, _manifest, **kwargs):
+        seen["selection"] = kwargs["select"]("c", [])
+        raise StopError
+
+    monkeypatch.setattr(focused_gate, "resolve", resolve)
+    monkeypatch.setattr(merge_gate.Gate, "github", lambda _gate, path: rows[path])
+    with pytest.raises(StopError):
+        focused_gate.verify_main(gate, run_id, base, "{}", lambda _path: b"")
+    assert seen["selection"] == (None, "the run took the full set")
+
+
+def test_the_main_proof_race_accepts_the_full_run_that_followed(focused_gate, first_attempt, monkeypatch):
+    """S9 end to end: N completes unproven, N+1 starts and goes full, N's proof appears, the judge accepts N+1."""
+    from scripts import focused_coverage, focused_plan
+
+    gate, run_id, _manifest, lane, rows, logs, git_rows = first_attempt
+    base, head = "a" * 40, gate.head
+    run = rows[f"actions/runs/{run_id}"]
+    run.update(event="push", head_branch="main", head_repository={"full_name": gate.repo})
+    rows["git/ref/heads/main"] = {"object": {"sha": head}}
+    rows[f"actions/workflows/{focused_gate.CI_WORKFLOW_ID}/runs?head_sha={head}&event=push&per_page=1"] = {
+        "workflow_runs": [run]
+    }
+    diff = git_rows[("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, "c" * 40)]
+    git_rows.update(
+        {
+            ("fetch", "--no-tags", "origin", "refs/heads/main"): b"",
+            ("rev-parse", "FETCH_HEAD"): head.encode(),
+            ("merge-base", base, head): base.encode(),
+            ("merge-base", "--is-ancestor", base, head): b"",
+            ("merge-base", base, base): base.encode(),
+            ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, head): diff,
+        }
+    )
+    # 1-2. When N+1 started, N (= base) had no proof yet: CI took the full set, with Coverage and the Test matrix.
+    source = focused_plan.WorkloadSource("push", gate.repo, "refs/heads/main", {}, base, head, diff)
+    ci_scope = focused_plan.resolve(
+        source, head, "{}", select=lambda _c, _p: (None, "no green main run before this push")
+    )
+    assert ci_scope.full
+    report = focused_coverage.canonical(focused_coverage.evidence(ci_scope, "coverage", run_id, 1, {}))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("evidence.json", report)
+    content = output.getvalue()
+    jobs = rows[f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page=1"]
+    lane["name"] = "Coverage"
+    test_job = dict(lane, id=555, name="Test (ubuntu-24.04, Python 3.12, unit)")
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] not in focused_gate.PR_JOBS] + [test_job]
+    jobs["total_count"] = len(jobs["jobs"])
+    for job in jobs["jobs"]:
+        rows[f"check-runs/{job['id']}"] = {
+            **job,
+            "app": {"id": focused_gate.ACTIONS_APP_ID},
+            "check_suite": {"id": run["check_suite_id"]},
+        }
+    artifact = rows[f"actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0]
+    artifact.update(
+        name=f"focused-pr-evidence-coverage-{run_id}-1",
+        size_in_bytes=len(content),
+        digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
+    )
+    logs[f"actions/artifacts/{artifact['id']}/zip"] = content
+    logs[f"actions/jobs/{lane['id']}/steps/6/logs"] = (
+        f"Artifact {artifact['name']} has been successfully uploaded! "
+        f"Final size is {len(content)} bytes. Artifact ID is {artifact['id']}\n"
+    ).encode()
+    # 3. N's proof appears before N+1 is judged: the judge's own selection for this diff is now focused.
+    rows["actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=30"] = {
+        "workflow_runs": [{"id": 77, "head_sha": base}]
+    }
+    rows["actions/runs/77/jobs?filter=latest&per_page=100"] = {"jobs": [{"name": "CI OK", "conclusion": "success"}]}
+    rows[f"commits/{base}/statuses?per_page=100"] = [{"context": "hz/main-proof", "state": "success"}]
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    assert not focused_plan.resolve(source, head, "{}").full
+    # 4. The judge accepts N+1 as the full set it ran.
+    proof = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__)
+    assert (proof["full"], proof["head"], proof["base"]) == (True, head, base)

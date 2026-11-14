@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fnmatch
 import gzip
 import hashlib
 import importlib.util
@@ -116,7 +117,18 @@ PROTECTED_FILES = (
     "scripts/pyyaml-build-requirements.txt",
     "scripts/release_candidate.py",
     "uv.lock",
+    # What runs inside a full-set job: test collection, pytest configuration, package test scripts, CI helpers.
+    "pyproject.toml",
+    "tests/conftest.py",
+    "tests/unit/conftest.py",
+    "tests/e2e/conftest.py",
+    "desktop/package.json",
+    "web/package.json",
+    "scripts/ci_node.py",
+    "scripts/quarantine.py",
 )
+# Shared test helpers, matched in the tested tree; a change, addition or removal is a protected change too.
+PROTECTED_PATTERNS = ("tests/_*.py", "tests/e2e/_*.py")
 MAX_PLAN = 48 * 1024
 SLOT_VARIABLES = tuple(f"FOCUSED_CI_PLANS_V2_{index}" for index in range(4))
 MAX_SLOT = 40_000
@@ -326,6 +338,25 @@ def object_id(revision: str) -> str:
     return value
 
 
+def tracked_paths(commit: str, prefix: str) -> list[str]:
+    """The tracked files under PREFIX in COMMIT."""
+    raw = git("ls-tree", "-r", "--name-only", "-z", commit, "--", prefix)
+    return [name for name in raw.decode().split("\0") if name]
+
+
+def protected_blobs(commit: str) -> dict[str, str]:
+    """The blob of every protected file and of every tracked file a protected pattern matches, in COMMIT."""
+    blobs = {path: git_blob(commit, path) for path in PROTECTED_FILES}
+    for path in tracked_paths(commit, "tests"):
+        folder, _, name = path.rpartition("/")
+        if any(
+            folder == pattern.rpartition("/")[0] and fnmatch.fnmatchcase(name, pattern.rpartition("/")[2])
+            for pattern in PROTECTED_PATTERNS
+        ):
+            blobs[path] = git_blob(commit, path)
+    return blobs
+
+
 def git_blob(commit: str, path: str) -> str:
     """Bind a regular source blob, rejecting symlinks and submodule entries."""
     entry = git("ls-tree", "-z", commit, "--", path).split(b"\0")
@@ -518,7 +549,6 @@ def resolve(  # noqa: PLR0913 - independent source, dispatch, base and transport
         "config_blob": config_blob,
         "selection": {lane: list(tests) for lane, tests in chosen.items()},
         "full": full,
-        "reason": reason,
     }
     digest = hashlib.sha256(json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return Scope(workload, commit, tree, changes, production, config_blob, {}, chosen, {}, digest, full, reason)
