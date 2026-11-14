@@ -78,8 +78,8 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     assert info["sections"]["system.capability"] == {
         "ai.access test → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "claude-code → api.anthropic.com",
-        "documents read → documents:read": "optional: not connected: no adapter bound",
-        "documents search → documents:read": "optional: not connected: no adapter bound",
+        "document read → documents:read": "optional: not connected: no adapter bound",
+        "document search → documents:read": "optional: not connected: no adapter bound",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "org calendar → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
@@ -89,8 +89,8 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
         "ai.access test → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "command → unknown (configured)",
-        "documents read → documents:read": "optional: not connected: no adapter bound",
-        "documents search → documents:read": "optional: not connected: no adapter bound",
+        "document read → documents:read": "optional: not connected: no adapter bound",
+        "document search → documents:read": "optional: not connected: no adapter bound",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "org calendar → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "command → unknown (configured)",

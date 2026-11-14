@@ -23333,10 +23333,10 @@
         ]
       }
     },
-    "/documents/read": {
+    "/document/read": {
       "get": {
         "description": "Read a document's text through the connector it belongs to.",
-        "operationId": "documents_read",
+        "operationId": "document_read",
         "parameters": [
           {
             "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
@@ -23374,14 +23374,14 @@
         },
         "summary": "Read a document's text through the connector it belongs to.",
         "tags": [
-          "documents"
+          "document"
         ]
       }
     },
-    "/documents/search": {
+    "/document/search": {
       "get": {
-        "description": "Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.",
-        "operationId": "documents_search",
+        "description": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
+        "operationId": "document_search",
         "parameters": [
           {
             "description": "What to look for in titles and text.",
@@ -23429,9 +23429,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.",
+        "summary": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
         "tags": [
-          "documents"
+          "document"
         ]
       }
     },

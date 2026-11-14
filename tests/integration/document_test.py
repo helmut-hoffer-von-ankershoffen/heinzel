@@ -1,4 +1,4 @@
-"""`hz documents read` and `search` through the CLI with two documents connectors on (ADR 0161)."""
+"""`hz document read` and `search` through the CLI with two documents connectors on (ADR 0161)."""
 
 import json
 
@@ -68,17 +68,17 @@ def hz(kernel: Kernel, *args: str) -> tuple[int, object]:
 
 def test_links_open_in_the_connector_they_belong_to(make_kernel):
     kernel = kernel_with(make_kernel, ["drive", "wiki"])
-    code, drive = hz(kernel, "documents", "read", "https://docs.example.test/d/1")
+    code, drive = hz(kernel, "document", "read", "https://docs.example.test/d/1")
     assert code == 0
     assert (drive["title"], drive["source"]) == ("Roadmap", "drive")
-    code, wiki = hz(kernel, "documents", "read", "https://wiki.example.test/pages/4242")
+    code, wiki = hz(kernel, "document", "read", "https://wiki.example.test/pages/4242")
     assert code == 0
     assert (wiki["title"], wiki["source"]) == ("Team page", "wiki")
 
 
 def test_search_lists_both_connectors_results_labelled_and_reports_one_that_is_down(make_kernel):
     kernel = kernel_with(make_kernel, "drive,wiki,down")
-    code, found = hz(kernel, "documents", "search", "plan")
+    code, found = hz(kernel, "document", "search", "plan")
     assert code == 0
     assert [(hit["source"], hit["title"]) for hit in found["hits"]] == [("drive", "Drive plan"), ("wiki", "Wiki plan")]
     assert found["failures"] == [{"source": "down", "reason": "The archive is down for maintenance"}]
@@ -86,26 +86,26 @@ def test_search_lists_both_connectors_results_labelled_and_reports_one_that_is_d
 
 def test_an_id_without_a_link_names_the_choices(make_kernel):
     kernel = kernel_with(make_kernel, ["drive", "wiki"])
-    result = CliRunner().invoke(build(kernel), ["documents", "read", "4242"])
+    result = CliRunner().invoke(build(kernel), ["document", "read", "4242"])
     assert result.exit_code == 1
     assert "could be in drive or wiki: pass its link, or name the connector, e.g. drive:4242" in " ".join(
         result.output.split()
     )
-    code, page = hz(kernel, "documents", "read", "wiki:4242")
+    code, page = hz(kernel, "document", "read", "wiki:4242")
     assert code == 0
     assert page["source"] == "wiki"
 
 
 def test_one_connector_works_as_before(make_kernel):
     kernel = kernel_with(make_kernel, "wiki")
-    code, page = hz(kernel, "documents", "read", "4242")
+    code, page = hz(kernel, "document", "read", "4242")
     assert code == 0
     assert (page["title"], page["source"]) == ("Team page", None)
 
 
 def test_without_a_documents_connector_the_commands_say_how_to_get_one(make_kernel):
     kernel = make_kernel(builtins=True)
-    result = CliRunner().invoke(build(kernel), ["documents", "search", "plan"])
+    result = CliRunner().invoke(build(kernel), ["document", "search", "plan"])
     assert result.exit_code == 1
     assert "hz system plugin search --text documents" in " ".join(result.output.split())
 
@@ -113,8 +113,8 @@ def test_without_a_documents_connector_the_commands_say_how_to_get_one(make_kern
 def test_documents_are_on_the_cli_mcp_and_web_app_but_not_the_open_rest_head(make_kernel):
     kernel = kernel_with(make_kernel, ["drive", "wiki"])
     for head in ("cli", "mcp", "web"):
-        assert {"documents_read", "documents_search"} <= {item.name for item in exposed(kernel, head)}, head
-    assert not {"documents_read", "documents_search"} & {item.name for item in exposed(kernel, "api")}
+        assert {"document_read", "document_search"} <= {item.name for item in exposed(kernel, head)}, head
+    assert not {"document_read", "document_search"} & {item.name for item in exposed(kernel, "api")}
 
 
 @pytest.mark.parametrize("value", ['["drive", "wiki"]', "drive,wiki"])

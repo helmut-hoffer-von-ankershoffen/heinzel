@@ -110,8 +110,8 @@ def test_two_documents_connectors_are_switched_on_and_both_serve(make_kernel, tm
 
     # What a restart applies: a kernel on the saved configuration routes each link and asks both connectors.
     restarted = make_kernel(builtins=True, settings_=settings, config=Config.load(tmp_path / "home"), stores=stores())
-    assert hz(restarted, "documents", "read", "https://docs.example.test/d/1")["source"] == "drive"
-    assert hz(restarted, "documents", "read", "https://wiki.example.test/p/7")["source"] == "wiki"
-    found = hz(restarted, "documents", "search", "plan")
+    assert hz(restarted, "document", "read", "https://docs.example.test/d/1")["source"] == "drive"
+    assert hz(restarted, "document", "read", "https://wiki.example.test/p/7")["source"] == "wiki"
+    found = hz(restarted, "document", "search", "plan")
     assert [(hit["source"], hit["title"]) for hit in found["hits"]] == [("drive", "Drive plan"), ("wiki", "Wiki plan")]
     assert found["failures"] == []

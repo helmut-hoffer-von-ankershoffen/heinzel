@@ -1,8 +1,8 @@
 """Documents in every documents connector that is on: open one by its link or id, search them all (ADR 0161).
 
-With several connectors switched on for `documents`, such as Google Docs and Confluence, `hz documents read` opens a
+With several connectors switched on for `documents`, such as Google Docs and Confluence, `hz document read` opens a
 link in the connector whose links match its host, and an id in the connector that found it (`google:<id>` names one);
-`hz documents search` asks every connector at once, each with its own time limit, and lists what each found, labelled
+`hz document search` asks every connector at once, each with its own time limit, and lists what each found, labelled
 with its source, next to any connector that couldn't answer. With one connector, both work as they always did.
 
 They read your documents, so they are on the CLI, MCP and the web app, not the unauthenticated REST head.
@@ -17,7 +17,7 @@ from heinzel import Document, DocumentHit, Documents, Module, SourceFailure
 HEADS = frozenset({"cli", "mcp", "web"})
 MAX_RESULTS = 50
 
-module = Module("documents", "Open and search your documents in every documents connector that is on.")
+module = Module("document", "Open and search your documents in every documents connector that is on.")
 
 
 class DocumentSearch(BaseModel):
@@ -51,6 +51,6 @@ def search(
     query: Annotated[str, Field(min_length=1, description="What to look for in titles and text.")],
     limit: Annotated[int, Field(ge=1, le=MAX_RESULTS, description="At most this many results.")] = 20,
 ) -> DocumentSearch:
-    """Search every documents connector that is on at once; one that fails or is slow is reported, not fatal."""
+    """Search every documents connector at once; one that fails or is slow is reported, not fatal."""
     found = documents.search(query, limit)
     return DocumentSearch(query=query, hits=list(found), failures=list(getattr(found, "failures", [])))

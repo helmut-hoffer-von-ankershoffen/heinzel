@@ -21,7 +21,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `ai`: (expert) How hz reaches AI, and what it...
 * `app`: Manage the native Heinzel desktop app.
 * `chat`: Chat with the agent runner in this...
-* `documents`: (expert) Open and search your documents in...
+* `document`: (expert) Open and search your documents in...
 * `graph`: Show your team&#x27;s contracts: who keeps...
 * `heinzel`: Your Heinzelmännchen: durable Heinzels...
 * `join`: Join a team from its invite line: finds...
@@ -735,14 +735,14 @@ $ hz chat show [OPTIONS] {session}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-## `hz documents`
+## `hz document`
 
 (expert) Open and search your documents in every documents connector that is on.
 
 **Usage**:
 
 ```console
-$ hz documents [OPTIONS] COMMAND [ARGS]...
+$ hz document [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -754,14 +754,14 @@ $ hz documents [OPTIONS] COMMAND [ARGS]...
 * `read`: (expert) Read a document&#x27;s text through...
 * `search`: (expert) Search every documents connector...
 
-### `hz documents read`
+### `hz document read`
 
 (expert) Read a document&#x27;s text through the connector it belongs to.
 
 **Usage**:
 
 ```console
-$ hz documents read [OPTIONS] {ref}
+$ hz document read [OPTIONS] {ref}
 ```
 
 **Arguments**:
@@ -774,14 +774,14 @@ $ hz documents read [OPTIONS] {ref}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz documents search`
+### `hz document search`
 
-(expert) Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.
+(expert) Search every documents connector at once; one that fails or is slow is reported, not fatal.
 
 **Usage**:
 
 ```console
-$ hz documents search [OPTIONS] {query}
+$ hz document search [OPTIONS] {query}
 ```
 
 **Arguments**:

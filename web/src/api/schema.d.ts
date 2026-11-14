@@ -194,7 +194,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/documents/read": {
+    "/document/read": {
         parameters: {
             query?: never;
             header?: never;
@@ -205,7 +205,7 @@ export interface paths {
          * Read a document's text through the connector it belongs to.
          * @description Read a document's text through the connector it belongs to.
          */
-        get: operations["documents_read"];
+        get: operations["document_read"];
         put?: never;
         post?: never;
         delete?: never;
@@ -214,7 +214,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/documents/search": {
+    "/document/search": {
         parameters: {
             query?: never;
             header?: never;
@@ -222,10 +222,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.
-         * @description Search every documents connector that is on at once; one that fails or is slow is reported, not fatal.
+         * Search every documents connector at once; one that fails or is slow is reported, not fatal.
+         * @description Search every documents connector at once; one that fails or is slow is reported, not fatal.
          */
-        get: operations["documents_search"];
+        get: operations["document_search"];
         put?: never;
         post?: never;
         delete?: never;
@@ -18343,7 +18343,7 @@ export interface operations {
             };
         };
     };
-    documents_read: {
+    document_read: {
         parameters: {
             query: {
                 /** @description The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`. */
@@ -18375,7 +18375,7 @@ export interface operations {
             };
         };
     };
-    documents_search: {
+    document_search: {
         parameters: {
             query: {
                 /** @description What to look for in titles and text. */

@@ -100,7 +100,7 @@ labelled with their `source` and come back as `Gathered`.
 
 **Features that use documents:**
 
-- `hz documents read` and `hz documents search`, a new module on the CLI, MCP and the web app but not the open REST
+- `hz document read` and `hz document search`, a new module on the CLI, MCP and the web app but not the open REST
   head. `search` returns `hits` and `failures`.
 - Contracts and workflows: compiled jobs get the routed handle through `Kernel.handle_for`. A contract input can name
   `documents.search` with fixed `args` such as `{query: weekly, limit: 10}`. Read methods may now take an `int`.
@@ -144,7 +144,7 @@ once the need is concrete.
 - `tests/unit/kernel/multi_adapter_test.py` covers routing by links, by hosts, by id and by prefix; overlapping and
   unknown hosts; fan-out with a failing, a crashing, a hanging and a non-searching adapter; writes to the owner and
   to a read-only adapter; one binding unchanged; and the settings forms.
-- `tests/integration/documents_test.py` covers the CLI commands, the heads they are on, and `config set` with a list.
+- `tests/integration/document_test.py` covers the CLI commands, the heads they are on, and `config set` with a list.
 - The Vitest cases in `web/src/layout/SettingControls.test.tsx` and `SettingsStructure.test.tsx` cover the switches,
   the default and connector use.
 - The e2e journey `tests/e2e/multi_documents_test.py` (`web/e2e/multi-documents.mjs`) switches two documents
