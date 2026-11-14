@@ -1,7 +1,7 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,9 +23,24 @@ await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");
 let browser;
+// The aurora canvas per viewport (context lost, replacements, in-memory drawing) at each reading, written next to the
+// screenshots after every step that reads it: CI keeps them as an artifact, passed or failed.
+const canvasLog = [];
+const logCanvas = (entry) => {
+  canvasLog.push(entry);
+  writeFileSync(join(shots, "audio-canvas.json"), `${JSON.stringify(canvasLog, null, 1)}\n`);
+};
 // Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
 const RAIL_MARGIN = 0.2;
-const result = { viewports: [], tones: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
+const result = {
+  viewports: [],
+  tones: [],
+  realSignal: false,
+  gpuReset: false,
+  realSilence: false,
+  cleanup: false,
+  errors: [],
+};
 // For a failure: the page in use, its console errors and failed requests, written out before the error is rethrown.
 let open = null;
 const consoleErrors = [];
@@ -55,6 +70,27 @@ try {
       result.errors.push("Unexpected non-fixture browser request");
       return route.abort();
     });
+    // Diagnosis only: lost and restored canvas contexts, and whether the page still renders frames at all.
+    await page.addInitScript(() => {
+      const seen = { lost: 0, restored: 0, frames: 0 };
+      // Reads a canvas with the visualizer's own context options: the first getContext call on a new canvas fixes
+      // them, so a read before the visualizer's effect must not take the in-memory mode away from a replaced canvas.
+      window.vizContext = (canvas) =>
+        canvas.getContext(
+          "2d",
+          document.querySelector("canvas[data-testid=audio-aurora]")?.dataset.vizRender === "memory"
+            ? { willReadFrequently: true }
+            : undefined,
+        );
+      window.canvasEvents = seen;
+      document.addEventListener("contextlost", () => (seen.lost += 1), true);
+      document.addEventListener("contextrestored", () => (seen.restored += 1), true);
+      const tick = () => {
+        seen.frames += 1;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await page.goto(`http://127.0.0.1:${address.port}/e2e/audio-visualizer.html`);
     const trigger = page
       .getByRole("region", { name: "Audio visualizer", exact: true })
@@ -75,19 +111,20 @@ try {
     // What the visualizer measured and drew, read in the page: the shared analysis' spectrum position (0 = 40 Hz,
     // 1 = 12 kHz, -1 = silent), where the Spectrum rail's painted mass sits (0 = bottom/bass, 1 = top/treble), and
     // the aurora's painted pixel count and mean green share (logged for diagnosis, not asserted: its animation drifts).
-    const measure = () =>
-      page.evaluate(() => {
+    // Installed in the page once, so a wait can return the very frame it accepted (see `until`).
+    await page.evaluate(() => {
+      window.vizSnapshot = () => {
         const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
         const sky = document.querySelector("canvas[data-testid=audio-aurora]");
         let mass = 0,
           height = 0;
-        const pixels = rail.getContext("2d").getImageData(0, 0, rail.width, rail.height).data;
+        const pixels = window.vizContext(rail).getImageData(0, 0, rail.width, rail.height).data;
         for (let i = 3; i < pixels.length; i += 4) {
           const row = Math.floor((i - 3) / 4 / rail.width);
           mass += pixels[i];
           height += pixels[i] * (1 - row / Math.max(1, rail.height - 1));
         }
-        const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
+        const { data } = window.vizContext(sky).getImageData(0, 0, sky.width, sky.height);
         let share = 0,
           count = 0,
           strong = 0;
@@ -105,8 +142,23 @@ try {
           // The share of the window painted at an alpha a person can see (1/8 or more), not just nonzero.
           visible: strong / (data.length / 4),
           share: share / Math.max(1, count),
+          // The generator's audio clock against the page clock (seconds): when the generated stream stalls, the
+          // audio clock falls behind and the failure log names a starved signal instead of a drawing problem.
+          canvas: {
+            ...window.canvasEvents,
+            skyLost: window.vizContext(sky).isContextLost?.() ?? null,
+            generation: Number(sky.dataset.vizGeneration ?? "0"),
+            render: sky.dataset.vizRender,
+            visibility: document.visibilityState,
+          },
+          clock: {
+            audio: Number((window.audioFixture.contexts.at(-1)?.currentTime ?? -1).toFixed(2)),
+            page: Number((performance.now() / 1000).toFixed(2)),
+          },
         };
-      });
+      };
+    });
+    const measure = () => page.evaluate(() => window.vizSnapshot());
     const allStopped = () =>
       page.evaluate(() =>
         window.audioFixture.streams.every((stream) =>
@@ -125,9 +177,10 @@ try {
         })),
       );
     // Fails with what was measured, so a CI log tells a dead analyser from a drawing or timing problem.
+    // Returns the predicate's truthy value: a snapshot it accepted is the frame the assertions then read.
     const until = async (what, predicate, arg) => {
       try {
-        await page.waitForFunction(predicate, arg, { timeout: 30_000, polling: 100 });
+        return await (await page.waitForFunction(predicate, arg, { timeout: 30_000, polling: 100 })).jsonValue();
       } catch (error) {
         throw new Error(`${viewport.width}px: ${what}; measured ${JSON.stringify(await measure())}`, { cause: error });
       }
@@ -136,7 +189,7 @@ try {
       const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
       const sky = document.querySelector("canvas[data-testid=audio-aurora]");
       if (!rail || !sky || Number(rail.dataset.vizCentroid ?? "-1") < 0) return false;
-      const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
+      const { data } = window.vizContext(sky).getImageData(0, 0, sky.width, sky.height);
       return data.some((value, index) => index % 4 === 3 && value > 0);
     });
     // Let the 440 Hz tone settle, then move it to 12 kHz: the measured spectrum position must climb by at least a
@@ -144,7 +197,7 @@ try {
     // painted mass must move up with it.
     await page.waitForTimeout(1500);
     const low = await measure();
-    assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
+    assert(low.count > 0, `${viewport.width}px: real generated audio must paint the aurora: ${JSON.stringify(low)}`);
     // One plain tone fills a single band: it must still light the window visibly, not paint a trace nobody sees.
     assert(
       low.visible > 0.03,
@@ -153,17 +206,25 @@ try {
     await page.evaluate(() => {
       window.audioFixture.oscillator.frequency.value = 12000;
     });
-    await until(
-      `the 12 kHz tone did not move the measured spectrum up from ${JSON.stringify(low)}`,
-      (lowCentroid) =>
-        Number(document.querySelector('canvas[aria-label="Shared audio spectrum"]').dataset.vizCentroid ?? "-1") >
-        lowCentroid + 0.25,
-      low.centroid,
+    // Wait until the capture has heard the moved tone, not for page time: the centroid stands at least half the
+    // spectrum above the 440 Hz reading (it settles 0.6 above it), so the 12 kHz tone dominates what was analysed.
+    // Then the assertions read that very frame. A centroid that had just crossed a quarter, then 500 ms of page time,
+    // read a frame with no aurora at all and the centroid at 0.705 on a loaded macOS runner (run 43510033780): the
+    // capture had stopped hearing the generated tone for a while, and the aurora fades with silence by design.
+    const high = await until(
+      `the 12 kHz tone did not reach the capture and move the measured spectrum up from ${JSON.stringify(low)}`,
+      (from) => {
+        const now = window.vizSnapshot();
+        return now.centroid > from.centroid + 0.5 ? now : null;
+      },
+      low,
     );
-    await page.waitForTimeout(500);
-    const high = await measure();
     result.tones.push({ width: viewport.width, low, high });
-    assert(high.count > 0, "The moved tone must still paint the aurora");
+    logCanvas({ width: viewport.width, step: "tones", low: low.canvas, high: high.canvas });
+    assert(
+      high.count > 0,
+      `${viewport.width}px: the moved tone must still paint the aurora: ${JSON.stringify({ low, high })}`,
+    );
     // Measured 0.002 (1440) and 0.011 (390) while loudness was the mean over all bands, 0.09 and 0.12 since: the
     // threshold sits a factor of three from both, for other renderers.
     assert(
@@ -179,6 +240,25 @@ try {
       `Changing a real tone must move the drawn spectrum up the rail: ${JSON.stringify({ low, high })}`,
     );
     result.realSignal = true;
+    // A GPU reset while the aurora plays (once, at the wide viewport): every canvas loses its 2D context. The aurora
+    // must paint again, whether the browser restores the contexts or the visualizer replaces lost canvases; hosted
+    // macOS runners kept them lost, and the page showed the broken-canvas icon (runs 43510033780, 43518050865).
+    if (viewport.width === 1440) {
+      const gpu = await browser.newBrowserCDPSession();
+      await gpu.send("Browser.crashGpuProcess");
+      await gpu.detach();
+      await until("the GPU reset did not reach the canvases", () => window.canvasEvents.lost > 0);
+      const reset = await until("the aurora did not paint again after a GPU reset", () => {
+        const now = window.vizSnapshot();
+        return now.count > 0 && !now.canvas.skyLost ? now : null;
+      });
+      assert(
+        reset.visible > 0.03,
+        `${viewport.width}px: after a GPU reset the aurora must be visible again: ${JSON.stringify(reset)}`,
+      );
+      logCanvas({ width: viewport.width, step: "gpu-reset", reset: reset.canvas });
+      result.gpuReset = true;
+    }
     // What the person sees: a region of the page away from the controls must change while the aurora paints and
     // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
     const away = { x: 260, y: Math.round(viewport.height / 3), width: Math.min(80, viewport.width - 260), height: 200 };
@@ -189,7 +269,10 @@ try {
         const halo = document.querySelector("canvas[data-testid=audio-halo]");
         let ink = 0;
         if (halo)
-          for (const [index, value] of halo.getContext("2d").getImageData(0, 0, halo.width, halo.height).data.entries())
+          for (const [index, value] of window
+            .vizContext(halo)
+            .getImageData(0, 0, halo.width, halo.height)
+            .data.entries())
             if (index % 4 === 3) ink += value;
         const moving = [...document.querySelectorAll("[data-swarm-figure]")].filter((figure) => figure.style.transform);
         return {
@@ -285,8 +368,8 @@ try {
     // Analyser smoothing decays naturally; the UI does not invent idle bars.
     await page.waitForFunction(() => {
       const element = document.querySelector("canvas[data-testid=audio-aurora]");
-      return element
-        .getContext("2d")
+      return window
+        .vizContext(element)
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
