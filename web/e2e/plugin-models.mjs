@@ -51,7 +51,41 @@ try {
   await page.screenshot({ path: join(shots, "plugin-models-3-model-picked.png") });
 
   const answer = (await dialog.getByText(/^Answered: /).textContent()) ?? "";
-  console.log(JSON.stringify({ picked: true, unavailableMarked: true, answered: answer.startsWith("Answered: ") }));
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await dialog.waitFor({ state: "detached" });
+  // Back to the app without Settings: the chat's composer is in the side pane.
+  await page.goto(url);
+  await page.locator("#splash").waitFor({ state: "hidden" });
+
+  // The chat's own model picker lists the plugin's models; pick one per chat, then watch the answer stream in.
+  const picker = page.getByRole("button", { name: /^Model and effort: / });
+  await picker.click();
+  const menu = page.getByRole("group", { name: "Models of Demo models" });
+  await menu.waitFor();
+  const retiredInChat = menu.getByRole("button", { name: /Demo Retired/ });
+  assert.match((await retiredInChat.textContent()) ?? "", /unavailable/);
+  await page.screenshot({ path: join(shots, "plugin-models-4-chat-picker.png") });
+  await menu.getByRole("button", { name: /^Demo Fast/ }).click();
+  await page.getByPlaceholder(/Ask about this screen/).fill("Hello, demo models");
+  await page.getByRole("button", { name: "Send" }).click();
+  const reply = page.getByText(/Hello from the demo models/);
+  await reply.first().waitFor({ timeout: 30_000 });
+  const lengths = new Set();
+  for (let step = 0; step < 40; step += 1) {
+    lengths.add(((await reply.first().textContent()) ?? "").length);
+    if (step === 1) await page.screenshot({ path: join(shots, "plugin-models-5-streaming.png") });
+    if ((await reply.first().textContent())?.includes("word by word")) break;
+    await page.waitForTimeout(100);
+  }
+  await page
+    .getByText(/word by word/)
+    .first()
+    .waitFor({ timeout: 30_000 });
+  await page.screenshot({ path: join(shots, "plugin-models-6-reply.png") });
+  const streamed = lengths.size > 1;
+  console.log(
+    JSON.stringify({ picked: true, unavailableMarked: true, answered: answer.startsWith("Answered: "), streamed }),
+  );
 } finally {
   await browser.close();
 }

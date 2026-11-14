@@ -4,6 +4,7 @@ Its models answer through a `FunctionModel`, so nothing leaves the machine; one 
 company proxy's model list overstates what answers.
 """
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -34,6 +35,7 @@ async def _stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterato
             yield {0: DeltaToolCall(name=name if index == 0 else None, json_args=raw[index : index + 8])}
         return
     for word in STREAMED.split(" "):
+        await asyncio.sleep(0.2)  # slow enough that a browser sees the answer grow
         yield word + " "
 
 

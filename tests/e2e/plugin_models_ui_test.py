@@ -25,7 +25,7 @@ def test_a_plugins_models_are_picked_as_ai_access_and_a_model_in_settings(enviro
 
     result = drive_ui_script(env, tmp_path, "plugin-models.mjs")
 
-    assert result == {"picked": True, "unavailableMarked": True, "answered": True}
+    assert result == {"picked": True, "unavailableMarked": True, "answered": True, "streamed": True}
     config = tomllib.loads((Path(env["HZ_CONFIG_HOME"]) / "config.toml").read_text(encoding="utf-8"))
     assert config["capabilities"]["ai_access"] == "demo-models"
     assert config["ai"]["access"]["plugin_model"] == "demo-deep"
