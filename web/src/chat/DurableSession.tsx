@@ -1,7 +1,7 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import {
@@ -28,6 +28,7 @@ import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { HeinzelHeader } from "@/chat/HeinzelHeader";
 import { MessageState } from "@/chat/MessageState";
+import { DayHeading, MessageTime } from "@/chat/MessageTime";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
 import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
@@ -43,6 +44,7 @@ import { appearanceLook } from "@/heinzel/look";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
 import { isDurableSession, useComposerFocus } from "@/lib/chatIntent";
+import { dayStarts } from "@/lib/dayTime";
 import { cn } from "@/lib/utils";
 import { AnsweredInChat } from "@/notifications/ChatChannelSettings";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
@@ -248,6 +250,7 @@ function DurableSessionView({
     if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
       searchTarget.current?.scrollIntoView?.({ block: "center" });
   }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+  const dayStartAt = dayStarts((query.data?.messages ?? []).map((message) => message.at));
   const lastMessage = query.data?.messages?.at(-1);
   const newestKey = lastMessage ? `${lastMessage.seq}-${lastMessage.id}-${lastMessage.status}` : "";
   // Opening a conversation or getting a new message shows the newest one, unless the person is paging or jumping.
@@ -1086,7 +1089,31 @@ function DurableSessionView({
           // Who speaks decides the side and the label: the person on the right, everyone else on the left.
           const speaker = speakerOf(message);
           const own = speaker === "you";
-          return (
+          const bubble = (
+            <div
+              className={cn(
+                "min-w-0 break-words rounded-lg px-3 py-2",
+                own ? "bg-accent text-accent-foreground" : "border border-border",
+              )}
+            >
+              <p className={cn("text-xs font-medium", own && "sr-only")}>
+                {speakerLabel(speaker, heinzelName, message.role)}
+              </p>
+              <MessageText role={message.role} text={message.text} />
+              {message.status &&
+                message.status !== "completed" &&
+                !(own && (message.status === "pending" || message.id === pending?.request_id)) && (
+                  <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
+                )}
+              {message.billing === "plan" && (
+                <p className="text-xs text-muted-foreground">Subscription usage · cost unknown</p>
+              )}
+              {message.billing === "api" && message.cost_usd != null && (
+                <p className="text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</p>
+              )}
+            </div>
+          );
+          const row = (
             <div
               key={`${message.seq}-${message.id}`}
               ref={found ? searchTarget : undefined}
@@ -1099,28 +1126,13 @@ function DurableSessionView({
               {/* The person's own row sits on the right: its bubble takes the free space on its left. */}
               <div className={cn("min-w-0 space-y-1", own ? "ml-auto max-w-[85%]" : "flex-1")}>
                 {found && <span className="block text-xs font-medium">Search result</span>}
-                <div
-                  className={cn(
-                    "min-w-0 break-words rounded-lg px-3 py-2",
-                    own ? "bg-accent text-accent-foreground" : "border border-border",
-                  )}
-                >
-                  <p className={cn("text-xs font-medium", own && "sr-only")}>
-                    {speakerLabel(speaker, heinzelName, message.role)}
-                  </p>
-                  <MessageText role={message.role} text={message.text} />
-                  {message.status &&
-                    message.status !== "completed" &&
-                    !(own && (message.status === "pending" || message.id === pending?.request_id)) && (
-                      <p className="text-xs text-muted-foreground">{t(`durable.status.${message.status}`)}</p>
-                    )}
-                  {message.billing === "plan" && (
-                    <p className="text-xs text-muted-foreground">Subscription usage · cost unknown</p>
-                  )}
-                  {message.billing === "api" && message.cost_usd != null && (
-                    <p className="text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</p>
-                  )}
-                </div>
+                {message.at ? (
+                  <MessageTime at={message.at} own={own} tabbable={index === (query.data?.messages?.length ?? 0) - 1}>
+                    {bubble}
+                  </MessageTime>
+                ) : (
+                  bubble
+                )}
                 {own && message.id === pending?.request_id && !sending && !uncertain ? (
                   <MessageState
                     kind="not-answered"
@@ -1157,6 +1169,13 @@ function DurableSessionView({
                 )}
               </div>
             </div>
+          );
+          if (!message.at || !dayStartAt.has(index)) return row;
+          return (
+            <Fragment key={`${message.seq}-${message.id}`}>
+              <DayHeading at={message.at} />
+              {row}
+            </Fragment>
           );
         })}
         {pending && !query.data?.messages?.some((message) => message.id === pending.request_id) ? (

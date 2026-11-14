@@ -16,6 +16,8 @@ const en = {
   "oneChat.switch": "{name}. Switch Heinzel",
   "oneChat.heinzels": "Your Heinzels",
   "oneChat.new": "New Heinzel",
+  "oneChat.today": "Today",
+  "oneChat.yesterday": "Yesterday",
   "oneChat.more": "More",
   "oneChat.moreLabel": "More: search, details",
   "oneChat.search": "Search",
