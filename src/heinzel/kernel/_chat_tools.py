@@ -10,12 +10,16 @@ the very same `ChatTool`s there. Both paths select the tools with `chat_tools` a
 - any other operation does not run: it is handed to the `ActionGate` as a proposal, and the call returns its id;
 - the one consumer of a person's prior authorization (`system runner chat confirm-authorized-mcp`) runs only for
   its own chat session; its proof never appears in arguments or results;
+- a tool of the built-in browser runs for the chat's own session, also when it is not read-only, unless it is a
+  commit (send, buy, delete): that one is proposed like any other change, pinned to the target that was described.
+  This is the one seam in the rule above, and it is open to the browser module only;
 - a failure reaches the agent as a `ChatToolError` without email addresses; a bug's message never does.
 
 The kernel knows neither chats nor MCP: the chat module provides `ActionGate` and `McpChatSessions`, the MCP head
 and the runners ask for them by type.
 """
 
+import base64
 import inspect
 import json
 import logging
@@ -28,6 +32,15 @@ from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
 from heinzel.kernel._agents import ChatToolSet, ToolProfile
+from heinzel.kernel._browser import (
+    BROWSER_MODULE,
+    BrowserBridge,
+    BrowserCaller,
+    BrowserCommitError,
+    PageImage,
+    browser_caller,
+)
+from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import McpChatSessions
 from heinzel.kernel._errors import HeinzelError
@@ -115,7 +128,8 @@ class ChatTool:
     def call(self, arguments: Mapping[str, Any]) -> object:
         """Run, propose or refuse one call by the chat's rule; the result is what the agent gets.
 
-        A read and a proposal return text; the authorized confirmation returns its operation's own result.
+        A read and a proposal return text; the authorized confirmation returns its operation's own result, and a
+        picture of a browser tab is a `PageImage`.
 
         Raises:
             ChatToolError: If the call is refused or fails; the message holds no email address.
@@ -131,6 +145,8 @@ class ChatTool:
             with user.using(None):
                 if self.kind == "confirm-authorized":
                     return self._confirm(user, arguments)
+                if self.item.record.qualname == BROWSER_MODULE:
+                    return self._browser(user, arguments)
                 if self.item.operation.read_only:
                     return self._read(user, arguments)
                 return self._propose(arguments)
@@ -170,14 +186,32 @@ class ChatTool:
             raise ChatToolError(msg) from None
         return {name: getattr(checked, name) for name in fields}
 
+    def _browser(self, user: CurrentUser, arguments: Mapping[str, Any]) -> object:
+        """A browser tool: it runs for this chat's session unless the browser's gate says it is a commit.
+
+        The gate is the browser module's, not this policy's: a commit leaves the operation as `BrowserCommitError`
+        without having run, and is proposed with the fingerprint of the target the person will be shown.
+        """
+        if not self.kernel.resolve(BrowserBridge).available:
+            # This process has no desktop (a turn's private pipe, a terminal): the one that has it runs the call,
+            # as this chat's session and by the tool's name only, so gate, proposal, limits and log are there.
+            jsonable = to_jsonable_python(dict(arguments), fallback=str)
+            answer = relay(self.kernel.settings.state_dir, "heinzel", self.session, self.name, jsonable)
+            if answer is not None:
+                return _relayed(answer)
+        try:
+            with browser_caller(BrowserCaller(actor=self.session, kind="heinzel")), user.local_read(AUTHENTICATION):
+                result = self.kernel.invoke(self.item.operation, **arguments)
+        except BrowserCommitError as commit:
+            return self._propose({**arguments, "expected": commit.expected}, command=commit.summary)
+        return result if isinstance(result, PageImage) else _result_text(result)
+
     def _read(self, user: CurrentUser, arguments: Mapping[str, Any]) -> str:
         with user.local_read(AUTHENTICATION):
             result = self.kernel.invoke(self.item.operation, **arguments)
-        # Redacted before it is cut, so no address is cut into something the pattern misses.
-        text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
-        return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
+        return _result_text(result)
 
-    def _propose(self, arguments: Mapping[str, Any]) -> str:
+    def _propose(self, arguments: Mapping[str, Any], *, command: str | None = None) -> str:
         jsonable = to_jsonable_python(dict(arguments), fallback=str)
         call = ProposedCall(
             session=self.session,
@@ -185,7 +219,7 @@ class ChatTool:
             operation=self.item.operation.name,
             tool=self.name,
             arguments=jsonable,
-            command=command_line(self.item, jsonable),
+            command=command or command_line(self.item, jsonable),
         )
         action = self.kernel.resolve(ActionGate).propose(call)
         return redact_emails(
@@ -229,6 +263,28 @@ def _pre_parsed(arguments: dict[str, Any], model: type[BaseModel]) -> dict[str, 
     return parsed
 
 
+def _relayed(answer: Mapping[str, Any]) -> object:
+    """What the process with the desktop answered: the tool's text or picture.
+
+    Raises:
+        ChatToolError: If it refused the call, or answered something else.
+    """
+    text, image = answer.get("text"), answer.get("image")
+    if isinstance(text, str):
+        return text
+    if isinstance(image, dict):
+        return PageImage.model_validate(image)
+    error = answer.get("error")
+    raise ChatToolError(redact_emails(error) if isinstance(error, str) else "The browser call failed in hz.")
+
+
+def _result_text(result: object) -> str:
+    """A result as the agent gets it: JSON without email addresses, cut at the limit."""
+    # Redacted before it is cut, so no address is cut into something the pattern misses.
+    text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
+    return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
+
+
 def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") -> list[ChatTool]:
     """The tools of one chat session's agent, on whichever path the turn calls them.
 
@@ -251,6 +307,10 @@ def chat_tools(kernel: Kernel, session: str, tools: ChatToolSet = "everyday") ->
                 for item in exposed(kernel, "mcp-check-in")
                 if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
             ]
+    # Built once here, before a turn calls tools from several threads: `Kernel.resolve` takes no lock.
+    for service in (ActionGate, BrowserBridge):
+        if kernel.provides(service):
+            kernel.resolve(service)
     selected: list[ChatTool] = []
     for item in exposed(kernel, HEAD):
         if (item.record.qualname, item.operation.name) == CONFIRM_AUTHORIZED:
@@ -288,6 +348,23 @@ def direct_result(tool: ChatTool, arguments: Mapping[str, Any]) -> str:
         result = tool.call(arguments)
     except ChatToolError as exc:
         return f"Error: {exc}"
+    if isinstance(result, PageImage):
+        return json.dumps(result.caption(), ensure_ascii=False)
+    return result if isinstance(result, str) else json.dumps(to_jsonable_python(result, fallback=str))
+
+
+def direct_picture(tool: ChatTool, arguments: Mapping[str, Any]) -> object:
+    """Like `direct_result`, but a picture of a browser tab reaches the model as an image beside its caption."""
+    from pydantic_ai import BinaryContent, ToolReturn  # noqa: PLC0415 - only an in-process turn needs it
+
+    try:
+        result = tool.call(arguments)
+    except ChatToolError as exc:
+        return f"Error: {exc}"
+    if isinstance(result, PageImage):
+        caption = json.dumps(result.caption(), ensure_ascii=False)
+        picture = BinaryContent(data=base64.b64decode(result.data), media_type=result.media_type)
+        return ToolReturn(return_value=caption, content=[caption, picture])
     return result if isinstance(result, str) else json.dumps(to_jsonable_python(result, fallback=str))
 
 
@@ -301,10 +378,12 @@ def pydantic_ai_tools(
     """
     from pydantic_ai import Tool  # noqa: PLC0415 - only a turn that runs its model in-process needs it
 
-    def wrap(tool: ChatTool, name: str) -> Callable[..., str]:
-        def call(**arguments: Any) -> str:  # noqa: ANN401 - the model's arguments, validated by the schema
+    def wrap(tool: ChatTool, name: str) -> Callable[..., object]:
+        def call(**arguments: Any) -> object:  # noqa: ANN401 - the model's arguments, validated by the schema
             if counted is not None:
                 counted(name)
+            if tool.item.returns is PageImage:
+                return direct_picture(tool, arguments)
             return direct_result(tool, arguments)
 
         return call

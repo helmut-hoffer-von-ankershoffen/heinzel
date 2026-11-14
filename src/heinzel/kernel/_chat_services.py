@@ -41,3 +41,11 @@ class McpChatSessions:
     def is_check_in(self, session_id: str) -> bool:
         """Whether the existing session is scoped to a personal check-in."""
         raise NotImplementedError
+
+    def turn_running(self, session_id: str) -> bool:
+        """Whether some process holds the existing session right now: a turn is being answered, or an action run.
+
+        The process with the desktop's browser asks this before it runs another process's call as that session
+        (ADR 0162): a session nobody is working in has no agent that could be calling.
+        """
+        raise NotImplementedError
