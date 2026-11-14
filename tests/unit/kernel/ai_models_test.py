@@ -1,5 +1,6 @@
 """A plugin's own AI models, the AI access option the kernel derives for them, and declared gaps (ADR 0159)."""
 
+import json
 import threading
 from typing import ClassVar
 
@@ -282,6 +283,43 @@ def test_model_for_level_picks_the_marked_usable_offer_else_the_first_usable(cap
         ModelOffer.model_validate({"id": "x", "level": "max"})
     with pytest.raises(ModelUnavailableError):
         model_for_level(_source(Levels([ModelOffer(id="mute", tools=False)]), name="levels-none"), "low")
+
+
+def test_the_last_good_ids_survive_a_restart_with_a_broken_plugin(tmp_path, monkeypatch):
+    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TTL", 0.0)
+    kept = tmp_path / "ai" / "plugin-models" / "acme.json"
+    good = Levels([ModelOffer(id="big", title="Big", level="high"), ModelOffer(id="gone", available=False)])
+    offers, _note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", good, kept))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["big", "gone"]
+    assert kept.stat().st_mode & 0o777 == 0o600
+    assert json.loads(kept.read_text()) == [
+        {"id": "big", "tools": True, "available": True, "level": "high"},
+        {"id": "gone", "tools": True, "available": False, "level": None},
+    ]
+    stamp = kept.stat().st_mtime_ns
+    list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", good, kept))  # type: ignore[arg-type]
+    assert kept.stat().st_mtime_ns == stamp, "an unchanged list isn't written again"
+    broken = Flaky()
+    broken.mode = "fail"
+    restarted = AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", broken, kept)  # type: ignore[arg-type]
+    offers, note = list_offers(restarted)
+    assert [(o.id, o.level, o.available, o.title) for o in offers] == [
+        ("big", "high", True, ""),
+        ("gone", None, False, ""),
+    ]
+    assert note == "its model list failed (RuntimeError: proxy down); showing the list kept from before the restart"
+    kept.write_text("{not json")
+    offers, note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", Flaky(), kept))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["one", "two"], "a working plugin overwrites a corrupt file"
+    kept.write_text("{not json")
+    other = Flaky()
+    other.mode = "fail"
+    offers, note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", other, kept))  # type: ignore[arg-type]
+    assert (offers, note) == ([], "its model list failed (RuntimeError: proxy down)"), "a corrupt file is ignored"
+    blocked = tmp_path / "file"
+    blocked.write_text("")
+    offers, _note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", Flaky(), blocked / "a.json"))  # type: ignore[arg-type]
+    assert [o.id for o in offers] == ["one", "two"], "a failing write never fails the list"
 
 
 def test_one_bad_row_is_skipped_not_the_whole_list():

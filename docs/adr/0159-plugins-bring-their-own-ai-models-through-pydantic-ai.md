@@ -68,7 +68,10 @@ Checkable statements:
    more than one offer with the same level.
 3. **What Core guarantees the plugin.** It calls `models()` off the event loop, one call at a time per plugin, on a
    daemon thread, with a 5 s timeout, and reuses an answer for 3 s. When a call fails or times out it shows the
-   last good list and says so. A row that isn't a valid offer is skipped and logged, not the list. It calls
+   last good list and says so. It keeps the last good list's ids, with `level`, `available` and `tools`, in
+   `<state_dir>/ai/plugin-models/<adapter>.json` (mode 0600, replaced atomically, written only when it changed), so a
+   restart with a broken plugin still shows that list; a missing or corrupt file is ignored. A row that isn't a
+   valid offer is skipped and logged, not the list. It calls
    `model()` only with a listed, available id, off the event loop, with a 30 s timeout, once per turn.
 
 **Compatibility**
@@ -213,8 +216,8 @@ Checkable statements:
 - Bad: Core trusts the plugin's `Model` object. A plugin runs in-process with the person's rights anyway; this adds
   nothing a plugin couldn't already do, but a careless plugin could log its own headers.
 - Bad: no dollar caps on plugin models; owners who need caps keep `usd-cap` and can't use them.
-- Bad: the last good model list lives in memory only, so a fresh process with a broken plugin shows no models
-  until the plugin answers once.
+- Bad: across a restart only the last good list's ids survive, so a broken plugin's models show without titles
+  until it answers once.
 - Bad: a durable chat turn that fails after its first response stays uncertain, as on the Claude Code path.
 
 ### Confirmation

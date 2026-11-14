@@ -17,12 +17,17 @@ and ignores fields it doesn't know. The protocol gains optional methods only, wh
 `AI_MODELS_INTERFACE` names the version a Core implements; a plugin may check it at import.
 """
 
+import contextlib
+import json
 import logging
+import os
+import tempfile
 import threading
 import time
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
@@ -233,6 +238,9 @@ class AiModelsSource:
     """The plugin's version: a change makes approved schedules ask again (their access fingerprint changes)."""
     adapter: AiModels
     """The adapter itself: only hz's trusted core code holds it, never a requester's handle."""
+    kept: Path | None = None
+    """Where the last good list's ids are kept across a restart, a private file in the profile's state; none: memory
+    only."""
 
 
 class AiModelOptions:
@@ -270,6 +278,7 @@ class _Listing:
     skipped: str = ""
     problem: str = ""
     done: threading.Event | None = None
+    saved: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -321,10 +330,50 @@ def _fetch(source: AiModelsSource, listing: _Listing, done: threading.Event) -> 
     else:
         with listing.lock:
             listing.offers, listing.skipped, listing.problem, listing.at = offers, skipped, "", time.monotonic()
+        if source.kept is not None:
+            _keep(source.kept, offers, listing)
     finally:
         with listing.lock:
             listing.done = None
         done.set()
+
+
+KEPT_FIELDS = frozenset({"id", "level", "available", "tools"})
+"""What hz keeps of a good list across a restart: ids and what picking a model needs, never titles or descriptions."""
+
+
+def _keep(path: Path, offers: list[ModelOffer], listing: _Listing) -> None:
+    """Keep `offers`' ids in `path`, mode 0600, replaced atomically when they changed; never raises."""
+    text = json.dumps([o.model_dump(include=set(KEPT_FIELDS)) for o in offers])
+    if text == listing.saved:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-", suffix=".json")  # mode 0600
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as file:
+                file.write(text)
+            Path(temporary).replace(path)
+        finally:
+            with contextlib.suppress(OSError):
+                Path(temporary).unlink(missing_ok=True)
+    except OSError as exc:
+        log_event(logger, "ai.models.keep_failed", level=logging.WARNING, error=type(exc).__name__)
+        return
+    listing.saved = text
+
+
+def _kept(path: Path | None) -> list[ModelOffer]:
+    """The list kept in `path` by an earlier process; none when missing, unreadable or corrupt."""
+    if path is None:
+        return []
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as file:
+            rows: object = json.loads(file.read(MAX_OFFERS * 400))
+        offers, _skipped = _validated(rows)
+    except (OSError, ValueError, TypeError):
+        return []
+    return offers
 
 
 def _listing_of(adapter: object) -> _Listing:
@@ -377,6 +426,8 @@ def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[
         problem = f"its model list took longer than {timeout:g}s"
     if not problem:
         return list(kept or []), skipped
+    if not kept and (earlier := _kept(source.kept)):
+        return earlier, f"{problem}; showing the list kept from before the restart"
     return (list(kept), f"{problem}; showing the last list") if kept else ([], problem)
 
 
