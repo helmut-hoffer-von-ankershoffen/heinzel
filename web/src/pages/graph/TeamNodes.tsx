@@ -9,6 +9,7 @@ import { Link } from "react-router";
 import { useAskHeinzel } from "@/chat/askHeinzel";
 import type { FlowTone } from "@/components/graph/FlowNode";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { heinzelId, type PromiseState, type TeamNode } from "./jgf";
@@ -123,15 +124,17 @@ function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
         </span>
       </NodeLink>
       {node.kind === "heinzel" && ask && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => ask.ask(t("teamGraph.askAbout", { label: node.label }))}
           aria-label={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
           title={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
-          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-icon outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="nodrag nopan mr-1.5 size-7 shrink-0"
         >
           <MessageSquare aria-hidden className="size-4" />
-        </button>
+        </Button>
       )}
       <Handle type="source" position={Position.Right} isConnectable={false} className={handle} />
     </div>
