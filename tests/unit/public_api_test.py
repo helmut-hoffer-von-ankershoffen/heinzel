@@ -15,6 +15,7 @@ import heinzel.kernel
 pytestmark = pytest.mark.unit
 
 HEINZEL = [
+    "AI_MODELS_INTERFACE",
     "AccessStatus",
     "AccessTest",
     "ActionGate",
@@ -258,6 +259,7 @@ HEINZEL = [
     "redact_emails",
 ]
 KERNEL = [
+    "AI_MODELS_INTERFACE",
     "AccessStatus",
     "AccessTest",
     "ActionGate",

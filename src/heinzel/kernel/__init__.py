@@ -26,6 +26,7 @@ from heinzel.kernel._ai import (
     record_usage,
 )
 from heinzel.kernel._ai_models import (
+    AI_MODELS_INTERFACE,
     AiModelOptions,
     AiModels,
     AiModelsSource,
@@ -441,6 +442,7 @@ from heinzel.kernel._tool_uninstall import (
 from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
+    "AI_MODELS_INTERFACE",
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
     "CORE_DISTRIBUTION",

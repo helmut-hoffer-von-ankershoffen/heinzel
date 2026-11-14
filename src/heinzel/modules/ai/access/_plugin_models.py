@@ -66,7 +66,6 @@ class PluginModelsAccess:
             installed=bool(offers),
             models=[o.id for o in offers],
             unavailable_models=[o.id for o in offers if o.available is False],
-            efforts=sorted({e for o in offers for e in o.efforts}, key=["low", "medium", "high", "xhigh", "max"].index),
             billing="api",
             core_engine=True,
             runner=ENGINE_RUNNER,
@@ -80,7 +79,8 @@ class PluginModelsAccess:
             fix = f"hz system config set ai.access.plugin_model {exc.others[0]}" if exc.others else ""
             return status.model_copy(update={"detail": str(exc), "fix": fix})
         detail = f"{offer.label}; {len(offers)} models" + (f"; {note}" if note else "")
-        return status.model_copy(update={"detail": detail, "model": offer.id})
+        efforts = offer.efforts if offer.thinking is not None else []
+        return status.model_copy(update={"detail": detail, "model": offer.id, "efforts": efforts})
 
     def test(self) -> AccessTest:
         """One short request to the chosen model through the plugin's own client; a failure is a result."""
@@ -90,7 +90,10 @@ class PluginModelsAccess:
             source = self._source()
             offers, note = list_offers(source)
             settings = self._settings()
-            offer = choose(offers, settings.plugin_model)
+            offer = choose(offers, settings.plugin_model, settings.plugin_effort)
+            own = getattr(source.adapter, "test", None)
+            if callable(own):  # the plugin's own live check, when it has one (interface 1.0, optional)
+                return self._own_test(own, offer.id, started)
             model = build_model(source, offer)
         except ModelUnavailableError as exc:
             fix = f"hz system config set ai.access.plugin_model {exc.others[0]}" if exc.others else ""
@@ -127,6 +130,23 @@ class PluginModelsAccess:
             input_tokens=used.input_tokens,
             output_tokens=used.output_tokens,
         )
+
+    @staticmethod
+    def _own_test(own: Callable[[str], object], model_id: str, started: float) -> AccessTest:
+        """The plugin's own `test(model_id)`, held to `AccessTest`; a failure is a result."""
+        try:
+            found = own(model_id)
+            result = AccessTest.model_validate(found.model_dump() if isinstance(found, AccessTest) else found)
+        except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
+            detail = clean_text(f"{type(exc).__name__}: {exc}")[:DETAIL_LIMIT]
+            return AccessTest(ok=False, detail=detail, model=model_id, duration_seconds=time.monotonic() - started)
+        update: dict[str, object] = {
+            "detail": clean_text(result.detail)[:DETAIL_LIMIT],
+            "model": result.model or model_id,
+        }
+        if not result.duration_seconds:
+            update["duration_seconds"] = time.monotonic() - started
+        return result.model_copy(update=update)
 
 
 class PluginModelOptions(AiModelOptions):

@@ -45,6 +45,8 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from pydantic import JsonValue
 CHAT_TIMEOUT = timedelta(minutes=5)
+ENGINE_RUNNER = "engine"
+"""The agent runner that runs a plugin's models in this chat (ADR 0159)."""
 STOPPED = AgentResult(runner="", status="failed", detail="stopped before it answered", duration_seconds=0)
 TRANSCRIPT_LIMIT = 12000
 """Characters of the conversation sent with each message: the most recent messages that fit."""
@@ -812,6 +814,15 @@ class ChatService:
     def _run(self, runner: AgentRunner, chat: ChatSession, cap: float) -> AgentResult:
         if chat.personal_session_id is not None:
             msg = "This personal agent cannot run until its runner isolation and grants are verified"
+            raise HeinzelError(msg)
+        access = self._access()
+        bound = self._kernel.resolve(CapabilityView).bound("agent-runner")
+        if self._kernel.offers_ai_models(access) and bound != ENGINE_RUNNER:
+            # Never send a plugin's model id, or the prompt, to another runner's AI (ADR 0159).
+            msg = (
+                f"The AI access in use, {access}, brings its own models; this chat runs them on hz's engine runner, "
+                f"which isn't bound (the agent runner is {bound or 'none'}): run `hz ai access use {access}`."
+            )
             raise HeinzelError(msg)
         # No files of yours: an empty working directory and no built-in tools, only hz's, through the gate.
         with tempfile.TemporaryDirectory(prefix="hz-chat-") as directory:

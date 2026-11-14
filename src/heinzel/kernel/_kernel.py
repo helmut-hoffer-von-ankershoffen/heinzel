@@ -714,7 +714,30 @@ class Kernel:
                     logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=record.qualname, problem=problem
                 )
                 self.errors[record.qualname] = f"Adapter skipped: {problem}"
+        adapters = [a for a in adapters if not self._shadows_access(a, adapters)]
         return adapters + self._derived_access(adapters)
+
+    def _shadows_access(self, adapter: Adapter, adapters: list[Adapter]) -> bool:
+        """Whether an `ai-models` adapter takes the name of another distribution's AI access option (ADR 0159).
+
+        Such an adapter is skipped and reported: chat would otherwise run on its models while Settings shows the
+        other option, such as a plugin naming its models `claude-code`. A plugin may provide both under one name.
+        """
+        if adapter.let.capability != "ai-models":
+            return False
+        clash = [
+            a
+            for a in adapters
+            if a.let.capability == "ai-access"
+            and a.let.adapter == adapter.let.adapter
+            and a.distribution != adapter.distribution
+        ]
+        if not clash:
+            return False
+        problem = f"its AI models are called {adapter.let.adapter!r}, an AI access option {clash[0].distribution} has"
+        log_event(logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=adapter.module, problem=problem)
+        self.errors[adapter.module] = f"Adapter skipped: {problem}"
+        return True
 
     def _derived_access(self, adapters: list[Adapter]) -> list[Adapter]:
         """An `ai-access` adapter for each `ai-models` adapter, by the same name and hosts (ADR 0159).

@@ -5,10 +5,7 @@ command and talks to a fake transport: what a company proxy speaking Anthropic's
 """
 
 import asyncio
-import base64
 import json
-import subprocess
-import time
 from dataclasses import dataclass, field
 
 import httpx2
@@ -27,7 +24,6 @@ from heinzel.modules.heinzel._autonomous_schedule import model_binding_fingerpri
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
-from heinzel.token_auth import CommandTokenAuth
 from tests.unit.modules.user_chat_test import setup_chat
 
 pytestmark = pytest.mark.unit
@@ -146,6 +142,7 @@ def test_the_chosen_model_and_effort_reach_the_plugin_model(tmp_path):
         asyncio.run(chat.answer(session, "hello"))
     assert plugin.built == ["slow"]
     assert seen[0]["anthropic_thinking"] == {"type": "enabled", "budget_tokens": 16384}
+    assert seen[0]["max_tokens"] > 16384
 
 
 def test_an_unavailable_model_is_refused_before_the_turn_and_names_others(tmp_path):
@@ -215,60 +212,141 @@ def test_claude_code_stays_selected_when_the_access_is_not_a_plugins_models(tmp_
         assert chat.plugin_selected() is None
 
 
-def _jwt(expires: float) -> str:
-    def part(data: dict[str, object]) -> str:
-        return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
+class PluginAuth(httpx2.Auth):
+    """How a plugin might sign its requests: its own business, here a fixed bearer token."""
 
-    return f"{part({'alg': 'none'})}.{part({'exp': expires})}.signature"
+    def auth_flow(self, request: httpx2.Request):
+        request.headers.pop("x-api-key", None)
+        request.headers["authorization"] = "Bearer plugin-token"
+        yield request
 
 
-def test_an_anthropic_proxy_with_a_command_token_answers_a_chat_turn(tmp_path, monkeypatch):
-    """A company proxy speaking Anthropic's Messages API, with a bearer token from a helper command."""
-    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)  # the transport is fake, nothing leaves
-    tokens = [_jwt(time.time() + 18 * 3600), _jwt(time.time() + 18 * 3600)]
-    commands: list[list[str]] = []
-    seen: list[tuple[str, str]] = []
+def anthropic_reply(body: dict[str, object]) -> dict[str, object]:
+    """Anthropic's Messages API answer: the final answer through the output tool, or as JSON text when thinking is on
+    (Pydantic AI can't force a tool then, so it asks for the output in the text)."""
+    tools = [t["name"] for t in body.get("tools", [])]  # type: ignore[attr-defined, index]
+    answer = {"report": "ok", "summary": REPLY}
+    content = (
+        [{"type": "tool_use", "id": "t1", "name": "final_result", "input": answer}]
+        if "final_result" in tools
+        else [{"type": "text", "text": json.dumps(answer)}]
+    )
+    return {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": body["model"],
+        "content": content,
+        "stop_reason": "tool_use" if "final_result" in tools else "end_turn",
+        "usage": {"input_tokens": 120, "output_tokens": 30},
+    }
 
-    def helper(command: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0, tokens[len(commands) - 1] + "\n", "")
 
-    def proxy(request: httpx2.Request) -> httpx2.Response:
-        assert "x-api-key" not in request.headers
-        seen.append((request.url.path, request.headers.get("authorization", "")))
-        if len(seen) == 1:
-            return httpx2.Response(401, json={"type": "error", "error": {"type": "authentication_error"}})
-        body = json.loads(request.content)
-        tool = next(t["name"] for t in body["tools"] if t["name"] == "final_result")
-        return httpx2.Response(
-            200,
-            json={
-                "id": "msg_1",
-                "type": "message",
-                "role": "assistant",
-                "model": body["model"],
-                "content": [
-                    {"type": "tool_use", "id": "t1", "name": tool, "input": {"report": "ok", "summary": REPLY}}
-                ],
-                "stop_reason": "tool_use",
-                "usage": {"input_tokens": 120, "output_tokens": 30},
-            },
-        )
+def sse(body: dict[str, object]) -> httpx2.Response:
+    """The same answer as Anthropic's server-sent events, in several deltas, for a streamed request."""
+    reply = anthropic_reply(body)
+    [block] = reply["content"]  # type: ignore[misc]
+    usage = reply["usage"]
+    events: list[tuple[str, dict[str, object]]] = [
+        ("message_start", {"type": "message_start", "message": {**reply, "content": [], "stop_reason": None}}),
+    ]
+    if block["type"] == "text":
+        start = {"type": "text", "text": ""}
+        text = block["text"]
+        deltas = [{"type": "text_delta", "text": text[i : i + 7]} for i in range(0, len(text), 7)]
+    else:
+        start = {**block, "input": {}}
+        raw = json.dumps(block["input"])
+        deltas = [{"type": "input_json_delta", "partial_json": raw[i : i + 7]} for i in range(0, len(raw), 7)]
+    events.append(("content_block_start", {"type": "content_block_start", "index": 0, "content_block": start}))
+    events += [("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": d}) for d in deltas]
+    events.append(("content_block_stop", {"type": "content_block_stop", "index": 0}))
+    delta = {"stop_reason": reply["stop_reason"], "stop_sequence": None}
+    events.append(("message_delta", {"type": "message_delta", "delta": delta, "usage": usage}))
+    events.append(("message_stop", {"type": "message_stop"}))
+    text = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
+    return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=text.encode())
+
+
+def answer_from(body: dict[str, object]) -> httpx2.Response:
+    """A streamed answer when the request asks for one (Anthropic's client does for a large `max_tokens`)."""
+    return sse(body) if body.get("stream") else httpx2.Response(200, json=anthropic_reply(body))
+
+
+def anthropic_model(proxy):
+    """What a plugin's `model()` returns: a stock AnthropicModel whose client signs the plugin's own way."""
 
     def factory(model_id: str) -> Model:
-        auth = CommandTokenAuth(["example-sso", "token"], drop=["x-api-key"], run=helper)
-        client = httpx2.AsyncClient(auth=auth, transport=httpx2.MockTransport(proxy))
+        client = httpx2.AsyncClient(auth=PluginAuth(), transport=httpx2.MockTransport(proxy))
         provider = AnthropicProvider(api_key="unused", base_url="https://ai-proxy.example.invalid", http_client=client)
         return AnthropicModel(model_id, provider=provider)
+
+    return factory
+
+
+def test_an_anthropic_proxy_answers_a_chat_turn_with_the_effort_and_output_cap(tmp_path, monkeypatch):
+    """A company proxy speaking Anthropic's Messages API, signed the plugin's own way."""
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)  # the transport is fake, nothing leaves
+    seen: list[tuple[str, dict[str, object], dict[str, str]]] = []
+
+    def proxy(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        seen.append((request.url.path, body, dict(request.headers)))
+        return answer_from(body)
 
     current = CurrentUser(tmp_path / "identity")
     usage: list[UsageEntry] = []
     with current.local("cli"):
         current, crud, session = setup_chat(current)
-        chat = service(crud, current, Plugin(model_factory=factory), Settings(), usage)
+        plugin = Plugin(model_factory=anthropic_model(proxy))
+        chat = service(crud, current, plugin, Settings(model="slow", effort="max"), usage)
         replied = asyncio.run(chat.answer(session, "hello"))
     assert replied.message.text == REPLY
-    assert [path for path, _auth in seen] == ["/v1/messages", "/v1/messages"]
-    assert [auth for _path, auth in seen] == [f"Bearer {tokens[0]}", f"Bearer {tokens[1]}"], "refreshed once on 401"
-    assert commands == [["example-sso", "token"]] * 2
-    assert [(u.input_tokens, u.output_tokens, u.cost_usd) for u in usage] == [(120, 30, None)]
+    [(path, body, headers)] = seen
+    assert path == "/v1/messages"
+    assert headers["authorization"] == "Bearer plugin-token"
+    assert "x-api-key" not in headers
+    assert body["thinking"] == {"type": "enabled", "budget_tokens": 63999}
+    assert body["max_tokens"] > 63999
+    assert [(u.input_tokens, u.output_tokens, u.cost_usd, u.model) for u in usage] == [(120, 30, None, "slow")]
+
+
+@pytest.mark.parametrize(
+    ("status", "said"),
+    [
+        (401, "The provider refused the request (401): check the plugin's sign-in."),
+        (429, "The provider is busy or rate-limited (429); try again shortly."),
+        (500, "The provider failed the request (500); try again later."),
+    ],
+)
+def test_a_provider_failure_is_a_clean_error_and_the_message_can_be_sent_again(tmp_path, monkeypatch, status, said):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+    secret = "Bearer leaked-token in the proxy's error body"
+
+    def proxy(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status, json={"type": "error", "error": {"type": "x", "message": secret}})
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        chat = service(crud, current, Plugin(model_factory=anthropic_model(proxy)), Settings(), [])
+        with pytest.raises(HeinzelError) as failed:
+            asyncio.run(chat.answer(session, "hello"))
+        state = chat.turn_state(session, "hello").status
+    assert str(failed.value) == said
+    assert "leaked" not in str(failed.value)
+    assert state == "abandoned", "nothing was answered and no tool ran: set aside, so the person can send it again"
+
+
+def test_an_unknown_model_at_the_provider_names_it_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+
+    def proxy(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(404, json={"type": "error", "error": {"type": "not_found_error", "message": "no"}})
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        chat = service(crud, current, Plugin(model_factory=anthropic_model(proxy)), Settings(), [])
+        with pytest.raises(ModelUnavailableError, match="the provider doesn't know it"):
+            asyncio.run(chat.answer(session, "hello"))

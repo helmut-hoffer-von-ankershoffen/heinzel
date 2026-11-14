@@ -46,12 +46,17 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
+    from heinzel.modules.heinzel._plugin_turn import PluginTurnGuard
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 # A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
 _MAX_REQUESTS = 12
 MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
+PLUGIN_TURN_TOKENS = 1_000_000
+"""The most tokens one turn on a plugin's model may move, input and output, across its requests (ADR 0159)."""
+BUILD_TIMEOUT = 30.0
+"""How long a plugin may take to build its model; building must not call it."""
 
 
 class PluginModels(Protocol):
@@ -74,6 +79,18 @@ class PluginTurnChoice:
     source: AiModelsSource
     offer: ModelOffer
     effort: Effort | None
+    setting: str | None = None
+    """`[ai.access] plugin_model` as configured, which the offer was chosen by; none for the first usable one."""
+
+    def held(self) -> tuple[object, ...]:
+        """What hz owns and checks before every request of a turn: never the plugin's list, which may change."""
+        return (
+            self.source.name,
+            self.source.version,
+            self.setting,
+            self.effort,
+            self.limits.subscription_budget_mode,
+        )
 
     def terms(self) -> dict[str, object]:
         """What binds an approved schedule or draft to this choice: access, plugin version, model, effort, budget."""
@@ -211,8 +228,22 @@ class UserChatService:
         choice = config.settings(PluginModelChoice, "ai.access")
         source = self._models.source(access)
         offers, _note = list_offers(source)
-        offer = choose(offers, choice.plugin_model)
-        return PluginTurnChoice(limits, source, offer, choice.plugin_effort)
+        offer = choose(offers, choice.plugin_model, choice.plugin_effort)
+        effort = choice.plugin_effort if offer.thinking is not None else None
+        return PluginTurnChoice(limits, source, offer, effort, choice.plugin_model)
+
+    def _plugin_held(self) -> tuple[object, ...] | None:
+        """What `held` says now, read from the configuration only: no call to the plugin."""
+        if self._models is None:
+            return None
+        config = self._load()
+        access = config.settings(CapabilitySettings, "capabilities").ai_access
+        if access is None or not self._models.offers(access):
+            return None
+        choice = config.settings(PluginModelChoice, "ai.access")
+        limits = config.settings(HeinzelSettings, "heinzel")
+        source = self._models.source(access)
+        return (source.name, source.version, choice.plugin_model, choice.plugin_effort, limits.subscription_budget_mode)
 
     def binding_terms(self) -> dict[str, object]:
         """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.
@@ -336,13 +367,18 @@ class UserChatService:
             raise HeinzelError(msg)
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
+        from heinzel.modules.heinzel._plugin_turn import PluginModelError  # noqa: PLC0415 - model execution only during a turn
 
         plugin = await asyncio.to_thread(self.plugin_selected)
+        hooks: list[PluginTurnGuard] = []
+        limits = TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration)
         if plugin is None:
             model, unchanged, binding = await self._claude_model(session, turn, verify, max_requests, duration)
         else:
             cause: UsageCause = "chat" if user_proposals else "scheduled"
-            model, unchanged, binding = self._plugin_model(plugin, verify, cause)
+            model, unchanged, binding, hook = await self._plugin_model(plugin, verify, cause)
+            hooks.append(hook)
+            limits = limits.model_copy(update={"total_tokens": PLUGIN_TURN_TOKENS})
         scheduled_notice = None
         if notification_policy is not None:
             if (
@@ -373,11 +409,11 @@ class UserChatService:
             if user_proposals and connected is not None
             else None
         )
-        message = await InteractiveTurn(self._crud).run(
+        run = InteractiveTurn(self._crud).run(
             session,
             request,
             model,
-            limits=TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration),
+            limits=limits,
             allow_ungranted_tools=False,
             user_proposal_policy=unchanged if user_proposals else None,
             playbook_kernel=self._playbook_kernel if user_proposals else None,
@@ -387,8 +423,37 @@ class UserChatService:
             draft_tools=lambda writer: self._document_drafts(session, turn, connected, writer),
             scheduled_notifications=scheduled_notice,
             backend_binding=binding,
+            capabilities=hooks,
         )
+        try:
+            message = await run
+        except PluginModelError as exc:
+            if exc.before_response:
+                await asyncio.to_thread(self._set_aside, session, request)
+            raise
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    def _set_aside(self, session: str, request: str) -> None:
+        """A plugin's model failed before answering anything: no tool ran, so the turn is set aside, not uncertain.
+
+        The person sends the message again; nothing is retried behind their back. Only for a person's own turn: a
+        scheduled one stays as it is, for the schedule's own recovery.
+        """
+        origin = self.current.context().authentication
+        if origin not in _HEADS:
+            return
+        turn = interactive_turn_id(request)
+        repo = self._crud.repository
+        with repo.control_writer(session) as writer:
+            events = repo.control_read(session).events
+            if any(e.kind in {"interactive.abandoned", "message.replied"} and e.key == turn for e in events):
+                return
+            writer.append(
+                "interactive.abandoned",
+                key=turn,
+                turn=turn,
+                data={"message_id": request, "owner": repo.principal_id, "origin": origin},
+            )
 
     async def _claude_model(
         self, session: str, turn: str, verify: Callable[[], None], max_requests: int, duration: int
@@ -435,37 +500,44 @@ class UserChatService:
         )
         return model, unchanged, BackendBinding(backend="claude-code", mode="cli-model", revision=1)
 
-    def _plugin_model(
+    async def _plugin_model(
         self, plugin: "PluginTurnChoice", verify: Callable[[], None], cause: UsageCause
-    ) -> "tuple[Model, Callable[[], bool], BackendBinding]":
-        """A plugin's model as the turn's model: built by the plugin, checked and recorded by hz (ADR 0159)."""
-        from heinzel.modules.heinzel._plugin_turn_model import PluginTurnModel  # noqa: PLC0415 - only during a turn
+    ) -> "tuple[Model, Callable[[], bool], BackendBinding, PluginTurnGuard]":
+        """The plugin's own Pydantic AI model and hz's capability for the turn (ADR 0159).
 
-        initial = plugin.terms()
+        Raises:
+            HeinzelError: If the plugin can't build the model in time, or returns no Pydantic AI model.
+        """
+        from heinzel.modules.heinzel._plugin_turn import guard  # noqa: PLC0415 - model execution only during a turn
+
+        held = plugin.held()
 
         def unchanged() -> bool:
             verify()
-            current = self.plugin_selected()
-            return current is not None and current.terms() == initial
+            return self._plugin_held() == held
 
         def still() -> None:
             if not unchanged():
                 msg = "The selected AI access or model changed during this turn"
                 raise HeinzelError(msg)
 
-        record = self._usage or (lambda _entry: None)
-        model = PluginTurnModel(
-            build_model(plugin.source, plugin.offer),
+        try:
+            model = await asyncio.wait_for(asyncio.to_thread(build_model, plugin.source, plugin.offer), BUILD_TIMEOUT)
+        except TimeoutError:
+            msg = f"The plugin {plugin.source.distribution} took longer than {BUILD_TIMEOUT:g}s to build the model"
+            raise HeinzelError(msg) from None
+        hook = guard(
             access=plugin.source.name,
             offer=plugin.offer,
             effort=plugin.effort,
             verify=still,
-            record=lambda entry: record(entry.model_copy(update={"cause": cause})),
+            record=self._usage or (lambda _entry: None),
+            cause=cause,
         )
         binding = BackendBinding(
             backend=plugin.source.name, mode="api", model=plugin.offer.id, effort=plugin.effort, revision=1
         )
-        return model, unchanged, binding
+        return model, unchanged, binding, hook
 
     def _document_drafts(
         self, session: str, turn: str, connected: ConnectedReadGrants | None, writer: SessionWriter

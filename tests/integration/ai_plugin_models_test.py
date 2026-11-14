@@ -5,6 +5,7 @@ The made-up plugin in tests/fixtures/ai_models answers through a `FunctionModel`
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 from typing import ClassVar
 
@@ -15,7 +16,7 @@ from typer.testing import CliRunner
 from heinzel import Config, Kernel, Module, NotSupportedError
 from heinzel.heads import api
 from heinzel.heads.cli import build
-from heinzel.kernel import Document, Documents
+from heinzel.kernel import Document, Documents, user_config_dir
 from tests.integration.chat_test import AUTH, web_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures/ai_models"))
@@ -49,7 +50,12 @@ def test_use_test_and_pick_a_model_through_the_cli(make_kernel):
     code, used = hz(make_kernel(builtins=True, models_demo=demo), "ai", "access", "use", "demo-models")
     assert code == 0, used
     assert used["selected"] == "demo-models"
-    assert used["note"] is None
+    assert used["note"] == (
+        "Chat, drafts and schedules use Demo models; coding handoffs still run on the agent runner claude-code, "
+        "outside these models."
+    )
+    pinned = tomllib.loads((user_config_dir() / "config.toml").read_text(encoding="utf-8"))
+    assert pinned["ai"]["access"]["plugin_model"] == "demo-fast", "pinned: a new first row never changes the model"
     chat = next(use for use in used["uses"] if use["use"] == "chat")
     assert chat["runs"] == "hz's own engine on Demo models's models"
     code, tested = hz(make_kernel(builtins=True, models_demo=demo), "ai", "access", "test", "--name", "demo-models")

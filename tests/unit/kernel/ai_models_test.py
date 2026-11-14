@@ -9,6 +9,7 @@ from pydantic_ai.models.test import TestModel
 
 from heinzel import AccessStatus, AccessTest, Adapters, AiAccess, HeinzelError, Module, NotSupportedError
 from heinzel.kernel import (
+    AI_MODELS_INTERFACE,
     CAPABILITIES,
     AiModelOptions,
     AiModelsSource,
@@ -20,12 +21,14 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._ai_models import (
     EFFORT_BUDGETS,
+    OUTPUT_TOKENS,
     build_model,
     choose,
     effort_settings,
     list_offers,
 )
 from heinzel.kernel._capabilities import declared_unsupported
+from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 
 pytestmark = pytest.mark.unit
 
@@ -136,12 +139,21 @@ def test_an_unknown_ai_models_adapter_is_a_clear_error(make_kernel):
         kernel.ai_models("nope")
 
 
-def test_offers_need_only_an_id_and_refuse_unsafe_ids():
-    assert ModelOffer(id="claude-sonnet-4-5").label == "claude-sonnet-4-5"
+def test_offers_need_only_an_id_ignore_unknown_fields_and_refuse_unsafe_ids():
+    offer = ModelOffer(id="claude-sonnet-4-5")
+    assert (offer.label, offer.available, offer.tools, offer.thinking) == ("claude-sonnet-4-5", True, True, None)
     assert ModelOffer(id="team/llama3.1:8b", title="Llama").label == "Llama"
+    assert ModelOffer.model_validate({"id": "m", "price": 3, "vision": True}).id == "m", "a newer plugin's fields"
+    with pytest.raises(ValidationError):
+        offer.title = "changed"  # type: ignore[misc]  # frozen
     for bad in ("", "has space", "-leading", "quote'd", "x" * 201):
         with pytest.raises(ValidationError):
             ModelOffer(id=bad)
+
+
+def test_the_interface_has_a_version_plugins_can_check():
+    major, minor = AI_MODELS_INTERFACE.split(".")
+    assert (int(major), int(minor)) >= (1, 0)
 
 
 def test_choose_the_wanted_or_first_usable_model_and_name_others_when_unavailable():
@@ -158,38 +170,59 @@ def test_choose_the_wanted_or_first_usable_model_and_name_others_when_unavailabl
         choose(offers, "mute")
     with pytest.raises(ModelUnavailableError, match="No other model is offered now"):
         choose([ModelOffer(id="gone", available=False)], None)
+    assert ModelUnavailableError("x").others == []
 
 
-def test_effort_maps_to_anthropic_native_settings_per_model():
+def test_an_effort_the_model_doesnt_take_is_refused_before_the_turn():
+    offers = Models().models()
+    assert choose(offers, "big", "high").id == "big"
+    with pytest.raises(HeinzelError, match="doesn't take the effort max; pick one of low, high, or none"):
+        choose(offers, "big", "max")
+    assert choose(offers, "old", "max").id == "old", "a budget model with no efforts listed takes any"
+
+
+def test_effort_maps_to_anthropic_native_settings_and_leaves_room_for_thinking():
     adaptive, budget, plain = (
         ModelOffer(id="a", thinking="adaptive"),
         ModelOffer(id="b", thinking="budget"),
         ModelOffer(id="c"),
     )
-    assert effort_settings(adaptive, "high") == {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "high"}
-    assert effort_settings(budget, "low") == {
-        "anthropic_thinking": {"type": "enabled", "budget_tokens": EFFORT_BUDGETS["low"]}
+    assert effort_settings(adaptive, "high") == {
+        "max_tokens": OUTPUT_TOKENS,
+        "anthropic_thinking": {"type": "adaptive"},
+        "anthropic_effort": "high",
     }
-    assert effort_settings(plain, "max") == {}
-    assert effort_settings(adaptive, None) == {}
+    budgeted = effort_settings(budget, "max")
+    assert budgeted["anthropic_thinking"] == {"type": "enabled", "budget_tokens": EFFORT_BUDGETS["max"]}
+    assert budgeted["max_tokens"] > EFFORT_BUDGETS["max"], "Anthropic refuses budget_tokens >= max_tokens"
+    assert effort_settings(plain, "max") == {"max_tokens": OUTPUT_TOKENS}
+    assert effort_settings(adaptive, None) == {"max_tokens": OUTPUT_TOKENS}
 
 
-def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls():
-    class Flaky:
-        def __init__(self) -> None:
-            self.mode = "ok"
-            self.release = threading.Event()
+class Flaky:
+    """A plugin whose list works, fails, hangs or comes back with bad rows."""
 
-        def models(self) -> list[object]:
-            if self.mode == "fail":
-                msg = "proxy down"
-                raise RuntimeError(msg)
-            if self.mode == "stall":
-                self.release.wait(5)
-            if self.mode == "junk":
-                return "nope"  # type: ignore[return-value]
-            return [{"id": "one"}, ModelOffer(id="two"), {"id": "one", "title": "again"}]
+    def __init__(self) -> None:
+        self.mode = "ok"
+        self.calls = 0
+        self.release = threading.Event()
 
+    def models(self) -> list[object]:
+        self.calls += 1
+        if self.mode == "fail":
+            msg = "proxy down"
+            raise RuntimeError(msg)
+        if self.mode == "stall":
+            self.release.wait(5)
+        if self.mode == "junk":
+            return "nope"  # type: ignore[return-value]
+        if self.mode == "rows":
+            return [{"id": "ok"}, {"id": "has space"}, {"id": "x", "thinking": "quantum"}, {"id": "fine"}]
+        return [{"id": "one"}, ModelOffer(id="two"), {"id": "one", "title": "again"}]
+
+
+def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkeypatch):
+    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TTL", 0.0)
     flaky = Flaky()
     source = _source(flaky, name="flaky-test")
     offers, note = list_offers(source)
@@ -201,13 +234,58 @@ def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls():
     assert note == "its model list failed (RuntimeError: proxy down); showing the last list"
     flaky.mode = "stall"
     offers, note = list_offers(source, timeout=0.05)
-    flaky.release.set()
     assert [o.id for o in offers] == ["one", "two"]
     assert note.startswith("its model list took longer than 0.05s")
+    calls = flaky.calls
+    offers, note = list_offers(source, timeout=0.05)
+    assert flaky.calls == calls, "one call in flight per plugin: a second caller waits for it"
+    hung = [t for t in threading.enumerate() if t.name == "ai-models-flaky-test"]
+    assert len(hung) == 1
+    assert hung[0].daemon, "a hung plugin never blocks exit"
+    flaky.release.set()
+    hung[0].join(5)
     flaky.mode = "junk"
     offers, note = list_offers(_source(flaky, name="never-good"))
     assert offers == []
     assert note == "its model list failed (TypeError: models() returned str, not a list of ModelOffer)"
+
+
+def test_one_bad_row_is_skipped_not_the_whole_list():
+    flaky = Flaky()
+    flaky.mode = "rows"
+    offers, note = list_offers(_source(flaky, name="rows-test"))
+    assert [o.id for o in offers] == ["ok", "fine"]
+    assert note.startswith("2 offers skipped: ")
+
+
+def test_a_fresh_list_is_reused_for_a_few_seconds():
+    flaky = Flaky()
+    source = _source(flaky, name="ttl-test")
+    list_offers(source)
+    list_offers(source)
+    assert flaky.calls == 1
+
+
+def test_ai_models_named_like_another_plugins_access_option_are_skipped(settings):
+    claimer = Module("claimer", "Names its models like Claude Code.")
+    claimer.provides("ai-models", modes={"read"}, hosts=["x.invalid"], name="claude-code")(Models)
+
+    class Code:
+        def status(self) -> AccessStatus:
+            return AccessStatus(title="Claude Code", summary="", installed=True)
+
+        def test(self) -> AccessTest:
+            return AccessTest(ok=True)
+
+    runner = Module("runner", "The real Claude Code option.")
+    runner.provides("ai-access", modes={"read"}, name="claude-code")(Code)
+    records = [
+        ModuleRecord("claimer", claimer, Origin("heinzel-claimer", "1.0.0", builtin=False)),
+        ModuleRecord("runner", runner, Origin("heinzel", "0.0.0", builtin=True)),
+    ]
+    kernel = Kernel(settings, records)
+    assert not kernel.offers_ai_models("claude-code")
+    assert "claude-code" in kernel.errors["claimer"]
 
 
 def test_build_model_needs_a_pydantic_ai_model_and_wraps_plugin_failures():

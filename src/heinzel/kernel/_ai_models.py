@@ -1,30 +1,42 @@
-"""The AI models capability: a plugin brings its own models, and hz runs them (ADR 0159).
+"""The `ai-models` interface: a plugin tells hz which models it has and hands over a Pydantic AI model (ADR 0159).
 
-A company plugin reaches its models its own way: an internal endpoint or a company proxy, its own authentication,
-its own list of models from wherever it keeps them. It does not run an agent: it hands hz a ready Pydantic AI model
-(`pydantic_ai.models.Model`), and hz's own engine runs chat, drafts and schedules on it, with hz's tools, limits and
-usage records. The plugin owns the endpoint, the token, refreshing it, and caching the list; hz never sees a token.
+This is the whole contract between a plugin and hz for AI models, version `AI_MODELS_INTERFACE`:
 
-An adapter of `ai-models` becomes an AI access option of the same name without more code: the kernel derives an
-`ai-access` adapter from it, so `hz ai access use <name>` and the web picker work. A plugin that also provides
-`ai-access` under that name keeps its own instead (for a `status` or `test` of its own).
+- `models()` lists the models on offer as `ModelOffer`s; only `id` is required.
+- `model(model_id)` returns a ready `pydantic_ai.models.Model`, built however the plugin likes.
+- `test(model_id)` is optional: a plugin's own live check of one model.
+
+How the plugin reaches its models, and how it signs in, is its own business: hz never sees it. hz runs the model
+with Pydantic AI itself: its `Agent`, streaming, message history and usage. A plugin never runs an agent.
+
+An adapter of `ai-models` is an AI access option of the same name without more code: the kernel derives the
+`ai-access` adapter, so `hz ai access use <name>`, Settings and the chat's model picker work.
+
+Compatibility: within interface 1.x, changes are additive only. `ModelOffer` gains optional fields with defaults
+and ignores fields it doesn't know. The protocol gains optional methods only, which hz detects before calling.
+`AI_MODELS_INTERFACE` names the version a Core implements; a plugin may check it at import.
 """
 
-import concurrent.futures
+import logging
 import threading
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, cast
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from heinzel.kernel._agents import Effort
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._text import clean_text
 
 if TYPE_CHECKING:
     from heinzel.kernel._ai import AiAccess
+
+AI_MODELS_INTERFACE = "1.0"
+"""The `ai-models` interface this Core implements, `major.minor`: within a major version, changes are additive."""
 
 MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$"
 """What a model id may be: what endpoints and proxies use (`gpt-5`, `claude-sonnet-4-5`, `team/llama3.1:8b`), with no
@@ -42,28 +54,40 @@ EFFORT_BUDGETS: dict[Effort, int] = {"low": 2048, "medium": 8192, "high": 16384,
 
 
 class ModelOffer(BaseModel):
-    """One model a plugin offers: what the picker shows and what `model` takes."""
+    """One model a plugin offers: what the chat's picker and Settings show, and what `model` takes.
 
-    id: ModelId = Field(description="The id `model` takes and settings keep, e.g. `gpt-5` or `team/llama3.1:8b`.")
-    title: str = Field(default="", max_length=200, description="What people pick it by; the id when empty.")
+    Only `id` is required. Frozen, and fields hz doesn't know are ignored, so a newer plugin works with an older hz.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    id: ModelId = Field(description="The id hz passes to `model()` and keeps in settings, e.g. `claude-sonnet-4-5`.")
+    title: str = Field(
+        default="", max_length=200, description="What the picker and a reply's header show; the id when empty."
+    )
+    description: str = Field(default="", max_length=500, description="One line on what it is good for; optional.")
+    aliases: list[ModelId] = Field(
+        default_factory=list[str], description="Other ids people may know it by; shown, never passed to `model()`."
+    )
     context_window: int | None = Field(
         default=None, ge=1, description="How many tokens it reads at most, when the plugin knows; none when not."
     )
     efforts: list[Effort] = Field(
-        default_factory=list[Effort], description="The efforts it can be asked for, low to max; empty when none."
+        default_factory=list[Effort],
+        description="The efforts it takes, low to max; empty when it takes none. Only with `thinking` set.",
     )
     tools: bool = Field(
-        default=True, description="Whether it calls tools; chat and drafts need it, so hz offers only models that do."
+        default=True, description="Whether it calls tools; chat and drafts need it, so hz runs only models that do."
     )
     thinking: Thinking | None = Field(
         default=None,
-        description="How hz asks it for an effort: `adaptive` or `budget` (Anthropic's two styles), mapped from the "
-        "chosen effort; none when hz passes no effort and the plugin's model decides.",
+        description="How hz asks it for an effort: `adaptive` or `budget` (Anthropic's two styles); none when hz "
+        "passes no effort and the plugin's model keeps its own settings.",
     )
-    available: bool | None = Field(
-        default=None,
-        description="Whether it answered when the plugin last probed it: false keeps it in pickers, marked "
-        "unavailable, and makes hz refuse it before a turn, naming others to pick; none when not probed.",
+    available: bool = Field(
+        default=True,
+        description="False when it didn't answer when the plugin last checked: hz keeps it in the picker, marked "
+        "unavailable, and refuses a turn on it before starting, naming others to pick.",
     )
 
     @property
@@ -73,50 +97,70 @@ class ModelOffer(BaseModel):
 
 
 class ModelUnavailableError(HeinzelError):
-    """The chosen model isn't offered or doesn't answer now; the message names models to pick instead (ADR 0159)."""
+    """A model isn't offered or doesn't answer now; the message names models to pick instead (ADR 0159).
 
-    def __init__(self, model_id: str, others: list[str], reason: str = "") -> None:
+    Core raises it before a turn on a model `models()` doesn't list or marks unavailable. A plugin's `model()` raises
+    it for an id it doesn't know or can't serve now.
+    """
+
+    def __init__(self, model_id: str, others: list[str] | None = None, reason: str = "") -> None:
         """Say which model is unavailable, why in a few words, and which to pick instead."""
         self.model_id = model_id
-        self.others = others
+        self.others = list(others or [])
         why = f" ({reason})" if reason else ""
-        instead = (
-            f" Pick another: hz system config set ai.access.plugin_model {others[0]}"
-            + (f" (also offered: {', '.join(others[1:5])})" if len(others) > 1 else "")
-            if others
-            else " No other model is offered now."
-        )
+        if self.others:
+            also = f" (also offered: {', '.join(self.others[1:5])})" if len(self.others) > 1 else ""
+            instead = f" Pick another: hz system config set ai.access.plugin_model {self.others[0]}{also}"
+        else:
+            instead = " No other model is offered now."
         super().__init__(f"The model {model_id} is unavailable{why}.{instead}")
 
 
-def effort_settings(offer: ModelOffer, effort: Effort | None) -> dict[str, Any]:
-    """Anthropic's native model settings for `effort` on `offer`, as Pydantic AI passes them through (ADR 0159).
-
-    Empty when no effort is chosen or the model takes none: then the plugin's model keeps its own settings.
-    """
-    if effort is None or offer.thinking is None:
-        return {}
-    if offer.thinking == "budget":
-        return {"anthropic_thinking": {"type": "enabled", "budget_tokens": EFFORT_BUDGETS[effort]}}
-    return {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
-
-
 class AiModels(Protocol):
-    """Models a plugin reaches its own way, run by hz's Pydantic AI engine (capability `ai-models`, ADR 0159)."""
+    """A plugin's models, run by hz's Pydantic AI engine (capability `ai-models`, interface 1.0, ADR 0159).
+
+    Provide it with `module.provides("ai-models", modes={"read"}, hosts=[...], name="acme")`. Optional plain
+    attributes `title` and `summary` (str) name the AI access option; the adapter's name is used when absent.
+    Optional method: `test(model_id: str) -> AccessTest`, the plugin's own live check; without it, hz sends one short
+    request through `model()`.
+    """
 
     def models(self) -> list[ModelOffer]:
-        """The models offered now, the default first; fast, from the plugin's own cache. Mode: read.
+        """The models on offer now, the default first. Mode: read.
 
-        hz calls it for listings and before each turn, with a timeout, and shows the last good list when it fails.
+        Answer from your own cache, in milliseconds. hz calls it off the event loop, at most one call at a time, with
+        a 5-second timeout, and reuses an answer for a few seconds. When a call fails or times out, hz shows the last
+        good list and says so. A row that isn't a valid `ModelOffer` is skipped, not the list.
         """
         ...
 
     def model(self, model_id: str) -> Any:  # noqa: ANN401 - a pydantic_ai Model; the kernel doesn't import the SDK
-        """A ready `pydantic_ai.models.Model` for `model_id`, its client carrying the plugin's own auth. Mode: read.
+        """A ready `pydantic_ai.models.Model` for `model_id`, built however you like. Mode: read.
 
-        Building it must not call the model. hz runs it: one turn at a time, with its own tools, limits and records.
+        Build it without calling it. hz calls this only with an id `models()` listed and didn't mark unavailable, off
+        the event loop, once per turn. For an id you don't know or can't serve now, raise `ModelUnavailableError`.
+        hz runs the model: its requests, tools, streaming, history, limits and usage records.
         """
         ...
+
+
+OUTPUT_TOKENS = 16384
+"""The most a plugin's model may write in one response besides its thinking, hz's cap on that path (ADR 0159)."""
+
+
+def effort_settings(offer: ModelOffer, effort: Effort | None) -> dict[str, Any]:
+    """Model settings for one request on `offer`: hz's output cap, and Anthropic's native settings for `effort`.
+
+    The output cap leaves room for a `budget` model's thinking, which Anthropic counts within `max_tokens`. With no
+    effort, or a model that takes none, only the cap: the plugin's model keeps its own thinking settings.
+    """
+    if effort is None or offer.thinking is None:
+        return {"max_tokens": OUTPUT_TOKENS}
+    if offer.thinking == "budget":
+        budget = EFFORT_BUDGETS[effort]
+        thinking = {"type": "enabled", "budget_tokens": budget}
+        return {"max_tokens": budget + OUTPUT_TOKENS, "anthropic_thinking": thinking}
+    return {"max_tokens": OUTPUT_TOKENS, "anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": effort}
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,67 +196,121 @@ class AiModelOptions:
 
 LIST_TIMEOUT = 5.0
 """How long hz waits for a plugin's `models()`; it should answer from its cache in milliseconds."""
+LIST_TTL = 3.0
+"""How long a list is reused before hz asks the plugin again, so Settings polling doesn't hit it on every read."""
 MAX_OFFERS = 500
 NONE_CHOSEN = "(none chosen)"
 DETAIL_LIMIT = 300
 
-_last_good: dict[str, list[ModelOffer]] = {}
-_last_good_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
-def _validated(found: object) -> list[ModelOffer]:
-    """The offers `models()` returned, validated and without repeated ids, the plugin's order kept.
+@dataclass
+class _Listing:
+    """One plugin's list: the last good one, when it was got, what the last call said, and the call in flight."""
+
+    offers: list[ModelOffer] | None = None
+    at: float = 0.0
+    skipped: str = ""
+    problem: str = ""
+    done: threading.Event | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+_listings: dict[tuple[str, int], _Listing] = {}
+_listings_lock = threading.Lock()
+
+
+def _validated(found: object) -> tuple[list[ModelOffer], str]:
+    """The valid offers `models()` returned, without repeated ids, the plugin's order kept, and what was skipped.
+
+    One bad row is skipped and logged, never the whole list: the list comes from a database hz can't see, and a
+    newer plugin may send a value an older hz doesn't know.
 
     Raises:
-        TypeError: If it isn't a list of offers (or of their fields).
+        TypeError: If it isn't a list at all.
     """
     if not isinstance(found, list):
         msg = f"models() returned {type(found).__name__}, not a list of ModelOffer"
         raise TypeError(msg)
+    rows = cast("list[object]", found)
     offers: dict[str, ModelOffer] = {}
-    for item in cast("list[object]", found)[:MAX_OFFERS]:
-        offer = ModelOffer.model_validate(item.model_dump() if isinstance(item, ModelOffer) else item)
+    skipped: list[str] = []
+    for item in rows[:MAX_OFFERS]:
+        try:
+            offer = ModelOffer.model_validate(item.model_dump() if isinstance(item, ModelOffer) else item)
+        except ValidationError as exc:
+            skipped.append(clean_text(str(exc.errors()[0]["msg"]))[:80])
+            continue
         offers.setdefault(offer.id, offer)
-    return list(offers.values())
+    notes = [f"{len(skipped)} offers skipped: {skipped[0]}"] if skipped else []
+    if len(rows) > MAX_OFFERS:
+        notes.append(f"only the first {MAX_OFFERS} of {len(rows)} offers are shown")
+    if notes:
+        log_event(logger, "ai.models.offers_skipped", level=logging.WARNING, skipped=len(skipped), rows=len(rows))
+    return list(offers.values()), "; ".join(notes)
+
+
+def _fetch(source: AiModelsSource, listing: _Listing, done: threading.Event) -> None:
+    """Ask the plugin once, on a daemon thread, and keep what it said; never raises."""
+    try:
+        offers, skipped = _validated(source.adapter.models())
+    except Exception as exc:  # noqa: BLE001 - a plugin's failure is a note, never a crash of the listing
+        problem = clean_text(f"its model list failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
+        with listing.lock:
+            listing.problem = problem
+    else:
+        with listing.lock:
+            listing.offers, listing.skipped, listing.problem, listing.at = offers, skipped, "", time.monotonic()
+    finally:
+        with listing.lock:
+            listing.done = None
+        done.set()
 
 
 def list_offers(source: AiModelsSource, timeout: float = LIST_TIMEOUT) -> tuple[list[ModelOffer], str]:
-    """What `source` offers now, and a note when that is the last good list because asking failed (ADR 0159).
+    """What `source` offers now, and a note on what was skipped, or that this is the last good list (ADR 0159).
 
-    The call runs on a thread of its own with `timeout`: a slow or broken plugin never stalls a listing or a turn.
-    With no last good list, a failure is an empty list and the note says why.
+    One call per plugin at a time, on a daemon thread, so a hung plugin holds one thread and never blocks exit; a
+    second caller waits for that call, at most `timeout`. A list got in the last few seconds is reused. With no
+    good list yet, a failure is an empty list and the note says why.
     """
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"ai-models-{source.name}")
-    try:
-        offers = _validated(pool.submit(source.adapter.models).result(timeout=timeout))
-    except concurrent.futures.TimeoutError:
+    with _listings_lock:
+        # Per adapter instance: a kernel built again (tests, a reload) starts with a list of its own.
+        listing = _listings.setdefault((source.name, id(source.adapter)), _Listing())
+    with listing.lock:
+        fresh = listing.offers is not None and not listing.problem and time.monotonic() - listing.at < LIST_TTL
+        if fresh:
+            return list(listing.offers or []), listing.skipped
+        done = listing.done
+        if done is None:
+            done = listing.done = threading.Event()
+            name = f"ai-models-{source.name}"
+            threading.Thread(target=_fetch, args=(source, listing, done), name=name, daemon=True).start()
+    finished = done.wait(timeout)
+    with listing.lock:
+        kept, skipped, problem = listing.offers, listing.skipped, listing.problem
+    if not finished:
         problem = f"its model list took longer than {timeout:g}s"
-    except Exception as exc:  # noqa: BLE001 - a plugin's failure is a note, never a crash of the listing
-        problem = clean_text(f"its model list failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
-    else:
-        with _last_good_lock:
-            _last_good[source.name] = offers
-        return offers, ""
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-    with _last_good_lock:
-        kept = _last_good.get(source.name, [])
-    return kept, f"{problem}; showing the last list" if kept else problem
+    if not problem:
+        return list(kept or []), skipped
+    return (list(kept), f"{problem}; showing the last list") if kept else ([], problem)
 
 
-def choose(offers: list[ModelOffer], wanted: str | None) -> ModelOffer:
+def choose(offers: list[ModelOffer], wanted: str | None, effort: Effort | None = None) -> ModelOffer:
     """The offer hz runs: `wanted` when given, else the first that calls tools and isn't known to be unavailable.
 
     Raises:
         ModelUnavailableError: If `wanted` isn't offered, didn't answer when last probed or calls no tools; or, with
             nothing wanted, no offer would do.
+        HeinzelError: If the model doesn't take `effort`.
     """
     usable = [o.id for o in offers if o.tools and o.available is not False]
     if wanted is None:
         if not usable:
             why = "the plugin offers no model that answers and calls tools"
             raise ModelUnavailableError(NONE_CHOSEN, [], why)
-        return next(o for o in offers if o.id == usable[0])
+        wanted = usable[0]
     offer = next((o for o in offers if o.id == wanted), None)
     others = [i for i in usable if i != wanted]
     if offer is None:
@@ -221,6 +319,10 @@ def choose(offers: list[ModelOffer], wanted: str | None) -> ModelOffer:
         raise ModelUnavailableError(wanted, others, "it didn't answer when the plugin last checked")
     if not offer.tools:
         raise ModelUnavailableError(wanted, others, "it doesn't call tools, which chat and drafts need")
+    if effort is not None and offer.thinking is not None and offer.efforts and effort not in offer.efforts:
+        allowed = ", ".join(offer.efforts)
+        msg = f"The model {wanted} doesn't take the effort {effort}; pick one of {allowed}, or none"
+        raise HeinzelError(msg)
     return offer
 
 

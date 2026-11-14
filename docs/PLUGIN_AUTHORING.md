@@ -195,61 +195,62 @@ predicate) and `hz system prerequisite list --json`, against the released SDK; n
 
 ## Bring your own AI models and connectors
 
-A company plugin can reach its own models and its own systems. It needs Heinzelmännchen 0.9.43 or later (the first
-release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md)). Pin it as
-`heinzel>=0.9.43,<1`. The public `heinzel-example-bridge` plugin in `heinzel-plugins` does all of this with made-up
-parts. Copy it, and replace its dummy data with your company's calls.
+A plugin can bring its own AI models and its own connectors. This needs Heinzelmännchen 0.9.43 or later, the first
+release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md). The public
+`heinzel-example-bridge` plugin in `heinzel-plugins` does all of it with made-up parts.
 
-**Models.** Provide `ai-models` with two methods. `models()` returns the models on offer, the default first, as
-`ModelOffer`s; only `id` is required. `model(model_id)` returns a ready Pydantic AI model whose HTTP client carries
-your authentication. Heinzel runs that model for chat, drafts and schedules, with its own tools, limits and usage
-records. Your plugin never runs an agent and Heinzel never sees your token:
+### AI models: the `ai-models` interface
+
+A plugin is a model provider that plugs into [Pydantic AI](https://ai.pydantic.dev): it says which models it has,
+and hands Heinzel a Pydantic AI model for one. How it reaches the models, and how it signs in, is up to the plugin.
+Heinzel runs the model with Pydantic AI itself, with its own tools, streaming, history, limits and usage records.
 
 ```python
-from httpx2 import AsyncClient
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from heinzel import ModelOffer, Module
-from heinzel.token_auth import CommandTokenAuth
+from heinzel import ModelOffer, ModelUnavailableError, Module
 
-module = Module("acme-ai", "Acme's models through the company proxy.")
-PROXY = "https://ai-proxy.acme.example"
+module = Module("acme-ai", "Acme's models.")
 
 
-@module.provides("ai-models", modes={"read"}, hosts=["ai-proxy.acme.example"], name="acme")
+@module.provides("ai-models", modes={"read"}, hosts=["ai.acme.example"], name="acme")
 class AcmeModels:
     title = "Acme AI"
 
     def models(self) -> list[ModelOffer]:
-        return [ModelOffer(id=row.id, thinking="adaptive") for row in cached_rows()]  # your cache, refreshed by you
+        # From your own cache: Heinzel waits 5 seconds at most.
+        return [ModelOffer(id="acme-large", thinking="adaptive", efforts=["low", "medium", "high"])]
 
     def model(self, model_id: str) -> AnthropicModel:
-        auth = CommandTokenAuth(["acme-sso", "token"], drop=["x-api-key"])
-        provider = AnthropicProvider(api_key="unused", base_url=PROXY, http_client=AsyncClient(auth=auth))
+        if model_id not in {offer.id for offer in self.models()}:
+            raise ModelUnavailableError(model_id)
+        provider = AnthropicProvider(base_url="https://ai.acme.example", http_client=your_http_client())
         return AnthropicModel(model_id, provider=provider)
 ```
 
-The option shows up as "Acme AI" in Settings and in `hz ai access list`. People pick it with
-`hz ai access use acme`, and pick a model in Settings or with
-`hz system config set ai.access.plugin_model <id>`. Your plugin is responsible for:
+The option shows up as "Acme AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
+`hz ai access use acme`, then pick a model per chat in the chat's model picker. Reference
+(`from heinzel import ...`, interface `AI_MODELS_INTERFACE = "1.0"`):
 
-- `models()` answering in milliseconds from your own cache. Heinzel waits 5 seconds at most, then shows the last list
-  it got.
-- marking a model `available=False` when your own probe found it doesn't answer. Heinzel keeps it visible, marked,
-  and refuses a turn on it with the names of models to pick instead.
-- setting `thinking` to `"adaptive"` or `"budget"` when the model takes Anthropic's effort settings. Heinzel then
-  maps the chosen effort. Leave it unset to handle effort yourself.
-- never putting a token or header into an exception message: Heinzel shows failure messages, cut short.
+| Name | What it is |
+| --- | --- |
+| `AiModels.models() -> list[ModelOffer]` | The models on offer, the default first. Heinzel calls it off the event loop, with a 5 s timeout, reuses an answer for 3 s, and shows the last good list if a call fails. A bad row is skipped, not the list. |
+| `AiModels.model(model_id) -> Model` | A ready `pydantic_ai.models.Model`, built without calling it. Called only with a listed, available id, off the event loop, once per turn. Raise `ModelUnavailableError` for an id you can't serve. |
+| `AiModels.test(model_id) -> AccessTest` | Optional: your own live check. Without it, Heinzel sends one short request. |
+| `title`, `summary` | Optional attributes: what the option is called and one sentence about it. |
+| `ModelOffer` | `id` (required), and optional `title` (shown instead of the id), `description`, `aliases`, `context_window`, `efforts`, `tools` (default true), `thinking` (`"adaptive"` or `"budget"`: Anthropic's two effort styles, which Heinzel maps; leave unset to handle effort yourself) and `available` (default true; false keeps it visible, marked unavailable, and refused). |
+| `ModelUnavailableError(model_id, others=None, reason="")` | The model can't be used now; the message names others to pick. |
 
-`CommandTokenAuth` runs your token helper without a shell. It refreshes the token 5 minutes before its JWT `exp`
-and once on a 401. When the helper prints nothing (its own sign-in expired), it raises `TokenCommandError` with the
-helper's hint. It is an `httpx2.Auth`, the HTTP client Pydantic AI uses.
+Within interface 1.x, changes are additive only: new optional fields and new optional methods. Never put a secret
+into an exception message: Heinzel shows failure messages, cut short.
 
-**Connectors.** Provide `mail`, `calendar`, `documents`, `tracker`, `chat`, `meetings` or `code-host` as for any
-connector. A method your system can't do raises `NotSupportedError(capability, method, reason)`. Or list it in a
-class attribute, `unsupported = frozenset({"replace_section"})`; then Heinzel refuses the call before it reaches
-you, and the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
+### Connectors
+
+Provide `mail`, `calendar`, `documents`, `tracker`, `chat`, `meetings` or `code-host` as for any connector. A
+method your system can't do raises `NotSupportedError(capability, method, reason)`. Or list it in a class
+attribute, `unsupported = frozenset({"replace_section"})`: then Heinzel refuses the call before it reaches you, and
+the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
 
 ## Choose public or private hosting
 

@@ -43,6 +43,7 @@ CAPABILITY = "ai-access"
 SECTION = "capabilities"
 KEY = f"{SECTION}.ai_access"
 RUNNER_KEY = f"{SECTION}.agent_runner"
+PLUGIN_MODEL_KEY = "ai.access.plugin_model"
 VARIABLE = "HZ_CAPABILITIES__AI_ACCESS"
 DEFAULT = "claude-code"
 TESTS_FILE = "tests.json"
@@ -274,8 +275,7 @@ class AccessService:
             missing = f"{name}'s status couldn't be read, so no agent runner was bound: {status}"
         elif status.core_engine:
             # hz's own engine runs its models: chat needs no runner; coding binds the engine runner once installed.
-            if runner is not None and runner in self._view.installed("agent-runner"):
-                self._editor.write(RUNNER_KEY, runner, "user")
+            missing = self._use_models(status, runner)
         elif runner is None:
             missing = f"{name} has no agent of its own; the chat keeps its agent runner."
         elif runner in self._view.installed("agent-runner"):
@@ -287,6 +287,27 @@ class AccessService:
             overridden = f"{VARIABLE} in your environment decides the AI access ({listing.selected}); unset it."
             return listing.model_copy(update={"note": overridden, "next": [f"unset {VARIABLE}"]})
         return listing.model_copy(update={"note": " ".join(p for p in (missing, listing.note) if p) or None})
+
+    def _use_models(self, status: AccessStatus, runner: str | None) -> str | None:
+        """Pin the plugin's model and bind the engine runner for coding; a note when coding stays elsewhere.
+
+        The model in use is written to `ai.access.plugin_model`, so a new first row in the plugin's list never changes
+        it, nor the fingerprint approved schedules are bound to (ADR 0159).
+        """
+        if status.model is None and (usable := [m for m in status.models if m not in status.unavailable_models]):
+            self._editor.write(PLUGIN_MODEL_KEY, usable[0], "user")
+        elif status.model is not None:
+            self._editor.write(PLUGIN_MODEL_KEY, status.model, "user")
+        if runner is not None and runner in self._view.installed("agent-runner"):
+            self._editor.write(RUNNER_KEY, runner, "user")
+            return None
+        bound = self.bindings().agent_runner
+        if bound is None:
+            return None
+        return (
+            f"Chat, drafts and schedules use {status.title}; coding handoffs still run on the agent runner {bound}, "
+            "outside these models."
+        )
 
     def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
         """Run the live check of `name`, or of the option in use, and keep its result for the listing.

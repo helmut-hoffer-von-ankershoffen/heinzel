@@ -6,12 +6,13 @@ Only the deterministic local tool below can execute. Other requests become priva
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent, SessionWriter
@@ -215,6 +216,7 @@ class InteractiveTurn:
         scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
         draft_tools: Callable[[SessionWriter], DocumentDraftTools | None] | None = None,
+        capabilities: Sequence[AbstractCapability[TurnDeps]] = (),
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -639,6 +641,7 @@ class InteractiveTurn:
                 limits=limits,
                 checkpoint=checkpoint,
                 dispatch=dispatch,
+                capabilities=capabilities,
             )
             if result.outcome is None or result.status not in {"completed", "waiting"}:
                 msg = "The turn did not complete; its outcome requires inspection before retry"

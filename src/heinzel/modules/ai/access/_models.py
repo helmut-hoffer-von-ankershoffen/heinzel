@@ -115,14 +115,6 @@ class AccessSettings(ModuleSettings):
         "Anthropic's Messages API, as a company proxy may.",
         json_schema_extra={"x-expert": True},
     )
-    token_command: list[str] | None = Field(
-        default=None,
-        title="Token command",
-        description="A command, one argument per item and run without a shell, that prints a bearer token for the "
-        "Pydantic AI endpoint; it runs again before the token expires and once when the endpoint refuses it.",
-        examples=[["example-auth", "token"]],
-        json_schema_extra={"x-expert": True},
-    )
     plugin_model: str | None = Field(
         default=None,
         pattern=MODEL_ID_PATTERN,
@@ -176,7 +168,6 @@ class AccessSettings(ModuleSettings):
             "plugin_model",
             "plugin_effort",
             "api",
-            "token_command",
         }
     )
 

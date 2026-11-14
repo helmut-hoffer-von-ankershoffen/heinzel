@@ -7,7 +7,7 @@ failure escapes and stops the turn. Only an already policy-checked Model belongs
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from copy import copy
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
@@ -377,6 +377,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
     conversation: Conversation | None = None,
     resume_from: EngineCheckpoint | None = None,
     dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None,
+    capabilities: Sequence[AbstractCapability[TurnDeps]] = (),
 ) -> EngineResult:
     """Drive and checkpoint every node, retaining completed state when a cap or model validation fails.
 
@@ -409,7 +410,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
             deps=deps,
             usage_limits=limits.usage_limits(),
             timeout=limits.timeout_seconds,
-            capabilities=[accounting],
+            capabilities=[accounting, *capabilities],
             model_settings={"max_tokens": limits.output_tokens} if limits.output_tokens is not None else None,
         ) as run:
             return await _drive(run, deps, progress)
