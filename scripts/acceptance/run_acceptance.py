@@ -64,6 +64,8 @@ SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
+# The plugin both plugin cases install unpinned; its expected version is bound from the index in each run.
+EXAMPLE_PLUGIN = "heinzel-example"
 FOREGROUND_UI = {
     **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
     "0.9.16": ("ui", "serve"),
@@ -1749,6 +1751,33 @@ def plugin_update_version(case):
     return version
 
 
+def example_plugin_version(case):
+    """Bind the example plugin's install target to the independent index: the newest final release it serves.
+
+    The unpinned add installs what the index serves as newest, so a version written into this harness went stale
+    with each example release. The preview, the CLI and the page must each show this bound version.
+    """
+    index = json.loads(fetch(f"https://pypi.org/pypi/{EXAMPLE_PLUGIN}/json", 8 * 1024 * 1024))
+    version = index.get("info", {}).get("version")
+    check(is_final_version(version), f"The index names no final {EXAMPLE_PLUGIN} release to install: {version!r}")
+    wheels = [a for a in index.get("urls", []) if a.get("packagetype") == "bdist_wheel" and not a.get("yanked")]
+    check(len(wheels) == 1, f"The index must list exactly one unyanked {EXAMPLE_PLUGIN} {version} wheel")
+    check(
+        urllib.parse.urlsplit(wheels[0].get("url", "")).hostname == "files.pythonhosted.org",
+        f"The {EXAMPLE_PLUGIN} {version} install target is not a PyPI wheel",
+    )
+    case.notes["example_install_target"] = {"version": version, "sha256": wheels[0]["digests"]["sha256"]}
+    return version
+
+
+def check_installed_version(case, name, version, label):
+    """The CLI inventory shows NAME enabled at exactly the bound VERSION; what it found is recorded either way."""
+    expect_plugins(case, **{name: {"enabled": True, "version": version}})
+    installed = plugin_map(case, label).get(name, {}).get("version")
+    case.notes.setdefault("installed_versions", {})[label] = {"plugin": name, "bound": version, "found": installed}
+    check(installed == version, f"{name} is at {installed}, not at the bound {version}")
+
+
 def verify_clock_update(case, version):
     prefix = case.prefix.resolve(strict=True)
     check(prefix.is_relative_to(case.root), "The tool environment is outside this case")
@@ -1763,27 +1792,31 @@ def case_plugin_cli(case):
     clock_version = case.step(
         "bind the clock update to the profile and independent index", lambda: plugin_update_version(case)
     )
+    example_version = case.step(
+        "bind the example plugin install to the independent index", lambda: example_plugin_version(case)
+    )
 
     def preview():
         before = plugin_map(case, "plugins-before")
-        answer = hz(case, "system", "plugin", "add", "heinzel-example", label="example-preview")
-        check(answer["done"] is False and answer["candidate"]["distribution"] == "heinzel-example", "No preview")
+        answer = hz(case, "system", "plugin", "add", EXAMPLE_PLUGIN, label="example-preview")
+        check(answer["done"] is False and answer["candidate"]["distribution"] == EXAMPLE_PLUGIN, "No preview")
+        offered = answer["candidate"]["version"]
+        check(offered == example_version, f"The preview offers {EXAMPLE_PLUGIN} {offered}, not {example_version}")
         check(plugin_map(case, "plugins-after-preview").keys() == before.keys(), "A preview changed the inventory")
-        return {"version": answer["candidate"]["version"], "publisher": answer["candidate"]["publisher"]}
+        return {"version": offered, "publisher": answer["candidate"]["publisher"]}
 
     def add(spec, label, version):
         answer = hz(case, "system", "plugin", "add", spec, "--confirm", label=label)
         check(answer["done"] is True, f"{spec} was not installed: {answer.get('error')}")
         name = answer["distribution"]
-        expect_plugins(case, **{name: {"enabled": True, "version": version}})
-        check(plugin_map(case, label + "-list")[name]["version"] == version, f"{name} is not at {version}")
+        check_installed_version(case, name, version, label + "-list")
         evidence = {"installed": name, "version": version}
         if spec == "heinzel-clock":
             evidence["wheel_files_identical"] = verify_clock_update(case, version)
         return evidence
 
     case.step("preview installs nothing", preview)
-    case.step("install a plugin (CLI)", lambda: add("heinzel-example", "example-add", "0.4.0"))
+    case.step("install a plugin (CLI)", lambda: add(EXAMPLE_PLUGIN, "example-add", example_version))
     case.step("inventory and checkpoint after install", lambda: verify_state(case, "installed"))
     case.step("pin an older plugin version (CLI)", lambda: add("heinzel-clock==0.9.2", "clock-older", "0.9.2"))
     case.step(
@@ -1989,6 +2022,9 @@ def case_plugin_ui(case):
     clock_version = case.step(
         "bind the clock update to the profile and independent index", lambda: plugin_update_version(case)
     )
+    example_version = case.step(
+        "bind the example plugin install to the independent index", lambda: example_plugin_version(case)
+    )
     holder = {}
 
     def launch():
@@ -2027,11 +2063,10 @@ def case_plugin_ui(case):
 
     def install():
         browser = holder["browser"]
-        text = ui_add(browser, case, "heinzel-example", "02-install-preview", ["heinzel-example", "0.4.0"])
-        ui_apply(browser, "the install", row_has("heinzel-example", "0.4.0"))
-        expect_plugins(case, heinzel_example={"enabled": True, "version": "0.4.0"})
-        cli = plugin_map(case, "plugins-after-ui-install")
-        check(cli["heinzel-example"]["version"] == "0.4.0", "The CLI does not see the UI-installed plugin")
+        text = ui_add(browser, case, EXAMPLE_PLUGIN, "02-install-preview", [EXAMPLE_PLUGIN, example_version])
+        ui_apply(browser, "the install", row_has(EXAMPLE_PLUGIN, example_version))
+        # The CLI must see the UI-installed plugin at the bound version.
+        check_installed_version(case, EXAMPLE_PLUGIN, example_version, "plugins-after-ui-install")
         return {
             "screenshot": browser.shot("03-installed"),
             "isolated_server": server_state("after-install"),
