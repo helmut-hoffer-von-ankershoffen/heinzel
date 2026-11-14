@@ -8,6 +8,7 @@ import pytest
 from heinzel import CurrentUser
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig
 
@@ -25,10 +26,7 @@ def test_registered_chat_amends_current_agent_contract_and_refuses_stale_revisio
     executable.write_text(f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
+{CLAUDE_PRELUDE}
 marker=Path({str(calls)!r})
 n=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(n+1))

@@ -9,6 +9,7 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig
 
@@ -22,10 +23,7 @@ def _model(tmp_path, look):
     assert not executable.is_symlink()
     executable.write_text(f"""#!{sys.executable}
 import json,sys
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
+{CLAUDE_PRELUDE}
 payload=json.load(sys.stdin)
 if len(payload['messages']) == 1:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'profile:propose','arguments':{{'expected_revision':1,'name':'Original','appearance':{look!r}}}}},'text':None}}

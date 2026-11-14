@@ -15,6 +15,7 @@ from heinzel import (
 from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._capability_review import describe_capability_read
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH, web_client
 
 pytestmark = pytest.mark.integration
@@ -511,10 +512,7 @@ def test_compiled_rolling_read_item_revision_notices_survive_restart_and_revoke(
     executable.write_text(
         f"""#!{sys.executable}
 import json,sys
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
+{CLAUDE_PRELUDE}
 assert '--safe-mode' in sys.argv and '--restricted' in sys.argv and '--strict-mcp-config' in sys.argv
 assert sys.argv[sys.argv.index('--tools')+1] == '' and sys.argv[sys.argv.index('--allowed-tools')+1] == ''
 payload=json.load(sys.stdin)

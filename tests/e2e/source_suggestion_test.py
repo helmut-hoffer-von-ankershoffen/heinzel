@@ -12,6 +12,7 @@ import uvicorn
 
 from heinzel import ConnectedReadMethod, CurrentUser
 from heinzel.heads import web
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_build
 
 pytestmark = pytest.mark.e2e
@@ -105,10 +106,7 @@ def test_mounted_source_suggestion(make_kernel, tmp_path, monkeypatch, engine):
     executable.write_text(
         f"""#!{sys.executable}
 import json,sys
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
+{CLAUDE_PRELUDE}
 assert '--safe-mode' in sys.argv and '--restricted' in sys.argv and '--strict-mcp-config' in sys.argv
 assert sys.argv[sys.argv.index('--tools')+1] == '' and sys.argv[sys.argv.index('--allowed-tools')+1] == ''
 payload=json.load(sys.stdin)

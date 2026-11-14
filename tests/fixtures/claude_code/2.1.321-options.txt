@@ -1,0 +1,66 @@
+  --add-dir <directories...>            Additional directories to allow tool
+  --agent <agent>                       Agent for the current session. Overrides
+  --agents <json-or-file>               JSON object defining custom agents, or
+  --allow-dangerously-skip-permissions  Enable bypassing all permission checks
+  --allowedTools, --allowed-tools <tools...>
+  --append-system-prompt <prompt>       Append a system prompt to the default
+  --autocompact <auto|tokens>           Auto-compact window size (auto, or
+  --ax-screen-reader                    Render screen-reader friendly output
+  --bg, --background                    Start the session in the background and
+  --bare                                Minimal mode: skip hooks (those defined
+  --betas <betas...>                    Beta headers to include in API requests
+  --brief                               Enable SendUserMessage tool for
+  --chrome                              Enable Claude in Chrome integration
+  --cloud [description|session_id|url]  Create a cloud session with the given
+  -c, --continue                        Continue the most recent conversation in
+  --dangerously-skip-permissions        Bypass all permission checks.
+  -d, --debug [filter]                  Enable debug mode with optional category
+  --debug-file <path>                   Write debug logs to a specific file path
+  --desktop                             Open in the Claude Desktop app instead
+  --disable-slash-commands              Disable all skills and commands
+  --disallowedTools, --disallowed-tools <tools...>
+  --effort <level>                      Effort level for the current session
+  --environment <environment_id>        Create a new cloud session that runs on
+  --exclude-dynamic-system-prompt-sections
+  --fallback-model <model>              Enable automatic fallback to specified
+  --file <specs...>                     File resources to download at startup.
+  --fork-session                        When resuming, create a new session ID
+  --forward-subagent-text               Forward subagent text and thinking
+  --from-pr [value]                     Resume a session linked to a PR by PR
+  -h, --help                            Display help for command
+  --ide                                 Automatically connect to IDE on startup
+  --include-hook-events                 Include all hook lifecycle events in the
+  --include-partial-messages            Include partial message chunks as they
+  --input-format <format>               Input format (only works with --print):
+  --json-schema <schema>                JSON Schema for structured output
+  --max-budget-usd <amount>             Maximum dollar amount to spend on API
+  --mcp-config <configs...>             Load MCP servers from JSON files or
+  --model <model>                       Model for the current session. Provide
+  -n, --name <name>                     Set a display name for this session
+  --no-chrome                           Disable Claude in Chrome integration
+  --no-session-persistence              Disable session persistence - sessions
+  --output-format <format>              Output format (only works with --print):
+  --permission-mode <mode>              Permission mode to use for the session
+  --permission-prompts <target>         Who answers permission prompts with
+  --plugin-dir <path>                   Load a plugin from a directory or .zip
+  --plugin-url <url>                    Fetch a plugin .zip from a URL for this
+  -p, --print                           Print response and exit (useful for
+  --prompt-suggestions [value]          Enable prompt suggestions. In print/SDK
+  --remote-control [name]               Start an interactive session with Remote
+  --remote-control-session-name-prefix <prefix>
+  --replay-user-messages                Re-emit user messages from stdin back on
+  --restricted                          Restricted mode: removes the built-in
+  -r, --resume [value]                  Resume a conversation by session ID or
+  --safe-mode                           Start with all customizations
+  --session-id <uuid>                   Use a specific session ID for the
+  --setting-sources <sources>           Comma-separated list of setting sources
+  --settings <file-or-json>             Path to a settings JSON file or a JSON
+  --strict-mcp-config                   Only use MCP servers from --mcp-config,
+  --system-prompt <prompt>              System prompt to use for the session
+  --system-prompt-snapshot <on|off>     Record the system prompt once per
+  --teleport [session]                  Resume a teleport session, optionally
+  --tmux                                Create a tmux session for the worktree
+  --tools <tools...>                    Specify the list of available tools from
+  --verbose                             Override verbose mode setting from
+  -v, --version                         Output the version number
+  -w, --worktree [name]                 Create a new git worktree for this

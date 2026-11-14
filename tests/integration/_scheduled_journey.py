@@ -19,6 +19,7 @@ from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+from tests._fake_claude import CLAUDE_PRELUDE
 from tests.integration.chat_test import AUTH
 
 
@@ -134,10 +135,7 @@ def write_model(executable, counter, *, digest=None):
         f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
-if sys.argv[1:] == ['auth','status','--json']:
- print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
-if sys.argv[1:] == ['--version']:
- print('2.1.312 (Claude Code)'); raise SystemExit
+{CLAUDE_PRELUDE}
 marker=Path({str(counter)!r}); n=len(marker.read_text()) if marker.exists() else 0
 marker.write_text('x'*(n+1)); payload=json.load(sys.stdin)
 parts=[p for m in payload['messages'] for p in m['parts'] if p.get('part_kind') == 'tool-return']

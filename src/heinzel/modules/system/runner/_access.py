@@ -1,19 +1,22 @@
 """Claude Code as an AI access option: the CLI and its own login, beside the runner of the same name (ADR 0057).
 
-`status` asks `claude auth status`, which spends nothing; `test` runs one line through the `claude-code` runner with no
-tools, in an empty directory and within a small cap. The option names the runner `claude-code`, so `hz ai access use
+`status` asks `claude auth status`, which spends nothing; `test` asks one line through the chat's own admission (the
+reviewed release range, the help contract, the closed structured result), with no tools and in an empty directory, so
+a passing test means chat can run. The option names the runner `claude-code`, so `hz ai access use
 claude-code` binds it for the chat and coding handoffs too.
 """
 
+import logging
 import shutil
-import tempfile
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
-from heinzel import AccessStatus, AccessTest, Budget, HeinzelError, Progress, Status, ToolProfile
+from heinzel import AccessStatus, AccessTest, HeinzelError, Progress, Status
 from heinzel.kernel import Effort
-from heinzel.modules.system.runner._claude import DOCS, LOGIN, NAME, SILENT, ClaudeCodeRunner, auth_status
+from heinzel.kernel._logging import log_event
+from heinzel.modules.system.runner._claude import DOCS, LOGIN, NAME, SILENT, auth_status
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Execute, run_bounded
 
@@ -21,12 +24,11 @@ TITLE = "Claude Code"
 SUMMARY = "The Claude Code CLI with your own Claude login or subscription; it also runs the chat and coding handoffs."
 TEST_PROMPT = "Reply with the single word OK."
 TEST_TIMEOUT = timedelta(seconds=90)
-TEST_MAX_USD = 0.05
-"""Most a test may cost: one short answer, no tools."""
 ANSWER_LIMIT = 200
 MODELS = ("fable", "opus", "sonnet", "haiku")
 """The aliases Claude Code takes for the latest model of each family (`claude --help`, 2.1); a full model name works
 too."""
+logger = logging.getLogger(__name__)
 EFFORTS: tuple[Effort, ...] = ("low", "medium", "high", "xhigh", "max")
 """The efforts `claude --effort` takes (Claude Code 2.1)."""
 
@@ -83,27 +85,38 @@ class ClaudeCodeAccess:
         )
 
     def test(self) -> AccessTest:
-        """One short answer through the `claude-code` runner: no tools, an empty directory, at most TEST_MAX_USD."""
-        runner = ClaudeCodeRunner(self._settings, self._progress, self._execute, self._which)
+        """One short answer through the chat's own admission, so an OK means chat can run.
+
+        No model override, a claude.ai subscription login, the reviewed release, the help contract, the closed result.
+        """
+        from heinzel.kernel._claude_code import (  # noqa: PLC0415 - bridge admission only when testing
+            Denial,
+            SubscriptionDeniedError,
+            check_access,
+            require_no_model_override,
+            require_subscription_login,
+        )
+
+        found = self._which(self._settings.claude_executable)
+        if found is None:
+            return AccessTest(
+                ok=False,
+                detail=f"{self._settings.claude_executable} is not on PATH",
+                fix=f"Install Claude Code: {DOCS}",
+            )
+        started = time.monotonic()
         try:
-            with tempfile.TemporaryDirectory(prefix="hz-ai-test-") as directory:
-                result = runner.run(
-                    TEST_PROMPT,
-                    contract="",
-                    tools=ToolProfile(working_dir=Path(directory), read_files=False),
-                    timeout=TEST_TIMEOUT,
-                    budget=Budget(max_usd=TEST_MAX_USD),
-                )
-        except HeinzelError as exc:  # the CLI is missing: a failed check, not an error
-            return AccessTest(ok=False, detail=str(exc), fix=f"Install Claude Code: {DOCS}")
-        ok = result.status == "completed"
+            require_no_model_override(self._settings.model)
+            require_subscription_login(Path(found), self._execute)
+            version, answer = check_access(Path(found), self._execute, TEST_PROMPT, TEST_TIMEOUT.total_seconds())
+        except SubscriptionDeniedError as denied:
+            log_event(logger, "ai.access.claude_code_refused", level=logging.WARNING, reason=denied.reason.value)
+            fix = f"Install Claude Code: {DOCS}" if denied.reason is Denial.UNAVAILABLE else ""
+            return AccessTest(ok=False, detail=str(denied), fix=fix, duration_seconds=time.monotonic() - started)
+        except HeinzelError as error:  # the usage limit: plain words, never the CLI's body
+            return AccessTest(ok=False, detail=str(error), duration_seconds=time.monotonic() - started)
         return AccessTest(
-            ok=ok,
-            detail=(result.draft.strip()[:ANSWER_LIMIT] if ok else result.detail) or result.status,
-            fix=result.fix,
-            model=result.model,
-            cost_usd=result.usage.cost_usd,
-            duration_seconds=result.duration_seconds,
-            input_tokens=result.usage.input_tokens,
-            output_tokens=result.usage.output_tokens,
+            ok=True,
+            detail=f"{answer.strip()[:ANSWER_LIMIT]} (Claude Code {version})",
+            duration_seconds=time.monotonic() - started,
         )
