@@ -589,6 +589,26 @@ def _link_host(ref: str, capability: str) -> str | None:
     return host
 
 
+def _opaque(ref: str, capability: str) -> None:
+    """Refuse an id that a connector could read as a link or a path: an id goes to a connector as it is (ADR 0161).
+
+    Raises:
+        HeinzelError: If `ref` holds whitespace, a control character, a backslash or `://`, or starts with `//`.
+    """
+    if (
+        not ref
+        or "://" in ref
+        or ref.startswith("//")
+        or "\\" in ref
+        or any(c.isspace() or not c.isprintable() for c in ref)
+    ):
+        msg = (
+            f"{clean_text(ref)[:_SHOWN]!r} is neither an http or https link nor a plain {capability} id: pass the "
+            "link alone, or an id without spaces, backslashes or `://`."
+        )
+        raise HeinzelError(msg)
+
+
 def _refs(value: object) -> tuple[str, ...]:
     """The references a result carries, its `ref` and `url`, to route a later call naming one of them."""
     return tuple(ref for field in ("ref", "url") if isinstance(ref := getattr(value, field, None), str))
@@ -851,6 +871,8 @@ class Capabilities:
         scheme = _SCHEME.match(target)
         is_id = named is not None and (scheme is None or scheme.group(1).lower() not in _WEB)
         host = None if is_id else _link_host(target, capability)
+        if host is None:
+            _opaque(target, capability)
         if host is not None:
             adapters = [a for name in names for a in self.adapters.get((capability, name), [])[:1]]
             matches = [a.let.adapter for a in adapters if host in self.links_of(a)]

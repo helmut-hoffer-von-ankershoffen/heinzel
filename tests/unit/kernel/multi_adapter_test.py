@@ -508,3 +508,31 @@ def test_a_named_connector_takes_an_id_with_a_colon(two):
         call(two, "show", ref="PROJ:123")
     document = call(two, "show", ref="wiki:PROJ:123")
     assert (document.title, document.source) == ("wiki:PROJ:123", "wiki")
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "drive: https://evil.example/x",
+        "drive:\thttps://evil.example/x",
+        "drive://evil.example/x",
+        "drive:file://evil.example/etc/passwd",
+        "drive:%68ttps://evil.example/x",
+        "drive:a\\b",
+        "drive:",
+        "%68ttps://evil.example/x",
+    ],
+)
+def test_an_id_after_a_connector_name_is_opaque(two, ref):
+    """Review R8: an id never smuggles a link or a path to a connector, for reads and for writes."""
+    for name in ("show", "publish"):
+        with pytest.raises(
+            HeinzelError,
+            match=r"(neither an http or https link nor a plain documents id|could be in|Only http and https links)",
+        ):
+            call(two, name, ref=ref)
+    assert (
+        two._capabilities._instances.get(("documents", "drive")) is None
+        or not two._capabilities._instances["documents", "drive"].written
+    )
+    assert call(two, "show", ref="wiki:PROJ:123").source == "wiki"
