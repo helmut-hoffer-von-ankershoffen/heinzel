@@ -4,7 +4,7 @@ PersonalSessionRepository stores each principal under the installation's trusted
 project configuration. The random workspace id identifies this server state, not the owner or network origin.
 
 Version 1 returns a UTC `generated_at`, `fresh_for_seconds` (300), `workspace_id`, capped `awake` and
-`waiting` counts and at most 40 roster items. `waiting` counts Heinzels with one or more pending owner asks.
+`waiting` counts and at most 40 roster items. `waiting` counts non-retired Heinzels with pending owner asks.
 Names are capped at 128 characters and per-Heinzel ask counts at 9999. Clients must reject a different workspace
 and treat the snapshot as stale after its freshness interval.
 """
@@ -71,6 +71,7 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
                 if operation is None:
                     return JSONResponse({"error": "Widget snapshot unavailable."}, status_code=503, headers=NO_STORE)
                 sessions = kernel.invoke(operation).sessions
+            active = [item for item in sessions if item.state != "retired"]
             roster = [
                 {
                     "id": item.session_id,
@@ -79,17 +80,16 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
                     "activity": item.activity,
                     "asks": min(item.waiting_count, 9999),
                 }
-                for item in sessions
-                if item.state != "retired"
-            ][:40]
+                for item in active[:40]
+            ]
             return JSONResponse(
                 {
                     "workspace_id": workspace,
                     "version": 1,
                     "generated_at": datetime.now(UTC).isoformat(),
                     "fresh_for_seconds": 300,
-                    "awake": min(9999, sum(s.state == "awake" for s in sessions)),
-                    "waiting": min(9999, sum(s.waiting_count > 0 for s in sessions)),
+                    "awake": min(9999, sum(s.state == "awake" for s in active)),
+                    "waiting": min(9999, sum(s.waiting_count > 0 for s in active)),
                     "roster": roster,
                 },
                 headers=NO_STORE,

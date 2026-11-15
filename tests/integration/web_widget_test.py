@@ -61,6 +61,9 @@ def test_widget_projection_is_bounded_and_credential_revokes(make_kernel, tmp_pa
         )
         for i in range(45)
     ]
+    sessions.append(
+        SimpleNamespace(session_id="retired", name="retired", state="retired", activity="idle", waiting_count=1)
+    )
     monkeypatch.setattr(SessionCrud, "listing", lambda self: SimpleNamespace(sessions=sessions))
     devices = Devices(tmp_path / "devices")
     client = TestClient(
