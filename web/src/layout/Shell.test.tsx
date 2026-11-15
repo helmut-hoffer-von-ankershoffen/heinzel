@@ -105,6 +105,30 @@ describe("Shell", () => {
     }
   });
 
+  it("keeps Chat chosen on a phone when it is pressed right after About opens the Heinzel's page", async () => {
+    mockApi({ ...answers, ...withHelmi });
+    const initialWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      renderAt("/doctor");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+      await user.click(await screen.findByRole("button", { name: "More: search, about" }));
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: /^About / }),
+      );
+      // The very next press, before anything else settles: the person's choice of Chat wins over the new address.
+      await user.click(screen.getByRole("tab", { name: "Chat" }));
+      await screen.findByRole("heading", { level: 1, name: /, your Heinzel$/ });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
+    }
+  });
+
   it("keeps a linked conversation in the link to a new Heinzel's draft", () => {
     expect(createDraftPath(new URLSearchParams({ chat: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", panel: "changelog" }))).toBe(
       "/heinzel?chat=hz-01ARZ3NDEKTSV4RRFFQ69G5FAV&create=1",

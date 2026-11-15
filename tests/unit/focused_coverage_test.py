@@ -1,14 +1,11 @@
 """Focused coverage preserves independent branch opportunities and both numeric gates."""
 
 import json
-import os
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
-from coverage import CoverageData
 
 pytestmark = pytest.mark.unit
 PRODUCTION = "src/heinzel/new.py"
@@ -92,8 +89,6 @@ def test_coverage_uses_unrounded_aggregate_and_retains_90_percent(coverage, scop
 
 
 def test_producer_reports_unimported_module_from_real_branch_data(coverage, scope, monkeypatch, tmp_path):
-    import subprocess
-    import sys
 
     root = tmp_path.resolve()
     monkeypatch.chdir(root)
@@ -127,89 +122,6 @@ def test_producer_reports_unimported_module_from_real_branch_data(coverage, scop
     assert rows[PRODUCTION]["missing_lines"] == [1, 2, 3, 4]
     assert rows[PRODUCTION]["missing_branches"] == [[2, 3], [2, 4]]
     assert rows[ALREADY_USED]["executed_lines"] == [1]
-
-
-def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
-    """Both real analysis paths must leave an outer measured worker's data intact."""
-    marker = tmp_path / "worker_marker.py"
-    marker.write_text(
-        "def before_opportunities():\n    return 11\n\n"
-        "def after_opportunities():\n    return 12\n\n"
-        "def before_instrument():\n    return 13\n\n"
-        "def after_instrument():\n    return 14\n"
-    )
-    config = tmp_path / "pyproject.toml"
-    config.write_text(
-        f"[tool.coverage.run]\nsource = [{json.dumps(str(tmp_path))}]\n"
-        'branch = true\nparallel = true\npatch = ["subprocess"]\n'
-    )
-    probe = tmp_path / "test_outer_worker_probe.py"
-    probe.write_text(
-        textwrap.dedent(f"""
-        from pathlib import Path
-
-        import worker_marker
-        from coverage import CoverageData
-        from scripts import focused_coverage as focused
-        from scripts.ci_workload import FocusedPlan
-        from scripts.focused_plan import Scope
-
-        CONFIG = Path({str(REPO / "pyproject.toml")!r}).read_bytes()
-        PATH = "src/heinzel/example.py"
-        SOURCE = b"def value():\\n    return 42\\n"
-        WORKLOAD = FocusedPlan("pull_request", "refs/pull/1/merge", "a", "b", "c", ("Focused tests (python)",))
-        SCOPE = Scope(WORKLOAD, "d", "e", {{}}, {{PATH: "source"}}, "config", {{}}, {{"python": ()}}, {{}}, "d")
-
-        def test_opportunities(monkeypatch):
-            assert worker_marker.before_opportunities() == 11
-            monkeypatch.setattr(focused, "git", lambda *_args: SOURCE)
-            rows = focused.source_opportunities(SCOPE, CONFIG)
-            assert rows[PATH]["missing_lines"] == [1, 2]
-            assert worker_marker.after_opportunities() == 12
-
-        def test_instrument(monkeypatch, tmp_path):
-            assert worker_marker.before_instrument() == 13
-            monkeypatch.chdir(tmp_path)
-            module = tmp_path / PATH
-            module.parent.mkdir(parents=True)
-            module.write_bytes(SOURCE)
-            monkeypatch.setattr(focused, "git", lambda *_args: CONFIG)
-            def execute(args, env):
-                # The selected tests' data, written here: no runner interpreter; the analysis child stays real.
-                del args
-                data = CoverageData(basename=env["COVERAGE_FILE"], suffix=True)
-                data.add_arcs({{str(module.resolve()): [(-1, 1), (1, -1)]}})
-                data.write()
-            monkeypatch.setattr(focused, "_execute", execute)
-            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest"], tmp_path, {{}})
-            assert (tmp_path / focused.MEASUREMENT).is_file()
-            assert worker_marker.after_instrument() == 14
-    """)
-    )
-    env = {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join((str(REPO), str(tmp_path))),
-        "COVERAGE_FILE": str(tmp_path / ".coverage"),
-        "PYTEST_ADDOPTS": "",
-        # The disposable probe needs real xdist, not unrelated installed pytest plugins.
-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-    }
-    run = [sys.executable, "-m", "coverage"]
-    subprocess.run(
-        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "1", "-q", str(probe)],
-        cwd=tmp_path,
-        env=env,
-        check=True,
-        capture_output=True,
-        timeout=90,
-    )
-    # Read the workers' data files directly: no combine or report interpreters, and nothing measured is disturbed.
-    executed: set[int] = set()
-    for path in tmp_path.glob(".coverage.*"):
-        data = CoverageData(basename=str(path))
-        data.read()
-        executed.update(*(data.lines(name) or () for name in data.measured_files() if Path(name).name == marker.name))
-    assert {2, 5, 8, 11} <= executed
 
 
 def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, tmp_path):

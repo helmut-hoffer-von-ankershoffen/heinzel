@@ -12,6 +12,7 @@ import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
+import { scrollSettled } from "./settle.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -979,6 +980,8 @@ try {
     const composer = heinzelComposer;
     await composer.waitFor();
     await composer.fill("");
+    // Opening the chat scrolls the workspace to it, smoothly: measure where the composer comes to rest.
+    await scrollSettled(composer);
     const composerBox = await composer.boundingBox();
     assert.ok(composerBox, `${spec.name}: composer has no box`);
     assert.ok(
@@ -1112,7 +1115,7 @@ try {
     await assertContained(page, page.getByLabel(/^Message /), `${spec.name}: Heinzel composer`);
     await assertContained(page, page.getByRole("button", { name: "Send" }), `${spec.name}: Heinzel send`);
     // The suggestion waits on the Heinzel's page, under Look and name; Use it applies it at once, with Undo.
-    await openDetails(page);
+    await openDetails(page, { show: "page" });
     const look = page.getByRole("region", { name: "Look and name" });
     const useSuggestion = look.getByRole("button", { name: "Use it" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);
