@@ -109,20 +109,34 @@ struct Endpoint: Equatable {
         return URLSession(configuration: configuration, delegate: RefuseRedirects(), delegateQueue: nil)
     }
 
-    static func connectionIssue(at origin: URL, using session: URLSession) async -> WorkspaceProblem? {
+    static func connectionIssue(at origin: URL, using existingSession: URLSession? = nil) async -> WorkspaceProblem? {
+        let session = existingSession ?? probeSession()
+        defer { if existingSession == nil { session.finishTasksAndInvalidate() } }
         let request = URLRequest(
             url: origin.appending(path: "manifest.webmanifest"),
             cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4
         )
         do {
-            let (_, response) = try await session.data(for: request)
-            guard let response = response as? HTTPURLResponse,
-                  (200..<300).contains(response.statusCode),
-                  response.mimeType == "application/manifest+json" else { return .unavailable }
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse else { return .unavailable }
+            switch response.statusCode {
+            case 200..<300: break
+            case 403: return .denied
+            case 404, 410: return .wrongAddress
+            default: return .unavailable
+            }
+            guard response.mimeType == "application/manifest+json",
+                  let manifest = try? JSONDecoder().decode(WorkspaceManifest.self, from: data),
+                  manifest.name == "Heinzelmännchen", manifest.short_name == "hz" else { return .wrongAddress }
             return nil
         } catch {
             return WorkspaceProblem(navigationError: error)
         }
+    }
+
+    private struct WorkspaceManifest: Decodable {
+        let name: String
+        let short_name: String
     }
 
     func verify() async throws {
@@ -198,7 +212,7 @@ enum WorkspaceProblem {
         case .slow: "Still trying to connect"
         case .signIn: "Sign in to your workspace"
         case .denied: "This workspace denied access"
-        case .wrongAddress: "Workspace address not found"
+        case .wrongAddress: "No Heinzel workspace at this address"
         case .insecure: "Secure connection unavailable"
         case .interrupted: "The workspace closed unexpectedly"
         }

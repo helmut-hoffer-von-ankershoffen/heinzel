@@ -2,6 +2,8 @@ import AVFoundation
 import SwiftUI
 import UserNotifications
 
+private let heinzelTagline = "Durable agents accelerating product teams, like the little elves from Cologne."
+
 private var heinzelAppVersion: String {
     let bundle = Bundle.main
     let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
@@ -15,6 +17,24 @@ private enum ConnectionPalette {
     static let muted = Color(red: 0.30, green: 0.36, blue: 0.32)
     static let warning = Color(red: 0.50, green: 0.25, blue: 0.17)
     static let rule = ink.opacity(0.14)
+}
+
+private struct ConnectionFooter: View {
+    var showTagline = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if showTagline { Text(heinzelTagline) }
+            Text(heinzelAppVersion)
+        }
+        .font(.caption2)
+        .foregroundStyle(ConnectionPalette.muted)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 460)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+    }
 }
 
 private extension View {
@@ -161,6 +181,8 @@ struct ConnectionView: View {
     @State private var workspaceBackground = Color("StartupBackground")
     @State private var error: String?
     @State private var showConnection = false
+    @State private var connectionSheetHeight: CGFloat = 390
+    @State private var showDisconnectConfirmation = false
     @State private var choosingWorkspace = false
     @State private var showConnectionHelp = false
     @State private var helpAfterConnection = false
@@ -168,6 +190,7 @@ struct ConnectionView: View {
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
     @State private var connectionIssue: WorkspaceProblem?
+    @State private var verifiedConnectionOrigin: URL?
     @FocusState private var editingLink: Bool
     @State private var draftRevision = 0
     @State private var checkedDraft: URL?
@@ -183,17 +206,19 @@ struct ConnectionView: View {
     }
 
     private var draftOrigin: URL? {
-        guard choosingWorkspace || endpoint == nil else { return nil }
-        let input = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        let target = Endpoint(input) ?? URL(string: input).flatMap(Endpoint.sharedWorkspace)
-        guard let origin = target?.origin, let host = origin.host(),
-              host == "localhost" || host.contains(".") || host.contains(":") else { return nil }
-        return origin
+        draftWorkspace?.origin
     }
+
+    private var draftWorkspace: Endpoint? {
+        guard choosingWorkspace || endpoint == nil else { return nil }
+        return parseWorkspaceLink(link)
+    }
+
+    private var trimmedLink: String { link.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var visibleProblem: WorkspaceProblem? {
         if let loadFailure {
-            return loadFailure.canReconnectAutomatically ? connectionIssue ?? loadFailure : loadFailure
+            return loadFailure.canReconnectAutomatically || loadFailure == .signIn ? connectionIssue ?? loadFailure : loadFailure
         }
         return loadingWorkspace ? connectionIssue : nil
     }
@@ -216,10 +241,19 @@ struct ConnectionView: View {
         .overlay {
             if choosingWorkspace { setup }
         }
+        .sheet(isPresented: $showConnection, onDismiss: {
+            if helpAfterConnection {
+                helpAfterConnection = false
+                showConnectionHelp = true
+            }
+        }) {
+            if let endpoint { connectionSheet(for: endpoint) }
+        }
         .sheet(isPresented: $showConnectionHelp) {
             ConnectionHelp(
-                origin: draftOrigin ?? endpoint?.origin ?? Endpoint(serverOrigin)?.origin,
-                activeWorkspace: draftOrigin == nil && loadFailure == nil && !loadingWorkspace ? endpoint : nil,
+                origin: choosingWorkspace ? draftOrigin : draftOrigin ?? endpoint?.origin ?? Endpoint(serverOrigin)?.origin,
+                activeWorkspace: !choosingWorkspace && draftOrigin == nil && loadFailure == nil && !loadingWorkspace ? endpoint : nil,
+                needsSignIn: !choosingWorkspace && loadFailure == .signIn,
                 workspaceIsCurrent: { target in endpoint == target && loadFailure == nil && !loadingWorkspace }
             )
                 .presentationBackground(Color("StartupBackground"))
@@ -244,6 +278,7 @@ struct ConnectionView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && draftOrigin != nil { draftRevision += 1 }
         }
+        .onChange(of: link) { _, _ in error = nil }
         .task(id: draftProbe) {
             guard let probe = draftProbe else { return }
             let origin = probe.origin
@@ -257,6 +292,7 @@ struct ConnectionView: View {
             checkedDraft = origin
         }
         .task(id: monitoredOrigin) {
+            verifiedConnectionOrigin = nil
             guard let origin = monitoredOrigin else { return }
             await watchConnection(to: origin)
         }
@@ -289,7 +325,7 @@ struct ConnectionView: View {
         #if DEBUG
         if let link = ProcessInfo.processInfo.environment["HZ_SPIKE_SERVER"] {
             startupStage = "Checking workspace connection…"
-            await connect(link, remember: false)
+            await connect(link, remember: false, checkHost: false)
             return
         }
         #endif
@@ -299,7 +335,7 @@ struct ConnectionView: View {
         #else
         if !serverOrigin.isEmpty && sharedWorkspace == nil {
             startupStage = "Checking workspace connection…"
-            await connect(serverOrigin)
+            await connect(serverOrigin, checkHost: false)
         } else {
             startupStage = "Looking for a saved workspace…"
         }
@@ -309,7 +345,7 @@ struct ConnectionView: View {
     @ViewBuilder
     private var content: some View {
         if let endpoint, loadFailure == .signIn {
-            if showingColdStart { startup } else { recovery(.signIn, for: endpoint) }
+            if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
         } else if let endpoint {
             let revision = loadRevision
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
@@ -319,8 +355,18 @@ struct ConnectionView: View {
                 loadFailure = nil
             }, reportError: { message in
                 guard self.endpoint == endpoint, loadRevision == revision else { return }
-                loadingWorkspace = false
-                loadFailure = message
+                if message == .signIn && endpoint.origin.scheme == "https" {
+                    Task {
+                        let issue = await Endpoint.connectionIssue(at: endpoint.origin)
+                        guard self.endpoint == endpoint, loadRevision == revision else { return }
+                        connectionIssue = issue
+                        loadFailure = issue ?? .signIn
+                        loadingWorkspace = false
+                    }
+                } else {
+                    loadingWorkspace = false
+                    loadFailure = message
+                }
             }, appearance: { color in
                 guard self.endpoint == endpoint, loadRevision == revision else { return }
                 workspaceBackground = color
@@ -373,74 +419,16 @@ struct ConnectionView: View {
                 showConnection = true
             }
             #else
-            .overlay(alignment: .bottomTrailing) {
-                if !loadingWorkspace && visibleProblem == nil {
-                    Button {
-                        showConnection = true
-                    } label: {
-                        Label("Connection", systemImage: "point.3.connected.trianglepath.dotted")
-                            .labelStyle(.iconOnly)
-                            .frame(width: 44, height: 44)
-                            .foregroundStyle(.primary)
-                            .background(.regularMaterial, in: Circle())
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 48)
-                    .padding(.trailing, 12)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !obscured {
+                    workspaceControl
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background { workspaceBackground.ignoresSafeArea(.container, edges: .bottom) }
                 }
             }
             #endif
-            .sheet(isPresented: $showConnection, onDismiss: {
-                if helpAfterConnection {
-                    helpAfterConnection = false
-                    showConnectionHelp = true
-                }
-            }) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Workspace Connection")
-                            .font(.system(.title2, design: .serif, weight: .semibold))
-                            .accessibilityAddTraits(.isHeader)
-                        workspaceAddress(endpoint.origin)
-                        if let shareURL = endpoint.shareURL {
-                            ShareLink(item: shareURL) { Label("Share Workspace Link", systemImage: "square.and.arrow.up") }
-                        }
-                        if let error {
-                            Label(error, systemImage: "info.circle")
-                                .font(.callout)
-                                .padding(12)
-                                .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        ViewThatFits(in: .horizontal) {
-                            HStack { connectionActions }
-                            VStack(alignment: .leading) { connectionActions }
-                        }
-                        Button {
-                            helpAfterConnection = true
-                            showConnection = false
-                        } label: {
-                            Label("Connection Help", systemImage: "questionmark.circle")
-                                .frame(minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.borderless)
-                        Divider()
-                        Button(role: .destructive, action: disconnect) {
-                            Text("Disconnect").frame(minHeight: 44).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    .frame(maxWidth: 420, alignment: .leading)
-                    .padding(24)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
-                .defaultScrollAnchor(.center, for: .alignment)
-                .environment(\.colorScheme, .light)
-                .tint(Color(red: 0.188, green: 0.282, blue: 0.227))
-                .presentationBackground(Color("StartupBackground"))
-                .presentationDetents([.medium, .large])
-            }
         } else if connecting || showingColdStart {
             startup
         } else if let target = sharedWorkspace {
@@ -463,12 +451,107 @@ struct ConnectionView: View {
         }
     }
 
-    @ViewBuilder
-    private var connectionActions: some View {
-        Button("Back to Workspace") { showConnection = false }
-            .buttonStyle(.borderedProminent)
-        Button("Switch Workspace", action: chooseAnotherWorkspace)
-            .buttonStyle(.bordered)
+    private var workspaceControl: some View {
+        Button {
+            showConnection = true
+        } label: {
+            Label("Workspace", systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows the address, connection status, and workspace actions")
+    }
+
+    private func connectionSheet(for endpoint: Endpoint) -> some View {
+        let problem = visibleProblem ?? connectionIssue
+        let confirmed = !loadingWorkspace && (endpoint.origin.scheme == "http" || verifiedConnectionOrigin == endpoint.origin)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Workspace Connection")
+                        .font(.system(.title2, design: .serif, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 4)
+                    Button { showConnection = false } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(problem == .signIn ? "Sign-in needed" : problem?.title ?? (confirmed ? "Connected" : "Checking connection…"),
+                          systemImage: problem?.icon ?? (confirmed ? "checkmark.circle.fill" : "ellipsis.circle"))
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(problem == nil && confirmed ? Color(red: 0.19, green: 0.37, blue: 0.27) : ConnectionPalette.muted)
+                        .accessibilityIdentifier("workspaceConnectionState")
+                    Text(endpoint.origin.absoluteString)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(ConnectionPalette.muted)
+                        .textSelection(.enabled)
+                }
+                .connectionPanel()
+                if let error {
+                    Label(error, systemImage: "exclamationmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(ConnectionPalette.warning)
+                }
+                VStack(spacing: 0) {
+                    if let shareURL = endpoint.shareURL {
+                        ShareLink(item: shareURL) { connectionRow("Share Workspace Link", "square.and.arrow.up") }
+                        Divider()
+                    }
+                    Button(action: chooseAnotherWorkspace) { connectionRow("Switch Workspace", "arrow.left.arrow.right") }
+                    Divider()
+                    Button {
+                        helpAfterConnection = true
+                        showConnection = false
+                    } label: {
+                        connectionRow("Connection Help", "questionmark.circle")
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ConnectionPalette.accent)
+                Button {
+                    showDisconnectConfirmation = true
+                } label: {
+                    connectionRow("Disconnect…", "rectangle.portrait.and.arrow.right")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ConnectionPalette.muted)
+                ConnectionFooter()
+            }
+            .frame(maxWidth: 420, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                connectionSheetHeight = min(520, max(300, height.rounded(.up)))
+            }
+        }
+        #if os(macOS)
+        .frame(width: 460, height: connectionSheetHeight)
+        #endif
+        .environment(\.colorScheme, .light)
+        .tint(ConnectionPalette.accent)
+        .presentationBackground(Color("StartupBackground"))
+        .presentationDetents([.height(connectionSheetHeight), .large])
+        .alert("Disconnect from this workspace?", isPresented: $showDisconnectConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Disconnect", role: .destructive, action: disconnect)
+        } message: {
+            Text(endpoint.origin.scheme == "http"
+                ? "This stops the local workspace and returns to the chooser."
+                : "You’ll return to the workspace chooser.")
+        }
+    }
+
+    private func connectionRow(_ title: String, _ icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     private func recovery(_ problem: WorkspaceProblem, for endpoint: Endpoint) -> some View {
@@ -477,7 +560,7 @@ struct ConnectionView: View {
                 .font(.system(.title2, design: .serif, weight: .semibold))
                 .foregroundStyle(ConnectionPalette.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text(problem.detail)
+            Text(problem == .signIn ? "Workspace reached. You still need to sign in on this device." : problem.detail)
                 .font(.callout)
                 .foregroundStyle(ConnectionPalette.muted)
             if endpoint.origin.scheme == "https" {
@@ -485,6 +568,10 @@ struct ConnectionView: View {
             }
             if problem == .signIn {
                 signInActions(for: endpoint)
+                Button("Choose a Different Workspace") { chooseDifferentWorkspace(from: endpoint) }
+                    .buttonStyle(.borderless)
+                    .controlSize(.large)
+                    .disabled(connecting)
             } else if problem.shouldEnterLink {
                 Button("Enter Workspace Link", action: chooseAnotherWorkspace)
                     .buttonStyle(.borderedProminent)
@@ -497,7 +584,18 @@ struct ConnectionView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
             }
-            if !choosingWorkspace { helpButton }
+            if !choosingWorkspace {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        workspaceControl
+                        helpButton
+                    }
+                    VStack(spacing: 4) {
+                        workspaceControl
+                        helpButton
+                    }
+                }
+            }
         }
         .multilineTextAlignment(.center)
     }
@@ -517,50 +615,87 @@ struct ConnectionView: View {
     }
 
     private func signInActions(for endpoint: Endpoint) -> some View {
-        VStack(spacing: 12) {
-            linkField("Private Sign-in Link") { signIn(link, at: endpoint) }
-            if let error {
-                Label(error, systemImage: "info.circle")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ask the workspace host for a sign-in link.")
+                .font(.callout)
+                .foregroundStyle(ConnectionPalette.muted)
+            linkField("Sign-in link") { signIn(at: endpoint) }
+            if let message = error ?? signInLinkIssue(for: endpoint) {
+                Label(message, systemImage: "exclamationmark.circle")
                     .font(.callout)
-                    .foregroundStyle(Color(red: 0.36, green: 0.22, blue: 0.17))
+                    .foregroundStyle(ConnectionPalette.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
-                Button(connecting ? "Signing In…" : "Sign In") { signIn(link, at: endpoint) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(connecting || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                #if os(iOS)
-                PasteButton(payloadType: String.self) { values in
-                    if let value = values.first {
-                        link = value
-                        error = nil
-                    }
-                }
-                .disabled(connecting)
-                #endif
+            Button { signIn(at: endpoint) } label: {
+                Text(connecting ? "Signing In…" : "Sign In")
+                    .frame(maxWidth: .infinity, minHeight: 30)
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(trimmedLink.isEmpty || signInLinkIssue(for: endpoint) != nil)
             .controlSize(.large)
-            Button("Use Another Workspace", action: chooseAnotherWorkspace)
-                .buttonStyle(.borderless)
-                .disabled(connecting)
         }
-        .frame(maxWidth: 320)
+        .disabled(connecting)
+        .multilineTextAlignment(.leading)
+        .connectionPanel()
     }
 
-    private func signIn(_ value: String, at endpoint: Endpoint) {
-        guard !connecting else { return }
-        guard let target = Endpoint(value), target.token != nil, endpoint.owns(target.origin) else {
-            error = "Use the private sign-in link for this workspace."
-            return
+    private func signInLinkIssue(for endpoint: Endpoint) -> String? {
+        guard !trimmedLink.isEmpty else { return nil }
+        let target = parseWorkspaceLink(link)
+        guard let target else { return "Enter the full sign-in link from the host." }
+        guard endpoint.owns(target.origin) else {
+            return "This link is for a different workspace. Choose a different workspace to use it."
         }
+        guard target.token != nil else {
+            return "This link leads to the workspace. Ask the host for a sign-in link to open it on this device."
+        }
+        return nil
+    }
+
+    private func chooseDifferentWorkspace(from endpoint: Endpoint) {
+        let alternateLink = parseWorkspaceLink(link).flatMap { endpoint.owns($0.origin) ? nil : link }
+        chooseAnotherWorkspace()
+        if let alternateLink { link = alternateLink }
+    }
+
+    private func signIn(at endpoint: Endpoint) {
+        guard !connecting, !trimmedLink.isEmpty, signInLinkIssue(for: endpoint) == nil else { return }
+        let value = link
+        editingLink = false
         Task { await connect(value) }
     }
 
     private func linkField(_ title: String, submit: @escaping () -> Void) -> some View {
-        SecureField(title, text: $link)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                SecureField(title, text: $link)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .submitLabel(.go)
+                    #endif
+                    .focused($editingLink)
+                    .accessibilityIdentifier("serverLink")
+                    .onSubmit(submit)
+                Button {
+                    link = ""
+                    error = nil
+                    editingLink = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ConnectionPalette.muted)
+                .accessibilityLabel("Clear link")
+                .opacity(link.isEmpty ? 0 : 1)
+                .allowsHitTesting(!link.isEmpty)
+                .accessibilityHidden(link.isEmpty)
+            }
+            .padding(.leading, 12)
             .frame(minHeight: 44)
             .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
             .overlay {
@@ -568,15 +703,14 @@ struct ConnectionView: View {
                     .strokeBorder(editingLink ? ConnectionPalette.accent : ConnectionPalette.rule)
                     .allowsHitTesting(false)
             }
-            .autocorrectionDisabled()
             #if os(iOS)
-            .textInputAutocapitalization(.never)
-            .keyboardType(.URL)
-            .submitLabel(.go)
+            PasteButton(payloadType: String.self) { values in
+                if let value = values.first { link = value }
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.large)
             #endif
-            .focused($editingLink)
-            .accessibilityIdentifier("serverLink")
-            .onSubmit(submit)
+        }
     }
 
     private var startup: some View {
@@ -599,7 +733,6 @@ struct ConnectionView: View {
                     .buttonStyle(.bordered)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { versionFooter }
         .task(id: stoppingLocalWorkspace) {
             startupIsSlow = false
             guard !stoppingLocalWorkspace else { return }
@@ -615,11 +748,7 @@ struct ConnectionView: View {
     }
 
     private var versionFooter: some View {
-        Text(heinzelAppVersion)
-            .font(.caption2)
-            .foregroundStyle(Color(red: 0.38, green: 0.40, blue: 0.38))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+        ConnectionFooter()
     }
 
     private func launchCard(
@@ -639,11 +768,12 @@ struct ConnectionView: View {
             .padding(24)
             .frame(maxWidth: .infinity)
         }
-        .defaultScrollAnchor(.center, for: .alignment)
+        .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
+        .safeAreaInset(edge: .bottom, spacing: 0) { if !editingLink { versionFooter } }
     }
 
     private func brandHeader(loading: Bool = false, compact: Bool = false) -> some View {
@@ -659,8 +789,8 @@ struct ConnectionView: View {
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
-            if !loading && !compact {
-                Text("Durable agents accelerating product teams, like the little elves from Cologne.")
+            if !loading && !editingLink {
+                Text(heinzelTagline)
                     .font(.callout)
                     .foregroundStyle(ConnectionPalette.muted)
                     .multilineTextAlignment(.center)
@@ -745,7 +875,7 @@ struct ConnectionView: View {
         #if os(iOS)
         .scrollDismissesKeyboard(.interactively)
         #endif
-        .defaultScrollAnchor(.center, for: .alignment)
+        .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxHeight: .infinity)
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
@@ -761,34 +891,28 @@ struct ConnectionView: View {
                 .font(.system(.title2, design: .serif, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
-            Text("Open a shared link or enter a link from your workspace host.")
+            Text("Enter the link your workspace host shared with you.")
                 .font(.callout)
                 .foregroundStyle(ConnectionPalette.muted)
-            linkField("Workspace or sign-in link") { Task { await connect(link) } }
+            linkField("Workspace link", submit: connectDraft)
             if let origin = draftOrigin { reachability(for: origin) }
+            if draftWorkspace == nil && !trimmedLink.isEmpty {
+                Label("Enter the full workspace link from the host.", systemImage: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(ConnectionPalette.warning)
+            }
             if let error {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(ConnectionPalette.warning)
             }
-            Button {
-                Task { await connect(link) }
-            } label: {
+            Button(action: connectDraft) {
                 Text(connecting ? "Connecting…" : "Connect")
                     .frame(maxWidth: .infinity, minHeight: 30)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(connecting || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            #if os(iOS)
-            PasteButton(payloadType: String.self) { values in
-                guard let value = values.first else { return }
-                link = value
-                error = nil
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.large)
-            #endif
+            .disabled(!canConnectDraft)
         }
         .connectionPanel()
     }
@@ -821,11 +945,23 @@ struct ConnectionView: View {
         }
     }
 
-    private func connect(_ input: String, remember: Bool = true) async {
+    private var canConnectDraft: Bool {
+        guard let origin = draftOrigin else { return false }
+        return !connecting && checkedDraft == origin && draftIssue == nil
+    }
+
+    private func connectDraft() {
+        guard canConnectDraft else { return }
+        let value = link
+        editingLink = false
+        Task { await connect(value) }
+    }
+
+    private func connect(_ input: String, remember: Bool = true, checkHost: Bool = true) async {
         guard !connecting else { return }
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let target = Endpoint(value) ?? URL(string: value).flatMap(Endpoint.sharedWorkspace) else {
-            error = "Enter a workspace link or private HTTPS address."
+        guard let target = parseWorkspaceLink(value) else {
+            error = "Enter the full workspace link from the host."
             return
         }
         // A shared address can refer to the active workspace, including a session
@@ -838,6 +974,11 @@ struct ConnectionView: View {
         connecting = true
         error = nil
         defer { connecting = false }
+        if checkHost, let issue = await Endpoint.connectionIssue(at: target.origin) {
+            error = issue.title
+            if endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
+            return
+        }
         do {
             try await target.verify()
             if remember { serverOrigin = target.origin.absoluteString }
@@ -856,6 +997,10 @@ struct ConnectionView: View {
             self.error = (error as? ConnectionError)?.errorDescription ?? "The server could not be reached."
             if endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
         }
+    }
+
+    private func parseWorkspaceLink(_ input: String) -> Endpoint? {
+        Endpoint(input) ?? URL(string: input.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap(Endpoint.sharedWorkspace)
     }
 
     private func chooseAnotherWorkspace() {
@@ -908,6 +1053,7 @@ struct ConnectionView: View {
             guard !Task.isCancelled, monitoredOrigin == origin else { return }
             let recovered = connectionIssue != nil && issue == nil
             connectionIssue = issue
+            verifiedConnectionOrigin = issue == nil ? origin : nil
             if recovered && (loadFailure?.canReconnectAutomatically == true || loadingWorkspace) { retryWorkspace() }
             let delay = issue == nil ? 12 : retryDelay
             retryDelay = issue == nil ? 2 : min(retryDelay * 2, 12)
@@ -944,6 +1090,7 @@ struct ConnectionView: View {
 private struct ConnectionHelp: View {
     let origin: URL?
     let activeWorkspace: Endpoint?
+    let needsSignIn: Bool
     let workspaceIsCurrent: (Endpoint) -> Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -1082,7 +1229,7 @@ private struct ConnectionHelp: View {
                 .connectionPanel()
 
                 DisclosureGroup("Which link should I use?") {
-                    Text("Open the workspace link to choose a workspace. On a new device, paste the private sign-in link from your host. Keep that link private.")
+                    Text("Start with the link your workspace host sent you. If Heinzel asks you to sign in, ask the host for a sign-in link. It gives this device access, so keep it private.")
                         .font(.callout)
                         .padding(.top, 8)
                 }
@@ -1096,9 +1243,6 @@ private struct ConnectionHelp: View {
                         .font(.callout)
                         .padding(.top, 8)
                 }
-                Text(heinzelAppVersion)
-                    .font(.caption)
-                    .foregroundStyle(ConnectionPalette.muted)
             }
             .frame(maxWidth: 460, alignment: .leading)
             .padding(.horizontal, 24)
@@ -1107,6 +1251,9 @@ private struct ConnectionHelp: View {
             .frame(maxWidth: .infinity)
         }
         .safeAreaInset(edge: .top, spacing: 0) { diagnosticsHeader }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ConnectionFooter(showTagline: true).background(Color("StartupBackground"))
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && !checking && !testingAudio && !askingPermission {
                 Task { await refreshPermissions() }
@@ -1173,6 +1320,8 @@ private struct ConnectionHelp: View {
 
     private var connectionSummary: String? {
         if let workspace = results[.workspace], workspace.status == .passed {
+            if needsSignIn { return "Workspace reached. Sign-in needed." }
+            if activeWorkspace != nil { return "Workspace open" }
             return "Workspace reachable"
         }
         if results[.internet]?.status == .failed { return "Internet check failed" }
@@ -1369,6 +1518,6 @@ private struct ConnectionHelp: View {
         if let issue = await Endpoint.connectionIssue(at: origin, using: session) {
             return Result(.failed, issue.title)
         }
-        return Result(.passed, "\(origin.host() ?? "Workspace") is reachable")
+        return Result(.passed, "Reached \(origin.host() ?? "the workspace")")
     }
 }
