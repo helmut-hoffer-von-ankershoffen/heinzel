@@ -35,6 +35,8 @@ if (journey === "tally") {
 const visible = process.env.HZ_JOURNEY_VISIBLE === "1";
 if (visible && process.platform !== "linux") throw new Error("A shown window is for Linux under Xvfb only; everywhere else the app stays hidden.");
 if (visible && !tallyFile) throw new Error("Set HZ_JOURNEY_TALLY to the file the journeys note their in-frame presses in.");
+// The Heinzel's journey is the first of a run: it starts the notes afresh, so no earlier run's count is added.
+if (visible && journey === "heinzel") await writeFile(tallyFile, "");
 if (journey !== "heinzel" && journey !== "mcp") throw new Error("Say which journey: heinzel or mcp.");
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const python = process.env.HZ_JOURNEY_PYTHON;
