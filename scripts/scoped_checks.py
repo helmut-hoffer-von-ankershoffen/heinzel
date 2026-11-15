@@ -37,8 +37,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    "tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl"
-    "#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7"
+    "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
+    "#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38"
 )
 
 
