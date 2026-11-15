@@ -54,10 +54,13 @@ struct WorkspaceView: WebRepresentable {
             forMainFrameOnly: true, in: .defaultClient
         ))
         // The bundle path belongs to this Mac and is only shared with the local service it launched.
-        let about = endpoint.origin.scheme == "http"
-            ? "about: () => window.webkit.messageHandlers.heinzelWindow.postMessage('about'),"
+        let localCommands = endpoint.origin.scheme == "http"
+            ? """
+                about: () => window.webkit.messageHandlers.heinzelWindow.postMessage('about'),
+                lifecycle: () => window.webkit.messageHandlers.heinzelWindow.postMessage('lifecycle'),
+                """
             : ""
-        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(about)"
+        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(localCommands)"
         #else
         let chrome = ""
         #endif
@@ -400,6 +403,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                   let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             else { return (nil, "App details unavailable") }
             return (["version": version, "path": Bundle.main.bundleURL.path], nil)
+        }
+        if message.name == "heinzelWindow", message.body as? String == "lifecycle" {
+            guard endpoint.origin.scheme == "http", revision == documentRevision, case .idle = provisionalLoad,
+                  let state = try? await endpoint.readLifecycle(),
+                  self.workspace === workspace, revision == documentRevision else {
+                return (nil, "Local service unavailable")
+            }
+            return (["instance": state.instance, "version": state.version, "restartable": state.restartable == true], nil)
         }
         if message.name == "heinzelDrag" {
             observeWindow(workspace.window)

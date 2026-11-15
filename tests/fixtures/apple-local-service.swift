@@ -13,8 +13,18 @@ struct LocalServiceProbe {
             await service.stop()
             throw ProbeFailure.unexpectedStartup
         }
+        let endpoint: Endpoint
         do {
-            let endpoint = try await service.start()
+            endpoint = try await service.start()
+            let state = try await endpoint.readLifecycle()
+            guard state.instance == "fixture", state.version == "1.0", state.restartable == true else {
+                throw ProbeFailure.unexpectedLifecycle
+            }
+        } catch {
+            await service.stop()
+            throw ProbeFailure.unexpectedLifecycle
+        }
+        do {
             // The child writes a full megabyte to stdout before replying to this request.
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForResource = 3
@@ -33,6 +43,6 @@ struct LocalServiceProbe {
     }
 
     enum ProbeFailure: Error {
-        case unexpectedStartup, outputBlocked, uncleanShutdown
+        case unexpectedStartup, unexpectedLifecycle, outputBlocked, uncleanShutdown
     }
 }

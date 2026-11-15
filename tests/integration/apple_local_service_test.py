@@ -45,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/lifecycle":
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b'{"instance":"fixture","version":"1.0"}')
+            self.wfile.write(b'{"instance":"fixture","version":"1.0","restartable":true}')
         elif self.path == "/noise":
             print("x" * 1048576, flush=True)
             self.send_response(204)

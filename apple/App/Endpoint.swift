@@ -1,4 +1,7 @@
 import Foundation
+#if os(macOS)
+import CFNetwork
+#endif
 
 struct Endpoint: Equatable {
     let url: URL
@@ -95,10 +98,29 @@ struct Endpoint: Equatable {
     }
 
     func verify() async throws {
-        guard let token else { return }
-        let session = URLSession(configuration: .ephemeral, delegate: RefuseRedirects(), delegateQueue: nil)
+        if token != nil { _ = try await readLifecycle() }
+    }
+
+    func readLifecycle() async throws -> Lifecycle {
+        guard let token else { throw ConnectionError.authentication }
+        let configuration = URLSessionConfiguration.ephemeral
+        #if os(macOS)
+        if origin.scheme == "http" {
+            // The launch token belongs only to the owned loopback listener.
+            configuration.connectionProxyDictionary = [
+                kCFNetworkProxiesHTTPEnable as String: 0,
+                kCFNetworkProxiesHTTPSEnable as String: 0,
+                kCFNetworkProxiesSOCKSEnable as String: 0,
+                kCFNetworkProxiesProxyAutoConfigEnable as String: 0,
+                kCFNetworkProxiesProxyAutoDiscoveryEnable as String: 0,
+            ]
+        }
+        #endif
+        let session = URLSession(configuration: configuration, delegate: RefuseRedirects(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        var request = URLRequest(url: origin.appending(path: "api/lifecycle"), timeoutInterval: 6)
+        var request = URLRequest(
+            url: origin.appending(path: "api/lifecycle"), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6
+        )
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (body, response) = try await session.data(for: request)
@@ -107,11 +129,13 @@ struct Endpoint: Equatable {
               !lifecycle.instance.isEmpty, !lifecycle.version.isEmpty else {
             throw ConnectionError.authentication
         }
+        return lifecycle
     }
 
-    private struct Lifecycle: Decodable {
+    struct Lifecycle: Decodable {
         let instance: String
         let version: String
+        let restartable: Bool?
     }
 }
 
