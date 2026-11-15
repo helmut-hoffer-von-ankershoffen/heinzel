@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -19,6 +19,7 @@ LINT := \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&design=uv run python scripts/design_tokens.py --check" \
+		"&release-policy=uv run --script scripts/release_policy.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
@@ -31,9 +32,10 @@ TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
 TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
 # The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
-# deadline on a busy developer machine. Match `make test`'s 420s allowance; coverage still measures every worker.
+# deadline on a busy developer machine. 720s (es8j): the measured suite took 285 to 411s on recent runs and hit 420s at
+# 97 % on the 0.9.43 candidate (run 43682716777, 14343 passed); the owner raised it. Coverage measures every worker.
 # ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=420
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=720
 # The web head's app in web/ (ADR 0039): pnpm from scripts/tools.toml on the Node.js of uv.lock, through scripts/web_build.py,
 # which installs web/'s dependencies first when they are stale. Plugins have no web/; the template leaves these out.
 WEB := uv run --quiet --script scripts/web_build.py
@@ -52,8 +54,13 @@ MANAGED_TYPES := "&managed-types=$(MANAGED) exec tsc --noEmit --project ."
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+pyyaml: ## Build the reviewed PyYAML into .venv (Python 3.15 has no wheel), so no later sync builds it from source
+	@uv venv --quiet --allow-existing --python 3.15
+	@bash scripts/bootstrap-pyyaml.sh
+
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
+	@$(MAKE) --no-print-directory pyyaml # no wheel on Python 3.15: the reviewed build goes in before any sync
 	@uv run --quiet --script scripts/build.py sync && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
@@ -95,6 +102,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&design=uv run python scripts/design_tokens.py --check" \
+		"&release-policy=uv run --script scripts/release_policy.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
@@ -250,7 +258,7 @@ commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conve
 		'&branch=[ -z "$$BRANCH" ] || uv run --script scripts/check_confidentiality.py --text "$$BRANCH"'
 
 test-all-pythons: ## Run unit and integration tests on every supported Python, in isolated environments
-	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
+	$(STEPS) $(foreach python,3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
 
 test-unit: ## Run unit tests
 	uv run pytest -m unit
@@ -327,13 +335,13 @@ licenses: ## Check that runtime dependencies' licenses are on .license-allowlist
 template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
 	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
 
-docs: ## Regenerate the references (MODULES, CLI_REFERENCE, CONFIGURATION) and every plugin's page from the code
+docs: ## Regenerate the references (MODULES, CLI_REFERENCE, MCP_REFERENCE, CONFIGURATION) and every plugin's page from the code
 	uv run python scripts/generate_docs.py
 
 attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text
 	uv run --quiet --script scripts/attributions.py
 
-fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
+fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, paused: no atheris wheel for Python 3.15)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
 demo: ## Render the README's intro, docs/assets/demo.{gif,webp,mp4}: the demo tape's CLI part, then the UI scenes of docs/scenes.toml

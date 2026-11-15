@@ -5,8 +5,10 @@ import { createBrowserRouter, Navigate, type RouteObject, RouterProvider, useSea
 import { ApiError } from "@/api/client";
 import { CopyCommand } from "@/components/common";
 import { ErrorBoundary, RouteError } from "@/components/ErrorScreen";
+import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { t } from "@/i18n";
 import { Shell } from "@/layout/Shell";
+import { Bookmarks } from "@/pages/Bookmarks";
 import { Contract } from "@/pages/Contract";
 import { Contracts } from "@/pages/Contracts";
 import { Doctor } from "@/pages/Doctor";
@@ -36,6 +38,7 @@ export const routes: RouteObject[] = [
       { path: "settings", element: <SettingsLink /> },
       { path: "notifications", element: <Navigate replace to="/?panel=notifications" /> },
       { path: "heinzel", element: <Heinzelmaennchen /> },
+      { path: "heinzel/:id", element: <HeinzelPage /> },
       { path: "contracts", element: <Contracts /> },
       { path: "contracts/:name", element: <Contract /> },
       { path: "graph", element: <GraphView /> },
@@ -44,6 +47,7 @@ export const routes: RouteObject[] = [
       { path: "inventory/types", element: <AssetTypes /> },
       { path: "inventory/assets", element: <Assets /> },
       { path: "doctor", element: <Doctor /> },
+      { path: "bookmarks", element: <Bookmarks /> },
       { path: "profile", element: <Profile /> },
       { path: "plugins/*", element: <InstalledPage /> },
       { path: "*", element: <NotFound /> },

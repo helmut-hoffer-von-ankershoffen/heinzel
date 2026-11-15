@@ -8,7 +8,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypedDict
 
 import typer
 from pydantic import BaseModel
@@ -16,7 +16,16 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from heinzel.heads.cli._render import message
-from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, parse_duration
+from heinzel.kernel import (
+    KERNEL_SECTION,
+    ConfigEditor,
+    CurrentUser,
+    HeinzelError,
+    Kernel,
+    PersistentWeb,
+    Settings,
+    parse_duration,
+)
 
 if TYPE_CHECKING:
     from heinzel.heads._mcp_tokens import McpToken, McpTokens
@@ -118,6 +127,7 @@ def serve_group(
         serving = partial(head.serve, transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
         _refused_or_served(lambda: serving(expose=expose, allowed_hosts=tuple(allowed_host or ())), err_console)
 
+    _add_mcp_switch(serve, footer, kernel, err_console)
     _add_mcp_check(serve, footer, err_console)
     _add_mcp_project_install(serve, footer, err_console)
 
@@ -380,6 +390,93 @@ def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console)
             err_console.print(message("Can't check:", "The MCP endpoint could not be authenticated and initialized."))
             raise typer.Exit(1) from None
         typer.echo(json.dumps({"mcp_readiness": "initialized", "tools": count, "worker_ownership": "unverified"}))
+
+
+class McpState(TypedDict):
+    """What `mcp-start`, `mcp-stop` and `mcp-status` report."""
+
+    enabled: bool
+    url: str
+    shared_urls: list[str]
+    serving: bool
+
+
+def _mcp_state(kernel: Kernel) -> McpState:
+    """The `[hz] mcp_http` switch as the files hold it now, where it is served, and whether the web app answers."""
+    settings = kernel.config.reread().settings(Settings, KERNEL_SECTION)
+    url = f"http://127.0.0.1:{settings.ui_port}/mcp"
+    shared = sorted(f"{origin}/mcp" for origin in settings.ui_allowed_origins)
+    return {
+        "enabled": settings.mcp_http,
+        "url": url,
+        "shared_urls": shared,
+        "serving": _mcp_serving(settings.ui_port) if settings.mcp_http else False,
+    }
+
+
+def _mcp_serving(port: int) -> bool:
+    """Whether the web app answers `/mcp` (401 without a token) on its port; False when it isn't running or it's off."""
+    import http.client  # noqa: PLC0415 - only for this check
+
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        connection.request("GET", "/mcp")
+        return connection.getresponse().status in {http.client.UNAUTHORIZED, http.client.BAD_REQUEST}
+    except OSError:
+        return False
+    finally:
+        connection.close()
+
+
+def _print_mcp_state(state: McpState, *, json_output: bool) -> None:
+    """The switch, as JSON or as lines saying what to do next."""
+    if json_output:
+        typer.echo(json.dumps(state))
+        return
+    if not state["enabled"]:
+        typer.echo("MCP for other agents is off. `hz system serve mcp-start` turns it on (or Settings, MCP).")
+        return
+    if state["serving"]:
+        typer.echo(f"MCP for other agents is on at {state['url']}")
+    else:
+        typer.echo(f"MCP for other agents is on, and `hz ui serve` serves it at {state['url']} once it runs.")
+    for url in state["shared_urls"]:
+        typer.echo(f"Shared: {url}")
+    typer.echo("Every agent needs a token: `hz system serve mcp-token create --actor NAME`.")
+
+
+def _add_mcp_switch(serve: typer.Typer, footer: str | None, kernel: Kernel, err_console: Console) -> None:
+    """Register `mcp-start`, `mcp-stop` and `mcp-status`: the one setting that serves MCP at `/mcp` on the web app."""
+
+    def change(*, on: bool, json_output: bool) -> None:
+        try:
+            kernel.resolve(ConfigEditor).write("hz.mcp_http", on)
+        except HeinzelError as exc:
+            err_console.print(message("Can't change it:", str(exc)))
+            raise typer.Exit(1) from None
+        state = _mcp_state(kernel)
+        if state["enabled"] is not on:
+            err_console.print(message("Not in effect:", "the environment (HZ_MCP_HTTP) overrides the configuration."))
+            raise typer.Exit(1)
+        _print_mcp_state(state, json_output=json_output)
+
+    @serve.command(name="mcp-start", epilog=footer)
+    def mcp_start(json_output: JsonOption = False) -> None:
+        """Serve MCP to other agents at /mcp on the web app's address; the running web app follows at once.
+
+        It sets `[hz] mcp_http`, the switch Settings, MCP shows too. Nothing else has to run beyond `hz ui serve`.
+        """
+        change(on=True, json_output=json_output)
+
+    @serve.command(name="mcp-stop", epilog=footer)
+    def mcp_stop(json_output: JsonOption = False) -> None:
+        """Stop serving MCP at /mcp; open agent sessions end, the tokens stay."""
+        change(on=False, json_output=json_output)
+
+    @serve.command(name="mcp-status", epilog=footer)
+    def mcp_status(json_output: JsonOption = False) -> None:
+        """Say whether MCP is on, where it is served and whether the web app answers it."""
+        _print_mcp_state(_mcp_state(kernel), json_output=json_output)
 
 
 class TokenScope(StrEnum):

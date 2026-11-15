@@ -41,13 +41,13 @@ def expert(service: ExpertService) -> ExpertMode:
     return service.mode()
 
 
-@module.operation(read_only=False, render=render, audience="everyday")
+@module.operation(read_only=False, render=render, audience="everyday", agents="direct")
 def on(service: ExpertService) -> ExpertMode:
     """Turn expert mode on: help, completion and the web app list every command."""
     return service.change(expert=True)
 
 
-@module.operation(read_only=False, render=render, audience="everyday")
+@module.operation(read_only=False, render=render, audience="everyday", agents="direct")
 def off(service: ExpertService) -> ExpertMode:
     """Turn expert mode off: help, completion and the web app list the everyday commands."""
     return service.change(expert=False)

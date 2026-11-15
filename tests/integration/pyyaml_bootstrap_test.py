@@ -1,5 +1,6 @@
 """The compatibility build rejects modified source before running a build backend."""
 
+import json
 import os
 import subprocess
 import sys
@@ -11,15 +12,34 @@ import pytest
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/bootstrap-pyyaml.sh"
+MODULE = ROOT / "src/heinzel/bootstrap_pyyaml.py"
 
 
 def test_bootstrap_uses_the_locked_pyyaml_source():
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     package = next(item for item in lock["package"] if item["name"] == "pyyaml")
+    pins = json.loads(
+        subprocess.run(
+            [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=10
+        ).stdout
+    )
+    assert pins["source_url"] == package["sdist"]["url"]
+    assert "sha256:" + pins["source_sha256"] == package["sdist"]["hash"]
+    assert pins["version"] == package["version"]
+
+
+def test_the_script_and_the_template_keep_no_copy_of_a_pin():
+    """One source: the module the Core wheel ships. The script and a generated project only run it."""
     script = SCRIPT.read_text()
-    assert f"source_url={package['sdist']['url']}\n" in script
-    assert f"source_sha={package['sdist']['hash'].removeprefix('sha256:')}\n" in script
-    assert f"pyyaml-{package['version']}.tar.gz" in script
+    assert "files.pythonhosted.org" not in script
+    assert "sha256" not in script
+    assert "6.0.3" not in script
+    assert not (ROOT / "scripts/pyyaml-build-requirements.txt").exists()
+    mirror = ROOT / "template/scripts/bootstrap_pyyaml.py.jinja"
+    assert mirror.is_symlink()
+    assert mirror.resolve() == MODULE
+    # copier renders the mirror as a template: nothing in it may read as Jinja
+    assert not any(mark in MODULE.read_text() for mark in ("{{", "{%", "{#"))
 
 
 def project_environment(tmp_path):

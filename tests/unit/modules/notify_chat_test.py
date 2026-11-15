@@ -11,7 +11,7 @@ import pytest
 from heinzel import HeinzelError, NoticeHelper, NoticeKind, SelfMessage
 from heinzel.kernel._self_chat import SelfChat
 from heinzel.modules.system.notify import NotifyService, NotifySettings
-from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, notice_ledger
+from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, forget_chats, notice_ledger
 from heinzel.modules.system.notify._native import Native
 
 pytestmark = pytest.mark.unit
@@ -284,3 +284,55 @@ def test_a_send_a_finished_process_left_claimed_is_taken_over(make):
     with service.chat_ledger.locked() as state:
         state["sent"][notice.id] = f"sending:{__import__('os').getpid()}"  # this process is still at it
     assert service.post_chat() == 0
+
+
+def test_the_threads_of_deleted_chats_are_forgotten_and_never_reused(make, clock):
+    inbox = Inbox()
+    service = make(inbox, chat_notifications=True)
+    with service.chat_ledger.locked() as state:
+        state["threads"].update({"/heinzel?chat=hz-gone": "t-gone", "/heinzel?chat=hz-1": "t-1", "/doctor": "t-d"})
+    assert service.forget_chats(lambda: {"hz-1", "hz-2"}) == 1
+    with service.chat_ledger.locked() as state:
+        assert state["threads"] == {"/heinzel?chat=hz-1": "t-1", "/doctor": "t-d"}, "other routes stay"
+    helper = NoticeHelper(name="Ada", reason="scheduled check-in")
+    service.emit(
+        NoticeKind.HEINZEL, "Ada checked in", "", route="/heinzel?chat=hz-gone", command="hz", key="k", helper=helper
+    )
+    _wait_for(lambda: not service._chat_busy.locked())  # recording it kicked the background sender
+    service.post_chat()  # whichever sender comes first sends it, once
+    assert len(inbox.sent) == 1
+    assert inbox.sent[0]["thread"] is None
+
+
+def test_forgetting_never_raises_for_an_unreadable_ledger(make, monkeypatch):
+    service = make(Inbox())
+
+    def unreadable(*_args: object) -> int:
+        raise OSError
+
+    monkeypatch.setattr("heinzel.modules.system.notify._chat.forget_chats", unreadable)
+    assert service.forget_chats(set) == 0
+    assert forget_chats(service.chat_ledger, set) == 0
+
+
+def test_a_chat_created_while_the_chats_are_listed_keeps_its_notice_thread(make):
+    service = make(Inbox())
+    with service.chat_ledger.locked() as state:
+        state["threads"].update({"/heinzel?chat=hz-gone": "t-gone", "/doctor": "t-d"})
+
+    def racing() -> set[str]:
+        with service.chat_ledger.locked() as state:  # another process notifies a chat created after the listing
+            state["threads"]["/heinzel?chat=hz-fresh"] = "t-fresh"
+        return set()
+
+    assert service.forget_chats(racing) == 1
+    with service.chat_ledger.locked() as state:
+        assert state["threads"] == {"/doctor": "t-d", "/heinzel?chat=hz-fresh": "t-fresh"}
+
+
+def test_forgetting_with_no_ledger_writes_none_and_lists_no_chats(make):
+    service = make(Inbox())
+    listed: list[bool] = []
+    assert service.forget_chats(lambda: listed.append(True) or set()) == 0
+    assert not service.chat_ledger.path.exists()
+    assert listed == []

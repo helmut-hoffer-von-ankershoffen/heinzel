@@ -9,7 +9,7 @@ import {
   type SchemaConnectedGrantProposal,
   type SchemaRollingConnectedGrantProposal,
 } from "@/api/client";
-import { ActionCard } from "@/chat/Conversation";
+import { ActionCard } from "@/chat/ActionCard";
 import { Button } from "@/components/ui/button";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {

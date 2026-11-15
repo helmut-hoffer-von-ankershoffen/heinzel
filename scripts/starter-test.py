@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Exercise fresh standalone and collection authors against installed core and toolkit artifacts."""
@@ -7,6 +7,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,8 +17,8 @@ from pathlib import Path
 
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    "tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl"
-    "#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7"
+    "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
+    "#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38"
 )
 
 
@@ -76,6 +77,44 @@ def check_collection_message(log: Path) -> None:
         raise AssertionError(msg)
 
 
+def uv_shim(directory: Path, find_links: str) -> Path:
+    """A `uv` first on PATH that gives only its own process the reviewed PyYAML, and strips what uv records of it.
+
+    uv saves an inherited find-links in the tool receipt as resolver policy, and the installer rightly refuses a
+    receipt with options. A user's install never has them, so the shim removes them as soon as uv exits.
+
+    Raises:
+        RuntimeError: If uv is not on PATH.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    real = shutil.which("uv")
+    if not real:
+        msg = "uv is not on PATH"
+        raise RuntimeError(msg)
+    script = directory / "uv"
+    script.write_text(
+        f"#!{sys.executable} -I\n"
+        "import glob, os, re, subprocess, sys\n"
+        f"env = {{**os.environ, 'UV_FIND_LINKS': {find_links!r}}}\n"
+        f"code = subprocess.call([{real!r}, *sys.argv[1:]], env=env)\n"
+        "for path in glob.glob(os.path.join(os.environ.get('UV_TOOL_DIR', ''), '*', 'uv-receipt.toml')):\n"
+        "    text = open(path, encoding='utf-8').read()\n"
+        "    new = re.sub(r'\\n\\[tool\\.options\\]\\nfind-links = \\[[^\\]]*\\]\\n', '\\n', text)\n"
+        "    if new != text:\n"
+        "        open(path, 'w', encoding='utf-8').write(new.rstrip('\\n') + '\\n')\n"
+        "sys.exit(code)\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return directory
+
+
+def shim_find_links(environment: dict[str, str], directory: Path) -> None:
+    """Replace an inherited UV_FIND_LINKS by the shim that scopes it to uv's own process."""
+    if find_links := environment.pop("UV_FIND_LINKS", None):
+        environment["PATH"] = f"{uv_shim(directory, find_links)}{os.pathsep}{environment.get('PATH', '')}"
+
+
 def journey(core: str, toolkit: str | None, template: Path, destination: Path) -> None:
     """The documented commands must work without copying configuration or importing core sources.
 
@@ -84,6 +123,7 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
     """
     environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     environment.pop("VIRTUAL_ENV", None)
+    shim_find_links(environment, destination / "uv-shim")
     environment["HZ_PLUGINS_ENABLED"] = "false"
     for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
         environment[f"HZ_{name}"] = str(destination / "state" / name.lower())

@@ -19,6 +19,7 @@ export const keys = {
   discover: ["heinzel", "discover"],
   jobs: ["system", "daemon", "jobs"],
   expert: ["system", "expert"],
+  level: (sessionId: string) => ["heinzel", "level", sessionId],
 } as const;
 
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
@@ -30,6 +31,48 @@ export function usePreviewFeature(name: string): boolean {
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
   return Array.isArray(features) && features.includes(name);
 }
+/** `hz heinzel sessions`: your durable Heinzels, newest first; the chat's header and default Heinzel read it. */
+export const useHeinzelSessions = (enabled = true, pollMs: number | false = false) =>
+  useQuery({
+    queryKey: ["heinzel", "sessions"],
+    queryFn: () => unwrap(api.GET("/heinzel/sessions")),
+    enabled,
+    retry: false,
+    refetchInterval: pollMs,
+  });
+/** `hz heinzel level`: a Heinzel's level, AI provider and exact model, and what a turn would run on now (ADR 0158). */
+export const useHeinzelLevel = (sessionId: string) =>
+  useQuery({
+    queryKey: keys.level(sessionId),
+    queryFn: () => unwrap(api.GET("/heinzel/level", { params: { query: { session_id: sessionId } } })),
+    retry: false,
+  });
+
+/** What `hz heinzel set-level` changes; a field left out stays, an empty `provider` or `model` clears it. */
+export type LevelChange = Pick<components["schemas"]["heinzel_set_level_Input"], "level" | "provider" | "model">;
+
+/** `hz heinzel set-level`: saves against the profile revision last read; every call is a new request id. */
+export const useSetHeinzelLevel = (sessionId: string) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (variables: LevelChange & { expectedRevision: number }) =>
+      unwrap(
+        api.POST("/heinzel/set-level", {
+          body: {
+            session_id: sessionId,
+            expected_revision: variables.expectedRevision,
+            request_id: crypto.randomUUID(),
+            level: variables.level,
+            provider: variables.provider,
+            model: variables.model,
+          },
+        }),
+      ),
+    onSuccess: (view) => client.setQueryData(keys.level(sessionId), view),
+    // A refused save (the profile moved on) is read again so the next try carries the new revision.
+    onError: () => client.invalidateQueries({ queryKey: keys.level(sessionId) }),
+  });
+};
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {
   const config = useConfig();
@@ -214,10 +257,6 @@ export const useRemoveAiKey = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access"] }),
   });
 };
-
-/** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
-export const useAiModels = () =>
-  useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });
 
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>

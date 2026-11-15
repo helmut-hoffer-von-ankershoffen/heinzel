@@ -3,6 +3,35 @@ import { useState } from "react";
 import { api, problem } from "@/api/client";
 import { Button } from "@/components/ui/button";
 
+/** The server's recorded state of an accepted turn; shared by the recovery card and the message states. */
+export function useTurnState(sessionId: string, requestId: string, enabled = true) {
+  return useQuery({
+    queryKey: turnStateKey(sessionId, requestId),
+    queryFn: () => fetchTurnState(sessionId, requestId),
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    enabled,
+  });
+}
+
+export const turnStateKey = (sessionId: string, requestId: string) =>
+  ["heinzel", "chat-turn-state", sessionId, requestId] as const;
+
+/** What hz knows about one accepted turn: pending, unresolved (uncertain), abandoned or completed. */
+export async function fetchTurnState(sessionId: string, requestId: string) {
+  const {
+    data,
+    error: failure,
+    response,
+  } = await api.GET("/heinzel/chat-turn-state", {
+    params: { query: { session_id: sessionId, request_id: requestId } },
+  });
+  if (!response.ok || !data) throw problem(response.status, failure);
+  if (data.session_id !== sessionId || data.request_id !== requestId) throw new Error("Unexpected turn");
+  return data;
+}
+
 /** An explicit owner decision; neither a retry nor an assertion that effects were undone. */
 export function UncertainTurnRecovery({
   sessionId,
@@ -18,24 +47,7 @@ export function UncertainTurnRecovery({
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const state = useQuery({
-    queryKey: ["heinzel", "chat-turn-state", sessionId, requestId],
-    queryFn: async () => {
-      const {
-        data,
-        error: failure,
-        response,
-      } = await api.GET("/heinzel/chat-turn-state", {
-        params: { query: { session_id: sessionId, request_id: requestId } },
-      });
-      if (!response.ok || !data) throw problem(response.status, failure);
-      if (data.session_id !== sessionId || data.request_id !== requestId) throw new Error("Unexpected turn");
-      return data;
-    },
-    retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  const state = useTurnState(sessionId, requestId);
   const setAside = async () => {
     if (
       !acknowledged ||
@@ -53,7 +65,11 @@ export function UncertainTurnRecovery({
         error: failure,
         response,
       } = await api.POST("/heinzel/abandon-chat-turn", {
-        body: { session_id: sessionId, request_id: requestId, acknowledge_uncertain: true },
+        body: {
+          session_id: sessionId,
+          request_id: requestId,
+          acknowledge_uncertain: true,
+        },
       });
       if (!response.ok || !data) throw problem(response.status, failure);
       if (data.session_id !== sessionId || data.request_id !== requestId || data.status !== "abandoned")

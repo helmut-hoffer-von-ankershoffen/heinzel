@@ -1,11 +1,11 @@
 // Home is "Today" (ADR 0045): cards of what needs you. The chat is the shell's panel, beside Home when the window is
-// wide and below it when narrow, as on every screen. A card opens its screen, starts a chat about it, or goes away;
-// `?card=<id>` focuses one (a notification's link), `?chat-context=event:<id>` opens the chat about that event.
+// wide and below it when narrow, as on every screen. A card opens its screen, asks your default Heinzel about it ("Ask
+// <Name>": typed into its composer, never sent), or goes away; `?card=<id>` focuses one (a notification's link).
 
 import { ArrowUpRight, MessageSquarePlus, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
-import { useSharedChat } from "@/chat/ChatContext";
+import { type AskHeinzel, useAskHeinzel } from "@/chat/askHeinzel";
 import { type TodayCard, useToday } from "@/chat/today";
 import { TodayWidgets } from "@/components/Contributions";
 import { TodayHiddenWidgets } from "@/components/HiddenWidgets";
@@ -23,14 +23,12 @@ const TONES: Record<TodayCard["tone"], string> = {
 function Card({
   card,
   focused,
-  busy,
-  onAsk,
+  ask,
   onDismiss,
 }: {
   card: TodayCard;
   focused: boolean;
-  busy: boolean;
-  onAsk: () => void;
+  ask: AskHeinzel | null;
   onDismiss: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
@@ -58,33 +56,25 @@ function Card({
         <PaneAction key="open" icon={ArrowUpRight} to={card.route}>
           {t("today.open")}
         </PaneAction>
-        <PaneAction key="ask" icon={MessageSquarePlus} onClick={onAsk} disabled={busy}>
-          {t("today.ask")}
-        </PaneAction>
+        {ask && (
+          <PaneAction
+            key="ask"
+            icon={MessageSquarePlus}
+            onClick={() => ask.ask(card.detail ? `${card.title}: ${card.detail}` : card.title)}
+          >
+            {t("today.askHeinzel", { name: ask.name })}
+          </PaneAction>
+        )}
       </PaneActions>
     </li>
   );
 }
 
 export function Home() {
-  const { chat, focus } = useSharedChat();
   const today = useToday();
   const [params] = useSearchParams();
   const focused = params.get("card");
-  // Home is where you talk to your Heinzelmännchen: the composer has the focus when it opens.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when Home opens
-  useEffect(() => {
-    if (window.innerWidth >= 1024) focus();
-  }, []);
-
-  const askAbout = async (context: string, text: string) => {
-    await chat.openAbout(context, text);
-    focus();
-  };
-  const ask = async (card: TodayCard) => {
-    await chat.openAbout(card.context, card.detail ? `${card.title}: ${card.detail}` : card.title);
-    focus();
-  };
+  const ask = useAskHeinzel();
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -103,12 +93,11 @@ export function Home() {
               key={card.id}
               card={card}
               focused={focused === card.id}
-              busy={chat.live != null}
-              onAsk={() => void ask(card)}
+              ask={ask}
               onDismiss={() => today.dismiss(card.id)}
             />
           ))}
-          <TodayWidgets onAsk={(context, text) => void askAbout(context, text)} />
+          <TodayWidgets ask={ask} />
         </ul>
         {today.cards.length ? null : (
           <p className="mt-2 text-sm text-muted-foreground">{today.loading ? t("state.loading") : t("today.quiet")}</p>

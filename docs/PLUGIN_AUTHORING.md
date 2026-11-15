@@ -67,6 +67,31 @@ No unrelated plugin or core tests run. Write a test for the new behavior and mar
 level: `unit`, `integration` or `e2e`. Installed acceptance belongs in `tests/acceptance/`. A richer frontend declares
 its own build and tests; a small static view needs no JavaScript build system.
 
+## Say what an agent may do with a write
+
+An operation that changes things (`read_only=False`) says what happens when an agent calls it:
+
+```python
+@module.operation(read_only=False, requires=["tracker:write"], agents="direct")
+def create(tracker: Tracker, title: str) -> Issue:
+    """Create an issue."""
+```
+
+- `agents="direct"`: a Heinzel's call runs at once and is logged.
+- `agents="approve"`: the call waits for the person. Use it for sending to other people, deleting, paying,
+  publishing, credentials and installing code.
+- `agents="never"`: only the person runs it, for example a confirmation.
+- Nothing: the call is proposed in a chat, as before. Leave no write unmarked.
+
+Mark an operation as strictly as everything it can trigger. `ByArguments("direct", "approve", when, reason)` makes
+some calls stricter, for example a rename that can also change an address. Whatever a plugin declares, a write
+that requires `mail:write`, `chat:write` or `calendar:write` waits for the person. An operation that needs to know
+who calls it asks for `caller: Caller`; hz fills it in, and no argument can.
+
+A plugin's `direct` write is still proposed until the person allowed your plugin with
+`hz system write allow <plugin>`; `hz system write plugins` and `hz system doctor` show what waits. The yes names
+the operations of the installed version, so a later version that marks another operation `direct` waits again.
+
 ## Show the useful feature
 
 Use the [screenshot playbook](SCREENSHOT_PLAYBOOK.md) to plan real UI and CLI scenes with fictional data, review
@@ -231,7 +256,8 @@ class AcmeModels:
 ```
 
 The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
-`hz ai access use acme`, then pick a model per chat in the chat's model picker. Reference
+`hz ai access use acme`, then pick a default model in Settings; each Heinzel then runs on the model the plugin
+marks for its intelligence level (ADR 0158). Reference
 (`from heinzel import ...`, interface `AI_MODELS_INTERFACE = "1.0"`):
 
 | Name | What it is |

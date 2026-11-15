@@ -42,4 +42,7 @@ echo "Template rendered and checked in $destination"
 
 # New authors use the small presets. Exercise their actual installed-artifact commands in both layouts too.
 cd "$repo_root"
-uv run --no-project --script scripts/starter-test.py --core "$core_wheel"
+# The starter journeys install through the external toolkit: let their fresh uv installs find the reviewed PyYAML.
+pyyaml_wheels="$(mktemp -d)"
+bash scripts/bootstrap-pyyaml.sh --wheel-dir "$pyyaml_wheels"
+UV_FIND_LINKS="$pyyaml_wheels" uv run --no-project --script scripts/starter-test.py --core "$core_wheel"

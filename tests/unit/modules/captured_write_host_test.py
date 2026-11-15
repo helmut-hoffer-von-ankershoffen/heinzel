@@ -383,3 +383,34 @@ def test_cleanup_failure_after_effect_is_uncertain_and_cannot_replay(tmp_path, m
         assert provider.writes == 1
     finally:
         context.__exit__(None, None, None)
+
+
+def test_open_drafts_count_as_waiting_for_the_owner_until_settled(tmp_path):
+    context, _current, crud, draft, _provider, host = _setup(tmp_path)
+    try:
+        host.draft(draft)
+        host.draft(draft)
+        with pytest.raises(HeinzelError, match="already identifies different terms"):
+            host.draft(draft.model_copy(update={"section": "other"}))
+        listed = crud.listing().sessions[0]
+        assert (listed.waiting_count, listed.activity) == (1, "waiting_for_you")
+        assert [item["request_id"] for item in host.pending(draft.session)] == [draft.request_id]
+        with pytest.raises(HeinzelError, match="draft is unavailable"):
+            host.current(draft.session, "write-missing")
+        host.discard(draft.session, draft.request_id)
+        listed = crud.listing().sessions[0]
+        assert (listed.waiting_count, listed.activity) == (0, "idle")
+    finally:
+        context.__exit__(None, None, None)
+
+
+def test_an_attempted_draft_cannot_be_discarded(tmp_path):
+    context, _current, _crud, draft, _provider, host = _setup(tmp_path)
+    try:
+        host.draft(draft)
+        _confirm(host, draft, host.issue(draft.session, draft.request_id, "human-test"))
+        with pytest.raises(HeinzelError, match="no longer pending"):
+            host.discard(draft.session, draft.request_id)
+        assert host.pending(draft.session) == []
+    finally:
+        context.__exit__(None, None, None)

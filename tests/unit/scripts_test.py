@@ -95,7 +95,7 @@ def call_problems(text: str, standalone: set[str], bound: set[str], stdlib: set[
                     call["runner"]
                     and call["python"]
                     and "--no-build" in flags
-                    and ({"--frozen", "--no-sync"} <= set(flags) or {"--no-project", "--python", "3.14"} <= set(flags))
+                    and ({"--frozen", "--no-sync"} <= set(flags) or {"--no-project", "--python", "3.15"} <= set(flags))
                 )
             )
             if (
@@ -151,7 +151,7 @@ def test_callers_run_scripts_the_way_they_declare(caller):
 @pytest.mark.parametrize(
     "launcher",
     [
-        "uv run --no-project --frozen --no-build --python 3.14 python",
+        "uv run --no-project --frozen --no-build --python 3.15 python",
         "uv run --frozen --no-sync --no-build python",
         "python3 -I",
     ],

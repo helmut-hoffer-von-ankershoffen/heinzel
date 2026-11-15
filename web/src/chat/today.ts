@@ -1,7 +1,7 @@
-// The "Today" strip on Home: what needs you, as cards you can open, ask the chat about, or dismiss (ADR 0045).
-// The cards come from the notices of the last day (`hz system notify list`, ADR 0043), each with its id as the chat
-// context (`event:<id>`, as `hz chat open --context <id>` gives it), and from what the app reads anyway: the doctor's
-// report, the daemon's jobs and your profile, unless a notice already says the same.
+// The "Today" strip on Home: what needs you, as cards you can open, ask your default Heinzel about ("Ask <Name>"), or
+// dismiss (ADR 0045, 0157). The cards come from the notices of the last day (`hz system notify list`, ADR 0043) and
+// from what the app reads anyway: the doctor's report, the daemon's jobs and your profile, unless a notice already
+// says the same.
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -23,8 +23,6 @@ export type TodayCard = {
   detail: string;
   /** The screen that shows it. */
   route: string;
-  /** The chat context of "Ask about it": `route:/doctor`, `event:<id>`. */
-  context: string;
   /** For a notice, what it is about (`failed`, `doctor`, `draft`), so the app doesn't say it twice. */
   kind?: string;
 };
@@ -43,7 +41,6 @@ export function doctorCards(report: SchemaHealthReport | undefined): TodayCard[]
       title: t("today.doctor", { count: failing.length }),
       detail: failing.slice(0, 3).join(", ") + (failing.length > 3 ? "…" : ""),
       route: "/doctor",
-      context: "route:/doctor",
     },
   ];
 }
@@ -57,7 +54,6 @@ export function jobCards(jobs: SchemaJobInfo[] | undefined): TodayCard[] {
       title: t("today.runFailed", { job: job.job }),
       detail: job.problem ?? (job.last_as_of ? t("today.lastRun", { when: format.dateTime(job.last_as_of) }) : ""),
       route: "/contracts",
-      context: `text:the daemon job ${job.job}`,
     }));
 }
 
@@ -70,7 +66,6 @@ export function profileCards(profile: SchemaProfile | undefined): TodayCard[] {
       title: t("today.profile"),
       detail: t("home.profileMissing", { missing: profile.missing.join(", ") }),
       route: "/profile",
-      context: "route:/profile",
     },
   ];
 }
@@ -91,7 +86,6 @@ export function eventCards(list: SchemaNoticeList | undefined, now = Date.now())
       title: notice.title,
       detail: notice.body,
       route: notice.route,
-      context: `event:${notice.id}`,
     }));
 }
 

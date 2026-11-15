@@ -7,7 +7,7 @@
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/helmut-hoffer-von-ankershoffen/heinzel?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
 [![OpenSSF Best Practices](https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/en/projects/15863/passing)
 [![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.15-blue)](pyproject.toml)
 [![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
@@ -181,7 +181,8 @@ Your configuration files stay; `hz system config show` lists them before you uni
 
 `hz --command-tree` prints every enabled command, argument, option and operation input/output schema as JSON,
 including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
-The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
+The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree, and the [MCP reference](docs/MCP_REFERENCE.md) lists every MCP tool with its input schema; CI checks both for drift.
+`hz system tools` prints every operation with its CLI command, MCP tool, REST endpoint, parameters and result (`--output text|markdown|yaml|json`, `--head cli|mcp|rest`, `--module NAME`).
 
 <img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints the pixel-art swarm of three Heinzelmännchen above the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
@@ -288,6 +289,7 @@ Built in today:
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
+- [`system.bookmark`](docs/MODULES.md#systembookmark) — Keep the built-in browser's bookmarks: a tree of folders and bookmarks.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
 - [`system.claude`](docs/MODULES.md#systemclaude) — See the MCP servers and skills you already set up for Claude, and switch servers off or on.
@@ -310,8 +312,10 @@ Built in today:
 - [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
+- [`system.write`](docs/MODULES.md#systemwrite) — See what agents changed, and allow a plugin's writes to run without asking.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
 - [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
+- [`ui.browser`](docs/MODULES.md#uibrowser) — Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.

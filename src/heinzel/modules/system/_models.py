@@ -217,3 +217,14 @@ class AnnouncedUpdate(BaseModel):
         default_factory=list[HeadRefresh],
         description="What each installed long-running head runs after the update, as its live process reported it.",
     )
+
+
+Format = Literal["text", "markdown", "yaml", "json"]
+
+
+class ToolReference(BaseModel):
+    """The reference, rendered."""
+
+    format: Format = Field(description="The format of `text`.")
+    count: int = Field(description="How many operations it describes.")
+    text: str = Field(description="The reference in that format.")

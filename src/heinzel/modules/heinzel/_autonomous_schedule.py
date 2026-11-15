@@ -30,7 +30,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationInventory, ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired, retired_after
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
 from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
@@ -169,13 +169,15 @@ class ScheduleReviewPage(BaseModel):
     next_cursor: int | None = Field(default=None, ge=0, description="Cursor for the next page, if present.")
 
 
-def model_binding_fingerprint(chat: UserChatService) -> str:
+def model_binding_fingerprint(chat: UserChatService, session: str | None = None) -> str:
     """Observe selected CLI/settings or plugin model, not provider account identity or publisher authenticity.
+
+    With `session`, the model the Heinzel's level chooses (ADR 0158).
 
     Raises:
         HeinzelError: If selected access cannot be observed.
     """
-    terms = chat.binding_terms()
+    terms = chat.binding_terms(session)
     return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -212,7 +214,7 @@ class AutonomousSchedules:
             or latest.revision != binding.contract_revision
             or latest.preview_sha256 != binding.contract_sha256
             or not ContractReview(self.crud).applied(session, binding.contract_request_id)
-            or binding.access_fingerprint != model_binding_fingerprint(self.chat)
+            or binding.access_fingerprint != model_binding_fingerprint(self.chat, session)
             or latest.max_usd is not None
             or binding.timeout_seconds > latest.timeout_seconds
         ):
@@ -269,8 +271,8 @@ class AutonomousSchedules:
             cadence_seconds=cadence_seconds,
             max_requests=max_requests,
             timeout_seconds=timeout_seconds,
-            access="plugin-models" if self.chat.plugin_selected() is not None else "claude-code-subscription",
-            access_fingerprint=model_binding_fingerprint(self.chat),
+            access="plugin-models" if self.chat.plugin_selected(session) is not None else "claude-code-subscription",
+            access_fingerprint=model_binding_fingerprint(self.chat, session),
             connected_grant=connected_grant,
             notification_policy=notification_policy,
             quiet_hours=quiet_hours,
@@ -334,7 +336,14 @@ class AutonomousSchedules:
     def _paused(self, session: str, request: str, events: list[SessionEvent]) -> bool:
         pauses = [e for e in events if e.kind == "agent.schedule-paused" and e.key == request]
         if not pauses:
-            return False
+            # A retire after the approval paused it; a restore never resumes it (a new approval does).
+            approvals = [
+                e
+                for e in events
+                if e.kind == "agent.schedule-approved"
+                and ScheduleBinding.model_validate(self.crud.read_body(session, e)).request_id == request
+            ]
+            return bool(approvals) and retired_after(events, approvals[-1].seq)
         approved = [
             e
             for e in events
@@ -576,6 +585,11 @@ class AutonomousSchedules:
             msg = "The schedule occurrence time is invalid"
             raise HeinzelError(msg)
 
+    def _require_not_retired(self, session: str) -> None:
+        if is_retired(self.crud.repository.control_read(session).events):
+            msg = "This Heinzel is retired; restore it to run its schedule"
+            raise HeinzelError(msg)
+
     async def tick(self, session: str, request: str, when: datetime) -> str | None:
         """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
 
@@ -583,6 +597,7 @@ class AutonomousSchedules:
             HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
         """
         self._require_daemon_occurrence(when)
+        self._require_not_retired(session)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
         now = datetime.now(UTC)

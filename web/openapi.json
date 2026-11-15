@@ -1175,6 +1175,118 @@
         "title": "AgentResult",
         "type": "object"
       },
+      "AgentWrite": {
+        "description": "One write an agent asked for; the arguments only as a digest.",
+        "properties": {
+          "arguments": {
+            "description": "A digest of the call's arguments; the arguments themselves are not kept.",
+            "title": "Arguments",
+            "type": "string"
+          },
+          "at": {
+            "description": "When it was asked for.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attended": {
+            "description": "Whether the person started that turn and watched it.",
+            "title": "Attended",
+            "type": "boolean"
+          },
+          "caller": {
+            "description": "Who asked: `heinzel:<session>`, `token:<key id>`, `local-agent:mcp-stdio`.",
+            "title": "Caller",
+            "type": "string"
+          },
+          "module": {
+            "description": "The module of the operation, e.g. `system.bookmark`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation, e.g. `add`.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "What happened.",
+            "enum": [
+              "ran",
+              "failed",
+              "proposed",
+              "refused",
+              "over-budget"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "policy": {
+            "description": "The operation's rule for agents.",
+            "enum": [
+              "direct",
+              "propose",
+              "approve",
+              "never"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of what it changed, where the call named one.",
+            "title": "Target"
+          }
+        },
+        "required": [
+          "at",
+          "caller",
+          "attended",
+          "module",
+          "operation",
+          "arguments",
+          "policy",
+          "outcome"
+        ],
+        "title": "AgentWrite",
+        "type": "object"
+      },
+      "AgentWrites": {
+        "description": "The writes agents asked for, latest first, and a line per agent.",
+        "properties": {
+          "callers": {
+            "description": "One line per agent, busiest first.",
+            "items": {
+              "$ref": "#/components/schemas/CallerActivity"
+            },
+            "title": "Callers",
+            "type": "array"
+          },
+          "unattended_ran": {
+            "default": 0,
+            "description": "Writes that ran in turns nobody watched, in the last 24 hours: the digest's count.",
+            "title": "Unattended Ran",
+            "type": "integer"
+          },
+          "writes": {
+            "description": "The entries asked for, latest first.",
+            "items": {
+              "$ref": "#/components/schemas/AgentWrite"
+            },
+            "title": "Writes",
+            "type": "array"
+          }
+        },
+        "title": "AgentWrites",
+        "type": "object"
+      },
       "AssetTypeDoc": {
         "description": "An asset type of a playbook (ADR 0037).",
         "properties": {
@@ -1523,6 +1635,17 @@
             "description": "The selected reasoning effort, when supported.",
             "title": "Effort"
           },
+          "level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnLevel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Heinzel's level this turn asked for and ran as, when levels choose the model (ADR 0158)."
+          },
           "mode": {
             "description": "Whether the turn uses direct API, a CLI model bridge or a native CLI loop.",
             "enum": [
@@ -1613,6 +1736,122 @@
         "title": "BindingResult",
         "type": "object"
       },
+      "Bookmark": {
+        "description": "One entry of the tree: a bookmark with an address, or a folder holding entries.",
+        "properties": {
+          "depth": {
+            "default": 0,
+            "description": "How deep it sits: 0 at the top level.",
+            "title": "Depth",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The entry's id, e.g. `b-1a2b3c4d`; the other operations take it.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "A bookmark with an address, or a folder.",
+            "enum": [
+              "bookmark",
+              "folder"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address's origin, the key of its favicon.",
+            "title": "Origin"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The folder it is in; none at the top level.",
+            "title": "Parent"
+          },
+          "title": {
+            "description": "The name shown.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The address; a folder has none.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ],
+        "title": "Bookmark",
+        "type": "object"
+      },
+      "BookmarkList": {
+        "description": "The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.",
+        "properties": {
+          "bookmarks": {
+            "description": "Every entry, depth-first in order; `parent` and `depth` give the tree.",
+            "items": {
+              "$ref": "#/components/schemas/Bookmark"
+            },
+            "title": "Bookmarks",
+            "type": "array"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the entry this call added or changed.",
+            "title": "Changed"
+          },
+          "favicons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "A small image per origin as a `data:` URL, where a page showed one.",
+            "title": "Favicons",
+            "type": "object"
+          },
+          "restorable": {
+            "description": "Ids of removed entries `restore` can still bring back, latest first.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Restorable",
+            "type": "array"
+          }
+        },
+        "title": "BookmarkList",
+        "type": "object"
+      },
       "CalendarReminderStatus": {
         "description": "Whether calendar reads are enabled and what the supervisor reports.",
         "properties": {
@@ -1699,6 +1938,52 @@
           "until"
         ],
         "title": "CalendarWeek",
+        "type": "object"
+      },
+      "CallerActivity": {
+        "description": "What one agent did: for a token, the line shown beside it in Settings.",
+        "properties": {
+          "caller": {
+            "description": "The agent, as in `AgentWrite.caller`.",
+            "title": "Caller",
+            "type": "string"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its latest write that ran.",
+            "title": "Last"
+          },
+          "ran": {
+            "description": "Writes that ran, in the entries kept.",
+            "title": "Ran",
+            "type": "integer"
+          },
+          "ran_today": {
+            "description": "Writes that ran in the last 24 hours.",
+            "title": "Ran Today",
+            "type": "integer"
+          },
+          "refused": {
+            "description": "Writes refused, proposed or over budget, in the entries kept.",
+            "title": "Refused",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "caller",
+          "ran",
+          "ran_today",
+          "refused"
+        ],
+        "title": "CallerActivity",
         "type": "object"
       },
       "Candidate": {
@@ -3177,14 +3462,15 @@
             "type": "string"
           },
           "kind": {
-            "description": "The context kind; `check-in` is created only by the durable-session flow.",
+            "description": "The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a Heinzel's own proposals (ADR 0162).",
             "enum": [
               "route",
               "contract",
               "draft",
               "event",
               "text",
-              "check-in"
+              "check-in",
+              "heinzel"
             ],
             "title": "Kind",
             "type": "string"
@@ -9187,6 +9473,152 @@
         "title": "LetDoc",
         "type": "object"
       },
+      "LevelRunsAs": {
+        "description": "What a turn of this Heinzel would run on now: for its details, never shown in the chat.",
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort passed; none when the model takes none.",
+            "title": "Effort"
+          },
+          "level": {
+            "$ref": "#/components/schemas/TurnLevel",
+            "description": "The level asked, the level it runs as, the rule and how it was chosen."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model id; none when the provider runs its own default.",
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin's AI access option; none for the configured AI access.",
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "effort",
+          "level"
+        ],
+        "title": "LevelRunsAs",
+        "type": "object"
+      },
+      "LevelView": {
+        "description": "A Heinzel's level, provider and exact model, the profile revision they were read at, and what they run as.",
+        "properties": {
+          "level": {
+            "description": "How hard this Heinzel thinks: auto, low, medium or high.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its exact model, an advanced choice that wins over the level; none for none.",
+            "title": "Model"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a turn couldn't start on this choice now; none when it can.",
+            "title": "Problem"
+          },
+          "profile_revision": {
+            "description": "The profile revision to pass to set-level.",
+            "minimum": 1.0,
+            "title": "Profile Revision",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its AI provider; none for the configured AI access.",
+            "title": "Provider"
+          },
+          "runs_as": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LevelRunsAs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a turn runs on now; none when it can't start, and `problem` says why."
+          },
+          "session_id": {
+            "description": "The owner's durable Heinzel.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "level",
+          "provider",
+          "model",
+          "profile_revision",
+          "runs_as",
+          "problem"
+        ],
+        "title": "LevelView",
+        "type": "object"
+      },
       "Lifecycle": {
         "description": "Facts about code actually loaded by this UI server, independent of the installation on disk.",
         "properties": {
@@ -9851,7 +10283,7 @@
         "type": "object"
       },
       "ModelList": {
-        "description": "The models and efforts of the AI access in use, for the chat's picker.",
+        "description": "The models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "properties": {
           "access": {
             "anyOf": [
@@ -13024,6 +13456,74 @@
         "title": "PluginUpdate",
         "type": "object"
       },
+      "PluginWrite": {
+        "description": "A plugin operation that asks to run directly for agents, and whether you allowed it.",
+        "properties": {
+          "allowed": {
+            "description": "Whether you allowed it to run directly; until then it is proposed.",
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "capped": {
+            "description": "Whether hz holds it at approval whatever you allow: it writes mail, chat or a calendar.",
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "module": {
+            "description": "The module of the operation.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "plugin": {
+            "description": "The plugin's distribution, e.g. `heinzel-crm`.",
+            "title": "Plugin",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the operation does, in its own words.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin",
+          "module",
+          "operation",
+          "summary",
+          "allowed",
+          "capped"
+        ],
+        "title": "PluginWrite",
+        "type": "object"
+      },
+      "PluginWrites": {
+        "description": "Every plugin operation that asks to run directly for agents.",
+        "properties": {
+          "next": {
+            "description": "Commands that allow what is waiting.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "writes": {
+            "description": "The operations, by plugin.",
+            "items": {
+              "$ref": "#/components/schemas/PluginWrite"
+            },
+            "title": "Writes",
+            "type": "array"
+          }
+        },
+        "title": "PluginWrites",
+        "type": "object"
+      },
       "PrerequisiteCheck": {
         "additionalProperties": false,
         "description": "An observed tool state, separate from Python package installation and account authentication.",
@@ -16013,6 +16513,23 @@
       "SessionSummary": {
         "description": "Picker metadata, including proposed chats with no approved contract.",
         "properties": {
+          "activity": {
+            "default": "idle",
+            "description": "One of nine states, computed by code in fixed precedence: paused, stuck, waiting_for_you, overloaded, working, waiting_on_others, proud, asleep, idle.",
+            "enum": [
+              "paused",
+              "stuck",
+              "waiting_for_you",
+              "overloaded",
+              "working",
+              "waiting_on_others",
+              "proud",
+              "asleep",
+              "idle"
+            ],
+            "title": "Activity",
+            "type": "string"
+          },
           "appearance": {
             "$ref": "#/components/schemas/HeinzelAppearance",
             "description": "The persisted character overrides for the session picker."
@@ -16030,6 +16547,25 @@
             "description": "The approved contract version, when one exists.",
             "title": "Contract Version"
           },
+          "last_approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the owner last approved or published this Heinzel's work, if ever.",
+            "title": "Last Approved At"
+          },
+          "last_run_failed": {
+            "default": false,
+            "description": "Whether the latest run outcome was a set-aside turn or a failed scheduled turn; a crashed turn (started, never finished) reads failed, and so stuck, only after the 7200 s turn cap.",
+            "title": "Last Run Failed",
+            "type": "boolean"
+          },
           "last_seq": {
             "description": "The latest acknowledged control-journal sequence.",
             "minimum": 0.0,
@@ -16040,6 +16576,20 @@
             "description": "The persisted personal display name.",
             "title": "Name",
             "type": "string"
+          },
+          "queued_runs": {
+            "default": 0,
+            "description": "Accepted messages whose run has not started yet.",
+            "minimum": 0.0,
+            "title": "Queued Runs",
+            "type": "integer"
+          },
+          "runs_last_hour": {
+            "default": 0,
+            "description": "Runs (turns) started in the last hour.",
+            "minimum": 0.0,
+            "title": "Runs Last Hour",
+            "type": "integer"
           },
           "session_id": {
             "description": "The stable personal conversation identity.",
@@ -16065,6 +16615,13 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "waiting_count": {
+            "default": 0,
+            "description": "Items open for the owner: unsettled write drafts plus a pending check-in proposal.",
+            "minimum": 0.0,
+            "title": "Waiting Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -20220,6 +20777,94 @@
         "title": "ToolActivity",
         "type": "object"
       },
+      "ToolReference": {
+        "description": "The reference, rendered.",
+        "properties": {
+          "count": {
+            "description": "How many operations it describes.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "format": {
+            "description": "The format of `text`.",
+            "enum": [
+              "text",
+              "markdown",
+              "yaml",
+              "json"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "text": {
+            "description": "The reference in that format.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "count",
+          "text"
+        ],
+        "title": "ToolReference",
+        "type": "object"
+      },
+      "TurnLevel": {
+        "additionalProperties": false,
+        "description": "What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen.",
+        "properties": {
+          "asked": {
+            "description": "The level the Heinzel had when the turn started.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Asked",
+            "type": "string"
+          },
+          "ran": {
+            "description": "The level the turn ran as: Auto resolved by code, the nearest one the provider marks.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Ran",
+            "type": "string"
+          },
+          "rule": {
+            "description": "How Auto was resolved, or `fixed` for a level picked as is.",
+            "enum": [
+              "fixed",
+              "auto-fixed-medium"
+            ],
+            "title": "Rule",
+            "type": "string"
+          },
+          "source": {
+            "description": "How the model was chosen: exact, declared, nearest or provider-default.",
+            "enum": [
+              "exact",
+              "declared",
+              "nearest",
+              "provider-default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asked",
+          "ran",
+          "rule",
+          "source"
+        ],
+        "title": "TurnLevel",
+        "type": "object"
+      },
       "Uninstalled": {
         "description": "What `uninstall` removed.",
         "properties": {
@@ -22673,6 +23318,52 @@
         "title": "heinzel_resolve_scheduled_notification_Input",
         "type": "object"
       },
+      "heinzel_restore_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_restore_Input",
+        "type": "object"
+      },
+      "heinzel_retire_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_retire_Input",
+        "type": "object"
+      },
       "heinzel_review_release_draft_Input": {
         "additionalProperties": false,
         "properties": {
@@ -22865,6 +23556,80 @@
         "title": "heinzel_search_conversation_Input",
         "type": "object"
       },
+      "heinzel_set_level_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "description": "The exact profile_revision you last read.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "auto, low, medium or high; null leaves it unchanged.",
+            "title": "Level"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An exact model id; empty clears it; null leaves it unchanged.",
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An AI access option's name; empty for the configured one; null leaves it.",
+            "title": "Provider"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision"
+        ],
+        "title": "heinzel_set_level_Input",
+        "type": "object"
+      },
       "heinzel_share_draft_link_Input": {
         "additionalProperties": false,
         "properties": {
@@ -22901,38 +23666,6 @@
           "approval_proof"
         ],
         "title": "heinzel_share_draft_link_Input",
-        "type": "object"
-      },
-      "heinzel_start_helper_Input": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "description": "Your Heinzel's display name.",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "prompt": {
-            "description": "The exact first chat message; grants no connected access or schedule.",
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "request_id": {
-            "description": "A stable client request id; reuse it only for an exact retry.",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Request Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id",
-          "name",
-          "prompt"
-        ],
-        "title": "heinzel_start_helper_Input",
         "type": "object"
       },
       "system_claude_acknowledge_Input": {
@@ -23372,7 +24105,7 @@
     },
     "/ai/models": {
       "get": {
-        "description": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "description": "List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "operationId": "ai_models",
         "responses": {
           "200": {
@@ -23386,7 +24119,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "summary": "List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.",
         "tags": [
           "ai"
         ]
@@ -25474,6 +26207,49 @@
         ]
       }
     },
+    "/heinzel/level": {
+      "get": {
+        "description": "Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now.",
+        "operationId": "heinzel_level",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LevelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read this Heinzel's intelligence level, provider and exact model, and what a turn runs on now.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/list": {
       "get": {
         "description": "List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.",
@@ -26851,6 +27627,90 @@
         ]
       }
     },
+    "/heinzel/restore": {
+      "post": {
+        "description": "Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.",
+        "operationId": "heinzel_restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_restore_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/retire": {
+      "post": {
+        "description": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
+        "operationId": "heinzel_retire",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_retire_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/review-release-draft": {
       "post": {
         "description": "Capture the human-edited marked section and revision for exact share review; send nothing.",
@@ -27362,6 +28222,48 @@
         ]
       }
     },
+    "/heinzel/set-level": {
+      "post": {
+        "description": "Set this Heinzel's level, provider or exact model against the exact profile revision you saw.",
+        "operationId": "heinzel_set_level",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_set_level_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LevelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set this Heinzel's level, provider or exact model against the exact profile revision you saw.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/share-draft-link": {
       "post": {
         "description": "Deliver one document link for the exact edited revision approved by its owner.",
@@ -27683,48 +28585,6 @@
           }
         },
         "summary": "Discover owner-private pending sharing request references.",
-        "tags": [
-          "heinzel"
-        ]
-      }
-    },
-    "/heinzel/start-helper": {
-      "post": {
-        "description": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.\n\nRaises:\n    HeinzelError: If the feature is off, request changed or selected model access is unavailable.",
-        "operationId": "heinzel_start_helper",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/heinzel_start_helper_Input"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserChatAnswer"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.",
         "tags": [
           "heinzel"
         ]
@@ -28188,6 +29048,523 @@
           }
         },
         "summary": "Remove Heinzelmännchen's skills from each configured agent skill directory.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/add": {
+      "post": {
+        "description": "Add a bookmark; an address already in that folder is kept once.",
+        "operationId": "system_bookmark_add",
+        "parameters": [
+          {
+            "description": "The page's https:// address.",
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "description": "The page's https:// address.",
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The name shown; the host when left out.",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The name shown; the host when left out.",
+              "title": "Title"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a bookmark; an address already in that folder is kept once.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/edit": {
+      "post": {
+        "description": "Rename a bookmark or folder, or change a bookmark's address.",
+        "operationId": "system_bookmark_edit",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The new name.",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The new name.",
+              "title": "Title"
+            }
+          },
+          {
+            "description": "The new https:// address of a bookmark.",
+            "in": "query",
+            "name": "url",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The new https:// address of a bookmark.",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename a bookmark or folder, or change a bookmark's address.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/favicon": {
+      "post": {
+        "description": "Keep the small icon a bookmarked site showed, per origin.",
+        "operationId": "system_bookmark_favicon",
+        "parameters": [
+          {
+            "description": "The origin the icon belongs to, e.g. `https://example.com`.",
+            "in": "query",
+            "name": "origin",
+            "required": true,
+            "schema": {
+              "description": "The origin the icon belongs to, e.g. `https://example.com`.",
+              "title": "Origin",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO).",
+            "in": "query",
+            "name": "image",
+            "required": true,
+            "schema": {
+              "description": "The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO).",
+              "title": "Image",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep the small icon a bookmarked site showed, per origin.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/folder": {
+      "post": {
+        "description": "Add an empty bookmark folder.",
+        "operationId": "system_bookmark_folder",
+        "parameters": [
+          {
+            "description": "The folder's name.",
+            "in": "query",
+            "name": "title",
+            "required": true,
+            "schema": {
+              "description": "The folder's name.",
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add an empty bookmark folder.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/list": {
+      "get": {
+        "description": "List the bookmarks and folders in their order, with each entry's id and folder.",
+        "operationId": "system_bookmark_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the bookmarks and folders in their order, with each entry's id and folder.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/move": {
+      "post": {
+        "description": "Move a bookmark or folder into another folder or to another place in its own.",
+        "operationId": "system_bookmark_move",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder's id to put it in; the top level when left out.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The folder's id to put it in; the top level when left out.",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "The id of the entry in that folder to put it before; else last.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The id of the entry in that folder to put it before; else last.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move a bookmark or folder into another folder or to another place in its own.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/remove": {
+      "post": {
+        "description": "Remove a bookmark, or a folder with everything in it; `restore` brings it back.",
+        "operationId": "system_bookmark_remove",
+        "parameters": [
+          {
+            "description": "The entry's id, as `hz system bookmark list` shows it.",
+            "in": "query",
+            "name": "entry",
+            "required": true,
+            "schema": {
+              "description": "The entry's id, as `hz system bookmark list` shows it.",
+              "title": "Entry",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a bookmark, or a folder with everything in it; `restore` brings it back.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/bookmark/restore": {
+      "post": {
+        "description": "Bring back a removed bookmark or folder to where it was.",
+        "operationId": "system_bookmark_restore",
+        "parameters": [
+          {
+            "description": "The removed entry's id; the latest removal when left out.",
+            "in": "query",
+            "name": "entry",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The removed entry's id; the latest removal when left out.",
+              "title": "Entry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring back a removed bookmark or folder to where it was.",
         "tags": [
           "system"
         ]
@@ -31213,6 +32590,55 @@
         ]
       }
     },
+    "/system/runner/chat/heinzel-actions": {
+      "get": {
+        "description": "Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).\n\nRaises:\n    HeinzelError: If no owner is signed in.",
+        "operationId": "system_runner_chat_heinzel_actions",
+        "parameters": [
+          {
+            "description": "The Heinzel's own chat.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The Heinzel's own chat.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatSession"
+                  },
+                  "title": "Response System Runner Chat Heinzel Actions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/runner/chat/list": {
       "get": {
         "description": "List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.",
@@ -32586,6 +34012,98 @@
         ]
       }
     },
+    "/system/tools": {
+      "get": {
+        "description": "List every operation and tool with its heads, parameters and result, in four formats.",
+        "operationId": "system_tools",
+        "parameters": [
+          {
+            "description": "How to write the list; the CLI's own `--format json` wraps the whole result instead.",
+            "in": "query",
+            "name": "output",
+            "required": false,
+            "schema": {
+              "default": "text",
+              "description": "How to write the list; the CLI's own `--format json` wraps the whole result instead.",
+              "enum": [
+                "text",
+                "markdown",
+                "yaml",
+                "json"
+              ],
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only what this head exposes; its input schemas too.",
+            "in": "query",
+            "name": "head",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Only what this head exposes; its input schemas too.",
+              "enum": [
+                "all",
+                "cli",
+                "mcp",
+                "rest",
+                "web"
+              ],
+              "title": "Head",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only these modules and the ones under them, e.g. `system.config`.",
+            "in": "query",
+            "name": "module",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these modules and the ones under them, e.g. `system.config`.",
+              "title": "Module"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List every operation and tool with its heads, parameters and result, in four formats.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/ui/actions": {
       "get": {
         "description": "List the buttons modules add to the web app's header, with what each does and its badge.\n\nRaises:\n    HeinzelError: If `item` names no action.",
@@ -33109,6 +34627,161 @@
           }
         },
         "summary": "Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/allow": {
+      "post": {
+        "description": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
+        "operationId": "system_write_allow",
+        "parameters": [
+          {
+            "description": "The plugin, e.g. `crm` or `heinzel-crm`.",
+            "in": "query",
+            "name": "plugin",
+            "required": true,
+            "schema": {
+              "description": "The plugin, e.g. `crm` or `heinzel-crm`.",
+              "title": "Plugin",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Take the allowance back: its writes are proposed again.",
+            "in": "query",
+            "name": "revoke",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Take the allowance back: its writes are proposed again.",
+              "title": "Revoke",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/list": {
+      "get": {
+        "description": "List the writes agents asked for: what ran, what waited for you, and a line per agent.",
+        "operationId": "system_write_list",
+        "parameters": [
+          {
+            "description": "Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`.",
+            "in": "query",
+            "name": "caller",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`.",
+              "title": "Caller"
+            }
+          },
+          {
+            "description": "Only writes of turns nobody watched.",
+            "in": "query",
+            "name": "unattended",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only writes of turns nobody watched.",
+              "title": "Unattended",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many entries, latest first.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "How many entries, latest first.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the writes agents asked for: what ran, what waited for you, and a line per agent.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/plugins": {
+      "get": {
+        "description": "List the plugin operations that ask to run directly for agents, and whether you allowed them.",
+        "operationId": "system_write_plugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the plugin operations that ask to run directly for agents, and whether you allowed them.",
         "tags": [
           "system"
         ]

@@ -125,7 +125,7 @@ def workflow(tmp_path, monkeypatch, settings):
         _discovery, "entry_points", lambda **_kwargs: [installed_entry(root, "workflowfixture", package, declared=True)]
     )
     monkeypatch.syspath_prepend(str(tmp_path))
-    features = frozenset({"connected_frontdoor", "connected_channels"})
+    features = frozenset({"connected_channels"})
     config = Config(
         files=(),
         data={"capabilities": {"documents": "fixture", "code-host": "fixture"}, "hz": {"features": sorted(features)}},
@@ -206,6 +206,27 @@ def test_exact_initial_human_publication_is_separate_from_prompt_and_never_react
         host.published(session)
     assert state["appends"] == 0
     assert state["notices"] == state["shares"] == []
+
+
+def test_a_retire_pauses_a_published_workflow_and_a_restore_keeps_it_paused(workflow):
+    host, session, _request, state = workflow
+    import asyncio
+
+    from heinzel.modules.heinzel._draft_workflow_operations import workflow_jobs
+    from heinzel.modules.heinzel._draft_workflow_runtime import tick
+
+    assert publish(workflow) == host.published(session)
+    assert [job[0] for job in workflow_jobs(host)] == [session]
+    host.crud.retire(session, "retire-workflow")
+    # While retired the daemon compiles no job for it, and a slot already due refuses before any work.
+    assert workflow_jobs(host) == []
+    with host.current_user.local("daemon"), pytest.raises(HeinzelError, match="retired"):
+        asyncio.run(tick(host, session, _request.request_id, host.crud.clock()))
+    host.crud.retire(session, "restore-workflow", retired=False)
+    # The retire paused the publication; the restore does not resume it: a new human publication would.
+    with pytest.raises(HeinzelError, match="paused"):
+        host.published(session)
+    assert state["appends"] == 0
 
 
 def test_publication_denies_source_account_and_destination_drift_without_effects(workflow):

@@ -107,11 +107,6 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
         f"test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work[{change}]"
         for change in (
             "none",
-            "old015-upgrade",
-            "old015-web-migrate",
-            "old015-web-retire",
-            "old015-web-recovery",
-            "old015-web-foreign",
             "recovery",
             "calendar",
             "calendar-recovery",

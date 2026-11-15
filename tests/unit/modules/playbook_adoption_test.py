@@ -191,7 +191,7 @@ elif count == 1:
        'timeout_seconds':30,'expected_revision':0}}
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'playbook:propose','arguments':args}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  wire={{'kind':'tool','name':name,'arguments':{{'report':'Draft ready for review'}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,
                    'permission_denials':[], 'structured_output':wire}}))

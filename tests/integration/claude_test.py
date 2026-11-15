@@ -29,7 +29,7 @@ def kernel(make_kernel, tmp_path: Path, monkeypatch):
     (home / ".claude.json").write_text(
         json.dumps({"mcpServers": {"tickets": {"command": "npx", "env": {"API_KEY": SECRET}}}})
     )
-    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("HZ_CLAUDE_HOME", str(home))
     return make_kernel(builtins=True)
 
 
@@ -160,7 +160,7 @@ def test_an_agent_cannot_switch_a_server_over_rest_or_mcp(kernel):
     anyio.run(scenario)
 
 
-@pytest.mark.parametrize("route", ["project-file", "config-set-over-mcp"])
+@pytest.mark.parametrize("route", ["project-file", "config-set"])
 def test_a_redirected_state_dir_does_not_switch_a_server_back_on(
     kernel, make_kernel, tmp_path: Path, monkeypatch, route: str
 ):
@@ -172,16 +172,9 @@ def test_a_redirected_state_dir_does_not_switch_a_server_back_on(
     project.mkdir()
     if route == "project-file":
         (project / "hz.toml").write_text(f'[hz]\nstate_dir = "{elsewhere}"\n')
-    else:
-
-        async def scenario() -> None:
-            async with Client(mcp.build(kernel)) as client:
-                arguments = {"key": "hz.state_dir", "value": str(elsewhere)}
-                await client.call_tool("system_config_set", arguments)
-
-        import anyio
-
-        anyio.run(scenario)
+    else:  # the person's own `hz system config set`: an agent's call of it waits for their approval (ADR 0162)
+        code, output = hz(kernel, "system", "config", "set", "hz.state_dir", str(elsewhere))
+        assert code == 0, output
     monkeypatch.delenv("HZ_STATE_DIR")  # the environment would override either route
     config = Config.load(project)
     redirected = make_kernel(builtins=True, config=config, settings_=config.settings(Settings, "hz"))

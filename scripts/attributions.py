@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["packaging==26.3"]
 # ///
 """Generate ATTRIBUTIONS.md: every open-source package hz ships to its users, with its license text. Thank you!
@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "ATTRIBUTIONS.md"
 PYTHON_SECTION = "Python packages"
 WEB_SECTION = "Web app (JavaScript) packages"
-PYTHONS = ("3.12", "3.13", "3.14", "3.15")
+PYTHONS = ("3.15",)
 """The Pythons hz supports (pyproject's classifiers); a dependency needed on any of them is listed."""
 PLATFORMS = {
     "aarch64-apple-darwin": {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "arm64"},
@@ -205,18 +205,39 @@ def python_package(dist: Distribution) -> Package:
     return Package(name, dist.version, spdx(metadata), python_url(name, metadata), python_texts(dist))
 
 
+BOOTSTRAP = (sys.executable, "-I", "-S", str(ROOT / "src/heinzel/bootstrap_pyyaml.py"))
+"""Core's reviewed build of the one package that has no upstream wheel for the newest Python (stdlib only)."""
+
+
+def reviewed_build(directory: Path) -> tuple[str, Path] | None:
+    """The pure-Python wheel Core's bootstrap builds for a package without an upstream wheel, or nothing.
+
+    The wheel is `py3-none-any`: it installs for any target platform, so the licence metadata and files it carries are
+    the same whichever host builds it and whichever platform is listed. A source build per target (a wheel for the
+    host, installed for a foreign platform) cannot work.
+    """
+    if subprocess.run([*BOOTSTRAP, "needed", PYTHONS[0]], cwd=ROOT, check=False, timeout=TIMEOUT).returncode:  # noqa: S603
+        return None
+    name = str(json.loads(run(*BOOTSTRAP, "pins"))["name"])
+    built = run(*BOOTSTRAP, "build", "--lock", str(ROOT / "uv.lock"), "--wheel-dir", str(directory / "reviewed"))
+    return name, Path(built.strip())
+
+
 def python_packages(exported: str) -> list[Package]:
     """Every runtime Python dependency, read from the wheels uv.lock pins, installed per platform."""
     packages: dict[str, Package] = {}
     with tempfile.TemporaryDirectory(prefix="hz-attributions-") as temporary:
+        reviewed = reviewed_build(Path(temporary))
         for platform, requirements in locked_requirements(exported).items():
             target = Path(temporary) / platform
             listing = target.with_suffix(".txt")
-            listing.write_text("\n".join(str(r).split(";")[0].strip() for r in requirements) + "\n", "utf-8")
-            run(
-                "uv", "pip", "install", "--quiet", "--no-deps", "--no-config", "--target", str(target),
-                "--python-platform", platform, "--python-version", PYTHONS[0], "-r", str(listing),
-            )  # fmt: skip
+            wanted = [r for r in requirements if not reviewed or canonicalize_name(r.name) != reviewed[0]]
+            listing.write_text("\n".join(str(r).split(";")[0].strip() for r in wanted) + "\n", "utf-8")
+            options = ["--quiet", "--no-deps", "--no-config", "--target", str(target)]
+            options += ["--python-platform", platform, "--python-version", PYTHONS[0]]
+            run("uv", "pip", "install", *options, "-r", str(listing))
+            if reviewed and len(wanted) != len(requirements):
+                run("uv", "pip", "install", *options, "--no-build", str(reviewed[1]))
             for dist in distributions(path=[str(target)]):
                 package = python_package(dist)
                 packages.setdefault(package.name, package)

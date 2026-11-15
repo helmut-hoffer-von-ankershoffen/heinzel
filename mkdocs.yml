@@ -115,6 +115,7 @@ nav:
   - Reference:
       - Modules: MODULES.md
       - CLI: CLI_REFERENCE.md
+      - MCP tools: MCP_REFERENCE.md
       - Configuration: CONFIGURATION.md
       - Workflows: WORKFLOWS.md
       - Playbooks: PLAYBOOKS.md

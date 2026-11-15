@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Decide and stamp an edge release: what is releasable, its version, and the channel pointer (ADR 0114).

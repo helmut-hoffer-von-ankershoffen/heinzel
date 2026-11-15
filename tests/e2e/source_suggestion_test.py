@@ -119,7 +119,7 @@ if n == 0:
 elif n == 2:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'connected_read','arguments':{{}}}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  summary='Source read finished.' if n == 3 else 'Suggestion recorded.'
  wire={{'kind':'tool','name':name,'arguments':{{'report':summary,'summary':summary}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permission_denials':[],'structured_output':wire}}))

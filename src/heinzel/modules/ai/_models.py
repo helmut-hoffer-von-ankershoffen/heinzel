@@ -1,4 +1,4 @@
-"""What the chat's model and effort picker shows: the models and efforts of the AI access in use (ADR 0057)."""
+"""The models and efforts of the AI access in use, to pick from with `hz chat send --model` (ADR 0057)."""
 
 from pydantic import BaseModel, Field
 
@@ -32,7 +32,7 @@ class EffortChoice(BaseModel):
 
 
 class ModelList(BaseModel):
-    """The models and efforts of the AI access in use, for the chat's picker."""
+    """The models and efforts of the AI access in use, to pick from with `hz chat send --model`."""
 
     access: str | None = Field(description="The AI access in use, e.g. `claude-code`; none when none is.")
     title: str = Field(description="Its title, e.g. `Claude Code`.")

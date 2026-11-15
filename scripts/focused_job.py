@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Run exactly one focused test selection on a hosted runner (`.github/workflows/focused-job.yml`).
@@ -38,10 +38,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("e2e", "pytest", "vitest")
 LANES = ("cli", "supervised", "web-1", "web-2")
-MAX_IDS = 10
+MAX_IDS = 4096
+"""The limit on ids in a non-Python lane: above any number of test files, so it never binds (owner rule, 2026-11-14:
+focused tests for PRs of any size). The key stays until the steuermaschine stops reading it, then goes."""
 PYTHON_CI_MAX_IDS = 4096
-"""The canonical Python lane's limit: above any number of test files, so it never binds (owner, 2026-11-14). A head's
-selection may name every test it needs; the key stays until the steuermaschine stops reading it, then goes."""
+"""The canonical Python lane's limit: above any number of test files, so it never binds (owner rule, 2026-11-14: focused
+tests for PRs of any size). A head's selection may name every test it needs; the key stays until the steuermaschine
+stops reading it, then goes."""
 VITEST_ALL = "web/ALL"  # the whole Vitest suite as `make test-web` runs it: no file filter, never mixed with files
 MAX_REPEAT = 60
 DEADLINE = 1020  # seconds into the run: start no new round after this, so the tally and artifacts still upload
@@ -117,9 +120,10 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int =
         return [["make", "e2e-prepare"], [*pytest, junit, *ids]]
     if kind == "pytest":
         ids = _paths(selector, "tests/", kind, max_ids)
-        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
+        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test", "--no-install-package", "pyyaml"]
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
-        return [sync, [*pytest, junit, *ids]]
+        # `uv sync` is exact: it removed PyYAML again, so the reviewed build goes in after it (no 3.15 wheel).
+        return [sync, ["bash", "scripts/bootstrap-pyyaml.sh"], [*pytest, junit, *ids]]
     if kind == "vitest":
         web = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "exec", "vitest", "run", "--maxWorkers=2"]
         report = ["--reporter=default", "--reporter=junit", f"--outputFile.junit={out.resolve() / 'junit.xml'}"]

@@ -110,6 +110,7 @@ describe("Plugin settings pages once the installed plugins are known", () => {
     expect(nav.connectors.map((entry) => entry.id)).toEqual(["atlassian", "google"]);
     expect(nav.pages.filter((entry) => entry.heading === "preferences").map((entry) => entry.id)).toEqual([
       "appearance",
+      "browser",
       "notifications",
     ]);
   });

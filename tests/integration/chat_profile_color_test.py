@@ -28,7 +28,7 @@ payload=json.load(sys.stdin)
 if len(payload['messages']) == 1:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'profile:propose','arguments':{{'expected_revision':1,'name':'Original','appearance':{look!r}}}}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  wire={{'kind':'tool','name':name,'arguments':{{'report':'Ready for review'}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,
  'permission_denials':[], 'structured_output':wire}}))

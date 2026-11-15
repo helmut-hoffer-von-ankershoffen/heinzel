@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Affected-tests selector: changed files -> the minimal pytest paths, Vitest files, E2E lanes and CI jobs.

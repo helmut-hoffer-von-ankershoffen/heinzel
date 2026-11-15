@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["packaging==26.3"]
 # ///
 """Read public plugin metadata at immutable revisions; never import or install a provider.

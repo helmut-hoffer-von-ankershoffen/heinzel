@@ -13,7 +13,7 @@ from heinzel import CapabilityState, Notice, NoticeKind, ResolveWhen
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._store import MAX_NOTICES, Store
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "notify_v0929"
 # Exact files from v0.9.29, peeled commit f034fb410ac801562c1afff68f62a19cec9ec26a.
 HASHES = {

@@ -33,11 +33,14 @@ from heinzel.modules.system._models import (
     ReleaseCheck,
     ReleaseNotes,
     SystemInfo,
+    ToolReference,
     UpdatePlan,
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import PyPIPluginReleases, plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
+from heinzel.modules.system._tools import render as render_tools_text
+from heinzel.modules.system._tools import tools as tool_list
 from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
@@ -144,6 +147,33 @@ def modules(service: SystemService) -> list[ModuleInfo]:
     return service.modules()
 
 
+def render_tools(reference: ToolReference) -> RenderableType:
+    """The reference as plain text, unwrapped, so it pipes into a file."""
+    from heinzel.modules.system._render import render_tools  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_tools(reference)
+
+
+@module.operation(render=render_tools)
+def tools(
+    kernel: Kernel,
+    output: Annotated[
+        Literal["text", "markdown", "yaml", "json"],
+        Field(description="How to write the list; the CLI's own `--format json` wraps the whole result instead."),
+    ] = "text",
+    head: Annotated[
+        Literal["all", "cli", "mcp", "rest", "web"],
+        Field(description="Only what this head exposes; its input schemas too."),
+    ] = "all",
+    module: Annotated[
+        list[str] | None, Field(description="Only these modules and the ones under them, e.g. `system.config`.")
+    ] = None,
+) -> ToolReference:
+    """List every operation and tool with its heads, parameters and result, in four formats."""
+    entries = tool_list(kernel, modules=module or (), head=head)
+    return ToolReference(format=output, count=len(entries), text=render_tools_text(entries, output, head))
+
+
 @module.operation(render=render_release)
 def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     """Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
@@ -157,7 +187,7 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     return service.release(requirements[0] if requirements else None)
 
 
-@module.operation(read_only=False, audience="everyday", render=render_update)
+@module.operation(read_only=False, audience="everyday", render=render_update, agents="approve")
 def update(  # noqa: PLR0913 - the services, where to install from, and each answer a person can give in advance
     service: UpdateService,
     kernel: Kernel,
@@ -392,7 +422,7 @@ def recover_announced(installation: Installation, kernel: Kernel) -> bool:
     return True
 
 
-@module.operation(read_only=False, audience="everyday", render=render_channel)
+@module.operation(read_only=False, audience="everyday", render=render_channel, agents="approve")
 def channel(
     service: UpdateService,
     config: ConfigService,

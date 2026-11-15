@@ -31,7 +31,7 @@ from heinzel.modules.heinzel._draft_workflow_notice import LocalDraftNotice
 from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
 from heinzel.modules.heinzel._draft_workflow_runtime import tick
 from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, share_payload
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, is_retired
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 from heinzel.modules.heinzel._user_chat import UserChatService
 
@@ -116,7 +116,7 @@ def _register_chat_review(module: Module) -> None:
         host.owner(human=True, read=True)
         return host.journal.activity(session_id)
 
-    @module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web"}, audience="everyday", agents="never")
     def prepare_release_draft_share(service: DraftWorkflowShare, session_id: Identity, draft_key: DraftKey) -> str:
         """Capture the current edited draft and return the identity for a separate chat confirmation."""
         return arguments_hash(share_payload(service.propose(session_id, draft_key)))
@@ -155,7 +155,9 @@ def register_draft_workflow_operations(module: Module) -> None:
         _confirm(kernel, prompter, "publish-draft-workflow", created.session_id, request_id)
         return host.published(created.session_id, request_id)
 
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    @module.operation(
+        private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday", agents="never"
+    )
     def publish_draft_workflow(  # noqa: PLR0913, PLR0917 - exact inputs and injected authority services
         host: DraftWorkflowPublication,
         confirmation: ApprovalConfirmation,
@@ -174,7 +176,7 @@ def register_draft_workflow_operations(module: Module) -> None:
         """Capture the human-edited marked section and revision for exact share review; send nothing."""
         return service.propose(session_id, draft_key)
 
-    @module.operation(private=True, read_only=False, heads={"cli"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"cli"}, audience="everyday", agents="never")
     def approve_release_draft(
         kernel: Kernel, service: DraftWorkflowShare, prompter: Prompter, session_id: Identity, draft_key: DraftKey
     ) -> str:
@@ -190,7 +192,9 @@ def register_draft_workflow_operations(module: Module) -> None:
             raise HeinzelError(msg)
         return result
 
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    @module.operation(
+        private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday", agents="never"
+    )
     def share_draft_link(  # noqa: PLR0913, PLR0917 - exact inputs and injected authority services
         service: DraftWorkflowShare,
         confirmation: ApprovalConfirmation,
@@ -216,7 +220,9 @@ def register_draft_workflow_operations(module: Module) -> None:
             ],
         }
 
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    @module.operation(
+        private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday", agents="never"
+    )
     def revoke_release_workflow(host: DraftWorkflowPublication, session_id: Identity, request_id: Request) -> bool:
         """Revoke future recurring draft and notice effects under the shared document fence."""
         host.revoke(session_id, request_id)
@@ -234,6 +240,8 @@ def workflow_jobs(host: DraftWorkflowPublication) -> list[tuple[str, str]]:
         if head.problem:
             continue
         try:
+            if is_retired(host.crud.repository.control_read(head.session).events):
+                continue
             if not matching(host.journal.events(head.session), "draft.published"):
                 continue
             terms = host.published(head.session)

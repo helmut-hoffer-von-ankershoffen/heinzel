@@ -46,9 +46,9 @@ if (latePage) {
 const trace = [];
 const began = Date.now();
 const watched = new Set([
-  "/api/heinzel/new-chat", // bead f67s: "Create a Heinzel and take this message" must show whether it answered
+  "/api/heinzel/new-chat", // bead f67s: the first start's Start must show whether it answered
   "/api/heinzel/chat",
-  "/api/heinzel/answer-chat",
+  "/api/stream/heinzel/answer-chat",
   "/api/heinzel/chat-turn-state",
   "/api/heinzel/abandon-chat-turn",
   "/api/heinzel/session",
@@ -71,7 +71,7 @@ try {
   const text = "Prepare a private draft and suggest an identity.";
   await createHeinzelWith(page, text);
   trace.push(`+${Date.now() - began}ms create pressed`);
-  const message = page.getByLabel("Message your Heinzel");
+  const message = page.getByLabel(/^Message /);
   await message.waitFor();
   assert.equal(await message.inputValue(), text);
   await page.getByRole("button", { name: "Send" }).click();
@@ -253,9 +253,8 @@ try {
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
-  // The reply and its tool activity are the conversation, pressed above with Details closed as a person finds it:
-  // open Details only now, for the reviews. Open earlier, its sections change height above the reply when the
-  // turn settles and can move the summary out from under a held press.
+  // The reply and its tool activity are the conversation, pressed above before the page opens, as a person finds it:
+  // open the Heinzel's page only now, for the reviews.
   await openDetails(page);
   const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
@@ -273,11 +272,11 @@ try {
   await schedules.getByText(/Approved; the daemon must be running/).waitFor();
   await schedules.getByRole("button", { name: "Pause future turns" }).click();
   await schedules.getByText(/Every 5 minutes · paused/).waitFor();
-  await watchDisclosure(page.getByText(/suggested look/), "suggested-look");
-  await page.getByText(/suggested look/).click();
-  await page.getByRole("button", { name: "Use suggested identity" }).click();
-  await page.getByRole("button", { name: "Save name and look" }).click();
-  await page.getByRole("heading", { name: "Mira" }).waitFor();
+  // The chat's suggested look waits under Look and name on the Heinzel's page; Use it applies it at once, with Undo.
+  const look = page.getByRole("region", { name: "Look and name" });
+  await look.getByRole("button", { name: "Use it" }).click();
+  await look.getByText("Saved · Mira").waitFor();
+  await page.getByRole("heading", { name: "Mira, your Heinzel" }).waitFor();
   const state = await page.evaluate(async () => {
     const session = new URLSearchParams(location.search).get("chat");
     const authorization = `Bearer ${sessionStorage.getItem("hz.token")}`;
@@ -302,10 +301,22 @@ try {
       ["profile:propose", "completed"],
     ],
   );
-  await page.getByLabel("Message your Heinzel").fill("Continue after the interruption.");
+  await page.getByLabel(/^Message /).fill("Continue after the interruption.");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText(/reported its subscription usage limit/).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
+  // An uncertain turn is never a plain retry (T2): its bubble stays in the conversation with no Try again under it.
+  const uncertain = page
+    .locator('[data-message-speaker="you"]')
+    .filter({ hasText: "Continue after the interruption." });
+  await uncertain.first().waitFor();
+  // Once it is no longer on its way, the bubble carries no failure line (not sent, not answered) to retry from.
+  await uncertain.locator('[data-message-state="sending"]').first().waitFor({ state: "detached", timeout: 15000 });
+  assert.equal(
+    await uncertain.locator('[data-message-state="not-sent"], [data-message-state="not-answered"]').count(),
+    0,
+    `uncertain bubble states: ${await uncertain.locator("[data-message-state]").evaluateAll((all) => all.map((e) => e.getAttribute("data-message-state")))}`,
+  );
+  assert.equal(await page.locator("[data-message-state]").getByRole("button", { name: "Try again" }).count(), 0);
   await page.reload();
   await revealChat(page);
   await page.getByText(/may still be running/).waitFor();
@@ -324,7 +335,11 @@ try {
       inserted.resolve();
     });
   }
-  await page.reload();
+  // Back on /doctor, whose late report grows the page above the chat (the Heinzel's page reads no report).
+  const list = new URL(page.url());
+  list.pathname = "/doctor";
+  list.search = `?chat=${list.searchParams.get("chat")}`;
+  await page.goto(list.href);
   await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
   const continueConversation = page.getByRole("button", { name: "Continue conversation" });
@@ -357,7 +372,7 @@ try {
       await page.evaluate(() => window.__hzReleasePageResize());
     }
   } else await continueConversation.click();
-  const composer = page.getByLabel("Message your Heinzel");
+  const composer = page.getByLabel(/^Message /);
   await composer.fill("Please continue with the draft.");
   const submit = page.getByRole("button", { name: "Send" });
   trace.push(`before-submit enabled=${await submit.isEnabled()} input=${(await composer.inputValue()).length}`);
@@ -367,7 +382,7 @@ try {
   );
   const answered = page.waitForResponse(
     (response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/heinzel/answer-chat",
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/stream/heinzel/answer-chat",
   );
   const rendered = page.getByText("I prepared proposals for your review.").nth(1).waitFor({ timeout: 30000 });
   await submit.click();

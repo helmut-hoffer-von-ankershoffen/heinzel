@@ -14,6 +14,7 @@ from typing import Any, Literal, overload
 from pydantic import BaseModel
 from rich.console import RenderableType
 
+from heinzel.kernel._agent_writes import AgentWrites, ByArguments
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._contributions import (
@@ -199,6 +200,7 @@ class Module:
         health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
+        agents: AgentWrites | ByArguments | None = None,
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -217,6 +219,7 @@ class Module:
         health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
+        agents: AgentWrites | ByArguments | None = None,
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
@@ -240,6 +243,12 @@ class Module:
             aliases: Old command paths that still run it for one minor release, e.g. `["workflow run"]`: the CLI
                 hides them and names the new command on stderr, MCP keeps the old tool name marked deprecated
                 (ADR 0051).
+
+            agents: For an operation that changes things (`read_only=False`): what an agent's call does (ADR 0162).
+                `"direct"` runs it, `"approve"` waits for the person (sending to other people, deleting, paying,
+                publishing, credentials, installing code), `"never"` is the person's own (confirming, approving),
+                `"propose"` or nothing keeps the behaviour before the policy. `ByArguments` makes some calls
+                stricter. Mark it as strict as everything the operation can trigger.
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
@@ -271,6 +280,7 @@ class Module:
                     health_on_demand=health_on_demand,
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
+                    agents=agents,
                 )
             )
             return target

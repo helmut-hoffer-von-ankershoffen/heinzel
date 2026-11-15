@@ -20,7 +20,7 @@ describe("The Today cards from the doctor's report", () => {
     };
     const [down] = doctorCards(report("down", checks));
     const [degraded] = doctorCards(report("degraded", checks));
-    expect(down).toMatchObject({ tone: "bad", detail: "web port", route: "/doctor", context: "route:/doctor" });
+    expect(down).toMatchObject({ tone: "bad", detail: "web port", route: "/doctor" });
     expect(down?.title).toContain("1");
     expect(degraded?.tone).toBe("warn");
   });
@@ -48,7 +48,7 @@ describe("The Today cards from the daemon's jobs", () => {
     expect(cards.map((card) => card.id.split(":")[1])).toEqual(["broke", "stuck"]);
     expect(cards[1]?.detail).toBe("no schedule");
     expect(cards[0]?.detail).toMatch(/^Last run /);
-    expect(cards[0]).toMatchObject({ tone: "bad", route: "/contracts", context: "text:the daemon job broke" });
+    expect(cards[0]).toMatchObject({ tone: "bad", route: "/contracts" });
   });
 
   it("has none without jobs", () => {
@@ -79,11 +79,11 @@ describe("The Today cards from notices", () => {
     expect(cards.map((card) => card.id)).toEqual(["event:new"]);
   });
 
-  it("shows at most five and gives each its event as chat context", () => {
+  it("shows at most five, each with its detail and route", () => {
     const many = Array.from({ length: 8 }, (_, i) => notice(`n${i}`, "2026-11-11T11:00:00Z"));
     const cards = eventCards(list(...many), now);
     expect(cards).toHaveLength(5);
-    expect(cards[0]).toMatchObject({ context: "event:n0", detail: "b", route: "/x" });
+    expect(cards[0]).toMatchObject({ detail: "b", route: "/x" });
   });
 
   it("calls failures bad, doctor notices a warning and the rest info", () => {

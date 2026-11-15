@@ -3,6 +3,7 @@ status: proposed
 date: 2026-11-08
 implementation: built
 decision-makers: maintainer
+amended-by: 0162
 related: 0019, 0047, 0068, 0138
 ---
 

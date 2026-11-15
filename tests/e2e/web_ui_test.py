@@ -602,7 +602,7 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     (plugin / "src" / "heinzel_sidecar").mkdir(parents=True)
     (plugin / "pyproject.toml").write_text(
         '[project]\nname = "heinzel-sidecar"\nversion = "1.0.0"\ndescription = "A plugin installed outside the app."\n'
-        'requires-python = ">=3.12"\ndependencies = []\n'
+        'requires-python = ">=3.15"\ndependencies = []\n'
         '[project.entry-points."heinzel.modules"]\nsidecar = "heinzel_sidecar"\n'
         '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
         '[tool.hatch.build.targets.wheel]\npackages = ["src/heinzel_sidecar"]\n',
@@ -1161,6 +1161,23 @@ def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environ
     assert result["browser"] == {"topbar": 48}
     assert result["desktop"]["order"][1:] == ["Collapse navigation", "Today", "Notifications", "Search"]
     assert result["collapsed"]["expandX"] >= 80
+
+
+@pytest.mark.timeout(600)
+def test_bookmarks_are_managed_listed_as_a_tree_and_opened_on_desktop_and_phone(environment, tmp_path):
+    """Folder, add, move, drag, remove and Undo in the manager; the navigation tree by mouse, keys and touch."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "bookmarks.mjs")
+    assert result == {
+        "created": True,
+        "moved": True,
+        "undone": True,
+        "remembered": True,
+        "keyboard": True,
+        "pwaTab": True,
+        "desktopTab": True,
+        "phone": True,
+    }
 
 
 @pytest.mark.timeout(600)

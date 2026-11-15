@@ -41,17 +41,3 @@ export const ROLES = [
   ["product-manager", "PM - Product Manager"],
   ["program-manager", "TPM - Program Manager"],
 ] as const;
-
-/** "Send the weekly status to my team" → `send-the-weekly-status`: a contract name `hz heinzel new` takes. */
-export function contractName(sentence: string): string {
-  return sentence
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 4)
-    .join("-");
-}

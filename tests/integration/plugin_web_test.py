@@ -362,6 +362,8 @@ def test_a_restart_hands_the_port_and_the_token_to_the_process_it_becomes(make_k
     monkeypatch.setattr(uvicorn, "Server", Recorded)
     monkeypatch.setattr(web.sys, "argv", ["hz", "ui", "serve", "--port", "0"])
     kernel = make_kernel(builtins=True)
+    # The desktop app's bridge token arrives in the environment, as it does when the app starts the service.
+    monkeypatch.setenv(web.BROWSER_BRIDGE, "b" * 43)
     first = threading.Thread(
         target=web.serve,
         args=(kernel,),
@@ -374,10 +376,12 @@ def test_a_restart_hands_the_port_and_the_token_to_the_process_it_becomes(make_k
     auth = {"Authorization": f"Bearer {token}"}
     assert httpx.post(f"http://127.0.0.1:{port}/api/restart", headers=auth, timeout=10).status_code == 202
     first.join(10)
+    assert web.BROWSER_BRIDGE not in os.environ  # read and removed: nothing the service starts inherits it
     [(executable, command, environment)] = executed
     assert command == [executable, "-m", "heinzel", "ui", "serve", "--port", "0"]
     fd, handed = environment[web.RESUME].split(":", 1)
     assert (fd.isdigit(), handed) == (True, token)
+    assert environment[web.BROWSER_BRIDGE] == "b" * 43  # the desktop app does not start the process it becomes
 
     # The process it becomes: the same port, the same token, no new browser tab.
     started.clear()

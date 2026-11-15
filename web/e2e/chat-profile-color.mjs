@@ -15,15 +15,25 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  const message = page.getByLabel("Message your Heinzel");
-  const header = page.getByRole("img", { name: /^Original/ }).first();
+  const message = page.getByLabel(/^Message /);
+  // The face in the chat's header sits in the switcher button, which carries the name (ADR 0157).
+  const header = page
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: /^Original.*\. Switch Heinzel$/ })
+    .locator('svg[data-view="bust"]');
   const hatFill = '[fill="#1E88E5"]';
   const checkHeader = async (hatBlue) => {
     await header.waitFor({ timeout: 30000 });
     const view = await header.getAttribute("data-view");
     assert.equal(view, "bust");
-    // Chosen look: old, long beard, rose shirt, scarf; the hat is green before the change and blue after it.
-    assert.match((await header.getAttribute("aria-label")) ?? "", /wearing a scarf/);
+    // Chosen look: old, long beard, rose shirt, scarf; the hat is green before the change and blue after it. The face
+    // is decoration inside the switcher button, so the look is read from its data and its drawing.
+    assert.equal(await header.getAttribute("data-age"), "old");
+    assert.equal(await header.getAttribute("data-beard"), "long");
+    assert.equal(await header.getAttribute("data-shirt"), "rose");
+    assert.match((await header.getAttribute("data-accessories")) ?? "", /\bscarf\b/);
+    assert.ok((await header.locator('[fill="#D9567C"]').count()) > 0, "the rose shirt is drawn");
+    assert.equal(await header.getAttribute("data-hat"), hatBlue ? "blue" : "green");
     assert.equal((await header.locator(hatFill).count()) > 0, hatBlue);
     assert.ok((await header.locator('[fill="#43A047"]').count()) > 0 !== hatBlue);
   };
@@ -34,34 +44,27 @@ try {
   await openDetails(page);
   await message.fill("Make the hat blue, keep my other preferences");
   await page.getByRole("button", { name: "Send" }).click();
-  const editor = page
-    .locator("details")
-    .filter({ has: page.locator("summary").filter({ hasText: /^Customize your Heinzel(?: · suggested look)?$/ }) })
-    .last(); // the Details disclosure around it matches too
-  await editor.locator("summary").click();
-  const suggestion = editor.getByRole("region", { name: "Suggested identity" });
+  // The Heinzel's page: the look editor of Meet your first Heinzelmännchen, and the chat's suggestion with Use it.
+  const editor = page.getByRole("region", { name: "Look and name" });
+  const suggestion = editor.getByText(/^Suggested in chat: /);
   await suggestion.waitFor({ timeout: 30000 });
   const hat = () =>
-    editor
-      .getByRole("radiogroup", { name: "Hat colour" })
-      .getByRole("radio", { checked: true })
-      .getAttribute("aria-label");
+    editor.getByRole("radiogroup", { name: "Hat" }).getByRole("radio", { checked: true }).getAttribute("aria-label");
   assert.equal(await hat(), "Green");
-  await suggestion.getByRole("button", { name: "Use suggested identity" }).click();
-  assert.equal(await hat(), "Blue");
   const saved = page.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/heinzel/profile" && response.request().method() === "POST",
   );
-  await editor.getByRole("button", { name: "Save name and look" }).click();
+  await editor.getByRole("button", { name: "Use it" }).click();
   assert.equal((await saved).status(), 200);
+  await editor.getByRole("button", { name: "Undo" }).waitFor();
+  assert.equal(await hat(), "Blue");
   await page.reload();
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
   await openDetails(page);
-  await editor.locator("summary").click();
   assert.equal(await hat(), "Blue");
   await checkHeader(true);
-  const avatar = editor.getByRole("img", { name: "Appearance preview" });
+  const avatar = editor.getByRole("img", { name: /, as it looks now/ });
   assert.ok((await avatar.locator('[fill="#1E88E5"]').count()) > 0);
   // Phone width: the header avatar stays visible next to the name.
   await page.setViewportSize({ width: 375, height: 812 });
@@ -78,11 +81,11 @@ try {
   await page.goto(plain.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
   await chatTab.click();
-  await page.getByRole("button", { name: /: switch chats$/ }).click();
   await page
-    .getByRole("dialog", { name: "Your chats" })
-    .getByRole("button", { name: "Create a personal Heinzel" })
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: /\. Switch Heinzel$/ })
     .click();
+  await page.getByRole("dialog", { name: "Your Heinzels" }).getByRole("button", { name: "New Heinzel" }).click();
   await page.waitForURL((next) => next.searchParams.get("create") === "1", { timeout: 10000 });
   const pageTab = page.getByRole("tab", { name: "Page", exact: true });
   const draft = page.getByText("Your new Heinzel", { exact: true });

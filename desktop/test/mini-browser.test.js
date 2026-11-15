@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { createMiniBrowser } from "../src/mini-browser.js";
+import { BROWSER_PARTITION, MAX_FAVICON_BYTES, MAX_FAVICON_DOWNLOAD, createMiniBrowser, deviceDialog, smallFavicon, smallPng } from "../src/mini-browser.js";
 
-function fixture(enabled = true, configure = async () => {}) {
+function fixture(configure = async () => {}, extra = {}) {
   const frame = { processId: 1, frameToken: "main", url: "http://127.0.0.1:8737/", detached: false, isDestroyed: () => false };
   const sender = Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, getZoomFactor: () => 1 });
   const views = [], sessions = [], options = [], calls = [];
   const owner = Object.assign(new EventEmitter(), { webContents: sender, isDestroyed: () => false, isFocused: () => true,
     getContentSize: () => [1000, 700], contentView: { addChildView: (view) => calls.push(["add", view]), removeChildView: () => calls.push(["remove"]) } });
   const controller = createMiniBrowser({ createNetwork: async () => ({ configure: async () => { await configure(); calls.push(["network-ready"]); }, close: () => calls.push(["network-close"]), authenticate: (_info, callback) => callback() }), windows: new WeakSet([owner]), fromWebContents: (contents) => contents === sender ? owner : null,
-    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }), enabled: async () => typeof enabled === "function" ? enabled() : enabled,
+    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }),
     createSession: (partition, config) => {
       const session = Object.assign(new EventEmitter(), { partition, config, clearStorageData: async () => calls.push(["clear"]),
+        setSpellCheckerEnabled: (enabled) => calls.push(["spellcheck", enabled]),
+        setSpellCheckerLanguages: (languages) => calls.push(["languages", languages]),
         setPermissionCheckHandler: (handler) => { session.check = handler; },
         setPermissionRequestHandler: (handler) => { session.request = handler; },
         setDevicePermissionHandler: (handler) => { session.device = handler; },
@@ -22,7 +24,7 @@ function fixture(enabled = true, configure = async () => {}) {
       sessions.push(session); return session;
     }, createView: (preferences) => {
       options.push(preferences); let url = "", dead = false;
-      const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead,
+      const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
         close: (options) => { dead = true; calls.push(["close", options]); }, getURL: () => url,
         loadURL: async (target) => { url = target; calls.push(["load", target]); }, reload: () => calls.push(["reload"]),
         navigationHistory: { canGoBack: () => false, canGoForward: () => false },
@@ -30,18 +32,16 @@ function fixture(enabled = true, configure = async () => {}) {
         setWindowOpenHandler: (handler) => { contents.popup = handler; } });
       const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), setVisible: (visible) => calls.push(["visible", visible]) };
       views.push(view); return view;
-    } });
+    }, ...extra });
   return { controller, owner, sender, frame, views, sessions, options, calls,
     invoke: (request) => controller.handle({ sender, senderFrame: frame }, request) };
 }
 
-test("native guest is dark until explicitly enabled and never borrows the product session/preload", async () => {
-  const dark = fixture(false);
-  await assert.rejects(dark.invoke({ action: "navigate", url: "https://example.com" }));
-  assert.equal(dark.views.length, 0);
+test("native guest never borrows the product session/preload", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
-  assert.match(f.sessions[0].partition, /^hz-browser-/);
-  assert.ok(!f.sessions[0].partition.startsWith("persist:"));
+  // One persistent website partition: never the product's default session, never per-window.
+  assert.equal(f.sessions[0].partition, "persist:hz-browser");
+  assert.equal(BROWSER_PARTITION, "persist:hz-browser");
   assert.equal(f.options[0].webPreferences.session, f.sessions[0]);
   assert.equal(f.options[0].webPreferences.preload, undefined);
   for (const key of ["nodeIntegration", "nodeIntegrationInSubFrames", "webviewTag"])
@@ -52,8 +52,10 @@ test("native guest is dark until explicitly enabled and never borrows the produc
 test("all permissions, downloads, popup dispatch and local redirects/subresources refuse", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   const session = f.sessions[0], contents = f.views[0].webContents;
-  assert.equal(session.check(), false);
-  session.request(null, "media", (allowed) => assert.equal(allowed, false));
+  for (const permission of ["media", "geolocation", "notifications", "display-capture", "clipboard-read", undefined])
+    assert.equal(session.check(null, permission), false, permission);
+  for (const permission of ["media", "display-capture", "geolocation", "hid", "usb", "serial"])
+    session.request(null, permission, (allowed) => assert.equal(allowed, false));
   let prevented = 0;
   session.emit("will-download", { preventDefault: () => prevented++ });
   assert.deepEqual(contents.popup({ url: "https://other.example.com" }), { action: "deny" });
@@ -63,25 +65,210 @@ test("all permissions, downloads, popup dispatch and local redirects/subresource
     session.before({ url }, (result) => assert.equal(result.cancel, true));
   session.before({ url: "https://example.com/image.png" }, (result) => assert.equal(result.cancel, false));
 });
-test("device choosers, device permissions, Bluetooth pairing and screen sharing are refused", async () => {
-  const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("device and security-key prompts show the person a chooser; only the picked device is granted", async () => {
+  const asked = [];
+  let answer = (devices) => devices[0].id;
+  const f = fixture(undefined, { chooseDevice: async (request) => { asked.push(request); return answer(request.devices); } });
+  await f.invoke({ action: "navigate", url: "https://keys.example.com/login" });
   const session = f.sessions[0], contents = f.views[0].webContents;
-  assert.equal(session.device({ deviceType: "usb" }), false);
-  session.pairing({}, (answer) => assert.deepEqual(answer, { confirmed: false }));
-  session.display({}, (answer) => assert.deepEqual(answer, {}));
-  for (const chooser of ["select-hid-device", "select-serial-port", "select-usb-device"]) {
+  const top = contents.mainFrame;
+  Object.assign(top, { origin: "https://keys.example.com", url: "https://keys.example.com/login" });
+  // An embed asks from its own frame: the chooser names the embed, not only the page around it.
+  const embed = { top, origin: "https://embed.example.net", url: "https://embed.example.net/widget" };
+  // Electron's handler shapes (DeviceInfoToValue), not the chooser entries.
+  const key = { vendorId: 4176, productId: 1031, serialNumber: "KEY1" };
+  assert.equal(session.device({ deviceType: "hid", origin: "https://keys.example.com", device: key }), false);
+  for (const permission of ["hid", "usb", "serial"]) assert.equal(session.check(null, permission), true, permission);
+  session.display({}, (result) => assert.deepEqual(result, {}));
+  const lists = {
+    "select-hid-device": [{ deviceList: [
+      { deviceId: "h1", name: "Security Key", vendorId: 4176, productId: 1031, serialNumber: "KEY1" },
+      { deviceId: "h2", name: "Keyboard", vendorId: 1452, productId: 641, serialNumber: "KBD" }], frame: top }],
+    "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }], frame: embed }],
+    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "9025", productId: "67", serialNumber: "SN-1" }], contents],
+  };
+  for (const [chooser, args] of Object.entries(lists)) {
     let prevented = false, picked = "unset";
-    session.emit(chooser, { preventDefault: () => { prevented = true; } }, { deviceList: [{ deviceId: "1" }] },
-      (id) => { picked = id; });
+    session.emit(chooser, { preventDefault: () => { prevented = true; } }, ...args, (id) => { picked = id; });
+    await settle();
     assert.equal(prevented, true, chooser);
-    assert.equal(picked, chooser === "select-serial-port" ? "" : undefined, chooser);
+    assert.equal(picked, { "select-hid-device": "h1", "select-usb-device": "u1", "select-serial-port": "s1" }[chooser]);
   }
-  let prevented = false, picked = "unset";
-  contents.emit("select-bluetooth-device", { preventDefault: () => { prevented = true; } }, [{ deviceId: "1" }],
-    (id) => { picked = id; });
-  assert.equal(prevented, true);
-  assert.equal(picked, "");
+  assert.equal(asked.length, 3);
+  assert.equal(asked[0].window, f.owner);
+  assert.equal(asked[0].host, "keys.example.com");
+  assert.equal(asked[1].host, "embed.example.net");
+  assert.equal(asked[2].host, "keys.example.com");
+  // Only the picked device, for the origin that asked, of that device type, is granted.
+  const check = (deviceType, origin, device) => session.device({ deviceType, origin, device });
+  assert.equal(check("hid", "https://keys.example.com", key), true);
+  assert.equal(check("hid", "https://keys.example.com", { vendorId: 1452, productId: 641, serialNumber: "KBD" }), false);
+  assert.equal(check("hid", "https://keys.example.com", { ...key, serialNumber: "OTHER" }), false);
+  assert.equal(check("hid", "https://other.example.com", key), false);
+  assert.equal(check("hid", "https://keys.example.com", { deviceId: "h1" }), false);
+  assert.equal(check("usb", "https://keys.example.com", { deviceId: "u1" }), false);
+  assert.equal(check("usb", "https://embed.example.net", { deviceId: "u1" }), true);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 67, serial_number: "SN-1", usb_driver: "x" }), true);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 68, serial_number: "SN-1" }), false);
+  assert.equal(check("hid", "https://keys.example.com", { vendorId: 4176, productId: 1031 }), false);
+  assert.equal(session.device(undefined), false);
+  assert.deepEqual(asked[0].devices, [{ id: "h1", label: "Security Key" }, { id: "h2", label: "Keyboard" }]);
+  assert.deepEqual(asked[1].devices, [{ id: "u1", label: "Token · Maker" }]);
+  // Cancel, an unknown id or a failing dialog grant nothing; HID/USB cancel without an id, serial with "".
+  for (const reply of [() => null, () => "not-offered", () => { throw new Error("dialog"); }]) {
+    answer = reply;
+    for (const [chooser, args] of Object.entries(lists)) {
+      let picked = "unset";
+      session.emit(chooser, { preventDefault: () => {} }, ...args, (id) => { picked = id; });
+      await settle();
+      assert.equal(picked, chooser === "select-serial-port" ? "" : undefined, chooser);
+    }
+  }
+  // Bluetooth repeats while scanning: one chooser, the latest callback answers.
+  answer = (devices) => devices.at(-1).id;
+  const before = asked.length, answers = [];
+  contents.emit("select-bluetooth-device", { preventDefault: () => {} }, [], (id) => answers.push(["first", id]));
+  contents.emit("select-bluetooth-device", { preventDefault: () => {} }, [{ deviceId: "b1", deviceName: "Key" }], (id) => answers.push(["second", id]));
+  contents.emit("select-bluetooth-device", { preventDefault: () => {} }, [{ deviceId: "b1", deviceName: "Key" }, { deviceId: "b2", deviceName: "Other" }], (id) => answers.push(["third", id]));
+  await settle();
+  assert.equal(asked.length, before + 1);
+  assert.deepEqual(answers, [["third", "b1"]]);
+  answer = () => "pair";
+  const paired = [];
+  session.pairing({ pairingKind: "confirm", frame: top }, (result) => paired.push(result));
+  session.pairing({ pairingKind: "providePin", frame: top }, (result) => paired.push(result));
+  answer = () => null;
+  session.pairing({ pairingKind: "confirmPin", pin: "123456", frame: top }, (result) => paired.push(result));
+  await settle();
+  assert.deepEqual(paired, [{ confirmed: false }, { confirmed: true }, { confirmed: false }]);
+  assert.equal(asked.at(-1).devices[0].label, "Pair with PIN 123456");
 });
+
+test("a device prompt with no device, or from a background window, says so instead of failing silently", async () => {
+  const asked = [];
+  const f = fixture(undefined, { chooseDevice: async (request) => { asked.push(request); return request.devices[0].id; } });
+  await f.invoke({ action: "navigate", url: "https://keys.example.com/" });
+  const session = f.sessions[0];
+  let picked = "unset";
+  const frame = f.views[0].webContents.mainFrame;
+  session.emit("select-hid-device", { preventDefault: () => {} }, { deviceList: [], frame }, (id) => { picked = id; });
+  await settle();
+  assert.equal(picked, undefined);
+  assert.equal((await f.invoke({ action: "state" })).notice, "no-device");
+  f.sender.emit("did-start-navigation", { isMainFrame: false, isSameDocument: false });
+  f.views[0].webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
+  // A frame of no guest (another session user) never prompts.
+  picked = "unset";
+  session.emit("select-usb-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "u1" }], frame: { top: {} } }, (id) => { picked = id; });
+  await settle();
+  assert.equal(picked, undefined);
+  f.owner.isFocused = () => false;
+  session.emit("select-usb-device", { preventDefault: () => {} }, { deviceList: [{ deviceId: "u1" }], frame }, (id) => { picked = id; });
+  await settle();
+  assert.equal(picked, undefined);
+  assert.equal(asked.length, 0);
+});
+
+test("the device dialog lists each device, then Cancel, and cancels by default", () => {
+  const options = deviceDialog({ host: "keys.example.com", devices: [{ id: "a", label: "Key A" }, { id: "b", label: "Key B" }] });
+  assert.deepEqual(options.buttons, ["Device: Key A", "Device: Key B", "Cancel"]);
+  // A device that names itself "Cancel" stays recognisable as a device.
+  assert.deepEqual(deviceDialog({ host: "x.example.com", devices: [{ id: "c", label: "Cancel" }] }).buttons, ["Device: Cancel", "Cancel"]);
+  assert.equal(options.cancelId, 2);
+  assert.equal(options.defaultId, 2);
+  assert.match(options.message, /^keys\.example\.com wants to connect to a device$/);
+  assert.match(deviceDialog({ host: "", devices: [] }).message, /^This website/);
+});
+
+test("a passkey step or a WebAuthn failure shows a visible note that passkeys may not work", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://accounts.example.com/" });
+  const contents = f.views[0].webContents;
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
+  contents.emit("did-navigate", {}, "https://accounts.example.com/v3/signin/challenge/pk?x=1");
+  assert.equal((await f.invoke({ action: "state" })).notice, "passkey");
+  contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  contents.emit("did-navigate", {}, "https://accounts.example.com/v3/signin/challenge/pwd");
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
+  contents.emit("console-message", { message: "Uncaught (in promise) NotAllowedError: The operation either timed out or was not allowed." });
+  assert.equal((await f.invoke({ action: "state" })).notice, "passkey");
+  contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  contents.emit("console-message", {}, 2, "WebAuthn request failed", 1, "x.js");
+  assert.equal((await f.invoke({ action: "state" })).notice, "passkey");
+  contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  contents.emit("console-message", { message: "ordinary log line" });
+  contents.emit("did-navigate-in-page", {}, "not a url");
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
+});
+
+test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
+  const opened = [];
+  const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null });
+  await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
+  await f.invoke({ action: "external" });
+  assert.deepEqual(opened, ["https://example.com/page?q=1"]);
+  await assert.rejects(f.invoke({ action: "external", url: "https://evil.example.com/" }), /Invalid browser command/);
+  const contents = f.views[0].webContents;
+  for (const url of ["", "http://example.com/", "file:///etc/hosts", "https://127.0.0.1/", "http://127.0.0.1:8737/"]) {
+    contents.getURL = () => url;
+    await assert.rejects(f.invoke({ action: "external" }));
+  }
+  assert.deepEqual(opened, ["https://example.com/page?q=1"]);
+});
+
+test("sign-ins persist across close and reopen; Clear browsing data empties the shared partition", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  await f.invoke({ action: "close" });
+  await f.invoke({ action: "navigate", url: "https://example.com/again" });
+  // Close never wipes: the reopened guest uses the same persistent partition, so its cookies are still there.
+  assert.equal(f.sessions.length, 1);
+  assert.equal(f.options[1].webPreferences.session, f.sessions[0]);
+  assert.ok(!f.calls.some(([name]) => name === "clear"));
+  const session = f.sessions[0];
+  const cleared = [];
+  session.clearCache = async () => cleared.push("cache");
+  session.clearAuthCache = async () => cleared.push("auth");
+  await f.invoke({ action: "clear" });
+  assert.deepEqual(cleared.sort(), ["auth", "cache"]);
+  // The page leaves its site before the wipe, so no running script writes data back; then it loads again.
+  const order = f.calls.map(([name, target]) => (name === "load" ? target : name)).filter((name) => name !== "webrtc");
+  const blank = order.lastIndexOf("about:blank"), wiped = order.lastIndexOf("clear");
+  assert.ok(blank >= 0 && blank < wiped, order.join(" "));
+  assert.equal(order.at(-1), "https://example.com/again");
+  // A failed wipe is reported, not hidden.
+  session.clearStorageData = async () => { throw new Error("disk"); };
+  await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
+  // The restore navigation does not hide it; the next good clear does.
+  f.views[1].webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert.equal((await f.invoke({ action: "state" })).notice, "clear-failed");
+  session.clearStorageData = async () => {};
+  await f.invoke({ action: "clear" });
+  assert.equal((await f.invoke({ action: "state" })).notice, null);
+  // Clearing before any guest in this run still opens and empties the persisted partition.
+  const cold = fixture();
+  await cold.invoke({ action: "clear" });
+  assert.equal(cold.sessions[0].partition, "persist:hz-browser");
+  assert.ok(cold.calls.some(([name]) => name === "clear"));
+  assert.equal(cold.views.length, 0);
+});
+
+test("one CONNECT broker serves the shared partition and ends with the last guest", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  await f.invoke({ action: "navigate", url: "https://example.com/two" });
+  assert.equal(f.calls.filter(([name]) => name === "network-ready").length, 1);
+  await f.invoke({ action: "close" });
+  await settle();
+  assert.equal(f.calls.filter(([name]) => name === "network-close").length, 1);
+  await f.invoke({ action: "navigate", url: "https://example.com/three" });
+  assert.equal(f.calls.filter(([name]) => name === "network-ready").length, 2);
+});
+
 test("every redirect hop and request to a non-public target is refused, a public hop passes", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   const session = f.sessions[0], contents = f.views[0].webContents;
@@ -102,7 +289,7 @@ test("every redirect hop and request to a non-public target is refused, a public
   assert.equal(prevented, false);
   await assert.rejects(f.invoke({ action: "navigate", url: "https://mini.tail1234.ts.net/" }));
 });
-test("surface layout is bounded, hidden on request, destroyed on product navigation and session not reused", async () => {
+test("surface layout is bounded, hidden on request, destroyed on product navigation, partition kept", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   await assert.rejects(f.invoke({ action: "layout", bounds: { x: -1, y: 0, width: 100, height: 100 } }));
   await f.invoke({ action: "layout", bounds: { x: 600, y: 100, width: 300, height: 400 } });
@@ -122,11 +309,10 @@ test("surface layout is bounded, hidden on request, destroyed on product navigat
   assert.ok(f.calls.some(([name, options]) => name === "close" && options.waitForBeforeUnload === false));
   assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
   assert.equal(f.owner.listenerCount("closed"), 0);
-  assert.ok(f.calls.some(([name]) => name === "clear"));
+  assert.ok(!f.calls.some(([name]) => name === "clear"));
   await f.invoke({ action: "navigate", url: "https://example.com" });
-  // Reopening reuses the wiped partition of this window instead of leaking a new in-memory session.
+  // Reopening reuses the one persistent partition, with its handlers registered once.
   assert.equal(f.sessions.length, 1);
-  assert.ok(f.calls.findIndex(([name]) => name === "clear") < f.calls.findLastIndex(([name]) => name === "load"));
   assert.equal(f.sessions[0].listenerCount("will-download"), 1);
   f.controller.closeAll();
   assert.ok(f.views.every((view) => view.webContents.isDestroyed()));
@@ -138,25 +324,10 @@ test("unknown commands, fields and a guest sender cannot control the product", a
   await assert.rejects(f.controller.handle({ sender: { isDestroyed: () => false }, senderFrame: f.frame }, { action: "close" }));
   assert.equal(f.views.length, 0);
 });
-test("concurrent initial navigation creates only one guest after asynchronous feature validation", async () => {
+test("concurrent initial navigation creates only one guest while the guest opens", async () => {
   const f = fixture();
   await Promise.all([f.invoke({ action: "navigate", url: "https://example.com/one" }), f.invoke({ action: "navigate", url: "https://example.com/two" })]);
   assert.equal(f.views.length, 1);
-});
-
-test("closing, navigating or shutting down during feature validation cannot create a late guest", async () => {
-  for (const action of ["close", "shutdown", "navigation"]) {
-    let complete;
-    const f = fixture(() => new Promise((resolve) => { complete = resolve; }));
-    const pending = f.invoke({ action: "navigate", url: "https://example.com" });
-    if (action === "shutdown") f.controller.closeAll();
-    else if (action === "navigation") {
-      f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
-    } else await f.invoke({ action: "close" });
-    complete(true);
-    await assert.rejects(pending);
-    assert.equal(f.views.length, 0);
-  }
 });
 
 test("guest declines platform certificates and authentication challenges", async () => {
@@ -179,14 +350,14 @@ test("guest declines platform certificates and authentication challenges", async
 });
 
 test("proxy setup fails closed and close during setup never loads a late website", async () => {
-  const broken = fixture(true, async () => { throw new Error("private internal error"); });
+  const broken = fixture(async () => { throw new Error("private internal error"); });
   await assert.rejects(broken.invoke({ action: "navigate", url: "https://example.com" }), /^Error: Browser network is unavailable\.$/);
   assert.equal(broken.views.length, 0);
   assert(broken.calls.some(([name]) => name === "network-close"));
   let complete, started;
   const pending = new Promise(resolve => { complete = resolve; });
   const began = new Promise(resolve => { started = resolve; });
-  const f = fixture(true, async () => { started(); await pending; });
+  const f = fixture(async () => { started(); await pending; });
   const navigation = f.invoke({ action: "navigate", url: "https://example.com" });
   await began;
   await f.invoke({ action: "close" });
@@ -195,4 +366,390 @@ test("proxy setup fails closed and close during setup never loads a late website
   assert(!f.calls.some(([name]) => name === "load"));
   assert(f.calls.some(([name]) => name === "network-close"));
   assert(f.views.every(view => view.webContents.isDestroyed()));
+});
+
+test("Clear browsing data also revokes every device the person picked", async () => {
+  const f = fixture(undefined, { chooseDevice: async ({ devices }) => devices[0].id });
+  await f.invoke({ action: "navigate", url: "https://keys.example.com/" });
+  const session = f.sessions[0], frame = f.views[0].webContents.mainFrame;
+  Object.assign(frame, { origin: "https://keys.example.com" });
+  session.emit("select-hid-device", { preventDefault: () => {} },
+    { deviceList: [{ deviceId: "h1", vendorId: 4176, productId: 1031, serialNumber: "KEY1" }], frame }, () => {});
+  await settle();
+  const granted = () => session.device({ deviceType: "hid", origin: "https://keys.example.com",
+    device: { vendorId: 4176, productId: 1031, serialNumber: "KEY1" } });
+  assert.equal(granted(), true);
+  await f.invoke({ action: "clear" });
+  assert.equal(granted(), false);
+});
+
+test("device identity matches Electron's chooser and handler shapes, and only with a serial number", async () => {
+  const { deviceIdentity } = await import("../src/mini-browser.js");
+  assert.equal(deviceIdentity("hid", { deviceId: "x", vendorId: 4176, productId: 1031, serialNumber: "A" }),
+    deviceIdentity("hid", { vendorId: "0x1050", productId: "1031", serialNumber: "A" }));
+  assert.equal(deviceIdentity("hid", { vendorId: 1, productId: 2, guid: "g" }), "hid:1:2:g");
+  assert.equal(deviceIdentity("serial", { vendorId: "0x2341", productId: "0x0043", serialNumber: "S" }),
+    deviceIdentity("serial", { vendor_id: 9025, product_id: 67, serial_number: "S" }));
+  for (const [type, device] of [["hid", { vendorId: 1, productId: 2 }], ["serial", { vendor_id: 1, product_id: 2, guid: "g" }],
+    ["hid", { vendorId: "zz", productId: 2, serialNumber: "s" }], ["usb", {}], ["bluetooth", { deviceId: "b" }], ["hid", null]])
+    assert.equal(deviceIdentity(type, device), null, JSON.stringify([type, device]));
+});
+
+test("clear waits for a guest that is still opening before it wipes", async () => {
+  let ready;
+  const gate = new Promise((resolve) => { ready = resolve; });
+  const f = fixture(() => gate);
+  const navigation = f.invoke({ action: "navigate", url: "https://example.com/" });
+  await settle();
+  const clearing = f.invoke({ action: "clear" });
+  await settle();
+  assert.ok(!f.calls.some(([name]) => name === "clear"));
+  ready();
+  await navigation;
+  await clearing;
+  const order = f.calls.map(([name, target]) => (name === "load" ? target : name));
+  assert.ok(order.indexOf("about:blank") < order.indexOf("clear"), order.join(" "));
+});
+
+const BOUNDS = { x: 0, y: 40, width: 400, height: 300 };
+
+test("tabs: open, select and close; every tab shares the one partition and is tagged with its owner", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const second = await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  const blank = await f.invoke({ action: "new-tab" });
+  assert.equal(blank.tabs.length, 3);
+  assert.deepEqual(blank.tabs.map((tab) => tab.owner), ["person", "person", "person"]);
+  assert(blank.tabs.every((tab) => /^t-[0-9a-f]{8}$/.test(tab.id)));
+  assert.equal(blank.selected, blank.tabs[2].id);
+  assert.equal(f.sessions.length, 1);
+  assert(f.options.every((o) => o.webPreferences.session === f.sessions[0] && o.webPreferences.sandbox === true));
+  assert.equal(second.tabs[1].url, "https://two.example.com/");
+  const [a, b] = blank.tabs;
+  // Only the selected tab with a page is shown.
+  await f.invoke({ action: "layout", bounds: BOUNDS });
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [false, false, false]);
+  assert.equal((await f.invoke({ action: "select-tab", tab: a.id })).selected, a.id);
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [true, false, false]);
+  assert.equal((await f.invoke({ action: "state" })).url, "https://one.example.com/");
+  assert.equal((await f.invoke({ action: "close-tab", tab: a.id })).selected, b.id);
+  assert.equal(f.views[0].webContents.isDestroyed(), true);
+  const last = (await f.invoke({ action: "close-tab", tab: blank.tabs[2].id }));
+  assert.equal(last.selected, b.id);
+  assert.equal((await f.invoke({ action: "close-tab", tab: b.id })).tabs.length, 0);
+  assert.equal((await f.invoke({ action: "state" })).status, "empty");
+});
+
+test("tabs: ids are checked, the limit is 8, and bad tab commands are refused", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (const bad of [{ action: "select-tab" }, { action: "select-tab", tab: "t-00000000" }, { action: "close-tab", tab: "../x" },
+    { action: "close-tab", tab: 5 }, { action: "state", tab: "nope" }, { action: "new-tab", tab: "t-00000000" },
+    { action: "tabs", extra: 1 }, { action: "new-tab", url: "http://127.0.0.1:8737/" }, { action: "new-tab", url: "https://x.example.com:8443" }])
+    await assert.rejects(f.invoke(bad), /./, JSON.stringify(bad));
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 8);
+});
+
+test("tabs: every ADR 0140 rule holds in each tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  for (const view of f.views) {
+    const contents = view.webContents;
+    let prevented = 0;
+    contents.emit("will-redirect", { url: "http://127.0.0.1:8737", preventDefault: () => prevented++ });
+    contents.emit("will-navigate", { url: "file:///etc/passwd", preventDefault: () => prevented++ });
+    contents.emit("will-attach-webview", { preventDefault: () => prevented++ });
+    assert.equal(prevented, 3);
+    assert.deepEqual(contents.popup({ url: "https://x.example.com" }), { action: "deny" });
+  }
+  assert(f.calls.filter((c) => c[0] === "webrtc").length === 2);
+});
+
+test("tabs: Clear browsing data and closing the window cover every tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "clear" });
+  const loads = f.calls.filter((c) => c[0] === "load").map((c) => c[1]);
+  assert.deepEqual(loads.filter((u) => u === "about:blank").length, 2);
+  assert.equal(loads.filter((u) => u === "https://two.example.com/").length, 2);
+  f.owner.emit("closed");
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  await settle();
+  assert.equal(f.calls.filter((c) => c[0] === "network-close").length, 1);
+});
+
+test("tabs: the product page navigating or the panel hiding keeps tabs; only a new document closes them", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "hide" });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+});
+
+test("tabs: the limit counts the person's own tabs, and a foreign-owner tab does not use it", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+});
+
+test("links: a link opens a new selected tab; a refused address or a full strip leaves a note with the link", async () => {
+  const opened = [];
+  const f = fixture(undefined, { openExternal: async (url) => { opened.push(url); return true; } });
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const first = await f.controller.openLink(f.owner, "https://two.example.com/page");
+  assert.equal(first.tabs.length, 2);
+  assert.equal(first.selected, first.tabs[1].id);
+  assert.equal(first.tabs[1].url, "https://two.example.com/page");
+  assert.equal(first.link, null);
+  const refused = await f.controller.openLink(f.owner, "http://example.com/plain");
+  assert.deepEqual(refused.link, { url: "http://example.com/plain", reason: "refused", external: true });
+  assert.equal(refused.tabs.length, 2);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["http://example.com/plain"]);
+  opened.length = 0;
+  const local = await f.controller.openLink(f.owner, "https://localhost/x");
+  assert.equal(local.link.reason, "refused");
+  assert.equal(local.link.external, false);
+  // Nothing is offered for a local target, so the command opens nothing.
+  assert.equal((await f.invoke({ action: "link-external" })).link.reason, "refused");
+  assert.deepEqual(opened, []);
+  for (let i = 2; i < 8; i++) await f.invoke({ action: "new-tab" });
+  const full = await f.controller.openLink(f.owner, "https://late.example.com/");
+  assert.deepEqual(full.link, { url: "https://late.example.com/", reason: "limit", external: true });
+  assert.equal(full.tabs.length, 8);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["https://late.example.com/"]);
+  assert.equal((await f.controller.openLink(f.owner, "https://late.example.com/")).link.reason, "limit");
+  assert.equal((await f.invoke({ action: "link-dismiss" })).link, null);
+});
+
+test("links: a page's target=_blank opens a tab only right after the person's input", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const contents = f.views[0].webContents;
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  const after = await f.invoke({ action: "tabs" });
+  assert.equal(after.tabs.length, 2);
+  assert.equal(after.tabs[1].url, "https://pop.example.com/");
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  contents.popup({ url: "http://127.0.0.1:8737/" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+});
+
+// --- favicons: the page's own icon, read in the guest partition, kept small per origin ---
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24)]);
+const PNG_URL = `data:image/png;base64,${PNG.toString("base64")}`;
+// A real streamed body, so the reader, the cap and the cancel are the ones the app uses.
+const iconResponse = (body = PNG, type = "image/png", ok = true) => {
+  const response = new Response(body, { status: ok ? 200 : 404, headers: { "content-type": type } });
+  response.arrayBuffer = async () => { throw new Error("the whole body must never be buffered"); };
+  return response;
+};
+const iconSettled = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function withIcon(fetch, extra = {}) {
+  const f = fixture(async () => {}, extra);
+  await f.invoke({ action: "navigate", url: "https://example.com/page" });
+  const fetched = [];
+  f.sessions[0].fetch = async (url, init) => { fetched.push([url, init]); return fetch(url); };
+  return { ...f, fetched, icon: async (urls) => { f.views[0].webContents.emit("page-favicon-updated", {}, urls); await iconSettled(); await iconSettled(); } };
+}
+
+test("a tab carries the icon its page showed, read without credentials in the guest partition", async () => {
+  const f = await withIcon(() => iconResponse());
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  await f.icon(["https://example.com/favicon.png"]);
+  assert.equal(f.fetched.length, 1);
+  assert.equal(f.fetched[0][0], "https://example.com/favicon.png");
+  assert.equal(f.fetched[0][1].credentials, "omit");
+  assert.ok(f.fetched[0][1].signal instanceof AbortSignal);
+  const state = await f.invoke({ action: "state" });
+  assert.equal(state.tabs[0].favicon, PNG_URL);
+});
+
+test("an icon is kept per origin: another tab of the same site shows it, another site does not", async () => {
+  const f = await withIcon(() => iconResponse());
+  await f.icon(["https://example.com/favicon.png"]);
+  await f.invoke({ action: "new-tab", url: "https://example.com/other" });
+  await f.invoke({ action: "new-tab", url: "https://example.org/" });
+  const { tabs } = await f.invoke({ action: "state" });
+  assert.deepEqual(tabs.map((tab) => tab.favicon), [PNG_URL, PNG_URL, null]);
+});
+
+test("icons that are not public HTTPS, not images, failing or too large are skipped for the next candidate", async () => {
+  const f = await withIcon((url) => url.endsWith("good.png") ? iconResponse()
+    : url.endsWith("html") ? iconResponse(PNG, "text/html")
+      : url.endsWith("missing") ? iconResponse(PNG, "image/png", false)
+        : url.endsWith("big") ? iconResponse(Buffer.concat([PNG, Buffer.alloc(MAX_FAVICON_BYTES)]))
+          : Promise.reject(new Error("offline")));
+  await f.icon(["http://example.com/plain.png", "data:image/png;base64,AAAA", "http://127.0.0.1:8737/favicon.ico",
+    "https://example.com/html"]);
+  assert.deepEqual(f.fetched.map(([url]) => url), ["https://example.com/html"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  await f.icon(["https://example.com/missing", "https://example.com/big", "https://example.com/offline", "https://example.com/good.png"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+  await f.icon("not a list");
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("clearing browsing data forgets the icons", async () => {
+  const f = await withIcon(() => iconResponse());
+  await f.icon(["https://example.com/favicon.png"]);
+  await f.invoke({ action: "clear" });
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+});
+
+test("the app's decoder reduces any icon to a small PNG and refuses what it cannot read", async () => {
+  const image = (size, empty = false) => ({ isEmpty: () => empty, getSize: () => ({ width: size, height: size }),
+    resize: (to) => { image.resized = to; return image(32); }, toPNG: () => PNG });
+  assert.equal(smallFavicon(Buffer.from("ico"), () => image(256)), PNG_URL);
+  assert.deepEqual(image.resized, { width: 32, height: 32, quality: "best" });
+  image.resized = null;
+  assert.equal(smallFavicon(Buffer.from("ico"), () => image(16)), PNG_URL);
+  assert.equal(image.resized, null);
+  assert.equal(smallFavicon(Buffer.from("junk"), () => image(0, true)), null);
+  assert.equal(smallFavicon(PNG, () => image(0, true)), PNG_URL);
+  assert.equal(smallFavicon(PNG, () => { throw new Error("decoder"); }), null);
+  assert.equal(smallPng("text"), null);
+  assert.equal(smallPng(Buffer.concat([PNG, Buffer.alloc(MAX_FAVICON_BYTES)])), null);
+  const f = await withIcon(() => iconResponse(Buffer.from("ico"), "image/x-icon"), { faviconImage: () => "javascript:alert(1)" });
+  await f.icon(["https://example.com/favicon.ico"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+});
+
+test("a chunked icon body without a length is cancelled at the cap, not buffered", async () => {
+  let pulled = 0, cancelled = false;
+  const endless = () => new Response(new ReadableStream({
+    pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(64 * 1024)); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 }), { headers: { "content-type": "image/png" } });
+  const f = await withIcon((url) => url.endsWith("endless") ? endless() : iconResponse());
+  await f.icon(["https://example.com/endless"]);
+  for (let turn = 0; turn < 50 && !cancelled; turn += 1) await iconSettled();
+  assert.equal(cancelled, true);
+  assert.ok(pulled * 64 * 1024 <= MAX_FAVICON_DOWNLOAD + 2 * 64 * 1024, `read ${pulled} chunks`);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  // The next candidate still gets its turn.
+  await f.icon(["https://example.com/endless", "https://example.com/good.png"]);
+  for (let turn = 0; turn < 50 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1) await iconSettled();
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("an icon whose answer or body never ends is given up after the timeout", async () => {
+  const signals = [];
+  // Like the network: the pending answer and the pending read both fail when the request is aborted.
+  const onAbort = (signal, fail) => signal.addEventListener("abort", () => fail(new Error("aborted")), { once: true });
+  const f = await withIcon(() => iconResponse(), { faviconTimeout: 20 });
+  f.sessions[0].fetch = async (url, init) => {
+    signals.push(init.signal);
+    if (url.endsWith("no-answer")) return new Promise((_resolve, reject) => onAbort(init.signal, reject));
+    if (url.endsWith("stalled")) return new Response(new ReadableStream({
+      start(controller) { controller.enqueue(PNG); onAbort(init.signal, (error) => controller.error(error)); },
+    }), { headers: { "content-type": "image/png" } });
+    return iconResponse();
+  };
+  f.views[0].webContents.emit("page-favicon-updated", {}, ["https://example.com/no-answer", "https://example.com/stalled",
+    "https://example.com/good.png"]);
+  for (let turn = 0; turn < 200 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(signals.map((signal) => signal.aborted), [true, true, false]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("a refused icon answer is aborted, so its body is never downloaded", async () => {
+  const f = await withIcon((url) => iconResponse(PNG, url.endsWith("html") ? "text/html" : "image/png"));
+  await f.icon(["https://example.com/html"]);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
+});
+
+/** As Electron does once a window is destroyed: it says so, and everything else of it throws. */
+function destroyWindow(owner) {
+  const gone = () => { throw new TypeError("Object has been destroyed"); };
+  owner.isDestroyed = () => true;
+  for (const key of ["webContents", "contentView"]) Object.defineProperty(owner, key, { get: gone });
+  owner.isFocused = gone;
+  owner.getContentSize = gone;
+}
+
+test("quit after the window is gone: closeAll never throws, closes every tab and leaves no listener", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  // The window closes, the app quits from its own "closed" listener, and only then is the browser told to close.
+  destroyWindow(f.owner);
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.deepEqual(f.calls.filter(([name]) => name === "remove"), []);
+  for (const name of ["closed", "blur"]) assert.equal(f.owner.listenerCount(name), 0, name);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+  // The window's own "closed" arrives after that: nothing is left to do, and nothing throws.
+  assert.doesNotThrow(() => f.owner.emit("closed"));
+  await assert.rejects(f.invoke({ action: "state" }));
+});
+
+test("quit: a tab that cannot be closed does not keep the others or the network open", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  f.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert.equal(f.views[1].webContents.isDestroyed(), true);
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.equal(f.owner.listenerCount("closed"), 0);
+  // Even a window whose listeners cannot be taken off any more does not stop the quit.
+  const g = fixture();
+  await g.invoke({ action: "navigate", url: "https://one.example.com" });
+  g.owner.off = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => g.controller.closeAll());
+  assert.equal(g.views[0].webContents.isDestroyed(), true);
+  assert.equal(g.sender.listenerCount("did-start-navigation"), 0);
+});
+
+test("spell check: websites get it only where it downloads nothing, so no dictionary is ever fetched for them", async () => {
+  // Chromium's own spell checker fetches its dictionaries from a server; a website session fetches nothing on its own.
+  for (const platform of ["linux", "win32"]) {
+    const f = fixture(undefined, { platform });
+    await f.invoke({ action: "navigate", url: "https://one.example.com" });
+    await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+    assert(f.options.every((option) => option.webPreferences.spellcheck === false), platform);
+    assert.deepEqual(f.calls.filter(([name]) => name === "spellcheck" || name === "languages"), [["spellcheck", false], ["languages", []]], platform);
+    // Switched off on the partition before any guest exists, so the media player's guest is covered too.
+    assert(f.calls.findIndex(([name]) => name === "spellcheck") < f.calls.findIndex(([name]) => name === "add"));
+  }
+  // macOS uses the system's spell checker, which downloads nothing: it stays.
+  const mac = fixture(undefined, { platform: "darwin" });
+  await mac.invoke({ action: "navigate", url: "https://one.example.com" });
+  assert.equal(mac.options[0].webPreferences.spellcheck, true);
+  assert.deepEqual(mac.calls.filter(([name]) => name === "spellcheck" || name === "languages"), []);
+});
+
+test("a website's dialogs stay off: an alert shows nothing and a confirm() is never a yes", async () => {
+  // The agent engine never answers a page's dialog; that these are refused in the guest is what keeps a click from
+  // becoming an unapproved "OK".
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert(f.options.every((option) => option.webPreferences.disableDialogs === true && option.webPreferences.safeDialogs === true));
 });

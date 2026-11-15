@@ -5,7 +5,7 @@
 - `heinzel.connectors.mcp`: `McpConnector`, an adapter's client for one MCP server over stdio. Imported on its own,
   so `import heinzel.connectors` doesn't load the MCP client.
 
-Works on Python 3.12 and later.
+Works on Python 3.15 and later.
 """
 
 from collections.abc import Iterable

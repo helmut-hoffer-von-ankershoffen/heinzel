@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { forwardRef, memo } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { confirmOperation, dismissOperation, getRun, resetOperationRun } from "@/lib/operationRun";
-import { formCall, loadView, type ViewEntry, viewComponent } from "./Views";
+import { formCall, LONG_FORM_VALUE, loadView, type ViewEntry, viewComponent, viewSDK } from "./Views";
 
 const props = {
   data: 42,
@@ -74,6 +74,16 @@ describe("a view's form", () => {
     expect(() => formCall({ ...report, call: { ...report.call, body: null } }, { text: "x" })).toThrow();
     expect(() => formCall({ kind: "navigate", path: "/" }, { text: "x" })).toThrow();
     expect(() => formCall(undefined, {})).toThrow();
+  });
+  it("shows a long value shortened and still sends all of it", () => {
+    const data = "A".repeat(LONG_FORM_VALUE + 1);
+    const form = { ...report, inputs: ["text", "file_data", "short"] };
+    const call = formCall(form, { text: "x", file_data: data, short: "B".repeat(LONG_FORM_VALUE) });
+    expect(call.body).toEqual({ text: "x", file_data: data, short: "B".repeat(LONG_FORM_VALUE) });
+    expect(call.command).toContain(`--file-data '${"A".repeat(200)}…' (2,001 characters)`);
+    expect(call.command).toContain(`--short '${"B".repeat(LONG_FORM_VALUE)}'`);
+    expect(call.command.length).toBeLessThan(LONG_FORM_VALUE + 400);
+    expect(viewSDK.features).toContain("form-long-values");
   });
   it("asks first and fails when the person cancels", async () => {
     const pending = confirmOperation(formCall(report, { text: "x" }));

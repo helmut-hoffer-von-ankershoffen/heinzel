@@ -1,6 +1,6 @@
 ---
 status: proposed
-amended-by: 0065, 0072, 0084, 0094
+amended-by: 0065, 0072, 0084, 0094, 0157
 date: 2026-10-24
 implementation: built
 decision-makers: maintainer
@@ -78,7 +78,8 @@ data.
   `{kind: "time", at}` (an aware moment as a local time) or `{kind: "until", at}` (relative: "in 12 min"). `Widget`
   is one of `card {title, body, tone, actions (at most 3)}`, `list {title, items: [{text, detail?, tone, effect?}]
   (at most 8)}`, `metric {label, value, delta?, tone}` and `progress {label, done, total, tone}` (`0 <= done <=
-  total`, `total >= 1`). The app adds "Ask about it" (it hands the widget's text to the chat, framed as what module
+  total`, `total >= 1`). The app adds "Ask about it" (since [ADR 0157](0157-one-kind-of-chat-every-chat-is-with-a-heinzel.md)
+  "Ask <Name>", typed into the default Heinzel's composer; it hands the widget's text to the chat, framed as what module
   `<qualname>` shows, never as the person's words; it is data an agent reads, so ADR 0045's gate still confirms
   anything the chat would change) and dismiss to every widget.
 - **Slots.** Each contribution names where it may show and whether it does by default: a status item in `footer`
@@ -178,3 +179,10 @@ data.
   take. The view calls `submit(action, values)`; the app sends only the declared inputs, still asks first, and its
   dialog shows the command built from the values that will run, never the view's label. The promise settles with the
   operation's result, or fails when the person cancels or the operation fails.
+
+- Amendment, 2026-11-14: a typed value longer than 2,000 characters is shown in the dialog as its first 200
+  characters and its length; the call still sends all of it. A "Show all" disclosure, built by the app from the
+  body that will be sent (never from text a page supplies), reveals each shortened value in full in a scrollable,
+  read-only block, so nothing is sent that cannot be read first. A view can so send a file as text (a screenshot
+  with a report, base64) without filling the dialog. The view SDK names what it can do beyond the first ABI 1 release in
+  `sdk.features`; `form-long-values` is this, and a view offers a file only where it finds it.

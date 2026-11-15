@@ -148,7 +148,7 @@ def uninstall(service: DaemonService) -> Uninstalled:
     return service.uninstall()
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def restart(service: DaemonService) -> Restarted:
     """Restart the daemon so it runs with the installed hz."""
     return service.restart()
@@ -183,7 +183,9 @@ def logs(
 
 # Ticks spend money and act with your rights; REST is reachable from a browser, so the CLI (which launchd and systemd
 # run) and MCP (an agent you started) get it, REST does not.
-@module.operation(read_only=False, render=render_tick, exit_code=_tick_exit_code, heads={"cli", "mcp"})
+@module.operation(
+    read_only=False, render=render_tick, exit_code=_tick_exit_code, heads={"cli", "mcp"}, agents="approve"
+)
 def tick(
     service: DaemonService,
     dry_run: Annotated[bool, Field(description="Only show which jobs are due; run nothing.")] = False,
@@ -195,13 +197,13 @@ def tick(
     return service.tick(dry_run=dry_run, job=job)
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def pause(service: DaemonService) -> Toggled:
     """Pause the daemon: ticks run no job until resumed."""
     return service.pause()
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def resume(service: DaemonService) -> Toggled:
     """Resume a paused daemon."""
     return service.resume()

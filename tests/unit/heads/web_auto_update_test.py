@@ -125,6 +125,7 @@ def test_the_plan_survives_the_state_file_but_a_countdown_does_not():
 
 def test_only_requests_that_change_state_count_as_work():
     assert auto.counts_as_work("POST", "/api/heinzel/answer-chat")
+    assert auto.counts_as_work("POST", "/mcp")  # an outside agent's write holds off an update like the app's own
     assert not auto.counts_as_work("GET", "/api/heinzel/sessions")
     assert not auto.counts_as_work("POST", "/api/auto-update/postpone")
     activity = Activity()

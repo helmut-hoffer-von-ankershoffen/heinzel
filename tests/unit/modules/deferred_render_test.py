@@ -57,5 +57,5 @@ def test_registered_renderers_keep_runtime_annotations_and_forward_unchanged(mak
         assert seen == [value]
         checked.add(renderer)
     # system.plugin adds render_bind, render_checklist and render_result (ADR 0145);
-    # system.claude adds render_switch and render_closed (ADR 0146)
-    assert len(checked) == 52
+    # system.claude adds render_switch and render_closed (ADR 0146); system adds render_tools (hz system tools)
+    assert len(checked) == 53

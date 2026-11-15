@@ -116,7 +116,7 @@ def test_every_review_attempt_is_judged_by_its_execution_file():
         "${{ steps.full.outcome != 'skipped' && steps.full.outcome || steps.light.outcome }}"
     )
     assert judged["run"] == (
-        'uv run --no-project --frozen --no-build --python 3.14 python scripts/review_outcome.py "$OUTCOME"'
+        'uv run --no-project --frozen --no-build --python 3.15 python scripts/review_outcome.py "$OUTCOME"'
     )
 
 

@@ -24,12 +24,6 @@ CHAT = "system.runner.chat"
 """The module whose operations `hz chat` is a view on."""
 
 
-def command_words(path: tuple[str, ...]) -> tuple[str, ...]:
-    """The words of an operation's CLI command, `hz chat ...` for the chat's (mounted at the top level only)."""
-    prefix = tuple(CHAT.split("."))
-    return ("chat", *path[len(prefix) :]) if path[: len(prefix)] == prefix else path
-
-
 HELP = (
     "Chat with the agent runner in this terminal: it reads with hz's operations and asks you before it changes "
     "anything. /exit or Ctrl-D leaves; `hz chat --continue` comes back."

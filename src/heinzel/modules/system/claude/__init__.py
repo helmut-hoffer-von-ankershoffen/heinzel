@@ -2,13 +2,14 @@
 
 It reads where Claude Code and Claude Desktop keep them (`~/.claude.json`, `~/.claude/settings.json`,
 `~/.claude/skills`, a project's `.mcp.json` and `.claude/skills`, enabled plugins, Desktop's config and extensions)
-and shows what it found. Nothing is imported, started or connected to, no secret value is
+and shows what it found. Listing imports, starts and connects to nothing, no secret value is
 read into a result (environment variables and headers are listed by name), and a link that leads out of the directory
 a file is expected in is not followed. Names can reveal employers and customers, so the full list is for the CLI and the
 web app; the MCP and REST heads get counts.
 
 A found MCP server is switched on by default, also one from a project or a plugin, and `disable` switches it off for
-good (ADR 0146). The switch only records what Heinzels may use once they can; it runs nothing. `enable`, `disable`
+good (ADR 0146). The switch decides what Heinzels may use: hz is the MCP client of every switched-on server, started
+the first time a Heinzel's turn needs it and stopped when idle (`FoundConnections`, ADR 0162). `enable`, `disable`
 and `acknowledge` are for the CLI and the web app only, so an agent cannot switch a server on.
 """
 
@@ -18,6 +19,8 @@ from pydantic import Field
 from rich.console import RenderableType
 
 from heinzel import Check, Module
+from heinzel.kernel import FoundMcpServers
+from heinzel.modules.system.claude._connections import FoundConnections
 from heinzel.modules.system.claude._models import (
     ClaudeScan,
     ClaudeSummary,
@@ -63,6 +66,8 @@ ServerId = Annotated[str, Field(description="The server's id, as `hz system clau
 
 module = Module("claude", "See the MCP servers and skills you already set up for Claude, and switch servers off or on.")
 module.service(ClaudeService, ClaudeService.for_user)
+# hz as the MCP client of the switched-on servers: a Heinzel's turn gets their tools directly (ADR 0162).
+module.service(FoundMcpServers, FoundConnections.for_user)
 
 
 @module.operation(name="list", render=render_scan, heads={"cli", "web"})
@@ -105,9 +110,10 @@ def summary(service: ClaudeService) -> ClaudeSummary:
 
 
 @module.health
-def files(service: ClaudeService) -> list[Check]:
-    """Every Claude file that was found can be read, and so can the file that remembers switched-off servers."""
-    return service.checks()
+def files(service: ClaudeService, connections: FoundMcpServers) -> list[Check]:
+    """Every Claude file that was found can be read, and so can the switch file; how many servers hz runs."""
+    running = connections.checks() if isinstance(connections, FoundConnections) else []
+    return [*service.checks(), *running]
 
 
 __all__ = [
@@ -115,6 +121,7 @@ __all__ = [
     "ClaudeService",
     "ClaudeSummary",
     "FirstRunNotice",
+    "FoundConnections",
     "FoundServer",
     "FoundSkill",
     "NoticeClosed",

@@ -152,6 +152,18 @@ export function classifyUiLink(target, connection) {
   return { kind: "external", url: url.href };
 }
 
+/** An http(s) link that leaves the product UI: what the built-in browser may be asked to open, or refuse visibly. */
+export function builtInBrowserLink(target, connection) {
+  if (typeof target !== "string" || target.length > MAX_URL || CONTROL.test(target)) return null;
+  if (isOwnedUiNavigation(target, connection)) return null;
+  try {
+    const url = new URL(target);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Electron has no popup blocker and window-open details carry no user activation, so any frame
  * (e.g. a sandboxed embed with allow-popups) could open the browser in a loop. Allow one external
@@ -188,8 +200,10 @@ export function openUiLinkExternally(target, connection, openExternal) {
 
 /**
  * Page scripts can click links and call window.open() without a person, and Electron's window-open and
- * navigation details carry no user activation. The isolated preload reports trusted pointer, key and
- * click input from the owned main frame (`grant`); one external open may follow within `windowMs`.
+ * navigation details carry no user activation (Electron 45 window-open details: url, frameName, features,
+ * disposition, referrer, postBody; disposition is no gesture signal). The isolated preload reports trusted
+ * pointer, key and click input from the owned main frame, and the main process native input to any frame
+ * (`grant`); one external open may follow within `windowMs`.
  */
 export function createUserActivation({ now = Date.now, windowMs = 1000 } = {}) {
   let until = Number.NEGATIVE_INFINITY;
@@ -204,41 +218,74 @@ export function createUserActivation({ now = Date.now, windowMs = 1000 } = {}) {
 }
 
 /**
+ * Native input the browser process hands to the page, in any frame. The preload sees only the main
+ * frame's document, so a click inside a cross-origin embed (the YouTube player's "Learn more" or
+ * "Sign in") never reached it. Page scripts cannot produce these events; pointer moves, wheel and
+ * key-up are no gesture.
+ */
+const GESTURE_INPUT = new Set(["mouseDown", "mouseUp", "pointerDown", "pointerUp", "touchEnd", "gestureTap", "rawKeyDown", "keyDown"]);
+
+/** Grant the window's activation from trusted native input to any of its frames. */
+export function grantOnNativeInput(contents, activation) {
+  const grant = (input) => { if (GESTURE_INPUT.has(input?.type)) activation.grant(); };
+  // Keyboard input is delegated per WebContents and covers every frame; mouse and touch come as
+  // input-event and before-mouse-event. Listening never prevents the event.
+  for (const name of ["before-input-event", "input-event", "before-mouse-event"])
+    contents.on(name, (_event, input) => grant(input));
+}
+
+/**
  * Only top-level documents use this guard; embedded third-party frames keep the web head's CSP.
  * The window never leaves the owned origin and never opens a child window: target=_blank,
- * window.open() and middle-click on a public link go to the default browser only right after trusted
- * user input, classified and rate-limited; scripted opens and everything else are denied.
- * Returns the window's user activation for the preload's input reports.
+ * window.open() and middle-click on a public link, from the page or an embed, go to the default
+ * browser only right after trusted user input, classified and rate-limited; scripted opens and
+ * everything else are denied. Returns the window's user activation for the preload's input reports, with `open`:
+ * the same gesture-checked, rate-limited external open for the window's own controls (the sidebar browser).
  */
 export function guardUiNavigation(contents, connection, openExternal, options = {}) {
-  const { windowMs, ...openerOptions } = options;
+  // `browser(url)` opens an http(s) link in the built-in browser while `browserOn()` is not false; otherwise,
+  // and for mailto: and the like, the link goes to the system as before.
+  const { windowMs, browser, browserOn, browserIntervalMs = 500, ...openerOptions } = options;
   const log = options.log ?? defaultLog;
   const activation = createUserActivation({ now: options.now, windowMs });
+  grantOnNativeInput(contents, activation);
   const opener = createExternalOpener({ connection, openExternal, ...openerOptions });
   let refusedLogged = false;
-  const open = (target) => {
-    if (classifyUiLink(target, connection).kind !== "external") return false;
+  let lastBrowser = Number.NEGATIVE_INFINITY;
+  const now = options.now ?? Date.now;
+  // `toBrowser` is false for the window's own "Open in browser" button, which always goes to the system.
+  const openWith = (target, toBrowser) => {
+    const inBrowser = toBrowser && typeof browser === "function" && browserOn?.() !== false ? builtInBrowserLink(target, connection) : null;
+    if (!inBrowser && classifyUiLink(target, connection).kind !== "external") return false;
     if (!activation.consume()) {
       if (!refusedLogged) log({ event: "desktop.external_link.without_gesture" });
       refusedLogged = true;
       return false;
     }
     refusedLogged = false;
+    if (inBrowser) {
+      const time = now();
+      if (time - lastBrowser < browserIntervalMs) return false;
+      lastBrowser = time;
+      Promise.resolve().then(() => browser(inBrowser)).catch(() => log({ event: "desktop.browser_link.failed" }));
+      return true;
+    }
     return opener(target);
   };
+  const open = (target) => openWith(target, false);
   contents.setWindowOpenHandler((details) => {
-    open(details?.url);
+    openWith(details?.url, true);
     return { action: "deny" };
   });
   contents.on("will-navigate", (event) => {
     if (isOwnedUiNavigation(event.url, connection)) return;
     event.preventDefault();
-    open(event.url);
+    openWith(event.url, true);
   });
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });
-  return activation;
+  return Object.assign(activation, { open });
 }
 
 /** Do not open or show a product window after shutdown began, including across asynchronous startup. */

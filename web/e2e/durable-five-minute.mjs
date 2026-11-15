@@ -1,4 +1,5 @@
 import { chromium, webkit } from "playwright-core";
+import { openDetails } from "./chat-ready.mjs";
 import { fetchOnce } from "./fetch-once.mjs";
 
 const supplied = process.argv[2];
@@ -41,8 +42,11 @@ try {
   if (!selected) throw new Error("The created profile was not selected");
   // Saving lands in the new Heinzel's conversation, which shows the chosen look.
   await page.waitForURL((url) => url.searchParams.get("chat") === selected);
-  await page.getByLabel("Message your Heinzel").waitFor();
-  const header = page.getByRole("img", { name: /^Draft helper/ });
+  await page.getByLabel(/^Message /).waitFor();
+  const header = page
+    .getByRole("complementary", { name: "Chat" })
+    .getByRole("button", { name: /^Draft helper, .+\. Switch Heinzel$/ })
+    .locator('svg[data-view="bust"]');
   await header.waitFor();
   if ((await header.locator('[fill="#1F9488"]').count()) === 0)
     throw new Error("The chat does not show the chosen hat");
@@ -78,7 +82,7 @@ try {
   // The conversation is already linked; the button still brings its tab forward on a phone.
   await own.getByRole("button", { name: "Chat with Mobile helper" }).click();
   await page.waitForURL((url) => url.searchParams.get("chat") === selected);
-  await page.getByLabel("Message your Heinzel").waitFor();
+  await page.getByLabel(/^Message /).waitFor();
   const readSchedule = async () =>
     await page.evaluate(async (expected) => {
       const session = new URLSearchParams(location.search).get("chat");
@@ -110,17 +114,19 @@ try {
   await page.getByText("active", { exact: true }).waitFor();
   const active = await readSchedule();
   if (active.schedule?.status !== "active") throw new Error("Human confirmation did not activate schedule");
-  await page.getByRole("button", { name: "Review pause in chat" }).click();
-  const pause = page.getByRole("heading", { name: "Review pause of this schedule" }).locator("..");
-  await pause.getByRole("button", { name: "Confirm" }).click();
-  await page.getByText("paused", { exact: true }).waitFor();
+  // Pause and resume live on the Heinzel's page: pause at once; Undo opens the resume to confirm as one whole item.
+  await openDetails(page);
+  const lifecycle = page.getByRole("region", { name: "Pause or retire" });
+  await lifecycle.getByRole("button", { name: "Pause" }).click();
+  await lifecycle.getByText(/^Paused · /).waitFor();
   const paused = await readSchedule();
   if (paused.schedule?.status !== "paused" || paused.schedule.revision !== active.schedule.revision + 1)
     throw new Error("Pause did not update the reviewed schedule exactly once");
-  await page.getByRole("button", { name: "Review resume in chat" }).click();
-  const resume = page.getByRole("heading", { name: "Review resuming this schedule" }).locator("..");
-  await resume.getByRole("button", { name: "Confirm" }).click();
-  await page.getByText("active", { exact: true }).waitFor();
+  await lifecycle.getByRole("button", { name: "Undo" }).click();
+  const resume = page.getByRole("alertdialog", { name: /^Resume / });
+  await resume.getByRole("button", { name: /^Resume / }).click();
+  await resume.waitFor({ state: "hidden" });
+  await lifecycle.getByText("Running · on its schedule").waitFor();
   const resumed = await readSchedule();
   if (resumed.schedule?.status !== "active" || resumed.schedule.revision !== paused.schedule.revision + 1)
     throw new Error("Resume did not update the reviewed schedule exactly once");

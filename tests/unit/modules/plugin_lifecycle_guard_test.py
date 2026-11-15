@@ -16,7 +16,7 @@ from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 
 
 def _append_guard(receipt):

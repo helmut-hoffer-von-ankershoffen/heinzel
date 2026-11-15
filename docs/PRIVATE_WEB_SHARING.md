@@ -50,3 +50,10 @@ authenticated serving instance are confirmed, then shows the URL; a short cause 
 something needs the person, and the long explanation stays under **Details**. Copy link remains nonsecret. Copy sign-in link is a separate
 session-owner action; enabling never copies credentials automatically. Manual origin configuration remains useful
 for an already-managed reverse proxy.
+
+## MCP for other agents on the same address
+
+When `[hz] mcp_http` is on (Settings, MCP, or `hz system serve mcp-start`), the same web server also answers MCP at
+`/mcp`, so a Tailscale Serve mapping to this server covers it with no second port: an agent on another device connects to
+`https://NAME/mcp` with a token of its own. The Host and Origin rules above apply to `/mcp` too, so the name must be in
+`ui_allowed_origins`. The app's session and device tokens never open `/mcp`, and an MCP token never opens the app.

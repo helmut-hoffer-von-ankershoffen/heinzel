@@ -162,7 +162,7 @@ $ hz ai access use [OPTIONS] {name}
 
 ### `hz ai models`
 
-(expert) List the models and efforts of the AI access in use, for the chat&#x27;s model and effort picker.
+(expert) List the models and efforts of the AI access in use, to pick from with `hz chat send --model`.
 
 **Usage**:
 
@@ -345,6 +345,7 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
 * `decline`: Decline an action the agent proposed; it...
+* `heinzel-actions`: Show what a Heinzel&#x27;s turns proposed,...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
@@ -418,6 +419,26 @@ $ hz chat decline [OPTIONS] {session} {action}
 
 * `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
 * `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat heinzel-actions`
+
+Show what a Heinzel&#x27;s turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+
+**Usage**:
+
+```console
+$ hz chat heinzel-actions [OPTIONS] {durable_session}
+```
+
+**Arguments**:
+
+* `durable_session <str>`: The Heinzel&#x27;s own chat.  [required]
 
 **Options**:
 
@@ -870,6 +891,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `input-snapshot-history`: Show recent private exact-result...
 * `latest-profile-proposal`: Inspect the latest suggested name and...
 * `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
+* `level`: Read this Heinzel&#x27;s intelligence level,...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
@@ -881,6 +903,8 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `prune`: (expert) Delete drafts and records older...
 * `publish-draft-workflow`: Publish only the exact standing draft...
 * `release-workflow`: Read the published workflow and durable...
+* `restore`: Bring a retired Heinzel back with its...
+* `retire`: Retire this Heinzel: hidden from your...
 * `review-release-draft`: Capture the human-edited marked section...
 * `revoke-release-workflow`: Revoke future recurring draft and notice...
 * `schedule-control`: Pause a schedule; activation and resume...
@@ -888,11 +912,11 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
+* `set-level`: Set this Heinzel&#x27;s level, provider or...
 * `share-draft-link`: Deliver one document link for the exact...
 * `show`: Show a contract as the daemon runs it:...
 * `skill-draft`: Read exact private skill draft files and...
 * `skill-drafts`: List private draft references without file...
-* `start-helper`: Create a Heinzel, retain its first prompt...
 * `start-release-workflow`: Create a named Heinzel from one prompt,...
 * `tool-activity`: Show owner-private host-observed tool...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
@@ -1183,6 +1207,26 @@ $ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel level`
+
+Read this Heinzel&#x27;s intelligence level, provider and exact model, and what a turn runs on now.
+
+**Usage**:
+
+```console
+$ hz heinzel level [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel list`
 
 List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
@@ -1413,6 +1457,48 @@ $ hz heinzel release-workflow [OPTIONS] {session_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel restore`
+
+Bring a retired Heinzel back with its history; its schedules wait, paused, for a new approval.
+
+**Usage**:
+
+```console
+$ hz heinzel restore [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel retire`
+
+Retire this Heinzel: hidden from your list, never woken, history kept; `restore` undoes it.
+
+**Usage**:
+
+```console
+$ hz heinzel retire [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel review-release-draft`
 
 Capture the human-edited marked section and revision for exact share review; send nothing.
@@ -1564,6 +1650,31 @@ $ hz heinzel sessions [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel set-level`
+
+Set this Heinzel&#x27;s level, provider or exact model against the exact profile revision you saw.
+
+**Usage**:
+
+```console
+$ hz heinzel set-level [OPTIONS] {session_id} {request_id} {expected_revision}
+```
+
+**Arguments**:
+
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `expected_revision <int>`: The exact profile_revision you last read.  [required]
+
+**Options**:
+
+* `--level <auto|low|medium|high>`: auto, low, medium or high; null leaves it unchanged.
+* `--provider <str>`: An AI access option&#x27;s name; empty for the configured one; null leaves it.
+* `--model <str>`: An exact model id; empty clears it; null leaves it unchanged.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel share-draft-link`
 
 Deliver one document link for the exact edited revision approved by its owner.
@@ -1646,28 +1757,6 @@ $ hz heinzel skill-drafts [OPTIONS] {session_id}
 
 * `--cursor <int>`: Resume after this session journal position.  [default: 0]
 * `--limit <int>`: The most private draft references returned in this page.  [default: 20]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel start-helper`
-
-Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-
-**Usage**:
-
-```console
-$ hz heinzel start-helper [OPTIONS] {request_id} {name} {prompt}
-```
-
-**Arguments**:
-
-* `request_id <str>`: [required]
-* `name <str>`: Your Heinzel&#x27;s display name.  [required]
-* `prompt <str>`: The exact first chat message; grants no connected access or schedule.  [required]
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2148,6 +2237,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `agent`: (expert) Install the Heinzelmännchen...
+* `bookmark`: (expert) Keep the built-in browser&#x27;s...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
 * `channel`: Show the update channel, or say what...
@@ -2171,9 +2261,11 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `sound`: (expert) Pick the web app&#x27;s soundscape:...
 * `state`: (expert) Note how hz is used on this...
 * `theme`: (expert) Pick how the web app looks: the...
+* `tools`: (expert) List every operation and tool...
 * `ui`: (expert) List what modules add to the web...
 * `uninstall`: Uninstall the verified Heinzel tool...
 * `update`: Update Heinzelmännchen, every plugin and...
+* `write`: (expert) See what agents changed, and...
 
 ### `hz system agent`
 
@@ -2239,6 +2331,172 @@ $ hz system agent uninstall [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system bookmark`
+
+(expert) Keep the built-in browser&#x27;s bookmarks: a tree of folders and bookmarks.
+
+**Usage**:
+
+```console
+$ hz system bookmark [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `add`: (expert) Add a bookmark; an address...
+* `edit`: (expert) Rename a bookmark or folder, or...
+* `folder`: (expert) Add an empty bookmark folder.
+* `list`: (expert) List the bookmarks and folders in...
+* `move`: (expert) Move a bookmark or folder into...
+* `remove`: (expert) Remove a bookmark, or a folder...
+* `restore`: (expert) Bring back a removed bookmark or...
+
+#### `hz system bookmark add`
+
+(expert) Add a bookmark; an address already in that folder is kept once.
+
+**Usage**:
+
+```console
+$ hz system bookmark add [OPTIONS] {url}
+```
+
+**Arguments**:
+
+* `url <str>`: The page&#x27;s https:// address.  [required]
+
+**Options**:
+
+* `--title <str>`: The name shown; the host when left out.
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark edit`
+
+(expert) Rename a bookmark or folder, or change a bookmark&#x27;s address.
+
+**Usage**:
+
+```console
+$ hz system bookmark edit [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--title <str>`: The new name.
+* `--url <str>`: The new https:// address of a bookmark.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark folder`
+
+(expert) Add an empty bookmark folder.
+
+**Usage**:
+
+```console
+$ hz system bookmark folder [OPTIONS] {title}
+```
+
+**Arguments**:
+
+* `title <str>`: The folder&#x27;s name.  [required]
+
+**Options**:
+
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark list`
+
+(expert) List the bookmarks and folders in their order, with each entry&#x27;s id and folder.
+
+**Usage**:
+
+```console
+$ hz system bookmark list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark move`
+
+(expert) Move a bookmark or folder into another folder or to another place in its own.
+
+**Usage**:
+
+```console
+$ hz system bookmark move [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--parent <str>`: The folder&#x27;s id to put it in; the top level when left out.
+* `--before <str>`: The id of the entry in that folder to put it before; else last.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark remove`
+
+(expert) Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+
+**Usage**:
+
+```console
+$ hz system bookmark remove [OPTIONS] {entry}
+```
+
+**Arguments**:
+
+* `entry <str>`: The entry&#x27;s id, as `hz system bookmark list` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system bookmark restore`
+
+(expert) Bring back a removed bookmark or folder to where it was.
+
+**Usage**:
+
+```console
+$ hz system bookmark restore [OPTIONS]
+```
+
+**Options**:
+
+* `--entry <str>`: The removed entry&#x27;s id; the latest removal when left out.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3981,6 +4239,9 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `mcp`: (expert) Serve every operation as an MCP...
 * `mcp-check`: (expert) Authenticate and initialize a...
 * `mcp-install-project`: (expert) Create a new project MCP config;...
+* `mcp-start`: (expert) Serve MCP to other agents at /mcp...
+* `mcp-status`: (expert) Say whether MCP is on, where it...
+* `mcp-stop`: (expert) Stop serving MCP at /mcp; open...
 * `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
@@ -4072,6 +4333,53 @@ $ hz system serve mcp-install-project [OPTIONS]
 
 * `--client <claude|codex|cursor>`: Client whose project configuration to create.  [required]
 * `--project <path>`: Existing project directory other than home; no global configuration is changed.  [required]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-start`
+
+(expert) Serve MCP to other agents at /mcp on the web app&#x27;s address; the running web app follows at once.
+
+It sets ` mcp_http`, the switch Settings, MCP shows too. Nothing else has to run beyond `hz ui serve`.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-start [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-status`
+
+(expert) Say whether MCP is on, where it is served and whether the web app answers it.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-status [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-stop`
+
+(expert) Stop serving MCP at /mcp; open agent sessions end, the tokens stay.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-stop [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`
@@ -4435,6 +4743,25 @@ $ hz system theme use [OPTIONS] {name}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz system tools`
+
+(expert) List every operation and tool with its heads, parameters and result, in four formats.
+
+**Usage**:
+
+```console
+$ hz system tools [OPTIONS]
+```
+
+**Options**:
+
+* `--output <text|markdown|yaml|json>`: How to write the list; the CLI&#x27;s own `--format json` wraps the whole result instead.  [default: text]
+* `--head <all|cli|mcp|rest|web>`: Only what this head exposes; its input schemas too.  [default: all]
+* `--module <list[str]>`: Only these modules and the ones under them, e.g. `system.config`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system ui`
 
 (expert) List what modules add to the web app: status items, header actions and Today widgets.
@@ -4654,6 +4981,82 @@ $ hz system update [OPTIONS]
 * `--preview / --no-preview`: Only show what the update would change (`plan`); nothing is installed.  [default: no-preview]
 * `--keep-pins / --no-keep-pins`: Leave plugins pinned to an exact version or a commit where they are.  [default: no-keep-pins]
 * `--desktop / --no-desktop`: Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app&#x27;s own next update.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system write`
+
+(expert) See what agents changed, and allow a plugin&#x27;s writes to run without asking.
+
+**Usage**:
+
+```console
+$ hz system write [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `allow`: (expert) Allow the writes a plugin marks...
+* `list`: (expert) List the writes agents asked for:...
+* `plugins`: (expert) List the plugin operations that...
+
+#### `hz system write allow`
+
+(expert) Allow the writes a plugin marks direct to run without asking, for its installed version.
+
+**Usage**:
+
+```console
+$ hz system write allow [OPTIONS] {plugin}
+```
+
+**Arguments**:
+
+* `plugin <str>`: The plugin, e.g. `crm` or `heinzel-crm`.  [required]
+
+**Options**:
+
+* `--revoke / --no-revoke`: Take the allowance back: its writes are proposed again.  [default: no-revoke]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system write list`
+
+(expert) List the writes agents asked for: what ran, what waited for you, and a line per agent.
+
+**Usage**:
+
+```console
+$ hz system write list [OPTIONS]
+```
+
+**Options**:
+
+* `--caller <str>`: Only this agent, e.g. `token:k1a2b3` or `heinzel:&lt;session&gt;`.
+* `--unattended / --no-unattended`: Only writes of turns nobody watched.  [default: no-unattended]
+* `--limit <int>`: How many entries, latest first.  [default: 50]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system write plugins`
+
+(expert) List the plugin operations that ask to run directly for agents, and whether you allowed them.
+
+**Usage**:
+
+```console
+$ hz system write plugins [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

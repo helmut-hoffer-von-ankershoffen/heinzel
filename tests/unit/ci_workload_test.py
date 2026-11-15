@@ -94,7 +94,7 @@ def test_focused_scope_cannot_be_reused_for_another_event_or_source(router, chan
 
 
 @pytest.mark.parametrize(
-    "jobs", [(), ("",), ("Focused", "Focused"), ("Coverage",), ("Test (ubuntu-24.04, Python 3.12, unit)",)]
+    "jobs", [(), ("",), ("Focused", "Focused"), ("Coverage",), ("Test (ubuntu-24.04, Python 3.15, unit)",)]
 )
 def test_empty_duplicate_and_full_workloads_are_refused_as_focused_scope(router, jobs):
     with pytest.raises(router.CandidateError, match=r"reviewed focused jobs|reserved for release candidates"):
@@ -143,7 +143,7 @@ def test_canonical_open_release_pr_uses_current_full_candidate_contract(router, 
     assert result.version == "0.9.34"
     assert dict(result.expected_jobs) == release_candidate.expected_jobs(event)
     assert dict(result.expected_jobs)["Coverage"] == "success"
-    assert len([name for name, _ in result.expected_jobs if name.startswith("Test (")]) == 16
+    assert len([name for name, _ in result.expected_jobs if name.startswith("Test (")]) == 4
     assert len([name for name, _ in result.expected_jobs if name.startswith("End-to-end ")]) == 8
     assert result.coverage_floor == merge_gate.red_below((ROOT / release_candidate.WORKFLOW).read_text()) == 80
 

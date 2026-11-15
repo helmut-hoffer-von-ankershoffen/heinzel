@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { BrowserAgents } from "./browserAgents";
 
 /** Each screen's title and the `hz` command that shows the same thing in a terminal. */
 const screens: { path: string; title: MessageKey; command: string }[] = [
@@ -24,6 +25,7 @@ const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/inventory/types", title: "nav.assetTypes", command: "hz heinzel playbooks" },
   { path: "/inventory/assets", title: "nav.assets", command: "hz heinzel discover" },
   { path: "/doctor", title: "nav.doctor", command: "hz system doctor" },
+  { path: "/bookmarks", title: "bookmarks.title", command: "hz system bookmark list" },
   { path: "/profile", title: "nav.profile", command: "hz org show" },
 ];
 
@@ -47,6 +49,8 @@ type Props = {
   onOpenCalendar: () => void;
   browserOpen?: boolean;
   onToggleBrowser?: () => void;
+  /** An agent has a tab in the browser, or waits there for the person's answer; shown as a mark on the button. */
+  browserAgents?: BrowserAgents;
   navigationMode?: boolean;
   onOpenNavigation?: () => void;
   audioSlot?: (element: HTMLDivElement | null) => void;
@@ -61,11 +65,17 @@ export function TopBar({
   onOpenCalendar,
   browserOpen = false,
   onToggleBrowser,
+  browserAgents = "none",
   navigationMode = false,
   onOpenNavigation,
   audioSlot,
 }: Props) {
   const { title, command } = useScreen();
+  const browserBase = browserOpen ? t("browser.close") : t("browser.open");
+  const browserLabel =
+    browserAgents === "none"
+      ? browserBase
+      : `${browserBase}: ${t(browserAgents === "waiting" ? "browser.agentsWaiting" : "browser.agentsActive")}`;
   const queries = useQueryClient();
   const playful = usePlayful();
   const [menu, setMenu] = useState(false);
@@ -180,11 +190,21 @@ export function TopBar({
             size="icon"
             onClick={onToggleBrowser}
             aria-pressed={browserOpen}
-            aria-label={browserOpen ? t("browser.close") : t("browser.open")}
-            title={browserOpen ? t("browser.close") : t("browser.open")}
-            className={cn(compact && "size-11 rounded-full", browserOpen && "bg-accent text-accent-foreground")}
+            aria-label={browserLabel}
+            title={browserLabel}
+            className={cn("relative", compact && "size-11 rounded-full", browserOpen && "bg-accent text-accent-foreground")}
           >
             <Globe aria-hidden />
+            {browserAgents !== "none" && (
+              <span
+                aria-hidden
+                data-testid="browser-agents-mark"
+                className={cn(
+                  "absolute top-1 right-1 size-2 rounded-full",
+                  browserAgents === "waiting" ? "bg-destructive" : "bg-primary",
+                )}
+              />
+            )}
           </Button>
         )}
         {!compact && (

@@ -8,14 +8,12 @@ import { AboutDialog } from "@/about/AboutDialog";
 import { type MenuAction, onMenuAction } from "@/about/menu";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
-import { ChatProvider } from "@/chat/ChatContext";
-import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { clearChatLink, OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
+import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
 import { useOperationRun } from "@/lib/operationRun";
 import { OverlayTarget } from "@/lib/overlayTarget";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
@@ -29,7 +27,8 @@ import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { registerSlot } from "@/sound/dock";
 import { SoundEngine } from "@/sound/SoundEngine";
-import { BrowserPanel } from "./BrowserPanel";
+import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
+import { useBrowserAgents, useCommitAttention } from "./browserAgents";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -97,11 +96,9 @@ const GO: Record<string, string> = {
 export function Shell() {
   useVisualViewport();
   return (
-    <ChatProvider>
-      <AvatarThemeProvider>
-        <Layout />
-      </AvatarThemeProvider>
-    </ChatProvider>
+    <AvatarThemeProvider>
+      <Layout />
+    </AvatarThemeProvider>
   );
 }
 
@@ -129,9 +126,9 @@ function Layout() {
     [titlebar.bar, titlebar.fullscreen, navOpen],
   );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
-  const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
-  const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
+  const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
+  const browserAgents = useBrowserAgents();
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
@@ -496,7 +493,14 @@ function Layout() {
     window.addEventListener(OPEN_TERMINAL, open);
     window.addEventListener(OPEN_CHAT, openChat);
     window.addEventListener(OPEN_NEW_CHAT, openChat);
+    // The menu's New Chat opens the chat on the default Heinzel (every chat is with a Heinzel, ADR 0157) and puts the
+    // cursor in its composer, or in the first start's name field.
+    const stopNewChat = onMenuAction(["new-chat"], () => {
+      window.dispatchEvent(new Event(OPEN_NEW_CHAT));
+      requestComposerFocus();
+    });
     return () => {
+      stopNewChat();
       window.removeEventListener(OPEN_TERMINAL, open);
       window.removeEventListener(OPEN_CHAT, openChat);
       window.removeEventListener(OPEN_NEW_CHAT, openChat);
@@ -539,6 +543,11 @@ function Layout() {
       selectPanel("browser");
     }
   };
+  // An agent's commit waits at most two minutes: the card comes to the person, not the other way round.
+  useCommitAttention(browserAgents.waiting, browserEnabled && browserOpen && selectedPanel === "browser", () => {
+    setBrowserOpen(true);
+    selectPanel("browser");
+  });
   const toggleTerminal = (canClose: boolean) => {
     if (canClose && terminalOpen && selectedPanel === "terminal") {
       setTerminalOpen(false);
@@ -559,6 +568,7 @@ function Layout() {
           "sidebar",
           "terminal",
           "browser",
+          "browser-show",
           "chat",
           "notifications",
           "help",
@@ -568,7 +578,10 @@ function Layout() {
           if (action === "search") setSearchOpen(true);
           else if (action === "sidebar") setNavOpen((open) => !open);
           else if (action === "terminal") menu.current.toggleTerminal(true);
-          else if (action === "browser") {
+          else if (action === "browser-show") {
+            // A link opened a tab: show the panel without toggling it shut.
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(false);
+          } else if (action === "browser") {
             if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
           } else if (action === "chat") menu.current.toggleChat(true);
           else if (action === "notifications" || action === "help")
@@ -777,7 +790,11 @@ function Layout() {
                           id: "browser",
                           title: t("browser.title"),
                           content: (
-                            <BrowserPanel active={selectedPanel === "browser"} onClose={() => setBrowserOpen(false)} />
+                            <BrowserPanel
+                              bookmarks
+                              active={selectedPanel === "browser"}
+                              onClose={() => setBrowserOpen(false)}
+                            />
                           ),
                         },
                       ]
@@ -840,6 +857,7 @@ function Layout() {
             onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
             onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
+            browserAgents={browserAgents.mark}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => toggleTerminal(beside)}
           />,

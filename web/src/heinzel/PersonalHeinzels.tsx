@@ -6,16 +6,15 @@ import {
   api,
   problem,
   type SchemaHeinzelAppearance,
-  type SchemaProfileProposal,
   type SchemaSessionList,
   type SchemaSessionSnapshot,
 } from "@/api/client";
-import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
-import { appearanceLook, stateLabel } from "@/heinzel/look";
-import { StartHelper } from "@/heinzel/StartHelper";
+import { ActivityFace } from "@/heinzel/ActivityFace";
+import { sessionWord } from "@/heinzel/activity";
+import { appearanceLook } from "@/heinzel/look";
 import { type MessageKey, t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
@@ -144,7 +143,6 @@ export function usePersonalSessions() {
 }
 
 export function PersonalHeinzels() {
-  const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null);
@@ -217,14 +215,14 @@ export function PersonalHeinzels() {
                 !drafting && item.session_id === selected && "border-primary bg-accent text-accent-foreground",
               )}
             >
-              <HeinzelAvatar
-                view="bust"
-                {...appearanceLook(item.appearance)}
+              <ActivityFace
+                appearance={item.appearance}
+                activity={item.activity}
                 className="size-10 shrink-0 overflow-hidden"
               />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{item.name}</span>
-                <span className="block text-xs text-muted-foreground">{stateLabel(item.state)}</span>
+                <span className="block text-xs text-muted-foreground">{sessionWord(item)}</span>
               </span>
             </Button>
           ))}
@@ -235,7 +233,6 @@ export function PersonalHeinzels() {
           {t("personal.create")}
         </Button>
       )}
-      {connectedFrontdoor && <StartHelper />}
       {drafting && (
         <NewHeinzel
           onLock={setLocked}
@@ -360,6 +357,11 @@ function NewHeinzel({
                   last_seq: 0,
                   updated_at: new Date().toISOString(),
                   appearance: created.appearance,
+                  activity: "idle",
+                  last_run_failed: false,
+                  queued_runs: 0,
+                  runs_last_hour: 0,
+                  waiting_count: 0,
                 },
                 ...(list.sessions ?? []),
               ],
@@ -413,19 +415,19 @@ function NewHeinzel({
   );
 }
 
-const AGE_LABEL: Record<(typeof AGES)[number], MessageKey> = {
+export const AGE_LABEL: Record<(typeof AGES)[number], MessageKey> = {
   baby: "personal.age.baby",
   young: "personal.age.young",
   grown: "personal.age.grown",
   old: "personal.age.old",
 };
-const BEARD_LABEL: Record<(typeof BEARDS)[number], MessageKey> = {
+export const BEARD_LABEL: Record<(typeof BEARDS)[number], MessageKey> = {
   none: "personal.beard.none",
   short: "personal.beard.short",
   medium: "personal.beard.medium",
   long: "personal.beard.long",
 };
-const BUILD_LABEL: Record<(typeof BUILDS)[number], MessageKey> = {
+export const BUILD_LABEL: Record<(typeof BUILDS)[number], MessageKey> = {
   slim: "personal.build.slim",
   regular: "personal.build.regular",
   round: "personal.build.round",
@@ -444,7 +446,7 @@ const COLOUR_LABEL: Record<keyof typeof HATS | keyof typeof SHIRTS, MessageKey> 
 };
 
 /** One colour choice as swatches: the theme's own colour first, then the closed palette, each named for a reader. */
-function Swatches<Colour extends keyof typeof COLOUR_LABEL>({
+export function Swatches<Colour extends keyof typeof COLOUR_LABEL>({
   label,
   palette,
   value,
@@ -610,13 +612,9 @@ function LookFields({
 export function ProfileEditor({
   initial,
   onLock,
-  inChat = false,
-  suggestion = null,
 }: {
   initial: SchemaSessionSnapshot;
   onLock: (locked: boolean) => void;
-  inChat?: boolean;
-  suggestion?: SchemaProfileProposal | null;
 }) {
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -751,50 +749,11 @@ export function ProfileEditor({
   const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
-  const suggestionSelected =
-    suggestion !== null && name === suggestion.name && JSON.stringify(look) === JSON.stringify(suggestion.appearance);
   useEffect(() => {
     onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
   }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <EditorForm onSubmit={() => void save()}>
-      {suggestion?.session_id === snapshot.session_id && suggestion.status === "proposed" && (
-        <section aria-label={t("personal.suggested")} className="space-y-2 rounded border border-border p-2 text-sm">
-          <h3 className="font-medium">{t("personal.suggested")}</h3>
-          <p>{t("personal.suggestedName", { name: suggestion.name })}</p>
-          <HeinzelAvatar
-            label={t("personal.suggestedLook")}
-            age={suggestion.appearance.age}
-            build={suggestion.appearance.build}
-            beard={suggestion.appearance.beard ?? undefined}
-            hat={suggestion.appearance.hat ?? undefined}
-            shirt={suggestion.appearance.shirt ?? undefined}
-            accessories={suggestion.appearance.accessories}
-            className="h-24 w-16"
-          />
-          <p>{t("personal.suggestedHelp")}</p>
-          {suggestion.expected_revision !== snapshot.profile_revision && (
-            <p role="status">{t("personal.suggestedStale")}</p>
-          )}
-          {hasUncommittedChanges && !pending && suggestionSelected && (
-            <p role="status">{t("personal.suggestedReady")}</p>
-          )}
-          {hasUncommittedChanges && !pending && !suggestionSelected && (
-            <p role="status">{t("personal.suggestedBlocked")}</p>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled || hasUncommittedChanges || suggestion.expected_revision !== snapshot.profile_revision}
-            onClick={() => {
-              setName(suggestion.name);
-              setLook(suggestion.appearance);
-            }}
-          >
-            {t("personal.suggestedUse")}
-          </Button>
-        </section>
-      )}
       <LookFields
         name={name}
         look={look}
@@ -815,7 +774,7 @@ export function ProfileEditor({
       <div className="flex flex-wrap gap-2">
         <Button
           type="submit"
-          variant={hasUncommittedChanges || pending || inChat ? "default" : "outline"}
+          variant={hasUncommittedChanges || pending ? "default" : "outline"}
           disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}
         >
           {pending ? t("personal.retrySave") : t("personal.save")}
@@ -838,20 +797,18 @@ export function ProfileEditor({
             {t("personal.reload")}
           </Button>
         )}
-        {!inChat && (
-          <Button
-            type="button"
-            variant={hasUncommittedChanges || pending ? "outline" : "default"}
-            disabled={busy || pending !== null || hasUncommittedChanges}
-            onClick={() => {
-              // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
-              if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
-              else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
-            }}
-          >
-            {t("personal.chatWith", { name: snapshot.name })}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant={hasUncommittedChanges || pending ? "outline" : "default"}
+          disabled={busy || pending !== null || hasUncommittedChanges}
+          onClick={() => {
+            // Already linked: the address would not change, so ask the shell to show the conversation (a phone's tab).
+            if (params.get("chat") === snapshot.session_id) window.dispatchEvent(new Event(OPEN_CHAT));
+            else navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`);
+          }}
+        >
+          {t("personal.chatWith", { name: snapshot.name })}
+        </Button>
       </div>
       {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveFirst")}</p>}
     </EditorForm>

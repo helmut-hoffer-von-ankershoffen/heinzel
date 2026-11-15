@@ -5,6 +5,7 @@ implementation: partial
 decision-makers: maintainer (decision), architect (shape)
 amends: 0062
 amends-0062: found MCP servers are switched on by default; each can be switched off
+amended-by: 0162
 related: 0019, 0027, 0028, 0030, 0045, 0050, 0068
 ---
 

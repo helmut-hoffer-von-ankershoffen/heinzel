@@ -7,13 +7,15 @@ Register a flag here when the work starts, and delete it with its checks when th
 from heinzel.kernel._settings import Settings
 
 FEATURES: dict[str, str] = {
-    "sidebar_browser": "Isolated desktop sidebar browsing while native containment is being qualified.",
-    "connected_frontdoor": "Create a durable helper from its first prompt while the connected journey is completed.",
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
-    "durable_agents": "Durable agents that keep working between sessions, while they are being built.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""
+
+
+RETIRED_FEATURES = frozenset({"persistent_web", "sidebar_browser", "durable_agents", "one_chat", "connected_frontdoor"})
+"""Flags that shipped or were removed (one_chat: the one kind of chat, ADR 0157); a setting still naming one is ignored,
+not reported."""
 
 
 def feature_catalog() -> dict[str, str]:
@@ -34,5 +36,5 @@ def feature_enabled(settings: Settings, name: str) -> bool:
 
 def unknown_features(settings: Settings) -> list[str]:
     """Names in the setting that no flag has, to report; they switch nothing on."""
-    # Shipped web availability no longer has a gate; older selected profiles may still name it.
-    return sorted(settings.features - FEATURES.keys() - {"persistent_web"})
+    # Shipped work no longer has a gate; older selected profiles may still name these retired flags.
+    return sorted(settings.features - FEATURES.keys() - RETIRED_FEATURES)

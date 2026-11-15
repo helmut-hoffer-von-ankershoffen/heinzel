@@ -191,7 +191,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
-            {!notices.isLoading && <Gnome state="sleeping" />}
+            {!notices.isLoading && <Gnome state="asleep" />}
             <p className="text-sm text-muted-foreground">
               {notices.isLoading ? t("notify.loading") : t("notify.empty")}
             </p>
