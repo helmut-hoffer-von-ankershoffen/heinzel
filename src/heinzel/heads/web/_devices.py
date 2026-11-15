@@ -28,6 +28,7 @@ from pathlib import Path
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
 from heinzel.kernel import HeinzelError, clean_text
+from heinzel.kernel._identity import CurrentUser
 
 PREFIX = "hzd_"
 """Device tokens start with this, so they are told apart from session tokens at a glance (and in a secret scan)."""
@@ -49,6 +50,16 @@ class Device(BaseModel):
     created: AwareDatetime = Field(description="When it was paired.")
     last_used: AwareDatetime = Field(description="When it was last used, to the hour.")
     sha256: str = Field(description="SHA-256 of the token; the token itself is never stored.")
+    widget: "WidgetCredential | None" = None
+
+
+class WidgetCredential(BaseModel):
+    """A single expiring widget credential belonging to this device."""
+
+    sha256: str
+    owner: str
+    workspace: str
+    expires: AwareDatetime
 
 
 _DEVICES = TypeAdapter(list[Device])
@@ -111,6 +122,70 @@ class Devices:
         if self._clock() - found.last_used > TOUCH_EVERY:
             self._touch(found.id)
         return found
+
+    def widget_issue(self, device_id: str, owner: str) -> tuple[str, str, datetime] | None:
+        """Replace this device's widget credential; never issue to an unpaired device."""
+        with self._locked():
+            devices = self.paired()
+            device = next((d for d in devices if d.id == device_id), None)
+            if device is None or self._clock() - device.last_used > UNUSED_FOR:
+                return None
+            workspace = self._widget_workspace()
+            token = "hzw_" + secrets.token_urlsafe(32)
+            expires = self._clock() + timedelta(hours=24)
+            credential = WidgetCredential(sha256=digest(token), owner=owner, workspace=workspace, expires=expires)
+            self._write([d.model_copy(update={"widget": credential}) if d.id == device_id else d for d in devices])
+            return token, workspace, expires
+
+    def widget_check(self, token: str, owner: str, workspace: str) -> str | None:
+        """Check scope, expiry and live parent pairing on every request."""
+        if not token.startswith("hzw_"):
+            return None
+        with self._locked():
+            if not hmac.compare_digest(self._widget_workspace(create=False), workspace):
+                return None
+            now = self._clock()
+            for device in self.paired():
+                widget = device.widget
+                if (
+                    widget
+                    and widget.owner == owner
+                    and widget.workspace == workspace
+                    and now < widget.expires
+                    and now - device.last_used <= UNUSED_FOR
+                    and hmac.compare_digest(widget.sha256, digest(token))
+                ):
+                    return device.id
+        return None
+
+    def widget_revoke(self, device_id: str) -> None:
+        """Revoke only this paired device's widget credential."""
+        with self._locked():
+            devices = self.paired()
+            if any(d.id == device_id for d in devices):
+                self._write([d.model_copy(update={"widget": None}) if d.id == device_id else d for d in devices])
+
+    def _widget_workspace(self, *, create: bool = True) -> str:
+        path = self.directory / "widget-workspace"
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            if not create:
+                return ""
+            value = secrets.token_hex(32)
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
+            with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+                handle.write(value)
+                handle.flush()
+                os.fsync(handle.fileno())
+        else:
+            with os.fdopen(descriptor, "r", encoding="ascii") as handle:
+                CurrentUser.verify_private(os.fstat(handle.fileno()))
+                value = handle.read(65)
+        if not re.fullmatch(r"[0-9a-f]{64}", value):
+            msg = "The widget workspace identity is damaged"
+            raise HeinzelError(msg)
+        return value
 
     def revoke(self, which: str) -> list[Device]:
         """Remove the device `which` (an id), or every one with `all`; the ones removed."""
