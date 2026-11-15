@@ -12,6 +12,7 @@ import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
+import { scrollSettled } from "./settle.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -979,6 +980,8 @@ try {
     const composer = heinzelComposer;
     await composer.waitFor();
     await composer.fill("");
+    // Opening the chat scrolls the workspace to it, smoothly: measure where the composer comes to rest.
+    await scrollSettled(composer);
     const composerBox = await composer.boundingBox();
     assert.ok(composerBox, `${spec.name}: composer has no box`);
     assert.ok(
