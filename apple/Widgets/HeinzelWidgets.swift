@@ -257,6 +257,7 @@ private struct ActivityWidget: Widget {
 private struct ActivityWidgetView: View {
     let entry: ActivityEntry
     @Environment(\.redactionReasons) private var redaction
+    @Environment(\.widgetFamily) private var family
 
     var body: some View {
         if entry.loading || !redaction.isEmpty {
@@ -271,10 +272,35 @@ private struct ActivityWidgetView: View {
             HStack {
                 Text("Heinzels").font(.system(.headline, design: .serif)).widgetAccentable()
                 Spacer(minLength: 4)
+                if family == .systemMedium, let activity = entry.activity, activity.roster.count > 2 {
+                    Text("+\(activity.roster.count - 2)")
+                        .font(.caption2).foregroundStyle(.secondary).privacySensitive()
+                }
                 CrewMark(width: 30, height: 27)
             }
-            Spacer(minLength: 2)
-            if entry.fresh, let activity = entry.activity {
+            if let activity = entry.activity, family == .systemMedium, !activity.roster.isEmpty {
+                ForEach(activity.roster.prefix(2)) { item in
+                    Link(destination: activity.workspaceScope.map { NativeRoute.chat(workspace: $0, id: item.id).url }
+                         ?? NativeRoute.chooseHeinzel.url) {
+                        HStack(spacing: 8) {
+                            HeinzelPortrait(item: item, size: 27)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                Text(entry.fresh ? item.status : "Last known: \(item.status)")
+                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .privacySensitive()
+                }
+                if !entry.fresh {
+                    Text("Open to refresh · Updated \(activity.updatedAt, style: .relative) ago")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+            } else if entry.fresh, let activity = entry.activity {
+                Spacer(minLength: 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(activity.awake) awake")
                         .font(.system(.title2, design: .serif, weight: .semibold))
@@ -290,6 +316,7 @@ private struct ActivityWidgetView: View {
                 }
                 .privacySensitive()
             } else {
+                Spacer(minLength: 2)
                 WidgetRefresh(updatedAt: entry.activity?.updatedAt)
             }
         }
@@ -623,6 +650,9 @@ private struct HeinzelRosterView: View {
                         HeinzelStatus(item: item, font: .caption2)
                             .lineLimit(1)
                             .foregroundStyle(.secondary)
+                    } else {
+                        Text("Last known: \(item.status)")
+                            .font(.caption2).lineLimit(1).foregroundStyle(.secondary)
                     }
                 }
             }
