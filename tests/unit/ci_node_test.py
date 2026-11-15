@@ -122,7 +122,7 @@ def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
         < steps.index(selected)
         < next(i for i, step in enumerate(steps) if step.get("run") == "make test")
     )
-    assert coverage["timeout-minutes"] == 10
+    assert coverage["timeout-minutes"] == 18  # setup plus make test's 720 s covered session (es8j)
     assert coverage["env"]["UV_NO_SYNC"] == "1"
     test = jobs["test"]
     assert test["env"]["CI_NODE_GROUP_ARGUMENT"] == "${{ matrix.levels != 'integration' && '--group=build' || '' }}"
