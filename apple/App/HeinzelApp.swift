@@ -285,6 +285,8 @@ struct ConnectionView: View {
     #if os(iOS)
     @State private var connectionProbeRevision = 0
     @State private var connectionProbe: ConnectionProbe?
+    @State private var connectionScopeRevision = 0
+    @State private var signInProbeScope: Int?
 
     private struct ConnectionProbe {
         let revision: Int
@@ -701,6 +703,13 @@ struct ConnectionView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            #if os(iOS)
+            if phase != .active, signInProbeScope == connectionScopeRevision {
+                loadFailure = .signIn
+                loadingWorkspace = false
+            }
+            invalidateConnectionScope()
+            #endif
             if phase == .active && draftOrigin != nil { draftRevision += 1 }
         }
         .onChange(of: link) { _, _ in error = nil }
@@ -834,11 +843,23 @@ struct ConnectionView: View {
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
+                        #if os(iOS)
+                        guard scenePhase == .active else {
+                            loadFailure = .signIn
+                            loadingWorkspace = false
+                            return
+                        }
+                        let scope = connectionScopeRevision
+                        signInProbeScope = scope
+                        #endif
                         Task {
                             #if os(iOS)
-                            while self.endpoint == endpoint, loadRevision == revision, !Task.isCancelled {
+                            defer { if signInProbeScope == scope { signInProbeScope = nil } }
+                            while self.endpoint == endpoint, loadRevision == revision,
+                                  connectionScopeRevision == scope, scenePhase == .active, !Task.isCancelled {
                                 guard let result = await sharedConnectionProbe(endpoint.origin, manual: false) else { continue }
-                                guard self.endpoint == endpoint, loadRevision == revision else { return }
+                                guard self.endpoint == endpoint, loadRevision == revision,
+                                      connectionScopeRevision == scope, scenePhase == .active else { return }
                                 guard connectionProbe?.revision == result.revision else { continue }
                                 connectionIssue = result.issue
                                 loadFailure = result.issue ?? .signIn
@@ -1701,6 +1722,9 @@ struct ConnectionView: View {
                 loadFailure = nil
                 loadingWorkspace = true
             }
+            #if os(iOS)
+            if endpoint != target { invalidateConnectionScope() }
+            #endif
             endpoint = target
             #if os(macOS)
             choosingWorkspace = connectionMenuIntent.keepSetup(afterStartedAt: menuRevision)
@@ -1759,6 +1783,9 @@ struct ConnectionView: View {
         #endif
         showConnection = false
         choosingWorkspace = false
+        #if os(iOS)
+        invalidateConnectionScope()
+        #endif
         endpoint = nil
         serverOrigin = ""
         clearWidgetActivity()
@@ -1781,6 +1808,13 @@ struct ConnectionView: View {
     }
 
     #if os(iOS)
+    private func invalidateConnectionScope() {
+        connectionScopeRevision += 1
+        connectionProbe?.task.cancel()
+        connectionProbe = nil
+        signInProbeScope = nil
+    }
+
     private func refreshSetupStatus() async {
         refreshSyncedWorkspaces()
         guard let origin = draftOrigin, !connecting else { return }
