@@ -424,6 +424,23 @@ test("click confirmation: done is said only when the click reached the target", 
   assert.deepEqual(await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: list.fingerprint }), { url: "https://shop.example.com/" });
   assert.equal(scripts(PAGE_SCRIPTS.CLICKED), 0);
   assert.equal(scripts(PAGE_SCRIPTS.CLICK_OVER), 1);
+  view.page.elements[5] = BUTTON;
+});
+
+test("click confirmation: a link so quick that the page is gone before the click can be read is told as a navigation", async () => {
+  const f = fixture();
+  const { tab, view } = await onPage(f);
+  view.page.at = 5;
+  const list = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  view.page.clicked = null;
+  view.page.on = (method, params) => { if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") view.webContents.emit("did-navigate"); };
+  assert.deepEqual(await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: list.fingerprint }), { url: "https://shop.example.com/", navigated: true });
+  assert.equal(view.page.press, null);
+  // On the page that is still there, no click seen stays what it was: not confirmed.
+  view.page.on = () => {};
+  await f.call(HEINZEL, "read", { tab });
+  const again = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_4" });
+  await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_4", expect: again.fingerprint }), (error) => error.code === "changed" && /^Not confirmed/.test(error.message));
 });
 
 /** The engine's own page script, run for real: a window that keeps listeners, a clock, and events as the browser makes them. */
@@ -465,6 +482,21 @@ test("the press guard: a release or click that would reach anything but the targ
   world.run(PAGE_SCRIPTS.ARM_PRESS, label);
   for (const type of ["mouseup", "click"]) assert.equal(world.fire(type, [button, around, root]), false, type);
   assert.equal(world.run(PAGE_SCRIPTS.CLICKED), true);
+  world.run(PAGE_SCRIPTS.CLICK_OVER);
+  // A label passes its click on to its control, which may sit anywhere in the page: that second click, real and
+  // with no label in its path, must go through, or the box stays unticked while the click counts as done.
+  const box = { nodeType: 1, tagName: "INPUT" };
+  const agree = { nodeType: 1, tagName: "LABEL", control: box };
+  agree.closest = () => agree;
+  world.run(PAGE_SCRIPTS.ARM_PRESS, agree);
+  for (const type of ["mouseup", "click"]) assert.equal(world.fire(type, [agree, around, root]), false, type);
+  assert.equal(world.fire("click", [box, root]), false);
+  assert.equal(world.run(PAGE_SCRIPTS.CLICKED), true);
+  // Anything else is still stopped while that label is armed, and a control of its own does not arm a button.
+  assert.equal(world.fire("click", [around, root]), true);
+  world.run(PAGE_SCRIPTS.CLICK_OVER);
+  world.run(PAGE_SCRIPTS.ARM_PRESS, button);
+  assert.equal(world.fire("click", [box, root]), true);
   world.run(PAGE_SCRIPTS.CLICK_OVER);
   // The frame slid in: the release and the click go to what is around both, or to the root. All of it is stopped
   // and prevented, and the click is reported as a miss.

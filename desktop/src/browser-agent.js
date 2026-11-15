@@ -19,7 +19,8 @@
  *   describe   {tab, action: click|type|key, ref? or x?, y?}  -> {target, fingerprint}
  *   click      {tab, ref or x, y, button?, count?, modifiers?, expect} -> {url}
  *              (with `confirmed: false` when the target is a frame or an unknown place: the click was sent, and
- *              nothing in this document can say that it arrived)
+ *              nothing in this document can say that it arrived; with `navigated: true` when the page was already
+ *              another one before the click could be confirmed)
  *   type       {tab, text, ref?, expect}                      -> {url}
  *   key        {tab, keys, expect}                            -> {url}
  *   confirm    {tab, summary, fingerprint, seconds}           -> {approved}   (outside agents only)
@@ -147,7 +148,9 @@ const STATE = `(globalThis.__hzAgent || (globalThis.__hzAgent = (() => {
   // by itself a second after it was armed, so the person's own clicks always work again.
   const release = (event) => {
     if (!event.isTrusted || !state.target || !(state.until > Date.now())) return;
-    const hit = event.composedPath().includes(state.target);
+    // A label hands its click on to its control, which may sit outside it: that click is the target's own too.
+    const path = event.composedPath();
+    const hit = path.includes(state.target) || Boolean(state.target.control && path.includes(state.target.control));
     const click = event.type === "click" || event.type === "auxclick" || event.type === "contextmenu";
     if (click && state.awaited) { state.awaited = false; state.click = hit; }
     if (hit || event.type === "contextmenu") return;
@@ -662,12 +665,15 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
    * After a release: did the click reach the target? Asked for `clickMs` at most, each question within what is left
    * of it. A list (`select`) opens on the press and gets no click, so its press is its confirmation.
    */
-  const reached = async (id, guest, context, target) => {
+  const reached = async (id, guest, context, target, generation) => {
     if (target.tag === "select") return true;
     const started = Date.now();
     for (;;) {
       const answer = await within(clickMs - (Date.now() - started), () => evaluate(id, guest, CLICKED, context));
       if (answer === true || answer === false) return answer;
+      // The page is already another one: the press was on the target, and a link that is quick takes the record
+      // of its click with it. That is told as what it is, so the agent does not click again on the new page.
+      if (pageOf(guest).document !== generation) return "navigated";
       if (Date.now() - started >= clickMs) return false;
       await new Promise((resolve) => { setTimeout(resolve, Math.min(50, clickMs)).unref?.(); });
     }
@@ -880,6 +886,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
       await verify();
       // A frame or an unknown target has no element of this document to be pressed; the checks above and below stand.
       const watched = node !== null && target.resolved;
+      const generation = pageOf(guest).document;
       for (let count = 1; count <= (args.count ?? 1); count += 1) {
         const context = watched ? await world(id, guest) : null;
         try {
@@ -909,7 +916,9 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
           await mouse("mouseReleased", { button, clickCount: count });
           // Done is only said once the click is known to have reached the target. A page may still have changed
           // what is under the pointer between the last look and the release: that click was stopped.
-          if (watched && !(await reached(id, guest, context, target))) throw new BridgeError("changed", MESSAGES.unconfirmed);
+          const arrived = watched ? await reached(id, guest, context, target, generation) : true;
+          if (arrived === "navigated") return { url: urlOf(guest), navigated: true };
+          if (arrived !== true) throw new BridgeError("changed", MESSAGES.unconfirmed);
         } finally {
           if (watched) await over(id, guest, context);
         }
