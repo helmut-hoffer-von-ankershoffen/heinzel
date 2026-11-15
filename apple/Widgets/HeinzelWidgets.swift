@@ -436,21 +436,25 @@ private struct PinnedHeinzelView: View {
 
     private func status(_ item: WidgetHeinzel, detailLimit: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                HeinzelPortrait(item: item, size: family == .systemMedium ? 40 : 30)
-                Text(item.name).font(.headline).lineLimit(2).widgetAccentable()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    HeinzelPortrait(item: item, size: family == .systemMedium ? 40 : 30)
+                    Text(item.name).font(.headline).lineLimit(2).widgetAccentable()
+                }
+                HeinzelStatus(item: item, font: .subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .accessibilityLabel(entry.fresh ? item.status : "Last known: " + item.status)
+                if detailLimit > 0, entry.fresh {
+                    details(item, limit: detailLimit)
+                }
             }
-            HeinzelStatus(item: item, font: .subheadline.weight(.medium))
-                .lineLimit(2)
-                .accessibilityLabel(entry.fresh ? item.status : "Last known: " + item.status)
-            if detailLimit > 0, entry.fresh {
-                details(item, limit: detailLimit)
-            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
             if let updatedAt = entry.updatedAt {
                 SnapshotTime(updatedAt: updatedAt, fresh: entry.fresh)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func details(_ item: WidgetHeinzel, limit: Int) -> some View {
@@ -566,12 +570,14 @@ private struct HeinzelRosterView: View {
     private func roster(limit: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let snapshot = entry.activity, !items.isEmpty {
-                ForEach(items.prefix(limit)) { item in
-                    row(item, scope: snapshot.workspaceScope)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(items.prefix(limit)) { item in
+                        row(item, scope: snapshot.workspaceScope)
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
                 HStack(alignment: .bottom, spacing: 8) {
-                    SnapshotTime(updatedAt: snapshot.updatedAt, fresh: entry.fresh)
-                    Spacer(minLength: 0)
                     if items.count > limit {
                         Link(destination: NativeRoute.chooseHeinzel.url) {
                             Text("+\(items.count - limit)")
@@ -579,15 +585,19 @@ private struct HeinzelRosterView: View {
                         }
                         .accessibilityLabel("View all \(items.count) Heinzels")
                     }
+                    Spacer(minLength: 0)
+                    SnapshotTime(updatedAt: snapshot.updatedAt, fresh: entry.fresh)
                 }
                 .privacySensitive()
-            } else if entry.fresh, entry.activity?.heinzels != nil {
+            } else if entry.fresh, let snapshot = entry.activity, snapshot.heinzels != nil {
                 Text("No Heinzels yet").font(.subheadline)
+                Spacer(minLength: 0)
+                SnapshotTime(updatedAt: snapshot.updatedAt, fresh: true)
             } else {
                 WidgetRefresh(updatedAt: entry.activity?.updatedAt)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func row(_ item: WidgetHeinzel, scope: String?) -> some View {
@@ -618,8 +628,11 @@ private struct SnapshotTime: View {
 
     var body: some View {
         Text("\(fresh ? "Updated" : "Last known") \(updatedAt, style: .relative) ago")
-            .font(.caption)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.trailing)
             .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .accessibilityHint(fresh ? "Snapshot from the workspace" : "Open the app to refresh these statuses")
     }
 }
@@ -650,12 +663,12 @@ private struct WidgetRefresh: View {
         VStack(alignment: .leading, spacing: 3) {
             Label("Open to refresh", systemImage: "arrow.up.right")
                 .font(.caption.weight(.semibold))
+            Spacer(minLength: 0)
             if let updatedAt {
-                Text("Updated \(updatedAt, style: .relative) ago")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                SnapshotTime(updatedAt: updatedAt, fresh: false)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
