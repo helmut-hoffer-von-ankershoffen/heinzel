@@ -74,8 +74,11 @@ app.on("web-contents-created", (_event, contents) => {
   const send = wire.sendCommand.bind(wire);
   wire.sendCommand = async (method, params, ...rest) => {
     if (method === "Input.dispatchMouseEvent" && params?.type === "mousePressed" && Number.isFinite(params.x) && Number.isFinite(params.y)) {
-      const used = await contents.executeJavaScript(
-        `typeof window.__journeySeam === "function" ? window.__journeySeam(${params.x}, ${params.y}) : null`).catch(() => null);
+      // Two seconds at most: a page that is just leaving must not hold the engine's press.
+      const used = await Promise.race([
+        contents.executeJavaScript(`typeof window.__journeySeam === "function" ? window.__journeySeam(${params.x}, ${params.y}) : null`).catch(() => null),
+        new Promise((done) => { setTimeout(done, 2000, null).unref?.(); }),
+      ]);
       if (used) record("seam", JSON.stringify(used));
     }
     return send(method, params, ...rest);
