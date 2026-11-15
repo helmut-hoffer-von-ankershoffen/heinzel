@@ -60,7 +60,7 @@ elif n == 1:
  name='profile:propose'
  args={{'expected_revision':1,'name':'Mira','appearance':{{'age':'grown','build':'round'}}}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  args={{'report':'I prepared proposals for your review.'}}
 wire={{'kind':'tool','name':'use_tool' if n < 2 else name,
  'arguments':{{'name':name,'arguments':args}} if n < 2 else args,'text':None}}

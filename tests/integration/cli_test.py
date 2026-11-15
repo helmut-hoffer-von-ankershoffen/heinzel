@@ -145,7 +145,7 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
-    hidden = expert + 5  # and the server plus MCP setup/check commands
+    hidden = expert + 7  # and the server plus MCP setup, switch and check commands
     last = screen.strip().splitlines()[-1].strip()
     assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
     assert last.startswith(f"v{__version__}")
@@ -563,6 +563,7 @@ def test_commands_are_sorted(app):
     assert root.list_commands(None) == sorted(root.list_commands(None))  # type: ignore[arg-type]
     expected = [
         "agent",
+        "bookmark",
         "capability",
         "changelog",
         "channel",
@@ -586,9 +587,11 @@ def test_commands_are_sorted(app):
         "sound",
         "state",
         "theme",
+        "tools",
         "ui",
         "uninstall",
         "update",
+        "write",
     ]
     assert system.list_commands(None) == expected
 
