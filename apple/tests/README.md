@@ -3,7 +3,7 @@
 From the repository root on macOS with Xcode, compile and run the isolated widget model probe:
 
 ```sh
-sm gate run -- env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc -parse-as-library -swift-version 6 apple/Shared/NativeRoute.swift apple/Shared/ActivityWidgetData.swift apple/tests/WidgetStatusTests.swift -o apple/.build/widget-model-tests
+sm gate run -- env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc -parse-as-library -swift-version 6 apple/Shared/NativeRoute.swift apple/Shared/ActivityCatalog.swift apple/Shared/ActivityWidgetData.swift apple/tests/WidgetStatusTests.swift -o apple/.build/widget-model-tests
 sm gate run -- apple/.build/widget-model-tests
 ```
 

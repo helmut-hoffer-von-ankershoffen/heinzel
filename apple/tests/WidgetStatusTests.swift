@@ -25,6 +25,22 @@ struct WidgetStatusTests {
         precondition(snapshot.updatedAt == date)
         precondition(snapshot.roster.map(\.activity) == ["working", "waiting_for_you"])
         precondition(snapshot.roster.allSatisfy { $0.asks == nil && $0.nextWake == nil })
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("widget-test-" + UUID().uuidString)
+        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("catalog.sqlite")
+        let catalog = ActivityCatalog(url: url)!
+        let scope = ActivityWidgetData.scope(for: "https://example.test")
+        precondition(ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: snapshot.roster,
+                                             entries: [], workspaceScope: scope, expectedToken: ActivityCatalog.refreshToken(url: url)!,
+                                             now: date, catalogOverride: catalog))
+        let later = date.addingTimeInterval(45)
+        precondition(ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: snapshot.roster,
+                                             entries: [], workspaceScope: scope, expectedToken: ActivityCatalog.refreshToken(url: url)!,
+                                             now: later, catalogOverride: catalog))
+        let saved = try! JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
+        precondition(saved.updatedAt == later && saved.workspaceScope == scope)
+        precondition(saved.expiresAt == later.addingTimeInterval(300))
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")
     }
 }

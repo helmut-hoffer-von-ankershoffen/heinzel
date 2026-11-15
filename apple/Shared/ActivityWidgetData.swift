@@ -144,13 +144,13 @@ struct ActivityWidgetData: Codable, Equatable {
     }
 
     @discardableResult
-    static func save(awake: Int, waiting: Int, heinzels: [WidgetHeinzel], entries: [CatalogHeinzel], workspaceScope: String, expectedToken: Data, now: Date = .now) -> Bool {
-        guard awake >= 0, waiting >= 0, let catalog else { return false }
+    static func save(awake: Int, waiting: Int, heinzels: [WidgetHeinzel], entries: [CatalogHeinzel], workspaceScope: String, expectedToken: Data, now: Date = .now, catalogOverride: ActivityCatalog? = nil) -> Bool {
+        guard awake >= 0, waiting >= 0, let catalog = catalogOverride ?? catalog else { return false }
         let generation = UUID().uuidString
         let snapshot = Self(awake: awake, waiting: waiting, updatedAt: now, heinzels: heinzels, workspaceScope: workspaceScope, generation: generation)
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
         guard catalog.publish(scope: workspaceScope, generation: generation, snapshot: data, entries: entries, expectedToken: expectedToken) else { return false }
-        defaults?.removeObject(forKey: "activitySnapshot")
+        if catalogOverride == nil { defaults?.removeObject(forKey: "activitySnapshot") }
         return true
     }
 
