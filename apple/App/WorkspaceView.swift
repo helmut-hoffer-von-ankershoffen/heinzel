@@ -352,10 +352,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             replyHandler(true, nil)
             return
         }
-        if message.name == "heinzelNotices", (message.body as? [String: Any])?["action"] as? String == "enable" {
+        let startsAudio = message.name == "heinzelAudio" && message.body as? String == "start"
+        let enablesNotices = message.name == "heinzelNotices"
+            && (message.body as? [String: Any])?["action"] as? String == "enable"
+        if startsAudio || enablesNotices {
             guard case .idle = provisionalLoad, verifiedWorkspace(for: message) != nil,
                   externalLinks.consumeActivation() else {
-                replyHandler(nil, "Choose notifications in workspace settings")
+                if startsAudio { replyHandler(false, nil) }
+                else { replyHandler(nil, "Choose notifications in workspace settings") }
                 return
             }
         }
@@ -405,24 +409,37 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         #endif
         #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), message.name == "heinzelAudio" {
+            let action = message.body as? String
+            guard revision == documentRevision, case .idle = provisionalLoad else {
+                return (action == "read" ? NSNull() : false, nil)
+            }
             #if os(macOS)
             guard endpoint.origin.scheme == "http" else { return (nil, "System audio unavailable") }
             #endif
-            switch message.body as? String {
+            switch action {
             case "available": return (SystemAudio.available, nil)
             case "start":
-                guard SystemAudio.available, nativeAudio == nil else { return (false, nil) }
+                guard SystemAudio.available, nativeAudio == nil,
+                      let window = workspace.window, window.isKeyWindow else { return (false, nil) }
+                #if os(iOS)
+                guard window.windowScene?.activationState == .foregroundActive else { return (false, nil) }
+                #endif
                 let capture = SystemAudio()
                 nativeAudio = capture
                 #if os(macOS)
-                guard let window = workspace.window, await capture.confirm(in: window), nativeAudio === capture else {
+                guard await capture.confirm(in: window),
+                      revision == documentRevision, nativeAudio === capture else {
                     if nativeAudio === capture { nativeAudio = nil }
                     return (false, nil)
                 }
                 #endif
                 let started = await capture.start()
-                if !started, nativeAudio === capture { nativeAudio = nil }
-                return started ? (capture.sampleRate, nil) : (false, nil)
+                guard started, revision == documentRevision, nativeAudio === capture else {
+                    capture.stop()
+                    if nativeAudio === capture { nativeAudio = nil }
+                    return (false, nil)
+                }
+                return (capture.sampleRate, nil)
             case "read":
                 return ((nativeAudio as? SystemAudio)?.read() as Any? ?? NSNull(), nil)
             case "stop":

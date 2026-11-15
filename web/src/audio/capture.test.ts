@@ -301,6 +301,23 @@ describe("desktop system audio", () => {
     expect(output.stop).toHaveBeenCalledOnce();
   });
 
+  it("treats a native start refusal as retryable", async () => {
+    const nativeAudio = vi.fn().mockResolvedValue(false);
+    const output = track("audio");
+    vi.stubGlobal("heinzelDesktop", { nativeAudio });
+    vi.stubGlobal("AudioContext", function nativeContext() {
+      return {
+        ...context,
+        createAnalyser: () => ({ ...analyser, connect: vi.fn() }),
+        createMediaStreamDestination: () => ({ stream: { getTracks: () => [output] } }),
+      };
+    });
+
+    await expect(captureAudio(new AbortController().signal, true)).rejects.toMatchObject({ name: "NotAllowedError" });
+    expect(nativeAudio.mock.calls).toEqual([["start"], ["stop"]]);
+    expect(output.stop).toHaveBeenCalledOnce();
+  });
+
   it("arms the chosen source before the one display request", async () => {
     const audioSource = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("heinzelDesktop", { audioSource });
