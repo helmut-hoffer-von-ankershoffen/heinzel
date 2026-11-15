@@ -267,60 +267,29 @@ private struct ActivityWidgetView: View {
         }
     }
 
+    @ViewBuilder
     private var activity: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Heinzels").font(.system(.headline, design: .serif)).widgetAccentable()
-                Spacer(minLength: 4)
-                if family == .systemMedium, let activity = entry.activity, activity.roster.count > 2 {
-                    Text("+\(activity.roster.count - 2)")
-                        .font(.caption2).foregroundStyle(.secondary).privacySensitive()
-                }
-                CrewMark(width: 30, height: 27)
-            }
-            if let activity = entry.activity, family == .systemMedium, !activity.roster.isEmpty {
-                ForEach(activity.roster.prefix(2)) { item in
-                    Link(destination: activity.workspaceScope.map { NativeRoute.chat(workspace: $0, id: item.id).url }
-                         ?? NativeRoute.chooseHeinzel.url) {
-                        HStack(spacing: 8) {
-                            HeinzelPortrait(item: item, size: 27)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Text(entry.fresh ? item.status : "Last known: \(item.status)")
-                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .privacySensitive()
-                }
-                if !entry.fresh {
-                    Text("Open to refresh · Updated \(activity.updatedAt, style: .relative) ago")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
-            } else if entry.fresh, let activity = entry.activity {
-                Spacer(minLength: 2)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(activity.awake) awake")
-                        .font(.system(.title2, design: .serif, weight: .semibold))
+        if let snapshot = entry.activity, !snapshot.roster.isEmpty {
+            HeinzelRosterView(entry: entry)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                if entry.fresh, let snapshot = entry.activity {
+                    Text("\(snapshot.awake) awake")
+                        .font(.title2.weight(.semibold))
                         .widgetAccentable()
-                    if activity.waiting > 0 {
-                        Label("Needs attention · \(activity.waiting)", systemImage: "bell.badge")
-                            .font(.caption2)
-                            .lineLimit(1)
+                    if snapshot.waiting > 0 {
+                        Label("\(snapshot.waiting) need attention", systemImage: "bell.badge")
+                            .font(.subheadline)
                     }
-                    Text("Updated \(activity.updatedAt, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    SnapshotTime(updatedAt: snapshot.updatedAt, fresh: true)
+                } else {
+                    WidgetRefresh(updatedAt: entry.activity?.updatedAt)
                 }
-                .privacySensitive()
-            } else {
-                Spacer(minLength: 2)
-                WidgetRefresh(updatedAt: entry.activity?.updatedAt)
             }
+            .privacySensitive()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .minimumScaleFactor(0.7)
     }
 }
 
@@ -589,49 +558,55 @@ private struct HeinzelRosterView: View {
     @Environment(\.widgetFamily) private var family
     @Environment(\.redactionReasons) private var redaction
 
-    private var items: [WidgetHeinzel] { entry.activity?.roster ?? [] }
+    // Keep the server's order within each priority, so snapshots do not shuffle peers.
+    private var items: [WidgetHeinzel] {
+        (entry.activity?.roster ?? []).enumerated().sorted {
+            if $0.element.widgetPriority != $1.element.widgetPriority {
+                return $0.element.widgetPriority < $1.element.widgetPriority
+            }
+            return $0.offset < $1.offset
+        }.map(\.element)
+    }
 
     var body: some View {
         Group {
             if entry.loading || !redaction.isEmpty {
-                WidgetPlaceholder(title: "Your Heinzelmännchen", loading: entry.loading)
+                Text(entry.loading ? "Loading workspace" : "Open to view Heinzels")
+                    .font(.headline)
+                    .unredacted()
             } else {
                 ViewThatFits(in: .vertical) {
-                    roster(limit: family == .systemLarge ? 6 : 3)
+                    roster(limit: family == .systemLarge ? 6 : (family == .systemSmall ? 1 : 3))
                     roster(limit: family == .systemLarge ? 4 : 2)
                     roster(limit: 1)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Heinzels")
     }
 
     private func roster(limit: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Your Heinzelmännchen").font(.system(.headline, design: .serif)).widgetAccentable()
-                Spacer(minLength: 4)
-                if items.count > limit {
-                    Link(destination: NativeRoute.chooseHeinzel.url) {
-                        Label("View all \(items.count)", systemImage: "arrow.up.right")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.vertical, 4)
-                    }
-                    .privacySensitive()
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 8) {
             if let snapshot = entry.activity, !items.isEmpty {
-                if !entry.fresh {
-                    Text("Updated \(snapshot.updatedAt, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
                 ForEach(items.prefix(limit)) { item in
                     row(item, scope: snapshot.workspaceScope)
                 }
+                HStack(alignment: .bottom, spacing: 8) {
+                    SnapshotTime(updatedAt: snapshot.updatedAt, fresh: entry.fresh)
+                    Spacer(minLength: 0)
+                    if items.count > limit {
+                        Link(destination: NativeRoute.chooseHeinzel.url) {
+                            Text("+\(items.count - limit)")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .accessibilityLabel("View all \(items.count) Heinzels")
+                    }
+                }
+                .privacySensitive()
             } else if entry.fresh, entry.activity?.heinzels != nil {
-                Text("No Heinzels yet").font(.caption).foregroundStyle(.secondary)
+                Text("No Heinzels yet").font(.subheadline)
             } else {
                 WidgetRefresh(updatedAt: entry.activity?.updatedAt)
             }
@@ -642,25 +617,34 @@ private struct HeinzelRosterView: View {
     private func row(_ item: WidgetHeinzel, scope: String?) -> some View {
         Link(destination: scope.map { NativeRoute.chat(workspace: $0, id: item.id).url }
              ?? NativeRoute.chooseHeinzel.url) {
-            HStack(spacing: 8) {
-                HeinzelPortrait(item: item, size: 28)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    if entry.fresh {
-                        HeinzelStatus(item: item, font: .caption2)
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Last known: \(item.status)")
-                            .font(.caption2).lineLimit(1).foregroundStyle(.secondary)
-                    }
+            HStack(spacing: 10) {
+                HeinzelPortrait(item: item, size: family == .systemSmall ? 30 : 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name).font(.headline).lineLimit(1)
+                    HeinzelStatus(item: item, font: .subheadline)
+                        .lineLimit(1)
                 }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(item.name), \(entry.fresh ? item.status : "last known: " + item.status)")
+            .accessibilityHint("Opens this Heinzel’s chat")
         }
         .privacySensitive()
+    }
+}
+
+private struct SnapshotTime: View {
+    let updatedAt: Date
+    let fresh: Bool
+
+    var body: some View {
+        Text("\(fresh ? "Updated" : "Last known") \(updatedAt, style: .relative) ago")
+            .font(.caption)
+            .lineLimit(2)
+            .accessibilityHint(fresh ? "Snapshot from the workspace" : "Open the app to refresh these statuses")
     }
 }
 

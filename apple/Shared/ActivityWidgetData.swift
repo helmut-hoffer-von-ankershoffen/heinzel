@@ -22,6 +22,16 @@ struct WidgetHeinzel: Codable, Identifiable, Equatable {
         #endif
     }
 
+    /// Attention first, then work in progress; lifecycle state wins over stale activity.
+    var widgetPriority: Int {
+        if state == "retired" { return 3 }
+        switch activity {
+        case "waiting_for_you", "stuck", "overloaded": return 0
+        case "working": return 1
+        default: return 2
+        }
+    }
+
     var status: String {
         if state == "retired" { return "Retired" }
         if state == "proposed", activity == nil || activity == "idle" { return "New" }
