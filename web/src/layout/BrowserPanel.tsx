@@ -509,7 +509,9 @@ export function BrowserPanel({
           )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
           <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
-            <p className="min-w-0 flex-1">{t("browser.private")}</p>
+            <p className="min-w-0 flex-1">
+              {t("browser.private")} {t("browser.automationNote")}
+            </p>
             <Button
               type="button"
               variant="ghost"

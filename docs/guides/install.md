@@ -156,6 +156,9 @@ on stderr and stdout keeps only the result. Ctrl-C cancels and leaves no half-in
 yet it says so; run `hz system update` or try again later. A stalled network is reported after 20 to 30 seconds per request
 (retried twice), and a second install waits at most two minutes for the first. `hz app uninstall` removes the app and keeps your profile.
 
+The desktop app has a built-in browser, and a Heinzel or an outside agent can use its own tabs there with your website
+sign-ins. Some websites forbid automated use of an account: whether an agent may use a site with yours is your choice.
+
 For updates, removal and platform details, see the tested instructions in the
 [repository README](../../README.md#install). The desktop lifecycle has
 [explicit production gates](../DESKTOP_PRODUCTION_GATES.md); the local web command above is the starting path.

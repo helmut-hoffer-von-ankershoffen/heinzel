@@ -496,3 +496,17 @@ it("in the PWA there are no agent tabs, no bar and no commit card", () => {
   for (const name of ["Take over", "Hand back", "Stop", "Approve", "Decline"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
+
+it("the panel's help says that some websites forbid automated use of an account, in the desktop app only", () => {
+  const sentence = /Some websites forbid automated use of an account/;
+  Object.defineProperty(window, "heinzelDesktop", {
+    value: { browser: vi.fn(async () => ({ status: "empty" })) },
+    configurable: true,
+  });
+  const desktop = render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(screen.getByText(sentence)).toBeVisible();
+  desktop.unmount();
+  Reflect.deleteProperty(window, "heinzelDesktop");
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  expect(screen.queryByText(sentence)).toBeNull();
+});

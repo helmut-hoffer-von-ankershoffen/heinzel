@@ -1384,6 +1384,8 @@ const en = {
   "browser.unavailable": "This site could not open here",
   "browser.private":
     "Websites get their own session, separate from your Heinzel. Sign-ins stay until you clear browsing data. Downloads and popups are unavailable.",
+  "browser.automationNote":
+    "Some websites forbid automated use of an account: whether an agent may use a site with your sign-ins is your choice.",
   "browser.openInBrowser": "Open in browser",
   "browser.refusedNote":
     "This address can't open in the built-in browser: only public https websites work here, not local or private addresses.",
