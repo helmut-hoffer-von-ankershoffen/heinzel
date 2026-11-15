@@ -378,12 +378,21 @@ async function mcpJourney(page, origin) {
   const send = { tab, ref: refOf(read, "button", "Send order") };
   const answerCard = async (action) => {
     const call = agent.call("click", send);
-    await withTimeout((async () => { while (!(await agentTabs(page)).some((entry) => entry.id === tab && entry.commit)) await delay(200); })(),
-      30_000, "The commit card never appeared on the agent's tab.");
+    // The card on the tab, as the panel shows it: its summary and the id that the person's answer must name.
+    let card = null;
+    await withTimeout((async () => {
+      while (!(card = (await agentTabs(page)).find((entry) => entry.id === tab && entry.commit)?.commit)) await delay(200);
+    })(), 30_000, "The commit card never appeared on the agent's tab.");
+    assert.ok(typeof card.id === "string" && card.id, "The card must carry its id.");
+    assert.match(card.summary, /Send order/, "The card must say what would be clicked.");
     await delay(750);
+    // An answer that names no card, or another one, is refused and decides nothing.
+    await assert.rejects(panel(page, { action, tab }), "An answer without the card's id must be refused.");
+    await assert.rejects(panel(page, { action, tab, commit: `${card.id}x` }), "An answer for another card must be refused.");
+    assert.ok((await agentTabs(page)).some((entry) => entry.id === tab && entry.commit?.id === card.id), "A refused answer must leave the card waiting.");
     assert.deepEqual(site.state.orders, [], "While the card waits, nothing is sent.");
     assert.equal(site.count("send:click"), 0);
-    await panel(page, { action, tab });
+    await panel(page, { action, tab, commit: card.id });
     return call;
   };
   const declined = await answerCard("commit-refuse");
