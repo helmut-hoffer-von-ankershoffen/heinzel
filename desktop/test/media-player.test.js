@@ -271,6 +271,8 @@ test("quit after the window is gone: the player closes, gives its lease back and
   assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
   // The lease is back: with no tab open either, the shared network closes.
   assert.doesNotThrow(() => f.browser.closeAll());
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
   assert.doesNotThrow(() => f.owner.emit("closed"));
   // A player whose view cannot be closed any more still gives its lease back.
@@ -278,5 +280,6 @@ test("quit after the window is gone: the player closes, gives its lease back and
   await g.play({ action: "open", video: VIDEO });
   g.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
   assert.doesNotThrow(() => g.player.closeAll());
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(g.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
 });

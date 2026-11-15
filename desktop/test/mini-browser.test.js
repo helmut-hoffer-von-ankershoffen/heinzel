@@ -694,6 +694,8 @@ test("quit after the window is gone: closeAll never throws, closes every tab and
   destroyWindow(f.owner);
   assert.doesNotThrow(() => f.controller.closeAll());
   assert(f.views.every((view) => view.webContents.isDestroyed()));
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
   assert.deepEqual(f.calls.filter(([name]) => name === "remove"), []);
   for (const name of ["closed", "blur"]) assert.equal(f.owner.listenerCount(name), 0, name);
@@ -710,6 +712,8 @@ test("quit: a tab that cannot be closed does not keep the others or the network 
   f.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
   assert.doesNotThrow(() => f.controller.closeAll());
   assert.equal(f.views[1].webContents.isDestroyed(), true);
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
   assert.equal(f.owner.listenerCount("closed"), 0);
   // Even a window whose listeners cannot be taken off any more does not stop the quit.
