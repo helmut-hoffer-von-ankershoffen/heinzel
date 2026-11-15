@@ -463,7 +463,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             }
         }
         #endif
-        guard let request = message.body as? [String: Any] else { return (nil, "Browser command unavailable") }
+        guard message.name == "heinzelBrowser", revision == documentRevision, case .idle = provisionalLoad,
+              let request = message.body as? [String: Any] else { return (nil, "Browser command unavailable") }
         return (await browser.handle(request, in: workspace, excluding: endpoint), nil)
     }
 
@@ -673,6 +674,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         dragLayout = nil
         #endif
         stopAudio()
+        browser.reset()
         reportError("The workspace closed unexpectedly. Reconnect to open it again.")
     }
 

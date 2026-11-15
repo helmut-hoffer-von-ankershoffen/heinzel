@@ -26,7 +26,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             let revision = generation
             opening = true
             do {
-                let view = try await browser(in: workspace, revision: revision)
+                let view = try await browser(in: workspace, endpoint: endpoint, revision: revision)
                 if revision == generation { view.load(URLRequest(url: url)) }
             } catch {
                 if revision == generation { reset(status: "unavailable") }
@@ -36,13 +36,11 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             guard let bounds = request["bounds"] as? [String: CGFloat],
                   let x = bounds["x"], let y = bounds["y"], let width = bounds["width"], let height = bounds["height"],
                   width > 0, height > 0 else { surface?.isHidden = true; break }
-            #if os(macOS)
-            let top = workspace.isFlipped ? y : workspace.bounds.height - y - height
-            #else
-            let top = y
-            #endif
-            let frame = CGRect(x: x, y: top, width: width, height: height)
-            guard workspace.bounds.contains(frame) else { surface?.isHidden = true; break }
+            let frame = Self.surfaceFrame(
+                CGRect(x: x, y: y, width: width, height: height), in: workspace
+            )
+            guard !frame.isEmpty, [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite),
+                  workspace.bounds.contains(frame) else { surface?.isHidden = true; break }
             surface?.frame = frame
             surface?.isHidden = status == "unavailable"
         case "hide": surface?.isHidden = true
@@ -54,6 +52,17 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
 
         return state
+    }
+
+    static func surfaceFrame(_ css: CGRect, in workspace: WKWebView) -> CGRect {
+        #if os(macOS)
+        let zoom = workspace.pageZoom
+        let frame = css.applying(CGAffineTransform(scaleX: zoom, y: zoom))
+        let top = workspace.isFlipped ? frame.minY : workspace.bounds.height - frame.maxY
+        return CGRect(x: frame.minX, y: top, width: frame.width, height: frame.height)
+        #else
+        return css
+        #endif
     }
 
     private var state: [String: Any] {
@@ -106,9 +115,11 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         return compiled
     }
 
-    private func browser(in workspace: WKWebView, revision: Int) async throws -> WKWebView {
+    private func browser(in workspace: WKWebView, endpoint: Endpoint, revision: Int) async throws -> WKWebView {
         if let surface { return surface }
-        let host = endpoint?.origin.host()?.lowercased()
+        guard try await Self.enabled(in: workspace, for: endpoint) else { throw URLError(.userAuthenticationRequired) }
+        guard revision == generation else { throw URLError(.cancelled) }
+        let host = endpoint.origin.host()?.lowercased()
         let rules = try await Self.requestRules(excluding: host)
         guard revision == generation else { throw URLError(.cancelled) }
         let broker = try BrowserNetwork(deniedHost: host)
@@ -123,6 +134,23 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         workspace.addSubview(view)
         surface = view
         return view
+    }
+
+    private static func enabled(in workspace: WKWebView, for endpoint: Endpoint) async throws -> Bool {
+        // Use the owning document's current session or pairing credential. The guest never receives it.
+        try await workspace.callAsyncJavaScript("""
+            if (location.origin !== new URL(origin).origin) return false;
+            const token = sessionStorage.getItem("hz.token") ?? localStorage.getItem("hz.device");
+            if (!token) return false;
+            const response = await fetch(new URL("/api/system/config/show", origin), {
+                headers: { Authorization: "Bearer " + token },
+                cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000),
+            });
+            if (!response.ok) return false;
+            const report = await response.json();
+            const features = report.settings?.find(row => row.section === "hz" && row.key === "features")?.value;
+            return Array.isArray(features) && features.includes("sidebar_browser");
+            """, arguments: ["origin": endpoint.origin.absoluteString], contentWorld: .defaultClient) as? Bool == true
     }
 
     static func guestConfiguration(proxy: ProxyConfiguration, rules: WKContentRuleList) -> WKWebViewConfiguration {
