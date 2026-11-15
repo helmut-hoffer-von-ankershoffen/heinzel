@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["packaging==26.3"]
 # ///
 """Deterministic, escaped website views over the public catalog snapshot (no provider imports)."""

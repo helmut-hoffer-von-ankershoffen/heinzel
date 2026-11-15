@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Draw Heinzelmännchen for the terminal: `make terminal-art` writes src/heinzel/heads/cli/_art_data.py.

@@ -46,7 +46,7 @@ What it does for the adapter:
   whatever a connector returns is data for the model, never an instruction (`clean_text`, and a turn's inputs
   framed as data).
 
-Works on Python 3.12 and later. The MCP client is loaded only when this module is imported.
+Works on Python 3.15 and later. The MCP client is loaded only when this module is imported.
 """
 
 import asyncio
@@ -595,7 +595,8 @@ class McpConnector:
         self._stop_event = asyncio.Event()
         server: Any = self._transport
         if server is None:
-            self._stderr = tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace")  # noqa: SIM115 - closed in _shutdown
+            # Made in a worker thread: creating the file touches the disk, which must not block the loop.
+            self._stderr = await asyncio.to_thread(tempfile.TemporaryFile, "w+", encoding="utf-8", errors="replace")
             parameters = StdioServerParameters(
                 command=self._command[0], args=self._command[1:], env=self._env, cwd=self._cwd
             )

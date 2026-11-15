@@ -150,6 +150,11 @@ def test_pretty_multiline_json_is_not_a_manifest_record():
         [json.loads(line) for line in json.dumps(manifest, indent=2).splitlines() if line.strip()]
 
 
+def _node_identity_step(action: dict) -> dict:
+    """The Node identity step by its name: the PyYAML bootstrap (Python 3.15) is the action's last step now."""
+    return next(step for step in action["runs"]["steps"] if step.get("name", "").startswith("Record Node filesystem"))
+
+
 def test_node_identity_reads_static_header_without_executing_or_reading_node(tmp_path):
     """A symlinked launcher is identified even when its contents cannot be read."""
     prefix = tmp_path / "installation"
@@ -166,7 +171,7 @@ def test_node_identity_reads_static_header_without_executing_or_reading_node(tmp
     (commands / "node").symlink_to(binary)
     action = yaml.safe_load((ACTION / "action.yml").read_text())
     result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        ["bash", "-e", "-o", "pipefail", "-c", _node_identity_step(action)["run"]],
         env={"PATH": f"{commands}:/usr/bin:/bin", "ImageOS": "ubuntu24", "ImageVersion": "fixture"},
         capture_output=True,
         text=True,
@@ -184,7 +189,7 @@ def test_node_identity_reads_static_header_without_executing_or_reading_node(tmp
 def test_node_identity_reports_missing_node_without_changing_bootstrap_result(tmp_path):
     action = yaml.safe_load((ACTION / "action.yml").read_text())
     result = subprocess.run(
-        ["/bin/bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        ["/bin/bash", "-e", "-o", "pipefail", "-c", _node_identity_step(action)["run"]],
         env={"PATH": str(tmp_path)},
         capture_output=True,
         text=True,
@@ -205,7 +210,7 @@ def test_node_identity_escapes_newlines_and_bounds_static_header_reads(tmp_path)
     header.write_text("#define NODE_MAJOR_VERSION 22\n" + "x" * 16384 + "\n#define NODE_MINOR_VERSION 99\n")
     action = yaml.safe_load((ACTION / "action.yml").read_text())
     result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        ["bash", "-e", "-o", "pipefail", "-c", _node_identity_step(action)["run"]],
         env={"PATH": f"{commands}:/usr/bin:/bin", "ImageOS": "fixture\n::error::injected"},
         capture_output=True,
         text=True,

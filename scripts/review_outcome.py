@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Decide what one Claude review attempt means, from the review step's outcome and the action's execution file.

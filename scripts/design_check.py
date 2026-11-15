@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["playwright==1.64.1"]
 # ///
 """Computed-style check: the built Pages site and the running app against design/tokens.json.

@@ -42,7 +42,7 @@ def test_starter_make_bootstraps_its_pinned_toolkit_without_overrides(tmp_path):
         "--frozen",
         "--no-build",
         "--python",
-        "3.14",
+        "3.15",
         "python",
         "scripts/plugin_tooling.py",
     ]
@@ -88,7 +88,7 @@ def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(
     }
     environment["UV_PYTHON"] = sys.executable
     project = tmp_path / "pyproject.toml"
-    source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.12"\n'
+    source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.15"\n'
     project.write_text(source)
     # This new, synthetic project must create its own lock; the repository stays frozen in CI.
     created = subprocess.run(
@@ -167,6 +167,14 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
         "    assert not lock.exists(), 'setup must preserve an existing lock'\n"
         "    lock.write_text('version = 1\\nrevision = 3\\n[[package]]\\nname = '+json.dumps(project['name'])"
         "+'\\nversion = '+json.dumps(project['version'])+'\\nsource = { editable = '+json.dumps('.')+' }\\n')\n"
+        "elif args[0]=='venv':\n"
+        "    # what real uv leaves behind; this interpreter stands in for Core's PyYAML bootstrap (it downloads)\n"
+        "    python=Path('.venv/bin/python')\n"
+        "    if not python.exists():\n"
+        "        python.parent.mkdir(parents=True)\n"
+        f"        python.write_text('#!{sys.executable}\\nimport json,os,sys\\n'\n"
+        "            \"open(os.environ['TRACE'],'a').write(json.dumps(['python']+sys.argv[1:])+chr(10))\\n\")\n"
+        "        python.chmod(0o755)\n"
         "elif args[0]=='sync':\n"
         "    assert '--frozen' in args, 'installation must enforce the resolved lock'\n"
         "    record=tomllib.loads(lock.read_text())['package'][0]\n"
@@ -194,4 +202,11 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
     assert commands[0] == ["lock", "--quiet"]
     assert sum(command[0] == "lock" for command in commands) == 1
     assert sum(command[0] == "sync" for command in commands) == 2
+    # the reviewed PyYAML is built after the lock and before the first sync, by Core's own module run isolated
+    first = commands[: commands.index(next(command for command in commands if command[0] == "sync"))]
+    assert [command[0] for command in first] == ["lock", "venv", "python"]
+    bootstrap = first[2]
+    assert bootstrap[1:3] == ["-I", "-S"]
+    assert bootstrap[3].endswith("bootstrap_pyyaml.py")
+    assert bootstrap[4:] == ["install", "--lock", "uv.lock", "--python", ".venv/bin/python"]
     assert tomllib.loads((destination / "uv.lock").read_text())["package"][0]["name"] == "heinzel-harbor"

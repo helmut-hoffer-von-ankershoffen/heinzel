@@ -420,7 +420,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
 
 
 @contextmanager
-def _schedule_admission(service: SessionCrud, kernel: Kernel | None) -> Generator[None, None, None]:
+def _schedule_admission(service: SessionCrud, kernel: Kernel | None) -> Generator[None]:
     """Hold lifecycle before session writer until the caller's schedule write is complete.
 
     Yields:

@@ -280,6 +280,79 @@ def test_tool_install_binds_store_and_bin_to_running_receipt(tmp_path, monkeypat
     assert calls == [(command, {"EXAMPLE": "kept", "UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(bin_dir)})]
 
 
+def _managed(tmp_path, version="3.15"):
+    path = tmp_path / "managed" / "bin" / f"python{version}"
+    path.parent.mkdir(parents=True)
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o700)
+    return path.resolve()
+
+
+def test_a_newer_interpreter_is_named_for_the_install_and_never_for_a_restore(tmp_path):
+    prefix, _bin = _target_fixture(tmp_path)
+    managed = _managed(tmp_path)
+    calls = []
+
+    def uv(command, environment=None):
+        calls.append(command)
+        stdout = f"{managed}\n" if command[1:3] == ["python", "find"] else ""
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=uv)
+    with installation.tool_transaction(), installation.newer_interpreter("3.15") as python:
+        assert python == str(managed)
+        command = installation.tool_install_command("heinzel", [])
+        assert command[command.index("--python") + 1] == str(managed)
+        restore = installation.tool_install_command("heinzel", [], original=True)
+        assert restore[restore.index("--python") + 1] == PYTHON
+        installation.attempt(command, "newer")
+        installation.attempt(restore, "restore", recovery=True)
+        with pytest.raises(HeinzelError, match="interpreter changed"):
+            installation.attempt(command, "a restore never names the newer one", recovery=True)
+        managed.write_text("#!/bin/sh\n# replaced\n")
+        with pytest.raises(HeinzelError, match="newer interpreter changed"):
+            installation.attempt(command, "replaced after verification")
+    assert installation.tool_install_command("heinzel", [])[4:6] == ["--python", PYTHON]
+    assert [c[3:] for c in calls if c[1] == "tool"] == [command[3:], restore[3:]]
+
+
+def test_a_tool_install_that_recreates_the_folder_keeps_its_continuity_files(tmp_path):
+    prefix, _bin = _target_fixture(tmp_path)
+    for name in (".heinzel-startup-state", ".heinzel-startup-pending"):
+        (prefix / name).write_bytes(name.encode())
+        (prefix / name).chmod(0o600)
+
+    def uv(command, environment=None):  # uv for another interpreter: a new folder, without the continuity files
+        aside = prefix.with_name("aside")
+        prefix.rename(aside)
+        prefix.mkdir()
+        for entry in aside.iterdir():
+            if not entry.name.startswith(".heinzel-startup"):
+                entry.rename(prefix / entry.name)
+        return subprocess.CompletedProcess(command, 1, "", "failed after recreating it")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=uv)
+    result = installation.attempt(installation.tool_install_command("heinzel", []), "recreating uv")
+    assert result.returncode == 1
+    for name in (".heinzel-startup-state", ".heinzel-startup-pending"):
+        assert (prefix / name).read_bytes() == name.encode()
+        assert (prefix / name).stat().st_mode & 0o777 == 0o600
+
+
+def test_without_a_newer_interpreter_nothing_is_installed(tmp_path):
+    prefix, _bin = _target_fixture(tmp_path)
+    calls = []
+
+    def uv(command, environment=None):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "no download")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=uv)
+    with pytest.raises(HeinzelError, match="keeps working"), installation.newer_interpreter("3.15"):
+        pytest.fail("entered without an interpreter")
+    assert all(command[1] == "python" for command in calls)
+
+
 @pytest.mark.parametrize("damage", ["missing", "wrong_target", "multiple", "relative", "wrong_prefix"])
 def test_tool_install_refuses_unverified_target_without_running_uv(tmp_path, damage):
     prefix, bin_dir = _target_fixture(tmp_path)

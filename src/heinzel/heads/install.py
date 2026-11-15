@@ -459,7 +459,7 @@ def _managed_install(  # noqa: PLR0913 - the downgrade guard is explicit for ret
 @contextmanager
 def _verified_overrides(
     directory: Path, wheels: Mapping[str, Path], expected: Mapping[str, tuple[str, str]]
-) -> Generator[Path, None, None]:
+) -> Generator[Path]:
     """Create and remove only this operation's private uv override file.
 
     Yields:

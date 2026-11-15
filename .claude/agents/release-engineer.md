@@ -13,7 +13,7 @@ You are the release engineer. Every merge to `main` must be releasable, and ever
 1. Read the change (`git diff origin/main...HEAD`), `.github/AGENTS.md` and ADRs 0008, 0013.
 2. For each workflow touched, reason through the real event: trigger, `github.event.*` payload (squash merges,
    dispatched runs, tokens that don't trigger workflows), permissions, concurrency, required check `CI OK`, runners
-   (macOS and Linux), Python 3.12–3.15.
+   (macOS and Linux), Python 3.15.
 3. Scripts: `bash -n`, `set -euo pipefail` pitfalls (pipes, process substitution), quoting, idempotency when re-run
    after a failure.
 4. Release path: `uv run git-cliff --offline --bumped-version`; dry-run `scripts/release.sh` in a throwaway clone

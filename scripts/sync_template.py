@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Derive the plugin template's Makefile, CI workflow and tool configuration from ours, so they never drift.
@@ -95,8 +95,9 @@ def makefile() -> str:
     )
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
     text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
-    # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check|design)=[^\n]*', "", text)
+    # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md, the release policy
+    # manifest (never a last step).
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check|design|release-policy)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace(

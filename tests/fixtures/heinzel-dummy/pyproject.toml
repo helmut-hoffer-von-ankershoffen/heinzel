@@ -2,7 +2,7 @@
 name = "heinzel-dummy"
 version = "1.2.3"
 description = "Minimal plugin used by Heinzelmännchen's own end-to-end tests."
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 dependencies = ["heinzel"]
 
 [project.entry-points."heinzel.modules"]

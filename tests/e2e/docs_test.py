@@ -415,7 +415,9 @@ def test_readme_instructions(tmp_path, fixture_managed_python):
     for block in documented_blocks(REPO / "README.md"):
         if block.strip() == (REPO / "docs/_data/install-command.txt").read_text().strip():
             with readme_phase("install-and-launch", deadline):
-                launch_documented_app(block, env, tmp_path, deadline, bootstrap_wheels=artifacts)
+                # The install builds PyYAML from source on Python 3.15, as a user's does: no token in that environment.
+                launch_env = {key: value for key, value in env.items() if key not in TOKENS}
+                launch_documented_app(block, launch_env, tmp_path, deadline, bootstrap_wheels=artifacts)
             assert (tmp_path / "data/standard-app.json").is_file()
             assert (tmp_path / "tools/heinzel/bin/python").resolve(strict=True) == python
             continue

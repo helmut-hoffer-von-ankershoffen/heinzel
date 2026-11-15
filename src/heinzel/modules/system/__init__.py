@@ -21,6 +21,7 @@ from heinzel.kernel import (
     UninstallResult,
     WebHeadRefresh,
 )
+from heinzel.kernel._tool_python import PythonNeed
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
@@ -99,6 +100,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
         progress=kernel.resolve(Progress),
         pinned=plugins.pinned if isinstance(plugins, PyPIPluginReleases) else None,
         newer=plugins.newer if plugins is not None else None,
+        need=PythonNeed(kernel.settings.cache_dir),
     )
 
 

@@ -79,8 +79,7 @@ def test_a_launcher_that_never_answers_times_out_and_is_stopped(tmp_path: Path):
     connector = McpConnector([sys.executable, str(script)], tools=["x"], start_timeout=1, stop_timeout=2)
     with pytest.raises(McpConnectorError, match="didn't start within 1s"):
         connector.start()
-    children = [p for p in psutil.Process(os.getpid()).children(recursive=True) if str(script) in " ".join(p.cmdline())]
-    assert children == []
+    assert _running_children(script) == []
 
 
 GRANDCHILD = textwrap.dedent(
@@ -119,8 +118,19 @@ def test_stop_kills_the_whole_launcher_group_even_with_a_short_stop_timeout(
         connector.call("hang")
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     assert not _alive(grandchild), "the launcher's grandchild outlived stop()"
-    leftovers = [p for p in psutil.Process().children(recursive=True) if str(script) in " ".join(p.cmdline())]
-    assert leftovers == [], "the launcher outlived stop()"
+    assert _running_children(script) == [], "the launcher outlived stop()"
+
+
+def _running_children(script: Path) -> list[psutil.Process]:
+    """This process's live descendants running `script`; a zombie another test left unreaped is no longer running."""
+    found = []
+    for child in psutil.Process(os.getpid()).children(recursive=True):
+        try:
+            if child.status() != psutil.STATUS_ZOMBIE and str(script) in " ".join(child.cmdline()):
+                found.append(child)
+        except (psutil.NoSuchProcess, psutil.ZombieProcess, psutil.AccessDenied):
+            continue
+    return found
 
 
 def _alive(pid: int) -> bool:

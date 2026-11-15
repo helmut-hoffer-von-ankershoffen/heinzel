@@ -533,7 +533,8 @@ function InstalledChoices({
 }) {
   const saved = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
   // A list of switches has no "None": a saved `none` is every switch off.
-  const selected = control.multiple ? saved.filter((item) => item !== control.none) : saved;
+  // Each one once: a list that names one twice (a stale or hand-written save) is neither shown nor saved twice.
+  const selected = control.multiple ? [...new Set(saved)].filter((item) => item !== control.none) : saved;
   const available = new Set(options.map((option) => option.value));
   const choices = [
     ...options,

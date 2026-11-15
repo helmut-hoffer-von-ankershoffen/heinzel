@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Preserve Git's complete pushed-ref list before prek consumes the hook's standard input.

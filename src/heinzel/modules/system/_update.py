@@ -18,6 +18,7 @@ version it has if that still resolves, and otherwise taken out of the installati
 import hashlib
 import importlib.metadata
 import json
+import logging
 import platform
 import re
 import shlex
@@ -32,6 +33,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -53,7 +55,8 @@ from heinzel.kernel import (
     WebHeadRefresh,
     subprocess_environment,
 )
-from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._logging import get_logger, log_event, step
+from heinzel.kernel._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._announced import (
     Announcement,
     ToolSnapshot,
@@ -111,6 +114,13 @@ type Mode = Literal["new", "keep", "drop"]
 REASON_LENGTH = 300
 
 
+def _release_version(target: str | None) -> str | None:
+    """The version a release tag `vX.Y.Z` names; None for any other source."""
+    if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*", target):
+        return target.removeprefix("v")
+    return None
+
+
 def _is_conflict(output: str) -> bool:
     """Whether uv's output says the requirements can't be resolved together, as opposed to a failure to fetch."""
     return bool(re.search(r"no solution found|unsatisfiable|depends on|conflict", output, re.IGNORECASE))
@@ -129,6 +139,21 @@ def _reason(output: str) -> str:
         lines[-1] if lines else "",
     )
     return line[:REASON_LENGTH] or "uv failed without saying why"
+
+
+@dataclass(frozen=True, slots=True)
+class _Before:
+    """The tool before an automatic update: its generation, and for a move to another interpreter its content."""
+
+    generation: str
+    content: str | None = None
+    """The fingerprint without the folder's own identity: uv recreates the folder for another interpreter."""
+    matched: bool = False
+    """Whether the continuity record matched before; only then is it renewed after a put-back."""
+
+
+_ORIGINALS: ContextVar[Mapping[str, _Before]] = ContextVar("update_originals", default=MappingProxyType({}))
+"""Each generation captured before a move to another interpreter, with what a restore of it must match."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,15 +182,18 @@ class UpdateService:
         pinned: Callable[[float], PinnedPlugins] | None = None,
         newer: Callable[[float], dict[str, str]] | None = None,
         desktop: Callable[[], tuple[int, str]] | None = None,
+        need: PythonNeed | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
         `progress` hears the steps of `update` as they happen (`phase` events), so the app can show each one.
         `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
         plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
-        `hz app install` and returns its exit code and output. Tests replace all three.
+        `hz app install` and returns its exit code and output. Tests replace all three. `need` keeps what the last
+        update found about a release that needs a newer Python, for the doctor.
         """
         self._pinned_plugins = pinned
+        self._need = need
         self._newer_plugins = newer
         self._desktop = desktop or self._app_install
 
@@ -319,7 +347,7 @@ class UpdateService:
             return selection
         pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
         prefix = self._installation.prefix.resolve(strict=True)
-        with self._mutation() as scope:
+        with self._interpreter_for(announced.core), self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 expected, guards, policy = self._prepare_announced(
@@ -336,7 +364,7 @@ class UpdateService:
                     if scope is not None:
                         self._abort_or_leave_pending(scope)
                     raise
-                before = self._installation.startup_fingerprint()
+                before = self._fingerprints()
                 try:
                     generation = self._install_announced(
                         [core_requirement, *specs], (guards, constraints), expected, announced
@@ -378,6 +406,77 @@ class UpdateService:
             message=_with_heads(f"Installed hz {target}.", heads),
             heads=heads,
         )
+
+    def _target_release(self, pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
+        """The release an install moves to, whose Python requirement decides the interpreter; None if unknown.
+
+        An installation that follows the package index resolves the newest release uv finds for the interpreter it
+        names, so the highest release is asked for there: a release for a newer Python is reached only that way.
+        """
+        if latest is not None and target in {f"v{latest}", None}:
+            return latest
+        if target is None and pin.kind in ("default", "index") and pin.git is None:
+            highest = self._asked_latest(current)
+            return highest if highest is not None and Version(highest) > _version(current) else None
+        return _release_version(target)
+
+    def _fingerprints(self) -> "_Before":
+        """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
+        generation = self._installation.startup_fingerprint()
+        if not self._installation.changes_interpreter:
+            return _Before(generation)
+        return _Before(generation, self._installation.content_fingerprint(), self._installation.startup_state_matches())
+
+    def needed_python(self, version: str | None) -> str | None:
+        """The newer Python (`X.Y`) release `version` requires than this one runs on; None if this one will do.
+
+        None too when the release source can't say: the update then stays on the tool's interpreter, as before.
+
+        Raises:
+            HeinzelError: If the release's `Requires-Python` is malformed or no newer Python satisfies it.
+        """
+        if version is None:
+            return None
+        try:
+            requires = self._releases.requires_python(version, RELEASE_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: an unknown requirement keeps today's interpreter
+            log_event(log, "update.python.unknown", level=logging.WARNING, version=version, error=str(exc))
+            return None
+        return newer_python(requires)
+
+    @contextmanager
+    def _interpreter_for(self, version: str | None) -> Generator[None]:
+        """Install release `version` onto a uv-managed newer Python if it needs one, else onto the tool's own.
+
+        Raises:
+            HeinzelError: If the newer Python can't be obtained; nothing was changed then.
+        """
+        try:
+            needed = self.needed_python(version)
+        except HeinzelError as exc:
+            if self._need is not None and version is not None:
+                self._need.remember(version, "", held=str(exc))
+            raise
+        if needed is None:
+            if self._need is not None and version is not None:
+                self._need.forget()
+            yield
+            return
+        entered = False
+        token = _ORIGINALS.set({})  # what this update captured; none of it outlives it
+        try:
+            with self._installation.newer_interpreter(needed, subprocess_environment()) as path:
+                entered = True
+                log_event(log, "update.python.managed", version=version, python=needed, interpreter=path)
+                if self._need is not None and version is not None:
+                    self._need.remember(version, needed)
+                yield
+        except HeinzelError as exc:
+            if not entered and self._need is not None and version is not None:
+                self._need.remember(version, needed, held=str(exc))
+            raise
+        finally:
+            _ORIGINALS.reset(token)
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
@@ -549,7 +648,7 @@ class UpdateService:
         self,
         snapshot: ToolSnapshot,
         lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
-        before: str,
+        before: "_Before",
         current: str,
         why: str | None,
         *,
@@ -570,9 +669,14 @@ class UpdateService:
             )
             raise HeinzelError(msg) from exc
         generation = self._installation.startup_fingerprint()
-        if generation != before:
-            msg = "The installation isn't as it was after putting it back; explicit recovery is required."
-            raise HeinzelError(msg)
+        if generation != before.generation:
+            if before.content is None or self._installation.content_fingerprint() != before.content:
+                msg = "The installation isn't as it was after putting it back; explicit recovery is required."
+                raise HeinzelError(msg)
+            # The same files, in the folder uv made anew for the other interpreter: a record that held before
+            # holds again, so it is renewed for this folder.
+            if before.matched:
+                self._installation.record_startup_state(expected=generation)
         # A change that failed half way left the marker; the folder matches its record again. If it can't go, it stays
         # and says so: the next update or `hz ui restart` tries again.
         with suppress(OSError, HeinzelError):
@@ -1052,7 +1156,7 @@ class UpdateService:
         automatic: bool = True,
         generation: str | None = None,
     ) -> UpdateResult:
-        with self._mutation() as scope:
+        with self._interpreter_for(self._target_release(pin, current, latest, target)), self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 self._verify_selection(pin, plugins, scope)
@@ -1294,7 +1398,7 @@ class UpdateService:
     @contextmanager
     def _install_constraints(
         self, core: str, current: str, candidates: list[str], *, enabled: bool, scope: DaemonMutationScope | None
-    ) -> Generator[tuple[Path | None, tuple[str, ...]], None, None]:
+    ) -> Generator[tuple[Path | None, tuple[str, ...]]]:
         """Preserve prior constraints and add an automatic index floor where needed.
 
         Yields:
@@ -1587,7 +1691,9 @@ class UpdateService:
                 return f"hz {self._version()} is still installed, with every plugin."
             except HeinzelError:
                 pass
-        restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
+        restore = self._installation.tool_install_command(
+            pin.requirement, [p.requirement for p in plugins], original=True
+        )
         try:
             restored = self._installation.attempt(restore, f"Restoring hz {current}", environment, recovery=True)
             if restored.returncode == 0 and self._same_generation(original):
@@ -1689,12 +1795,34 @@ class UpdateService:
 
     def _original_generation(self) -> str | None:
         try:
-            return self._installation.startup_fingerprint()
+            generation = self._installation.startup_fingerprint()
+            if self._installation.changes_interpreter:  # uv will recreate the folder: remember its content too
+                before = self._fingerprints()
+                _ORIGINALS.set({**_ORIGINALS.get(), generation: before})
         except HeinzelError:
             return None
+        return generation
 
     def _same_generation(self, expected: str | None) -> bool:
-        return expected is not None and self._original_generation() == expected
+        """Whether the tool is generation `expected` again; for a move between interpreters, its files in a new folder.
+
+        Then a continuity record that matched before is renewed for the new folder, as a put-back does.
+        """
+        try:
+            current = self._installation.startup_fingerprint() if expected is not None else None
+        except HeinzelError:
+            return False
+        if current is None or current == expected:
+            return current is not None
+        before = _ORIGINALS.get().get(expected or "")
+        try:
+            if before is None or before.content is None or self._installation.content_fingerprint() != before.content:
+                return False
+            if before.matched:
+                self._installation.record_startup_state(expected=current)
+        except (HeinzelError, OSError):
+            return False
+        return True
 
     def _latest(self, current: str) -> str:
         """The highest stable release: never a pre-release, even when one is installed (ADR 0116 amends ADR 0006).

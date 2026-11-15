@@ -12,9 +12,10 @@ from rich.text import Text
 
 from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __version__
 from heinzel.kernel import ReleaseCache
+from heinzel.kernel._tool_python import PythonNeed, managed_root
 from heinzel.kernel._uv_locate import find_uv
 
-MINIMUM_PYTHON = (3, 12)
+MINIMUM_PYTHON = (3, 15)
 
 module = Module("doctor", "Check that Heinzelmännchen and its modules are healthy.")
 
@@ -75,11 +76,17 @@ def doctor(kernel: Kernel) -> HealthReport:
 @module.health
 def core(kernel: Kernel, settings: Settings) -> list[Check]:
     """Heinzelmännchen's own checks: Python, uv, the installation, plugins and its directories."""
+    receipt = Path(sys.prefix) / "uv-receipt.toml"
     checks = [
         Check(name="hostname", status=Status.UP, detail=gethostname()),
-        Check(name="python", status=Status.UP, detail=sys.version.split()[0])
+        python_check(settings, tool=receipt.is_file())
         if sys.version_info >= MINIMUM_PYTHON
-        else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),
+        else Check(
+            name="python",
+            status=Status.DOWN,
+            detail=f"{sys.version.split()[0]} is too old",
+            fix="Use uv-managed Python 3.15: uv tool install --python 3.15 --reinstall heinzel",
+        ),
     ]
     uv = find_uv()
     checks.append(
@@ -92,7 +99,6 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
             fix="Install uv: https://docs.astral.sh/uv/",
         )
     )
-    receipt = Path(sys.prefix) / "uv-receipt.toml"
     checks.append(
         Check(name="installation", status=Status.UP, detail=f"uv tool environment {sys.prefix}")
         if receipt.is_file()
@@ -132,6 +138,38 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
             )
         )
     return checks
+
+
+def python_check(settings: Settings, *, tool: bool) -> Check:
+    """The running Python, whether uv manages it, and what the last update found about a release needing a newer one.
+
+    Read from the record `hz system update` and automatic updates keep (`PythonNeed`); nothing is asked or run.
+    """
+    version = sys.version.split()[0]
+    root = managed_root(Path(sys.executable)) if tool else None
+    detail = f"{version}, uv-managed ({root.name})" if root is not None else version
+    need = PythonNeed(settings.cache_dir).read() if tool else None
+    if need is None:
+        return Check(name="python", status=Status.UP, detail=detail)
+    release, python, held = need["release"], need["python"] or "", need["held"]
+    if held is not None:
+        return Check(
+            name="python",
+            status=Status.DEGRADED,
+            detail=f"{detail}; hz {release} needs a newer Python, so its update is held: {held}",
+            fix=f"uv python install {python}, then: hz system update" if python else "hz system update",
+        )
+    if _below(sys.version_info[:2], python):
+        detail += f"; hz {release} needs Python {python}: the next update installs it onto a uv-managed Python {python}"
+    return Check(name="python", status=Status.UP, detail=detail)
+
+
+def _below(running: tuple[int, ...], python: str) -> bool:
+    try:
+        wanted = tuple(int(part) for part in python.split("."))
+    except ValueError:
+        return False
+    return running < wanted
 
 
 def release_check(settings: Settings) -> Check:

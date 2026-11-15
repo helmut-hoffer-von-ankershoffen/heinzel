@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """ACME setup end to end on an ISOLATED profile: add `acme` from the catalog, assert GitHub and Atlassian come too.
