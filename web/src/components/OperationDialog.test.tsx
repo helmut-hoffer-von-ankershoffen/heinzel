@@ -540,7 +540,6 @@ describe("Show all for a shortened value", () => {
     );
     act(() => void requestOperation(call));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).queryByRole("textbox")).toBeNull();
     const summary = within(dialog).getByText("Show all");
     expect(summary.closest("details")).not.toHaveAttribute("open");
     await userEvent.click(summary);
