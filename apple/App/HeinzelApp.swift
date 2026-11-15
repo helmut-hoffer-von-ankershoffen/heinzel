@@ -282,6 +282,9 @@ struct ConnectionView: View {
     @State private var loadRevision = 0
     @State private var connectionIssue: WorkspaceProblem?
     @State private var verifiedConnectionOrigin: URL?
+    #if os(iOS)
+    @State private var connectionProbeRevision = 0
+    #endif
     @FocusState private var editingLink: Bool
     @State private var draftRevision = 0
     @State private var checkedDraft: URL?
@@ -1772,10 +1775,13 @@ struct ConnectionView: View {
         guard !refreshingConnection else { return }
         refreshingConnection = true
         defer { refreshingConnection = false }
+        connectionProbeRevision += 1
+        let revision = connectionProbeRevision
         let session = Endpoint.probeSession()
         defer { session.invalidateAndCancel() }
         let issue = await Endpoint.connectionIssue(at: target.origin, using: session)
-        guard !Task.isCancelled, endpoint == target, monitoredOrigin == target.origin else { return }
+        guard !Task.isCancelled, endpoint == target, monitoredOrigin == target.origin,
+              connectionProbeRevision == revision else { return }
         connectionIssue = issue
         verifiedConnectionOrigin = issue == nil ? target.origin : nil
         if issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
@@ -1788,8 +1794,15 @@ struct ConnectionView: View {
         defer { session.invalidateAndCancel() }
         var retryDelay = 2
         while !Task.isCancelled {
+            #if os(iOS)
+            connectionProbeRevision += 1
+            let revision = connectionProbeRevision
+            #endif
             let issue = await Endpoint.connectionIssue(at: origin, using: session)
             guard !Task.isCancelled, monitoredOrigin == origin else { return }
+            #if os(iOS)
+            guard connectionProbeRevision == revision else { continue }
+            #endif
             let recovered = connectionIssue != nil && issue == nil
             connectionIssue = issue
             verifiedConnectionOrigin = issue == nil ? origin : nil
