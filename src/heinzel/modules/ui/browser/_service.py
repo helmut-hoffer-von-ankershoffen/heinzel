@@ -64,6 +64,10 @@ _PRIVATE_SUFFIXES: Final = (
 _LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 _NUMERIC_LABEL = re.compile(r"(0x[0-9a-f]*|\d+)")
 PAGE_CHANGED: Final = "The page changed since this target was described; read it again."
+WENT_ELSEWHERE: Final = (
+    "Sent, not confirmed: the page went to {url}, which is not where the pressed link led. Read the page before you "
+    "act on it."
+)
 SENT_NOT_CONFIRMED: Final = (
     "Sent, not confirmed: the target is a frame or a place hz cannot see into, so nothing says the click arrived. "
     "Read the page again before you act on it."
@@ -254,6 +258,8 @@ class _Sent(BaseModel):
     url: str = ""
     confirmed: bool = True
     """False for a click into a frame or at a place the desktop cannot see into: sent, and nothing says it arrived."""
+    navigated: bool = False
+    """True when the page was another one before the click could be seen; with `confirmed` false, not the link's own."""
 
 
 class _Picture(BaseModel):
@@ -471,8 +477,11 @@ class Browser:
             url = clean_text(sent.url)[:URL_LIMIT]
             if not sent.confirmed:  # never told as done: the agent reads the page before it builds on this
                 fields["unconfirmed"] = True
-                return InputDone(tab=tab, url=url, target=label(target), done=False, note=SENT_NOT_CONFIRMED)
-            return InputDone(tab=tab, url=url, target=label(target))
+                note = WENT_ELSEWHERE.format(url=url) if sent.navigated else SENT_NOT_CONFIRMED
+                return InputDone(
+                    tab=tab, url=url, target=label(target), done=False, navigated=sent.navigated, note=note
+                )
+            return InputDone(tab=tab, url=url, target=label(target), navigated=sent.navigated)
 
         return self.call(f"ui_browser_{action}", tab, work, typed=len(text) if action == "type" else None)
 

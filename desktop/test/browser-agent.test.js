@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import vm from "node:vm";
-import { BridgeError, CDP_METHODS, PAGE_SCRIPTS, createBrowserAgent, neverField, outline, parseKeys, pngSize, targetOf } from "../src/browser-agent.js";
+import { BridgeError, CDP_METHODS, PAGE_SCRIPTS, createBrowserAgent, neverField, outline, parseKeys, pngSize, sameAddress, targetOf } from "../src/browser-agent.js";
 import { AGENT_IDLE_MS, createMiniBrowser } from "../src/mini-browser.js";
 
 const HEINZEL = { id: "chat-1", name: "Ada", kind: "heinzel" };
@@ -66,16 +66,19 @@ function fixture() {
             if (!Object.hasOwn(page.elements, params.backendNodeId)) throw new Error("No node");
             return { object: { objectId: `o${params.backendNodeId}` } };
           }
-          if (method === "DOM.getNodeForLocation") { if (page.at === null) throw new Error("No node"); return { backendNodeId: page.at }; }
           if (method === "DOM.getBoxModel") return { model: { content: [10, 10, 30, 10, 30, 20, 10, 20] } };
           if (method === "DOM.focus") { page.onFocus?.(params.backendNodeId); return {}; }
           if (method === "Runtime.callFunctionOn") {
-            const node = Number(params.objectId.slice(1)), script = params.functionDeclaration;
-            if (script === PAGE_SCRIPTS.CONTAINS) return { result: { value: !page.covered } };
+            const script = params.functionDeclaration;
+            // `at`: the element the page's own hit test finds at any point, or null for none.
+            if (script === PAGE_SCRIPTS.AT) return { result: page.at === null ? { type: "object", subtype: "null", value: null } : { type: "object", objectId: `o${page.at}` } };
+            const node = Number(params.objectId.slice(1));
+            if (script === PAGE_SCRIPTS.IDENT) return { result: { value: node } };
             if (script === PAGE_SCRIPTS.PRESSED) return { result: { value: page.pressed } };
             // `press`: the control a press is armed for, until the engine says the press is over.
-            if (script === PAGE_SCRIPTS.ARM_PRESS) { page.press = node; return { result: { value: true } }; }
-            if (script === PAGE_SCRIPTS.HIT) return { result: { value: page.hit } };
+            if (script === PAGE_SCRIPTS.ARM_PRESS) { page.press = node; return { result: { value: { armed: true, href: page.href ?? null } } }; }
+            // `covered`: something else lies over the target; `hit`: what the last look before the release finds.
+            if (script === PAGE_SCRIPTS.HIT) return { result: { value: page.hit && !page.covered } };
             // The focus must be on the element the text is for.
             if (script === PAGE_SCRIPTS.ARM_NODE) { page.armed = page.focused === page.elements[node] ? node : null; return { result: { value: page.armed === null ? null : page.focused } }; }
             return { result: { value: page.elements[node] } };
@@ -379,16 +382,19 @@ test("click confirmation: done is said only when the click reached the target", 
   assert.deepEqual(await click(), { url: "https://shop.example.com/" });
   const order = view.sent.map(([name, params]) => (name === "Input.dispatchMouseEvent" ? params.type
     : Object.keys(PAGE_SCRIPTS).find((key) => PAGE_SCRIPTS[key] === (params?.expression ?? params?.functionDeclaration)))).filter(Boolean);
+  // (HIT is also how the engine asks, before the press and after it, whether something lies over the target.)
   assert.deepEqual(order.filter((step) => ["ARM_PRESS", "mousePressed", "PRESSED", "HIT", "mouseReleased", "CLICKED", "CLICK_OVER"].includes(step)),
-    ["ARM_PRESS", "mousePressed", "PRESSED", "HIT", "mouseReleased", "CLICKED", "CLICK_OVER"]);
+    ["HIT", "ARM_PRESS", "mousePressed", "PRESSED", "HIT", "HIT", "mouseReleased", "CLICKED", "CLICK_OVER"]);
   // Nothing is sent between the last look and the release.
-  const last = view.sent.findIndex(([, params]) => params?.functionDeclaration === PAGE_SCRIPTS.HIT);
+  const last = view.sent.findLastIndex(([, params]) => params?.functionDeclaration === PAGE_SCRIPTS.HIT);
   assert.equal(view.sent[last + 1][1].type, "mouseReleased");
   assert.deepEqual(view.sent[last][1].arguments, [{ value: 20 }, { value: 15 }]);
   assert.equal(view.page.press, null);
   // The last look finds something else under the pointer: let go outside the page, with the old refusal.
-  view.sent.length = 0; view.page.hit = false;
+  view.sent.length = 0;
+  view.page.on = (method, params) => { if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") view.page.hit = false; };
   await assert.rejects(click(), (error) => error.code === "changed" && /put something else under the pointer/.test(error.message));
+  view.page.on = () => {};
   assert.deepEqual(mouse().at(-1), ["mouseReleased", -1, -1]);
   assert.equal(scripts(PAGE_SCRIPTS.HOLD), 1);
   assert.equal(view.page.press, null);
@@ -427,20 +433,94 @@ test("click confirmation: done is said only when the click reached the target", 
   view.page.elements[5] = BUTTON;
 });
 
-test("click confirmation: a link so quick that the page is gone before the click can be read is told as a navigation", async () => {
+test("click confirmation: a page that is gone before the click can be read counts as done only when it went where the link led", async () => {
+  const LINK = "https://shop.example.com/cart?item=7";
+  // What the page does on the release: it starts one or more navigations and is another page before the click is read.
+  const outcome = async ({ href, goes }) => {
+    const f = fixture();
+    const { tab, view } = await onPage(f);
+    view.page.at = 5;
+    view.page.href = href;
+    view.page.clicked = null;
+    const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+    view.page.on = (method, params) => {
+      if (method !== "Input.dispatchMouseEvent" || params.type !== "mouseReleased") return;
+      for (const step of goes) step(view);
+      view.webContents.emit("did-navigate");
+    };
+    const answer = await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint });
+    assert.equal(view.page.press, null);
+    return answer;
+  };
+  const go = (url, more = {}) => (view) => view.webContents.emit("did-start-navigation", { url, isMainFrame: true, isSameDocument: false, ...more });
+  const done = { url: "https://shop.example.com/", navigated: true };
+  const unconfirmed = { ...done, confirmed: false };
+  // The link's own navigation: done.
+  assert.deepEqual(await outcome({ href: LINK, goes: [go(LINK)] }), done);
+  // A redirect chain that starts at the link's address is still the link's navigation, wherever it ends.
+  assert.deepEqual(await outcome({ href: LINK, goes: [go(LINK), go("https://login.example.com/?next=cart")] }), done);
+  // Only the part after # differs: the same page.
+  assert.deepEqual(await outcome({ href: `${LINK}#reviews`, goes: [go(LINK)] }), done);
+  // A frame's navigation and a move within the page are not where the page went.
+  assert.deepEqual(await outcome({ href: LINK, goes: [go("https://ads.example.net/", { isMainFrame: false }), go(`${LINK}#top`, { isSameDocument: true }), go(LINK)] }), done);
+  // The page went somewhere else on its own (a timer), with the link's address untouched: sent, not confirmed.
+  assert.deepEqual(await outcome({ href: LINK, goes: [go("https://elsewhere.example.com/")] }), unconfirmed);
+  // The page swapped the link's address after the press was armed and went there: not what was pressed.
+  assert.deepEqual(await outcome({ href: LINK, goes: [(view) => { view.page.href = "https://pay.example.com/now"; }, go("https://pay.example.com/now")] }), unconfirmed);
+  // A redirect that only ends at the link's address did not start there.
+  assert.deepEqual(await outcome({ href: LINK, goes: [go("https://elsewhere.example.com/"), go(LINK)] }), unconfirmed);
+  // A button has no address to go by, and a page that is gone without having started any navigation says nothing.
+  assert.deepEqual(await outcome({ href: null, goes: [go(LINK)] }), unconfirmed);
+  assert.deepEqual(await outcome({ href: LINK, goes: [] }), unconfirmed);
+  assert.equal(sameAddress("https://a.example.com/x?y=1#one", "https://a.example.com/x?y=1#two"), true);
+  assert.equal(sameAddress("https://a.example.com/x", "https://a.example.com/x/"), false);
+  assert.equal(sameAddress("https://a.example.com/x", null), false);
+  assert.equal(sameAddress("not an address", "not an address"), false);
+});
+
+test("click confirmation: on a page that is still there, no click seen is not confirmed", async () => {
   const f = fixture();
   const { tab, view } = await onPage(f);
+  view.page.at = 5; view.page.clicked = null; view.page.href = "https://shop.example.com/cart";
+  const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  // A navigation that was under way before the press is not this click's.
+  view.webContents.emit("did-start-navigation", { url: "https://shop.example.com/cart", isMainFrame: true, isSameDocument: false });
+  await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), (error) => error.code === "changed" && /^Not confirmed/.test(error.message));
+});
+
+test("hit test: the page's own, at the point the mouse goes to, also after take over and hand back and on a scrolled page", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://mine.example.com" });
+  await f.invoke({ action: "layout", bounds: { x: 0, y: 40, width: 760, height: 640 } });
+  const { tab, view } = await onPage(f);
   view.page.at = 5;
-  const list = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
-  view.page.clicked = null;
-  view.page.on = (method, params) => { if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") view.webContents.emit("did-navigate"); };
-  assert.deepEqual(await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: list.fingerprint }), { url: "https://shop.example.com/", navigated: true });
-  assert.equal(view.page.press, null);
-  // On the page that is still there, no click seen stays what it was: not confirmed.
-  view.page.on = () => {};
-  await f.call(HEINZEL, "read", { tab });
-  const again = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_4" });
-  await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_4", expect: again.fingerprint }), (error) => error.code === "changed" && /^Not confirmed/.test(error.message));
+  const scripts = (script) => view.sent.filter(([name, params]) => name === "Runtime.callFunctionOn" && params.functionDeclaration === script);
+  // The person looks at the tab, the agent clicks; the person clicks in the page themselves and hands the tab back.
+  await f.invoke({ action: "select-tab", tab });
+  const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint });
+  await f.invoke({ action: "take-over", tab });
+  await f.refused(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), "paused");
+  await f.invoke({ action: "hand-back", tab });
+  view.sent.length = 0;
+  assert.deepEqual(await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), { url: "https://shop.example.com/" });
+  // What is under the pointer is asked of the page itself, with the pointer's own coordinates, before the press and
+  // as the last look; the protocol's own hit test, which goes by other coordinates once a page is scrolled, is never used.
+  assert.deepEqual(scripts(PAGE_SCRIPTS.HIT).map(([, params]) => params.arguments), [[{ value: 20 }, { value: 15 }], [{ value: 20 }, { value: 15 }], [{ value: 20 }, { value: 15 }]]);
+  assert(!methods(view).includes("DOM.getNodeForLocation"));
+  assert(!CDP_METHODS.includes("DOM.getNodeForLocation"));
+  await assert.rejects(f.engine.protocol(HEINZEL.id, f.controller.agents.find(HEINZEL.id, tab), "DOM.getNodeForLocation", { x: 20, y: 15 }), /not allowed/);
+  // By coordinates the element is the one the page finds there, asked in the engine's own world with the point as given.
+  const point = await f.call(HEINZEL, "describe", { tab, action: "click", x: 300, y: 500 });
+  assert.equal(point.target.name, "More");
+  const at = view.sent.filter(([name, params]) => name === "Runtime.callFunctionOn" && params.functionDeclaration === PAGE_SCRIPTS.AT).at(-1)[1];
+  assert.deepEqual([at.arguments, at.executionContextId, at.objectId], [[{ value: 300 }, { value: 500 }], 7, undefined]);
+  // A frame under the point is never the target or a part of it, for a ref and for a point alike.
+  view.page.covered = true;
+  await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }), /Something else covers that element/);
+  view.page.covered = false; view.page.at = 8; view.page.elements[8] = { ...BUTTON, tag: "iframe", name: "" };
+  assert.equal((await f.call(HEINZEL, "describe", { tab, action: "click", x: 300, y: 500 })).target.resolved, false);
+  await f.refused(f.call(HEINZEL, "click", { tab, x: 300, y: 500, expect: point.fingerprint }), "changed");
 });
 
 /** The engine's own page script, run for real: a window that keeps listeners, a clock, and events as the browser makes them. */
@@ -448,22 +528,60 @@ function isolatedWorld() {
   const listeners = [];
   let time = 1000000;
   const sandbox = { window: { addEventListener: (type, listener) => listeners.push([type, listener]) }, Date: { now: () => time },
-    document: { activeElement: null, body: {}, documentElement: {} } };
+    document: { activeElement: null, body: {}, documentElement: {}, elementFromPoint: (x, y) => world.at(x, y) } };
+  const world = { at: () => null };
   vm.createContext(sandbox);
-  const run = (script, self) => (self === undefined ? vm.runInContext(script, sandbox) : vm.runInContext(`(${script})`, sandbox).call(self));
+  const run = (script, self, ...values) => (self === undefined ? vm.runInContext(script, sandbox) : vm.runInContext(`(${script})`, sandbox).call(self, ...values));
   const fire = (type, path, trusted = true) => {
     const event = { type, isTrusted: trusted, prevented: false, stopped: false, composedPath: () => path,
       preventDefault() { event.prevented = true; }, stopImmediatePropagation() { event.stopped = true; } };
     for (const [name, listener] of listeners) if (name === type) listener(event);
     return event.stopped && event.prevented;
   };
-  return { run, fire, listeners, tick: (ms) => { time += ms; } };
+  return Object.assign(world, { run, fire, listeners, tick: (ms) => { time += ms; } });
 }
+
+test("the page's own hit test: the element under the point, into shadow trees, and never a frame", () => {
+  const world = isolatedWorld();
+  world.run(PAGE_SCRIPTS.INSTALL);
+  const button = { nodeType: 1, tagName: "BUTTON", parentNode: null };
+  const span = { nodeType: 1, tagName: "SPAN", parentNode: button };
+  const other = { nodeType: 1, tagName: "DIV", parentNode: null };
+  // The point is passed on as it is: the same numbers the mouse event gets.
+  const asked = [];
+  world.at = (x, y) => { asked.push([x, y]); return span; };
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 300, 500), true);
+  assert.equal(world.run(PAGE_SCRIPTS.AT, null, 300, 500), span);
+  assert.deepEqual(asked, [[300, 500], [300, 500]]);
+  world.at = () => button;
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 1, 1), true);
+  // Something else there, or nothing: a miss.
+  world.at = () => other;
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 1, 1), false);
+  world.at = () => null;
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 1, 1), false);
+  assert.equal(world.run(PAGE_SCRIPTS.AT, null, 1, 1), null);
+  // A frame under the point is a miss even when it sits inside the target: what is in it cannot be told from here.
+  for (const tagName of ["IFRAME", "FRAME", "OBJECT", "EMBED"]) {
+    world.at = () => ({ nodeType: 1, tagName, parentNode: button });
+    assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 1, 1), false, tagName);
+  }
+  // Into an open shadow tree: the element inside is what is there, and its host's tree leads back to the target.
+  const inner = { nodeType: 1, tagName: "B", parentNode: null };
+  const host = { nodeType: 1, tagName: "X-BUTTON", parentNode: button, shadowRoot: { elementFromPoint: () => inner } };
+  inner.parentNode = { host };
+  world.at = () => host;
+  assert.equal(world.run(PAGE_SCRIPTS.AT, null, 1, 1), inner);
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, button, 1, 1), true);
+  assert.equal(world.run(PAGE_SCRIPTS.HIT, other, 1, 1), false);
+});
 
 test("the press guard: a release or click that would reach anything but the target is stopped, for one press and one second", () => {
   const world = isolatedWorld();
-  const button = { nodeType: 1, tagName: "BUTTON", closest: () => button };
-  const label = { nodeType: 1, tagName: "SPAN", closest: () => button };
+  // `closest`: the control an element belongs to, and no link around any of them unless it is one itself.
+  const within = (control) => (selector) => (selector === "a[href]" ? (control().tagName === "A" ? control() : null) : control());
+  const button = { nodeType: 1, tagName: "BUTTON", closest: within(() => button) };
+  const label = { nodeType: 1, tagName: "SPAN", closest: within(() => button) };
   const around = { nodeType: 1, tagName: "DIV" }, root = { nodeType: 1, tagName: "HTML" };
   assert.equal(world.run(PAGE_SCRIPTS.INSTALL), true);
   const count = world.listeners.length;
@@ -474,7 +592,15 @@ test("the press guard: a release or click that would reach anything but the targ
   for (const type of STRAY) assert.equal(world.fire(type, [around, root]), false, type);
   assert.equal(world.run(PAGE_SCRIPTS.CLICKED), null);
   // Armed for the button, through the span the ref named: what reaches the button or its inside passes and counts.
-  assert.equal(world.run(PAGE_SCRIPTS.ARM_PRESS, label), true);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  assert.deepEqual(plain(world.run(PAGE_SCRIPTS.ARM_PRESS, label)), { armed: true, href: null });
+  // A link says where it leads at the moment it is armed, read from the control and not from what the page says later.
+  const link = { nodeType: 1, tagName: "A", href: "https://shop.example.com/cart", closest: within(() => link) };
+  assert.deepEqual(plain(world.run(PAGE_SCRIPTS.ARM_PRESS, link)), { armed: true, href: "https://shop.example.com/cart" });
+  world.run(PAGE_SCRIPTS.CLICK_OVER);
+  // Two elements never share a number, and an element keeps its own.
+  assert.deepEqual([world.run(PAGE_SCRIPTS.IDENT, link), world.run(PAGE_SCRIPTS.IDENT, button), world.run(PAGE_SCRIPTS.IDENT, link)], [1, 2, 1]);
+  world.run(PAGE_SCRIPTS.ARM_PRESS, label);
   for (const type of ["pointerup", "mouseup", "click"]) assert.equal(world.fire(type, [label, button, around, root]), false, type);
   assert.equal(world.run(PAGE_SCRIPTS.CLICKED), true);
   world.run(PAGE_SCRIPTS.CLICK_OVER);
@@ -486,8 +612,7 @@ test("the press guard: a release or click that would reach anything but the targ
   // A label passes its click on to its control, which may sit anywhere in the page: that second click, real and
   // with no label in its path, must go through, or the box stays unticked while the click counts as done.
   const box = { nodeType: 1, tagName: "INPUT" };
-  const agree = { nodeType: 1, tagName: "LABEL", control: box };
-  agree.closest = () => agree;
+  const agree = { nodeType: 1, tagName: "LABEL", control: box, closest: within(() => agree) };
   world.run(PAGE_SCRIPTS.ARM_PRESS, agree);
   for (const type of ["mouseup", "click"]) assert.equal(world.fire(type, [agree, around, root]), false, type);
   assert.equal(world.fire("click", [box, root]), false);
@@ -534,25 +659,28 @@ test("the press guard: a release or click that would reach anything but the targ
   assert.equal(world.fire("mouseup", [around, root]), false);
 });
 
-test("the engine's listeners are registered for every document before a tab's first page, with nothing else allowed", async () => {
+test("the engine's listeners go into each document as it commits, and nothing answers a page's dialogs", async () => {
   const f = fixture();
   const tab = (await f.call(HEINZEL, "open", { url: "https://shop.example.com/" })).id;
   const view = f.views[0];
-  // An empty page first, then the debugger, the registration and the listeners in that page, then the real address.
-  const steps = view.sent.map(([name, params]) => (name === "load" ? params : name === "Runtime.evaluate" && params.expression === PAGE_SCRIPTS.INSTALL ? "INSTALL" : name))
-    .filter((step) => ["about:blank", "attach", "Page.enable", "Page.addScriptToEvaluateOnNewDocument", "INSTALL", "https://shop.example.com/"].includes(step));
-  assert.deepEqual(steps, ["about:blank", "attach", "Page.enable", "Page.addScriptToEvaluateOnNewDocument", "INSTALL", "https://shop.example.com/"]);
-  assert.deepEqual(view.sent.find(([name]) => name === "Page.addScriptToEvaluateOnNewDocument")[1], { source: PAGE_SCRIPTS.INSTALL, worldName: "hz-browser-agent" });
-  assert.deepEqual(view.sent.find(([name]) => name === "Page.enable")[1], {});
+  const steps = () => view.sent.map(([name, params]) => (name === "load" ? params : name === "Runtime.evaluate" && params.expression === PAGE_SCRIPTS.INSTALL ? "INSTALL" : name))
+    .filter((step) => ["about:blank", "attach", "INSTALL", "https://shop.example.com/", "https://shop.example.com/two"].includes(step));
+  // An empty page first, so the debugger is there before the real page: that page then gets the listeners when it commits.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(steps(), ["about:blank", "attach", "INSTALL", "https://shop.example.com/", "INSTALL"]);
   // The empty page is gone from the tab's history once the real page is there: Back has nowhere to go.
   assert.equal(view.webContents.navigationHistory.getActiveIndex(), 0);
   assert.equal(view.webContents.navigationHistory.getEntryAtIndex(0).url, "https://shop.example.com/");
   assert.equal((await f.call(HEINZEL, "navigate", { tab, to: "back" })).url, "https://shop.example.com/");
   assert(!methods(view).includes("back"));
-  // Once per attach, however many calls follow; a blank tab is primed the same way at its first navigation.
-  await f.call(HEINZEL, "read", { tab });
+  // Every later document gets them too, the agent's navigation and the page's own alike.
   await f.call(HEINZEL, "navigate", { tab, url: "https://shop.example.com/two" });
-  assert.equal(view.sent.filter(([name]) => name === "Page.addScriptToEvaluateOnNewDocument").length, 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(steps().slice(-2), ["https://shop.example.com/two", "INSTALL"]);
+  const before = steps().length;
+  view.webContents.emit("did-navigate");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(steps().slice(before), ["INSTALL"]);
   assert.deepEqual(view.sent.filter(([name]) => name === "load").map(([, url]) => url), ["about:blank", "https://shop.example.com/", "https://shop.example.com/two"]);
   // Back from the second page leads to the first, never to the empty one.
   assert.equal((await f.call(HEINZEL, "navigate", { tab, to: "back" })).url, "https://shop.example.com/");
@@ -563,23 +691,21 @@ test("the engine's listeners are registered for every document before a tab's fi
   delete f.defaults.unreachable;
   assert.equal(gone.status, "unavailable");
   assert.equal(f.views.at(-1).webContents.navigationHistory.getEntryAtIndex(0).url, "about:blank");
-  // Nothing but the engine's own script into its own world, and no way to answer a page's dialogs.
+  // The page's dialogs are the page's and the guest's affair: the engine switches no page events on (with them a page
+  // hangs in alert() waiting for an answer over the protocol), registers nothing and can answer nothing.
   const guest = f.controller.agents.find(HEINZEL.id, tab);
-  const fits = { source: PAGE_SCRIPTS.INSTALL, worldName: "hz-browser-agent" };
-  for (const params of [{ ...fits, source: "document.cookie" }, { ...fits, worldName: "" }, { source: PAGE_SCRIPTS.INSTALL }, { ...fits, includeCommandLineAPI: true },
-    { ...fits, runImmediately: true }, { ...fits, source: PAGE_SCRIPTS.PAGE_TEXT }])
-    await assert.rejects(f.engine.protocol(HEINZEL.id, guest, "Page.addScriptToEvaluateOnNewDocument", params), /not allowed/);
-  await assert.rejects(f.engine.protocol(HEINZEL.id, guest, "Page.enable", { extra: 1 }), /not allowed/);
-  for (const method of ["Page.handleJavaScriptDialog", "Page.setBypassCSP", "Page.addScriptToEvaluateOnLoad", "Page.setInterceptFileChooserDialog", "Page.navigate"]) {
+  for (const method of ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.handleJavaScriptDialog", "Page.setBypassCSP", "Page.setInterceptFileChooserDialog",
+    "Page.navigate", "Runtime.enable"]) {
     assert(!CDP_METHODS.includes(method), method);
-    await assert.rejects(f.engine.protocol(HEINZEL.id, guest, method, { accept: true }), /not allowed/);
+    await assert.rejects(f.engine.protocol(HEINZEL.id, guest, method, {}), /not allowed/);
+    assert(f.views.every((each) => !methods(each).includes(method)), method);
   }
-  assert.equal(CDP_METHODS.length, 21);
-  // A guest that does not answer the registration costs the time limit, not the tab: the listeners come at the first press.
-  f.defaults.hang = "Page.enable";
+  assert.equal(CDP_METHODS.length, 18);
+  // A guest that does not answer the install costs the time limit, not the tab: the listeners come before the first press.
+  f.defaults.hangScript = PAGE_SCRIPTS.INSTALL;
   const slow = await f.call(OTHER, "open", { url: "https://two.example.com/" });
   assert.equal(slow.url, "https://two.example.com/");
-  assert.equal(f.views.at(-1).sent.filter(([name]) => name === "Page.addScriptToEvaluateOnNewDocument").length, 0);
+  f.views.at(-1).page.hangScript = null;
   assert.equal((await f.call(OTHER, "text", { tab: slow.id })).content, "Hello page");
 });
 

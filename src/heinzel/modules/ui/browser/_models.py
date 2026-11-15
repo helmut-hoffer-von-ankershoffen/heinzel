@@ -84,5 +84,7 @@ class InputDone(BaseModel):
     """False when the input was sent and nothing could say that it arrived: read the page before acting on it."""
     target: str = ""
     """What it hit, as the page names it, e.g. `button "Next"`."""
+    navigated: bool = False
+    """True when the tab was already on another page before the click could be seen; read that page before going on."""
     note: str = ""
     """Why `done` is false; empty otherwise."""
