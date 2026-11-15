@@ -82,13 +82,19 @@ const REASONS = {
 };
 /** How long the agent's next call may take after the page opened its own dialogs. */
 const AFTER_DIALOG_SECONDS = 10;
-/** The page's dialogs opened on the agent's click, the page went on, and the agent's next call was answered in time. */
-function assertDialogs(click, next, seconds) {
+/**
+ * The page's dialogs opened on the agent's click, the page went on, and the click and the agent's next call were
+ * answered in time. Nobody was asked, so the confirm was answered no and the prompt with nothing: a yes here would be
+ * an "Are you sure?" that an agent's click agreed to.
+ */
+function assertDialogs(click, next, [clickSeconds, nextSeconds]) {
   assert.ok(ran(click), `The click that makes the page open its dialogs must run: ${click}`);
   assert.equal(site.count("dialog:click"), 1, "The button that opens the dialogs must be clicked once.");
-  assert.equal(site.count("dialog:done"), 1, "The page must get past its alert and its confirm: neither may leave it waiting.");
+  assert.equal(site.starting("dialog:done:"), 1, "The page must get past its alert, its confirm and its prompt: none may leave it waiting.");
+  assert.equal(site.count("dialog:done:false:null"), 1, `The page's confirm must be answered no and its prompt with nothing: ${site.state.events.filter((event) => event.startsWith("dialog:done:"))}`);
+  assert.ok(clickSeconds < AFTER_DIALOG_SECONDS, `The click that opened the page's dialogs took ${clickSeconds} s.`);
   assert.ok(ran(next), `After the page's dialogs the agent's next call must be answered: ${next}`);
-  assert.ok(seconds < AFTER_DIALOG_SECONDS, `After the page's dialogs the agent's next call took ${seconds} s.`);
+  assert.ok(nextSeconds < AFTER_DIALOG_SECONDS, `After the page's dialogs the agent's next call took ${nextSeconds} s.`);
 }
 const FRAME_TAGS = ["IFRAME", "FRAME", "OBJECT", "EMBED", "none"];
 /**
@@ -351,8 +357,7 @@ async function heinzelJourney(page, origin) {
   assert.ok(refused(report.click_press_swap, "swapped"), `A target swapped on the press must be refused: ${report.click_press_swap}`);
   assert.ok(notClicked(report.click_banner), `A target covered by the page's own banner on the press must not be answered as clicked: ${report.click_banner}`);
   report.race.forEach((answer, attempt) => checkTry(attempt, answer, notes[attempt], notes[attempt + 1]));
-  await settled("dialog:done", 1);
-  assertDialogs(report.click_dialog, report.after_dialog, report.after_dialog_seconds);
+  assertDialogs(report.click_dialog, report.after_dialog, report.dialog_seconds);
   assert.ok(proposed(report.send), `Sending the form is a commit and must be proposed: ${report.send}`);
   await assertInputs(report.tab, report.race);
   const [tab] = await agentTabs(page);
@@ -489,12 +494,12 @@ async function mcpJourney(page, origin) {
     checkTry(attempt, answer, before, heard());
   }
   // The page opens an alert and a confirm on this click; the next call must still be answered, and soon.
-  const dialogClick = await agent.call("click", { tab, ref: refOf(read, "button", "Show a notice") });
   const began = Date.now();
+  const dialogClick = await agent.call("click", { tab, ref: refOf(read, "button", "Show a notice") });
+  const clicked = Date.now();
   const afterDialog = await agent.call("text", { tab });
-  const afterDialogSeconds = (Date.now() - began) / 1000;
-  await settled("dialog:done", 1);
-  assertDialogs(dialogClick, afterDialog, afterDialogSeconds);
+  await delay(1000);  // the page's report is in
+  assertDialogs(dialogClick, afterDialog, [(clicked - began) / 1000, (Date.now() - 1000 - clicked) / 1000]);
   const cardTab = tabOf(await agent.call("open", { url: `${SHOP_URL}card` }));
   const card = await agent.call("read", { tab: cardTab });
   await expectRefused("A card field", "secret", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });

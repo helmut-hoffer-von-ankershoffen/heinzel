@@ -68,11 +68,14 @@ const swap = (zone) => {
 };
 document.querySelector("#hover button").addEventListener("mousemove", () => swap("hover"));
 document.querySelector("#press button").addEventListener("mousedown", () => swap("press"));
-// A page that opens its own dialogs while the agent acts: neither may leave the page or the agent waiting.
+// A page that opens its own dialogs while the agent acts: none may leave the page or the agent waiting, and none
+// may be answered with a yes that no person gave.
 document.querySelector("[data-watch=dialog]").addEventListener("click", () => {
   alert("Tea of the week: Assam");
-  confirm("Read more about it?");
-  tell("dialog:done");
+  const yes = confirm("Read more about it?");
+  const typed = prompt("Your name?");
+  // What the dialogs answered goes with it: nobody was asked, so the confirm must be a no and the prompt empty.
+  tell("dialog:done:" + yes + ":" + typed);
 });
 // The ordinary case on an ordinary page: something of the page's own, here a banner, covers the button on the press.
 document.querySelector("#banner button").addEventListener("mousedown", () => swap("banner"));
