@@ -31,9 +31,10 @@ TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
 TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
 # The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
-# deadline on a busy developer machine. Match `make test`'s 420s allowance; coverage still measures every worker.
+# deadline on a busy developer machine. 720s (es8j): the measured suite took 285 to 411s on recent runs and hit 420s at
+# 97 % on the 0.9.43 candidate (run 43682716777, 14343 passed); the owner raised it. Coverage measures every worker.
 # ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=420
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=720
 # The web head's app in web/ (ADR 0039): pnpm from scripts/tools.toml on the Node.js of uv.lock, through scripts/web_build.py,
 # which installs web/'s dependencies first when they are stale. Plugins have no web/; the template leaves these out.
 WEB := uv run --quiet --script scripts/web_build.py

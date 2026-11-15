@@ -418,7 +418,7 @@ jobs:
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 18 # setup, then make test's 720 s covered session (es8j), then the report
     permissions:
       contents: write # publishes the badge to the python-coverage-comment-action-data branch
       pull-requests: write # comments the coverage report on pull requests
