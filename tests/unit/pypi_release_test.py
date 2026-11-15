@@ -546,13 +546,7 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][5]["run"] == "make desktop-electron-package"
     swift = desktop["steps"][-2]
     assert swift["env"] == {"APPLE_APPLICATION_IDENTIFIER_PREFIX": "${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}"}
-    steps = swift["run"].splitlines()
-    assert steps[0] == "export HEINZEL_HTTPS_LINKS=NO"
-    assert (
-        steps[2].strip() == 'python3 apple/scripts/association-file "$APPLE_APPLICATION_IDENTIFIER_PREFIX" > /dev/null'
-    )
-    assert steps[3].strip() == "export HEINZEL_HTTPS_LINKS=YES"
-    assert steps[-1] == "make desktop-swift-package"
+    assert swift["run"] == "make desktop-swift-package"
     assert "desktop" in publish["needs"]
     assert "needs.desktop.result == 'success'" in publish["if"]
     steps = publish["steps"]

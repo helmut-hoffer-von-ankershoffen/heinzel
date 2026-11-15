@@ -3,7 +3,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 version=${1:?Pass the matching stable Heinzel version}
 [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-https_links=${HEINZEL_HTTPS_LINKS:-NO}
+https_links=${HEINZEL_HTTPS_LINKS:-}
+if [[ -z "$https_links" ]]; then
+    https_links=NO
+    if [[ -n "${APPLE_APPLICATION_IDENTIFIER_PREFIX:-}" ]]; then
+        python3 scripts/association-file -- "$APPLE_APPLICATION_IDENTIFIER_PREFIX" > /dev/null
+        https_links=YES
+    fi
+fi
 case "$https_links" in
     YES|NO) ;;
     *) printf '%s\n' 'HEINZEL_HTTPS_LINKS must be YES or NO.' >&2; exit 2 ;;

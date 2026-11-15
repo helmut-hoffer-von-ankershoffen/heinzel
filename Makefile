@@ -350,7 +350,7 @@ docs-site: ## Build the documentation site (MkDocs Material) into site/ from doc
 	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
 
 docs-stage-apple-association: ## Stage the Universal Links association in the built site using APPLE_APPLICATION_IDENTIFIER_PREFIX
-	python3 apple/scripts/association-file "$${APPLE_APPLICATION_IDENTIFIER_PREFIX}" --site-dir site
+	python3 apple/scripts/association-file --site-dir site -- "$${APPLE_APPLICATION_IDENTIFIER_PREFIX}"
 
 docs-catalog: ## Refresh the public metadata-only website catalog; offline site builds use its checked-in snapshot
 	uv run --quiet --script scripts/site_catalog.py --output "$${HZ_SITE_CATALOG:-docs/_data/catalog.json}"
