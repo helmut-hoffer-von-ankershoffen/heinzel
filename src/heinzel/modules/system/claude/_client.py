@@ -10,9 +10,12 @@ logged, and a failure's message names the server and what went wrong, never its 
 
 import contextlib
 import json
+import os
 import queue
+import signal
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from typing import IO, Any, Protocol, cast
@@ -26,6 +29,8 @@ START_TIMEOUT = 30.0
 REQUEST_TIMEOUT = 60.0
 STOP_TIMEOUT = 2.0
 MAX_MESSAGE_BYTES = 4 * 1024 * 1024
+MAX_QUEUED_BYTES = 2 * MAX_MESSAGE_BYTES
+"""What a server may have sent that hz has not read yet; past it, the server is stopped."""
 MAX_RESULT_CHARS = 100_000
 MAX_TOOLS = 200
 MAX_PAGES = 10
@@ -108,14 +113,19 @@ def call_tool(client: Client, tool: str, arguments: dict[str, Any]) -> str:
 
 
 def _refused(name: str, answer: dict[str, Any]) -> str:
-    """Why a request failed, by the error's code only: its message is the server's text."""
+    """Why a request failed, by the error's code if it is a number: nothing else of the server's reaches the text."""
     error = answer.get("error")
     code = cast("dict[str, Any]", error).get("code") if isinstance(error, dict) else None
-    return f"The MCP server {name} refused the request (code {code})"
+    shown = str(code) if isinstance(code, int) and not isinstance(code, bool) else "?"
+    return f"The MCP server {name} refused the request (code {shown})"
+
+
+_LATE = b"\x00late"
+"""What `StdioClient._take` returns when the deadline passed; no line read from a server is ever this object."""
 
 
 class StdioClient:
-    """A local server process hz started; it ends with `stop`, and only the process hz started is stopped."""
+    """A local server process hz started, in a process group of its own; `stop` ends the whole group."""
 
     def __init__(self, name: str, launch: Launch) -> None:
         """Describe the server `name` and how to start it."""
@@ -123,6 +133,9 @@ class StdioClient:
         self._launch = launch
         self._process: subprocess.Popen[bytes] | None = None
         self._lines: queue.Queue[bytes | None] = queue.Queue()
+        self._queued = 0
+        self._overflow = False
+        self._count = threading.Lock()
         self._next = 0
         self._lock = threading.Lock()
 
@@ -140,7 +153,7 @@ class StdioClient:
                 stderr=subprocess.DEVNULL,
                 cwd=self._launch.cwd,
                 env=self._launch.env,
-                start_new_session=True,  # a Ctrl-C in hz's terminal is hz's, not the server's
+                start_new_session=True,  # its own process group: `stop` ends what it starts too (npx, then node)
             )
         except OSError as exc:
             msg = f"The MCP server {self.name} couldn't start: {clean_text(exc.strerror or type(exc).__name__)}"
@@ -158,38 +171,78 @@ class StdioClient:
             raise
 
     def _read(self, stdout: IO[bytes]) -> None:
-        """Hand each line to the waiting request; a line over the limit ends the connection."""
+        """Queue each line for the waiting request, up to `MAX_QUEUED_BYTES`; past that the server is stopped."""
         with contextlib.suppress(OSError, ValueError):
             while line := stdout.readline(MAX_MESSAGE_BYTES + 1):
                 if len(line) > MAX_MESSAGE_BYTES:
+                    self._overflow = True
                     break
+                with self._count:
+                    if self._queued + len(line) > MAX_QUEUED_BYTES:
+                        self._overflow = True
+                        break
+                    self._queued += len(line)
                 self._lines.put(line)
+        if self._overflow:
+            self._kill_group()
         self._lines.put(None)
+
+    def _take(self, seconds: float) -> bytes | None:
+        """The next line, none when the server stopped, `_LATE` when `seconds` pass first."""
+        if seconds <= 0:
+            return _LATE
+        try:
+            line = self._lines.get(timeout=seconds)
+        except queue.Empty:
+            return _LATE
+        if line is not None:
+            with self._count:
+                self._queued -= len(line)
+        return line
+
+    def _drain(self) -> None:
+        """Drop what was queued since the last request: no answer to a new request can be among it."""
+        while True:
+            try:
+                line = self._lines.get_nowait()
+            except queue.Empty:
+                return
+            if line is None:
+                self._lines.put(None)
+                return
+            with self._count:
+                self._queued -= len(line)
 
     def alive(self) -> bool:
         """Whether the process still runs."""
         return self._process is not None and self._process.poll() is None
 
     def request(self, method: str, params: dict[str, Any], seconds: float) -> dict[str, Any]:
-        """One request; requests from the server are answered "method not found", notifications are dropped.
+        """One request within one deadline; requests from the server get "method not found", notifications go.
 
         Raises:
-            McpClientError: If the server stops, times out or answers an error.
+            McpClientError: If the server stops, sends too much, misses the deadline or answers an error.
         """
         with self._lock:
+            self._drain()
             self._next += 1
             ident = self._next
+            deadline = time.monotonic() + seconds
             self._send({"jsonrpc": "2.0", "id": ident, "method": method, "params": params})
             while True:
-                try:
-                    line = self._lines.get(timeout=seconds)
-                except queue.Empty:
+                line = self._take(deadline - time.monotonic())
+                if line is _LATE:
                     self.stop()
                     msg = f"The MCP server {self.name} did not answer within {seconds:.0f} seconds; it was stopped"
                     raise McpClientError(msg) from None
                 if line is None:
                     self._lines.put(None)
-                    msg = f"The MCP server {self.name} stopped"
+                    self.stop()
+                    msg = (
+                        f"The MCP server {self.name} sent more than hz reads at once; it was stopped"
+                        if self._overflow
+                        else f"The MCP server {self.name} stopped"
+                    )
                     raise McpClientError(msg)
                 answer = _message(line)
                 if answer is None:
@@ -218,28 +271,34 @@ class StdioClient:
             msg = f"The MCP server {self.name} stopped"
             raise McpClientError(msg) from None
 
+    def _kill_group(self, sig: int = signal.SIGKILL) -> None:
+        """Signal the server's process group, which only hz's own server leads (`start_new_session`)."""
+        process = self._process
+        if process is not None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, sig)
+
     def stop(self) -> None:
-        """Close its input, then terminate it, then kill it: only the process hz started."""
-        process, self._process = self._process, None
+        """Close its input, then end its whole process group: terminate, then kill."""
+        process = self._process
         if process is None:
             return
-        if process.poll() is None:
+        with contextlib.suppress(OSError, ValueError):
+            if process.stdin is not None:
+                process.stdin.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(STOP_TIMEOUT)
+        # Its children outlive it unless the group is ended (npx then node, uvx then python).
+        self._kill_group(signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(STOP_TIMEOUT)
+        time.sleep(0.05)
+        self._kill_group(signal.SIGKILL)
+        self._process = None
+        process.wait()
+        if process.stdout is not None:
             with contextlib.suppress(OSError, ValueError):
-                if process.stdin is not None:
-                    process.stdin.close()
-            try:
-                process.wait(STOP_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-                try:
-                    process.wait(STOP_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-        for stream in (process.stdin, process.stdout):
-            with contextlib.suppress(OSError, ValueError):
-                if stream is not None:
-                    stream.close()
+                process.stdout.close()
 
 
 def _message(line: bytes) -> dict[str, Any] | None:
@@ -315,15 +374,9 @@ class HttpClient:
             headers["Mcp-Session-Id"] = self._session
         body = json.dumps(message).encode()
         request = urllib.request.Request(self._launch.url, data=body, headers=headers, method="POST")  # noqa: S310 - http(s) only, checked in `launch`
+        expired = threading.Event()
         try:
-            with self._opener.open(request, timeout=seconds) as response:
-                if session := response.headers.get("Mcp-Session-Id"):
-                    self._session = str(session)[:256]
-                if ident is None:
-                    return None
-                kind = str(response.headers.get("Content-Type", ""))
-                raw = cast("IO[bytes]", response)
-                return _event_answer(raw, ident) if kind.startswith("text/event-stream") else _json_answer(raw)
+            return self._exchange(request, seconds, ident, expired)
         except urllib.error.HTTPError as exc:
             with exc:  # the error is also the open response (a refused redirect too): closed before anything else
                 code = exc.code
@@ -332,9 +385,41 @@ class HttpClient:
                 raise McpClientError(msg) from None
             msg = f"The MCP server {self.name} answered HTTP {code}"
             raise McpClientError(msg) from None
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, AttributeError) as exc:
+            if expired.is_set():  # closed under the reader at the deadline
+                msg = f"The MCP server {self.name} did not answer within {seconds:.0f} seconds"
+                raise McpClientError(msg) from None
+            if isinstance(exc, ValueError | AttributeError):
+                raise
             msg = f"The MCP server {self.name} could not be reached ({type(exc).__name__})"
             raise McpClientError(msg) from None
+
+    def _exchange(
+        self, request: urllib.request.Request, seconds: float, ident: int | None, expired: threading.Event
+    ) -> dict[str, Any] | None:
+        """Send `request` and read its answer within one deadline; `expired` is set if the deadline closed it."""
+        deadline = time.monotonic() + seconds
+        with self._opener.open(request, timeout=seconds) as response:
+            # One deadline for the whole answer: a stream that trickles is closed under the reader when it passes.
+            def close() -> None:
+                expired.set()
+                response.close()
+
+            timer = threading.Timer(max(deadline - time.monotonic(), 0.0), close)
+            timer.daemon = True
+            timer.start()
+            try:
+                if session := response.headers.get("Mcp-Session-Id"):
+                    self._session = str(session)[:256]
+                if ident is None:
+                    return None
+                kind = str(response.headers.get("Content-Type", ""))
+                raw = cast("IO[bytes]", response)
+                if kind.startswith("text/event-stream"):
+                    return _event_answer(raw, ident, deadline)
+                return _json_answer(raw)
+            finally:
+                timer.cancel()
 
     def stop(self) -> None:
         """Forget the session; the server is told, when it gave one, and nothing waits for it."""
@@ -368,15 +453,18 @@ def _json_answer(response: IO[bytes]) -> dict[str, Any]:
     return answer
 
 
-def _event_answer(response: IO[bytes], ident: int) -> dict[str, Any] | None:
+def _event_answer(response: IO[bytes], ident: int, deadline: float) -> dict[str, Any] | None:
     """The answer to `ident` from an event stream: the `data:` lines of each event, up to the size limit.
 
     Raises:
-        McpClientError: If the stream is longer than the limit.
+        McpClientError: If the stream is longer than the limit or outlasts the deadline.
     """
     read, data = 0, b""
     while line := response.readline(MAX_MESSAGE_BYTES + 1):
         read += len(line)
+        if time.monotonic() > deadline:
+            msg = "The MCP server did not answer in time"
+            raise McpClientError(msg)
         if read > MAX_MESSAGE_BYTES:
             msg = "The MCP server's answer is too large"
             raise McpClientError(msg)

@@ -7,10 +7,12 @@ each start (`_launch`); no secret is stored, and the switch file stays the only 
 tools without starting the server again; the server starts again when one of them is called.
 
 Tool names are `mcp__<server>__<tool>`. A server whose name, made safe, is another server's (or hz's own) is refused,
-as is a tool whose name is another tool's: an agent can never call one server's tool by another's name. Logs carry
-the server's scope and counts, never its id, name, arguments or output (names can reveal employers and customers).
+as is a tool whose name is another tool's: an agent can never call one server's tool by another's name. Lifecycle
+logs carry the server's scope and counts, never its id, arguments or output; a failed start's error names the server
+(names can reveal employers and customers, and the log stays on this computer).
 """
 
+import atexit
 import json
 import logging
 import re
@@ -92,6 +94,7 @@ class FoundConnections(FoundMcpServers):
         self._problems: dict[str, str] = {}
         self._wake = threading.Event()
         self._reaper: threading.Thread | None = None
+        self._registered = False
 
     @classmethod
     def for_user(cls) -> "FoundConnections":
@@ -309,6 +312,7 @@ class FoundConnections(FoundMcpServers):
         with connection.lock:
             if connection.client is not None and connection.client.alive():
                 return connection
+            self._stop_client(connection)  # one that died on its own is ended and closed before the next starts
             client: Client = (
                 StdioClient(server.name, spec) if spec.transport == "stdio" else HttpClient(server.name, spec)
             )
@@ -324,6 +328,9 @@ class FoundConnections(FoundMcpServers):
             connection.client, connection.used = client, self._clock()
             self._problems.pop(server.id, None)
         self._start_reaper()
+        if not self._registered:  # hz's exit (the daemon's, the web server's, a CLI run's) stops what it started
+            self._registered = True
+            atexit.register(self.stop_all)
         return connection
 
     def _tools(self, server: FoundServer, space: str, listing: list[dict[str, Any]]) -> list[FoundMcpTool]:
@@ -358,7 +365,8 @@ class FoundConnections(FoundMcpServers):
                     title=title,
                     description=clean_text(description if isinstance(description, str) else "")[:DESCRIPTION_LIMIT],
                     schema=cast("dict[str, Any]", schema),
-                    read_only=hints.get("readOnlyHint") is True,
+                    # A tool that says it is read-only and destructive is a write: proposed.
+                    read_only=hints.get("readOnlyHint") is True and hints.get("destructiveHint") is not True,
                 )
             )
         if refused:

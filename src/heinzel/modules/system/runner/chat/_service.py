@@ -1105,7 +1105,8 @@ class ChatService:
         else:
             try:
                 value = self._kernel.resolve(FoundMcpServers).call(server, found.operation, dict(found.arguments))
-                found.status, found.result = "done", untrusted(found.tool, value)[:RESULT_LIMIT]
+                # Cut before it is wrapped, so the end of the untrusted block is never cut off.
+                found.status, found.result = "done", untrusted(found.tool, value[:RESULT_LIMIT])
             except HeinzelError as exc:
                 found.status, found.result = "failed", redact_emails(str(exc))
             except Exception as exc:  # noqa: BLE001 - a bug in an action is recorded, never raised
