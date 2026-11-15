@@ -284,6 +284,14 @@ struct ConnectionView: View {
     @State private var verifiedConnectionOrigin: URL?
     #if os(iOS)
     @State private var connectionProbeRevision = 0
+    @State private var connectionProbe: ConnectionProbe?
+
+    private struct ConnectionProbe {
+        let revision: Int
+        let origin: URL
+        let manual: Bool
+        let task: Task<WorkspaceProblem?, Never>
+    }
     #endif
     @FocusState private var editingLink: Bool
     @State private var draftRevision = 0
@@ -720,6 +728,11 @@ struct ConnectionView: View {
         }
         .task(id: monitoredOrigin) {
             verifiedConnectionOrigin = nil
+            #if os(iOS)
+            connectionProbeRevision += 1
+            connectionProbe?.task.cancel()
+            connectionProbe = nil
+            #endif
             guard let origin = monitoredOrigin else { return }
             await watchConnection(to: origin)
         }
@@ -822,12 +835,26 @@ struct ConnectionView: View {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
                         Task {
+                            #if os(iOS)
+                            while self.endpoint == endpoint, loadRevision == revision, !Task.isCancelled {
+                                guard let result = await sharedConnectionProbe(endpoint.origin, manual: false) else { continue }
+                                guard self.endpoint == endpoint, loadRevision == revision else { return }
+                                guard connectionProbe?.revision == result.revision else { continue }
+                                connectionIssue = result.issue
+                                loadFailure = result.issue ?? .signIn
+                                if result.issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                                loadingWorkspace = false
+                                finishConnectionProbe(result.revision)
+                                return
+                            }
+                            #else
                             let issue = await Endpoint.connectionIssue(at: endpoint.origin)
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
                             if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
                             loadingWorkspace = false
+                            #endif
                         }
                     } else {
                         loadingWorkspace = false
@@ -1774,18 +1801,39 @@ struct ConnectionView: View {
     private func refreshConnectionStatus(for target: Endpoint) async {
         guard !refreshingConnection else { return }
         refreshingConnection = true
-        defer { refreshingConnection = false }
-        connectionProbeRevision += 1
-        let revision = connectionProbeRevision
-        let session = Endpoint.probeSession()
-        defer { session.invalidateAndCancel() }
-        let issue = await Endpoint.connectionIssue(at: target.origin, using: session)
-        guard !Task.isCancelled, endpoint == target, monitoredOrigin == target.origin,
-              connectionProbeRevision == revision else { return }
-        connectionIssue = issue
-        verifiedConnectionOrigin = issue == nil ? target.origin : nil
-        if issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
-        AccessibilityNotification.Announcement(issue?.title ?? "Workspace reachable").post()
+        defer {
+            refreshingConnection = false
+            if connectionProbe?.manual == true { connectionProbe = nil }
+        }
+        guard let result = await sharedConnectionProbe(target.origin, manual: true),
+              endpoint == target, monitoredOrigin == target.origin,
+              connectionProbe?.revision == result.revision else { return }
+        connectionIssue = result.issue
+        verifiedConnectionOrigin = result.issue == nil ? target.origin : nil
+        if result.issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
+        AccessibilityNotification.Announcement(result.issue?.title ?? "Workspace reachable").post()
+        finishConnectionProbe(result.revision, manual: true)
+    }
+
+    private func sharedConnectionProbe(_ origin: URL, manual: Bool) async -> (revision: Int, issue: WorkspaceProblem?)? {
+        let flight: ConnectionProbe
+        if let existing = connectionProbe, existing.origin == origin, !manual || existing.manual {
+            flight = existing
+        } else {
+            connectionProbe?.task.cancel()
+            connectionProbeRevision += 1
+            let task = Task { await Endpoint.connectionIssue(at: origin) }
+            flight = ConnectionProbe(revision: connectionProbeRevision, origin: origin, manual: manual, task: task)
+            connectionProbe = flight
+        }
+        let issue = await flight.task.value
+        guard !Task.isCancelled, connectionProbe?.revision == flight.revision else { return nil }
+        return (flight.revision, issue)
+    }
+
+    private func finishConnectionProbe(_ revision: Int, manual: Bool = false) {
+        guard connectionProbe?.revision == revision, manual || connectionProbe?.manual == false else { return }
+        connectionProbe = nil
     }
     #endif
 
@@ -1795,13 +1843,21 @@ struct ConnectionView: View {
         var retryDelay = 2
         while !Task.isCancelled {
             #if os(iOS)
-            connectionProbeRevision += 1
-            let revision = connectionProbeRevision
-            #endif
+            guard let result = await sharedConnectionProbe(origin, manual: false) else {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                continue
+            }
+            let issue = result.issue
+            #else
             let issue = await Endpoint.connectionIssue(at: origin, using: session)
+            #endif
             guard !Task.isCancelled, monitoredOrigin == origin else { return }
             #if os(iOS)
-            guard connectionProbeRevision == revision else { continue }
+            if refreshingConnection || connectionProbe?.revision != result.revision {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                continue
+            }
+            finishConnectionProbe(result.revision)
             #endif
             let recovered = connectionIssue != nil && issue == nil
             connectionIssue = issue
