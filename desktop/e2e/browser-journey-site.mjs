@@ -13,7 +13,8 @@ export const WIDGET = "times.heinzel-widget.example";
 const HOSTS = new Set([SHOP, WIDGET]);
 const ZONES = ["hover", "press", "race-a", "race-b"];
 /** Milliseconds between the pointer's arrival and the frame's appearance, one per raced try. */
-const RACE_WAITS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20];
+// The press follows the pointer by the few milliseconds the engine's checks take, so the band is walked twice.
+const RACE_WAITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
 export const RACE_TRIES = RACE_WAITS.length;
 
 const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>

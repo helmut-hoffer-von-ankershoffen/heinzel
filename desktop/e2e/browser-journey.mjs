@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -17,10 +17,24 @@ import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
 import { RACE_TRIES, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
 
 const journey = process.argv[2];
+// Under the virtual display each journey notes how many raced presses landed inside the other site's frame; `tally`
+// then requires at least one across both. Which try wins the race is a matter of milliseconds, not of the journey.
+const tallyFile = process.env.HZ_JOURNEY_TALLY;
+if (journey === "tally") {
+  if (process.env.HZ_JOURNEY_VISIBLE !== "1") { console.log("Browser journeys: a press inside the other site's frame is only required under the virtual display."); process.exit(0); }
+  if (!tallyFile) throw new Error("Set HZ_JOURNEY_TALLY to the file the journeys note their in-frame presses in.");
+  const lines = (await readFile(tallyFile, "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
+  const total = lines.reduce((sum, line) => sum + Number(line.split(" ")[1]), 0);
+  console.log(`Browser journeys: presses inside the other site's frame: ${lines.join(", ") || "none noted"}.`);
+  assert.deepEqual(lines.map((line) => line.split(" ")[0]).sort(), ["heinzel", "mcp"], "Both journeys must have noted their count.");
+  assert.ok(total > 0, "Across both journeys at least one raced press must land inside the other site's frame, or nothing is proven about it.");
+  process.exit(0);
+}
 // HZ_JOURNEY_VISIBLE=1, on Linux under a virtual display only (Xvfb, see browser-journey.Dockerfile): the window is
 // really shown, and then at least one raced press must land inside the frame of the other site's process.
 const visible = process.env.HZ_JOURNEY_VISIBLE === "1";
 if (visible && process.platform !== "linux") throw new Error("A shown window is for Linux under Xvfb only; everywhere else the app stays hidden.");
+if (visible && !tallyFile) throw new Error("Set HZ_JOURNEY_TALLY to the file the journeys note their in-frame presses in.");
 if (journey !== "heinzel" && journey !== "mcp") throw new Error("Say which journey: heinzel or mcp.");
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const python = process.env.HZ_JOURNEY_PYTHON;
@@ -158,7 +172,7 @@ function guestFacts() {
 }
 
 /** What both journeys must have left behind once the agent did the free and the forbidden steps. */
-async function assertInputs(tab, race, { inSight }) {
+async function assertInputs(tab, race) {
   await settled("press:mousedown", 1);
   assert.equal(site.count("note:click"), 1, "The ordinary button must be clicked once, by a trusted click.");
   for (const [zone, shown] of [["hover", "hover:swapped"], ["press", "press:swapped"], ["race-a", "race-a:shown"], ["race-b", "race-b:shown"]]) {
@@ -176,10 +190,8 @@ async function assertInputs(tab, race, { inSight }) {
   found.raceInFrame = site.countOf("widget-race-", "pointerdown");
   found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
   assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
-  // A press reaches the other site's process only through a shown surface: a shown window and the tab in sight. That
-  // is the outside agent's journey under the virtual display, and there the race must be won at least once. In a
-  // never-shown tab (the Heinzel's) the count is only reported.
-  if (visible && inSight) assert.ok(found.raceInFrame > 0, `With a shown window and tab at least one of ${RACE_TRIES} raced presses must land in the frame, or nothing is proven about it.`);
+  // Whether a press lands inside the frame is a matter of milliseconds: the count is noted, and `tally` requires at
+  // least one across both journeys. What must hold in every try is checked right here.
   // What a called-off press must never do (ADR 0162, safety 3 and 5.5):
   // 1. The frame of the other site gets no release and no click, whichever try put a press into it.
   assert.equal(site.countOf("widget-", "mouseup") + site.countOf("widget-", "click"), 0,
@@ -260,7 +272,7 @@ async function heinzelJourney(page, origin) {
   assert.ok(refused(report.click_hover_swap, "covered"), `A covered target must be refused: ${report.click_hover_swap}`);
   assert.ok(refused(report.click_press_swap, "swapped"), `A target swapped on the press must be refused: ${report.click_press_swap}`);
   assert.ok(proposed(report.send), `Sending the form is a commit and must be proposed: ${report.send}`);
-  await assertInputs(report.tab, report.race, { inSight: false });
+  await assertInputs(report.tab, report.race);
   const [tab] = await agentTabs(page);
   assert.equal(tab?.id, report.tab);
   assert.equal(tab.agent.kind, "heinzel");
@@ -383,7 +395,7 @@ async function mcpJourney(page, origin) {
   const card = await agent.call("read", { tab: cardTab });
   await expectRefused("A card field", "secret", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });
   await agent.call("close", { tab: cardTab });
-  await assertInputs(tab, race, { inSight: true });
+  await assertInputs(tab, race);
   const [shown] = await agentTabs(page);
   assert.equal(shown?.id, tab);
   assert.equal(shown.agent.kind, "external");
@@ -503,6 +515,7 @@ try {
   assert.equal(await kept("public-media"), "", "Nothing may have been handed to the system's browser.");
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), visible,
     visible ? "Under the virtual display the window must be shown." : "The journey's app must stay hidden.");
+  if (visible) await appendFile(tallyFile, `${journey} ${found.raceInFrame}\n`);
   // Diagnostic: every check of the journey held; what follows is only the app's own quit.
   console.log(`Browser journey "${journey}": every check passed, closing the app. Found: ${JSON.stringify(found)}`);
   const exited = new Promise((done) => electronProcess.once("exit", (code, signal) => done({ code, signal })));

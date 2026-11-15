@@ -14,7 +14,7 @@
     "verify:package": "node ci/verify-package.mjs",
     "test:real-backend": "node e2e/real-backend.mjs",
     "test:real-backend-crash": "node e2e/real-backend.mjs --crash-test",
-    "test:browser-journey": "node e2e/browser-journey.mjs heinzel; heinzel=$?; node e2e/browser-journey.mjs mcp; mcp=$?; echo \"Browser journeys: heinzel exit $heinzel, mcp exit $mcp\"; test $heinzel -eq 0 -a $mcp -eq 0"
+    "test:browser-journey": "node e2e/browser-journey.mjs heinzel; heinzel=$?; node e2e/browser-journey.mjs mcp; mcp=$?; node e2e/browser-journey.mjs tally; tally=$?; echo \"Browser journeys: heinzel exit $heinzel, mcp exit $mcp, tally exit $tally\"; test $heinzel -eq 0 -a $mcp -eq 0 -a $tally -eq 0"
   },
   "devDependencies": {
     "@electron-internal/extract-zip": "1.0.6",

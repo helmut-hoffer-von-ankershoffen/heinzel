@@ -35,7 +35,8 @@ USER journey
 
 # The virtual display is started here and not by xvfb-run: as the container's first process xvfb-run waits forever
 # for the display's ready signal. UV_OFFLINE: the run has no network, and everything was fetched by the build.
-ENV HZ_JOURNEY_VISIBLE=1 HZ_JOURNEY_PYTHON=/work/.venv/bin/python DISPLAY=:99 UV_OFFLINE=1
+ENV HZ_JOURNEY_VISIBLE=1 HZ_JOURNEY_PYTHON=/work/.venv/bin/python DISPLAY=:99 UV_OFFLINE=1 \
+    HZ_JOURNEY_TALLY=/tmp/hz-journey-in-frame
 CMD Xvfb :99 -screen 0 1440x900x24 -nolisten tcp & \
     for turn in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.5; done; \
     [ -S /tmp/.X11-unix/X99 ] || { echo "The virtual display did not start."; exit 1; }; \
