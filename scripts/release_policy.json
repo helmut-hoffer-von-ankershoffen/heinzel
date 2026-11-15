@@ -54,20 +54,8 @@
         "Public contract consumers",
         "Release candidate source",
         "Secret scan",
-        "Test (macos-latest, Python 3.12, integration)",
-        "Test (macos-latest, Python 3.12, unit)",
-        "Test (macos-latest, Python 3.13, integration)",
-        "Test (macos-latest, Python 3.13, unit)",
-        "Test (macos-latest, Python 3.14, integration)",
-        "Test (macos-latest, Python 3.14, unit)",
         "Test (macos-latest, Python 3.15, integration)",
         "Test (macos-latest, Python 3.15, unit)",
-        "Test (ubuntu-24.04, Python 3.12, integration)",
-        "Test (ubuntu-24.04, Python 3.12, unit)",
-        "Test (ubuntu-24.04, Python 3.13, integration)",
-        "Test (ubuntu-24.04, Python 3.13, unit)",
-        "Test (ubuntu-24.04, Python 3.14, integration)",
-        "Test (ubuntu-24.04, Python 3.14, unit)",
         "Test (ubuntu-24.04, Python 3.15, integration)",
         "Test (ubuntu-24.04, Python 3.15, unit)",
         "macOS-specific tests",
@@ -129,20 +117,8 @@
         "Public contract consumers",
         "Release candidate source",
         "Secret scan",
-        "Test (macos-latest, Python 3.12, integration)",
-        "Test (macos-latest, Python 3.12, unit)",
-        "Test (macos-latest, Python 3.13, integration)",
-        "Test (macos-latest, Python 3.13, unit)",
-        "Test (macos-latest, Python 3.14, integration)",
-        "Test (macos-latest, Python 3.14, unit)",
         "Test (macos-latest, Python 3.15, integration)",
         "Test (macos-latest, Python 3.15, unit)",
-        "Test (ubuntu-24.04, Python 3.12, integration)",
-        "Test (ubuntu-24.04, Python 3.12, unit)",
-        "Test (ubuntu-24.04, Python 3.13, integration)",
-        "Test (ubuntu-24.04, Python 3.13, unit)",
-        "Test (ubuntu-24.04, Python 3.14, integration)",
-        "Test (ubuntu-24.04, Python 3.14, unit)",
         "Test (ubuntu-24.04, Python 3.15, integration)",
         "Test (ubuntu-24.04, Python 3.15, unit)",
         "macOS-specific tests",
@@ -161,47 +137,37 @@
   "lanes": {
     "browser": {
       "kind": "e2e",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "ubuntu-24.04"
     },
     "macos": {
       "kind": "pytest",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "macos-latest"
     },
     "macos-browser": {
       "kind": "e2e",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "macos-latest"
     },
     "macos-notifier": {
       "kind": "pytest",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "macos-latest"
     },
     "managed": {
       "kind": "managed",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "ubuntu-24.04"
     },
     "python": {
-      "kind": "pytest",
-      "python": "3.14.8",
-      "runner": "ubuntu-24.04"
-    },
-    "python312": {
-      "kind": "pytest",
-      "python": "3.12",
-      "runner": "ubuntu-24.04"
-    },
-    "python315": {
       "kind": "pytest",
       "python": "3.15",
       "runner": "ubuntu-24.04"
     },
     "web": {
       "kind": "vitest",
-      "python": "3.14",
+      "python": "3.15",
       "runner": "ubuntu-24.04"
     }
   },
@@ -312,20 +278,8 @@
     "merge-gate"
   ],
   "test_jobs": [
-    "Test (macos-latest, Python 3.12, integration)",
-    "Test (macos-latest, Python 3.12, unit)",
-    "Test (macos-latest, Python 3.13, integration)",
-    "Test (macos-latest, Python 3.13, unit)",
-    "Test (macos-latest, Python 3.14, integration)",
-    "Test (macos-latest, Python 3.14, unit)",
     "Test (macos-latest, Python 3.15, integration)",
     "Test (macos-latest, Python 3.15, unit)",
-    "Test (ubuntu-24.04, Python 3.12, integration)",
-    "Test (ubuntu-24.04, Python 3.12, unit)",
-    "Test (ubuntu-24.04, Python 3.13, integration)",
-    "Test (ubuntu-24.04, Python 3.13, unit)",
-    "Test (ubuntu-24.04, Python 3.14, integration)",
-    "Test (ubuntu-24.04, Python 3.14, unit)",
     "Test (ubuntu-24.04, Python 3.15, integration)",
     "Test (ubuntu-24.04, Python 3.15, unit)"
   ],
