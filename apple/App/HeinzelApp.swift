@@ -1212,6 +1212,7 @@ private struct ConnectionHelp: View {
         defer { session.invalidateAndCancel() }
         async let publicCheck = internetStatus(using: session)
         async let privateCheck = workspaceStatus(using: session)
+        async let alertCheck = notificationStatus()
 
         for check in Check.allCases {
             results[check] = Result(.checking, "Checking…")
@@ -1221,7 +1222,7 @@ private struct ConnectionHelp: View {
             case .workspace: result = await privateCheck
             case .microphone: result = microphone
             case .systemAudio: result = systemAudio
-            case .notifications: result = await notificationStatus()
+            case .notifications: result = await alertCheck
             }
             // Keep quick local checks visible long enough for the change in status to register.
             do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
