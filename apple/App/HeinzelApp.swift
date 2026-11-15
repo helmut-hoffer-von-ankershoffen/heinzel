@@ -186,6 +186,10 @@ struct ConnectionView: View {
     @State private var choosingWorkspace = false
     @State private var showConnectionHelp = false
     @State private var helpAfterConnection = false
+    #if os(iOS)
+    @State private var shortcutRouter = AppShortcutRouter.shared
+    @State private var pendingShortcutURL: NativeRoute?
+    #endif
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
@@ -233,6 +237,31 @@ struct ConnectionView: View {
             !stoppingLocalWorkspace && !showConnection && !showConnectionHelp && !helpAfterConnection &&
             sharedWorkspace == nil && !editingLink
     }
+
+    #if os(iOS)
+    private var canOpenShortcut: Bool {
+        scenePhase == .active && !showingColdStart && !stoppingLocalWorkspace &&
+            !showDisconnectConfirmation && (sharedWorkspace == nil || endpoint == nil)
+    }
+
+    private func openShortcut(_ shortcut: NativeRoute) {
+        editingLink = false
+        switch shortcut {
+        case .workspace:
+            helpAfterConnection = false
+            showConnectionHelp = false
+            showConnection = false
+            if endpoint != nil { choosingWorkspace = false }
+        case .connectionHelp:
+            if showConnection {
+                helpAfterConnection = true
+                showConnection = false
+            } else {
+                showConnectionHelp = true
+            }
+        }
+    }
+    #endif
 
     var body: some View {
         content
@@ -296,7 +325,25 @@ struct ConnectionView: View {
             guard let origin = monitoredOrigin else { return }
             await watchConnection(to: origin)
         }
+        #if os(iOS)
+        .task(id: canOpenShortcut ? pendingShortcutURL : nil) { @MainActor in
+            guard !Task.isCancelled, canOpenShortcut, let shortcut = pendingShortcutURL else { return }
+            pendingShortcutURL = nil
+            openShortcut(shortcut)
+        }
+        .task(id: canOpenShortcut ? shortcutRouter.pending : nil) { @MainActor in
+            guard !Task.isCancelled, canOpenShortcut, let shortcut = shortcutRouter.pending else { return }
+            shortcutRouter.pending = nil
+            openShortcut(shortcut)
+        }
+        #endif
         .onOpenURL { url in
+            #if os(iOS)
+            if let shortcut = NativeRoute(url: url) {
+                pendingShortcutURL = shortcut
+                return
+            }
+            #endif
             guard let target = Endpoint.sharedWorkspace(url) else {
                 if endpoint == nil { error = "This Heinzel link is incomplete. Ask the host to share it again." }
                 return
@@ -421,16 +468,12 @@ struct ConnectionView: View {
                     showConnection = true
                 }
                 #endif
-                #if os(iOS)
-                if !obscured {
-                    workspaceControl
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background { workspaceBackground.ignoresSafeArea(.container, edges: .bottom) }
-                }
-                #endif
             }
+            #if os(iOS)
+            .overlay {
+                if !obscured { workspaceSafeAreaControl }
+            }
+            #endif
         } else if connecting || showingColdStart {
             startup
         } else if let target = sharedWorkspace {
@@ -452,6 +495,40 @@ struct ConnectionView: View {
             setup
         }
     }
+
+    #if os(iOS)
+    private var workspaceSafeAreaControl: some View {
+        GeometryReader { geometry in
+            let bottom = geometry.safeAreaInsets.bottom
+            if bottom >= 18 {
+                workspaceCircle(size: min(28, bottom - 2), hitHeight: bottom)
+                    .padding(.leading, 3)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            } else {
+                workspaceCircle(size: 32, hitHeight: 44)
+                    .padding(4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+    }
+
+    private func workspaceCircle(size: CGFloat, hitHeight: CGFloat) -> some View {
+        Button {
+            showConnection = true
+        } label: {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: size * 0.52, weight: .semibold))
+                .frame(width: size, height: size)
+                .background(.regularMaterial, in: Circle())
+                .frame(width: 44, height: hitHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Workspace")
+        .accessibilityHint("Shows the address, connection status, and workspace actions")
+    }
+    #endif
 
     private var workspaceControl: some View {
         Button {
@@ -562,9 +639,15 @@ struct ConnectionView: View {
                 .font(.system(.title2, design: .serif, weight: .semibold))
                 .foregroundStyle(ConnectionPalette.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text(problem == .signIn ? "Workspace reached. You still need to sign in on this device." : problem.detail)
-                .font(.callout)
-                .foregroundStyle(ConnectionPalette.muted)
+            if problem == .signIn {
+                Label("Workspace reachable", systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(ConnectionPalette.accent)
+            } else {
+                Text(problem.detail)
+                    .font(.callout)
+                    .foregroundStyle(ConnectionPalette.muted)
+            }
             if endpoint.origin.scheme == "https" {
                 workspaceAddress(endpoint.origin)
             }
@@ -618,9 +701,15 @@ struct ConnectionView: View {
 
     private func signInActions(for endpoint: Endpoint) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Ask the workspace host for a sign-in link.")
-                .font(.callout)
-                .foregroundStyle(ConnectionPalette.muted)
+            if endpoint.origin.host?.hasSuffix(".ts.net") == true {
+                Text("On the computer running Heinzel, open **Tailscale** at the bottom of the signed-in workspace. Choose **Copy link** or **Share**, send yourself the link privately, then paste it here.")
+                    .font(.callout)
+                    .foregroundStyle(ConnectionPalette.muted)
+            } else {
+                Text("Ask the person who runs this workspace to send you a sign-in link, then paste it below.")
+                    .font(.callout)
+                    .foregroundStyle(ConnectionPalette.muted)
+            }
             linkField("Sign-in link") { signIn(at: endpoint) }
             if let message = error ?? signInLinkIssue(for: endpoint) {
                 Label(message, systemImage: "exclamationmark.circle")
@@ -649,7 +738,7 @@ struct ConnectionView: View {
             return "This link is for a different workspace. Choose a different workspace to use it."
         }
         guard target.token != nil else {
-            return "This link leads to the workspace. Ask the host for a sign-in link to open it on this device."
+            return "This link has no sign-in access. Get a link from the signed-in workspace on the host computer."
         }
         return nil
     }
@@ -668,19 +757,19 @@ struct ConnectionView: View {
     }
 
     private func linkField(_ title: String, submit: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                SecureField(title, text: $link)
-                    .textFieldStyle(.plain)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .submitLabel(.go)
-                    #endif
-                    .focused($editingLink)
-                    .accessibilityIdentifier("serverLink")
-                    .onSubmit(submit)
+        HStack(spacing: 4) {
+            SecureField(title, text: $link)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .submitLabel(.go)
+                #endif
+                .focused($editingLink)
+                .accessibilityIdentifier("serverLink")
+                .onSubmit(submit)
+            if !link.isEmpty {
                 Button {
                     link = ""
                     error = nil
@@ -693,25 +782,30 @@ struct ConnectionView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(ConnectionPalette.muted)
                 .accessibilityLabel("Clear link")
-                .opacity(link.isEmpty ? 0 : 1)
-                .allowsHitTesting(!link.isEmpty)
-                .accessibilityHidden(link.isEmpty)
-            }
-            .padding(.leading, 12)
-            .frame(minHeight: 44)
-            .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(editingLink ? ConnectionPalette.accent : ConnectionPalette.rule)
-                    .allowsHitTesting(false)
             }
             #if os(iOS)
+            Rectangle()
+                .fill(ConnectionPalette.rule)
+                .frame(width: 1, height: 24)
+                .accessibilityHidden(true)
             PasteButton(payloadType: String.self) { values in
                 if let value = values.first { link = value }
             }
+            .labelStyle(.titleOnly)
             .buttonStyle(.borderless)
-            .controlSize(.large)
+            .controlSize(.regular)
+            .fixedSize()
+            .frame(minHeight: 44)
             #endif
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .frame(minHeight: 44)
+        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(editingLink ? ConnectionPalette.accent : ConnectionPalette.rule)
+                .allowsHitTesting(false)
         }
     }
 

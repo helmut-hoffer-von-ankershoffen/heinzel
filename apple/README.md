@@ -17,6 +17,8 @@ In the local Mac app, turn on private sharing and choose **Copy app link** in th
 
 The Swift shell uses the same title-bar layout and Browser panel as Electron. The Browser panel uses a separate WebKit session. Enable the host’s `sidebar_browser` feature flag to use the Browser panel. The browser uses an authenticated loopback HTTPS proxy with public-only DNS resolution and no direct fallback. The guest enables WebKit Lockdown Mode to disable peer connections. Mac, iPhone simulator, and iPad simulator probes confirmed that public HTTPS works through the proxy, loopback HTTP and WebRTC STUN are blocked, and closing the proxy stops public navigation. Lockdown Mode may limit some websites. See [ADR 0140](../docs/adr/0140-isolate-sidebar-browser-content-in-the-desktop.md).
 
+On iPhone and iPad, add **Workspace** from the **Heinzelmännchen** entry in the widget gallery. The medium Home Screen widget also opens **Connection Help**. On the Lock Screen, add the circular **Workspace** widget or the rectangular **Connection Help** widget. These launchers show artwork and labels only. In Shortcuts, use **Open Workspace** or **Open Connection Help**. Assign either shortcut to the Action Button on supported iPhones.
+
 In notification settings, choose **Notify me on this device**. Heinzel confirms the workspace and asks for system permission. Notifications come from the connected workspace while the app is open. Tapping an alert opens the notice when its workspace is connected. On iPhone and iPad, keep Heinzel active to receive new notices.
 
 In the local macOS workspace, system audio uses a private Core Audio tap and macOS audio recording permission. On iOS/iPadOS 27 or later, it uses the system ScreenCaptureKit picker where available. iOS Simulator builds omit system audio because their SDK does not expose ScreenCaptureKit. The microphone uses WebKit’s permission prompt in the workspace.
@@ -31,7 +33,7 @@ On iPhone and iPad, the ScreenCaptureKit picker filters audio at app scope, so s
 the Browser panel. See [Apple’s capture-filter guidance](https://developer.apple.com/videos/play/wwdc2022/10155/).
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
-build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
+build with `HEINZEL_IOS_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
 Set the `APPLE_APPLICATION_IDENTIFIER_PREFIX` repository variable to the prefix
 from the app's signed `application-identifier` entitlement. The Docs workflow
 then generates `/.well-known/apple-app-site-association` alongside `/open/`.

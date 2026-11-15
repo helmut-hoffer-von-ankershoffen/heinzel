@@ -1,5 +1,45 @@
 // !$*UTF8*$!
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000060 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRoute.swift; sourceTree = "<group>";};
+000000000000000000000061 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Brand.xcassets; sourceTree = "<group>";};
+000000000000000000000062 = {isa = PBXGroup; children = (000000000000000000000060,000000000000000000000061,); path = Shared; sourceTree = "<group>";};
+000000000000000000000063 = {isa = PBXBuildFile; fileRef = 000000000000000000000060;};
+000000000000000000000064 = {isa = PBXBuildFile; fileRef = 000000000000000000000060;};
+000000000000000000000065 = {isa = PBXBuildFile; fileRef = 000000000000000000000061;};
+000000000000000000000066 = {isa = PBXBuildFile; fileRef = 000000000000000000000061;};
+000000000000000000000067 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeinzelWidgets.swift; sourceTree = "<group>";};
+000000000000000000000068 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>";};
+000000000000000000000069 = {isa = PBXGroup; children = (000000000000000000000067,000000000000000000000068,); path = Widgets; sourceTree = "<group>";};
+00000000000000000000006A = {isa = PBXBuildFile; fileRef = 000000000000000000000067;};
+00000000000000000000006B = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = HeinzelWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR;};
+00000000000000000000006C = {isa = PBXBuildFile; fileRef = 00000000000000000000006B; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};};
+00000000000000000000006D = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (00000000000000000000006C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0;};
+00000000000000000000006E = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000064,00000000000000000000006A,); runOnlyForDeploymentPostprocessing = 0;};
+00000000000000000000006F = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000066,); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000070 = {isa = PBXContainerItemProxy; containerPortal = 000000000000000000000001; proxyType = 1; remoteGlobalIDString = 000000000000000000000073; remoteInfo = HeinzelWidgets;};
+000000000000000000000071 = {isa = PBXTargetDependency; platformFilter = ios; target = 000000000000000000000073; targetProxy = 000000000000000000000070;};
+000000000000000000000072 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000074,000000000000000000000075,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+000000000000000000000073 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000072; buildPhases = (00000000000000000000006E,00000000000000000000006F,); buildRules = (); dependencies = (); name = HeinzelWidgets; productName = HeinzelWidgets; productReference = 00000000000000000000006B; productType = "com.apple.product-type.app-extension";};
+000000000000000000000076 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeinzelShortcuts.swift; sourceTree = "<group>";};
+000000000000000000000077 = {isa = PBXBuildFile; fileRef = 000000000000000000000076;};
+000000000000000000000074 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+        APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_STYLE = Automatic; ALWAYS_SEARCH_USER_PATHS = NO;
+        CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+        GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = Widgets/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 18.0; TARGETED_DEVICE_FAMILY = "1,2";
+        PRODUCT_NAME = HeinzelWidgets; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple.widgets;
+        SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+    };};
+000000000000000000000075 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+        APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_STYLE = Automatic; ALWAYS_SEARCH_USER_PATHS = NO;
+        CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+        GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = Widgets/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 18.0; TARGETED_DEVICE_FAMILY = "1,2";
+        PRODUCT_NAME = HeinzelWidgets; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple.widgets;
+        SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-O";
+    };};
 00000000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceNotifications.swift; sourceTree = "<group>";};
 00000000000000000000003C = {isa = PBXBuildFile; fileRef = 00000000000000000000001C;};
 00000000000000000000001B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudio.swift; sourceTree = "<group>";};
@@ -19,11 +59,11 @@
 000000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>";};
 00000000000000000000002C = {isa = PBXBuildFile; fileRef = 000000000000000000000018;};
 000000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Heinzel.app; sourceTree = BUILT_PRODUCTS_DIR;};
-000000000000000000000004 = {isa = PBXGroup; children = (00000000000000000000001C,00000000000000000000001B,00000000000000000000001A,000000000000000000000019,000000000000000000000014,000000000000000000000015,000000000000000000000016,000000000000000000000017,000000000000000000000018,); path = App; sourceTree = "<group>";};
-000000000000000000000005 = {isa = PBXGroup; children = (000000000000000000000006,); name = Products; sourceTree = "<group>";};
-000000000000000000000003 = {isa = PBXGroup; children = (000000000000000000000004,000000000000000000000005,); sourceTree = "<group>";};
-000000000000000000000007 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000003C,00000000000000000000002F,00000000000000000000002E,00000000000000000000002D,000000000000000000000028,000000000000000000000029,00000000000000000000002A,00000000000000000000002B,); runOnlyForDeploymentPostprocessing = 0;};
-000000000000000000000008 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000002C,); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000004 = {isa = PBXGroup; children = (000000000000000000000076,00000000000000000000001C,00000000000000000000001B,00000000000000000000001A,000000000000000000000019,000000000000000000000014,000000000000000000000015,000000000000000000000016,000000000000000000000017,000000000000000000000018,); path = App; sourceTree = "<group>";};
+000000000000000000000005 = {isa = PBXGroup; children = (000000000000000000000006,00000000000000000000006B,); name = Products; sourceTree = "<group>";};
+000000000000000000000003 = {isa = PBXGroup; children = (000000000000000000000004,000000000000000000000062,000000000000000000000069,000000000000000000000005,); sourceTree = "<group>";};
+000000000000000000000007 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000063,000000000000000000000077,00000000000000000000003C,00000000000000000000002F,00000000000000000000002E,00000000000000000000002D,000000000000000000000028,000000000000000000000029,00000000000000000000002A,00000000000000000000002B,); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000008 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000002C,000000000000000000000065,); runOnlyForDeploymentPostprocessing = 0;};
 00000000000000000000000C = {isa = XCBuildConfiguration; name = Debug; buildSettings = {};};
 00000000000000000000000E = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
         PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
@@ -35,7 +75,7 @@
         CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = App/Heinzel.entitlements;
-        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "";
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
     };};
 00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {};};
@@ -49,11 +89,11 @@
         CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = App/Heinzel.entitlements;
-        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "";
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
     };};
 00000000000000000000000A = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000C,00000000000000000000000D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 00000000000000000000000B = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000E,00000000000000000000000F,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
-000000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000007,000000000000000000000008,); buildRules = (); dependencies = (); name = Heinzel; productName = Heinzel; productReference = 000000000000000000000006; productType = "com.apple.product-type.application";};
-000000000000000000000001 = {isa = PBXProject; buildConfigurationList = 00000000000000000000000A; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 000000000000000000000003; productRefGroup = 000000000000000000000005; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000002);};
+000000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000007,000000000000000000000008,00000000000000000000006D,); buildRules = (); dependencies = (000000000000000000000071,); name = Heinzel; productName = Heinzel; productReference = 000000000000000000000006; productType = "com.apple.product-type.application";};
+000000000000000000000001 = {isa = PBXProject; buildConfigurationList = 00000000000000000000000A; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 000000000000000000000003; productRefGroup = 000000000000000000000005; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000002,000000000000000000000073,);};
 }; rootObject = 000000000000000000000001; }
