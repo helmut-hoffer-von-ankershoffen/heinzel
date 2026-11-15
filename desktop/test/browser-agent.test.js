@@ -47,7 +47,7 @@ function fixture() {
       // the page does when a protocol call reaches it.
       const page = { elements: {}, focused: null, at: null, covered: false, text: "Hello page", shot: image(800, 600), ax: [],
         pressed: true, hit: true, clicked: true, blocked: 0, armed: null, on: () => {}, ...defaults };
-      const sent = [];
+      const sent = [], entries = [];
       const wire = { isAttached: () => attached, attach: (version) => { attached = true; sent.push(["attach", version]); },
         detach: () => { attached = false; sent.push(["detach"]); },
         sendCommand: async (method, params) => {
@@ -93,8 +93,16 @@ function fixture() {
         } };
       const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
         close: () => { dead = true; }, getURL: () => url, getTitle: () => "Title", debugger: wire,
-        loadURL: async (target) => { url = target; sent.push(["load", target]); contents.emit("did-navigate"); }, reload: () => { sent.push(["reload"]); contents.emit("did-stop-loading"); },
-        navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+        loadURL: async (target) => {
+          sent.push(["load", target]);
+          if (page.unreachable === target) throw new Error("ERR_NAME_NOT_RESOLVED");
+          url = target; entries.push({ url: target }); contents.emit("did-navigate");
+        },
+        reload: () => { sent.push(["reload"]); contents.emit("did-stop-loading"); },
+        // The tab's history, as Electron keeps it: the last entry is the current one.
+        navigationHistory: { canGoBack: () => entries.length > 1, canGoForward: () => false, getActiveIndex: () => entries.length - 1,
+          getEntryAtIndex: (index) => entries[index], removeEntryAtIndex: (index) => index < entries.length - 1 && entries.splice(index, 1).length === 1,
+          goBack: () => { entries.pop(); url = entries.at(-1).url; sent.push(["back", url]); contents.emit("did-navigate"); contents.emit("did-stop-loading"); } },
         capturePage: async (_rect, options) => { sent.push(["capture", options]); return page.shot; },
         setWebRTCIPHandlingPolicy: () => {}, setWindowOpenHandler: (handler) => { contents.popup = handler; } });
       const view = { webContents: contents, page, sent, setBounds: (bounds) => sent.push(["bounds", bounds]), setVisible: (visible) => sent.push(["visible", visible]) };
@@ -453,6 +461,11 @@ test("the press guard: a release or click that would reach anything but the targ
   for (const type of ["pointerup", "mouseup", "click"]) assert.equal(world.fire(type, [label, button, around, root]), false, type);
   assert.equal(world.run(PAGE_SCRIPTS.CLICKED), true);
   world.run(PAGE_SCRIPTS.CLICK_OVER);
+  // The control is what is armed, not the part of it the ref named: a click on the button beside the span counts.
+  world.run(PAGE_SCRIPTS.ARM_PRESS, label);
+  for (const type of ["mouseup", "click"]) assert.equal(world.fire(type, [button, around, root]), false, type);
+  assert.equal(world.run(PAGE_SCRIPTS.CLICKED), true);
+  world.run(PAGE_SCRIPTS.CLICK_OVER);
   // The frame slid in: the release and the click go to what is around both, or to the root. All of it is stopped
   // and prevented, and the click is reported as a miss.
   world.run(PAGE_SCRIPTS.ARM_PRESS, button);
@@ -499,11 +512,25 @@ test("the engine's listeners are registered for every document before a tab's fi
   assert.deepEqual(steps, ["about:blank", "attach", "Page.enable", "Page.addScriptToEvaluateOnNewDocument", "INSTALL", "https://shop.example.com/"]);
   assert.deepEqual(view.sent.find(([name]) => name === "Page.addScriptToEvaluateOnNewDocument")[1], { source: PAGE_SCRIPTS.INSTALL, worldName: "hz-browser-agent" });
   assert.deepEqual(view.sent.find(([name]) => name === "Page.enable")[1], {});
+  // The empty page is gone from the tab's history once the real page is there: Back has nowhere to go.
+  assert.equal(view.webContents.navigationHistory.getActiveIndex(), 0);
+  assert.equal(view.webContents.navigationHistory.getEntryAtIndex(0).url, "https://shop.example.com/");
+  assert.equal((await f.call(HEINZEL, "navigate", { tab, to: "back" })).url, "https://shop.example.com/");
+  assert(!methods(view).includes("back"));
   // Once per attach, however many calls follow; a blank tab is primed the same way at its first navigation.
   await f.call(HEINZEL, "read", { tab });
   await f.call(HEINZEL, "navigate", { tab, url: "https://shop.example.com/two" });
   assert.equal(view.sent.filter(([name]) => name === "Page.addScriptToEvaluateOnNewDocument").length, 1);
   assert.deepEqual(view.sent.filter(([name]) => name === "load").map(([, url]) => url), ["about:blank", "https://shop.example.com/", "https://shop.example.com/two"]);
+  // Back from the second page leads to the first, never to the empty one.
+  assert.equal((await f.call(HEINZEL, "navigate", { tab, to: "back" })).url, "https://shop.example.com/");
+  assert.equal(view.webContents.navigationHistory.canGoBack(), false);
+  // A first page that cannot be reached leaves the history as it is, and nothing fails over it.
+  f.defaults.unreachable = "https://gone.example.com/";
+  const gone = await f.call(OUTSIDE, "open", { url: "https://gone.example.com/" });
+  delete f.defaults.unreachable;
+  assert.equal(gone.status, "unavailable");
+  assert.equal(f.views.at(-1).webContents.navigationHistory.getEntryAtIndex(0).url, "about:blank");
   // Nothing but the engine's own script into its own world, and no way to answer a page's dialogs.
   const guest = f.controller.agents.find(HEINZEL.id, tab);
   const fits = { source: PAGE_SCRIPTS.INSTALL, worldName: "hz-browser-agent" };
@@ -520,7 +547,7 @@ test("the engine's listeners are registered for every document before a tab's fi
   f.defaults.hang = "Page.enable";
   const slow = await f.call(OTHER, "open", { url: "https://two.example.com/" });
   assert.equal(slow.url, "https://two.example.com/");
-  assert.equal(f.views[1].sent.filter(([name]) => name === "Page.addScriptToEvaluateOnNewDocument").length, 0);
+  assert.equal(f.views.at(-1).sent.filter(([name]) => name === "Page.addScriptToEvaluateOnNewDocument").length, 0);
   assert.equal((await f.call(OTHER, "text", { tab: slow.id })).content, "Hello page");
 });
 

@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Final, Literal
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from heinzel.kernel._errors import HeinzelError
 
@@ -183,12 +183,20 @@ class BrowserBridge:
 class PageImage(BaseModel):
     """A picture of an agent's tab; heads hand `data` to the agent as an image, not as text."""
 
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
     notice: str = WEBSITE_NOTICE
+    """What the picture shows: website content, untrusted data."""
     tab: str
+    """The tab the picture is of."""
     url: str
+    """The address of the page."""
     width: int
+    """The picture's width in pixels."""
     height: int
+    """The picture's height in pixels."""
     media_type: Literal["image/png"] = "image/png"
+    """Always PNG."""
     data: str
     """The PNG, base64."""
 

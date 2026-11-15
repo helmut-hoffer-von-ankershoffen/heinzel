@@ -728,18 +728,26 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
    */
   const prime = async (id, guest) => {
     const state = pageOf(guest);
-    if (!guest.blank || state.primed) return;
+    if (!guest.blank || state.primed) return false;
     const contents = guest.view.webContents;
     await loaded(contents, contents.loadURL("about:blank").catch(() => {}));
     state.primed = true;
     // Attaches, and with that registers the listeners (see `cdp`); within its own limits, and never fatal.
     await quiet(() => cdp(id, guest, "Page.getFrameTree"));
+    return true;
   };
   const load = async (id, guest, url) => {
-    await prime(id, guest);
+    const first = await prime(id, guest);
     guest.blank = false;
     const contents = guest.view.webContents;
     await loaded(contents, contents.loadURL(url).catch(() => { guest.status = "unavailable"; }));
+    // The empty page was only there to get ready: once the real page is the current one, Back must not lead to it.
+    if (first) {
+      try {
+        const history = contents.navigationHistory;
+        if (history.getActiveIndex() > 0 && history.getEntryAtIndex(0)?.url === "about:blank") history.removeEntryAtIndex(0);
+      } catch { /* a history that cannot be trimmed is left as it is */ }
+    }
   };
 
   const run = {
