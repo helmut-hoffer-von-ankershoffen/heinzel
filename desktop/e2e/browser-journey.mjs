@@ -91,7 +91,9 @@ function assertDialogs(click, next, [clickSeconds, nextSeconds]) {
   assert.ok(ran(click), `The click that makes the page open its dialogs must run: ${click}`);
   assert.equal(site.count("dialog:click"), 1, "The button that opens the dialogs must be clicked once.");
   assert.equal(site.starting("dialog:done:"), 1, "The page must get past its alert, its confirm and its prompt: none may leave it waiting.");
-  assert.equal(site.count("dialog:done:false:null"), 1, `The page's confirm must be answered no and its prompt with nothing: ${site.state.events.filter((event) => event.startsWith("dialog:done:"))}`);
+  // alert() returns nothing, confirm() says no, and prompt() gives nothing or is not there at all (Electron throws).
+  const [dialogs] = site.state.events.filter((event) => event.startsWith("dialog:done:"));
+  assert.match(dialogs, /^dialog:done:undefined:false:(null|thrown)$/, `The page's alert must return, its confirm must be answered no and its prompt with nothing: ${dialogs}`);
   assert.ok(clickSeconds < AFTER_DIALOG_SECONDS, `The click that opened the page's dialogs took ${clickSeconds} s.`);
   assert.ok(ran(next), `After the page's dialogs the agent's next call must be answered: ${next}`);
   assert.ok(nextSeconds < AFTER_DIALOG_SECONDS, `After the page's dialogs the agent's next call took ${nextSeconds} s.`);
@@ -144,8 +146,9 @@ const formState = () => withTimeout(app.evaluate(async ({ webContents }, url) =>
     path: location.pathname, banner: document.getElementById("banner").classList.contains("swapped") })`) : null;
 }, SHOP_URL), 15_000, "The guest did not answer.");
 const refused = (text, reason) => typeof text === "string" && text.startsWith("Error:") && (!reason || REASONS[reason].test(text));
-/** An input that was sent and replaced the page before anything could confirm it: `done` false, `navigated` true. */
-const wentOn = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /"done": ?false/.test(text) && /"navigated": ?true/.test(text);
+/** The submit that was sent and replaced the page before anything could confirm it: `done` false, `navigated` true, and the order's page named as where it went. */
+const wentOn = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /"done": ?false/.test(text) && /"navigated": ?true/.test(text) &&
+  text.includes(`${SHOP_URL}order`);
 /** The answer of a click that was pressed and then called off or not confirmed: the only tries that may leave a stray click. */
 const notClicked = (text) => refused(text, "swapped") || refused(text, "unconfirmed");
 const proposed = (text) => typeof text === "string" && text.startsWith("Not run:");

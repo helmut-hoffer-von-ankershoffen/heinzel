@@ -74,11 +74,13 @@ document.querySelector("#press button").addEventListener("mousedown", () => swap
 // A page that opens its own dialogs while the agent acts: none may leave the page or the agent waiting, and none
 // may be answered with a yes that no person gave.
 document.querySelector("[data-watch=dialog]").addEventListener("click", () => {
-  alert("Tea of the week: Assam");
-  const yes = confirm("Read more about it?");
-  const typed = prompt("Your name?");
-  // What the dialogs answered goes with it: nobody was asked, so the confirm must be a no and the prompt empty.
-  tell("dialog:done:" + yes + ":" + typed);
+  // What each dialog answered goes into the report, and one that throws is reported as that: Electron has no
+  // prompt() and throws there. Nobody was asked, so the confirm must be a no and the prompt must give nothing.
+  const answer = (ask) => { try { return String(ask()); } catch (error) { return "thrown"; } };
+  const shown = answer(() => alert("Tea of the week: Assam"));
+  const yes = answer(() => confirm("Read more about it?"));
+  const typed = answer(() => prompt("Your name?"));
+  tell("dialog:done:" + shown + ":" + yes + ":" + typed);
 });
 // The ordinary case on an ordinary page: something of the page's own, here a banner, covers the button on the press.
 document.querySelector("#banner button").addEventListener("mousedown", () => swap("banner"));
