@@ -40,16 +40,31 @@ await access(electronExecutable, constants.X_OK);
 const SHOP_URL = `https://${SHOP}/`;
 const NOT_PUBLIC = ["https://127.0.0.1/", "https://localhost/", `http://${SHOP}/`, "https://192.168.1.10/"];
 const root = await mkdtemp(join(tmpdir(), "hz-browser-journey-"));
-const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electron-profile", "electron-session", "electron-logs", "tmp", "sync", "site"];
+const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electron-profile", "electron-session", "electron-logs", "electron-crashes", "tmp", "sync", "site"];
 let app, electronProcess, ownedPid, site;
 let stopped = false, launchAttempted = false;
+// What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
+const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0 };
 
-const refused = (text) => typeof text === "string" && text.startsWith("Error:");
+// Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
+const REASONS = {
+  address: /public https:\/\/ addresses only|Only public HTTPS addresses/,
+  secret: /password, one-time-code or payment-card field|Only the person may type here/,
+  covered: /Something else covers that element/,
+  swapped: /put something else under the pointer/,
+  stopped: /stopped this agent/,
+  changed: /page changed/i,
+  scope: /\bwrite\b/i,
+};
+const refused = (text, reason) => typeof text === "string" && text.startsWith("Error:") && (!reason || REASONS[reason].test(text));
 const proposed = (text) => typeof text === "string" && text.startsWith("Not run:");
 const ran = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /t-[0-9a-f]{8}/.test(text);
 const tabOf = (text) => /t-[0-9a-f]{8}/.exec(text)?.[0] ?? "";
-const refOf = (text, role, name) =>
-  new RegExp(`- ${role} \\\\?"${name}\\\\?"[^\\[]{0,120}\\[(ref_\\d+)\\]`).exec(text)?.[1] ?? "ref_0";
+function refOf(text, role, name) {
+  const ref = new RegExp(`- ${role} \\\\?"${name}\\\\?"[^\\[]{0,120}\\[(ref_\\d+)\\]`).exec(text)?.[1];
+  assert.ok(ref, `The page that was read has no ${role} named "${name}": ${String(text).slice(0, 300)}`);
+  return ref;
+}
 /** Page events arrive a moment after the input; wait for the ones expected, then give a stray one time to show. */
 async function settled(kind, count) {
   for (let turn = 0; turn < 40 && site.count(kind) < count; turn += 1) await delay(250);
@@ -75,6 +90,33 @@ function api(page, method, path, { query = {}, body } = {}) {
 /** What the person does in the browser panel: the product page's own `hz:browser` call. */
 const panel = (page, request) => page.evaluate((command) => window.heinzelDesktop.browser(command), request);
 const agentTabs = async (page) => (await panel(page, { action: "tabs" })).tabs.filter((tab) => tab.agent);
+const signal = (name) => writeFile(join(root, "sync", name), "done\n", { mode: 0o600 });
+/** Wait until the scripted model says it is at `name`; a turn that ended before that fails with its own reason. */
+async function signalled(name, message, running) {
+  let over = false;
+  running.then(() => { over = true; }, () => { over = true; });
+  for (let turn = 0; turn < 600 && !over; turn += 1) {
+    try { await access(join(root, "sync", name)); return; } catch { await delay(200); }
+  }
+  await running;
+  assert.fail(message);
+}
+const viewportOf = async () => (await guestFacts()).find((fact) => fact.url === SHOP_URL)?.page?.inner ?? null;
+/**
+ * The person opens the browser panel and selects the agent's tab. Until then the tab's view was never visible; what
+ * size the page had before and has after is kept for the run's last line.
+ */
+async function showPanel(page, tab) {
+  found.closed = await viewportOf();
+  await panel(page, { action: "select-tab", tab });
+  await panel(page, { action: "layout", bounds: { x: 300, y: 80, width: 760, height: 640 } });
+  for (let turn = 0; turn < 20; turn += 1) {
+    found.shown = await viewportOf();
+    if (found.shown?.[0] > 0 && found.shown[1] > 0) return;
+    await delay(250);
+  }
+  assert.fail(`The selected agent tab has no size even with the panel open: ${JSON.stringify(found)}`);
+}
 
 /** For a failure report only: every guest page of the shop, asked directly from the main process. */
 function guestFacts() {
@@ -103,9 +145,28 @@ function guestFacts() {
 }
 
 /** What both journeys must have left behind once the agent did the free and the forbidden steps. */
-async function assertInputs(tab) {
+async function assertInputs(tab, race) {
   await settled("press:mousedown", 1);
   assert.equal(site.count("note:click"), 1, "The ordinary button must be clicked once, by a trusted click.");
+  for (const [zone, shown] of [["hover", "hover:swapped"], ["press", "press:swapped"], ["race-a", "race-a:shown"], ["race-b", "race-b:shown"]]) {
+    assert.equal(site.count(`widget-${zone}:ready`), 1, `The ${zone} frame must be loaded, with its listeners.`);
+    const first = site.state.events.indexOf(shown);
+    assert.ok(first < 0 || site.state.events.indexOf(`widget-${zone}:ready`) < first, `The ${zone} frame must have been listening before the page showed it.`);
+  }
+  // The race: the page showed a frame of another site a moment after the pointer arrived. A try either clicked the
+  // button before the frame was there, or was refused; a press that landed in the frame must end without a release
+  // or a click there.
+  for (const answer of race)
+    assert.ok(ran(answer) || refused(answer, "covered") || refused(answer, "swapped") || refused(answer, "changed"), `A raced click must run or be refused as changed: ${answer}`);
+  found.raceShown = site.count("race-a:shown") + site.count("race-b:shown");
+  found.raceInFrame = site.countOf("widget-race-", "pointerdown");
+  found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
+  assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
+  assert.equal(site.countOf("widget-race-", "mouseup") + site.countOf("widget-race-", "click"), 0,
+    "A press that landed in the frame of another site must get no release and no click there.");
+  assert.equal(site.count("document:click"), 1 + found.raceClicks, "No release may become a click anywhere in the page, the page around a button included.");
+  assert.equal(site.count("document:mousedown"), 2 + site.count("race-a:mousedown") + site.count("race-b:mousedown"),
+    "The only presses in the page are the ordinary click, the press answered with a swap and the raced buttons' own.");
   assert.equal(site.count("hover:swapped"), 1, "The page must have slid its frame in when the pointer moved.");
   assert.equal(site.count("hover:mousedown") + site.count("hover:click"), 0, "Nothing may be pressed once a frame covers the target.");
   assert.equal(site.count("widget-hover:mousedown") + site.count("widget-hover:click"), 0, "The covering frame must get no press.");
@@ -141,20 +202,27 @@ async function heinzelJourney(page, origin) {
     return { chat, report: JSON.parse(answer.text) };
   };
 
-  const first = await turn("JOURNEY-TURN-1 Please send the tea order for Mira.");
+  const running = turn("JOURNEY-TURN-1 Please send the tea order for Mira.");
+  running.catch(() => {});  // reported below, by the await
+  await signalled("tab-open", "The Heinzel never opened its tab.", running);
+  const [opened1] = await agentTabs(page);
+  assert.ok(opened1, "The Heinzel's tab must be in the panel's strip.");
+  await showPanel(page, opened1.id);
+  await signal("panel-shown");
+  const first = await running;
   const report = first.report;
   assert.match(report.tabs, /"available": ?true/, `The desktop's bridge never connected: ${report.tabs}`);
-  assert.ok(refused(report.open_not_public), `A tab on a literal address must be refused: ${report.open_not_public}`);
+  assert.ok(refused(report.open_not_public, "address"), `A tab on a literal address must be refused: ${report.open_not_public}`);
   assert.ok(report.read.includes("Add a gift note") && /\[ref_\d+\]/.test(report.read), `The page must be read with refs: ${report.read}`);
-  for (const address of NOT_PUBLIC) assert.ok(refused(report.not_public[address]), `${address} must be refused: ${report.not_public[address]}`);
+  for (const address of NOT_PUBLIC) assert.ok(refused(report.not_public[address], "address"), `${address} must be refused: ${report.not_public[address]}`);
   assert.ok(ran(report.type_name), `Typing a name must run: ${report.type_name}`);
   assert.ok(ran(report.click_note), `An ordinary click must run: ${report.click_note}`);
-  assert.ok(refused(report.type_password), `A password field must be refused: ${report.type_password}`);
-  assert.ok(refused(report.type_card), `A card field must be refused: ${report.type_card}`);
-  assert.ok(refused(report.click_hover_swap), `A covered target must be refused: ${report.click_hover_swap}`);
-  assert.ok(refused(report.click_press_swap), `A target swapped on the press must be refused: ${report.click_press_swap}`);
+  assert.ok(refused(report.type_password, "secret"), `A password field must be refused: ${report.type_password}`);
+  assert.ok(refused(report.type_card, "secret"), `A card field must be refused: ${report.type_card}`);
+  assert.ok(refused(report.click_hover_swap, "covered"), `A covered target must be refused: ${report.click_hover_swap}`);
+  assert.ok(refused(report.click_press_swap, "swapped"), `A target swapped on the press must be refused: ${report.click_press_swap}`);
   assert.ok(proposed(report.send), `Sending the form is a commit and must be proposed: ${report.send}`);
-  await assertInputs(report.tab);
+  await assertInputs(report.tab, report.race);
   const [tab] = await agentTabs(page);
   assert.equal(tab?.id, report.tab);
   assert.equal(tab.agent.kind, "heinzel");
@@ -169,23 +237,25 @@ async function heinzelJourney(page, origin) {
   assert.equal(done.status, "done", `The confirmed click did not run: ${done.result}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
+  assert.equal(site.count("document:click"), 2 + found.raceClicks, "No click besides the ordinary one, the raced buttons' own and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop, while the Heinzel is at work: its next calls are refused and its tabs are gone.
   const second = turn("JOURNEY-TURN-2 Carry on.");
-  await withTimeout((async () => { for (;;) { try { await access(join(root, "sync", "ready-for-stop")); return; } catch { await delay(200); } } })(),
-    120_000, "The Heinzel never reached the point where the person stops it.");
+  second.catch(() => {});  // reported below, by the await
+  await signalled("ready-for-stop", "The Heinzel never reached the point where the person stops it.", second);
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "Before Stop the Heinzel still clicks.");
   await panel(page, { action: "stop-agent", tab: report.tab });
-  await writeFile(join(root, "sync", "stopped"), "stopped\n", { mode: 0o600 });
+  await signal("stopped");
   const after = (await second).report;
   assert.equal(after.stop_seen, true);
   assert.ok(ran(after.click_before_stop), after.click_before_stop);
   for (const step of ["click_after_stop", "read_after_stop", "open_after_stop"])
-    assert.ok(refused(after[step]), `After Stop ${step} must be refused: ${after[step]}`);
+    assert.ok(refused(after[step], "stopped"), `After Stop ${step} must be refused as stopped: ${after[step]}`);
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
+  assert.equal(site.count("document:click"), 3 + found.raceClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
@@ -242,30 +312,36 @@ async function mcpJourney(page, origin) {
   let tabs = "";
   for (let turn = 0; turn < 20 && !/"available": ?true/.test(tabs); turn += 1) { if (turn) await delay(1000); tabs = await agent.call("tabs"); }
   assert.match(tabs, /"available": ?true/, `The desktop's bridge never connected: ${tabs}`);
-  assert.ok(refused(await agent.call("open", { url: NOT_PUBLIC[0] })), "A tab on a literal address must be refused.");
+  assert.ok(refused(await agent.call("open", { url: NOT_PUBLIC[0] }), "address"), "A tab on a literal address must be refused.");
   const tab = tabOf(await agent.call("open", { url: SHOP_URL }));
+  await showPanel(page, tab);
   let read = await agent.call("read", { tab });
   assert.ok(read.includes("Add a gift note") && /\[ref_\d+\]/.test(read), `The page must be read with refs: ${read.slice(0, 300)}`);
   for (const address of NOT_PUBLIC) {
     const answer = await agent.call("navigate", { tab, url: address });
-    assert.ok(refused(answer), `${address} must be refused: ${answer}`);
+    assert.ok(refused(answer, "address"), `${address} must be refused: ${answer}`);
   }
   await reader.start();
   const unscoped = await reader.call("click", { tab, ref: refOf(read, "button", "Add a gift note") });
-  assert.ok(refused(unscoped), `A read token must not click: ${unscoped}`);
+  assert.ok(refused(unscoped, "scope"), `A read token must not click: ${unscoped}`);
   assert.equal(site.count("note:click"), 0);
   const expectRan = async (step, name, args) => { const answer = await agent.call(name, args); assert.ok(ran(answer), `${step} must run: ${answer}`); };
-  const expectRefused = async (step, name, args) => { const answer = await agent.call(name, args); assert.ok(refused(answer), `${step} must be refused: ${answer}`); };
+  const expectRefused = async (step, reason, name, args) => { const answer = await agent.call(name, args); assert.ok(refused(answer, reason), `${step} must be refused (${reason}): ${answer}`); };
   await expectRan("Typing a name", "type", { tab, ref: refOf(read, "textbox", "Name"), text: "Mira" });
   await expectRan("An ordinary click", "click", { tab, ref: refOf(read, "button", "Add a gift note") });
-  await expectRefused("A password field", "type", { tab, ref: refOf(read, "textbox", "Password"), text: "not-a-real-secret" });
-  await expectRefused("A covered target", "click", { tab, ref: refOf(read, "button", "Show delivery times") });
-  await expectRefused("A target swapped on the press", "click", { tab, ref: refOf(read, "button", "Show opening hours") });
+  await expectRefused("A password field", "secret", "type", { tab, ref: refOf(read, "textbox", "Password"), text: "not-a-real-secret" });
+  await expectRefused("A covered target", "covered", "click", { tab, ref: refOf(read, "button", "Show delivery times") });
+  await expectRefused("A target swapped on the press", "swapped", "click", { tab, ref: refOf(read, "button", "Show opening hours") });
+  const race = [];
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    race.push(await agent.call("click", { tab, ref: refOf(read, "button", attempt % 2 ? "Show prices tomorrow" : "Show prices today") }));
+    await delay(800);  // the page takes its frame away again
+  }
   const cardTab = tabOf(await agent.call("open", { url: `${SHOP_URL}card` }));
   const card = await agent.call("read", { tab: cardTab });
-  await expectRefused("A card field", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });
+  await expectRefused("A card field", "secret", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });
   await agent.call("close", { tab: cardTab });
-  await assertInputs(tab);
+  await assertInputs(tab, race);
   const [shown] = await agentTabs(page);
   assert.equal(shown?.id, tab);
   assert.equal(shown.agent.kind, "external");
@@ -292,6 +368,7 @@ async function mcpJourney(page, origin) {
   assert.ok(ran(approved), `The approved commit must run: ${approved}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
+  assert.equal(site.count("document:click"), 2 + found.raceClicks, "No click besides the ordinary one, the raced buttons' own and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop: the agent's calls are refused and its tabs are gone.
@@ -300,11 +377,12 @@ async function mcpJourney(page, origin) {
   await expectRan("A click before Stop", "click", receipt);
   await settled("receipt:click", 1);
   await panel(page, { action: "stop-agent", tab });
-  await expectRefused("A click after Stop", "click", receipt);
-  await expectRefused("A read after Stop", "read", { tab });
-  await expectRefused("A new tab after Stop", "open", { url: SHOP_URL });
+  await expectRefused("A click after Stop", "stopped", "click", receipt);
+  await expectRefused("A read after Stop", "stopped", "read", { tab });
+  await expectRefused("A new tab after Stop", "stopped", "open", { url: SHOP_URL });
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
+  assert.equal(site.count("document:click"), 3 + found.raceClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
@@ -323,7 +401,7 @@ try {
     XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
     XDG_CACHE_HOME: join(root, "cache"), HZ_CONFIG_HOME: join(root, "config"), HZ_DATA_DIR: join(root, "data"),
     HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
-    HZ_NATIVE_TEST_ROOT: root, HZ_CAPABILITIES__AGENT_RUNNER: "journey",
+    HZ_NATIVE_TEST_ROOT: root, HZ_NATIVE_TEST_PUBLIC_MEDIA: "1", HZ_CAPABILITIES__AGENT_RUNNER: "journey",
     HZ_JOURNEY_PROXY: String(site.proxyPort), HZ_JOURNEY_CERT: site.certificate, HZ_JOURNEY_HOSTS: `${SHOP},${WIDGET}`,
     HZ_JOURNEY_SHOP: SHOP, HZ_JOURNEY_SYNC: join(root, "sync"),
   };
@@ -349,9 +427,14 @@ try {
   } catch (error) {
     // What the guest itself says when a step failed: its size, its visibility and what lies at the first button.
     console.error(`Guest facts: ${JSON.stringify(await guestFacts().catch((failed) => String(failed)))}`);
+    console.error(`Found so far: ${JSON.stringify(found)}; page events: ${JSON.stringify(site.state.events)}`);
     throw error;
   }
   assertNothingElseDialled();
+  const kept = async (name) => { try { return await readFile(join(root, name), "utf8"); } catch { return ""; } };
+  assert.notEqual(await kept("proxy-calls"), "", "The product must have configured its guests' network itself; the fixture only answers in its place.");
+  assert.equal(await kept("dialogs"), "", "No native question may have been asked.");
+  assert.equal(await kept("public-media"), "", "Nothing may have been handed to the system's browser.");
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), false,
     "The journey's app must stay hidden.");
   const exited = new Promise((done) => electronProcess.once("exit", (code, signal) => done({ code, signal })));
@@ -360,7 +443,9 @@ try {
   stopped = true;
   assert.equal(result.code, 0, `Electron closed abnormally: ${JSON.stringify(result)}`);
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
-    "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions.");
+    "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
+    `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
+    `Race: the frame was shown in ${found.raceShown} of 8 tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first.`);
 } finally {
   site?.close();
   await cleanupHarness({

@@ -33,7 +33,8 @@ with a write token. It needs the built web app (`uv run --script scripts/web_bui
 and the only site is a fixture on loopback, served to the guest under two made-up public names through a test proxy,
 so nothing reaches the network. It checks reading with refs, typing, an ordinary click, a form submit that waits for
 the person, a click let go when the page swaps its target, refused password and card fields, refused non-public
-addresses, and Stop. It does not use the product's own CONNECT broker, and it confirms through the calls the
+addresses, and Stop. The journey's person selects the agent's tab in the panel before the agent clicks: a tab whose view was never
+visible has no size, and the run's last line says what size it had before and after. It does not use the product's own CONNECT broker, and it confirms through the calls the
 confirmation cards make, not through their pixels.
 
 The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native

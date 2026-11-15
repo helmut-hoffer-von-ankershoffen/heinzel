@@ -31,6 +31,8 @@ SYNC = Path(os.environ.get("HZ_JOURNEY_SYNC", "."))
 PREFIX = "mcp__hz__ui_browser_"
 KEPT = 400
 """How much of each tool result goes into the report."""
+RACE_TRIES = 8
+"""How often the script clicks a button over which the page shows a frame a moment after the pointer arrives."""
 PAGE_KEPT = 4000
 """How much of the page the agent read goes into the report."""
 NOT_PUBLIC = (
@@ -52,9 +54,25 @@ def tab_of(result: str) -> str:
 
 
 def ref_of(page: str, role: str, name: str) -> str:
-    """The ref of the element with this role and name in a page as `ui_browser_read` returns it, or `ref_0`."""
+    """The ref of the element with this role and name in a page as `ui_browser_read` returns it.
+
+    Raises:
+        LookupError: If the page has no such element: the turn fails, so no later refusal passes for the wrong reason.
+    """
     found = re.search(rf'- {role} \\?"{re.escape(name)}\\?"[^\[]{{0,120}}\[(ref_\d+)\]', page)
-    return found.group(1) if found else "ref_0"
+    if not found:
+        msg = f"The page that was read has no {role} named {name!r}."
+        raise LookupError(msg)
+    return found.group(1)
+
+
+def wait_for_the_person(ready: str, done: str) -> bool:
+    """Tell the journey the script is at `ready`, and wait until the person has done their part (`done`)."""
+    (SYNC / ready).write_text("ready\n", encoding="utf-8")
+    deadline = time.monotonic() + 90
+    while not (SYNC / done).exists() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return (SYNC / done).exists()
 
 
 def first_turn() -> Script:
@@ -74,6 +92,7 @@ def first_turn() -> Script:
     report["open_not_public"] = yield "open", {"url": NOT_PUBLIC[0]}
     tab = tab_of((yield "open", {"url": SHOP + "/"}))
     report["tab"] = tab
+    wait_for_the_person("tab-open", "panel-shown")
     page = yield "read", {"tab": tab}
     report["read"] = page
     refused = {}
@@ -86,6 +105,13 @@ def first_turn() -> Script:
     report["type_password"] = yield "type", {"tab": tab, "ref": password, "text": "not-a-real-secret"}
     report["click_hover_swap"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show delivery times")}
     report["click_press_swap"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show opening hours")}
+    race = []
+    for attempt in range(RACE_TRIES):  # the page shows a frame of another site a moment after the pointer arrives
+        name = "Show prices today" if attempt % 2 == 0 else "Show prices tomorrow"
+        answer = yield "click", {"tab": tab, "ref": ref_of(page, "button", name)}
+        race.append(answer)
+        time.sleep(0.8)  # the page takes its frame away again
+    report["race"] = race
     card_tab = tab_of((yield "open", {"url": SHOP + "/card"}))
     card = yield "read", {"tab": card_tab}
     card_number = ref_of(card, "textbox", "Card number")
@@ -109,11 +135,7 @@ def second_turn() -> Script:
     page = yield "read", {"tab": tab}
     receipt = ref_of(page, "button", "Show receipt")
     report["click_before_stop"] = yield "click", {"tab": tab, "ref": receipt}
-    (SYNC / "ready-for-stop").write_text("ready\n", encoding="utf-8")
-    deadline = time.monotonic() + 90
-    while not (SYNC / "stopped").exists() and time.monotonic() < deadline:
-        time.sleep(0.2)
-    report["stop_seen"] = (SYNC / "stopped").exists()
+    report["stop_seen"] = wait_for_the_person("ready-for-stop", "stopped")
     report["click_after_stop"] = yield "click", {"tab": tab, "ref": receipt}
     report["read_after_stop"] = yield "read", {"tab": tab}
     report["open_after_stop"] = yield "open", {"url": SHOP + "/"}
@@ -123,6 +145,8 @@ def second_turn() -> Script:
 
 def shorten(value: object) -> object:
     """A report with every text cut, so it fits a chat answer; the page that was read keeps enough to check it."""
+    if isinstance(value, list):
+        return [shorten(item) for item in value]
     if isinstance(value, dict):
         return {
             key: item[:PAGE_KEPT] if key == "read" and isinstance(item, str) else shorten(item)

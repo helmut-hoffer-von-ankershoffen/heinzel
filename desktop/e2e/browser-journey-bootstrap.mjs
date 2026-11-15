@@ -1,7 +1,8 @@
 // Test-only bootstrap of the browser journey (ADR 0162): the real app, never on anyone's screen, with its guest
 // partition sent to the journey's fixture instead of the network. Everything else is the product's own code.
-import { app, BrowserWindow, session } from "electron";
-import { readFileSync } from "node:fs";
+import { app, BrowserWindow, dialog, session } from "electron";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const proxyPort = Number(process.env.HZ_JOURNEY_PROXY);
 const hosts = new Set(String(process.env.HZ_JOURNEY_HOSTS ?? "").split(",").filter(Boolean));
@@ -10,8 +11,22 @@ if (!Number.isSafeInteger(proxyPort) || proxyPort < 1 || !hosts.size || !process
 const pem = (text) => String(text).replace(/\s+/g, "");
 const trusted = pem(readFileSync(process.env.HZ_JOURNEY_CERT, "utf8"));
 
-// Hidden: no window is shown, focused or raised, and macOS gets no Dock icon and no activation.
+const root = process.env.HZ_NATIVE_TEST_ROOT;
+if (!root) throw new Error("The isolated native test directory is required.");
+app.setPath("crashDumps", join(root, "electron-crashes"));
+const record = (file, line) => appendFileSync(join(root, file), `${line}\n`, { mode: 0o600 });
+// No sheet may appear: a native question is recorded and answered with its cancel button; the journey expects none.
+dialog.showMessageBox = async (...args) => {
+  const options = args.at(-1) ?? {};
+  record("dialogs", String(options.message ?? "dialog").slice(0, 120));
+  return { response: Number.isInteger(options.cancelId) ? options.cancelId : 0, checkboxChecked: false };
+};
+
+// Hidden: no window is shown, focused or raised, and macOS gets no Dock icon and no activation. The product shows a
+// guest only in a focused window, so the never-shown window says it is focused: the journey's person can then select
+// the agent's tab in the panel, which gives that tab's view its size, with nothing on any screen.
 for (const name of ["show", "showInactive", "focus", "moveTop"]) BrowserWindow.prototype[name] = function hidden() {};
+BrowserWindow.prototype.isFocused = function focused() { return true; };
 if (process.platform === "darwin") {
   app.setActivationPolicy("accessory");
   app.dock?.hide();
@@ -26,7 +41,11 @@ session.fromPartition = (partition, options) => {
   if (partition !== "persist:hz-browser" || prepared.has(guest)) return guest;
   prepared.add(guest);
   const setProxy = guest.setProxy.bind(guest);
-  guest.setProxy = () => setProxy({ mode: "fixed_servers", proxyRules: `http://127.0.0.1:${proxyPort}`, proxyBypassRules: "<-loopback>" });
+  const fixture = () => setProxy({ mode: "fixed_servers", proxyRules: `http://127.0.0.1:${proxyPort}`, proxyBypassRules: "<-loopback>" });
+  // From the partition's first moment, and again whenever the product sets its own proxy; each product call is
+  // recorded, so the journey fails if the product stopped configuring its guests' network.
+  void fixture();
+  guest.setProxy = () => { record("proxy-calls", "set"); return fixture(); };
   guest.setCertificateVerifyProc((request, callback) =>
     callback(hosts.has(request.hostname) && pem(request.certificate?.data) === trusted ? 0 : -3));
   return guest;
