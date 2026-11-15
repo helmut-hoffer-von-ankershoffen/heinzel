@@ -894,11 +894,9 @@ def installed_uninstall(selected, environment, change):
     "change",
     [
         "none",
-        "old015-upgrade",
-        "old015-web-migrate",
-        "old015-web-retire",
-        "old015-web-recovery",
-        "old015-web-foreign",
+        # The old015-* cases (upgrade from the published 0.9.15 on its older Python to the Python 3.15 build) are
+        # retired as an unsupported path. Owner, 2026-11-15: "we don't need to support migration from .43 to 3.15 - i
+        # already upgraded all installations". Same-Python upgrade and uninstall cases stay.
         "recovery",
         "calendar",
         "calendar-recovery",
