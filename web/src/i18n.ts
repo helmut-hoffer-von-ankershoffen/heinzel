@@ -284,8 +284,8 @@ const en = {
   "durable.scheduleReview": "Review activation in chat",
   "durable.scheduleActionTitle": "Review this schedule change",
   "durable.heinzelActionsTitle": "Waiting for your Confirm",
-  "durable.heinzelActionsUnavailable": "What this Heinzel proposed couldn't be loaded. Reload to try again.",
-  "durable.heinzelActionFailed": "That didn't go through. Check the card's outcome before you try again.",
+  "durable.heinzelActionsUnavailable": "Couldn't load what this Heinzel proposed. Reload to try.",
+  "durable.heinzelActionFailed": "That didn't go through. Check the card first.",
   "durable.pauseActionTitle": "Review pause of this schedule",
   "durable.resumeActionTitle": "Review resuming this schedule",
   "durable.scheduleReviewStale":

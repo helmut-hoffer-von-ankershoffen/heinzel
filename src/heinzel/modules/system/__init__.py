@@ -149,9 +149,9 @@ def modules(service: SystemService) -> list[ModuleInfo]:
 
 def render_tools(reference: ToolReference) -> RenderableType:
     """The reference as plain text, unwrapped, so it pipes into a file."""
-    from rich.text import Text  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+    from heinzel.modules.system._render import render_tools  # noqa: PLC0415 - CLI presentation is loaded only when rendered
 
-    return Text(reference.text.rstrip("\n"), no_wrap=True, overflow="ignore")
+    return render_tools(reference)
 
 
 @module.operation(render=render_tools)
