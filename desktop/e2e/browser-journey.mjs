@@ -178,7 +178,8 @@ function api(page, method, path, { query = {}, body } = {}) {
   }, { method, path, query, body }), 240_000, `The web API did not answer ${path}.`);
 }
 /** What the person does in the browser panel: the product page's own `hz:browser` call. */
-const panel = (page, request) => page.evaluate((command) => window.heinzelDesktop.browser(command), request);
+const panel = (page, request) => withTimeout(page.evaluate((command) => window.heinzelDesktop.browser(command), request),
+  30_000, `The browser panel did not answer ${request.action}.`);
 const agentTabs = async (page) => (await panel(page, { action: "tabs" })).tabs.filter((tab) => tab.agent);
 const signal = (name) => writeFile(join(root, "sync", name), "done\n", { mode: 0o600 });
 /** Wait until the scripted model says it is at `name`; a turn that ended before that fails with its own reason. */
@@ -361,7 +362,11 @@ async function heinzelJourney(page, origin) {
   assertDialogs(report.click_dialog, report.after_dialog, report.dialog_seconds);
   assert.ok(proposed(report.send), `Sending the form is a commit and must be proposed: ${report.send}`);
   await assertInputs(report.tab, report.race);
-  const [tab] = await agentTabs(page);
+  // The card's tab was closed on the agent's word, leave prompt or not: only the shop's tab is left.
+  assert.ok(ran(report.close_card) && report.close_card.includes(report.card_tab), `Closing the card's tab must run: ${report.close_card}`);
+  const left = await agentTabs(page);
+  assert.deepEqual(left.map((entry) => entry.id), [report.tab], "The card's tab must be gone and the shop's tab must stay.");
+  const [tab] = left;
   assert.equal(tab?.id, report.tab);
   assert.equal(tab.agent.kind, "heinzel");
   assert.equal(tab.url, SHOP_URL, "No refused address may have moved the tab.");
@@ -510,7 +515,9 @@ async function mcpJourney(page, origin) {
   const cardTab = tabOf(await agent.call("open", { url: `${SHOP_URL}card` }));
   const card = await agent.call("read", { tab: cardTab });
   await expectRefused("A card field", "secret", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });
-  await agent.call("close", { tab: cardTab });
+  const closed = await agent.call("close", { tab: cardTab });
+  assert.ok(ran(closed) && closed.includes(cardTab), `Closing the card's tab must run: ${closed}`);
+  assert.deepEqual((await agentTabs(page)).map((entry) => entry.id), [tab], "The card's tab must be gone and the shop's tab must stay.");
   await assertInputs(tab, race);
   const [shown] = await agentTabs(page);
   assert.equal(shown?.id, tab);

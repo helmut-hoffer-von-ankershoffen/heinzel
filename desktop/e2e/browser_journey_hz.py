@@ -126,6 +126,7 @@ def first_turn() -> Script:
     report["after_dialog"] = yield "text", {"tab": tab}
     report["dialog_seconds"] = [round(clicked - began, 2), round(time.monotonic() - clicked, 2)]
     card_tab = tab_of((yield "open", {"url": SHOP + "/card"}))
+    report["card_tab"] = card_tab
     card = yield "read", {"tab": card_tab}
     card_number = ref_of(card, "textbox", "Card number")
     report["type_card"] = yield "type", {"tab": card_tab, "ref": card_number, "text": "4111111111111111"}
