@@ -30,11 +30,13 @@ class NoCliRenderers(importlib.abc.MetaPathFinder):
 guard = NoCliRenderers()
 sys.meta_path.insert(0, guard)
 from heinzel import Settings
-from heinzel.kernel import boot, DaemonOverview
+from heinzel.kernel import boot, discover, DaemonOverview
 from heinzel.heads import cli
 import typer
 kernel = boot(Settings(plugins_enabled=False, update_check=False, auto_update=False))
-assert len(kernel.modules) == 33
+expected = {record.qualname for record in discover(plugins=False)[0]}  # the built-in modules, however many
+assert expected
+assert {record.qualname for record in kernel.modules} == expected
 assert any(record.qualname == 'system.prerequisite' for record in kernel.modules)
 assert 'ui' in typer.main.get_command(cli.build(kernel, ui_only=True)).commands
 from heinzel.heads.web import build
