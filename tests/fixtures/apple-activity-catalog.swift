@@ -41,6 +41,23 @@ import SQLite3
                 try Data().write(to: flag(url, "started"))
                 precondition(ActivityCatalog.clear(url: url).complete)
                 try Data().write(to: flag(url, "done"))
+            } else if mode == "secure-install" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                let installed = ActivityCatalog.installCredential(url: url, expected: expected,
+                    workspaceID: String(repeating: "a", count: 64), generation: UUID().uuidString) {
+                    try! Data().write(to: flag(url, "install-ready"))
+                    waitFor(flag(url, "install-release"))
+                    return true
+                }
+                precondition(installed != nil)
+            } else if mode == "secure-invalidate" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                try Data().write(to: flag(url, "invalidate-started"))
+                let result = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
+                    try! Data().write(to: flag(url, "unexpected-delete")); return true
+                })
+                precondition(!result.revoked)
+                try Data().write(to: flag(url, "invalidate-done"))
             }
             return
         }
@@ -144,6 +161,28 @@ import SQLite3
         try Data().write(to: flag(url, "stale-release"))
         stale.waitUntilExit()
         precondition(stale.terminationStatus == 0 && afterFailure.snapshot() == nil)
+        let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        try JSONEncoder().encode(pending).write(to: flag(url, "activation"))
+        let pendingToken = ActivityCatalog.refreshToken(url: url)!
+        let installer = Process()
+        installer.executableURL = writer.executableURL
+        installer.arguments = [url.path, "secure-install"]
+        try installer.run()
+        waitFor(flag(url, "install-ready"))
+        let invalidator = Process()
+        invalidator.executableURL = writer.executableURL
+        invalidator.arguments = [url.path, "secure-invalidate"]
+        try invalidator.run()
+        waitFor(flag(url, "invalidate-started"))
+        Thread.sleep(forTimeInterval: 0.2)
+        precondition(!FileManager.default.fileExists(atPath: flag(url, "invalidate-done").path))
+        try Data().write(to: flag(url, "install-release"))
+        installer.waitUntilExit(); invalidator.waitUntilExit()
+        precondition(installer.terminationStatus == 0 && invalidator.terminationStatus == 0)
+        precondition(!FileManager.default.fileExists(atPath: flag(url, "unexpected-delete").path))
+        let active = ActivityCatalog.activation(url: url)!
+        precondition(active.credentialGeneration != nil)
+        precondition(!store.publish(scope: active.scope!, generation: "old", snapshot: Data("old".utf8), entries: [], expectedToken: pendingToken))
         print("catalog checks passed")
     }
 }
