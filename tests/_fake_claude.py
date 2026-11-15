@@ -1,4 +1,4 @@
-"""The lines every fake Claude Code CLI starts with: a claude.ai login, a reviewed release and its option contract."""
+"""The lines every fake Claude Code CLI starts with: a claude.ai login, a release and its option contract."""
 
 from heinzel.kernel._claude_code import CONTRACT_OPTIONS
 

@@ -151,7 +151,7 @@ def test_unsupported_caps_and_model_settings_fail_closed_before_process(tmp_path
 
 def test_untrusted_or_stale_admission_and_version_refuse_before_prompt(tmp_path):
     sentinel = tmp_path / "ran"
-    executable = fake_cli(tmp_path, version="1.0.0", extra=f"open({str(sentinel)!r}, 'w').write('ran')")
+    executable = fake_cli(tmp_path, version="unknown", extra=f"open({str(sentinel)!r}, 'w').write('ran')")
     policy = admission()
     message = [ModelRequest(parts=[UserPromptPart(content="secret")])]
     for verifier, current, reason in [
@@ -444,18 +444,19 @@ def _message():
     return [ModelRequest(parts=[UserPromptPart(content="private prompt")])]
 
 
-def test_a_newer_reviewed_release_with_its_real_options_is_admitted(tmp_path):
+@pytest.mark.parametrize("version", ["2.1.311", "2.1.321", "2.2.0", "3.0.0"])
+def test_a_release_with_required_options_is_admitted(tmp_path, version):
     policy = admission()
     verifier = FixtureVerifier()
-    executable = fake_cli(tmp_path, version="2.1.321", help=REAL_2_1_321_OPTIONS)
+    executable = fake_cli(tmp_path, version=version, help=REAL_2_1_321_OPTIONS)
     model = fixture_model(executable, policy, verifier, lambda: policy)
     response = asyncio.run(model.request(_message(), None, parameters()))
     assert isinstance(response.parts[0], ToolCallPart)
-    assert [seen[2] for seen in verifier.seen] == ["2.1.312 to before 2.2.0", "2.1.321"]
+    assert [seen[2] for seen in verifier.seen] == ["Claude Code option contract", version]
 
 
-@pytest.mark.parametrize("version", ["2.1.311", "2.2.0", "3.0.0", "2.1.321-beta", "2.1.0321", "Claude Code"])
-def test_a_release_outside_the_reviewed_range_is_refused_before_the_prompt(tmp_path, version):
+@pytest.mark.parametrize("version", ["2.1.321-beta", "2.1.0321", "Claude Code"])
+def test_an_unrecognizable_release_is_refused_before_the_prompt(tmp_path, version):
     sentinel = tmp_path / "ran"
     executable = fake_cli(tmp_path, version=version, extra=f"open({str(sentinel)!r}, 'w').write('ran')")
     policy = admission()
@@ -463,8 +464,7 @@ def test_a_release_outside_the_reviewed_range_is_refused_before_the_prompt(tmp_p
     with pytest.raises(SubscriptionDeniedError) as error:
         asyncio.run(model.request(_message(), None, parameters()))
     assert error.value.reason == "version-unsupported"
-    action = "Update Claude Code" if version == "2.1.311" else "Update Heinzel"
-    assert str(error.value).endswith(f"{action}, then send the message again.")
+    assert "recognizable version" in str(error.value)
     assert not sentinel.exists()
 
 
@@ -592,7 +592,7 @@ def test_the_access_check_runs_the_same_admission_as_chat(tmp_path):
     assert seen == [["--version"], ["--help"], list(COMMAND_FLAGS)]
     with pytest.raises(SubscriptionDeniedError) as error:
         check_access(executable, lambda command, **_: Outcome(0, "2.2.1 (Claude Code)\n", ""), "Reply OK", 5)
-    assert error.value.reason == "version-unsupported"
+    assert error.value.reason == "contract-unproven"
 
 
 def test_an_option_named_only_in_another_options_description_is_not_proven():

@@ -372,7 +372,7 @@ def test_fake_model_suggests_inert_schedule_in_personal_turn(tmp_path):
         ]
 
 
-def test_the_turn_verifier_binds_the_observed_release_inside_the_reviewed_range(tmp_path):
+def test_the_turn_verifier_binds_the_observed_release(tmp_path):
     from heinzel.modules.heinzel._claude_subscription_model import COMMAND_FLAGS, VERSION, SubscriptionAdmission
     from heinzel.modules.heinzel._user_chat import _ClaudeVerifier
 
@@ -390,8 +390,10 @@ def test_the_turn_verifier_binds_the_observed_release_inside_the_reviewed_range(
     assert admits(turn, "2.1.321")
     assert admits(turn, "2.1.321")
     assert not admits(turn, "2.1.322")  # the release cannot change inside one turn
-    for outside in ("2.1.311", "2.2.0", "2.1.321 (Claude Code)", "latest"):
-        assert not admits(verifier(), outside)
+    for version in ("2.1.311", "2.2.0", "3.0.0"):
+        assert admits(verifier(), version)
+    for invalid in ("2.1.321 (Claude Code)", "latest"):
+        assert not admits(verifier(), invalid)
 
 
 class Questions:
