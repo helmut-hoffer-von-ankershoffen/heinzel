@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SQLite3
 import Darwin
 
@@ -27,6 +28,22 @@ final class ActivityCatalog {
     private struct Authority: Codable, Equatable {
         let scope: String
         let generation: String
+        var activation: Activation? = nil
+        var revoked: Bool? = nil
+    }
+
+    /// Non-secret authority shared by the app and extension. Secrets stay in Keychain.
+    struct Activation: Codable, Equatable {
+        let id: String
+        let endpoint: String
+        let workspaceID: String?
+        let credentialGeneration: String?
+
+        var scope: String? {
+            guard let workspaceID, credentialGeneration != nil else { return nil }
+            let input = Data((endpoint + "\n" + workspaceID).utf8)
+            return SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
+        }
     }
     private struct WriterToken: Codable, Equatable {
         let authority: Data
@@ -93,6 +110,71 @@ final class ActivityCatalog {
         return current == authority
     }
 
+    private func authority() -> Authority? {
+        guard let data = try? Data(contentsOf: authorityURL) else { return nil }
+        return try? JSONDecoder().decode(Authority.self, from: data)
+    }
+
+    static func activation(url: URL) -> Activation? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else { return nil }
+            return current.activation
+        }
+    }
+
+    /// Start a new activation by revoking the old publication before credential work.
+    /// The endpoint must be canonicalized and transport-validated by the caller.
+    static func activate(url: URL, endpoint: String) -> Activation? {
+        guard let parts = URLComponents(string: endpoint), parts.scheme == "https",
+              let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
+              parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
+              parts.port.map({ (1...65535).contains($0) }) ?? true else { return nil }
+        return withWriterLock(url: url, failure: nil) {
+            let activation = Activation(id: UUID().uuidString, endpoint: endpoint,
+                                        workspaceID: nil, credentialGeneration: nil)
+            let next = Authority(scope: "", generation: UUID().uuidString, activation: activation)
+            guard let data = try? JSONEncoder().encode(next), writeAuthority(data, authorityURL(for: url)) else { return nil }
+            return activation
+        }
+    }
+
+    /// Install while fenced against switch/forget. A failed authority write leaves
+    /// an unusable orphan in Keychain; no secret is put in the shared container.
+    static func installCredential(url: URL, expected: Activation, workspaceID: String,
+                                  generation: String, install: () -> Bool) -> Activation? {
+        guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
+              expected.workspaceID == nil || expected.workspaceID == workspaceID,
+              UUID(uuidString: generation) != nil else { return nil }
+        return withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.activation == expected, install() else { return nil }
+            let next = Activation(id: expected.id, endpoint: expected.endpoint,
+                                  workspaceID: workspaceID, credentialGeneration: generation)
+            let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
+            guard let encoded = try? JSONEncoder().encode(authority),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return nil }
+            return next
+        }
+    }
+
+    /// Revoke before attempting noninteractive Keychain deletion; a stale failure
+    /// cannot invalidate a later activation or replacement credential.
+    static func invalidate(url: URL, expected: Activation, deleteCredential: () -> Bool) -> ClearResult {
+        withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.activation == expected else { return ClearResult(revoked: false, purged: false) }
+            let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true)
+            guard let encoded = try? JSONEncoder().encode(tombstone),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            let deleted = deleteCredential()
+            let purged = ActivityCatalog(url: url)?.purge() ?? false
+            return ClearResult(revoked: true, purged: deleted && purged)
+        }
+    }
+
     init?(url: URL) {
         databaseURL = url
         authorityURL = Self.authorityURL(for: url)
@@ -138,8 +220,14 @@ final class ActivityCatalog {
         guard run("BEGIN IMMEDIATE") else { return false }
         var committed = false
         defer { if !committed { _ = run("ROLLBACK") } }
-        let token = try? JSONDecoder().decode(WriterToken.self, from: expectedToken)
-        let current = token.flatMap { try? JSONDecoder().decode(Authority.self, from: $0.authority) }?.generation ?? ""
+        guard let token = try? JSONDecoder().decode(WriterToken.self, from: expectedToken) else { return false }
+        let previous = try? JSONDecoder().decode(Authority.self, from: token.authority)
+        guard token.authority.isEmpty || previous != nil else { return false }
+        guard previous?.revoked != true else { return false }
+        if let activation = previous?.activation {
+            guard let boundScope = activation.scope, boundScope == scope else { return false }
+        }
+        let current = previous?.generation ?? ""
         guard run("INSERT OR IGNORE INTO snapshots_v2 SELECT scope, generation, data FROM snapshot"),
               run("INSERT OR IGNORE INTO catalog_v3 SELECT snapshot.generation, catalog_v2.id, catalog_v2.name, catalog_v2.state, catalog_v2.activity, catalog_v2.asks, catalog_v2.approved, catalog_v2.ordinal FROM catalog_v2 CROSS JOIN snapshot"),
               let cleanItems = prepare("DELETE FROM catalog_v3 WHERE generation != ?"),
@@ -169,7 +257,7 @@ final class ActivityCatalog {
         guard sqlite3_step(statement) == SQLITE_DONE, run("COMMIT") else { return false }
         committed = true
         guard matches(expectedToken) else { return false }
-        guard let authority = try? JSONEncoder().encode(Authority(scope: scope, generation: generation)) else { return false }
+        guard let authority = try? JSONEncoder().encode(Authority(scope: scope, generation: generation, activation: previous?.activation)) else { return false }
         guard write(authority, authorityURL) else { return false }
         _ = run("DELETE FROM catalog_v2")
         _ = run("DELETE FROM snapshot")
@@ -215,8 +303,8 @@ final class ActivityCatalog {
     }
 
     func search(scope: String, generation: String, query: String = "", offset: Int = 0, limit: Int = 50) -> [CatalogHeinzel] {
-        let authority = Authority(scope: scope, generation: generation)
-        guard authorized(authority) else { return [] }
+        guard let authority = authority(), authority.scope == scope, authority.generation == generation,
+              authorized(authority) else { return [] }
         guard let statement = prepare("SELECT id, name, state, activity, asks, approved FROM catalog_v3 WHERE EXISTS (SELECT 1 FROM snapshots_v2 WHERE scope=? AND generation=?) AND generation=? AND (name LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\') ORDER BY name COLLATE NOCASE, id LIMIT ? OFFSET ?") else { return [] }
         defer { sqlite3_finalize(statement) }
         bind(scope, to: statement, at: 1)
@@ -232,8 +320,8 @@ final class ActivityCatalog {
     }
 
     func find(scope: String, generation: String, id: String) -> CatalogHeinzel? {
-        let authority = Authority(scope: scope, generation: generation)
-        guard authorized(authority) else { return nil }
+        guard let authority = authority(), authority.scope == scope, authority.generation == generation,
+              authorized(authority) else { return nil }
         guard let statement = prepare("SELECT id, name, state, activity, asks, approved FROM catalog_v3 WHERE id=? AND EXISTS (SELECT 1 FROM snapshots_v2 WHERE scope=? AND generation=?) AND generation=?") else { return nil }
         defer { sqlite3_finalize(statement) }
         bind(id, to: statement, at: 1); bind(scope, to: statement, at: 2)

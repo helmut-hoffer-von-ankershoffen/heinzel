@@ -52,6 +52,40 @@ struct WidgetStatusTests {
                                               workspaceScope: scope, expectedToken: token, catalogOverride: unsafeCatalog))
         precondition(try! Data(contentsOf: target) == Data("untouched".utf8))
         precondition(!ActivityCatalog.clear(url: unsafeURL).complete)
+        let oldToken = ActivityCatalog.refreshToken(url: url)!
+        let activation = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        precondition(catalog.snapshot() == nil)
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: oldToken, catalogOverride: catalog))
+        let pendingToken = ActivityCatalog.refreshToken(url: url)!
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: pendingToken, catalogOverride: catalog))
+        let workspace = String(repeating: "a", count: 64)
+        let bound = ActivityCatalog.installCredential(url: url, expected: activation, workspaceID: workspace,
+                                                      generation: UUID().uuidString, install: { true })!
+        precondition(ActivityCatalog.activation(url: url) == bound)
+        let boundToken = ActivityCatalog.refreshToken(url: url)!
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: boundToken, catalogOverride: catalog))
+        precondition(ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                             workspaceScope: bound.scope!, expectedToken: boundToken, catalogOverride: catalog))
+        let staleWriter = ActivityCatalog.refreshToken(url: url)!
+        let result = ActivityCatalog.invalidate(url: url, expected: bound, deleteCredential: { false })
+        precondition(result.revoked && !result.complete && catalog.snapshot() == nil)
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: bound.scope!, expectedToken: staleWriter, catalogOverride: catalog))
+        let revokedToken = ActivityCatalog.refreshToken(url: url)!
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: bound.scope!, expectedToken: revokedToken, catalogOverride: catalog))
+        let replacement = ActivityCatalog.activate(url: url, endpoint: "https://other.test")!
+        var staleDeleteCalled = false
+        let stale = ActivityCatalog.invalidate(url: url, expected: bound, deleteCredential: { staleDeleteCalled = true; return true })
+        precondition(!stale.revoked && !staleDeleteCalled && ActivityCatalog.activation(url: url) == replacement)
+        var staleInstallCalled = false
+        precondition(ActivityCatalog.installCredential(url: url, expected: activation, workspaceID: workspace,
+                    generation: UUID().uuidString, install: { staleInstallCalled = true; return true }) == nil)
+        precondition(!staleInstallCalled)
+        precondition(ActivityCatalog.activate(url: url, endpoint: "http://example.test") == nil)
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")
     }
 }
