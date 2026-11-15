@@ -286,6 +286,10 @@ struct ConnectionView: View {
     @State private var draftRevision = 0
     @State private var checkedDraft: URL?
     @State private var draftIssue: WorkspaceProblem?
+    #if os(iOS)
+    @State private var manualDraftProbe: DraftProbe?
+    @State private var refreshingConnection = false
+    #endif
 
     #if os(macOS)
     @State private var connectionMenuIntent = MacConnectionIntent()
@@ -698,6 +702,9 @@ struct ConnectionView: View {
         }
         .task(id: draftProbe) {
             guard let probe = draftProbe else { return }
+            #if os(iOS)
+            guard manualDraftProbe != probe else { return }
+            #endif
             let origin = probe.origin
             let session = Endpoint.probeSession()
             defer { session.invalidateAndCancel() }
@@ -1044,6 +1051,9 @@ struct ConnectionView: View {
                     connectionSheetFooterHeight = height
                 }
         }
+        #if os(iOS)
+        .refreshable { await refreshConnectionStatus(for: endpoint) }
+        #endif
         #if os(macOS)
         .frame(width: 460, height: connectionSheetHeight)
         #endif
@@ -1301,6 +1311,12 @@ struct ConnectionView: View {
             .padding(24)
             .frame(maxWidth: .infinity)
         }
+        #if os(iOS)
+        .refreshable {
+            guard !loading, let endpoint else { return }
+            await refreshConnectionStatus(for: endpoint)
+        }
+        #endif
         .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.colorScheme, .light)
@@ -1451,6 +1467,7 @@ struct ConnectionView: View {
         }
         #if os(iOS)
         .scrollDismissesKeyboard(.interactively)
+        .refreshable { await refreshSetupStatus() }
         #endif
         .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxHeight: .infinity)
@@ -1732,6 +1749,39 @@ struct ConnectionView: View {
         loadingWorkspace = true
         loadRevision += 1
     }
+
+    #if os(iOS)
+    private func refreshSetupStatus() async {
+        refreshSyncedWorkspaces()
+        guard let origin = draftOrigin, !connecting else { return }
+        draftRevision += 1
+        let probe = DraftProbe(origin: origin, revision: draftRevision)
+        manualDraftProbe = probe
+        checkedDraft = nil
+        defer { if manualDraftProbe == probe { manualDraftProbe = nil } }
+        let session = Endpoint.probeSession()
+        defer { session.invalidateAndCancel() }
+        let issue = await Endpoint.connectionIssue(at: origin, using: session)
+        guard !Task.isCancelled, draftProbe == probe else { return }
+        draftIssue = issue
+        checkedDraft = origin
+        AccessibilityNotification.Announcement(issue?.title ?? "Workspace reachable").post()
+    }
+
+    private func refreshConnectionStatus(for target: Endpoint) async {
+        guard !refreshingConnection else { return }
+        refreshingConnection = true
+        defer { refreshingConnection = false }
+        let session = Endpoint.probeSession()
+        defer { session.invalidateAndCancel() }
+        let issue = await Endpoint.connectionIssue(at: target.origin, using: session)
+        guard !Task.isCancelled, endpoint == target, monitoredOrigin == target.origin else { return }
+        connectionIssue = issue
+        verifiedConnectionOrigin = issue == nil ? target.origin : nil
+        if issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
+        AccessibilityNotification.Announcement(issue?.title ?? "Workspace reachable").post()
+    }
+    #endif
 
     private func watchConnection(to origin: URL) async {
         let session = Endpoint.probeSession()
@@ -2156,6 +2206,12 @@ private struct ConnectionHelp: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
         }
+        #if os(iOS)
+        .refreshable {
+            guard !checking && !testingAudio && !askingPermission else { return }
+            await runDiagnostics()
+        }
+        #endif
         .safeAreaInset(edge: .top, spacing: 0) { diagnosticsHeader }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ConnectionFooter(showTagline: true).background(Color("StartupBackground"))
