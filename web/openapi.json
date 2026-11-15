@@ -20777,6 +20777,39 @@
         "title": "ToolActivity",
         "type": "object"
       },
+      "ToolReference": {
+        "description": "The reference, rendered.",
+        "properties": {
+          "count": {
+            "description": "How many operations it describes.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "format": {
+            "description": "The format of `text`.",
+            "enum": [
+              "text",
+              "markdown",
+              "yaml",
+              "json"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "text": {
+            "description": "The reference in that format.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "count",
+          "text"
+        ],
+        "title": "ToolReference",
+        "type": "object"
+      },
       "TurnLevel": {
         "additionalProperties": false,
         "description": "What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen.",
@@ -33974,6 +34007,98 @@
           }
         },
         "summary": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/tools": {
+      "get": {
+        "description": "List every operation and tool with its heads, parameters and result, in four formats.",
+        "operationId": "system_tools",
+        "parameters": [
+          {
+            "description": "How to write the list; the CLI's own `--format json` wraps the whole result instead.",
+            "in": "query",
+            "name": "output",
+            "required": false,
+            "schema": {
+              "default": "text",
+              "description": "How to write the list; the CLI's own `--format json` wraps the whole result instead.",
+              "enum": [
+                "text",
+                "markdown",
+                "yaml",
+                "json"
+              ],
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only what this head exposes; its input schemas too.",
+            "in": "query",
+            "name": "head",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Only what this head exposes; its input schemas too.",
+              "enum": [
+                "all",
+                "cli",
+                "mcp",
+                "rest",
+                "web"
+              ],
+              "title": "Head",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only these modules and the ones under them, e.g. `system.config`.",
+            "in": "query",
+            "name": "module",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only these modules and the ones under them, e.g. `system.config`.",
+              "title": "Module"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List every operation and tool with its heads, parameters and result, in four formats.",
         "tags": [
           "system"
         ]

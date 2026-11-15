@@ -2908,6 +2908,155 @@ Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[
 }
 ```
 
+## `system_bookmark_edit`
+
+Rename a bookmark or folder, or change a bookmark's address.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "entry": {
+      "description": "The entry's id, as `hz system bookmark list` shows it.",
+      "title": "Entry",
+      "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The new name.",
+      "title": "Title"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The new https:// address of a bookmark.",
+      "title": "Url"
+    }
+  },
+  "required": [
+    "entry"
+  ],
+  "title": "system_bookmark_editArguments",
+  "type": "object"
+}
+```
+
+## `system_bookmark_move`
+
+Move a bookmark or folder into another folder or to another place in its own.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "entry": {
+      "description": "The entry's id, as `hz system bookmark list` shows it.",
+      "title": "Entry",
+      "type": "string"
+    },
+    "parent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The folder's id to put it in; the top level when left out.",
+      "title": "Parent"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The id of the entry in that folder to put it before; else last.",
+      "title": "Before"
+    }
+  },
+  "required": [
+    "entry"
+  ],
+  "title": "system_bookmark_moveArguments",
+  "type": "object"
+}
+```
+
+## `system_bookmark_remove`
+
+Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "entry": {
+      "description": "The entry's id, as `hz system bookmark list` shows it.",
+      "title": "Entry",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entry"
+  ],
+  "title": "system_bookmark_removeArguments",
+  "type": "object"
+}
+```
+
+## `system_bookmark_restore`
+
+Bring back a removed bookmark or folder to where it was.
+
+Module `system.bookmark`. Changes state. Result: `BookmarkList {bookmarks: list[Bookmark], favicons: dict[string, string], restorable: list[string], changed: string \| null}`.
+
+```json
+{
+  "properties": {
+    "entry": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The removed entry's id; the latest removal when left out.",
+      "title": "Entry"
+    }
+  },
+  "title": "system_bookmark_restoreArguments",
+  "type": "object"
+}
+```
+
 ## `system_capability_list`
 
 List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.

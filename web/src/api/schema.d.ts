@@ -4475,6 +4475,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every operation and tool with its heads, parameters and result, in four formats.
+         * @description List every operation and tool with its heads, parameters and result, in four formats.
+         */
+        get: operations["system_tools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/ui/actions": {
         parameters: {
             query?: never;
@@ -16849,6 +16869,28 @@ export interface components {
             turn_id: string;
         };
         /**
+         * ToolReference
+         * @description The reference, rendered.
+         */
+        ToolReference: {
+            /**
+             * Count
+             * @description How many operations it describes.
+             */
+            count: number;
+            /**
+             * Format
+             * @description The format of `text`.
+             * @enum {string}
+             */
+            format: "text" | "markdown" | "yaml" | "json";
+            /**
+             * Text
+             * @description The reference in that format.
+             */
+            text: string;
+        };
+        /**
          * TurnLevel
          * @description What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen.
          */
@@ -18803,6 +18845,7 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaToolActivity = components['schemas']['ToolActivity'];
+export type SchemaToolReference = components['schemas']['ToolReference'];
 export type SchemaTurnLevel = components['schemas']['TurnLevel'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
@@ -25527,6 +25570,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_tools: {
+        parameters: {
+            query?: {
+                /** @description How to write the list; the CLI's own `--format json` wraps the whole result instead. */
+                output?: "text" | "markdown" | "yaml" | "json";
+                /** @description Only what this head exposes; its input schemas too. */
+                head?: "all" | "cli" | "mcp" | "rest" | "web";
+                /** @description Only these modules and the ones under them, e.g. `system.config`. */
+                module?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolReference"];
                 };
             };
             /** @description Validation Error */
