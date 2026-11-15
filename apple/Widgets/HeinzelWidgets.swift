@@ -35,40 +35,41 @@ private struct WritePromptWidget: Widget {
 }
 
 private struct WritePromptWidgetView: View {
-    @Environment(\.widgetFamily) private var family
-    @Environment(\.widgetRenderingMode) private var renderingMode
-    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        WidgetLauncher(title: "Write a prompt", detail: "Choose a Heinzel, then write and review.",
+                       symbol: "square.and.pencil")
+            .paperWidget()
+            .accessibilityHint("Opens the app. Nothing is sent until you review and send your prompt.")
+    }
+}
+
+/// Launchers explain the action instead of repeating the app's name and logo.
+private struct WidgetLauncher: View {
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
+    let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "square.and.pencil")
-                .font(.system(size: 25, weight: .medium))
-                .widgetAccentable()
-            Spacer(minLength: 2)
-            Text("Write a Prompt")
-                .font(.system(.headline, design: .serif))
-            Text(family == .systemMedium ? "Choose a Heinzel, write, then send." : "Choose a Heinzel")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.caption.weight(.semibold))
-            }
+        ViewThatFits(in: .vertical) {
+            content(showDetail: true)
+            content(showDetail: false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .foregroundStyle(promptInk)
-        .containerBackground(for: .widget) {
-            colorScheme == .dark ? Color(red: 0.08, green: 0.14, blue: 0.12) : Color(red: 0.97, green: 0.95, blue: 0.90)
-        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Write a prompt. Opens Heinzel to choose a recipient and review before sending.")
     }
 
-    private var promptInk: Color {
-        guard renderingMode == .fullColor else { return .primary }
-        return colorScheme == .dark
-            ? Color(red: 0.94, green: 0.93, blue: 0.87)
-            : Color(red: 0.15, green: 0.23, blue: 0.20)
+    private func content(showDetail: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .widgetAccentable()
+                .accessibilityHidden(true)
+            Text(title).font(.headline).widgetAccentable()
+            if showDetail {
+                Text(detail).font(.subheadline)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -139,40 +140,32 @@ private struct WorkspaceWidgetView: View {
         #endif
     }
 
+    @ViewBuilder
     private var homeWidget: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                CrewMark(width: 50, height: 48)
-                Text("Heinzel")
-                    .font(.system(.title2, design: .serif, weight: .bold))
-                    .widgetAccentable()
-                if family == .systemSmall {
-                    Label("Open workspace", systemImage: "arrow.up.right")
-                        .font(.caption.weight(.medium))
-                }
+        if family == .systemMedium {
+            VStack(spacing: 8) {
+                action("Open workspace", symbol: workspaceSymbol, route: .workspace)
+                action("Connection help", symbol: helpSymbol, route: .connectionHelp)
             }
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            if family == .systemMedium {
-                Spacer(minLength: 0)
-                VStack(spacing: 8) {
-                    action("Workspace", symbol: workspaceSymbol, route: .workspace)
-                    action("Connection Help", symbol: helpSymbol, route: .connectionHelp)
-                }
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            WidgetLauncher(title: "Open workspace", detail: "Your Heinzels and conversations", symbol: workspaceSymbol)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private func action(_ name: LocalizedStringKey, symbol: String, route: NativeRoute) -> some View {
         Link(destination: route.url) {
-            Label(name, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                .padding(.horizontal, 10)
-                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            HStack(spacing: 10) {
+                Image(systemName: symbol).accessibilityHidden(true)
+                Text(name)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
+            }
+            .font(.headline)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }
@@ -249,7 +242,7 @@ private struct ActivityWidget: Widget {
                 .paperWidget()
         }
         .configurationDisplayName("Active Heinzels")
-        .description("See how many Heinzels are awake or waiting for attention in your workspace.")
+        .description("See Heinzels needing attention first, with statuses and the snapshot age.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -257,8 +250,6 @@ private struct ActivityWidget: Widget {
 private struct ActivityWidgetView: View {
     let entry: ActivityEntry
     @Environment(\.redactionReasons) private var redaction
-    @Environment(\.widgetFamily) private var family
-
     var body: some View {
         if entry.loading || !redaction.isEmpty {
             WidgetPlaceholder(title: "Active Heinzels", loading: entry.loading)
@@ -423,72 +414,63 @@ private struct PinnedHeinzelView: View {
     var body: some View {
         Group {
             if entry.loading || !redaction.isEmpty {
-                WidgetPlaceholder(title: "Heinzel Status", loading: entry.loading)
+                WidgetPlaceholder(title: "Heinzel status", loading: entry.loading)
             } else if let item = entry.heinzel {
-                if family == .systemMedium {
-                    HStack(spacing: 12) {
-                        identity(item, size: 55)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Divider()
-                        details(item)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        identity(item, size: 43)
-                        details(item)
-                    }
+                ViewThatFits(in: .vertical) {
+                    status(item, detailLimit: 2)
+                    status(item, detailLimit: 1)
+                    status(item, detailLimit: 0)
                 }
+                .privacySensitive()
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    CrewMark(width: 36, height: 34)
-                    Text(entry.configured ? "Heinzel unavailable" : "Choose a Heinzel")
-                        .font(.system(.headline, design: .serif))
-                    Text(entry.configured ? "Open the picker" : "Touch and hold to edit")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                WidgetLauncher(title: entry.configured ? "Heinzel unavailable" : "Choose a Heinzel",
+                               detail: entry.configured ? "Open the picker" : "Edit this widget to pin a Heinzel",
+                               symbol: "person.crop.circle.badge.questionmark")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(entry.heinzel == nil ? "Opens the Heinzel picker" : "Opens this Heinzel’s chat")
+        .accessibilityHint(entry.workspaceScope == nil || entry.heinzel == nil
+                           ? "Opens the Heinzel picker" : "Opens this Heinzel’s chat")
     }
 
-    private func identity(_ item: WidgetHeinzel, size: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HeinzelPortrait(item: item, size: size)
-            Text(item.name)
-                .font(.system(.headline, design: .serif))
-                .lineLimit(1)
-                .widgetAccentable()
-        }
-        .privacySensitive()
-    }
-
-    private func details(_ item: WidgetHeinzel) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if entry.fresh {
-                HeinzelStatus(item: item, font: .subheadline.weight(.semibold))
-                if let asks = item.asks, family == .systemMedium || asks > 0 || entry.nextWake == nil {
-                    Label(asks == 1 ? "1 open ask" : "\(asks) open asks", systemImage: "questionmark.bubble")
-                }
-                if let wake = entry.nextWake, family == .systemMedium || (item.asks ?? 0) == 0 {
-                    if Calendar.current.isDate(wake, inSameDayAs: entry.date) {
-                        Label("Scheduled \(wake, style: .time)", systemImage: "clock")
-                    } else {
-                        Label("Scheduled \(wake.formatted(.dateTime.weekday(.abbreviated).hour().minute()))",
-                              systemImage: "clock")
-                    }
-                } else if family == .systemMedium, let approved = item.lastApproved, approved <= entry.date.timeIntervalSince1970 {
-                    Text("Approved \(Date(timeIntervalSince1970: approved), style: .relative) ago")
-                }
-            } else {
-                WidgetRefresh(updatedAt: entry.updatedAt)
+    private func status(_ item: WidgetHeinzel, detailLimit: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                HeinzelPortrait(item: item, size: family == .systemMedium ? 40 : 30)
+                Text(item.name).font(.headline).lineLimit(2).widgetAccentable()
+            }
+            HeinzelStatus(item: item, font: .subheadline.weight(.medium))
+                .lineLimit(2)
+                .accessibilityLabel(entry.fresh ? item.status : "Last known: " + item.status)
+            if detailLimit > 0, entry.fresh {
+                details(item, limit: detailLimit)
+            }
+            if let updatedAt = entry.updatedAt {
+                SnapshotTime(updatedAt: updatedAt, fresh: entry.fresh)
             }
         }
-        .font(.caption2)
-        .privacySensitive()
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func details(_ item: WidgetHeinzel, limit: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let asks = item.asks, asks > 0 {
+                Label(asks == 1 ? "1 open ask" : "\(asks) open asks", systemImage: "questionmark.bubble")
+            }
+            if let wake = entry.nextWake, (family == .systemMedium && limit > 1) || (item.asks ?? 0) == 0 {
+                if Calendar.current.isDate(wake, inSameDayAs: entry.date) {
+                    Label("Scheduled \(wake, style: .time)", systemImage: "clock")
+                } else {
+                    Label("Scheduled \(wake.formatted(.dateTime.weekday(.abbreviated).hour().minute()))",
+                          systemImage: "clock")
+                }
+            } else if family == .systemMedium, limit > 1, let approved = item.lastApproved, approved <= entry.date.timeIntervalSince1970 {
+                Text("Approved \(Date(timeIntervalSince1970: approved), style: .relative) ago")
+            }
+        }
+        .font(.subheadline)
+        .lineLimit(1)
     }
 }
 
@@ -524,13 +506,7 @@ private struct HeinzelStatus: View {
 private struct HeinzelChooserWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "HeinzelChooser", provider: ShortcutProvider()) { _ in
-            VStack(alignment: .leading, spacing: 8) {
-                CrewMark(width: 54, height: 48)
-                Label("Choose a Heinzel", systemImage: "arrow.up.right")
-                    .font(.system(.headline, design: .serif))
-                    .widgetAccentable()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            WidgetLauncher(title: "Choose a Heinzel", detail: "Open a conversation", symbol: "bubble.left.and.bubble.right")
             .widgetURL(NativeRoute.chooseHeinzel.url)
             .paperWidget()
         }
@@ -548,7 +524,7 @@ private struct HeinzelRosterWidget: Widget {
                 .paperWidget()
         }
         .configurationDisplayName("Heinzel Roster")
-        .description("See your Heinzels’ current status. Tap a name to open that chat.")
+        .description("See your Heinzels’ last reported statuses and snapshot age. Tap a name to open that chat.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -630,7 +606,7 @@ private struct HeinzelRosterView: View {
             .contentShape(Rectangle())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(item.name), \(entry.fresh ? item.status : "last known: " + item.status)")
-            .accessibilityHint("Opens this Heinzel’s chat")
+            .accessibilityHint(scope == nil ? "Opens the Heinzel picker" : "Opens this Heinzel’s chat")
         }
         .privacySensitive()
     }
@@ -654,7 +630,6 @@ private struct WidgetPlaceholder: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            CrewMark(width: 36, height: 34)
             Text(title)
                 .font(.system(.headline, design: .serif))
                 .widgetAccentable()
