@@ -111,6 +111,22 @@ struct WidgetStatusTests {
         let missingAuthority = ActivityCatalog.refreshToken(url: url)!
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: missingAuthority, catalogOverride: catalog))
+        let rotationURL = directory.appendingPathComponent("rotation.sqlite")
+        let initial = ActivityCatalog.activate(url: rotationURL, endpoint: "https://example.test")!
+        let g1 = UUID().uuidString, g2 = UUID().uuidString
+        let first = ActivityCatalog.installCredential(url: rotationURL, expected: initial, workspaceID: workspace,
+                                                      generation: g1, install: { true })!
+        let second = ActivityCatalog.installCredential(url: rotationURL, expected: first, workspaceID: workspace,
+                                                       generation: g2, install: { true })!
+        let third = ActivityCatalog.installCredential(url: rotationURL, expected: second, workspaceID: workspace,
+                                                      generation: g1, install: { true })!
+        precondition(third.id != first.id)
+        var oldCallback = false
+        precondition(!ActivityCatalog.invalidate(url: rotationURL, expected: first,
+                     deleteCredential: { oldCallback = true; return true }).revoked)
+        precondition(ActivityCatalog.installCredential(url: rotationURL, expected: first, workspaceID: workspace,
+                     generation: g2, install: { oldCallback = true; return true }) == nil)
+        precondition(!oldCallback && ActivityCatalog.activation(url: rotationURL) == third)
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")
     }
 }

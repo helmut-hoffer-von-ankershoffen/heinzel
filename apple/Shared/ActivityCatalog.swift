@@ -133,7 +133,7 @@ final class ActivityCatalog {
               parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
               parts.port.map({ (1...65535).contains($0) }) ?? true else { return nil }
         return withWriterLock(url: url, failure: nil) {
-            // This durable, non-secret marker prevents an absent or damaged
+            // This non-secret marker prevents an absent or damaged
             // authority from being interpreted as a legacy writable store.
             guard writeAuthority(Data("1".utf8), secureModeURL(for: url)) else { return nil }
             let activation = Activation(id: UUID().uuidString, endpoint: endpoint,
@@ -156,7 +156,9 @@ final class ActivityCatalog {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
                   current.activation == expected, install() else { return nil }
-            let next = Activation(id: expected.id, endpoint: expected.endpoint,
+            // Every successful installation creates a distinct CAS identity,
+            // even if a caller later reuses an older credential generation.
+            let next = Activation(id: UUID().uuidString, endpoint: expected.endpoint,
                                   workspaceID: workspaceID, credentialGeneration: generation)
             let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
             guard let encoded = try? JSONEncoder().encode(authority),
