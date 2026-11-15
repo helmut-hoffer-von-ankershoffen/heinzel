@@ -107,6 +107,7 @@ async function signalled(name, message, running) {
   await running;
   assert.fail(message);
 }
+const PANEL = { x: 300, y: 80, width: 760, height: 640 };
 const viewportOf = async () => (await guestFacts()).find((fact) => fact.url === SHOP_URL)?.page?.inner ?? null;
 /** An agent's tab that was never shown must have a real size all the same: agents work with the panel closed. */
 async function backgroundSize() {
@@ -120,13 +121,14 @@ async function backgroundSize() {
 async function showPanel(page, tab) {
   await backgroundSize();
   await panel(page, { action: "select-tab", tab });
-  await panel(page, { action: "layout", bounds: { x: 300, y: 80, width: 760, height: 640 } });
+  await panel(page, { action: "layout", bounds: PANEL });
+  // Shown, the page has the view's own size: the size it was given while hidden must be gone.
   for (let turn = 0; turn < 20; turn += 1) {
     found.shown = await viewportOf();
-    if (found.shown?.[0] > 0 && found.shown[1] > 0) return;
+    if (found.shown?.[0] === PANEL.width && found.shown[1] === PANEL.height) return;
     await delay(250);
   }
-  assert.fail(`The selected agent tab has no size even with the panel open: ${JSON.stringify(found)}`);
+  assert.fail(`The selected agent tab must have the panel's size (${PANEL.width} by ${PANEL.height}): ${JSON.stringify(found)}`);
 }
 
 /** For a failure report only: every guest page of the shop, asked directly from the main process. */
