@@ -709,6 +709,25 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("lets the iOS app retry a transient system audio failure", async () => {
+    vi.stubGlobal("heinzelDesktop", { mobileWorkspace: true, workspaceAudio: false, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio)
+      .mockRejectedValueOnce(new Error("Audio could not start. Try again."))
+      .mockResolvedValueOnce({ ...captured, label: "System audio" });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await pane().findByRole("button", { name: "Use system audio" }));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Audio could not start. Try again."));
+      expect(sessionStorage.getItem("hz.audio.nosystem")).not.toBe("1");
+      fireEvent.click(pane().getByRole("button", { name: "Try system audio again" }));
+      await waitFor(() => expect(captureAudio).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("a declined workspace request never turns the system action into a retry", async () => {
     vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
     vi.mocked(systemAudioAvailable).mockResolvedValue(true);
