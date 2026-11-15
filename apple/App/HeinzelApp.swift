@@ -349,77 +349,79 @@ struct ConnectionView: View {
         } else if let endpoint {
             let revision = loadRevision
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
-            WorkspaceView(endpoint: endpoint, isObscured: obscured, ready: {
-                guard self.endpoint == endpoint, loadRevision == revision else { return }
-                loadingWorkspace = false
-                loadFailure = nil
-            }, reportError: { message in
-                guard self.endpoint == endpoint, loadRevision == revision else { return }
-                if message == .signIn && endpoint.origin.scheme == "https" {
-                    Task {
-                        let issue = await Endpoint.connectionIssue(at: endpoint.origin)
-                        guard self.endpoint == endpoint, loadRevision == revision else { return }
-                        connectionIssue = issue
-                        loadFailure = issue ?? .signIn
-                        loadingWorkspace = false
-                    }
-                } else {
+            VStack(spacing: 0) {
+                WorkspaceView(endpoint: endpoint, isObscured: obscured, ready: {
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
-                    loadFailure = message
-                }
-            }, appearance: { color in
-                guard self.endpoint == endpoint, loadRevision == revision else { return }
-                workspaceBackground = color
-            })
-            .id(endpoint.url)
-            .id(revision)
-            .opacity(obscured ? 0 : 1)
-            #if os(iOS)
-            .background {
-                if !obscured { workspaceBackground.ignoresSafeArea(.container) }
-            }
-            #endif
-            .allowsHitTesting(!obscured)
-            .task(id: loadingWorkspace) {
-                guard loadingWorkspace else { return }
-                do { try await Task.sleep(for: .seconds(12)) } catch { return }
-                guard self.endpoint == endpoint, loadRevision == revision, loadingWorkspace else { return }
-                loadingWorkspace = false
-                loadFailure = .slow
-            }
-            .overlay(alignment: .top) {
-                if let connectionIssue, !loadingWorkspace, loadFailure == nil {
-                    Button {
-                        showConnectionHelp = true
-                    } label: {
-                        Label(connectionIssue.title, systemImage: connectionIssue.icon)
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 44)
-                            .background(.regularMaterial, in: Capsule())
+                    loadFailure = nil
+                }, reportError: { message in
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
+                    if message == .signIn && endpoint.origin.scheme == "https" {
+                        Task {
+                            let issue = await Endpoint.connectionIssue(at: endpoint.origin)
+                            guard self.endpoint == endpoint, loadRevision == revision else { return }
+                            connectionIssue = issue
+                            loadFailure = issue ?? .signIn
+                            loadingWorkspace = false
+                        }
+                    } else {
+                        loadingWorkspace = false
+                        loadFailure = message
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens Connection Help")
-                    .padding(.top, 8)
+                }, appearance: { color in
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
+                    workspaceBackground = color
+                })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(endpoint.url)
+                .id(revision)
+                .opacity(obscured ? 0 : 1)
+                #if os(iOS)
+                .background {
+                    if !obscured { workspaceBackground.ignoresSafeArea(.container) }
                 }
-            }
-            .accessibilityHidden(obscured)
-            .overlay {
-                if showingColdStart {
-                    startup
-                } else if let problem = visibleProblem {
-                    recovery(problem, for: endpoint)
-                } else if loadingWorkspace {
-                    startup
+                #endif
+                .allowsHitTesting(!obscured)
+                .task(id: loadingWorkspace) {
+                    guard loadingWorkspace else { return }
+                    do { try await Task.sleep(for: .seconds(12)) } catch { return }
+                    guard self.endpoint == endpoint, loadRevision == revision, loadingWorkspace else { return }
+                    loadingWorkspace = false
+                    loadFailure = .slow
                 }
-            }
-            #if os(macOS)
-            .ignoresSafeArea(edges: .top)
-            .onReceive(NotificationCenter.default.publisher(for: .showHeinzelConnection)) { _ in
-                showConnection = true
-            }
-            #else
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+                .overlay(alignment: .top) {
+                    if let connectionIssue, !loadingWorkspace, loadFailure == nil {
+                        Button {
+                            showConnectionHelp = true
+                        } label: {
+                            Label(connectionIssue.title, systemImage: connectionIssue.icon)
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 44)
+                                .background(.regularMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens Connection Help")
+                        .padding(.top, 8)
+                    }
+                }
+                .accessibilityHidden(obscured)
+                .overlay {
+                    if showingColdStart {
+                        startup
+                    } else if let problem = visibleProblem {
+                        recovery(problem, for: endpoint)
+                    } else if loadingWorkspace {
+                        startup
+                    }
+                }
+                #if os(macOS)
+                .ignoresSafeArea(edges: .top)
+                .onReceive(NotificationCenter.default.publisher(for: .showHeinzelConnection)) { _ in
+                    showConnection = true
+                }
+                #endif
+                #if os(iOS)
                 if !obscured {
                     workspaceControl
                         .background(.regularMaterial, in: Capsule())
@@ -427,8 +429,8 @@ struct ConnectionView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background { workspaceBackground.ignoresSafeArea(.container, edges: .bottom) }
                 }
+                #endif
             }
-            #endif
         } else if connecting || showingColdStart {
             startup
         } else if let target = sharedWorkspace {
