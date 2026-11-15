@@ -86,7 +86,11 @@ def test_a_new_plugin_keeps_fresh_dependency_cache_when_its_server_is_unavailabl
             assert not thread.is_alive()
 
 
-def test_plugin_mutation_keeps_checkpointed_standard_wheel_provenance(tmp_path, fixture_managed_python, make_kernel):
+def test_plugin_mutation_keeps_checkpointed_standard_wheel_provenance(
+    tmp_path, fixture_managed_python, make_kernel, monkeypatch
+):
+    # Fixture wheels need no PyYAML; uv would record an inherited find-links in the receipt as resolver policy.
+    monkeypatch.delenv("UV_FIND_LINKS", raising=False)
     import hashlib
     import types
 

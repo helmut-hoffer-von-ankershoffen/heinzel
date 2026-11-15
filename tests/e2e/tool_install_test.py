@@ -114,7 +114,20 @@ class Sandbox:
             timeout=240,
         )
         assert result.returncode == 0, f"{command} failed:\n{result.stdout}\n{result.stderr}\n{self.diagnose()}"
+        self.forget_reviewed_find_links()
         return result.stdout
+
+    def forget_reviewed_find_links(self) -> None:
+        """Drop the find-links uv records from UV_FIND_LINKS (the reviewed PyYAML build on Python 3.15).
+
+        uv saves an environment find-links in the tool receipt as resolver policy, and the installer rightly refuses
+        a receipt with options. A user's install never has them; the tests only need them while uv resolves.
+        """
+        for receipt in (self.root / "tools").glob("*/uv-receipt.toml"):
+            text = receipt.read_text(encoding="utf-8")
+            stripped = re.sub(r"\n\[tool\.options\]\nfind-links = \[[^\]]*\]\n", "\n", text)
+            if stripped != text:
+                receipt.write_text(stripped.rstrip("\n") + "\n", encoding="utf-8")
 
     def diagnose(self) -> str:
         """What the sandbox's bin directory holds, and where the hz launcher's interpreter points."""

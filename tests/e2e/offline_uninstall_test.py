@@ -604,6 +604,8 @@ def isolated_environment(selected, monkeypatch):
     environment = {
         key: value for key, value in selected.env.items() if not key.upper().startswith("HZ_") and key != "VIRTUAL_ENV"
     } | {"HZ_OFFLINE_MANAGER_FIXTURE": str(selected.root)}
+    # The product mutates the tool as a user's does: uv would record an inherited find-links as resolver policy.
+    environment.pop("UV_FIND_LINKS", None)
     for key, value in environment.items():
         if key in {"HOME", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON"}:
             monkeypatch.setenv(key, value)
@@ -627,6 +629,7 @@ def retain_manager_fixture_source(selected, environment):
         '[tool.hatch.build.targets.wheel]\nonly-include = ["offline_uninstall_fixture.py", "offline_manager_plugin"]\n'
     )
     interpreter = selected.root / "tools/heinzel/bin/python"
+    selected.forget_reviewed_find_links()
     result = fixture_run(
         [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "plugin", "develop", str(source)],
         env=environment,
