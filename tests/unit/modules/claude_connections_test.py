@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
@@ -32,6 +32,7 @@ from heinzel.modules.system.claude._connections import FoundConnections
 from heinzel.modules.system.claude._switch import SwitchStore
 from heinzel.modules.system.runner.chat._service import ChatService
 from heinzel.modules.system.runner.chat._store import ChatStore
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
 
@@ -289,7 +290,7 @@ class _Http(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def http_url() -> Iterator[str]:
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Http)
+    httpd = LoopbackThreadingHTTPServer(("127.0.0.1", 0), _Http)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}/mcp"
