@@ -194,7 +194,7 @@ window size, and any tool that drives the YouTube player.
    `local` for stdio. Over HTTP the input tools need the `write` scope. Per agent: 60 calls and 10 navigations a
    minute, 4 tabs. Beyond that the call is refused with the wait.
 9. **Audit.** Every call logs `browser.call` with actor, tool, tab, host, gate outcome (`ran`, `proposed`,
-   `refused`, `paused`) and duration. Typed text and page content are never logged, only their length. Phase 2 shows
+   `refused`, `paused`, `unconfirmed`) and duration. Typed text and page content are never logged, only their length. Phase 2 shows
    the last actions of an agent on its tab.
 10. **Without the desktop app** (the PWA, a browser tab, a headless server) there is no built-in browser. The tools
    stay listed; `ui_browser_tabs` returns `available: false` and every other tool fails with "The built-in browser
@@ -246,9 +246,11 @@ window size, and any tool that drives the YouTube player.
 
 #### 5. Implementation path
 
-1. **Bridge.** The Electron main process opens one authenticated WebSocket to the daemon's web head, using the
-   connection it already holds. The daemon sends commands, the desktop answers; both sides check exact keys, as
-   `hz:browser` does today. A kernel service `BrowserBridge` is what the operations call; without a connected
+1. **Bridge.** The Electron main process opens one WebSocket to the daemon's web head and authenticates with its
+   own bridge token, not the session token. The main process makes that token and hands it only to the service it
+   starts, in `HEINZEL_UI_BROWSER_BRIDGE`; it is in no page, URL, file or API answer. The session token is refused,
+   and a service the desktop did not start refuses every bridge socket. The daemon sends commands, the desktop
+   answers; both sides check exact keys, as `hz:browser` does today. A kernel service `BrowserBridge` is what the operations call; without a connected
    desktop it raises the "needs the desktop app" error. The web page is not in this path and sees no page content.
 2. **Who decides what.** The daemon owns actor, the commit gate, limits and the audit log. The desktop owns
    the tab table and tab ownership, the URL policy, the protocol allowlist and the never-list of safety statement 4.
