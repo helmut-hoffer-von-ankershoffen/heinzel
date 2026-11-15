@@ -651,7 +651,8 @@ SERVERS = {
     "hz chat",
 }
 SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
-DESKTOP = {"hz app install", "hz app uninstall", "hz app refresh"}  # Native lifecycle commands, not operations.
+# Native lifecycle commands. `app update` shares the installer callback with `app install`.
+DESKTOP = {"hz app install", "hz app update", "hz app uninstall", "hz app refresh"}
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
