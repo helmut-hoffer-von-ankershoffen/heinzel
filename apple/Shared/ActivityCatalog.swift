@@ -125,6 +125,27 @@ final class ActivityCatalog {
         }
     }
 
+    /// A tombstone is not an authorization. Its handle permits only cleanup.
+    static func pendingCleanup(url: URL) -> Activation? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.revoked == true else { return nil }
+            return current.cleanup
+        }
+    }
+
+    static func workspaceScope(url: URL, endpoint: String, legacy: String) -> String? {
+        withWriterLock(url: url, failure: nil) {
+            guard FileManager.default.fileExists(atPath: secureModeURL(for: url).path) else { return legacy }
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.revoked != true, let activation = current.activation,
+                  activation.endpoint == endpoint else { return nil }
+            return activation.scope
+        }
+    }
+
     /// Start a new activation by revoking the old publication before credential work.
     /// The endpoint must be canonicalized and transport-validated by the caller.
     static func activate(url: URL, endpoint: String) -> Activation? {
@@ -223,12 +244,24 @@ final class ActivityCatalog {
                  write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority) -> Bool {
         Self.withWriterLock(url: databaseURL, failure: false) {
             publishLocked(scope: scope, generation: generation, snapshot: snapshot, entries: entries,
-                          expectedToken: expectedToken, write: write)
+                          expectedToken: expectedToken, preserveCatalog: false, write: write)
+        }
+    }
+
+    /// Publish only a bounded projection while retaining every existing catalog row.
+    /// Validate the current snapshot under the same lock and never recapture the token.
+    func publishPartial(scope: String, generation: String, snapshot: Data, expectedToken: Data,
+                        acceptPrevious: (Data) -> Bool) -> Bool {
+        Self.withWriterLock(url: databaseURL, failure: false) {
+            guard matches(expectedToken), let current = authority(), current.activation?.scope == scope,
+                  current.scope == scope, let previous = self.snapshot(), acceptPrevious(previous) else { return false }
+            return publishLocked(scope: scope, generation: generation, snapshot: snapshot, entries: [],
+                                 expectedToken: expectedToken, preserveCatalog: true, write: Self.writeAuthority)
         }
     }
 
     private func publishLocked(scope: String, generation: String, snapshot: Data, entries: [CatalogHeinzel],
-                               expectedToken: Data, write: (Data, URL) -> Bool) -> Bool {
+                               expectedToken: Data, preserveCatalog: Bool, write: (Data, URL) -> Bool) -> Bool {
         guard matches(expectedToken) else { return false }
         guard run("BEGIN IMMEDIATE") else { return false }
         var committed = false
@@ -249,8 +282,14 @@ final class ActivityCatalog {
               let cleanSnapshots = prepare("DELETE FROM snapshots_v2 WHERE generation != ?") else { return false }
         defer { sqlite3_finalize(cleanItems); sqlite3_finalize(cleanSnapshots) }
         bind(current, to: cleanItems, at: 1); bind(current, to: cleanSnapshots, at: 1)
-        guard sqlite3_step(cleanItems) == SQLITE_DONE, sqlite3_step(cleanSnapshots) == SQLITE_DONE,
-              let insert = prepare("INSERT INTO catalog_v3 VALUES (?, ?, ?, ?, ?, ?, ?, ?)") else { return false }
+        guard sqlite3_step(cleanItems) == SQLITE_DONE, sqlite3_step(cleanSnapshots) == SQLITE_DONE else { return false }
+        if preserveCatalog {
+            guard let copy = prepare("INSERT INTO catalog_v3 SELECT ?, id, name, state, activity, asks, approved, ordinal FROM catalog_v3 WHERE generation=?") else { return false }
+            defer { sqlite3_finalize(copy) }
+            bind(generation, to: copy, at: 1); bind(current, to: copy, at: 2)
+            guard sqlite3_step(copy) == SQLITE_DONE else { return false }
+        }
+        guard let insert = prepare("INSERT INTO catalog_v3 VALUES (?, ?, ?, ?, ?, ?, ?, ?)") else { return false }
         defer { sqlite3_finalize(insert) }
         for (ordinal, item) in entries.enumerated() {
             bind(generation, to: insert, at: 1); bind(item.id, to: insert, at: 2)

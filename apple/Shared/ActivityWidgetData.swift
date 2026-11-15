@@ -81,6 +81,8 @@ struct ActivityWidgetData: Codable, Equatable {
         return directory.appendingPathComponent("activity-catalog.sqlite")
     }
     private static var catalog: ActivityCatalog? { catalogURL.flatMap(ActivityCatalog.init(url:)) }
+    static func sharedCatalogURL() -> URL? { catalogURL }
+    static func backgroundCatalog() -> ActivityCatalog? { catalog }
     static func refreshToken() -> Data? { catalogURL.flatMap(ActivityCatalog.refreshToken(url:)) }
     private static let detailsKey = "activityDetailRequests"
 
@@ -105,6 +107,11 @@ struct ActivityWidgetData: Codable, Equatable {
 
     static func scope(for address: String) -> String {
         SHA256.hash(data: Data(address.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func currentScope(for origin: URL) -> String? {
+        guard let catalogURL else { return nil }
+        return ActivityCatalog.workspaceScope(url: catalogURL, endpoint: origin.absoluteString, legacy: scope(for: origin))
     }
 
     static func read() -> Self? {

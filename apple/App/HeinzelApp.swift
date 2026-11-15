@@ -402,7 +402,10 @@ struct ConnectionView: View {
         let latestSync = syncedWorkspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
         forgotten[item.address] = max(.now, latestSync)
         if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
-        if serverOrigin == item.address { serverOrigin = "" }
+        if serverOrigin == item.address {
+            clearWidgetActivity()
+            serverOrigin = ""
+        }
     }
 
     private var diagnosticOrigin: URL? {
@@ -493,7 +496,7 @@ struct ConnectionView: View {
         #else
         guard endpoint.origin.absoluteString == serverOrigin else { return nil }
         #endif
-        return ActivityWidgetData.scope(for: endpoint.origin)
+        return ActivityWidgetData.currentScope(for: endpoint.origin)
     }
 
     private var currentWidgetSnapshot: ActivityWidgetData? {
@@ -1797,7 +1800,7 @@ struct ConnectionView: View {
     }
 
     private func clearWidgetActivity() {
-        _ = ActivityWidgetData.clear()
+        _ = WidgetCredentialStore.clearShared()
         ActivityWidgetData.reload()
     }
 

@@ -536,7 +536,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func sendPrompt(_ request: NativePromptRequest) async -> NativePromptOutcome {
         guard request.isValid, let workspace,
-              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true else { return .unavailable }
         let revision = documentRevision
@@ -580,7 +580,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func openChat(_ request: HeinzelChatRequest) {
         guard lastChatRequest != request, NativeRoute.isSessionID(request.id), let workspace,
-              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true,
               var url = URLComponents(url: endpoint.origin, resolvingAgainstBaseURL: false) else { return }
@@ -614,7 +614,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         let invalidation = ActivityWidgetData.invalidation
         guard let refreshToken = ActivityWidgetData.refreshToken() else { return }
         // The session and device tokens stay inside WebKit.
-        let scope = ActivityWidgetData.scope(for: endpoint.origin)
+        guard let scope = ActivityWidgetData.currentScope(for: endpoint.origin) else { return }
         let details = ActivityWidgetData.requestedDetails(scope: scope)
         let artwork = Self.widgetArtwork
         let result = try? await inspectWorkspace(in: workspace, arguments: ["detailIDs": details], body: """
@@ -681,7 +681,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               let result, isWidgetWorkspaceCurrent() else { return }
         let changed: Bool
         if result.isEmpty {
-            _ = ActivityWidgetData.clear()
+            _ = WidgetCredentialStore.clearShared()
             ActivityWidgetData.reload()
             return
         }
