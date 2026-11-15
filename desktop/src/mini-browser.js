@@ -307,14 +307,17 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
     const onBlur = () => { for (const guest of surface.tabs.values()) { guest.view.setVisible(false); if (guest.agent) guest.shown = false; } };
+    // Kept from the start: a destroyed window no longer hands out its webContents ("Object has been destroyed"),
+    // and taking a listener off needs only the object it was put on.
+    const contents = window.webContents;
     surface.detach = () => {
-      window.off("closed", onClosed);
-      window.off("blur", onBlur);
-      window.webContents.off("did-start-navigation", onNavigation);
+      for (const [emitter, name, listener] of [[window, "closed", onClosed], [window, "blur", onBlur], [contents, "did-start-navigation", onNavigation]]) {
+        try { emitter.off(name, listener); } catch { /* gone, and its listeners with it */ }
+      }
     };
     window.on("closed", onClosed);
     window.on("blur", onBlur);
-    window.webContents.on("did-start-navigation", onNavigation);
+    contents.on("did-start-navigation", onNavigation);
     surfaces.set(window, surface);
     return surface;
   };
@@ -349,7 +352,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     if (!surface) return;
     surfaces.delete(window);
     surface.detach();
-    for (const guest of surface.tabs.values()) dispose(window, guest);
+    // The window may be destroyed already (it closes before the app quits): each tab is still let go, and one that
+    // cannot be does not keep the others or the network open.
+    for (const guest of surface.tabs.values()) {
+      try { dispose(window, guest); } catch { /* destroyed with its window */ }
+    }
     // The partition keeps sign-ins; only "Clear browsing data" empties it.
     releaseNetwork();
   }
@@ -632,7 +639,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     },
     /** True only for a live guest of the tab table that this agent owns: the engine checks it before every protocol call. */
     holds: (id, guest) => everyGuest().some(([window, entry]) => entry === guest && entry.owner === agentOwner(id) &&
-      Boolean(entry.agent) && entry.view.webContents !== window.webContents && !entry.view.webContents.isDestroyed()),
+      Boolean(entry.agent) && !window.isDestroyed() && entry.view.webContents !== window.webContents && !entry.view.webContents.isDestroyed()),
     async open(window, agent) {
       const who = validAgent(agent);
       if (stopped || !window || !windows.has(window) || window.isDestroyed()) throw new Error("Browser surface is closed.");
@@ -806,6 +813,13 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       } catch (error) { release(); throw error; }
     },
     openLink,
-    closeAll() { stopped = true; agentListeners.clear(); for (const window of [...surfaces.keys()]) close(window); },
+    /** At quit: never throws, so a window that is already gone cannot keep the app from quitting. */
+    closeAll() {
+      stopped = true;
+      agentListeners.clear();
+      for (const window of [...surfaces.keys()]) {
+        try { close(window); } catch { /* the other windows are still closed */ }
+      }
+    },
   };
 }

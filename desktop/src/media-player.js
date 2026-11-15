@@ -59,8 +59,11 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     if (!player) return;
     players.delete(window);
     player.detach();
-    if (!window.isDestroyed()) window.contentView.removeChildView(player.view);
-    if (!player.view.webContents.isDestroyed()) player.view.webContents.close({ waitForBeforeUnload: false });
+    // The window may be destroyed already (it closes before the app quits): the lease is given back all the same.
+    try {
+      if (!window.isDestroyed()) window.contentView.removeChildView(player.view);
+      if (!player.view.webContents.isDestroyed()) player.view.webContents.close({ waitForBeforeUnload: false });
+    } catch { /* destroyed with its window */ }
     player.release();
   };
   const open = async (window, video) => {
@@ -133,14 +136,16 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (event.isMainFrame && !event.isSameDocument) close(window); };
     const onBlur = () => view.setVisible(false);
+    // Kept from the start: a destroyed window no longer hands out its webContents ("Object has been destroyed").
+    const owner = window.webContents;
     player.detach = () => {
-      window.off("closed", onClosed);
-      window.off("blur", onBlur);
-      window.webContents.off("did-start-navigation", onNavigation);
+      for (const [emitter, name, listener] of [[window, "closed", onClosed], [window, "blur", onBlur], [owner, "did-start-navigation", onNavigation]]) {
+        try { emitter.off(name, listener); } catch { /* gone, and its listeners with it */ }
+      }
     };
     window.on("closed", onClosed);
     window.on("blur", onBlur);
-    window.webContents.on("did-start-navigation", onNavigation);
+    owner.on("did-start-navigation", onNavigation);
     // YouTube requires a referrer for embeds; it is the product's origin, as the web head's frame sends today.
     const load = () => {
       if (contents.isDestroyed()) return;
@@ -199,6 +204,12 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       const state = playerState(await run(player, "state"));
       return { status: player.status, ...state };
     },
-    closeAll() { stopped = true; for (const window of [...players.keys()]) close(window); },
+    /** At quit: never throws, so a window that is already gone cannot keep the app from quitting. */
+    closeAll() {
+      stopped = true;
+      for (const window of [...players.keys()]) {
+        try { close(window); } catch { /* the other windows are still closed */ }
+      }
+    },
   };
 }
