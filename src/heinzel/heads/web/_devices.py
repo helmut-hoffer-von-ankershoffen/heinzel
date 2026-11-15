@@ -13,6 +13,7 @@ A device token is 32 random bytes, so a plain SHA-256 is enough to make the stor
 lookups compare digests with `hmac.compare_digest`.
 """
 
+import contextlib
 import fcntl
 import hashlib
 import hmac
@@ -49,16 +50,18 @@ class Device(BaseModel):
     name: str = Field(description="What the app called itself, e.g. `Chrome on macOS (installed)`.")
     created: AwareDatetime = Field(description="When it was paired.")
     last_used: AwareDatetime = Field(description="When it was last used, to the hour.")
-    sha256: str = Field(description="SHA-256 of the token; the token itself is never stored.")
+    sha256: str = Field(
+        pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the token; the token itself is never stored."
+    )
     widget: "WidgetCredential | None" = None
 
 
 class WidgetCredential(BaseModel):
     """A single expiring widget credential belonging to this device."""
 
-    sha256: str
-    owner: str
-    workspace: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    owner: str = Field(min_length=1, max_length=128)
+    workspace: str = Field(pattern=r"^[0-9a-f]{64}$")
     expires: AwareDatetime
 
 
@@ -83,8 +86,9 @@ class Devices:
     def paired(self) -> list[Device]:
         """Every paired device, oldest first; a missing or damaged file is none."""
         try:
-            return _DEVICES.validate_json(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError):
+            with self._folder() as folder:
+                return self._read(folder)
+        except (OSError, HeinzelError):
             return []
 
     def pair(self, name: str) -> tuple[Device, str]:
@@ -97,15 +101,15 @@ class Devices:
         now = self._clock()
         label = re.sub(r"\s+", " ", clean_text(name)).strip()[:NAME_LIMIT] or "a browser"
         device = Device(id=secrets.token_hex(4), name=label, created=now, last_used=now, sha256=digest(token))
-        with self._locked():
-            devices = self.paired()
+        with self._locked() as folder:
+            devices = self._read(folder)
             if len(devices) >= MAX_DEVICES:
                 msg = (
                     f"{MAX_DEVICES} devices are paired already; remove one with `hz ui serve --revoke ID` "
                     "(`hz ui serve --devices`)"
                 )
                 raise HeinzelError(msg)
-            self._write([*devices, device])
+            self._write(folder, [*devices, device])
         return device, token
 
     def check(self, token: str) -> Device | None:
@@ -125,27 +129,29 @@ class Devices:
 
     def widget_issue(self, device_id: str, owner: str) -> tuple[str, str, datetime] | None:
         """Replace this device's widget credential; never issue to an unpaired device."""
-        with self._locked():
-            devices = self.paired()
+        with self._locked() as folder:
+            devices = self._read(folder)
             device = next((d for d in devices if d.id == device_id), None)
             if device is None or self._clock() - device.last_used > UNUSED_FOR:
                 return None
-            workspace = self._widget_workspace()
+            workspace = self._widget_workspace(folder)
             token = "hzw_" + secrets.token_urlsafe(32)
             expires = self._clock() + timedelta(hours=24)
             credential = WidgetCredential(sha256=digest(token), owner=owner, workspace=workspace, expires=expires)
-            self._write([d.model_copy(update={"widget": credential}) if d.id == device_id else d for d in devices])
+            self._write(
+                folder, [d.model_copy(update={"widget": credential}) if d.id == device_id else d for d in devices]
+            )
             return token, workspace, expires
 
     def widget_check(self, token: str, owner: str, workspace: str) -> str | None:
         """Check scope, expiry and live parent pairing on every request."""
-        if not token.startswith("hzw_"):
+        if not token.startswith("hzw_") or not re.fullmatch(r"[0-9a-f]{64}", workspace):
             return None
-        with self._locked():
-            if not hmac.compare_digest(self._widget_workspace(create=False), workspace):
+        with self._locked() as folder:
+            if not hmac.compare_digest(self._widget_workspace(folder, create=False), workspace):
                 return None
             now = self._clock()
-            for device in self.paired():
+            for device in self._read(folder):
                 widget = device.widget
                 if (
                     widget
@@ -160,24 +166,26 @@ class Devices:
 
     def widget_revoke(self, device_id: str) -> None:
         """Revoke only this paired device's widget credential."""
-        with self._locked():
-            devices = self.paired()
+        with self._locked() as folder:
+            devices = self._read(folder)
             if any(d.id == device_id for d in devices):
-                self._write([d.model_copy(update={"widget": None}) if d.id == device_id else d for d in devices])
+                self._write(
+                    folder, [d.model_copy(update={"widget": None}) if d.id == device_id else d for d in devices]
+                )
 
-    def _widget_workspace(self, *, create: bool = True) -> str:
-        path = self.directory / "widget-workspace"
+    def _widget_workspace(self, folder: int, *, create: bool = True) -> str:
         try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            descriptor = CurrentUser.open_private(folder, "widget-workspace", os.O_RDONLY)
         except FileNotFoundError:
             if not create:
                 return ""
             value = secrets.token_hex(32)
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
+            descriptor = CurrentUser.open_private(folder, "widget-workspace", os.O_WRONLY | os.O_CREAT | os.O_EXCL)
             with os.fdopen(descriptor, "w", encoding="ascii") as handle:
                 handle.write(value)
                 handle.flush()
                 os.fsync(handle.fileno())
+            os.fsync(folder)
         else:
             with os.fdopen(descriptor, "r", encoding="ascii") as handle:
                 CurrentUser.verify_private(os.fstat(handle.fileno()))
@@ -189,38 +197,71 @@ class Devices:
 
     def revoke(self, which: str) -> list[Device]:
         """Remove the device `which` (an id), or every one with `all`; the ones removed."""
-        with self._locked():
-            devices = self.paired()
+        with self._locked() as folder:
+            devices = self._read(folder)
             gone = [d for d in devices if which in {"all", d.id}]
             if gone:
-                self._write([d for d in devices if d not in gone])
+                self._write(folder, [d for d in devices if d not in gone])
         return gone
 
     def _touch(self, device: str) -> None:
         try:
-            with self._locked():
+            with self._locked() as folder:
                 now = self._clock()
-                self._write([d.model_copy(update={"last_used": now}) if d.id == device else d for d in self.paired()])
-        except OSError:
+                self._write(
+                    folder,
+                    [d.model_copy(update={"last_used": now}) if d.id == device else d for d in self._read(folder)],
+                )
+        except (OSError, HeinzelError):
             return  # only the hint of when it was used is lost
 
-    def _write(self, devices: list[Device]) -> None:
-        partial = self.path.with_name(f".{self.path.name}.{os.getpid()}.{secrets.token_hex(4)}")
-        descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_FILE)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(_DEVICES.dump_python(devices, mode="json"), indent=1) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        partial.replace(self.path)
+    def _read(self, folder: int) -> list[Device]:
+        try:
+            descriptor = CurrentUser.open_private(folder, "devices.json", os.O_RDONLY)
+        except FileNotFoundError:
+            return []
+        with os.fdopen(descriptor, "rb") as handle:
+            data = handle.read(256 * 1024 + 1)
+        if len(data) > 256 * 1024:
+            msg = "The paired device store is damaged"
+            raise HeinzelError(msg)
+        try:
+            return _DEVICES.validate_json(data)
+        except ValidationError:
+            msg = "The paired device store is damaged"
+            raise HeinzelError(msg) from None
+
+    def _write(self, folder: int, devices: list[Device]) -> None:
+        partial = f".devices-{secrets.token_hex(12)}"
+        descriptor = CurrentUser.open_private(folder, partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(_DEVICES.dump_python(devices, mode="json"), indent=1) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(partial, "devices.json", src_dir_fd=folder, dst_dir_fd=folder)
+            os.fsync(folder)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(partial, dir_fd=folder)
 
     @contextmanager
-    def _locked(self) -> Generator[None]:
+    def _folder(self) -> Generator[int]:
         self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        self.directory.chmod(PRIVATE_DIR)
-        descriptor = os.open(self._lock, os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
-        with os.fdopen(descriptor, "a") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+        folder = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            CurrentUser.verify_private(os.fstat(folder), directory=True)
+            yield folder
+        finally:
+            os.close(folder)
+
+    @contextmanager
+    def _locked(self) -> Generator[int]:
+        with self._folder() as folder:
+            descriptor = CurrentUser.open_private(folder, "devices.lock", os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+            with os.fdopen(descriptor, "a") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                try:
+                    yield folder
+                finally:
+                    fcntl.flock(handle, fcntl.LOCK_UN)

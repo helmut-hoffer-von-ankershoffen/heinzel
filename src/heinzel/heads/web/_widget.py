@@ -2,7 +2,14 @@
 
 PersonalSessionRepository stores each principal under the installation's trusted state root, independent of
 project configuration. The random workspace id identifies this server state, not the owner or network origin.
+
+Version 1 returns a UTC `generated_at`, `fresh_for_seconds` (300), `workspace_id`, capped `awake` and
+`waiting` counts and at most 40 roster items. `waiting` counts Heinzels with one or more pending owner asks.
+Names are capped at 128 characters and per-Heinzel ask counts at 9999. Clients must reject a different workspace
+and treat the snapshot as stale after its freshness interval.
 """
+
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -78,8 +85,11 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
             return JSONResponse(
                 {
                     "workspace_id": workspace,
+                    "version": 1,
+                    "generated_at": datetime.now(UTC).isoformat(),
+                    "fresh_for_seconds": 300,
                     "awake": min(9999, sum(s.state == "awake" for s in sessions)),
-                    "waiting": min(9999, sum(s.state == "waiting" for s in sessions)),
+                    "waiting": min(9999, sum(s.waiting_count > 0 for s in sessions)),
                     "roster": roster,
                 },
                 headers=NO_STORE,
