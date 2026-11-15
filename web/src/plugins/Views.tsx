@@ -47,6 +47,7 @@ const quoted = (value: FormValue) =>
   typeof value === "string" ? `'${value.replaceAll("'", `'"'"'`)}'` : JSON.stringify(value);
 
 export { LONG_FORM_VALUE };
+
 const SHOWN_OF_LONG = 200;
 // A file a view sends as text (base64) would fill the dialog with noise; its start and its length say enough.
 const shown = (value: FormValue) =>
