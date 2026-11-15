@@ -691,8 +691,8 @@ test("the engine's listeners go into each document as it commits, and nothing an
   delete f.defaults.unreachable;
   assert.equal(gone.status, "unavailable");
   assert.equal(f.views.at(-1).webContents.navigationHistory.getEntryAtIndex(0).url, "about:blank");
-  // The page's dialogs are the page's and the guest's affair: the engine switches no page events on (with them a page
-  // hangs in alert() waiting for an answer over the protocol), registers nothing and can answer nothing.
+  // The page's dialogs are the page's and the guest's affair: the engine switches no page events on (how dialogs
+  // behave with them on is not proven), registers nothing and can answer nothing.
   const guest = f.controller.agents.find(HEINZEL.id, tab);
   for (const method of ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.handleJavaScriptDialog", "Page.setBypassCSP", "Page.setInterceptFileChooserDialog",
     "Page.navigate", "Runtime.enable"]) {

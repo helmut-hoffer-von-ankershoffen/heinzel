@@ -40,7 +40,8 @@
  * at the window, before any listener of the page. It is armed for one press, disarmed in a finally, and over by
  * itself after a second. Its listeners are put into each document when it commits (the debugger is attached before
  * a tab's first page for that) and again before every press. They are early, not guaranteed first: registering them
- * ahead of every script needs Page.enable, and with that on a page hangs in alert(). So a page that itself listens
+ * ahead of every script needs Page.enable, which stays off: how a page's dialogs behave with it on is not proven
+ * (a hang once seen in a test was a fault of the test page, shown in neither direction). So a page that itself listens
  * on `window` in the capture phase, from a script that ran before, can still see a stray release or click; a label
  * or a button that listens on itself or on the document cannot.
  * Limits: it covers the tab's main document only. Frames in the page are not armed; a frame of another site rests on
