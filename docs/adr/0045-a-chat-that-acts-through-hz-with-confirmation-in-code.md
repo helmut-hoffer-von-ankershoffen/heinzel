@@ -8,7 +8,7 @@ amends-0018: adds hz chat
 amends-0029: hz operations as agent tools through the MCP head
 amends-0039: chat sessions instead of the stateless resend
 related: 0003, 0019, 0020, 0024, 0027, 0028, 0030, 0038, 0043
-amended-by: 0049, 0050, 0051, 0068, 0157
+amended-by: 0049, 0050, 0051, 0068, 0157, 0162
 implemented-by: 71
 ---
 

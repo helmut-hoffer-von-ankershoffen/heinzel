@@ -3,6 +3,7 @@ status: proposed
 date: 2026-11-05
 implementation: partial
 decision-makers: maintainer, owner (device and security-key prompts, kept sign-ins, player shares the sign-in)
+amended-by: 0162
 related: 0039, 0045, 0115
 ---
 
