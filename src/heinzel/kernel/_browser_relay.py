@@ -107,6 +107,8 @@ def _receive(connection: socket.socket, limit: int, seconds: float) -> bytes:
 
 def peer_uid(connection: socket.socket) -> int | None:
     """The user id of the process at the other end of a Unix socket, as the kernel reports it; None if unknown."""
+    if connection.family != socket.AF_UNIX:
+        return None  # Linux answers SO_PEERCRED on a TCP socket with uid -1: there is no process to name
     try:
         if hasattr(socket, "SO_PEERCRED"):  # Linux: struct ucred {pid, uid, gid}
             size = struct.calcsize("3i")
