@@ -44,6 +44,8 @@ MAX_PROPOSALS = 100
 MAX_MESSAGES = 200
 """Messages a session may hold; then it is full and the person opens a new one."""
 SESSION = "session.json"
+BROWSER_COMMITS = frozenset({"click", "type", "key"})
+"""The browser inputs that can be commits; nothing else of the browser is ever proposed."""
 BOUND_KINDS = frozenset({"check-in", "heinzel"})
 """Contexts bound to one owner's durable session: the check-in chat, and a Heinzel's actions chat (ADR 0162)."""
 PERSONAL_OPERATIONS = frozenset(
@@ -696,6 +698,12 @@ class StoreGate(ActionGate):
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
         chat = self._store.load(call.session)
+        if call.module == BROWSER_MODULE and (
+            call.operation not in BROWSER_COMMITS or not isinstance(call.arguments.get("expected"), str)
+        ):
+            # Only the browser's own commit path proposes: an input pinned to the target it described (ADR 0162).
+            msg = "A browser proposal must be a commit pinned to its described target"
+            raise HeinzelError(msg)
         if call.module == "heinzel" and call.operation in {
             "publish-draft-workflow",
             "share-draft-link",

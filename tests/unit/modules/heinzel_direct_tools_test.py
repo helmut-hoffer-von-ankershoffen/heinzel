@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCall
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import heinzel.kernel._chat_tools as chat_tools_module
-from heinzel import CurrentUser, HeinzelError, Module, ProposedCall
+from heinzel import ActionGate, CurrentUser, HeinzelError, Module, ProposedCall
 from heinzel.heads import mcp
 from heinzel.kernel import ChatToolError, chat_tools, found_tools
 from heinzel.kernel._agent_writes import AgentWriteLog, Caller, WriteBudget, calling
@@ -409,3 +409,21 @@ def test_retention_keeps_an_actions_chat_with_waiting_cards(kernel):
     with kernel.resolve(CurrentUser).local_read("cli"):
         assert actions not in store(kernel).prune()
         assert store(kernel).load(actions).actions[0].status == "pending"
+
+
+@pytest.mark.parametrize(
+    ("operation", "arguments"),
+    [("navigate", {"tab": TAB, "url": "https://shop.example.org/", "expected": "v1:x"}), ("click", {"tab": TAB})],
+)
+def test_the_gate_takes_a_browser_proposal_only_as_a_pinned_commit(kernel, operation, arguments):
+    actions = actions_chat(kernel)
+    call = ProposedCall(
+        session=actions,
+        module="ui.browser",
+        operation=operation,
+        tool=f"ui_browser_{operation}",
+        arguments=arguments,
+        command="anything. The words in quotes are the website's own, untrusted data.",
+    )
+    with kernel.resolve(CurrentUser).local_read("cli"), pytest.raises(HeinzelError, match="pinned"):
+        kernel.resolve(ActionGate).propose(call)
