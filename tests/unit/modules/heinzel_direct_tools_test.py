@@ -123,7 +123,15 @@ def test_the_tools_call_as_the_heinzel_named_by_the_chat_s_binding(kernel):
     assert "system_runner_chat_confirm_authorized_mcp" not in names  # its proposals are confirmed on the card only
 
 
+class Allowed(AgentWriteLog):
+    """The owner allowed the test module's direct writes, as a plugin's need (`hz system write allow`)."""
+
+    def acknowledged(self, distribution: str, module: str, operation: str) -> bool:
+        return True
+
+
 def test_a_direct_write_runs_for_its_own_heinzel_only(kernel, ran):
+    kernel.bind(AgentWriteLog, Allowed())
     actions = actions_chat(kernel)
     pin = tool(kernel, actions, "desk_pin")
     assert "pinned" in pin.call({"session_id": HEINZEL})
@@ -316,10 +324,10 @@ def _service(tools_kernel, seen: dict) -> UserChatService:
 @pytest.mark.parametrize(
     ("way", "caller", "attended"),
     [
-        ("answer", Caller("person", "web-session"), True),
+        ("answer", Caller("person", "web-session", attended=True), True),
         ("answer", None, False),  # nobody established who calls: never attended
         ("answer", Caller("local-agent", "mcp-stdio"), False),
-        ("scheduled", Caller("person", "web-session"), False),  # the schedule's dispatch shape
+        ("scheduled", Caller("person", "web-session", attended=True), False),  # the schedule's dispatch shape
     ],
 )
 def test_only_a_person_s_own_message_is_an_attended_turn(monkeypatch, way, caller, attended):

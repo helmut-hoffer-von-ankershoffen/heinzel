@@ -429,7 +429,19 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If another process holds it.
         """
-        with self.locked(session_id):
+        # The lock only, not the chat: the turn runs as whoever started it, and its chat was checked when it was
+        # found for this owner (`heinzel_actions`). A probe (`turn_running`) holds it for an instant: ask again.
+        folder = self.directory(session_id)
+        for _ in range(LOCK_TRIES - 1):
+            with self.held(folder) as holding:
+                if holding:
+                    yield
+                    return
+            time.sleep(LOCK_PAUSE_SECONDS)
+        with self.held(folder) as holding:
+            if not holding:
+                msg = f"Chat session {session_id} is busy right now; try again when the current operation is done."
+                raise HeinzelError(msg)
             yield
 
     @contextlib.contextmanager
