@@ -29,6 +29,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
+from heinzel.kernel._agent_writes import caller_or_none
 from heinzel.kernel._ai_models import PluginModelChoice, PluginModelError, build_model, choose, list_offers
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
@@ -194,6 +195,12 @@ class _ClaudeVerifier:
             and flags == command_flags(policy.model)
             and policy == self._policy
         )
+
+
+def _person_watches() -> bool:
+    """Whether a person head made the call that runs this turn (ADR 0162); any other caller, or none, is not."""
+    caller = caller_or_none()
+    return caller is not None and caller.kind == "person" and caller.attended
 
 
 class UserChatService:
@@ -427,7 +434,7 @@ class UserChatService:
             _MAX_REQUESTS,
             MAX_TURN_SECONDS,
             user_proposals=True,
-            attended=True,
+            attended=_person_watches(),
         )
 
     async def dispatch(  # noqa: PLR0913 - private dispatcher receives exact host policy

@@ -77,7 +77,7 @@ it("shows under each token what its agent changed, and nothing extra for a read 
   mockApi({
     ...shell,
     "/api/_web/mcp": { enabled: true, tokens: [token, reader, quiet] },
-    "/api/system/writes/list": {
+    "/api/system/write/list": {
       writes: [],
       callers: [
         { caller: "token:ab12cd34", ran: 12, ran_today: 3, refused: 2, last: "2026-11-14T10:00:00Z" },

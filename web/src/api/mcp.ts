@@ -58,17 +58,17 @@ export function useRevokeMcpToken() {
   });
 }
 
-/** What one agent changed, from `hz system writes list`: the line under a token. */
+/** What one agent changed, from `hz system write list`: the line under a token. */
 export type AgentActivity = { caller: string; ran: number; ran_today: number; refused: number; last: string | null };
-export const writesKey = ["system", "writes", "list"] as const;
+export const writesKey = ["system", "write", "list"] as const;
 
-/** `hz system writes list`: a line per agent. Read with the tokens, so a token's changes show beside it. */
+/** `hz system write list`: a line per agent. Read with the tokens, so a token's changes show beside it. */
 export const useAgentWrites = () =>
   useQuery({
     queryKey: writesKey,
     queryFn: async () => {
       const response = await globalThis.fetch(
-        new Request(`${window.location.origin}/api/system/writes/list?limit=1`, {
+        new Request(`${window.location.origin}/api/system/write/list?limit=1`, {
           headers: { Authorization: `Bearer ${token() ?? ""}` },
           signal: AbortSignal.timeout(15_000),
         }),

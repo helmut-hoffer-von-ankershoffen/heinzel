@@ -311,6 +311,7 @@ Built in today:
 - [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
+- [`system.write`](docs/MODULES.md#systemwrite) — See what agents changed, and allow a plugin's writes to run without asking.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
 - [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
 - [`ui.browser`](docs/MODULES.md#uibrowser) — Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.

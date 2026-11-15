@@ -89,7 +89,7 @@ that requires `mail:write`, `chat:write` or `calendar:write` waits for the perso
 who calls it asks for `caller: Caller`; hz fills it in, and no argument can.
 
 A plugin's `direct` write is still proposed until the person allowed your plugin with
-`hz system writes allow <plugin>`; `hz system writes plugins` and `hz system doctor` show what waits. The yes names
+`hz system write allow <plugin>`; `hz system write plugins` and `hz system doctor` show what waits. The yes names
 the operations of the installed version, so a later version that marks another operation `direct` waits again.
 
 ## Show the useful feature

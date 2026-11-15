@@ -45,6 +45,7 @@ from heinzel.kernel import (
     record_usage,
     untrusted,
 )
+from heinzel.kernel._agent_writes import caller_or_none
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._logging import log_event
@@ -235,6 +236,16 @@ def parameters(kernel: Kernel, operation: OperationLet) -> set[str]:
         for name, parameter in operation.signature().parameters.items()
         if not kernel.provides(parameter.annotation)
     }
+
+
+def _person_watches() -> bool:
+    """Whether a person provably started this turn: a human head made the call that runs it (ADR 0162).
+
+    A turn the daemon, a job or any agent starts is unattended, and so is one whose caller nobody established.
+    The chat's stdio pipe is unattended whatever this says: its child cannot be told who watches.
+    """
+    caller = caller_or_none()
+    return caller is not None and caller.kind == "person" and caller.attended
 
 
 class ChatService:
@@ -860,8 +871,7 @@ class ChatService:
                 working_dir=Path(directory),
                 read_files=False,
                 mcp_servers={SERVER: server},
-                # The person sent this message and reads the answer: an attended turn.
-                hz_tools=HzTools(session=chat.id, tools=tools_set, server=SERVER, attended=True),
+                hz_tools=HzTools(session=chat.id, tools=tools_set, server=SERVER, attended=_person_watches()),
             )
             chosen: dict[str, str] = {}  # only what the chat chose, so a runner keeps its own defaults
             if chat.model:

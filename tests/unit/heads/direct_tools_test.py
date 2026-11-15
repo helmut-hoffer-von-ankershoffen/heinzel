@@ -15,7 +15,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from heinzel import ActionGate, CurrentUser, HeinzelError, Module
+from heinzel import ActionGate, Caller, CurrentUser, HeinzelError, Module
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
 from heinzel.kernel import (
@@ -26,6 +26,7 @@ from heinzel.kernel import (
     HzTools,
     McpServer,
     ToolProfile,
+    calling,
     chat_tools,
     direct_tools,
     pydantic_ai_tools,
@@ -397,3 +398,41 @@ def test_an_agent_cli_still_gets_the_same_tools_through_its_private_pipe(kernel)
     command = tools.mcp_servers["hz"].command
     assert command[command.index("--chat") + 1] == session
     assert tools.hz_tools == HzTools(session=session, tools="everyday", server="hz")
+    # Nobody is known to watch this turn, and the pipe cannot say who does: nothing in its command claims it,
+    # and the tools its child serves are unattended. An agent's pipe never counts as the attended person.
+    assert tools.hz_tools.attended is False
+    assert not any("attended" in word for word in command)
+    assert {tool.attended for tool in chat_tools(kernel, session)} == {False}
+    assert {tool.attended for tool in direct_tools(kernel, tools)[1]} == {False}
+
+
+@pytest.mark.parametrize(
+    ("caller", "attended"),
+    [
+        (Caller("person", "web-session", attended=True), True),
+        (Caller("person", "cli", attended=True), True),
+        (Caller("person", "web-session"), False),  # a person nobody said is watching
+        (Caller("daemon", "tick"), False),
+        (Caller("local-agent", "mcp-stdio"), False),
+        (Caller("token", "k1", attended=True), False),  # an agent is never the watching person, whatever it carries
+        (Caller("heinzel", "s1", session="s1", attended=True), False),
+        (None, False),
+    ],
+)
+def test_a_turn_is_attended_only_when_a_person_started_it(kernel, caller, attended):
+    seen: list[ToolProfile] = []
+
+    class Runner:
+        def run(self, prompt, *, contract, tools: ToolProfile, timeout: timedelta, budget: Budget, **_):
+            seen.append(tools)
+            return AgentResult(runner="cli", status="completed", draft="ok", duration_seconds=0.1)
+
+    service = kernel.resolve(ChatService)
+    session = service.open(None).id
+    with calling(caller):
+        service.send(Runner(), session, "Hello", budget_usd=1.0)
+    [tools] = seen
+    assert tools.hz_tools.attended is attended
+    assert {tool.attended for tool in direct_tools(kernel, tools)[1]} == {attended}
+    # The pipe of the same turn stays unattended in every case.
+    assert {tool.attended for tool in chat_tools(kernel, session)} == {False}

@@ -14,7 +14,7 @@ import heinzel.kernel._chat_tools as chat_tools_module
 from heinzel import CurrentUser, HeinzelError, Module, ProposedCall
 from heinzel.heads import mcp
 from heinzel.kernel import ChatToolError, chat_tools, found_tools
-from heinzel.kernel._agent_writes import AgentWriteLog, WriteBudget
+from heinzel.kernel._agent_writes import AgentWriteLog, Caller, WriteBudget, calling
 from heinzel.kernel._browser import BrowserBridge
 from heinzel.kernel._chat_services import FoundMcpServers, FoundMcpTool
 from heinzel.modules.heinzel._direct_tools import activity_name, turn_toolbox
@@ -313,20 +313,30 @@ def _service(tools_kernel, seen: dict) -> UserChatService:
     return service
 
 
-@pytest.mark.parametrize("scheduled", [False, True])
-def test_only_the_person_s_own_message_is_an_attended_turn(monkeypatch, scheduled):
+@pytest.mark.parametrize(
+    ("way", "caller", "attended"),
+    [
+        ("answer", Caller("person", "web-session"), True),
+        ("answer", None, False),  # nobody established who calls: never attended
+        ("answer", Caller("local-agent", "mcp-stdio"), False),
+        ("scheduled", Caller("person", "web-session"), False),  # the schedule's dispatch shape
+    ],
+)
+def test_only_a_person_s_own_message_is_an_attended_turn(monkeypatch, way, caller, attended):
     seen: dict = {}
     service = _service(object(), seen)
     direct, toolbox = service._patch  # type: ignore[attr-defined]
     monkeypatch.setattr(direct, "turn_toolbox", toolbox)
-    turn = (
-        service.dispatch(HEINZEL, "occurrence", lambda: None, 4, 60, user_proposals=False)  # as a schedule does
-        if scheduled
-        else service.answer(HEINZEL, "request")
-    )
+
+    async def turn():
+        with calling(caller):
+            if way == "scheduled":
+                return await service.dispatch(HEINZEL, "occurrence", lambda: None, 4, 60, user_proposals=False)
+            return await service.answer(HEINZEL, "request")
+
     with pytest.raises(LookupError):
-        asyncio.run(turn)
-    assert seen == {"session": HEINZEL, "owner": "u-owner", "attended": not scheduled}
+        asyncio.run(turn())
+    assert seen == {"session": HEINZEL, "owner": "u-owner", "attended": attended}
 
 
 def test_an_answer_from_a_chat_app_is_not_attended(monkeypatch):

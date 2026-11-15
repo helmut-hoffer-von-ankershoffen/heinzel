@@ -4684,6 +4684,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/write/allow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Allow the writes a plugin marks direct to run without asking, for its installed version.
+         * @description Allow the writes a plugin marks direct to run without asking, for its installed version.
+         */
+        post: operations["system_write_allow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/write/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the writes agents asked for: what ran, what waited for you, and a line per agent.
+         * @description List the writes agents asked for: what ran, what waited for you, and a line per agent.
+         */
+        get: operations["system_write_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/write/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the plugin operations that ask to run directly for agents, and whether you allowed them.
+         * @description List the plugin operations that ask to run directly for agents, and whether you allowed them.
+         */
+        get: operations["system_write_plugins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/team/show": {
         parameters: {
             query?: never;
@@ -5352,6 +5412,82 @@ export interface components {
             warnings?: string[];
         };
         /**
+         * AgentWrite
+         * @description One write an agent asked for; the arguments only as a digest.
+         */
+        AgentWrite: {
+            /**
+             * Arguments
+             * @description A digest of the call's arguments; the arguments themselves are not kept.
+             */
+            arguments: string;
+            /**
+             * At
+             * Format: date-time
+             * @description When it was asked for.
+             */
+            at: string;
+            /**
+             * Attended
+             * @description Whether the person started that turn and watched it.
+             */
+            attended: boolean;
+            /**
+             * Caller
+             * @description Who asked: `heinzel:<session>`, `token:<key id>`, `local-agent:mcp-stdio`.
+             */
+            caller: string;
+            /**
+             * Module
+             * @description The module of the operation, e.g. `system.bookmark`.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation, e.g. `add`.
+             */
+            operation: string;
+            /**
+             * Outcome
+             * @description What happened.
+             * @enum {string}
+             */
+            outcome: "ran" | "failed" | "proposed" | "refused" | "over-budget";
+            /**
+             * Policy
+             * @description The operation's rule for agents.
+             * @enum {string}
+             */
+            policy: "direct" | "propose" | "approve" | "never";
+            /**
+             * Target
+             * @description The id of what it changed, where the call named one.
+             */
+            target?: string | null;
+        };
+        /**
+         * AgentWrites
+         * @description The writes agents asked for, latest first, and a line per agent.
+         */
+        AgentWrites: {
+            /**
+             * Callers
+             * @description One line per agent, busiest first.
+             */
+            callers?: components["schemas"]["CallerActivity"][];
+            /**
+             * Unattended Ran
+             * @description Writes that ran in turns nobody watched, in the last 24 hours: the digest's count.
+             * @default 0
+             */
+            unattended_ran: number;
+            /**
+             * Writes
+             * @description The entries asked for, latest first.
+             */
+            writes?: components["schemas"]["AgentWrite"][];
+        };
+        /**
          * AssetTypeDoc
          * @description An asset type of a playbook (ADR 0037).
          */
@@ -5744,6 +5880,37 @@ export interface components {
              * @description The exclusive end of the week in your time zone.
              */
             until: string;
+        };
+        /**
+         * CallerActivity
+         * @description What one agent did: for a token, the line shown beside it in Settings.
+         */
+        CallerActivity: {
+            /**
+             * Caller
+             * @description The agent, as in `AgentWrite.caller`.
+             */
+            caller: string;
+            /**
+             * Last
+             * @description Its latest write that ran.
+             */
+            last?: string | null;
+            /**
+             * Ran
+             * @description Writes that ran, in the entries kept.
+             */
+            ran: number;
+            /**
+             * Ran Today
+             * @description Writes that ran in the last 24 hours.
+             */
+            ran_today: number;
+            /**
+             * Refused
+             * @description Writes refused, proposed or over budget, in the entries kept.
+             */
+            refused: number;
         };
         /**
          * Candidate
@@ -12293,6 +12460,58 @@ export interface components {
             status: "upgraded" | "unchanged" | "failed";
         };
         /**
+         * PluginWrite
+         * @description A plugin operation that asks to run directly for agents, and whether you allowed it.
+         */
+        PluginWrite: {
+            /**
+             * Allowed
+             * @description Whether you allowed it to run directly; until then it is proposed.
+             */
+            allowed: boolean;
+            /**
+             * Capped
+             * @description Whether hz holds it at approval whatever you allow: it writes mail, chat or a calendar.
+             */
+            capped: boolean;
+            /**
+             * Module
+             * @description The module of the operation.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation.
+             */
+            operation: string;
+            /**
+             * Plugin
+             * @description The plugin's distribution, e.g. `heinzel-crm`.
+             */
+            plugin: string;
+            /**
+             * Summary
+             * @description What the operation does, in its own words.
+             */
+            summary: string;
+        };
+        /**
+         * PluginWrites
+         * @description Every plugin operation that asks to run directly for agents.
+         */
+        PluginWrites: {
+            /**
+             * Next
+             * @description Commands that allow what is waiting.
+             */
+            next?: string[];
+            /**
+             * Writes
+             * @description The operations, by plugin.
+             */
+            writes?: components["schemas"]["PluginWrite"][];
+        };
+        /**
          * PrerequisiteCheck
          * @description An observed tool state, separate from Python package installation and account authentication.
          */
@@ -18238,6 +18457,8 @@ export type SchemaAdapterDoc = components['schemas']['AdapterDoc'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
+export type SchemaAgentWrite = components['schemas']['AgentWrite'];
+export type SchemaAgentWrites = components['schemas']['AgentWrites'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
@@ -18251,6 +18472,7 @@ export type SchemaBookmark = components['schemas']['Bookmark'];
 export type SchemaBookmarkList = components['schemas']['BookmarkList'];
 export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
+export type SchemaCallerActivity = components['schemas']['CallerActivity'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -18439,6 +18661,8 @@ export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
 export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
+export type SchemaPluginWrite = components['schemas']['PluginWrite'];
+export type SchemaPluginWrites = components['schemas']['PluginWrites'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
 export type SchemaPrerequisiteDefinition = components['schemas']['PrerequisiteDefinition'];
 export type SchemaPrerequisiteDoc = components['schemas']['PrerequisiteDoc'];
@@ -25525,6 +25749,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_allow: {
+        parameters: {
+            query: {
+                /** @description The plugin, e.g. `crm` or `heinzel-crm`. */
+                plugin: string;
+                /** @description Take the allowance back: its writes are proposed again. */
+                revoke?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginWrites"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_list: {
+        parameters: {
+            query?: {
+                /** @description Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`. */
+                caller?: string | null;
+                /** @description Only writes of turns nobody watched. */
+                unattended?: boolean;
+                /** @description How many entries, latest first. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWrites"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_plugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginWrites"];
                 };
             };
         };

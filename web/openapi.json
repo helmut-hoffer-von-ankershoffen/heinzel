@@ -1175,6 +1175,118 @@
         "title": "AgentResult",
         "type": "object"
       },
+      "AgentWrite": {
+        "description": "One write an agent asked for; the arguments only as a digest.",
+        "properties": {
+          "arguments": {
+            "description": "A digest of the call's arguments; the arguments themselves are not kept.",
+            "title": "Arguments",
+            "type": "string"
+          },
+          "at": {
+            "description": "When it was asked for.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attended": {
+            "description": "Whether the person started that turn and watched it.",
+            "title": "Attended",
+            "type": "boolean"
+          },
+          "caller": {
+            "description": "Who asked: `heinzel:<session>`, `token:<key id>`, `local-agent:mcp-stdio`.",
+            "title": "Caller",
+            "type": "string"
+          },
+          "module": {
+            "description": "The module of the operation, e.g. `system.bookmark`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation, e.g. `add`.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "What happened.",
+            "enum": [
+              "ran",
+              "failed",
+              "proposed",
+              "refused",
+              "over-budget"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "policy": {
+            "description": "The operation's rule for agents.",
+            "enum": [
+              "direct",
+              "propose",
+              "approve",
+              "never"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of what it changed, where the call named one.",
+            "title": "Target"
+          }
+        },
+        "required": [
+          "at",
+          "caller",
+          "attended",
+          "module",
+          "operation",
+          "arguments",
+          "policy",
+          "outcome"
+        ],
+        "title": "AgentWrite",
+        "type": "object"
+      },
+      "AgentWrites": {
+        "description": "The writes agents asked for, latest first, and a line per agent.",
+        "properties": {
+          "callers": {
+            "description": "One line per agent, busiest first.",
+            "items": {
+              "$ref": "#/components/schemas/CallerActivity"
+            },
+            "title": "Callers",
+            "type": "array"
+          },
+          "unattended_ran": {
+            "default": 0,
+            "description": "Writes that ran in turns nobody watched, in the last 24 hours: the digest's count.",
+            "title": "Unattended Ran",
+            "type": "integer"
+          },
+          "writes": {
+            "description": "The entries asked for, latest first.",
+            "items": {
+              "$ref": "#/components/schemas/AgentWrite"
+            },
+            "title": "Writes",
+            "type": "array"
+          }
+        },
+        "title": "AgentWrites",
+        "type": "object"
+      },
       "AssetTypeDoc": {
         "description": "An asset type of a playbook (ADR 0037).",
         "properties": {
@@ -1826,6 +1938,52 @@
           "until"
         ],
         "title": "CalendarWeek",
+        "type": "object"
+      },
+      "CallerActivity": {
+        "description": "What one agent did: for a token, the line shown beside it in Settings.",
+        "properties": {
+          "caller": {
+            "description": "The agent, as in `AgentWrite.caller`.",
+            "title": "Caller",
+            "type": "string"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its latest write that ran.",
+            "title": "Last"
+          },
+          "ran": {
+            "description": "Writes that ran, in the entries kept.",
+            "title": "Ran",
+            "type": "integer"
+          },
+          "ran_today": {
+            "description": "Writes that ran in the last 24 hours.",
+            "title": "Ran Today",
+            "type": "integer"
+          },
+          "refused": {
+            "description": "Writes refused, proposed or over budget, in the entries kept.",
+            "title": "Refused",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "caller",
+          "ran",
+          "ran_today",
+          "refused"
+        ],
+        "title": "CallerActivity",
         "type": "object"
       },
       "Candidate": {
@@ -13295,6 +13453,74 @@
           "after"
         ],
         "title": "PluginUpdate",
+        "type": "object"
+      },
+      "PluginWrite": {
+        "description": "A plugin operation that asks to run directly for agents, and whether you allowed it.",
+        "properties": {
+          "allowed": {
+            "description": "Whether you allowed it to run directly; until then it is proposed.",
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "capped": {
+            "description": "Whether hz holds it at approval whatever you allow: it writes mail, chat or a calendar.",
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "module": {
+            "description": "The module of the operation.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "plugin": {
+            "description": "The plugin's distribution, e.g. `heinzel-crm`.",
+            "title": "Plugin",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the operation does, in its own words.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin",
+          "module",
+          "operation",
+          "summary",
+          "allowed",
+          "capped"
+        ],
+        "title": "PluginWrite",
+        "type": "object"
+      },
+      "PluginWrites": {
+        "description": "Every plugin operation that asks to run directly for agents.",
+        "properties": {
+          "next": {
+            "description": "Commands that allow what is waiting.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "writes": {
+            "description": "The operations, by plugin.",
+            "items": {
+              "$ref": "#/components/schemas/PluginWrite"
+            },
+            "title": "Writes",
+            "type": "array"
+          }
+        },
+        "title": "PluginWrites",
         "type": "object"
       },
       "PrerequisiteCheck": {
@@ -34226,6 +34452,161 @@
           }
         },
         "summary": "Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/allow": {
+      "post": {
+        "description": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
+        "operationId": "system_write_allow",
+        "parameters": [
+          {
+            "description": "The plugin, e.g. `crm` or `heinzel-crm`.",
+            "in": "query",
+            "name": "plugin",
+            "required": true,
+            "schema": {
+              "description": "The plugin, e.g. `crm` or `heinzel-crm`.",
+              "title": "Plugin",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Take the allowance back: its writes are proposed again.",
+            "in": "query",
+            "name": "revoke",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Take the allowance back: its writes are proposed again.",
+              "title": "Revoke",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/list": {
+      "get": {
+        "description": "List the writes agents asked for: what ran, what waited for you, and a line per agent.",
+        "operationId": "system_write_list",
+        "parameters": [
+          {
+            "description": "Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`.",
+            "in": "query",
+            "name": "caller",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`.",
+              "title": "Caller"
+            }
+          },
+          {
+            "description": "Only writes of turns nobody watched.",
+            "in": "query",
+            "name": "unattended",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only writes of turns nobody watched.",
+              "title": "Unattended",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many entries, latest first.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "How many entries, latest first.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the writes agents asked for: what ran, what waited for you, and a line per agent.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/write/plugins": {
+      "get": {
+        "description": "List the plugin operations that ask to run directly for agents, and whether you allowed them.",
+        "operationId": "system_write_plugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrites"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the plugin operations that ask to run directly for agents, and whether you allowed them.",
         "tags": [
           "system"
         ]
