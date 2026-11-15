@@ -99,7 +99,7 @@ def check_requirements(path: Path) -> None:
 
 
 def _run(command: list[str], env: dict[str, str] | None = None) -> None:
-    result = subprocess.run(command, check=False, env=env)  # noqa: S603 - fixed commands with reviewed operands
+    result = subprocess.run(command, check=False, env=env, timeout=900)  # noqa: S603 - fixed commands, reviewed operands
     if result.returncode:
         raise SystemExit(result.returncode)
 
@@ -168,6 +168,7 @@ def install(wheel: Path, python: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=60,
     ).stdout.strip()
     (Path(site) / f"{NAME}-{VERSION}.dist-info" / "direct_url.json").unlink(missing_ok=True)
 
