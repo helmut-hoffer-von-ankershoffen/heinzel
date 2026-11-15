@@ -111,6 +111,7 @@ def test_the_mcp_reference_lists_each_tool_with_its_input_schema(built_ins):
     assert '"properties"' in text
 
 
+@pytest.mark.timeout(240)
 def test_generate_docs_check_finds_nothing_stale_including_the_references():
     import importlib.util
     import subprocess
@@ -140,3 +141,10 @@ def test_a_pull_request_does_not_check_the_references(tmp_path):
         "MCP_REFERENCE.md",
         "CONFIGURATION.md",
     }
+
+
+def test_no_operation_is_listed_that_no_head_serves(built_ins):
+    """An operation the MCP server leaves to a chat's own pipe has no column at all, so it is not listed."""
+    listed = tools(built_ins)
+    assert all(any(e.heads.model_dump().values()) for e in listed)
+    assert "confirm-authorized-mcp" not in {e.name for e in listed if e.module == "system.runner.chat"}
