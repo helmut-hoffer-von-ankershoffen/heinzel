@@ -3897,6 +3897,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/heinzel-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+         * @description Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+         *
+         *     Raises:
+         *         HeinzelError: If no owner is signed in.
+         */
+        get: operations["system_runner_chat_heinzel_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/list": {
         parameters: {
             query?: never;
@@ -6736,10 +6759,10 @@ export interface components {
             detail: string;
             /**
              * Kind
-             * @description The context kind; `check-in` is created only by the durable-session flow.
+             * @description The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a Heinzel's own proposals (ADR 0162).
              * @enum {string}
              */
-            kind: "route" | "contract" | "draft" | "event" | "text" | "check-in";
+            kind: "route" | "contract" | "draft" | "event" | "text" | "check-in" | "heinzel";
             /**
              * Owner Id
              * @description Authenticated owner of a durable personal chat.
@@ -24633,6 +24656,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_heinzel_actions: {
+        parameters: {
+            query: {
+                /** @description The Heinzel's own chat. */
+                durable_session: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"][];
                 };
             };
             /** @description Validation Error */

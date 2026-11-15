@@ -459,6 +459,7 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |
 | Stage the exact current agent schedule for human review; no schedule is approved yet. | `hz chat propose-agent-schedule-review` | — | — | `POST /api/system/runner/chat/propose-agent-schedule-review` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
+| Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162). | `hz chat heinzel-actions` | — | — | `GET /api/system/runner/chat/heinzel-actions` |  |  |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
 

@@ -321,6 +321,7 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
 * `decline`: Decline an action the agent proposed; it...
+* `heinzel-actions`: Show what a Heinzel&#x27;s turns proposed,...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
@@ -394,6 +395,26 @@ $ hz chat decline [OPTIONS] {session} {action}
 
 * `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
 * `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat heinzel-actions`
+
+Show what a Heinzel&#x27;s turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+
+**Usage**:
+
+```console
+$ hz chat heinzel-actions [OPTIONS] {durable_session}
+```
+
+**Arguments**:
+
+* `durable_session <str>`: The Heinzel&#x27;s own chat.  [required]
 
 **Options**:
 

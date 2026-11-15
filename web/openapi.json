@@ -3462,14 +3462,15 @@
             "type": "string"
           },
           "kind": {
-            "description": "The context kind; `check-in` is created only by the durable-session flow.",
+            "description": "The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a Heinzel's own proposals (ADR 0162).",
             "enum": [
               "route",
               "contract",
               "draft",
               "event",
               "text",
-              "check-in"
+              "check-in",
+              "heinzel"
             ],
             "title": "Kind",
             "type": "string"
@@ -32551,6 +32552,55 @@
           }
         },
         "summary": "Decline an action the agent proposed; it never runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/heinzel-actions": {
+      "get": {
+        "description": "Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).\n\nRaises:\n    HeinzelError: If no owner is signed in.",
+        "operationId": "system_runner_chat_heinzel_actions",
+        "parameters": [
+          {
+            "description": "The Heinzel's own chat.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The Heinzel's own chat.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatSession"
+                  },
+                  "title": "Response System Runner Chat Heinzel Actions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).",
         "tags": [
           "system"
         ]
