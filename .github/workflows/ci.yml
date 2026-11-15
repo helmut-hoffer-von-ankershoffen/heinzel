@@ -784,6 +784,10 @@ jobs:
           path: .plugin-tooling
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
+      - name: Build the reviewed PyYAML wheel (Python 3.15 has none; the plugin tooling syncs with --no-build)
+        run: |
+          bash scripts/bootstrap-pyyaml.sh --wheel-dir "$RUNNER_TEMP/reviewed-pyyaml"
+          echo "UV_FIND_LINKS=$RUNNER_TEMP/reviewed-pyyaml" >> "$GITHUB_ENV"
       - id: plan
         env:
           BASE: ${{ needs.changes.outputs.batch_base || github.event.pull_request.base.sha || github.event.before }}
@@ -825,6 +829,10 @@ jobs:
           name: plugin-core
           path: candidate
       - uses: ./.github/actions/setup-uv
+      - name: Build the reviewed PyYAML wheel (Python 3.15 has none; the plugin tooling syncs with --no-build)
+        run: |
+          bash scripts/bootstrap-pyyaml.sh --wheel-dir "$RUNNER_TEMP/reviewed-pyyaml"
+          echo "UV_FIND_LINKS=$RUNNER_TEMP/reviewed-pyyaml" >> "$GITHUB_ENV"
       - id: core
         env:
           CORE_URL: ${{ vars.CORE_ARTIFACT }}
