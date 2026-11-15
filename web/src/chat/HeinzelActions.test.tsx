@@ -53,7 +53,7 @@ it("never shows a chat that is bound to another Heinzel", async () => {
     ],
   });
   show();
-  expect(await screen.findByRole("alert")).toHaveTextContent("couldn't be loaded");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load what this Heinzel proposed");
   expect(screen.queryByText(action.command)).not.toBeInTheDocument();
 });
 
