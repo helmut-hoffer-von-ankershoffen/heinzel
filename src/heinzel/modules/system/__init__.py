@@ -33,12 +33,12 @@ from heinzel.modules.system._models import (
     ReleaseCheck,
     ReleaseNotes,
     SystemInfo,
+    ToolReference,
     UpdatePlan,
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import PyPIPluginReleases, plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
-from heinzel.modules.system._tools import ToolReference
 from heinzel.modules.system._tools import render as render_tools_text
 from heinzel.modules.system._tools import tools as tool_list
 from heinzel.modules.system._uninstall import SystemOfflineUninstall

@@ -10,12 +10,18 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
+from heinzel.modules.system._models import (
+    ChannelReport,
+    ModuleInfo,
+    ReleaseCheck,
+    SystemInfo,
+    ToolReference,
+    UpdateResult,
+)
 from heinzel.modules.system._plugin_standing import standing
 
 if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
     from heinzel.modules.system._models import AutomaticUpdates, UpdatePlan
-    from heinzel.modules.system._tools import ToolReference  # imports kernel names an older running hz lacks
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -153,6 +159,6 @@ def _automatic(automatic: "AutomaticUpdates") -> str:
     return f"Automatic updates: off. Turn them on with `hz system config set auto_update true`. {rule}"
 
 
-def render_tools(reference: "ToolReference") -> RenderableType:
+def render_tools(reference: ToolReference) -> RenderableType:
     """The reference as plain text, unwrapped, so it pipes into a file."""
     return Text(reference.text.rstrip("\n"), no_wrap=True, overflow="ignore")

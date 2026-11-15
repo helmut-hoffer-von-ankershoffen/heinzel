@@ -8,8 +8,8 @@ import yaml
 from pydantic import BaseModel, Field, TypeAdapter
 
 from heinzel.kernel import Exposed, HeinzelError, Kernel, ServedTool, ServedTools, command_words, exposed, input_schema
+from heinzel.modules.system._models import Format
 
-Format = Literal["text", "markdown", "yaml", "json"]
 HeadFilter = Literal["all", "cli", "mcp", "rest", "web"]
 #: Our head names, by the name a person gives the head.
 HEADS = {"cli": "cli", "mcp": "mcp", "rest": "api", "web": "web"}
@@ -47,14 +47,6 @@ class ToolInfo(BaseModel):
     parameters: list[ParameterInfo] = Field(description="What a caller supplies.")
     result: str = Field(description="The shape of its result.")
     input_schema: dict[str, Any] = Field(description="The JSON Schema of its input, as the MCP tool declares it.")
-
-
-class ToolReference(BaseModel):
-    """The reference, rendered."""
-
-    format: Format = Field(description="The format of `text`.")
-    count: int = Field(description="How many operations it describes.")
-    text: str = Field(description="The reference in that format.")
 
 
 def _resolve(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
