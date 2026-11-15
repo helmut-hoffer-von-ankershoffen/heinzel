@@ -36,7 +36,7 @@ function fixture() {
   const controller = createMiniBrowser({
     createNetwork: async () => ({ configure: async () => {}, close: () => {}, authenticate: (_info, callback) => callback() }),
     windows: new WeakSet([owner]), fromWebContents: (contents) => (contents === sender ? owner : null),
-    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }),
+    connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }), now: () => time,
     createSession: () => Object.assign(new EventEmitter(), { clearStorageData: async () => {}, setPermissionCheckHandler: () => {},
       setPermissionRequestHandler: () => {}, setDevicePermissionHandler: () => {}, setDisplayMediaRequestHandler: () => {},
       webRequest: { onBeforeRequest: () => {} } }),
@@ -51,7 +51,7 @@ function fixture() {
         detach: () => { attached = false; sent.push(["detach"]); },
         sendCommand: async (method, params) => {
           sent.push([method, params]);
-          page.on(method, params);
+          await page.on(method, params);
           // Never answered, unless the test lets it answer late with `page.release()`.
           if (page.hang === method) return new Promise((resolve) => { page.release = () => resolve({}); });
           if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "F" } } };
@@ -695,9 +695,14 @@ test("take over pauses one tab, hand back resumes it, stop closes the agent's ta
   // These controls exist for agent tabs only, and only with a tab id.
   await f.invoke({ action: "navigate", url: "https://mine.example.com" });
   const mine = (await f.invoke({ action: "state" })).selected;
-  for (const action of ["take-over", "hand-back", "stop-agent", "commit-approve"]) {
+  for (const action of ["take-over", "hand-back", "stop-agent"]) {
     await assert.rejects(f.invoke({ action, tab: mine }), /Unknown tab/);
     await assert.rejects(f.invoke({ action }), /Invalid browser command/);
+  }
+  for (const action of ["commit-approve", "commit-refuse"]) {
+    await assert.rejects(f.invoke({ action, tab: mine, commit: "0".repeat(16) }), /Unknown tab/);
+    await assert.rejects(f.invoke({ action, tab: mine }), /Invalid browser command/);
+    await assert.rejects(f.invoke({ action, commit: "0".repeat(16) }), /Invalid browser command/);
   }
 });
 
@@ -708,13 +713,15 @@ test("an outside agent's commit waits for the person's answer on the tab", async
   const settle = () => new Promise((resolve) => setImmediate(resolve));
   let pending = ask();
   await settle();
-  assert.deepEqual((await f.invoke({ action: "state" })).tabs[0].commit, { summary: "Click “Send”" });
-  await f.invoke({ action: "commit-approve", tab });
+  const card = (await f.invoke({ action: "state" })).tabs[0].commit;
+  assert.deepEqual(card, { summary: "Click “Send”", id: card.id });
+  assert.match(card.id, /^[0-9a-f]{16}$/);
+  await f.invoke({ action: "commit-approve", tab, commit: card.id });
   assert.deepEqual(await pending, { approved: true });
   assert.equal((await f.invoke({ action: "state" })).tabs[0].commit, null);
-  await assert.rejects(f.invoke({ action: "commit-approve", tab }), /Unknown tab/);
+  await assert.rejects(f.invoke({ action: "commit-approve", tab, commit: card.id }), /Unknown tab/);
   pending = ask(); await settle();
-  await f.invoke({ action: "commit-refuse", tab });
+  await f.invoke({ action: "commit-refuse", tab, commit: (await f.invoke({ action: "state" })).tabs[0].commit.id });
   assert.deepEqual(await pending, { approved: false });
   // No answer in time is a no.
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -804,4 +811,134 @@ test("the person's own key or click in an agent's tab takes it over; the agent's
   f.views.at(-1).webContents.emit("before-mouse-event", {}, { type: "mouseDown" });
   assert.equal((await f.invoke({ action: "state" })).tabs.some((entry) => entry.paused), false);
   assert.equal(f.events.length, 6);
+});
+
+test("a commit answer is for the card the person read: not the next card, not twice, not after Stop or a changed page", async () => {
+  const f = fixture();
+  const { tab, view } = await onPage(f, OUTSIDE);
+  view.page.at = 5;
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const cardOf = async () => (await f.invoke({ action: "state" })).tabs.find((entry) => entry.id === tab)?.commit ?? null;
+  const ask = (summary, fingerprint = "a".repeat(64)) => f.call(OUTSIDE, "confirm", { tab, summary, fingerprint, seconds: 120 });
+  // Card A ends (declined here; a timeout ends it the same way) and the agent posts card B at once. The panel may
+  // still show A for half a second: a click there, or the late second click of a double click, names A.
+  const first = ask("Click button \"More\"");
+  await settle();
+  const seen = await cardOf();
+  await f.invoke({ action: "commit-refuse", tab, commit: seen.id });
+  assert.deepEqual(await first, { approved: false });
+  const second = ask("Click button \"Pay 900\"");
+  await settle();
+  const shown = await cardOf();
+  assert.equal(shown.summary, "Click button \"Pay 900\"");
+  assert.notEqual(shown.id, seen.id);
+  for (const action of ["commit-approve", "commit-refuse"]) {
+    // The older card's id, no id, and anything that is not this card's id: none of them answers card B.
+    await assert.rejects(f.invoke({ action, tab, commit: seen.id }), /Unknown tab/);
+    await assert.rejects(f.invoke({ action, tab }), /Invalid browser command/);
+    for (const commit of ["", "0".repeat(16), null, 7, [shown.id]])
+      await assert.rejects(f.invoke({ action, tab, commit }), /Unknown tab/);
+    await assert.rejects(f.invoke({ action, tab, commit: shown.id, extra: 1 }), /Invalid browser command/);
+    assert.deepEqual(await cardOf(), shown);
+  }
+  // The same sentence again is still another card.
+  await f.invoke({ action: "commit-refuse", tab, commit: shown.id });
+  assert.deepEqual(await second, { approved: false });
+  const again = ask("Click button \"Pay 900\"");
+  await settle();
+  const repeated = await cardOf();
+  assert.notEqual(repeated.id, shown.id);
+  await assert.rejects(f.invoke({ action: "commit-approve", tab, commit: shown.id }), /Unknown tab/);
+  // The right card, twice: one yes, and the second click finds no card.
+  await f.invoke({ action: "commit-approve", tab, commit: repeated.id });
+  await assert.rejects(f.invoke({ action: "commit-approve", tab, commit: repeated.id }), /Unknown tab/);
+  assert.deepEqual(await again, { approved: true });
+  assert.equal(await cardOf(), null);
+  // Approved, but the page changed before the click: the fingerprint the person approved no longer fits.
+  const { fingerprint } = await f.call(OUTSIDE, "describe", { tab, action: "click", ref: "ref_1" });
+  const approved = ask("Click button \"More\"", fingerprint);
+  await settle();
+  await f.invoke({ action: "commit-approve", tab, commit: (await cardOf()).id });
+  assert.deepEqual(await approved, { approved: true });
+  view.page.elements[5] = { ...BUTTON, name: "Pay 900", submit: true, in_form: true };
+  await f.refused(f.call(OUTSIDE, "click", { tab, ref: "ref_1", expect: fingerprint }), "changed");
+  assert.deepEqual(view.sent.filter(([name, params]) => name === "Input.dispatchMouseEvent" && params.type === "mousePressed"), []);
+  view.page.elements[5] = BUTTON;
+  // Stop while a card waits: the agent's call ends as stopped, a late yes finds nothing, the approved click is refused.
+  const waiting = ask("Click button \"More\"", fingerprint);
+  await settle();
+  const last = await cardOf();
+  const ended = f.refused(waiting, "stopped");
+  await f.invoke({ action: "stop-agent", tab });
+  await ended;
+  await assert.rejects(f.invoke({ action: "commit-approve", tab, commit: last.id }), /Unknown tab/);
+  await f.refused(f.call(OUTSIDE, "click", { tab, ref: "ref_1", expect: fingerprint }), "stopped");
+  await f.refused(ask("Click button \"More\""), "stopped");
+});
+
+test("the person's input is never hidden by a call of the engine that hangs or by its one expected event", async () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  /** An agent tab whose page never answers the engine's `type` input call, as a page that blocks in its own handler. */
+  const hanging = async (action) => {
+    const f = fixture();
+    const { tab, view } = await onPage(f);
+    view.page.at = 5;
+    const contents = view.webContents;
+    const paused = async () => (await f.invoke({ action: "tabs" })).tabs.find((entry) => entry.id === tab).paused;
+    let reached = false;
+    view.page.on = (method, params) => {
+      const hit = action === "click" ? method === "Input.dispatchMouseEvent" && params.type === "mousePressed"
+        : method === "Input.dispatchKeyEvent" && params.type !== "keyUp";
+      if (!hit) return undefined;
+      reached = true;
+      return new Promise(() => {});
+    };
+    const { fingerprint } = await f.call(HEINZEL, "describe", action === "click" ? { tab, action, ref: "ref_1" } : { tab, action });
+    void f.call(HEINZEL, action, action === "click" ? { tab, ref: "ref_1", expect: fingerprint } : { tab, keys: "Tab", expect: fingerprint }).catch(() => {});
+    for (let turn = 0; turn < 50 && !reached; turn += 1) await settle();
+    assert.equal(reached, true);
+    return { f, contents, paused };
+  };
+  const press = (contents, channel = "before-mouse-event") => contents.emit(channel, {}, { type: "mouseDown" });
+  const key = (contents, type = "keyDown") => contents.emit("before-input-event", {}, { type });
+  // One press of the engine is one mouseDown per channel. The second on the same channel is the person's.
+  let { f, contents, paused } = await hanging("click");
+  press(contents); press(contents, "input-event");
+  assert.equal(await paused(), false);
+  press(contents);
+  assert.equal(await paused(), true);
+  assert.deepEqual(f.events.map((event) => event.event), ["take-over"]);
+  // The engine's event never came and the call still hangs: after a second the next press is the person's.
+  ({ f, contents, paused } = await hanging("click"));
+  f.tick(999);
+  press(contents);
+  assert.equal(await paused(), false);
+  ({ f, contents, paused } = await hanging("click"));
+  f.tick(1000);
+  press(contents);
+  assert.equal(await paused(), true);
+  // An event of another kind is never the engine's: a key during its press, a press during its key, a tap at any time.
+  ({ contents, paused } = await hanging("click"));
+  key(contents);
+  assert.equal(await paused(), true);
+  ({ contents, paused } = await hanging("key"));
+  press(contents);
+  assert.equal(await paused(), true);
+  ({ contents, paused } = await hanging("click"));
+  contents.emit("input-event", {}, { type: "gestureTap" });
+  assert.equal(await paused(), true);
+  // Two key downs during one key of the engine: whichever was the person's, the tab is taken over.
+  ({ contents, paused } = await hanging("key"));
+  key(contents, "rawKeyDown");
+  assert.equal(await paused(), false);
+  key(contents);
+  assert.equal(await paused(), true);
+  // A finished call leaves no expectation behind: the next press is the person's at once.
+  f = fixture();
+  const { tab, view } = await onPage(f);
+  view.page.at = 5;
+  const { fingerprint } = await f.call(HEINZEL, "describe", { tab, action: "click", ref: "ref_1" });
+  await f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint });
+  press(view.webContents);
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.find((entry) => entry.id === tab).paused, true);
 });

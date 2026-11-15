@@ -24,14 +24,19 @@ export const agentOwner = (id) => `agent:${id}`;
 const TAB_ID = /^t-[0-9a-f]{8}$/;
 // The person's input that takes an agent's tab over: a press, a tap or a key down. Moving the pointer and the wheel
 // only look at the page.
-const PERSON_INPUT = new Set(["mouseDown", "touchStart", "gestureTap", "keyDown", "rawKeyDown"]);
+const PERSON_INPUT = { mouseDown: "mouseDown", touchStart: "touchStart", gestureTap: "gestureTap", keyDown: "keyDown", rawKeyDown: "keyDown" };
+// Electron reports one input on more than one of these; the agent engine's own input passes them too.
+const INPUT_CHANNELS = ["before-input-event", "input-event", "before-mouse-event"];
+/** How long one input of the agent engine may take to show up as an event; after that any event is the person's. */
+export const AGENT_INPUT_MS = 1000;
 // The shape of each command; a command may also carry one optional key (a tab id, or a first address).
 const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
   state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
   tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"],
   "link-external": ["action"], "link-dismiss": ["action"],
   "take-over": ["action", "tab"], "hand-back": ["action", "tab"], "stop-agent": ["action", "tab"],
-  "commit-approve": ["action", "tab"], "commit-refuse": ["action", "tab"] };
+  // An answer names the card the person read (`commit`): it never reaches another card on the same tab.
+  "commit-approve": ["action", "tab", "commit"], "commit-refuse": ["action", "tab", "commit"] };
 const OPTIONAL = { navigate: "tab", state: "tab", back: "tab", forward: "tab", reload: "tab", external: "tab", "new-tab": "url" };
 // A failed passkey ceremony reaches the page as a bare NotAllowedError; Electron serves no platform passkey here.
 const PASSKEY_HINT = /NotAllowedError|PublicKeyCredential|webauthn|passkey/i;
@@ -122,7 +127,7 @@ export function deviceDialog({ host, devices }) {
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
   createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false,
-  faviconImage = smallPng, faviconTimeout = FAVICON_TIMEOUT_MS }) {
+  faviconImage = smallPng, faviconTimeout = FAVICON_TIMEOUT_MS, now = () => Date.now() }) {
   // window -> { tabs: Map(id -> guest), selected, bounds, shown, opening, pending }: every tab shares one partition.
   const surfaces = new Map();
   const opening = new Set();
@@ -386,7 +391,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false, driving: 0,
+      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false, expected: [],
         blank: true, view, session: partition, network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
@@ -457,13 +462,21 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       contents.on("will-attach-webview", (event) => event.preventDefault());
       if (agent) {
         // The person's own key or click inside an agent's tab takes it over (ADR 0162), as the Take over button does.
-        // Input the agent engine sends through the debugger passes the same events: `driving` marks it.
-        const own = (_event, input) => {
-          if (!PERSON_INPUT.has(input?.type) || guest.driving > 0 || guest.paused) return;
+        // The agent engine's own input passes the same events. It announces each one (`agents.expect`): one event of
+        // that kind per channel is its own, for a second at most. Every other event is the person's, also one that
+        // arrives while a call of the engine is still running.
+        const own = (channel) => (_event, input) => {
+          const kind = Object.hasOwn(PERSON_INPUT, input?.type ?? "") ? PERSON_INPUT[input.type] : null;
+          if (!kind) return;
+          const time = now();
+          guest.expected = guest.expected.filter((entry) => entry.until > time);
+          const index = guest.expected.findIndex((entry) => entry.channel === channel && entry.kind === kind);
+          if (index >= 0) { guest.expected.splice(index, 1); return; }
+          if (guest.paused) return;
           guest.paused = true;
           tell("take-over", guest);
         };
-        for (const name of ["before-input-event", "input-event", "before-mouse-event"]) contents.on(name, own);
+        for (const name of INPUT_CHANNELS) contents.on(name, own(name));
       }
       contents.on("did-start-loading", () => { guest.status = "loading"; });
       contents.on("did-stop-loading", () => { if (guest.status === "loading") guest.status = "ready"; });
@@ -494,7 +507,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const url = guest.view.webContents.getURL();
     return { id: guest.id, owner: guest.owner, selected, status: guest.status, url,
       agent: guest.agent ? { name: guest.agent.name, kind: guest.agent.kind } : null, paused: guest.paused,
-      commit: guest.commit ? { summary: guest.commit.summary } : null,
+      commit: guest.commit ? { summary: guest.commit.summary, id: guest.commit.id } : null,
       title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200), favicon: icons.get(originOf(url)) ?? null };
   };
   // The selected tab's state, plus the whole strip.
@@ -642,7 +655,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       return new Promise((resolve) => {
         const timer = setTimeout(() => entry.answer(false), seconds * 1000);
         timer.unref?.();
-        const entry = { summary, answer: (approved) => {
+        const entry = { summary, id: randomBytes(8).toString("hex"), answer: (approved) => {
           clearTimeout(timer);
           if (guest.commit === entry) guest.commit = null;
           resolve(approved === true);
@@ -654,6 +667,16 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     size(guest) {
       const bounds = everyGuest().find(([, entry]) => entry === guest)?.[2].bounds ?? DEFAULT_BOUNDS;
       return { width: bounds.width, height: bounds.height };
+    },
+    /**
+     * The engine is about to send one press or key down to this tab: one event of that kind per channel is the
+     * agent's, until the returned function is called or `AGENT_INPUT_MS` passed, whichever is first.
+     */
+    expect(guest, kind) {
+      const until = now() + AGENT_INPUT_MS;
+      const entries = INPUT_CHANNELS.map((channel) => ({ channel, kind, until }));
+      guest.expected.push(...entries);
+      return () => { guest.expected = guest.expected.filter((entry) => !entries.includes(entry)); };
     },
     /** The address policy of every navigation, for the engine's own loads. */
     url: (value) => browserUrl(value, connection()?.origin),
@@ -693,6 +716,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "commit-approve" || action === "commit-refuse") {
         const tab = tabOf(surface, request.tab);
         if (!tab.commit) throw new Error("Unknown tab.");
+        // The answer is for the card the person read. A card that came after it is not answered by this click.
+        if (typeof request.commit !== "string" || request.commit !== tab.commit.id) throw new Error("Unknown tab.");
         tab.commit.answer(action === "commit-approve");
         return state(window);
       }
