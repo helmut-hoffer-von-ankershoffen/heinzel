@@ -357,6 +357,7 @@ struct ConnectionView: View {
         editingLink = false
         switch shortcut {
         case .workspace:
+            showHeinzelPicker = false
             helpAfterConnection = false
             showConnectionHelp = false
             showConnection = false
@@ -377,6 +378,7 @@ struct ConnectionView: View {
                snapshot.roster.contains(where: { $0.id == id }) {
                 showConnection = false
                 showConnectionHelp = false
+                showHeinzelPicker = false
                 if endpoint != nil { choosingWorkspace = false }
                 chatRequest = HeinzelChatRequest(id: id, workspaceScope: scope)
             } else {

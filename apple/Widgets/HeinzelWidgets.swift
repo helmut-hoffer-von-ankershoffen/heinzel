@@ -145,9 +145,12 @@ private struct ConnectionHelpWidget: Widget {
 private struct ActivityEntry: TimelineEntry {
     let date: Date
     let activity: ActivityWidgetData?
+    var fresh = true
 }
 
 private struct ActivityProvider: TimelineProvider {
+    var keepsRoster = false
+
     func placeholder(in context: Context) -> ActivityEntry {
         ActivityEntry(date: .now, activity: ActivityWidgetData(awake: 2, waiting: 1, updatedAt: .now))
     }
@@ -159,13 +162,16 @@ private struct ActivityProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
         let entry = current(at: .now)
         var entries = [entry]
-        if let activity = entry.activity { entries.append(ActivityEntry(date: activity.expiresAt, activity: nil)) }
+        if let activity = entry.activity, activity.expiresAt > entry.date {
+            entries.append(ActivityEntry(date: activity.expiresAt, activity: keepsRoster ? activity : nil, fresh: false))
+        }
         completion(Timeline(entries: entries, policy: .never))
     }
 
     private func current(at date: Date) -> ActivityEntry {
         let snapshot = ActivityWidgetData.read()
-        return ActivityEntry(date: date, activity: snapshot.flatMap { $0.expiresAt > date ? $0 : nil })
+        let fresh = snapshot.map { $0.expiresAt > date } == true
+        return ActivityEntry(date: date, activity: fresh || keepsRoster ? snapshot : nil, fresh: fresh)
     }
 }
 
@@ -308,7 +314,8 @@ private struct PinnedHeinzelWidget: Widget {
                         }
                         if let next = item.nextWake {
                             Text("Next wake \(Date(timeIntervalSince1970: next), style: .relative)").font(.caption2)
-                        } else if let approved = item.lastApproved {
+                        }
+                        if let approved = item.lastApproved {
                             Text("Approved \(Date(timeIntervalSince1970: approved), style: .relative) ago").font(.caption2)
                         }
                     } else {
@@ -350,8 +357,8 @@ private struct HeinzelChooserWidget: Widget {
 
 private struct HeinzelRosterWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: ActivityWidgetData.rosterKind, provider: ActivityProvider()) { entry in
-            HeinzelRosterView(items: entry.activity?.roster ?? [], workspaceScope: entry.activity?.workspaceScope)
+        StaticConfiguration(kind: ActivityWidgetData.rosterKind, provider: ActivityProvider(keepsRoster: true)) { entry in
+            HeinzelRosterView(items: entry.activity?.roster ?? [], workspaceScope: entry.activity?.workspaceScope, fresh: entry.fresh)
                 .widgetURL(NativeRoute.chooseHeinzel.url)
                 .containerBackground(for: .widget) { widgetPaper }
         }
@@ -364,12 +371,13 @@ private struct HeinzelRosterWidget: Widget {
 private struct HeinzelRosterView: View {
     let items: [WidgetHeinzel]
     let workspaceScope: String?
+    let fresh: Bool
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Your Heinzels").font(.system(.headline, design: .serif))
-            if items.isEmpty { Text("Open to refresh").font(.footnote) }
+            if items.isEmpty || !fresh { Text("Open to refresh").font(.caption2) }
             ForEach(items.prefix(family == .systemLarge ? 6 : 3)) { item in
                 Link(destination: workspaceScope.map { NativeRoute.chat(workspace: $0, id: item.id).url }
                      ?? NativeRoute.chooseHeinzel.url) {
@@ -377,7 +385,7 @@ private struct HeinzelRosterView: View {
                         HeinzelPortrait(item: item, size: 23)
                         Text(item.name).font(.subheadline.weight(.medium)).lineLimit(1)
                         Spacer(minLength: 2)
-                        Text(item.status).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
+                        if fresh { Text(item.status).font(.caption2).lineLimit(1).foregroundStyle(.secondary) }
                     }
                 }
                 .privacySensitive()
