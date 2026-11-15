@@ -24,6 +24,7 @@ import hashlib
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -207,10 +208,9 @@ class QuestionRelay:
 
         caller = threading.Thread(target=call, name="hz-self-chat-adapter", daemon=True)
         caller.start()
-        waited = 0.0
-        while caller.is_alive() and waited < timeout + GRACE:
-            caller.join(POLL)
-            waited += POLL
+        deadline = time.monotonic() + timeout + GRACE  # real time: a slow check per poll must not stretch the wait
+        while caller.is_alive() and time.monotonic() < deadline:
+            caller.join(min(POLL, max(deadline - time.monotonic(), 0.0)))
             if ask.ended is None and self.answered_after(ask.session, ask.seq):
                 ask.ended = "answered-here"
                 ask.cancel.set()

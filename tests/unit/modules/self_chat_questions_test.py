@@ -251,6 +251,28 @@ def test_an_adapter_that_ignores_cancel_and_hangs_frees_its_place(world):
     inbox.release.set()
 
 
+def test_the_wait_for_a_hung_adapter_is_bounded_in_real_time_on_a_slow_runner(world, monkeypatch):
+    current, _crud, session = world
+    inbox = Inbox(ignore_cancel=True)
+    relay = _relay(world, inbox, Chat())
+    channel = SelfChat(adapter="acmechat", notifies=True, asks=True, build=lambda: inbox)
+
+    def slow(*_args):  # a slow runner: reading the app's events takes far longer than one poll
+        time.sleep(0.15)
+        return False
+
+    monkeypatch.setattr(relay, "answered_after", slow)
+    with current.local("self-chat"):
+        ask = relay._register(session, "q", 1)
+        assert ask is not None
+        started = time.monotonic()
+        answer, problem = relay._wait(channel, ask, ("Which?", "Ada", None), 1)
+    elapsed = time.monotonic() - started
+    inbox.release.set()
+    assert (answer, problem) == (None, "abandoned")
+    assert elapsed < 1 + 0.3 + 0.7, "the wait ends at timeout plus grace, however slow each poll is"
+
+
 def test_a_refused_answer_leaves_the_question_open(world):
     current, crud, session = world
     inbox, chat = Inbox(SelfAnswer(option="Delete everything", text="x")), Chat()
