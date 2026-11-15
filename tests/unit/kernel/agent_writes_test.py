@@ -226,7 +226,9 @@ def test_every_core_write_an_agent_head_offers_has_an_explicit_marker(kernel):
     unmarked = [
         f"{record.qualname} {op.name}"
         for record, op in core_writes(kernel)
-        if any(not restricts(op.heads, head) for head in AGENT_HEADS) and not declared_agent_writes(op)
+        if any(not restricts(op.heads, head) for head in AGENT_HEADS)
+        and not declared_agent_writes(op)
+        and record.qualname != "desk"  # this file's own module, with one write left unmarked on purpose
     ]
     assert unmarked == [], "mark each with agents=, as strict as everything it can trigger (ADR 0162)"
 
@@ -466,7 +468,8 @@ def test_a_direct_write_never_gets_private_write_rights(kernel):
 
     from heinzel.kernel import ChatTool
 
-    private = ChatTool(kernel, replace(item, operation=module.lets[0]), session)
+    stash_item = replace(item, operation=module.lets[0], path=("vault", "stash"), parameters=(), returns=str)
+    private = ChatTool(kernel, stash_item, session)
     with pytest.raises(ChatToolError, match="does not permit the requested private operation"):
         private.call({})
 
