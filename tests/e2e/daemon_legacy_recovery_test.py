@@ -301,11 +301,12 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
     environment = {key: value for key, value in selected.env.items() if not key.startswith(("HZ_", "XDG_"))}
     environment["HZ_LEGACY_MANAGER_FIXTURE"] = str(selected.root)
     for key in list(os.environ):
-        if key.startswith(("HZ_", "XDG_")):
+        if key.startswith(("HZ_", "XDG_", "UV_FIND_LINKS")):  # this process's uv calls go through the shim instead
             monkeypatch.delenv(key)
     for key, value in environment.items():
         if key in {
             "HOME",
+            "PATH",  # first the uv shim: it gives only uv the reviewed PyYAML, and strips what uv saves in the receipt
             "UV_TOOL_DIR",
             "UV_TOOL_BIN_DIR",
             "UV_CACHE_DIR",
