@@ -68,6 +68,8 @@ const swap = (zone) => {
 };
 document.querySelector("#hover button").addEventListener("mousemove", () => swap("hover"));
 document.querySelector("#press button").addEventListener("mousedown", () => swap("press"));
+// A page that asks before it is left: sending the order leaves it, and that must not wait on anyone either.
+window.addEventListener("beforeunload", (event) => { event.preventDefault(); event.returnValue = "Leave the shop?"; });
 // A page that opens its own dialogs while the agent acts: none may leave the page or the agent waiting, and none
 // may be answered with a yes that no person gave.
 document.querySelector("[data-watch=dialog]").addEventListener("click", () => {

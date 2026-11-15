@@ -77,7 +77,7 @@ const REASONS = {
   stopped: /stopped this agent/,
   changed: /page changed/i,
   // The engine pressed and released, and then could not confirm that its target got the click.
-  unconfirmed: /not clicked|not confirmed/i,
+  unconfirmed: /Not confirmed: the page changed under the pointer and the click may not have reached its target\./,
   scope: /\bwrite\b/i,
 };
 /** How long the agent's next call may take after the page opened its own dialogs. */
@@ -147,7 +147,8 @@ const refused = (text, reason) => typeof text === "string" && text.startsWith("E
 /** The answer of a click that was pressed and then called off or not confirmed: the only tries that may leave a stray click. */
 const notClicked = (text) => refused(text, "swapped") || refused(text, "unconfirmed");
 const proposed = (text) => typeof text === "string" && text.startsWith("Not run:");
-const ran = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /t-[0-9a-f]{8}/.test(text);
+// Done, and said so: an input that was only sent, with nothing to say it arrived, answers `done: false` and is not this.
+const ran = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /t-[0-9a-f]{8}/.test(text) && !/"done": ?false/.test(text);
 const tabOf = (text) => /t-[0-9a-f]{8}/.exec(text)?.[0] ?? "";
 function refOf(text, role, name) {
   const ref = new RegExp(`- ${role} \\\\?"${name}\\\\?"[^\\[]{0,120}\\[(ref_\\d+)\\]`).exec(text)?.[1];
@@ -451,7 +452,13 @@ async function mcpJourney(page, origin) {
   for (let turn = 0; turn < 20 && !/"available": ?true/.test(tabs); turn += 1) { if (turn) await delay(1000); tabs = await agent.call("tabs"); }
   assert.match(tabs, /"available": ?true/, `The desktop's bridge never connected: ${tabs}`);
   assert.ok(refused(await agent.call("open", { url: NOT_PUBLIC[0] }), "address"), "A tab on a literal address must be refused.");
+  const openBegan = Date.now();
   const opened = await agent.call("open", { url: SHOP_URL });
+  // A new tab is prepared on an empty page before it loads its address: that must answer at once, not after a time
+  // limit, and Back from the first page must not lead to the empty one.
+  assert.ok(Date.now() - openBegan < 5000, `Opening a tab on the shop took ${Date.now() - openBegan} ms.`);
+  const back = await agent.call("navigate", { tab: tabOf(opened), to: "back" });
+  assert.ok(ran(back) && back.includes(SHOP_URL) && !back.includes("about:blank"), `Back from a tab's first page must stay on it: ${back}`);
   trace.push({ tabs: tabs.slice(0, 400), open: opened.slice(0, 400) });
   const tab = tabOf(opened);
   // The outside agent works in sight: the person opens the panel on its tab.
