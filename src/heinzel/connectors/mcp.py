@@ -595,7 +595,8 @@ class McpConnector:
         self._stop_event = asyncio.Event()
         server: Any = self._transport
         if server is None:
-            self._stderr = tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace")  # noqa: SIM115 - closed in _shutdown
+            # Made in a worker thread: creating the file touches the disk, which must not block the loop.
+            self._stderr = await asyncio.to_thread(tempfile.TemporaryFile, "w+", encoding="utf-8", errors="replace")
             parameters = StdioServerParameters(
                 command=self._command[0], args=self._command[1:], env=self._env, cwd=self._cwd
             )

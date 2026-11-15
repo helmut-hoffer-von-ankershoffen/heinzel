@@ -485,6 +485,37 @@ describe("Declared installed choices", () => {
     });
   });
 
+  it("shows and saves each documents connector once, even from a list that names one twice", async () => {
+    const onChange = vi.fn();
+    capabilities.pending = true;
+    try {
+      const { unmount } = render(
+        <SchemaValue
+          label="Documents"
+          schema={documents}
+          value={["drive", "drive"]}
+          disabled={false}
+          onChange={onChange}
+        />,
+      );
+      expect(screen.getAllByRole("checkbox", { name: /drive/ })).toHaveLength(1);
+      unmount();
+    } finally {
+      capabilities.pending = false;
+    }
+    render(
+      <SchemaValue
+        label="Documents"
+        schema={documents}
+        value={["drive", "drive"]}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: /wiki/ }));
+    expect(onChange).toHaveBeenLastCalledWith(["drive", "wiki"]);
+  });
+
   it("never calls a saved adapter unavailable while the choices are still loading", () => {
     capabilities.pending = true;
     try {

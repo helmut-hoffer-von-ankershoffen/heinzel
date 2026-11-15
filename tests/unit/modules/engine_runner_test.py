@@ -28,6 +28,7 @@ from heinzel.modules.ai.access._engine_history import SessionHistory
 from heinzel.modules.ai.access._engine_runner import ENGINE, EngineModel, EngineRunner, SelectedModels
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
+from tests.unit.modules.engine_file_tools_test import ABOVE_HOME, fake_disk
 
 pytestmark = pytest.mark.unit
 
@@ -553,14 +554,12 @@ def test_the_folder_is_let_go_when_the_run_fails_before_its_turn(work: Path, mon
     assert closed[0] >= 0
 
 
-@pytest.mark.parametrize("above", ["/Users", "/Users/", "/home", "/System/Volumes", "/System/Volumes/Data/Users"])
-def test_a_folder_above_home_is_no_working_directory(above: str) -> None:
+@pytest.mark.parametrize("above", ABOVE_HOME)
+def test_a_folder_above_home_is_no_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, above: str
+) -> None:
     """Above the home folder lie every user's homes: as wide as the home itself (ADR 0159, A3)."""
-    folder = Path(above)
-    if not folder.is_dir():
-        pytest.skip(f"{above} doesn't exist here")
-    if above in {"/Users", "/Users/", "/home"} and folder not in Path.home().parents:
-        pytest.skip(f"{above} isn't above the home folder here")
+    folder = fake_disk(tmp_path, monkeypatch)[above]
     with pytest.raises(HeinzelError, match="whole disk, your home or a folder above it"):
         runner(TestModel()).run(
             "x", contract="", tools=ToolProfile(working_dir=folder), timeout=MINUTE, budget=Budget()

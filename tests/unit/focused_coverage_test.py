@@ -137,7 +137,7 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
     ]
 
 
-@pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
+@pytest.mark.parametrize("case", [("python", 4096), ("python312", 10), ("macos", 10)])
 def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
     from dataclasses import replace
 

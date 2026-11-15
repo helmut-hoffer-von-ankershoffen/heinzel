@@ -330,3 +330,29 @@ def test_redaction_stays_fast_on_hostile_lines(line):
     start = time.monotonic()
     _redact(line)
     assert time.monotonic() - start < 1.0
+
+
+def test_the_launchers_stderr_file_is_made_off_the_event_loop(monkeypatch, tmp_path):
+    """Creating the stderr file touches the disk, so it runs in a worker thread, never on the connector's loop."""
+    import asyncio
+    import tempfile
+
+    from heinzel.connectors import mcp
+
+    on_loop: list[bool] = []
+    real = tempfile.TemporaryFile
+
+    def made(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(mcp.tempfile, "TemporaryFile", made)
+    connector = McpConnector([str(tmp_path / "missing-launcher")], tools=[McpTool("a")], start_timeout=10)
+    with pytest.raises(McpConnectorError):
+        connector.start()
+    connector.stop()
+    assert on_loop == [False]

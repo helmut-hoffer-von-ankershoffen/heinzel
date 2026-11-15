@@ -10,10 +10,8 @@ the tagged commit): a plugin moves only together with the plugins its new releas
 one line, when one of them can't move. That never holds hz or an unrelated plugin.
 """
 
-import json
 import re
 import urllib.parse
-import urllib.request
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,13 +23,12 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from heinzel import __version__
 from heinzel.kernel import CorePin, Installation, Kernel, PluginNews, PluginRelease, PluginReleases
 from heinzel.modules.system._announced import plugin_requires
+from heinzel.modules.system._pypi import PYPI
+from heinzel.modules.system._pypi import fetch as _fetch
 from heinzel.modules.system.plugin._sources import JsonGetter, PluginSource, github_getter, github_project_at
 
-PYPI = "https://pypi.org"
-MAX_BYTES = 4 * 1024 * 1024
 MAX_TAGS = 1000
 """At most this many release tags of one plugin are read; a repository with more is read only that far."""
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -57,24 +54,6 @@ class PinnedPlugins:
     version), mapped to that release: an update never lowers a version, so their pin stays."""
     unasked: dict[str, str] = field(default_factory=dict[str, str])
     """Pinned plugins whose releases couldn't be asked, each with why; they stay as they are."""
-
-
-def _fetch(url: str, timeout: float) -> Any:  # noqa: ANN401 - free-form JSON
-    """GET `url` on PyPI with only a `heinzel/<version>` User-Agent; the seam tests fake.
-
-    Raises:
-        ValueError: If the URL is not on PyPI or the answer is too large or not JSON.
-    """
-    if not url.startswith(f"{PYPI}/pypi/"):
-        msg = f"not a PyPI JSON URL: {url}"
-        raise ValueError(msg)
-    request = urllib.request.Request(url, headers={"User-Agent": f"heinzel/{__version__}"})  # noqa: S310 - https
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - https checked above
-        body: bytes = response.read(MAX_BYTES + 1)
-    if len(body) > MAX_BYTES:
-        msg = f"the answer is larger than {MAX_BYTES} bytes"
-        raise ValueError(msg)
-    return json.loads(body)
 
 
 class PyPIPluginReleases(PluginReleases):
