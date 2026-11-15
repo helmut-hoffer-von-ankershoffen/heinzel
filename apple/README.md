@@ -28,11 +28,15 @@ build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS
 Set the `APPLE_APPLICATION_IDENTIFIER_PREFIX` repository variable to the prefix
 from the app's signed `application-identifier` entitlement. The Docs workflow
 then generates `/.well-known/apple-app-site-association` alongside `/open/`.
+The desktop publish workflow uses the same setting to produce Mac builds that copy
+HTTPS app links. For a local Mac package, run
+`HEINZEL_HTTPS_LINKS=YES apple/scripts/package-macos VERSION`.
 To stage the same files locally, run `make docs-site` and then
 `APPLE_APPLICATION_IDENTIFIER_PREFIX=APPLICATION_IDENTIFIER_PREFIX make docs-stage-apple-association`.
 
-After publication, check that the association URL responds directly with HTTP 200
-and `Content-Type: application/json`. Verify the expected app ID and `/open/`
-path, then tap a shared link in Messages on a fresh signed installation. The
+Before publishing an HTTPS-enabled Mac package, check that the live association
+URL responds directly with HTTP 200 and `Content-Type: application/json`. Verify
+the expected app ID and `/open/` path, then tap a shared link in Messages on a
+fresh signed installation. The
 fallback page reads the workspace address from the URL fragment, which keeps it
 out of the page request.
