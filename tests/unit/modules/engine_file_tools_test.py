@@ -15,19 +15,41 @@ from heinzel.modules.ai.access._file_tools import ConfinedFiles, FileToolError
 pytestmark = pytest.mark.unit
 
 
-HOMES = {"/Users", "/Users/", "/home"}
+ABOVE_HOME = ("users", "users-slash", "system", "system-volumes", "data-volume", "data-volume-users")
+"""Folders above the home folder or the data volume: the same cases on every system (macOS `/Users` and
+`/System/Volumes/Data`, Linux `/home`), laid out under the test's own folder."""
 
 
-def above_home_here(*candidates: str) -> list[str]:
-    """The folders of `candidates` that exist on this machine and, for a homes folder, hold this user's home.
+def fake_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    """A home and a data volume under `tmp_path`, set as this test's: each wide folder by a fixed name.
 
-    Chosen when the tests are collected, so a case that can't apply here isn't a skipped case.
+    The folders a real disk has differ by system, so cases chosen from the real disk would differ too.
     """
-    return [
-        above
-        for above in candidates
-        if Path(above).is_dir() and (above not in HOMES or Path(above) in Path.home().parents)
-    ]
+    disk = tmp_path / "disk"
+    home = disk / "Users" / "me"
+    data = disk / "System" / "Volumes" / "Data"
+    data_users = data / home.parent.relative_to(home.anchor)
+    for folder in (home / "project", data_users):
+        folder.mkdir(parents=True)
+    other_case = home.with_name(home.name.swapcase())
+    if not other_case.exists():  # a case-sensitive disk: the other spelling made the same folder by a symlink
+        other_case.symlink_to(home)
+    alias = tmp_path / "alias"
+    alias.symlink_to(home)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(_file_tools, "DATA_VOLUME", data)
+    return {
+        "home": home,
+        "home-alias": alias,
+        "home-other-case": other_case,
+        "users": home.parent,
+        "users-slash": Path(f"{home.parent}/"),
+        "system": data.parent.parent,
+        "system-volumes": data.parent,
+        "data-volume": data,
+        "data-volume-users": data_users,
+        "project": home / "project",
+    }
 
 
 @pytest.fixture
@@ -337,37 +359,26 @@ def test_a_swapped_parent_folder_doesn_t_redirect_the_tools(tmp_path: Path) -> N
     files.close()  # again is a no-op
 
 
-# The other case of home is the same folder only on a case-insensitive disk; chosen at collection, never a skip.
-_OTHER_CASE = ["home-other-case"] if Path(str(Path.home()).swapcase()).is_dir() else []
-
-
-@pytest.mark.parametrize("wide", ["root", "home", "home-alias", *_OTHER_CASE])
-def test_the_whole_disk_or_home_is_refused_by_identity(tmp_path: Path, wide: str) -> None:
+@pytest.mark.parametrize("wide", ["root", "home", "home-alias", "home-other-case"])
+def test_the_whole_disk_or_home_is_refused_by_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wide: str
+) -> None:
     """Refused by what the opened folder is, not by its name: another spelling or a symlink still counts."""
-    home = Path.home()
-    if wide == "home-other-case":
-        folder = Path(str(home).swapcase())
-    elif wide == "home-alias":
-        folder = tmp_path / "alias"
-        folder.symlink_to(home)
-    else:
-        folder = Path("/") if wide == "root" else home
+    folders = fake_disk(tmp_path, monkeypatch)
+    folder = Path("/") if wide == "root" else folders[wide]
 
     with pytest.raises(FileToolError, match="whole disk, your home or a folder above it"):
         ConfinedFiles(folder)
     assert _file_tools.too_wide(folder.stat())
-    assert not _file_tools.too_wide(tmp_path.stat())
+    assert not _file_tools.too_wide(folders["project"].stat())
 
 
-@pytest.mark.parametrize(
-    "above",
-    above_home_here(
-        "/Users", "/Users/", "/home", "/System", "/System/Volumes", "/System/Volumes/Data", "/System/Volumes/Data/Users"
-    ),
-)
-def test_every_folder_above_home_or_the_data_volume_is_refused(above: str) -> None:
+@pytest.mark.parametrize("above", ABOVE_HOME)
+def test_every_folder_above_home_or_the_data_volume_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, above: str
+) -> None:
     """`/Users` or `/home` holds every user's home, and the data volume holds the whole disk (ADR 0159, A3)."""
-    folder = Path(above)
+    folder = fake_disk(tmp_path, monkeypatch)[above]
 
     with pytest.raises(FileToolError, match="whole disk, your home or a folder above it"):
         ConfinedFiles(folder)
