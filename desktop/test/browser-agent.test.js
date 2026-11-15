@@ -52,7 +52,8 @@ function fixture() {
         sendCommand: async (method, params) => {
           sent.push([method, params]);
           page.on(method, params);
-          if (page.hang === method) return new Promise(() => {});
+          // Never answered, unless the test lets it answer late with `page.release()`.
+          if (page.hang === method) return new Promise((resolve) => { page.release = () => resolve({}); });
           if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "F" } } };
           if (method === "Page.createIsolatedWorld") return { executionContextId: 7 };
           if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { clientWidth: 800, clientHeight: 600 } };
@@ -594,6 +595,41 @@ test("a guest that never answers the protocol holds no call up, and a failed ope
   f.controller.agents.holds = holds;
   assert.deepEqual((await f.call(OUTSIDE, "tabs")).tabs, []);
   assert.equal((await f.invoke({ action: "state" })).tabs.length, 2);
+});
+
+test("an override whose answer never came is still taken away when the tab is shown", async () => {
+  const f = fixture();
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  await f.invoke({ action: "navigate", url: "https://mine.example.com" });
+  const mine = (await f.invoke({ action: "state" })).selected;
+  await f.invoke({ action: "layout", bounds: { x: 0, y: 40, width: 400, height: 300 } });
+  // The override is sent, and no answer comes: the engine cannot know whether it is in effect.
+  f.defaults.hang = "Emulation.setDeviceMetricsOverride";
+  const opened = await f.call(HEINZEL, "open", { url: "https://shop.example.com/" });
+  const view = f.views[1], tab = opened.id;
+  const sizes = () => view.sent.filter(([name]) => name.startsWith("Emulation.")).map(([name]) => name.split(".")[1]);
+  assert.equal(opened.sized, false);
+  assert.deepEqual(sizes(), ["setDeviceMetricsOverride"]);
+  // The person looks at the tab: the clear goes out all the same.
+  await f.invoke({ action: "select-tab", tab });
+  await settle();
+  assert.deepEqual(sizes(), ["setDeviceMetricsOverride", "clearDeviceMetricsOverride"]);
+  // The answer arrives after all. It is dropped: the tab does not count as sized, so hidden again it is sized anew.
+  view.page.hang = null;
+  view.page.release();
+  await settle();
+  await f.invoke({ action: "select-tab", tab: mine });
+  assert.equal(Object.hasOwn(await f.call(HEINZEL, "navigate", { tab, to: "reload" }), "sized"), false);
+  assert.deepEqual(sizes(), ["setDeviceMetricsOverride", "clearDeviceMetricsOverride", "setDeviceMetricsOverride"]);
+  // Take over, hand back and the agent's own close each clear it; with nothing sent since, no second clear.
+  await f.invoke({ action: "take-over", tab });
+  await f.invoke({ action: "hand-back", tab });
+  await settle();
+  assert.deepEqual(sizes().slice(3), ["clearDeviceMetricsOverride"]);
+  await f.call(HEINZEL, "read", { tab });
+  await f.call(HEINZEL, "close", { tab });
+  assert.deepEqual(sizes().slice(4), ["setDeviceMetricsOverride", "clearDeviceMetricsOverride"]);
+  assert.equal(methods(view).at(-1), "detach");
 });
 
 test("screenshot: the guest view only, hidden or not, 1568 pixels at most", async () => {

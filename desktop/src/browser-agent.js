@@ -372,7 +372,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
   const pageOf = (guest) => {
     let page = pages.get(guest);
     if (page) return page;
-    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null, unsized: false };
+    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null, unsized: false, sent: false, attempt: 0 };
     pages.set(guest, page);
     // The person looks at the tab: it has its real size again at once, whether or not the agent calls again.
     guest.onShown = (shown) => { if (shown) void unsize(guest); };
@@ -410,7 +410,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     if (!wire.isAttached()) {
       wire.attach("1.3");
       // An override ends with the session that set it.
-      pageOf(guest).sized = null;
+      Object.assign(pageOf(guest), { sized: null, sent: false });
       // The first call to a guest is the one that may never be answered: it gets a limit, and a guest that stays
       // silent is let go again, so the next call starts afresh.
       let timer;
@@ -422,6 +422,9 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
         throw new BridgeError("timeout", MESSAGES.silent);
       }
     }
+    // What counts for clearing is that an override was ever sent on this session, not that its answer came: an
+    // answer may be late or never come while the override is in effect all the same.
+    if (method === "Emulation.setDeviceMetricsOverride") pageOf(guest).sent = true;
     return wire.sendCommand(method, params);
   };
   /**
@@ -435,16 +438,21 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     if (guest.shown) { await unsize(guest); return; }
     const { width, height } = tabs.size(guest);
     if (state.sized && state.sized.width === width && state.sized.height === height && guest.view.webContents.debugger.isAttached()) return;
+    const attempt = ++state.attempt;
     await cdp(id, guest, "Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 0, mobile: false });
-    state.sized = { width, height };
+    // The answer of an attempt that was given up on, or that a clear overtook, says nothing about now.
+    if (state.attempt === attempt) state.sized = { width, height };
   };
+  /** Take the override away: always, once one was ever sent on this session. A clear with nothing set does no harm. */
   async function unsize(guest) {
     const state = pageOf(guest);
-    if (!state.sized) return;
+    state.attempt += 1;
     state.sized = null;
-    await quiet(async () => {
-      if (guest.agent && guest.view.webContents.debugger.isAttached()) await cdp(guest.agent.id, guest, "Emulation.clearDeviceMetricsOverride");
-    });
+    if (!state.sent || !guest.agent || !guest.view.webContents.debugger.isAttached()) return;
+    state.sent = false;
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(resolve, sizeMs); timer.unref?.(); });
+    try { await Promise.race([quiet(() => cdp(guest.agent.id, guest, "Emulation.clearDeviceMetricsOverride")), late]); } finally { clearTimeout(timer); }
   }
   /**
    * Give a hidden tab its viewport if that can be done, within `sizeMs`. Never before the tab's first page: a guest
@@ -457,6 +465,8 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), sizeMs); timer.unref?.(); });
     let outcome;
     try { outcome = await Promise.race([quiet(() => size(id, guest)).then(() => "done"), late]); } finally { clearTimeout(timer); }
+    // Given up on: whatever that attempt still answers is dropped.
+    if (outcome === "timeout") state.attempt += 1;
     // Never silent: a hidden tab without a size says so in its state, refuses what needs a layout, and is logged.
     const unsized = !guest.shown && !state.sized;
     if (unsized && !state.unsized) log(JSON.stringify({ event: "browser.agent.unsized", tab: guest.id, reason: outcome === "timeout" ? "timeout" : "refused" }));
@@ -630,7 +640,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
         throw error;
       }
     },
-    close: async (who, args) => { tabs.close(who.id, args.tab); return {}; },
+    close: async (who, args, guest) => { await unsize(guest); tabs.close(who.id, args.tab); return {}; },
     async navigate(who, args, guest) {
       const contents = guest.view.webContents;
       if (Object.hasOwn(args, "url")) await load(guest, address(args.url));
