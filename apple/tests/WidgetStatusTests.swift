@@ -41,6 +41,17 @@ struct WidgetStatusTests {
         let saved = try JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
         precondition(saved.updatedAt == later && saved.workspaceScope == scope)
         precondition(saved.expiresAt == later.addingTimeInterval(300))
+        let unsafeURL = directory.appendingPathComponent("unsafe.sqlite")
+        let unsafeCatalog = ActivityCatalog(url: unsafeURL)!
+        let lockURL = unsafeURL.appendingPathExtension("lock")
+        let target = directory.appendingPathComponent("target")
+        try! Data("untouched".utf8).write(to: target)
+        try! FileManager.default.createSymbolicLink(at: lockURL, withDestinationURL: target)
+        let token = ActivityCatalog.refreshToken(url: unsafeURL)!
+        precondition(!ActivityWidgetData.save(awake: 0, waiting: 0, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: token, catalogOverride: unsafeCatalog))
+        precondition(try! Data(contentsOf: target) == Data("untouched".utf8))
+        precondition(!ActivityCatalog.clear(url: unsafeURL).complete)
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")
     }
 }

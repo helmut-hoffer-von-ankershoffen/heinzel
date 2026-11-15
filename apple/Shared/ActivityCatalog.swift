@@ -53,10 +53,14 @@ final class ActivityCatalog {
     }
 
     private static func withWriterLock<T>(url: URL, failure: T, _ body: () -> T) -> T {
-        let fd = open(url.appendingPathExtension("lock").path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        let fd = open(url.appendingPathExtension("lock").path,
+                      O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard fd >= 0 else { return failure }
         defer { close(fd) }
-        guard flock(fd, LOCK_EX) == 0 else { return failure }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_uid == getuid(), info.st_nlink == 1, info.st_mode & 0o077 == 0,
+              flock(fd, LOCK_EX) == 0 else { return failure }
         defer { flock(fd, LOCK_UN) }
         return body()
     }
