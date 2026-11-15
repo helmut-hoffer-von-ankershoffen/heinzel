@@ -1112,7 +1112,7 @@ try {
     await assertContained(page, page.getByLabel(/^Message /), `${spec.name}: Heinzel composer`);
     await assertContained(page, page.getByRole("button", { name: "Send" }), `${spec.name}: Heinzel send`);
     // The suggestion waits on the Heinzel's page, under Look and name; Use it applies it at once, with Undo.
-    await openDetails(page);
+    await openDetails(page, { show: "page" });
     const look = page.getByRole("region", { name: "Look and name" });
     const useSuggestion = look.getByRole("button", { name: "Use it" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);

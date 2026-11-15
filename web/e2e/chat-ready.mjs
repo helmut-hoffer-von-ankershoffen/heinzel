@@ -26,7 +26,12 @@ export const heinzelComposer = (page) =>
 /** Reviews, terms and recurring turns live on the Heinzel's page (`/heinzel/:id`), beside its chat. Open it, once. */
 // The chat's More → About opens it. Then wait for the page's heading, keep the chat in reach on a phone, and restyle a
 // select the WebKit quirk below hides.
-export async function openDetails(page) {
+/**
+ * Open the Heinzel's page beside its chat. On a phone, where Page and Chat are tabs, `show` picks the one to end on:
+ * the chat (default), with the page above it so both are in reach, or the page alone when a check needs the page's
+ * controls inside the viewport.
+ */
+export async function openDetails(page, { show = "chat" } = {}) {
   const chat = page.getByRole("complementary", { name: "Chat" });
   await heinzelComposer(page).waitFor({ timeout: 30000 });
   const heading = page.getByRole("heading", { level: 1, name: /, your Heinzel$/ });
@@ -43,13 +48,18 @@ export async function openDetails(page) {
   // That selection runs just after the page renders (before any tap of a person's, which React handles after it), so
   // when About opened the page, wait for it to land before choosing Chat; else a slow runner chooses first and loses.
   const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
-  if (opened && (await chatTab.count()))
+  const pageTab = page.getByRole("tab", { name: "Page", exact: true });
+  if (opened && (await pageTab.count()))
     await page.getByRole("tab", { name: "Page", exact: true, selected: true }).waitFor({ timeout: 30000 });
-  if ((await chatTab.count()) && !(await heinzelComposer(page).isVisible())) {
+  if (show === "chat" && (await chatTab.count()) && !(await heinzelComposer(page).isVisible())) {
     await chatTab.press("Enter");
     await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
   }
-  await heinzelComposer(page).waitFor();
+  if (show === "page" && (await pageTab.count()) && (await pageTab.getAttribute("aria-selected")) !== "true") {
+    await pageTab.press("Enter");
+    await page.getByRole("tab", { name: "Page", exact: true, selected: true }).waitFor();
+  }
+  if (show === "chat") await heinzelComposer(page).waitFor();
   const selects = await page.locator("main").locator("select").all();
   const restyled = (await Promise.all(selects.map((select) => select.evaluate(quirkRestyled)))).filter(Boolean).length;
   if (restyled) process.stderr.write(`openDetails: restyled ${restyled} select(s) after the WebKit visibility quirk\n`);
