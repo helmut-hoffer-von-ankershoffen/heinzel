@@ -147,22 +147,25 @@ def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "al
         qualname = item.record.qualname
         if wanted and not any(qualname == w or qualname.startswith(f"{w}.") for w in wanted):
             continue
-        if head != "all" and key not in surfaces[head]:
+        # What each head really serves: MCP only what the server lists (it leaves some operations to a chat's own
+        # pipe), so the column and the filter read the same source.
+        runs = {name: key in surface for name, surface in surfaces.items()}
+        runs["mcp"] = runs["mcp"] and item.name in served
+        if not any(runs.values()) or (head != "all" and not runs[head]):
             continue
         verb = "GET" if item.operation.read_only else "POST"
         path = "/".join(item.path)
-        in_mcp = key in surfaces["mcp"] and item.name in served
-        schema = dict(served[item.name].input_schema) if in_mcp else input_schema(item)
+        schema = dict(served[item.name].input_schema) if runs["mcp"] else input_schema(item)
         result.append(
             ToolInfo(
                 module=qualname,
                 name=item.operation.name,
                 summary=item.operation.summary,
                 heads=HeadInfo(
-                    cli=f"hz {' '.join(command_words(item.path))}" if key in surfaces["cli"] else None,
-                    mcp=item.name if in_mcp else None,
-                    rest=f"{verb} /{path}" if key in surfaces["rest"] else None,
-                    web=f"{verb} /api/{path}" if key in surfaces["web"] else None,
+                    cli=f"hz {' '.join(command_words(item.path))}" if runs["cli"] else None,
+                    mcp=item.name if runs["mcp"] else None,
+                    rest=f"{verb} /{path}" if runs["rest"] else None,
+                    web=f"{verb} /api/{path}" if runs["web"] else None,
                 ),
                 read_only=item.operation.read_only,
                 private=item.operation.private,
