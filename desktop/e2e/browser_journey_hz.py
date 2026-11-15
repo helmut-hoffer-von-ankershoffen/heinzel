@@ -119,6 +119,11 @@ def first_turn() -> Script:
         # The journey notes what this try left on the page; meanwhile the page takes its frame away again.
         wait_for_the_person(f"try-{attempt + 1}", f"try-{attempt + 1}-seen")
     report["race"] = race
+    # The page opens an alert and a confirm on this click; the next call must still be answered, and soon.
+    report["click_dialog"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show a notice")}
+    began = time.monotonic()
+    report["after_dialog"] = yield "text", {"tab": tab}
+    report["after_dialog_seconds"] = round(time.monotonic() - began, 2)
     card_tab = tab_of((yield "open", {"url": SHOP + "/card"}))
     card = yield "read", {"tab": card_tab}
     card_number = ref_of(card, "textbox", "Card number")
