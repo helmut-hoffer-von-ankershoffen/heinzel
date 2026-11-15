@@ -32,6 +32,7 @@ from heinzel.kernel import (
     pydantic_ai_tools,
 )
 from heinzel.kernel._browser import BrowserBridge
+from heinzel.kernel._chat_services import FoundMcpServers
 from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.kernel._identity import CallIdentity
 from heinzel.modules.system.runner.chat._service import ChatService
@@ -117,7 +118,13 @@ def ran() -> list[str]:
 def kernel(make_kernel, ran):
     kernel = make_kernel(builtins=True, notes=notes(ran))
     kernel.bind(ActionGate, Gate())
+    kernel.bind(FoundMcpServers, NoServers())  # never the MCP servers of whoever runs the tests (their HOME)
     return kernel
+
+
+class NoServers(FoundMcpServers):
+    def tools(self) -> list:
+        return []
 
 
 def open_chat(kernel) -> str:
@@ -254,9 +261,17 @@ def test_one_table_of_calls_has_the_same_outcome_in_process_and_over_the_chat_pi
 
 def test_the_table_holds_with_the_chat_s_own_gate_too(make_kernel, ran):
     kernel = make_kernel(builtins=True, notes=notes(ran))  # no fake: the chat module's ActionGate keeps proposals
+    kernel.bind(FoundMcpServers, NoServers())
     service = kernel.resolve(ChatService)
     session = service.open(None).id
-    same(direct_outcomes(kernel, session), mcp_outcomes(kernel, session))
+    desktop = FakeDesktop()  # the table's browser rows need a desktop, as in the first table test
+    bridge = kernel.resolve(BrowserBridge)
+    bridge.connect(desktop)
+    desktop.seed(session, TAB)
+    try:
+        same(direct_outcomes(kernel, session), mcp_outcomes(kernel, session))
+    finally:
+        bridge.disconnect(desktop)
     assert ran == ["owner", "owner"]
     proposed = sum(kind == "proposed" for _, _, kind in CALLS)
     assert len(service._store.load(session).actions) == 2 * proposed

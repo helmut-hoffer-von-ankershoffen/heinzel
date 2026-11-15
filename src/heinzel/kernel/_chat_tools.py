@@ -221,7 +221,7 @@ class ChatTool:
 
         The gate is the browser module's, not this policy's: a commit leaves the operation as `BrowserCommitError`
         without having run, and is proposed with the fingerprint of the target the person will be shown. A browser
-        input is a write like any other for the agent write policy: its marker, the budget and the audit line.
+        input is a write for the agent write policy: its marker and the audit line; its budget is the browser's own.
 
         Raises:
             ChatToolError: If the browser input is not marked `direct`; it never waits for a yes outside a commit.
@@ -245,7 +245,7 @@ class ChatTool:
             note("refused")
             msg = f"{self.name} is not marked for agents; nothing ran"
             raise ChatToolError(msg)
-        self._budget(caller, note)
+        # No write budget: a browser input has the browser's own limits (60 calls, 10 navigations a minute).
         try:
             with browser_caller(acting), user.local_read(AUTHENTICATION), calling(caller):
                 result = self.kernel.invoke(self.item.operation, **arguments)
@@ -637,6 +637,8 @@ def agent_write(kernel: Kernel, item: Exposed, arguments: Mapping[str, Any], cal
             f"{command}"
         )
         raise HeinzelError(msg)
+    if item.record.qualname == BROWSER_MODULE:
+        return policy  # the browser's own limits count its inputs, as on the in-process path
     try:
         write_budget(kernel).take(caller)
     except HeinzelError:

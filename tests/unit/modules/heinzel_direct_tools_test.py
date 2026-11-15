@@ -227,7 +227,7 @@ def audited(monkeypatch) -> list[dict]:
     return lines
 
 
-def test_a_browser_input_takes_the_budget_and_leaves_one_audit_line_each_way(kernel, desktop, audited, monkeypatch):
+def test_a_browser_input_follows_its_marker_and_leaves_one_audit_line_each_way(kernel, desktop, audited, monkeypatch):
     actions = actions_chat(kernel)
     desktop.seed(HEINZEL, TAB)  # the Heinzel's own tabs, not the actions chat's
     click = tool(kernel, actions, "ui_browser_click")
@@ -240,17 +240,16 @@ def test_a_browser_input_takes_the_budget_and_leaves_one_audit_line_each_way(ker
     monkeypatch.setattr(chat_tools_module, "audit_write", lambda *a, **k: audited.append({"outcome": k["outcome"]}))
 
     def spent(self, caller):
-        msg = "This agent used its write budget for the minute"
-        raise HeinzelError(msg)
+        msg = "a browser input never draws on the write budget"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(WriteBudget, "take", spent)
-    with pytest.raises(ChatToolError, match="write budget"):
-        click.call({"tab": TAB, "ref": "ref_1"})
-    assert [line["outcome"] for line in audited] == ["ran", "proposed", "refused", "over-budget"]
+    click.call({"tab": TAB, "ref": "ref_1"})  # the browser's own limits count it
+    assert [line["outcome"] for line in audited] == ["ran", "proposed", "refused", "ran"]
     assert {line["caller"] for line in audited[:3]} == {f"heinzel:{HEINZEL}"}
     assert {line["policy"] for line in audited[:2]} == {"direct"}
     assert [command.actor for command in desktop.commands] == [HEINZEL] * len(desktop.commands)
-    assert desktop.acted() == ["click"]  # the commit and both refusals never acted
+    assert desktop.acted() == ["click", "click"]  # the commit and the refusal never acted
 
 
 class Servers(FoundMcpServers):
