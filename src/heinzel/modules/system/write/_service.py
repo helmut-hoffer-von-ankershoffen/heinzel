@@ -13,7 +13,7 @@ import secrets
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from packaging.utils import canonicalize_name
 from pydantic import ValidationError
@@ -129,7 +129,7 @@ class WriteLog(AgentWriteLog):
             lines = self._journal.read_bytes().splitlines()
         except FileNotFoundError:
             return []
-        entries = []
+        entries: list[AgentWrite] = []
         for line in lines[-2 * KEEP :]:
             if len(line) > MAX_LINE:
                 continue
@@ -174,9 +174,10 @@ class WriteLog(AgentWriteLog):
             return {}  # unreadable: nothing is allowed, the strict side
         if not isinstance(data, dict):
             return {}
+        document = cast("dict[object, object]", data)
         return {
-            plugin: [name for name in names if isinstance(name, str)]
-            for plugin, names in data.items()
+            plugin: [name for name in cast("list[object]", names) if isinstance(name, str)]
+            for plugin, names in document.items()
             if isinstance(plugin, str) and isinstance(names, list)
         }
 

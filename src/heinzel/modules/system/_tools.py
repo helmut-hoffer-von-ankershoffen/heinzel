@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, Field, TypeAdapter
@@ -71,13 +71,15 @@ def type_name(schema: dict[str, Any], defs: dict[str, Any] | None = None) -> str
         return " | ".join(repr(v) for v in schema.get("enum", [schema.get("const")]))
     for key in ("anyOf", "oneOf"):
         if key in schema:
-            return " | ".join(type_name(s, defs) for s in schema[key])
+            alternatives: list[dict[str, Any]] = schema[key]
+            return " | ".join(type_name(s, defs) for s in alternatives)
     kind = schema.get("type", "any")
     if kind == "array":
         return f"list[{type_name(schema.get('items', {}), defs)}]"
-    if kind == "object" and "additionalProperties" in schema and isinstance(schema["additionalProperties"], dict):
-        return f"dict[string, {type_name(schema['additionalProperties'], defs)}]"
-    return ", ".join(kind) if isinstance(kind, list) else str(kind)
+    extra = schema.get("additionalProperties")
+    if kind == "object" and isinstance(extra, dict):
+        return f"dict[string, {type_name(cast('dict[str, Any]', extra), defs)}]"
+    return ", ".join(cast("list[str]", kind)) if isinstance(kind, list) else str(kind)
 
 
 def _result(item: Exposed) -> str:

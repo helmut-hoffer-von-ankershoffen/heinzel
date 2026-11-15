@@ -15,7 +15,7 @@ permissions: {}
 jobs:
   fuzz:
     name: Fuzz the contract parser
-    if: false # paused: atheris has no Python 3.15 wheel and Heinzel needs 3.15; re-enable when it does (bead heinzel-management-1c4g)
+    if: ${{ vars.FUZZ_ENABLED == 'true' }} # paused (the variable is unset): atheris has no Python 3.15 wheel and Heinzel needs 3.15; re-enable when it does (bead heinzel-management-1c4g)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

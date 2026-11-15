@@ -110,7 +110,8 @@ def peer_uid(connection: socket.socket) -> int | None:
     try:
         if hasattr(socket, "SO_PEERCRED"):  # Linux: struct ucred {pid, uid, gid}
             size = struct.calcsize("3i")
-            return int(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, size))[1])
+            peercred: int = getattr(socket, "SO_PEERCRED")  # noqa: B009  (absent from the stubs on macOS)
+            return int(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, peercred, size))[1])
         # macOS and the BSDs: LOCAL_PEERCRED at level SOL_LOCAL gives struct xucred {version, uid, ...}
         credentials = connection.getsockopt(_SOL_LOCAL, _LOCAL_PEERCRED, _XUCRED_SIZE)
         return int(struct.unpack_from("2I", credentials)[1])
@@ -175,7 +176,7 @@ class BrowserRelay:
                 request = _OBJECT.validate_json(_receive(connection, REQUEST_LIMIT, REQUEST_SECONDS))
                 kind, session, tool, arguments = (request.get(key) for key in ("kind", "session", "tool", "arguments"))
                 if (
-                    set(request) != _REQUEST_KEYS
+                    frozenset(request) != _REQUEST_KEYS
                     or not isinstance(kind, str)
                     or not isinstance(session, str)
                     or not isinstance(tool, str)

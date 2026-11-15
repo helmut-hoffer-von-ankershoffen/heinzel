@@ -33,8 +33,12 @@ class CallerActivity(BaseModel):
 class AgentWrites(BaseModel):
     """The writes agents asked for, latest first, and a line per agent."""
 
-    writes: list[AgentWrite] = Field(default_factory=list, description="The entries asked for, latest first.")
-    callers: list[CallerActivity] = Field(default_factory=list, description="One line per agent, busiest first.")
+    writes: list[AgentWrite] = Field(
+        default_factory=list[AgentWrite], description="The entries asked for, latest first."
+    )
+    callers: list[CallerActivity] = Field(
+        default_factory=list[CallerActivity], description="One line per agent, busiest first."
+    )
     unattended_ran: int = Field(
         default=0, description="Writes that ran in turns nobody watched, in the last 24 hours: the digest's count."
     )
@@ -56,5 +60,5 @@ class PluginWrite(BaseModel):
 class PluginWrites(BaseModel):
     """Every plugin operation that asks to run directly for agents."""
 
-    writes: list[PluginWrite] = Field(default_factory=list, description="The operations, by plugin.")
+    writes: list[PluginWrite] = Field(default_factory=list[PluginWrite], description="The operations, by plugin.")
     next: list[str] = Field(default_factory=list, description="Commands that allow what is waiting.")

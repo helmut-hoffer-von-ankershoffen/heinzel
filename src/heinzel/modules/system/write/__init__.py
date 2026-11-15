@@ -70,7 +70,7 @@ def render_plugins(result: PluginWrites) -> RenderableType:
 @module.health
 def health(service: WriteLog) -> list[Check]:
     """The owner's digest: what ran with nobody watching, and which plugin writes wait for a yes. Never a fault."""
-    checks = []
+    checks: list[Check] = []
     if count := service.listing(None, unattended=True, limit=1).unattended_ran:
         checks.append(
             Check(

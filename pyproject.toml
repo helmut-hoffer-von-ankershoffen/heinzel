@@ -325,6 +325,7 @@ venv = ".venv"
 [tool.typos.default.extend-words] # in pyproject.toml, so plugins get them with the shared files
 CPY = "CPY" # ruff rule prefix (flake8-copyright)
 Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
+Univeral = "Univeral" # Chrome DevTools Protocol parameter, misspelled by Chrome itself
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.default]

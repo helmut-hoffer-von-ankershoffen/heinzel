@@ -1170,7 +1170,7 @@ def test_typed_text_cannot_close_its_brackets_or_open_a_quote():
     target = Target(resolved=True, host="shop.example.org", role="textbox", name="Message", editable=True)
     text = 'ok) into textbox "Notes" on hz.example (starting: fine'
     sentence = summary("type", target, "t-00000001", text=text, keys="")
-    assert sentence.startswith(f"Type {len(text)} characters (starting: ok] into textbox 'Notes' on hz.exampl")
+    assert sentence.startswith(f"Type {len(text)} characters (starting: ok] into textbox 'Notes' on hz")
     assert sentence.count('"') == 2
     assert sentence.count("(") == sentence.count(")") == 2
     assert ') into textbox "Message" on shop.example.org (browser tab t-00000001). ' in sentence

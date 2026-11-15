@@ -14,7 +14,7 @@ import os
 import secrets
 from collections.abc import Generator, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from heinzel import HeinzelError, Kernel
@@ -61,20 +61,29 @@ def _write_private(path: Path, data: bytes) -> None:
 
 def _well_formed(node: object) -> bool:
     """Whether a stored entry has the shape every operation relies on, all the way down."""
-    if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not isinstance(node.get("title"), str):
+    if not isinstance(node, dict):
         return False
-    if node.get("kind") == "bookmark":
-        return isinstance(node.get("url"), str)
-    children = node.get("children")
-    return node.get("kind") == "folder" and isinstance(children, list) and all(map(_well_formed, children))
+    entry = cast("dict[str, Any]", node)
+    if not isinstance(entry.get("id"), str) or not isinstance(entry.get("title"), str):
+        return False
+    if entry.get("kind") == "bookmark":
+        return isinstance(entry.get("url"), str)
+    children = entry.get("children")
+    return (
+        entry.get("kind") == "folder"
+        and isinstance(children, list)
+        and all(map(_well_formed, cast("list[object]", children)))
+    )
 
 
 def _well_formed_removal(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    entry = cast("dict[str, Any]", item)
     return (
-        isinstance(item, dict)
-        and _well_formed(item.get("node"))
-        and isinstance(item.get("parent"), str | None)
-        and isinstance(item.get("index"), int)
+        _well_formed(entry.get("node"))
+        and isinstance(entry.get("parent"), str | None)
+        and isinstance(entry.get("index"), int)
     )
 
 
@@ -162,20 +171,23 @@ class BookmarkService:
         except (OSError, ValueError) as exc:
             msg = f"The bookmarks file {self._file} can't be read ({exc}); move it away to start again."
             raise HeinzelError(msg) from exc
-        children = data.get("children") if isinstance(data, dict) else None
-        removed = data.get("removed", []) if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            msg = f"The bookmarks file {self._file} has an unknown format; move it away to start again."
+            raise HeinzelError(msg)
+        document = cast("Node", data)
+        children: object = document.get("children")
+        removed: object = document.get("removed", [])
         if (
-            not isinstance(data, dict)
-            or data.get("version") != 1
+            document.get("version") != 1
             or not isinstance(children, list)
             or not isinstance(removed, list)
-            or not all(map(_well_formed, children))
-            or not all(map(_well_formed_removal, removed))
+            or not all(map(_well_formed, cast("list[object]", children)))
+            or not all(map(_well_formed_removal, cast("list[object]", removed)))
         ):
             msg = f"The bookmarks file {self._file} has an unknown format; move it away to start again."
             raise HeinzelError(msg)
-        data["removed"] = removed
-        return data
+        document["removed"] = removed
+        return document
 
     def _write(self, data: Node) -> None:
         _write_private(self._file, json.dumps(data, ensure_ascii=False, indent=1).encode())

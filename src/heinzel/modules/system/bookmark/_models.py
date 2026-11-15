@@ -21,7 +21,8 @@ class BookmarkList(BaseModel):
     """The owner's bookmarks, depth-first in their order, with the cached favicons of their origins."""
 
     bookmarks: list[Bookmark] = Field(
-        default_factory=list, description="Every entry, depth-first in order; `parent` and `depth` give the tree."
+        default_factory=list[Bookmark],
+        description="Every entry, depth-first in order; `parent` and `depth` give the tree.",
     )
     favicons: dict[str, str] = Field(
         default_factory=dict, description="A small image per origin as a `data:` URL, where a page showed one."
