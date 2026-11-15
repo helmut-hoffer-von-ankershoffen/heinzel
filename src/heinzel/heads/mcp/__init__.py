@@ -58,6 +58,7 @@ from heinzel.heads._mcp_tokens import (
     tokens_for_user,
 )
 from heinzel.heads._presence import mark_authenticated_presence
+from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import (
     CurrentUser,
@@ -119,6 +120,7 @@ def build(
     Raises:
         HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
+    bind_served_tools(kernel)
     if chat is not None and transport != "stdio":
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)

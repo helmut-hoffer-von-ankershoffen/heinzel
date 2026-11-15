@@ -30,6 +30,7 @@ from typer.core import TyperGroup
 
 from heinzel import __version__
 from heinzel.heads._exposure import collapses, owns_path, restricts
+from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._branding import TAGLINE
 from heinzel.heads.cli._branding import footer as brand_footer
@@ -92,6 +93,7 @@ def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> type
             for experts marked.
         ui_only: Build only the UI subtree for direct UI invocations; root discovery uses the complete tree.
     """
+    bind_served_tools(kernel)
     app, mount = _root(kernel, plain=plain)
     if ui_only:
         mount.ui(app)

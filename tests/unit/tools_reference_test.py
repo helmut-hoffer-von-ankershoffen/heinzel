@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from heinzel import Config, HeinzelError, Kernel, Settings
+from heinzel.heads._served_tools import bind_served_tools
 from heinzel.kernel import discover
 from heinzel.modules.system._tools import mcp_reference, render, served_mcp_tools, tools
 
@@ -19,7 +20,9 @@ DOCS = Path(__file__).resolve().parents[2] / "docs"
 @pytest.fixture(scope="module")
 def built_ins() -> Kernel:
     config = Config.empty()
-    return Kernel(config.settings(Settings, "hz"), discover(plugins=False)[0], config=config)
+    kernel = Kernel(config.settings(Settings, "hz"), discover(plugins=False)[0], config=config)
+    bind_served_tools(kernel)
+    return kernel
 
 
 def test_every_format_renders_the_same_operations(built_ins):
@@ -89,7 +92,7 @@ def test_the_mcp_reference_is_what_the_served_server_lists(built_ins):
     assert "system_runner_chat_confirm_authorized_mcp" not in text
     assert "approval_proof" not in json.dumps(served["heinzel_schedule_control"].input_schema)
     assert "approval_proof" not in text.split("## `heinzel_schedule_control`")[1].split("\n## `")[0]
-    deprecated = [n for n, t in served.items() if (t.description or "").startswith("Deprecated")]
+    deprecated = [n for n, t in served.items() if t.description.startswith("Deprecated")]
     assert deprecated
     assert all(f"## `{n}`" in text for n in deprecated)
 

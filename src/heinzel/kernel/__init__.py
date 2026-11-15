@@ -213,7 +213,17 @@ from heinzel.kernel._draft_append import (
 )
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, NotSupportedError, SubscriptionUsageLimitError
-from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
+from heinzel.kernel._exposure import (
+    MCP_HTTP,
+    MCP_STDIO,
+    Exposed,
+    ServedTool,
+    ServedTools,
+    command_words,
+    exposed,
+    input_schema,
+    restricts,
+)
 from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
@@ -803,6 +813,8 @@ __all__ = [
     "SelfAnswer",
     "SelfMessage",
     "SentMail",
+    "ServedTool",
+    "ServedTools",
     "ServiceContract",
     "ServiceLet",
     "SessionEvent",
@@ -900,6 +912,7 @@ __all__ = [
     "check_target",
     "clean_text",
     "collapses",
+    "command_words",
     "current_caller",
     "daypart",
     "declared_agent_writes",
