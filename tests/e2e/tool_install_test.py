@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -80,6 +81,9 @@ class Sandbox:
         }
         for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
             env.pop(name, None)
+        find_links = env.pop("UV_FIND_LINKS", None)
+        if find_links:
+            env["PATH"] = f"{self.uv_shim(find_links)}{os.pathsep}{env.get('PATH', '')}"
         if self.own_home:
             for name in ("HZ_CONFIG", "HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_STATE_DIR", "HZ_LOG_DIR"):
                 env.pop(name, None)
@@ -114,20 +118,35 @@ class Sandbox:
             timeout=240,
         )
         assert result.returncode == 0, f"{command} failed:\n{result.stdout}\n{result.stderr}\n{self.diagnose()}"
-        self.forget_reviewed_find_links()
         return result.stdout
 
-    def forget_reviewed_find_links(self) -> None:
-        """Drop the find-links uv records from UV_FIND_LINKS (the reviewed PyYAML build on Python 3.15).
+    def uv_shim(self, find_links: str) -> Path:
+        """A `uv` first on PATH that gives only its own process the reviewed PyYAML build (Python 3.15 has no wheel).
 
-        uv saves an environment find-links in the tool receipt as resolver policy, and the installer rightly refuses
-        a receipt with options. A user's install never has them; the tests only need them while uv resolves.
+        uv saves an inherited find-links in the tool receipt as resolver policy, and the installer rightly refuses a
+        receipt with options. A user's install never has them, so the shim removes them as soon as uv exits, before
+        anything else (an installer script adding a plugin, say) reads the receipt.
         """
-        for receipt in (self.root / "tools").glob("*/uv-receipt.toml"):
-            text = receipt.read_text(encoding="utf-8")
-            stripped = re.sub(r"\n\[tool\.options\]\nfind-links = \[[^\]]*\]\n", "\n", text)
-            if stripped != text:
-                receipt.write_text(stripped.rstrip("\n") + "\n", encoding="utf-8")
+        directory = self.root / "uv-shim"
+        directory.mkdir(parents=True, exist_ok=True)
+        real = shutil.which("uv", path=os.environ.get("PATH"))
+        assert real, "uv is not on PATH"
+        script = directory / "uv"
+        script.write_text(
+            f"#!{sys.executable} -I\n"
+            "import glob, os, re, subprocess, sys\n"
+            f"env = {{**os.environ, 'UV_FIND_LINKS': {find_links!r}}}\n"
+            f"code = subprocess.call([{real!r}, *sys.argv[1:]], env=env)\n"
+            "for path in glob.glob(os.path.join(os.environ.get('UV_TOOL_DIR', ''), '*', 'uv-receipt.toml')):\n"
+            "    text = open(path, encoding='utf-8').read()\n"
+            "    new = re.sub(r'\\n\\[tool\\.options\\]\\nfind-links = \\[[^\\]]*\\]\\n', '\\n', text)\n"
+            "    if new != text:\n"
+            "        open(path, 'w', encoding='utf-8').write(new.rstrip('\\n') + '\\n')\n"
+            "sys.exit(code)\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        return directory
 
     def diagnose(self) -> str:
         """What the sandbox's bin directory holds, and where the hz launcher's interpreter points."""

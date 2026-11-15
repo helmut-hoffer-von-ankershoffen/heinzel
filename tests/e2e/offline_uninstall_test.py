@@ -629,7 +629,6 @@ def retain_manager_fixture_source(selected, environment):
         '[tool.hatch.build.targets.wheel]\nonly-include = ["offline_uninstall_fixture.py", "offline_manager_plugin"]\n'
     )
     interpreter = selected.root / "tools/heinzel/bin/python"
-    selected.forget_reviewed_find_links()
     result = fixture_run(
         [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "plugin", "develop", str(source)],
         env=environment,
