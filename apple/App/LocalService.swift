@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import Synchronization
 
 @MainActor
 final class LocalService: NSObject, NSApplicationDelegate {
@@ -51,15 +52,7 @@ final class LocalService: NSObject, NSApplicationDelegate {
             throw error
         }
         self.child = child
-        let handle = stdout.fileHandleForReading
-        let output = AsyncStream<Data> { continuation in
-            handle.readabilityHandler = { reader in
-                let data = reader.availableData
-                if data.isEmpty { continuation.finish() }
-                else { continuation.yield(data) }
-            }
-        }
-        defer { handle.readabilityHandler = nil }
+        let output = startupLine(from: stdout.fileHandleForReading)
 
         do {
             let endpoint = try await withThrowingTaskGroup(of: Endpoint.self) { group in
@@ -68,18 +61,14 @@ final class LocalService: NSObject, NSApplicationDelegate {
                     throw ConnectionError.startup
                 }
                 group.addTask {
-                    var line = Data()
-                    for await data in output {
-                        line.append(data)
-                        guard line.count <= 4096 else { break }
-                        if line.contains(10) {
-                            guard let value = String(data: line, encoding: .utf8),
-                                  let endpoint = Endpoint(value, loopback: true) else { break }
-                            try await endpoint.verify()
-                            return endpoint
-                        }
+                    var lines = output.makeAsyncIterator()
+                    guard let line = await lines.next(),
+                          let value = String(data: line, encoding: .utf8),
+                          let endpoint = Endpoint(value, loopback: true) else {
+                        throw ConnectionError.startup
                     }
-                    throw ConnectionError.startup
+                    try await endpoint.verify()
+                    return endpoint
                 }
                 defer { group.cancelAll() }
                 guard let endpoint = try await group.next() else { throw ConnectionError.startup }
@@ -92,6 +81,37 @@ final class LocalService: NSObject, NSApplicationDelegate {
             await stop()
             throw error
         }
+    }
+
+    private func startupLine(from handle: FileHandle) -> AsyncStream<Data> {
+        let pending = Mutex<Data?>(Data())
+        let (line, result) = AsyncStream<Data>.makeStream()
+        handle.readabilityHandler = { reader in
+            // Keep draining until exit. Restarts and later output still use this pipe.
+            let data = reader.availableData
+            guard !data.isEmpty else {
+                reader.readabilityHandler = nil
+                result.finish()
+                return
+            }
+            pending.withLock { buffer in
+                guard let length = buffer?.count else { return }
+                let newline = data.firstIndex(of: 10)
+                let prefix = data.prefix(upTo: newline ?? data.endIndex)
+                guard length + prefix.count <= 4096 else {
+                    buffer = nil
+                    result.finish()
+                    return
+                }
+                buffer?.append(contentsOf: prefix)
+                if newline != nil {
+                    if let buffer { result.yield(buffer) }
+                    buffer = nil
+                    result.finish()
+                }
+            }
+        }
+        return line
     }
 
     private func developmentCLI(home: URL) throws -> String {
