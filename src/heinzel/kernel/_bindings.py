@@ -11,23 +11,46 @@ an adapter's instance through introspection or import the adapter's module. Hand
 visible in review, as `Credentials` does (ADR 0030); they don't stop a malicious plugin.
 """
 
+import contextvars
+import inspect
+import itertools
 import logging
+import re
+import threading
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast, get_args, get_origin, get_type_hints
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
 from heinzel.kernel._config import ModuleSettings
-from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._errors import HeinzelError, NotSupportedError
 from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
 from heinzel.kernel._logging import log_event
+from heinzel.kernel._protocols import Gathered, SourceFailure
+from heinzel.kernel._text import clean_text
 
 logger = logging.getLogger(__name__)
 
 CAPABILITIES_SECTION = "capabilities"
+_ISSUED = 4096
+"""How many ids given out by adapters are remembered, to route a later call naming one without a link."""
+_SHOWN = 80
+"""Characters of a reference repeated in a routing error."""
+_REASON = 300
+"""Characters of an adapter's error repeated as the reason it failed in a read asked of several."""
+_GAP = object()
 
 RequesterKind = Literal["module", "operation", "job"]
 How = Literal["configured", "automatic", "default", "off", "unbound"]
@@ -36,12 +59,34 @@ automatically while nothing is configured; the core's default; `off`, configured
 HOWS: tuple[How, ...] = ("configured", "automatic", "default", "off", "unbound")
 
 
-def _options(capability: str) -> dict[str, Any]:
+def _options(capability: str, *, multiple: bool = False) -> dict[str, Any]:
     """The JSON Schema extra of a binding: its values are the installed adapters of `capability`, or `none`.
 
-    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0055).
+    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0055); a capability
+    several adapters may serve at once (ADR 0161) is a list of switches instead.
     """
-    return {"x-options": {"source": "adapters", "capability": capability, "none": NO_ADAPTER}}
+    options: dict[str, Any] = {"source": "adapters", "capability": capability, "none": NO_ADAPTER}
+    if multiple:
+        options["multiple"] = True
+    return {"x-options": options}
+
+
+def _names(value: object) -> object:
+    """A binding to several adapters as a list of names: from a list, or a comma-separated string (`a,b`).
+
+    Raises:
+        ValueError: If `none` is listed with adapters.
+    """
+    if isinstance(value, str) and "," in value:
+        value = value.split(",")
+    if isinstance(value, (list, tuple)):
+        names = [str(item).strip() for item in cast("Iterable[object]", value)]
+        names = list(dict.fromkeys(name for name in names if name))
+        if NO_ADAPTER in names and len(names) > 1:
+            msg = f"{NO_ADAPTER!r} binds nothing; it can't be listed with adapters ({', '.join(names)})"
+            raise ValueError(msg)
+        return names
+    return value
 
 
 class CapabilitySettings(ModuleSettings):
@@ -98,11 +143,11 @@ class CapabilitySettings(ModuleSettings):
         ),
         json_schema_extra=_options("directory"),
     )
-    documents: str | None = Field(
+    documents: str | list[str] | None = Field(
         default=None,
         title="Documents",
-        description="The connector for documents and pages, such as Confluence.",
-        json_schema_extra=_options("documents"),
+        description="The connectors for documents and pages, such as Google Docs and Confluence; switch on several.",
+        json_schema_extra=_options("documents", multiple=True),
     )
     mail: str | None = Field(
         default=None,
@@ -155,13 +200,25 @@ class CapabilitySettings(ModuleSettings):
             return {str(key).replace("-", "_"): value for key, value in cast("Mapping[str, Any]", data).items()}
         return data  # pragma: no cover - pydantic-settings always passes a mapping
 
+    @field_validator("documents", mode="before")
+    @classmethod
+    def _several(cls, value: object) -> object:
+        return _names(value)
+
     def bound(self, capability: str) -> str | None:
         """The adapter configured or defaulted for `capability`, or None; `none` and an empty value are None.
 
-        Doesn't choose automatically: that needs the installed adapters, which `Capabilities.binding` knows.
+        Of several adapters (ADR 0161), the first: the default, where a call that names no item goes. Doesn't choose
+        automatically: that needs the installed adapters, which `Capabilities.binding` knows.
         """
-        value = cast("str | None", getattr(self, capability.replace("-", "_"), None))
-        return None if value in {None, "", NO_ADAPTER} else value
+        names = self.bound_all(capability)
+        return names[0] if names else None
+
+    def bound_all(self, capability: str) -> tuple[str, ...]:
+        """Every adapter configured or defaulted for `capability`, the default first; empty for none (ADR 0161)."""
+        value = cast("str | list[str] | None", getattr(self, capability.replace("-", "_"), None))
+        values = value if isinstance(value, list) else [value]
+        return tuple(name for name in values if name is not None and name not in {"", NO_ADAPTER})
 
     def configured(self, capability: str) -> bool:
         """Whether a configuration file or variable sets `capability`, to an adapter or to `none`."""
@@ -310,9 +367,287 @@ class _Handle:
         return f"<{self._label}>"
 
 
-def _wrap(instance: Callable[[], object], capability: Capability, name: str) -> Callable[..., Any]:
+def _labelled(value: object, source: str) -> object:
+    """`value` with `source` set, if it is a model with a `source` field such as `Document`; else `value` itself."""
+    if isinstance(value, BaseModel) and "source" in type(value).model_fields:
+        return value.model_copy(update={"source": source})
+    return value
+
+
+class _Busy(Exception):  # noqa: N818 - an outcome, not an error anyone raises
+    """An adapter still working on as many earlier calls as it may have at once."""
+
+
+class _InFlight:
+    """How many fan-out calls each adapter has running, capped, so a stuck adapter can't pile up threads (ADR 0161)."""
+
+    def __init__(self, cap: int) -> None:
+        self._cap = cap
+        self._running: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def take(self, name: str) -> bool:
+        """Count one more call of `name`, unless it already has `cap` running."""
+        with self._lock:
+            if self._running.get(name, 0) >= self._cap:
+                return False
+            self._running[name] = self._running.get(name, 0) + 1
+            return True
+
+    def give(self, name: str) -> None:
+        """Count one call of `name` less."""
+        with self._lock:
+            self._running[name] -= 1
+
+
+def _gather(
+    calls: Mapping[str, Callable[[], object]], timeout: float, in_flight: _InFlight
+) -> list[tuple[str, object | BaseException]]:
+    """Run `calls` at once, each in a daemon thread with the caller's context; what each returned or raised, in order.
+
+    One that hasn't finished after `timeout` seconds yields a `TimeoutError`; its thread is left behind, as a daemon,
+    so a hanging adapter neither holds the caller nor keeps the process alive. An adapter with as many calls still
+    running as `in_flight` allows gets no new thread and yields `_Busy`: threads stay bounded per adapter.
+    """
+    outcomes: dict[str, object | BaseException] = {}
+    done = threading.Condition()
+
+    def run(name: str, call: Callable[[], object]) -> None:
+        try:
+            outcome: object | BaseException = call()
+        except BaseException as exc:  # noqa: BLE001 - reported per adapter, never raised into the caller
+            outcome = exc
+        finally:
+            in_flight.give(name)
+        with done:
+            outcomes[name] = outcome
+            done.notify_all()
+
+    for name, call in calls.items():
+        if not in_flight.take(name):
+            outcomes[name] = _Busy()
+            continue
+        context = contextvars.copy_context()
+        threading.Thread(target=context.run, args=(run, name, call), name=f"fan-out-{name}", daemon=True).start()
+    deadline = time.monotonic() + timeout
+    with done:
+        while len(outcomes) < len(calls) and (left := deadline - time.monotonic()) > 0:
+            done.wait(left)
+        return [(name, outcomes.get(name, TimeoutError())) for name in calls]
+
+
+def _reason(name: str, outcome: BaseException, method: str, timeout: float) -> str:
+    """Why an adapter gave nothing, for people: its own message only for a `HeinzelError`, which is written for them."""
+    if isinstance(outcome, NotSupportedError):
+        return f"can't {method.replace('_', ' ')}"
+    if isinstance(outcome, TimeoutError):
+        return f"didn't answer within {timeout:g} s"
+    if isinstance(outcome, _Busy):
+        return "still busy with earlier requests"
+    if isinstance(outcome, _Malformed):
+        return f"answered in a shape {method.replace('_', ' ')} doesn't return"
+    if isinstance(outcome, HeinzelError):
+        return clean_text(str(outcome))[:_REASON]
+    # Never the message of an unexpected error: it may repeat a URL with a token in it, as `hosts_of` says.
+    log_event(logger, "kernel.fan_out.failed", level=logging.WARNING, adapter=name, error=type(outcome).__name__)
+    return f"failed ({type(outcome).__name__})"
+
+
+def _interleaved(results: list[tuple[str, list[object]]]) -> list[object]:
+    """The adapters' results taken in turns, first of each, then second of each, in binding order: stable and fair."""
+    merged: list[object] = []
+    for row in itertools.zip_longest(*(items for _, items in results), fillvalue=_GAP):
+        merged.extend(item for item in row if item is not _GAP)
+    return merged
+
+
+class _Malformed(HeinzelError):  # noqa: N818 - an outcome, raised only as one adapter's failure
+    """An adapter answered a fan-out read with something its protocol method doesn't return.
+
+    A `HeinzelError`, so one adapter serving alone fails its call with this message, never with a validation error
+    of the whole result; in a fan-out it is that adapter's failure only (ADR 0161).
+    """
+
+
+def _checked(capability: Capability, method: str, outcome: object) -> list[object] | _Malformed:
+    """`outcome` as the protocol method's list, validated item by item; `_Malformed` if it isn't one (ADR 0161).
+
+    Strict: a string, a mapping or any other iterable is not a list, and is never read item by item; an item must be
+    an instance of the item type, never a mapping that could be read as one.
+    """
+    hint: Any = get_type_hints(getattr(capability.protocol, method)).get("return", list[object])
+    item: object = get_args(hint)[0] if get_origin(hint) is list and get_args(hint) else object
+    try:
+        validated = list(cast("Iterable[object]", TypeAdapter(hint).validate_python(outcome, strict=True)))
+    except (ValidationError, TypeError):
+        validated = None
+    if validated is None or (
+        isinstance(item, type) and not all(isinstance(each, item) for each in cast("list[object]", outcome))
+    ):
+        return _Malformed(f"answered in a shape {method.replace('_', ' ')} doesn't return")
+    return validated
+
+
+class _RoutedHandle:
+    """A requester's view of several adapters of one capability (ADR 0161).
+
+    A method on one item goes to the adapter it belongs to (`Capabilities.pick`); a list read is asked of all of them
+    at once and merged (`Gathered`); any other method goes to the default, the first bound. Each adapter is reached
+    through its own `_Handle`, so modes and refusals are those of one adapter.
+    """
+
+    __slots__ = ("_capabilities", "_capability", "_handles", "_modes", "_refusals")
+
+    def __init__(
+        self,
+        capabilities: "Capabilities",
+        capability: Capability,
+        handles: Mapping[str, tuple[Adapter, "_Handle"]],
+        refusals: "_Handle",
+        modes: frozenset[Mode],
+    ) -> None:
+        self._capabilities = capabilities
+        self._capability = capability
+        self._handles = dict(handles)
+        self._refusals = refusals
+        self._modes = modes
+
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 - a protocol method
+        mode = self._capability.methods.get(name)
+        if mode is None or mode not in self._modes:
+            return getattr(self._refusals, name)
+        if name in self._capability.fan_out:
+            return partial(self._fan_out, name)
+        if name in self._capability.routes:
+            return partial(self._routed, name)
+        return getattr(next(iter(self._handles.values()))[1], name)
+
+    def __repr__(self) -> str:
+        return f"<{self._capability.name} through {', '.join(self._handles)}>"
+
+    def _routed(self, method: str, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 - forwards the protocol method
+        capability = self._capability
+        parameter = capability.routes[method]
+        bound = inspect.signature(getattr(capability.protocol, method)).bind(None, *args, **kwargs)
+        ref = bound.arguments.get(parameter)
+        if not isinstance(ref, str):
+            msg = f"{capability.name}.{method} needs {parameter} as text, to know which connector holds it"
+            raise HeinzelError(msg)
+        name, local = self._capabilities.pick(capability.name, ref, self._handles)
+        adapter, handle = self._handles[name]
+        mode = capability.methods[method]
+        if mode not in adapter.let.modes:
+            msg = f"{name} serves {capability.name} only to {', '.join(sorted(adapter.let.modes))}; it can't {method}."
+            raise HeinzelError(msg)
+        bound.arguments[parameter] = local
+        result = getattr(handle, method)(*bound.args[1:], **bound.kwargs)
+        self._capabilities.remember(capability.name, (local, *_refs(result)), name)
+        return _labelled(result, name)
+
+    def _fan_out(self, method: str, *args: object, **kwargs: object) -> Gathered[object]:
+        capability = self._capability
+        timeout = self._capabilities.fan_out_timeout
+        calls = {name: partial(getattr(handle, method), *args, **kwargs) for name, (_, handle) in self._handles.items()}
+        results: list[tuple[str, list[object]]] = []
+        failures: list[SourceFailure] = []
+        for name, outcome in _gather(calls, timeout, self._capabilities.in_flight):
+            checked = outcome if isinstance(outcome, BaseException) else _checked(capability, method, outcome)
+            if isinstance(checked, BaseException):
+                failures.append(SourceFailure(source=name, reason=_reason(name, checked, method, timeout)))
+                continue
+            items = [_labelled(item, name) for item in checked]
+            self._capabilities.remember(capability.name, (ref for item in items for ref in _refs(item)), name)
+            results.append((name, items))
+        if not results:
+            reasons = "; ".join(f"{failure.source}: {failure.reason}" for failure in failures)
+            msg = f"No {capability.name} connector could {method.replace('_', ' ')}: {reasons}."
+            raise HeinzelError(msg)
+        merged = _interleaved(results)
+        bound = inspect.signature(getattr(capability.protocol, method)).bind(None, *args, **kwargs)
+        limit = bound.arguments.get("limit")
+        if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0:
+            merged = merged[:limit]
+        return Gathered(merged, failures)
+
+
+_SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
+_WEB = frozenset({"http", "https"})
+
+
+def _link_host(ref: str, capability: str) -> str | None:
+    """The host of `ref` if it is a link, None if it is an id (ADR 0161).
+
+    Strict where browsers and Python's parser disagree: only `http` and `https`, written `scheme://host`, with no user
+    information, no backslash, no percent escape or whitespace in the host part and no tab or newline anywhere; such a
+    link is refused rather than routed by a host a browser wouldn't open.
+
+    Raises:
+        HeinzelError: If `ref` has another scheme, or is a link of a form that can't be routed safely.
+    """
+    scheme = _SCHEME.match(ref)
+    if scheme is None:
+        return None
+    if scheme.group(1).lower() not in _WEB:
+        msg = (
+            f"Only http and https links open {capability}, not {scheme.group(1).lower()}: ones; for an id with a "
+            f"colon, name the connector first, e.g. <connector>:{clean_text(ref)[:_SHOWN]}."
+        )
+        raise HeinzelError(msg)
+    after = ref[scheme.end() :]
+    authority = after[2:].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0] if after.startswith("//") else ""
+    host = host_of(f"https://{authority}") if authority else None
+    unsafe = any(c in authority for c in "@\\%") or any(c.isspace() for c in ref) or "\\" in ref
+    if host is None or unsafe:
+        msg = f"{clean_text(ref)[:_SHOWN]!r} is not a link that can be opened safely: pass it as https://host/path."
+        raise HeinzelError(msg)
+    return host
+
+
+def _opaque(ref: str, capability: str) -> None:
+    """Refuse an id that a connector could read as a link or a path: an id goes to a connector as it is (ADR 0161).
+
+    Raises:
+        HeinzelError: If `ref` holds whitespace, a control character, a backslash or `://`, or starts with `//`.
+    """
+    if (
+        not ref
+        or "://" in ref
+        or ref.startswith("//")
+        or "\\" in ref
+        or any(c.isspace() or not c.isprintable() for c in ref)
+    ):
+        msg = (
+            f"{clean_text(ref)[:_SHOWN]!r} is neither an http or https link nor a plain {capability} id: pass the "
+            "link alone, or an id without spaces, backslashes or `://`."
+        )
+        raise HeinzelError(msg)
+
+
+def _refs(value: object) -> tuple[str, ...]:
+    """The references a result carries, its `ref` and `url`, to route a later call naming one of them."""
+    return tuple(ref for field in ("ref", "url") if isinstance(ref := getattr(value, field, None), str))
+
+
+def _wrap(
+    instance: Callable[[], object], capability: Capability, name: str, source: str | None = None
+) -> Callable[..., Any]:
     def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 - forwards the protocol method
-        return getattr(instance(), name)(*args, **kwargs)
+        adapter = instance()
+        method = getattr(adapter, name, None)
+        if name in declared_unsupported(adapter, capability) or not callable(method):
+            # Declared unsupported (ADR 0159), or an optional method it leaves out (ADR 0161).
+            raise NotSupportedError(capability.name, name)
+        result = method(*args, **kwargs)
+        if source is None or not capability.multiple:
+            return result
+        # The core says where a result came from, never the adapter (ADR 0161): one serving alone is labelled too.
+        if name in capability.fan_out:
+            checked = _checked(capability, name, result)
+            if isinstance(checked, _Malformed):
+                checked.args = (f"The {capability.name} connector {source} {checked}.",)
+                raise checked
+            return Gathered(_labelled(item, source) for item in checked)
+        return _labelled(result, source)
 
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
@@ -337,6 +672,11 @@ class Capabilities:
 
     Kernel-internal: modules get a `CapabilityView`, which reports but hands out nothing.
     """
+
+    fan_out_timeout: float = 20.0
+    """Seconds each adapter has to answer a read asked of several at once; one that takes longer is reported."""
+    fan_out_cap: int = 4
+    """Fan-out calls one adapter may have running at once; more are reported busy, so threads stay bounded."""
 
     def __init__(  # noqa: PLR0913, PLR0917 - everything the kernel registered
         self,
@@ -375,6 +715,11 @@ class Capabilities:
         self._instances: dict[tuple[str, str], object] = {}
         # By adapter, not by name: two adapters may share a name (an ambiguous binding) and differ in hosts.
         self._hosts: dict[Adapter, tuple[tuple[str, ...], str | None]] = {}
+        self._links: dict[tuple[Adapter, str], tuple[str, ...]] = {}
+        # Which adapters gave out an id, newest last, so an id without a link goes back to it (ADR 0161).
+        self._issued: dict[tuple[str, str], frozenset[str]] = {}
+        self._issuing = threading.Lock()  # the web head routes from several threads at once
+        self.in_flight = _InFlight(self.fan_out_cap)
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
@@ -433,10 +778,12 @@ class Capabilities:
             self._hosts[adapter] = self._configured_hosts(let)
         return self._hosts[adapter]
 
-    def _configured_hosts(self, let: ProviderLet) -> tuple[tuple[str, ...], str | None]:
-        function = cast("Callable[..., Iterable[str]]", let.configured_hosts)
+    def _configured_hosts(
+        self, let: ProviderLet, source: Callable[..., Iterable[str]] | None = None, what: str = "hosts"
+    ) -> tuple[tuple[str, ...], str | None]:
+        function = cast("Callable[..., Iterable[str]]", source or let.configured_hosts)
         if self._settings_of is None:
-            return (), f"the hosts of {let.name} come from its settings, which nothing provides"
+            return (), f"the {what} of {let.name} come from its settings, which nothing provides"
         try:
             settings = {name: self._settings_of(model) for name, model in settings_parameters(function).items()}
             result: object = function(**settings)
@@ -454,15 +801,15 @@ class Capabilities:
                 source=name,
                 error=type(exc).__name__,
             )
-            return (), f"the hosts of {let.name} come from its settings, which couldn't be read ({type(exc).__name__})"
+            return (), f"the {what} of {let.name} come from its settings, which couldn't be read ({type(exc).__name__})"
         hosts = [host_of(value) if isinstance(value, str) else None for value in values]
         if invalid := [str(number) for number, host in enumerate(hosts, 1) if host is None]:
             return (), (
-                f"the hosts of {let.name} come from its settings, but value {', '.join(invalid)} of {len(hosts)} is "
+                f"the {what} of {let.name} come from its settings, but value {', '.join(invalid)} of {len(hosts)} is "
                 f"not a host name or URL"
             )
         if not hosts:
-            return (), f"the hosts of {let.name} come from its settings, which name no host"
+            return (), f"the {what} of {let.name} come from its settings, which name no host"
         return tuple(dict.fromkeys(cast("list[str]", hosts))), None
 
     def unknown_bindings(self) -> list[tuple[str, str]]:
@@ -470,8 +817,129 @@ class Capabilities:
         return [
             (name, bound)
             for name in CAPABILITIES
-            if (bound := self.settings.bound(name)) is not None and (name, bound) not in self.adapters
+            for bound in self.settings.bound_all(name)
+            if (name, bound) not in self.adapters
         ]
+
+    def links_of(self, adapter: Adapter) -> tuple[str, ...]:
+        """The hosts of the links `adapter` opens (ADR 0161): its declared links, else the hosts it reaches."""
+        let = adapter.let
+        if let.links:
+            return let.links
+        if let.configured_links is not None:
+            key = (adapter, "links")
+            if key not in self._links:
+                self._links[key] = self._configured_hosts(let, let.configured_links, "links")[0]
+            return self._links[key]
+        return self.hosts_of(adapter)[0]
+
+    def bindings(self, capability: str) -> tuple[tuple[str, ...], How]:
+        """Every adapter that serves `capability`, the default first, and how they were chosen (ADR 0161).
+
+        Several only for a capability that allows them (`Capability.multiple`) and a configured list; otherwise the
+        one of `binding`, or none.
+        """
+        spec = CAPABILITIES.get(capability)
+        if spec is not None and spec.multiple and self.settings.configured(capability):
+            names = self.settings.bound_all(capability)
+            if len(names) > 1:
+                return names, "configured"
+        bound, how = self.binding(capability)
+        return ((bound,) if bound is not None else ()), how
+
+    def _serving(self, capability: str, modes: frozenset[Mode]) -> list[Adapter]:
+        """The bound adapters of `capability` that are installed once and serve some of `modes`, in binding order."""
+        serving: list[Adapter] = []
+        for name in self.bindings(capability)[0]:
+            candidates = self.adapters.get((capability, name), [])
+            if len(candidates) == 1 and modes & candidates[0].let.modes:
+                serving.append(candidates[0])
+        return serving
+
+    def remember(self, capability: str, refs: Iterable[str | None], source: str) -> None:
+        """Note that `source` gave out `refs`, so a later call naming one without a link goes back to it.
+
+        An id two adapters gave out is remembered with both, so naming it alone is refused, never guessed.
+        """
+        with self._issuing:
+            for ref in refs:
+                if ref:
+                    sources = self._issued.pop((capability, ref), frozenset[str]())
+                    self._issued[capability, ref] = sources | {source}
+            while len(self._issued) > _ISSUED:
+                del self._issued[next(iter(self._issued))]
+
+    def pick(self, capability: str, ref: str, names: Iterable[str]) -> tuple[str, str]:
+        """The adapter of `names` that `ref` belongs to, and `ref` as that adapter takes it (ADR 0161).
+
+        A link (http or https only, read as a browser reads it) goes to the one adapter whose links hold its host;
+        `<adapter>:<id>` names the adapter for an id, and for a link only if that adapter opens its host; an id goes
+        back to the one adapter that gave it out.
+
+        Raises:
+            HeinzelError: If none or several of `names` could hold it, or it is a link no adapter may open; the
+                message names the choices and what to pass.
+        """
+        names = tuple(names)
+        text = ref.strip()
+        head, colon, rest = text.partition(":")
+        named = head if colon and head in names and rest else None
+        target = rest if named else text
+        # After a named connector, only an http or https link is a link; anything else is that connector's id.
+        scheme = _SCHEME.match(target)
+        is_id = named is not None and (scheme is None or scheme.group(1).lower() not in _WEB)
+        host = None if is_id else _link_host(target, capability)
+        if host is None:
+            _opaque(target, capability)
+        if host is not None:
+            adapters = [a for name in names for a in self.adapters.get((capability, name), [])[:1]]
+            matches = [a.let.adapter for a in adapters if host in self.links_of(a)]
+            if named is not None:
+                if named in matches:
+                    return named, target
+                msg = f"{named} doesn't open links on {host}, so it can't be named for one; pass the link alone."
+                raise HeinzelError(msg)
+            if len(matches) == 1:
+                return matches[0], target
+            if matches:
+                msg = (
+                    f"Links on {host} could belong to {' or '.join(matches)}: their {capability} connectors both open "
+                    f"them. Switch one of them off, or fix its declared links."
+                )
+                raise HeinzelError(msg)
+            known = "; ".join(
+                f"{a.let.adapter} opens {', '.join(self.links_of(a)) or 'no declared hosts'}" for a in adapters
+            )
+            msg = f"No {capability} connector that is on opens links on {host} ({known})."
+            raise HeinzelError(msg)
+        if named is not None:
+            return named, target
+        shown = clean_text(text)[:_SHOWN]
+        with self._issuing:
+            owners = sorted(self._issued.get((capability, text), frozenset[str]()) & set(names))
+        if len(owners) == 1:
+            return owners[0], text
+        choices = owners or list(names)
+        where = f"came from both {' and '.join(choices)}" if owners else f"could be in {' or '.join(choices)}"
+        msg = f"{shown!r} {where}: pass its link, or name the connector, e.g. {choices[0]}:{shown}."
+        raise HeinzelError(msg)
+
+    def route(self, capability: str, method: str, arguments: Mapping[str, object]) -> str | None:
+        """The adapter a call of `method` with `arguments` goes to while several serve `capability` (ADR 0161).
+
+        None while one serves it, or for a method that names no item: then the default serves it, as `bound` says.
+
+        Raises:
+            HeinzelError: If the item names none or several of the adapters.
+        """
+        spec = CAPABILITIES.get(capability)
+        names = self.bindings(capability)[0]
+        if spec is None or len(names) < 2 or method not in spec.routes:  # noqa: PLR2004 - several
+            return None
+        ref = arguments.get(spec.routes[method])
+        if not isinstance(ref, str):
+            return None
+        return self.pick(capability, ref, names)[0]
 
     def binding(self, capability: str) -> tuple[str | None, How]:
         """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
@@ -550,6 +1018,8 @@ class Capabilities:
             )
             raise HeinzelError(msg)
         wanted = Requirement(capability.name, modes, requirement.adapter)
+        if wanted.adapter is None and len(self.bindings(capability.name)[0]) > 1:
+            return self._routed(requester, capability, requirement, modes)
         adapter, problem = self.adapter_for(wanted)
         if adapter is None or problem is not None:
             raise HeinzelError(self._unmet(requester, wanted, problem))
@@ -561,7 +1031,7 @@ class Capabilities:
             instance: Callable[[], object] = lambda: built  # noqa: E731 - one object, built once
         else:
             instance = partial(self._instance, adapter, capability)
-        return self._handle(requester, capability, requirement, modes, instance)
+        return self._handle(requester, capability, requirement, modes, instance, source=adapter.let.adapter)
 
     def handles(self, capability: Capability, func: Callable[..., Any]) -> "Adapters[Any]":
         """Read handles on every installed adapter of `capability` for `func`, by adapter name (ADR 0057).
@@ -595,8 +1065,41 @@ class Capabilities:
             if adapter is None or problem is not None:
                 continue
             instance = partial(self._instance, adapter, capability)
-            handles[name] = self._handle(requester, capability, requirement, modes, instance, inspection=inspection)
+            handles[name] = self._handle(
+                requester, capability, requirement, modes, instance, inspection=inspection, source=name
+            )
         return Adapters(handles)
+
+    def _routed(
+        self, requester: Requester, capability: Capability, requirement: Requirement, modes: frozenset[Mode]
+    ) -> "_RoutedHandle":
+        """A handle on every bound adapter of `capability` that serves some of `modes` (ADR 0161).
+
+        Raises:
+            HeinzelError: If none of them is installed once and serves any of `modes`.
+        """
+        serving = self._serving(capability.name, modes)
+        if not serving:
+            wanted = Requirement(capability.name, modes)
+            problem = self.adapter_for(wanted)[1] or "no bound adapter serves these modes"
+            raise HeinzelError(self._unmet(requester, wanted, problem))
+        handles = {
+            adapter.let.adapter: (
+                adapter,
+                self._handle(
+                    requester,
+                    capability,
+                    requirement,
+                    modes & adapter.let.modes,
+                    partial(self._instance, adapter, capability),
+                    source=adapter.let.adapter,
+                ),
+            )
+            for adapter in serving
+        }
+        # Only for its refusals: a method `requester` may not call at all says why, as with one adapter.
+        refusals = self._handle(requester, capability, requirement, modes, lambda: None)
+        return _RoutedHandle(self, capability, handles, refusals, modes)
 
     @staticmethod
     def _handle(  # noqa: PLR0913 - explicit inspection restriction in addition to existing mode authority
@@ -607,16 +1110,20 @@ class Capabilities:
         instance: Callable[[], object],
         *,
         inspection: bool = False,
+        source: str | None = None,
     ) -> "_Handle":
         """A handle with the methods of `modes`; every other method raises why `requester` can't call it."""
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
+            if name in capability.core_only:
+                denied[name] = f"Only hz itself calls {capability.name}.{name} (ADR 0160); {requester.label} can't."
+                continue
             if inspection and (name not in capability.inspection_methods or mode != "read"):
                 denied[name] = f"{requester.label} may only inspect {capability.name}; {name} needs an operation grant."
                 continue
             if mode in modes:
-                allowed[name] = _wrap(instance, capability, name)
+                allowed[name] = _wrap(instance, capability, name, source)
                 continue
             if mode in requirement.modes:
                 why = "only publish operations (read_only=False) may write"
@@ -634,12 +1141,28 @@ class Capabilities:
         key = (adapter.let.capability, adapter.let.adapter)
         if key not in self._instances:
             instance = self._build(adapter.let.factory)
-            served = [m for m, mode in capability.methods.items() if mode in adapter.let.modes]
+            unsupported = declared_unsupported(instance, capability)
+            served = [m for m, mode in capability.methods.items() if mode in adapter.let.modes and m not in unsupported]
             if missing := [m for m in served if not callable(getattr(instance, m, None))]:
                 msg = f"Adapter {adapter.let.name} of {adapter.module} lacks {', '.join(missing)} of {capability.name}."
                 raise HeinzelError(msg)
             self._instances[key] = instance
         return self._instances[key]
+
+    def instance(self, capability: str, name: str) -> tuple[Adapter, object]:
+        """The adapter `name` of `capability` itself, built once, for the kernel's own trusted callers (ADR 0159).
+
+        Not a requester's handle: no mode is checked. Only the kernel calls it, for hz's own AI engine.
+
+        Raises:
+            HeinzelError: If no adapter or two adapters of `capability` have that name, or it can't be built.
+        """
+        candidates = self.adapters.get((capability, name), [])
+        if len(candidates) != 1:
+            why = "is installed" if not candidates else "is unambiguous"
+            msg = f"No {capability} adapter called {name!r} {why}."
+            raise HeinzelError(msg)
+        return candidates[0], self._instance(candidates[0], CAPABILITIES[capability])
 
     def installed(self, capability: str) -> list[str]:
         """The names of the installed adapters of `capability`, sorted."""
@@ -695,6 +1218,14 @@ class CapabilityView:
     def binding(self, capability: str) -> tuple[str | None, How]:
         """The adapter that serves `capability`, and how it was chosen: configured, automatic, default, off, unbound."""
         return self._capabilities.binding(capability)
+
+    def bindings(self, capability: str) -> tuple[tuple[str, ...], How]:
+        """Every adapter that serves `capability`, the default first, and how they were chosen (ADR 0161)."""
+        return self._capabilities.bindings(capability)
+
+    def links(self, adapter: Adapter) -> tuple[str, ...]:
+        """The hosts of the links `adapter` opens: its declared links, else the hosts it reaches (ADR 0161)."""
+        return self._capabilities.links_of(adapter)
 
     def defaulted(self, capability: str) -> bool:
         """Whether `capability` is served by the core's default, because nothing is configured or chosen."""

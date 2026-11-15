@@ -147,7 +147,7 @@ def test_metadata_requires_a_bounded_github_file_response(kind):
     ],
 )
 def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, url, ref, subdirectory):  # noqa: PLR0913, PLR0917 - one per column
-    source = _sources.parse(spec)
+    source = _sources.parse(spec, origin="user")
     assert (source.kind, source.name, source.url, source.ref, source.subdirectory) == (
         kind,
         name,
@@ -163,14 +163,18 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
         ("", "it is empty"),
         ("--index-url=https://evil.example", "looks like an option"),
         ("heinzel-x\n--with evil", "control characters"),
-        (".", "local paths"),
-        ("/home/ada/heinzel-x", "local paths"),
-        ("~/heinzel-x", "local paths"),
-        ("file:///home/ada/heinzel-x", "local paths"),
-        ("C:\\plugins\\x", "local paths"),
+        (".", "absolute path"),
+        ("../heinzel-x", "absolute path"),
+        ("/nonexistent/ada/heinzel-x", "no git repository"),
+        ("~/nonexistent-heinzel-x", "no git repository"),
+        ("file:///nonexistent/ada/heinzel-x", "no git repository"),
+        ("file://example.org/srv/heinzel-x", "names a path on this machine"),
+        ("git+file:///srv/x?ref=main", "names a path on this machine"),
+        ("git+file:///srv/x#egg=x", "#subdirectory="),
+        ("C:\\plugins\\x", "absolute path"),
         ("git+ssh://git@github.com/o/heinzel-x", "only git over https"),
         ("git+http://github.com/o/heinzel-x", "only git over https"),
-        ("git+file:///srv/heinzel-x", "only git over https"),
+        ("git+file:///nonexistent/srv/heinzel-x", "no git repository"),
         ("ssh://git@github.com/o/heinzel-x", "only https URLs"),
         ("git@github.com:o/heinzel-x.git", "only git repositories over https"),
         ("https://ada:t0ken@github.com/o/heinzel-x", "user name or token"),
@@ -194,7 +198,7 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
 )
 def test_everything_else_is_refused_with_what_is_taken(spec, why):
     with pytest.raises(HeinzelError, match="takes a catalog short name") as refused:
-        _sources.parse(spec)
+        _sources.parse(spec, origin="user")
     assert why in str(refused.value)
 
 
@@ -373,3 +377,91 @@ def test_browser_urls_are_https_without_credentials():
 )
 def test_an_installed_repository_opens_at_the_code_installed(url, ref, subdirectory, expected):
     assert _sources.installed_repository_url(url, ref, subdirectory) == expected
+
+
+@pytest.fixture
+def local_repository(tmp_path):
+    root = tmp_path / "my plugins" / "heinzel-x"
+    (root / ".git").mkdir(parents=True)
+    return root
+
+
+def test_a_local_git_repository_is_taken_as_a_path_or_a_file_url(local_repository):
+    uri = local_repository.resolve().as_uri()
+    for spec in (str(local_repository), f"file://{uri.removeprefix('file://')}", f"git+{uri}"):
+        source = _sources.parse(spec, origin="user")
+        assert (source.kind, source.url, source.ref, source.subdirectory) == ("git", uri, None, None)
+        assert source.local_path == local_repository.resolve()
+        assert source.github is None
+
+
+def test_a_local_repository_takes_a_ref_a_subdirectory_and_a_name(local_repository):
+    uri = local_repository.resolve().as_uri()
+    source = _sources.parse(f"Heinzel_X @ git+{uri}@v0.1.0#subdirectory=plugins/x", origin="user")
+    assert (source.name, source.url, source.ref, source.subdirectory) == ("heinzel-x", uri, "v0.1.0", "plugins/x")
+    assert source.git_requirement("heinzel-x", "a" * 40) == f"heinzel-x @ git+{uri}@{'a' * 40}#subdirectory=plugins/x"
+
+
+def test_a_tilde_path_is_expanded_and_resolved(local_repository, monkeypatch):
+    monkeypatch.setenv("HOME", str(local_repository.parent))
+    assert _sources.parse("~/heinzel-x", origin="user").local_path == local_repository.resolve()
+
+
+def test_a_symlink_resolves_to_the_real_repository(local_repository, tmp_path):
+    link = tmp_path / "link"
+    link.symlink_to(local_repository)
+    assert _sources.parse(str(link), origin="user").local_path == local_repository.resolve()
+
+
+@pytest.mark.parametrize(
+    ("template", "why"),
+    [
+        pytest.param("git+{uri}@-upload-pack=x", "no git ref", id="option-ref"),
+        pytest.param("git+{uri}@v1;rm", "no git ref", id="shell-ref"),
+        pytest.param("git+{uri}#subdirectory=../x", "no git ref or subdirectory", id="escaping-subdirectory"),
+        pytest.param("{path}\x01", "control characters", id="control-in-path"),
+        pytest.param("git+{uri}%0A", "control characters", id="encoded-newline"),
+    ],
+)
+def test_unsafe_local_sources_are_refused(local_repository, template, why):
+    real = local_repository.resolve()
+    with pytest.raises(HeinzelError, match="takes a catalog short name") as refused:
+        _sources.parse(template.format(uri=real.as_uri(), path=real), origin="user")
+    assert why in str(refused.value)
+
+
+def test_a_directory_without_git_is_refused(tmp_path):
+    (tmp_path / "plain").mkdir()
+    with pytest.raises(HeinzelError, match="no git repository"):
+        _sources.parse(str(tmp_path / "plain"), origin="user")
+
+
+def test_a_local_repository_has_no_browser_link(local_repository):
+    uri = local_repository.resolve().as_uri()
+    assert _sources.installed_repository_url(uri, "a" * 40) is None
+    assert _sources.repository_url(f"git+{uri}@v1") is None
+
+
+def test_a_catalog_spec_never_names_a_local_path(local_repository):
+    """The reviewer's probe: a crafted catalog name that ends in a `git+file://` spec is refused before git runs."""
+    uri = local_repository.resolve().as_uri()
+    crafted = (
+        f'heinzel-x @ git+{uri} ;python_version>"0" and " @ git+https://github.com/e/r#subdirectory=plugins/"=="a"'
+    )
+    for spec in (crafted, str(local_repository), uri, f"git+{uri}", f"heinzel-x @ git+{uri}", f"heinzel-x @ {uri}"):
+        for origin in ("catalog", None):
+            with pytest.raises(HeinzelError, match="only from what you type"):
+                _sources.parse(spec) if origin is None else _sources.parse(spec, origin=origin)
+
+
+def test_a_path_with_an_at_sign_is_ambiguous_unless_written_as_a_url(local_repository, tmp_path):
+    at = tmp_path / "me@work"
+    (at / ".git").mkdir(parents=True)
+    with pytest.raises(HeinzelError, match="ambiguous"):
+        _sources.parse(str(at), origin="user")
+    assert _sources.parse(at.resolve().as_uri(), origin="user").local_path == at.resolve()
+    both = tmp_path / "both"
+    (both / ".git").mkdir(parents=True)
+    (tmp_path / "both@v1" / ".git").mkdir(parents=True)
+    with pytest.raises(HeinzelError, match="ambiguous"):
+        _sources.parse(f"git+{both.resolve().as_uri()}@v1", origin="user")

@@ -1,17 +1,20 @@
-"""The `pydantic-ai` option: a model API reached through Pydantic AI, with a key (ADR 0050, 0057).
+"""The `pydantic-ai` option: a model API reached through Pydantic AI, with a key (ADR 0050, 0057, 0159).
 
-Three kinds of API, by configuration in `[ai.access]`:
+Four kinds of API, by configuration in `[ai.access]`:
 
 - a vendor's own API: `model = "anthropic:claude-sonnet-4-5"` or `"openai:gpt-5"`, as Pydantic AI names it;
 - an OpenAI-compatible endpoint: `base_url = "http://localhost:11434/v1"` (Ollama), LM Studio, vLLM or OpenRouter,
   with `model` the name the endpoint knows (`llama3.1:8b`); the key is optional;
-- (with a ChatGPT login, a follow-up.)
+- an Anthropic-compatible endpoint, such as a company proxy: `base_url` with `api = "anthropic"`, spoken to with
+  Anthropic's Messages API and the key as a Bearer token (ADR 0159); such an endpoint lists no models, so none are
+  discovered;
 
 The key is the credential `ai.access/api-key` in the keychain (`hz system credential set ai.access api-key`) or the
-vendor's own variable, e.g. `ANTHROPIC_API_KEY`; it goes only over https, or over http to this machine. The vendor's
-client comes with an extra (`heinzel[anthropic]`, `heinzel[openai]`; endpoints use OpenAI's); the core itself imports
-only `pydantic_ai`, never a vendor SDK. `status` reads configuration and the last listing only. `test` lists the
-models the API offers (kept for the picker) and sends one short request, capped at one request and a few tokens.
+vendor's own variable, e.g. `ANTHROPIC_API_KEY`; it goes only over https, or over http to this machine. The
+vendor's client comes with an extra (`heinzel[anthropic]`, `heinzel[openai]`; endpoints use OpenAI's or
+Anthropic's); the core itself imports only `pydantic_ai`, never a vendor SDK. `status` reads configuration and the
+last listing only. `test` lists the models the API offers (kept for the picker)
+and sends one short request, capped at one request and a few tokens.
 """
 
 import asyncio
@@ -33,6 +36,10 @@ TITLE = "Model API"
 SUMMARY = "A model API through Pydantic AI: Anthropic's or OpenAI's with your key, or an OpenAI-compatible endpoint."
 ENDPOINT = "openai-compatible"
 """The vendor of a configured `base_url`: any server that speaks OpenAI's API."""
+ANTHROPIC_ENDPOINT = "anthropic-compatible"
+"""The vendor of a configured `base_url` with `api = "anthropic"`: a server that speaks Anthropic's Messages API."""
+NO_KEY = "none"
+"""What a client gets for a key when there is none: a local server needs none, but the clients insist on one."""
 VENDOR_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -45,32 +52,116 @@ KNOWN_VENDORS = frozenset(
     {"anthropic", "openai", "google-gla", "google-vertex", "groq", "mistral", "cohere", "bedrock"}
 )
 """Model prefixes Pydantic AI knows as vendors."""
-VENDOR_PACKAGES = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai", "google-gla": "google.genai"}
+VENDOR_PACKAGES = {
+    "anthropic": "anthropic",
+    "openai": "openai",
+    ENDPOINT: "openai",
+    ANTHROPIC_ENDPOINT: "anthropic",
+    "google-gla": "google.genai",
+}
 """The client package Pydantic AI needs for a vendor; `heinzel[<extra>]` installs it."""
-EXTRAS = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai"}
+EXTRAS = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai", ANTHROPIC_ENDPOINT: "anthropic"}
+ANTHROPIC_CUSTOM_HEADERS = "ANTHROPIC_CUSTOM_HEADERS"
+"""Extra headers Anthropic's client adds to every request; never sent to an `api = "anthropic"` endpoint."""
 TEST_INSTRUCTIONS = "Reply with the single word OK."
 TEST_OUTPUT_TOKENS = 16
 DETAIL_LIMIT = 300
 SET_MODEL = "hz system config set ai.access.model anthropic:claude-sonnet-4-5"
 SET_KEY = "hz system credential set ai.access api-key"
 
-ModelFactory = Callable[[str, str | None, str | None], Any]
-"""Builds a Pydantic AI model from the model name, the key and the endpoint; tests pass one returning `TestModel`."""
+ModelFactory = Callable[..., Any]
+"""Builds a Pydantic AI model from the model name, the key and the endpoint, plus `api` as a keyword when configured;
+tests pass one returning `TestModel`."""
 
 
-def build_model(model: str, key: str | None, base_url: str | None = None) -> Any:  # noqa: ANN401 - lazily imported
-    """The Pydantic AI model: an OpenAI-compatible one at `base_url`, else the vendor's, with `key` when given."""
+def _local_client(base_url: str) -> Any:  # noqa: ANN401 - httpx2, lazily imported
+    """A client that never goes through a proxy to this machine, where a key would cross the network in clear text.
+
+    None for another machine, so the vendor's client makes its own, as it always did.
+    """
+    if not is_local(base_url):
+        return None
+    import httpx2  # noqa: PLC0415 - Pydantic AI's HTTP client, only when a model is built
+
+    return httpx2.AsyncClient(trust_env=False)
+
+
+def _ambient_headers() -> set[tuple[str, str]]:
+    """The headers Anthropic's client adds from `ANTHROPIC_CUSTOM_HEADERS`, parsed as it parses them.
+
+    One `Name: value` per line; a line without a colon is ignored. Names are lowercased, as HTTP compares them.
+    """
+    text = os.environ.get(ANTHROPIC_CUSTOM_HEADERS)
+    if text is None:
+        return set()
+    return {
+        (line[:colon].strip().lower(), line[colon + 1 :].strip())
+        for line in text.split("\n")
+        if (colon := line.find(":")) >= 0
+    }
+
+
+def _without_ambient_headers(client: Any, key: str) -> Any:  # noqa: ANN401 - httpx2.AsyncClient, lazily imported
+    """`client`, made to drop every header `ANTHROPIC_CUSTOM_HEADERS` adds before a request leaves, with `key` kept.
+
+    Anthropic's client reads that variable each time it is built or copied (a copy per request with retries set),
+    so a gateway setup meant for Claude Code would send its headers, often a token, to this endpoint. Only the
+    headers the variable names with the value it gives (then or now) go; a value the request appends to one, as
+    `anthropic-beta` does, loses only that item; a header hz itself sends with the same value goes too. The
+    variable may name `Authorization` and so replace hz's own: `Bearer <key>` is put back after the strip. The
+    client hz builds sends only what hz chose (ADR 0159).
+    """
+    built = _ambient_headers()
+
+    async def drop(request: Any) -> None:  # noqa: ANN401 - httpx2.Request
+        for name, value in built | _ambient_headers():
+            sent = request.headers.get(name)
+            if sent is None:
+                continue
+            items = [item.strip() for item in sent.split(",")]
+            if sent.strip() == value:
+                del request.headers[name]
+            elif value in items:
+                kept = [item for item in items if item != value]
+                request.headers[name] = ", ".join(kept)
+        request.headers["authorization"] = f"Bearer {key}"
+
+    client.event_hooks = {**client.event_hooks, "request": [*client.event_hooks["request"], drop]}
+    return client
+
+
+def _anthropic_endpoint(model: str, key: str | None, base_url: str) -> Any:  # noqa: ANN401 - a pydantic_ai Model
+    """An Anthropic Messages model at `base_url`, with the key as `Authorization: Bearer`.
+
+    The client gets an explicit key, so it never reads `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, and an HTTP
+    client of hz's own, which drops what `ANTHROPIC_CUSTOM_HEADERS` adds (`_without_ambient_headers`).
+    """
+    from pydantic_ai.models import create_async_httpx2_client  # noqa: PLC0415 - a heavy import, only when built
+    from pydantic_ai.models.anthropic import AnthropicModel  # noqa: PLC0415
+    from pydantic_ai.providers.anthropic import AnthropicProvider  # noqa: PLC0415
+
+    client = _without_ambient_headers(_local_client(base_url) or create_async_httpx2_client(), key or NO_KEY)
+    provider = AnthropicProvider(api_key=key or NO_KEY, base_url=base_url, http_client=client)
+    return AnthropicModel(endpoint_model(model), provider=provider)
+
+
+def build_model(
+    model: str,
+    key: str | None,
+    base_url: str | None = None,
+    *,
+    api: str | None = None,
+) -> Any:  # noqa: ANN401 - lazily imported
+    """The Pydantic AI model: one at `base_url` speaking `api` (OpenAI's by default), else the vendor's; with `key`."""
+    if base_url is not None and api == "anthropic":
+        return _anthropic_endpoint(model, key, base_url)
     if base_url is not None:
         from pydantic_ai.models.openai import OpenAIChatModel  # noqa: PLC0415 - a heavy import, only on a test
         from pydantic_ai.providers.openai import OpenAIProvider  # noqa: PLC0415
 
-        client = None
-        if is_local(base_url):  # never through a proxy: a key would cross the network in clear text
-            import httpx2  # noqa: PLC0415 - Pydantic AI's HTTP client, only for a test
-
-            client = httpx2.AsyncClient(trust_env=False)
         # A local server needs no key, but OpenAI's client insists on one.
-        endpoint = OpenAIProvider(base_url=base_url, api_key=key or "none", http_client=client)
+        client = _local_client(base_url)
+        endpoint = OpenAIProvider(base_url=base_url, api_key=key or NO_KEY, http_client=client)
         return OpenAIChatModel(endpoint_model(model), provider=endpoint)
     from pydantic_ai.models import infer_model  # noqa: PLC0415
     from pydantic_ai.providers import infer_provider_class  # noqa: PLC0415
@@ -123,7 +214,7 @@ def vendor_of(settings: AccessSettings) -> str:
     An endpoint's own names have colons too (`llama3.1:8b`): only a vendor Pydantic AI knows counts as one.
     """
     if settings.base_url:
-        return ENDPOINT
+        return ANTHROPIC_ENDPOINT if settings.api == "anthropic" else ENDPOINT
     prefix = (settings.model or "").partition(":")[0]
     return prefix if ":" in (settings.model or "") and prefix in KNOWN_VENDORS else ""
 
@@ -149,7 +240,8 @@ def _installed(package: str) -> bool:
         return False
 
 
-def _selected_access() -> str | None:
+def selected_access() -> str | None:
+    """The AI access the files and environment bind now, not as at boot."""
     return Config.load().settings(Bindings, "capabilities").ai_access
 
 
@@ -160,6 +252,9 @@ def _current_model_settings() -> AccessSettings:
 class PydanticAiAccess:
     """The `pydantic-ai` option of `ai-access`."""
 
+    access = NAME
+    """The AI access option whose models this builds, as `connected_model` checks against the selection."""
+
     def __init__(  # noqa: PLR0913 - the seams tests replace, all defaulted
         self,
         settings: AccessSettings,
@@ -169,7 +264,7 @@ class PydanticAiAccess:
         build: ModelFactory = build_model,
         installed: Callable[[str], bool] = _installed,
         get: Fetch = fetch,
-        binding: Callable[[], str | None] = _selected_access,
+        binding: Callable[[], str | None] = selected_access,
         current_settings: Callable[[], AccessSettings] = _current_model_settings,
     ) -> None:
         """Create the option; settings and credentials are injected, the rest replace the world in tests."""
@@ -187,6 +282,17 @@ class PydanticAiAccess:
         """Which API the cached listing is of: the endpoint, or the vendor."""
         return (self._settings.base_url or "").rstrip("/") or vendor_of(self._settings)
 
+    def _endpoint(self) -> dict[str, Any]:
+        """The endpoint's API for the model factory; empty for a configuration without one."""
+        options: dict[str, Any] = {}
+        if self._settings.base_url is not None and self._settings.api is not None:
+            options["api"] = self._settings.api
+        return options
+
+    def _model(self, model: str, key: str | None) -> Any:  # noqa: ANN401 - a pydantic_ai Model
+        """The configured Pydantic AI model; today's call for a configuration without an API kind."""
+        return self._build(model, key, self._settings.base_url, **self._endpoint())
+
     def _key(self) -> tuple[str | None, str]:
         """The key from the credential, else none (the vendor's variable then applies), and where it was found."""
         stored = self._credentials.get(API_KEY)
@@ -197,21 +303,73 @@ class PydanticAiAccess:
             return os.environ[variable], variable
         return None, ""
 
+    def check_configuration(self, expected_model: str) -> None:
+        """Verify the option is selected and configured exactly as built, for `expected_model`; no credential is read.
+
+        Raises:
+            HeinzelError: If the selected adapter or the configuration has changed.
+        """
+        settings = self._current_settings()
+        if self._binding() != "pydantic-ai" or settings != self._settings or settings.model != expected_model:
+            msg = "The configured API binding is unavailable or changed"
+            raise HeinzelError(msg)
+
     def check_reserved_configuration(self, expected_model: str) -> None:
         """Verify the current owner-selected pinned configuration without resolving a credential.
 
         Raises:
             HeinzelError: If the selected adapter or exact configured endpoint has changed.
         """
-        settings = self._current_settings()
-        if (
-            self._binding() != "pydantic-ai"
-            or settings != self._settings
-            or settings.model != expected_model
-            or settings.base_url is not None
-        ):
+        self.check_configuration(expected_model)
+        if self._settings.base_url is not None:
             msg = "The configured API binding is unavailable or changed"
             raise HeinzelError(msg)
+
+    def pinned(self, model: str) -> bool:
+        """Whether the option is configured with exactly `model` at the vendor's own API, the reserved path."""
+        return self._settings.model == model and self._settings.base_url is None
+
+    def configured_model(self) -> str:
+        """The model the option is configured with.
+
+        Raises:
+            HeinzelError: If none is configured.
+        """
+        if not self._settings.model:
+            msg = "The configured API binding is unavailable or changed"
+            raise HeinzelError(msg)
+        return self._settings.model
+
+    def endpoint_identity(self) -> tuple[str, str]:
+        """Where turns go and which API they speak there: what a binding identifies.
+
+        The endpoint is the configured `base_url`, else the vendor's own API host; never a credential.
+        """
+        settings = self._settings
+        vendor = vendor_of(settings)
+        endpoint = (settings.base_url or "").rstrip("/") or f"https://{VENDOR_HOSTS.get(vendor, vendor)}"
+        if settings.base_url is None:
+            return endpoint, vendor
+        return endpoint, settings.api or "openai"
+
+    def configured_credential(self, current: CurrentUser, expected_model: str) -> tuple[str | None, str]:
+        """The owner's key for `expected_model` and where it was found, after the same checks as a turn.
+
+        None for the key when the endpoint needs none.
+
+        Raises:
+            HeinzelError: If identity, model configuration or credentials cannot be established safely.
+        """
+        return self._turn_credential(current, expected_model)
+
+    def build_configured(self, expected_model: str, key: str | None) -> Any:  # noqa: ANN401 - a pydantic_ai Model
+        """Build `expected_model` with `key`, captured earlier, if the configuration is still the same.
+
+        Raises:
+            HeinzelError: If the selected adapter or the configuration has changed.
+        """
+        self.check_configuration(expected_model)
+        return self._model(expected_model, key)
 
     def with_reserved_credential[T](self, expected_model: str, consume: Callable[[str | None, str], T]) -> T:
         """Pass the single current credential read to a trusted local consumer; not a head operation.
@@ -273,7 +431,7 @@ class PydanticAiAccess:
             HeinzelError: If identity, model configuration or credentials cannot be established safely.
         """
         key = self._turn_key(current, expected_model)
-        return self._build(expected_model, key, self._settings.base_url)
+        return self._model(expected_model, key)
 
     def priced_turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - optional provider
         """Build the host-owned pinned direct client for the internal reserved path.
@@ -288,6 +446,9 @@ class PydanticAiAccess:
         return build_reserved_openai(key)
 
     def _turn_key(self, current: CurrentUser, expected_model: str) -> str | None:
+        return self._turn_credential(current, expected_model)[0]
+
+    def _turn_credential(self, current: CurrentUser, expected_model: str) -> tuple[str | None, str]:
         if current.principal() != current.owner():
             msg = "This AI credential belongs to the installation owner"
             raise HeinzelError(msg)
@@ -296,7 +457,7 @@ class PydanticAiAccess:
             raise HeinzelError(msg)
         settings = self._settings
         latest = self._current_settings()
-        if (latest.model, latest.base_url) != (settings.model, settings.base_url):
+        if (latest.model, latest.base_url, latest.api) != (settings.model, settings.base_url, settings.api):
             msg = "The configured model or endpoint changed; reload the access service"
             raise HeinzelError(msg)
         if not settings.model or settings.model != expected_model:
@@ -306,7 +467,7 @@ class PydanticAiAccess:
         if not status.installed or status.signed_in is False:
             msg = "The configured model or credential is unavailable"
             raise HeinzelError(msg)
-        key, _ = self._key()
+        key, source = self._key()
         if settings.base_url is not None:
             if key and not safe_for_key(settings.base_url):
                 msg = "The configured model endpoint cannot safely receive credentials"
@@ -317,11 +478,13 @@ class PydanticAiAccess:
         elif key is None:
             msg = "The configured model credential is unavailable"
             raise HeinzelError(msg)
-        return key
+        return key, source
 
     def _discover(self, key: str | None) -> str:
         """List the API's models and keep them; a note on what happened, empty when they were listed."""
         vendor = vendor_of(self._settings)
+        if vendor == ANTHROPIC_ENDPOINT:
+            return ""  # an Anthropic-compatible endpoint, such as a company proxy, lists no models
         try:
             found = listing(vendor, self._settings.base_url, key, self._get)
         except (OSError, ValueError) as exc:
@@ -355,7 +518,7 @@ class PydanticAiAccess:
             from pydantic_ai.usage import UsageLimits  # noqa: PLC0415
 
             pydantic_ai.BANNER_ENABLED = False  # hz owns its output: stdout may be the MCP head's protocol
-            agent = pydantic_ai.Agent(self._build(model, key, base), instructions=TEST_INSTRUCTIONS)
+            agent = pydantic_ai.Agent(self._model(model, key), instructions=TEST_INSTRUCTIONS)
             run = agent.run(
                 "Are you there?",
                 model_settings={"max_tokens": TEST_OUTPUT_TOKENS},

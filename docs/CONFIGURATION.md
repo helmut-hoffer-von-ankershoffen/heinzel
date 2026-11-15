@@ -45,7 +45,7 @@ does not inherit it.
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | The connector for team chat, such as Slack. Never read from a project's hz.toml. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | The connector for pull requests and code, such as GitHub. Never read from a project's hz.toml. |
 | `directory` | `HZ_CAPABILITIES__DIRECTORY` | `'one-on-ones'` | Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each guess for you to confirm), or read from a directory a plugin connects. Never read from a project's hz.toml. |
-| `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | The connector for documents and pages, such as Confluence. Never read from a project's hz.toml. |
+| `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | The connectors for documents and pages, such as Google Docs and Confluence; switch on several. Never read from a project's hz.toml. |
 | `mail` | `HZ_CAPABILITIES__MAIL` | `None` | The connector that reads your mail, such as Google. Never read from a project's hz.toml. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | The connector for meeting summaries, such as Zoom. Never read from a project's hz.toml. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | The connector for issues, such as GitHub or Jira. Never read from a project's hz.toml. |
@@ -71,6 +71,9 @@ does not inherit it.
 | `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | The models the gateway offers, when its status command doesn't say. Never read from a project's hz.toml. |
 | `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables the gateway's commands get besides PATH, HOME, LANG, LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed. Never read from a project's hz.toml. |
 | `chatgpt_model` | `HZ_AI_ACCESS__CHATGPT_MODEL` | `None` | The model used with your ChatGPT plan, one it offers through Sign in with ChatGPT; sign in first. Never read from a project's hz.toml. |
+| `api` | `HZ_AI_ACCESS__API` | `None` | Which API the Pydantic AI endpoint at the base address speaks: OpenAI's (the default) or Anthropic's Messages API, as a company proxy may. Headers from ANTHROPIC_CUSTOM_HEADERS in hz's environment are never sent there. Choices: openai, anthropic. Never read from a project's hz.toml. |
+| `plugin_model` | `HZ_AI_ACCESS__PLUGIN_MODEL` | `None` | The model hz runs chat, drafts and schedules on when your AI access is a plugin's models, one it lists; its first available one when not set. Never read from a project's hz.toml. |
+| `plugin_effort` | `HZ_AI_ACCESS__PLUGIN_EFFORT` | `None` | How hard a plugin's model thinks, low to max, for a model that takes an effort; the model's own default when not set. Choices: low, medium, high, xhigh, max. Never read from a project's hz.toml. |
 | `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model Pydantic AI uses: vendor:model for a vendor's API, or the name your endpoint knows when a base address is set. Its key is the credential ai.access/api-key or the vendor's own variable. Example: "anthropic:claude-sonnet-4-5". Never read from a project's hz.toml. |
 | `base_url` | `HZ_AI_ACCESS__BASE_URL` | `None` | The address of an OpenAI-compatible endpoint, such as Ollama, LM Studio, vLLM or OpenRouter. A key is optional and goes only over https, or over http to this computer. Example: "http://localhost:11434/v1". Never read from a project's hz.toml. |
 
@@ -163,6 +166,9 @@ does not inherit it.
 | `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; the rest go to the list only. Never read from a project's hz.toml. |
 | `repeat_hours` | `HZ_SYSTEM_NOTIFY__REPEAT_HOURS` | `24` | The same notice again within this many hours is dropped. Never read from a project's hz.toml. |
 | `native` | `HZ_SYSTEM_NOTIFY__NATIVE` | `True` | Let the daemon show system notifications (Heinzel Notifier on macOS, notify-send on Linux) when no web app is open. Never read from a project's hz.toml. |
+| `chat_notifications` | `HZ_SYSTEM_NOTIFY__CHAT_NOTIFICATIONS` | `False` | Also send every notice that pops up to your own direct messages, through your chat connector, if it can. The app keeps showing them. Never read from a project's hz.toml. |
+| `chat_questions` | `HZ_SYSTEM_NOTIFY__CHAT_QUESTIONS` | `False` | Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it can: its whole message, which may quote what it read. The first answer counts, in the app or in chat. Never read from a project's hz.toml. |
+| `chat_wait_minutes` | `HZ_SYSTEM_NOTIFY__CHAT_WAIT_MINUTES` | `5` | How long a question waits for your answer in chat; then it stays open in the app. Never read from a project's hz.toml. |
 
 ## `[system.plugin]`
 

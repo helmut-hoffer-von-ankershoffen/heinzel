@@ -6,11 +6,13 @@ Only the deterministic local tool below can execute. Other requests become priva
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent, SessionWriter
@@ -27,12 +29,12 @@ from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._playbook_adoption import PlaybookDraftTools, playbook_tool_schemas
-from heinzel.modules.heinzel._priced_model import ReservedModel
+from heinzel.modules.heinzel._priced_model import ReservedModel, priced
 from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTools, schedule_suggestion_schemas
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
+from heinzel.modules.heinzel._session_models import QUESTION_ASKED, BackendBinding, SessionMessage
 from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestionTools, source_set_suggestion_schemas
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
@@ -55,6 +57,11 @@ def _word_count(arguments: dict[str, JsonValue]) -> str:
 
 # Host-owned implementations only. External adapters require separately enforced grants before registration.
 _READ_TOOLS: dict[str, Callable[[dict[str, JsonValue]], str]] = {"text.word_count": _word_count}
+
+
+def _billing(binding: BackendBinding) -> Literal["plan", "api"]:
+    """A plugin's models (mode `api`) bill per token at no known price; a CLI model is a subscription plan."""
+    return "api" if binding.mode == "api" else "plan"
 
 
 class InteractiveTurn:
@@ -150,12 +157,22 @@ class InteractiveTurn:
             timeout_seconds=grant.timeout_seconds,
         )
         self._check_owner()
-        if current.principal().id != self._owner or grant.access != "pydantic-ai":
+        if current.principal().id != self._owner:
             msg = "The reserved model binding cannot be verified"
             raise HeinzelError(msg)
         approved_binding = grant.binding
         if approved_binding is None:
             msg = "This model grant has no configured access binding"
+            raise HeinzelError(msg)
+        if (approved_binding.access, approved_binding.model) != (grant.access, grant.model):
+            msg = "The reserved model binding cannot be verified"
+            raise HeinzelError(msg)
+        if not priced(approved_binding.access, approved_binding.model, approved_binding.endpoint):
+            # A grant carries dollar caps: only a model with a pricing policy can hold them (ADR 0159).
+            msg = (
+                f"{approved_binding.access} reports no dollar cost for {approved_binding.model}, so this grant's "
+                "dollar caps can't be enforced; run it as a token-bounded turn instead"
+            )
             raise HeinzelError(msg)
         binding = kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
         lease = binding.lease()
@@ -209,6 +226,7 @@ class InteractiveTurn:
         scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
         draft_tools: Callable[[SessionWriter], DocumentDraftTools | None] | None = None,
+        capabilities: Sequence[AbstractCapability[TurnDeps]] = (),
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -357,7 +375,10 @@ class InteractiveTurn:
                     "interactive.started",
                     key=turn,
                     turn=turn,
-                    data={"message_id": request_id, **({"billing": "plan"} if backend_binding else {})},
+                    data={
+                        "message_id": request_id,
+                        **({"billing": _billing(backend_binding)} if backend_binding else {}),
+                    },
                 )
 
             set_schema = (
@@ -630,6 +651,7 @@ class InteractiveTurn:
                 limits=limits,
                 checkpoint=checkpoint,
                 dispatch=dispatch,
+                capabilities=capabilities,
             )
             if result.outcome is None or result.status not in {"completed", "waiting"}:
                 msg = "The turn did not complete; its outcome requires inspection before retry"
@@ -643,7 +665,7 @@ class InteractiveTurn:
                 text=text,
                 at=datetime.now(UTC),
                 backend_binding=backend_binding,
-                billing="plan" if backend_binding else None,
+                billing=_billing(backend_binding) if backend_binding else None,
             )
             self._check_owner()
             with repo.control_writer(session_id) as writer:
@@ -654,6 +676,8 @@ class InteractiveTurn:
                     turn=turn,
                     data={"message_id": reply.id, **body.model_dump(mode="json")},
                 )
+                if result.status == "waiting":  # it asks the owner: chat may ask too (ADR 0160)
+                    writer.append(QUESTION_ASKED, key=f"question-{turn}", turn=turn, data={"message_id": reply.id})
             return self._crud.read_message(session_id, event)
 
     def activity(self, session_id: str, *, limit: int = 30) -> list[ToolActivity]:

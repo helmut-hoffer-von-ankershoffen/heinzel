@@ -3,7 +3,8 @@
 Modules report notices through the injected `Notifications` service (a draft is ready, a contract run failed); once an
 hour the daemon's tick adds what doctor finds and a newer release. One policy decides what pops up and when: the kinds
 you want, quiet mode, your profile's working hours unless a notice is urgent, no repeats, a rate limit. Notices are
-kept on this machine only (the state directory, bounded, pruned); nothing is sent anywhere.
+kept on this machine only (the state directory, bounded, pruned); nothing is sent anywhere unless you switch on chat
+as an extra place: then notices, and a Heinzel's questions, also go to your own direct messages (ADR 0160).
 """
 
 import os
@@ -23,6 +24,7 @@ from heinzel.modules.system.notify._models import (
     NotifySettings,
     Opened,
     Recovered,
+    SelfChatStatus,
     Tested,
 )
 from heinzel.modules.system.notify._native import SESSION
@@ -189,6 +191,16 @@ def open_settings(service: NotifyService) -> Opened:
     return service.open_settings()
 
 
+@module.operation(name="chat", heads=HEADS)
+def chat(service: NotifyService) -> SelfChatStatus:
+    """Show whether notices and questions also reach you in chat, and through which connector.
+
+    Switch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it
+    works once a bound chat connector can message you (ADR 0160). The app keeps showing everything.
+    """
+    return service.chat_status()
+
+
 @module.health
 def health(service: NotifyService) -> list[Check]:
     """How notices reach you: the web app, the daemon's native notifier, or neither."""
@@ -205,6 +217,7 @@ __all__ = [
     "NotifySettings",
     "Opened",
     "Recovered",
+    "SelfChatStatus",
     "Tested",
     "module",
 ]

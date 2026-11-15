@@ -10,8 +10,9 @@ from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
 from heinzel.kernel._bindings import CapabilitySettings
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
+from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
@@ -21,7 +22,12 @@ pytestmark = pytest.mark.integration
 
 
 def fake_claude(
-    directory: Path, *, pause: bool = False, tool: str = "text.word_count", arguments: dict | None = None
+    directory: Path,
+    *,
+    pause: bool = False,
+    tool: str = "text.word_count",
+    arguments: dict | None = None,
+    final: dict | None = None,
 ) -> Path:
     path = directory / "fake-claude"
     marker = directory / "model-calls"
@@ -40,7 +46,7 @@ if len(payload['messages']) == 1:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':{tool!r},'arguments':{arguments!r}}},'text':None}}
 else:
  name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
- wire={{'kind':'tool','name':name,'arguments':{{'report':'A real recorded reply'}},'text':None}}
+ wire={{'kind':'tool','name':name,'arguments':{final or {"report": "A real recorded reply"}!r},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,
  'permission_denials':[], 'structured_output':wire}}))
 """,
@@ -386,3 +392,86 @@ def test_the_turn_verifier_binds_the_observed_release_inside_the_reviewed_range(
     assert not admits(turn, "2.1.322")  # the release cannot change inside one turn
     for outside in ("2.1.311", "2.2.0", "2.1.321 (Claude Code)", "latest"):
         assert not admits(verifier(), outside)
+
+
+class Questions:
+    """Stands in for the chat relay (ADR 0160): records which turns asked the owner something."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def asked(self, session: str, turn: str) -> None:
+        self.calls.append((session, turn))
+
+
+def test_a_turn_that_asks_the_owner_is_marked_and_handed_to_the_chat_relay(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path, final={"report": "Needs a detail", "question": "Which calendar?"})
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        questions = Questions()
+        service.questions = questions  # type: ignore[assignment]
+        answer = asyncio.run(service.answer(session, "hello"))
+        assert answer.message.text == "Which calendar?"
+        events = crud.repository.control_read(session).events
+        marked = [e for e in events if e.kind == QUESTION_ASKED]
+        assert [e.data["message_id"] for e in marked] == [answer.message.id]
+        assert questions.calls == [(session, marked[0].turn)]
+
+
+def test_a_turn_that_reports_is_not_handed_to_the_chat_relay(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        questions = Questions()
+        service.questions = questions  # type: ignore[assignment]
+        asyncio.run(service.answer(session, "hello"))
+        assert questions.calls == []
+        assert not any(e.kind == QUESTION_ASKED for e in crud.repository.control_read(session).events)
+
+
+def test_only_the_self_chat_identity_runs_a_turn_for_a_chat_answer(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        asyncio.run(service.answer(session, "hello"))
+        with pytest.raises(HeinzelError, match="no chat answer origin"):
+            asyncio.run(service.answer_from_chat(session, "hello"))
+    with current.local("self-chat"):
+        with pytest.raises(HeinzelError, match="no chat answer origin"):  # a typed message is no chat answer
+            asyncio.run(service.answer_from_chat(session, "hello"))
+        crud.accept(session, MessageRequest(request_id="from-chat", text="The work one"))
+        answer = asyncio.run(service.answer_from_chat(session, "from-chat"))
+        assert answer.message.role == "assistant"
+        with pytest.raises(HeinzelError, match="authenticated user"):  # no head runs it as its own
+            asyncio.run(service.answer(session, "from-chat"))
+
+
+def test_a_stopped_turn_for_a_chat_answer_is_set_aside_from_the_app_like_a_typed_one(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        asyncio.run(service.answer(session, "hello"))
+    with current.local("self-chat"):
+        crud.accept(session, MessageRequest(request_id="from-chat", text="The work one"))
+        turn = interactive_turn_id("from-chat")
+        with crud.repository.control_writer(session) as writer:  # the process ended mid-turn
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "from-chat"})
+    web = CallIdentity(
+        current.owner(), "web-session", "browser", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(web):
+        assert service.turn_state(session, "from-chat").status == "unresolved"
+        service.abandon(session, "from-chat")
+        assert service.turn_state(session, "from-chat").status == "abandoned"
+    with current.local("self-chat"):
+        service._set_aside(session, "from-chat")  # idempotent: already resolved
+    with current.using(web):
+        assert service.turn_state(session, "from-chat").status == "abandoned"

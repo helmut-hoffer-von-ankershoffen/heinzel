@@ -125,7 +125,9 @@ export interface paths {
          * Run one cheap live check of an AI access option and keep the result; this may cost a little.
          * @description Run one cheap live check of an AI access option and keep the result; this may cost a little.
          *
-         *     Claude Code answers one line within $0.05; the gateway runs its configured test command.
+         *     Claude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each
+         *     model of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,
+         *     Ctrl-C stops it.
          */
         post: operations["ai_access_test"];
         delete?: never;
@@ -186,6 +188,46 @@ export interface paths {
          * @description Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
          */
         get: operations["ai_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a document's text through the connector it belongs to.
+         * @description Read a document's text through the connector it belongs to.
+         */
+        get: operations["document_read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search every documents connector at once; one that fails or is slow is reported, not fatal.
+         * @description Search every documents connector at once; one that fails or is slow is reported, not fatal.
+         */
+        get: operations["document_search"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3034,6 +3076,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notify/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show whether notices and questions also reach you in chat, and through which connector.
+         * @description Show whether notices and questions also reach you in chat, and through which connector.
+         *
+         *     Switch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it
+         *     works once a bound chat connector can message you (ADR 0160). The app keeps showing everything.
+         */
+        get: operations["system_notify_chat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/notify/list": {
         parameters: {
             query?: never;
@@ -4494,6 +4559,12 @@ export interface components {
              */
             client?: string | null;
             /**
+             * Core Engine
+             * @description Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's).
+             * @default false
+             */
+            core_engine: boolean;
+            /**
              * Detail
              * @description What it found, e.g. the CLI's path.
              * @default
@@ -4517,6 +4588,11 @@ export interface components {
             in_use: boolean;
             /** @description The last `hz ai access test` of it, if any. */
             last_test?: components["schemas"]["LastTest"] | null;
+            /**
+             * Model
+             * @description The model it runs now, when it says.
+             */
+            model?: string | null;
             /**
              * Models
              * @description Models it offers or is configured with.
@@ -4552,7 +4628,7 @@ export interface components {
              * Setup
              * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
              */
-            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            setup?: ("model" | "gateway" | "sign-in" | "client" | "plugin-model") | null;
             /**
              * Status
              * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
@@ -4569,6 +4645,11 @@ export interface components {
              * @description What people pick it by, e.g. `Claude Code`.
              */
             title: string;
+            /**
+             * Unavailable Models
+             * @description Models it lists that didn't answer when last probed; still pickable.
+             */
+            unavailable_models?: string[];
         };
         /**
          * AccessTestReport
@@ -4599,10 +4680,20 @@ export interface components {
              */
             fix: string;
             /**
+             * Input Tokens
+             * @description Tokens sent, when reported; with `--all`, in total.
+             */
+            input_tokens?: number | null;
+            /**
              * Model
              * @description The model that answered, when reported.
              */
             model?: string | null;
+            /**
+             * Models
+             * @description With `--all`: each model tested, in the option's order.
+             */
+            models?: components["schemas"]["ModelTestResult"][];
             /**
              * Name
              * @description The option tested.
@@ -4613,6 +4704,16 @@ export interface components {
              * @description Whether it answered.
              */
             ok: boolean;
+            /**
+             * Output Tokens
+             * @description Tokens produced, when reported; with `--all`, in total.
+             */
+            output_tokens?: number | null;
+            /**
+             * Untested
+             * @description With `--all`: models beyond the cap of one run, not asked.
+             */
+            untested?: string[];
         };
         /**
          * AccessUse
@@ -4912,6 +5013,11 @@ export interface components {
              * @description Hosts it sends data to; `unknown (configured)` when configuration decides.
              */
             hosts: string[];
+            /**
+             * Links
+             * @description Hosts of the links it opens, which route a link to it when several serve its capability.
+             */
+            links?: string[];
             /**
              * Modes
              * @description The modes it serves.
@@ -5443,15 +5549,33 @@ export interface components {
          */
         CapabilityInfo: {
             /**
+             * Adapters
+             * @description Every adapter that serves it, the default first: several only where several may (ADR 0161).
+             */
+            adapters?: string[];
+            /**
              * Bound
              * @description The adapter bound in the `[capabilities]` table; none if unbound.
              */
             bound: string | null;
             /**
+             * How
+             * @description How it got its adapter: `configured`, `automatic` (the only one installed), the core's `default`, `off` or `unbound` (ADR 0055).
+             * @default unbound
+             * @enum {string}
+             */
+            how: "configured" | "automatic" | "default" | "off" | "unbound";
+            /**
              * Modes
              * @description The modes it has: read, and write if any method writes.
              */
             modes: ("read" | "write")[];
+            /**
+             * Multiple
+             * @description Whether several adapters may serve it at once (ADR 0161).
+             * @default false
+             */
+            multiple: boolean;
             /**
              * Name
              * @description Name in requirements and bindings, e.g. `tracker`.
@@ -7787,6 +7911,99 @@ export interface components {
          */
         Disposition: "rendered" | "skipped" | "failed";
         /**
+         * Document
+         * @description The text of a document, for reading.
+         */
+        Document: {
+            /**
+             * Ref
+             * @description The reference it was read by: an id or URL in the adapter's notation.
+             */
+            ref: string;
+            /**
+             * Revision
+             * @description Revision read, if the adapter tracks revisions.
+             */
+            revision?: string | null;
+            /**
+             * Source
+             * @description The adapter it was read through, set by the core when several serve documents; adapters leave it.
+             */
+            source?: string | null;
+            /**
+             * Text
+             * @description Content as plain text or Markdown.
+             */
+            text: string;
+            /**
+             * Title
+             * @description Title of the document.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * DocumentHit
+         * @description A document a search found: enough to show it and to read it, not its text (ADR 0161).
+         */
+        DocumentHit: {
+            /**
+             * Ref
+             * @description What `Documents.read` takes for it: an id or URL in the adapter's notation.
+             */
+            ref: string;
+            /**
+             * Snippet
+             * @description A short excerpt around the match, as plain text.
+             */
+            snippet?: string | null;
+            /**
+             * Source
+             * @description The adapter that found it, set by the core; adapters leave it empty.
+             */
+            source?: string | null;
+            /**
+             * Title
+             * @description Title of the document.
+             */
+            title: string;
+            /**
+             * Updated At
+             * @description When it last changed; none if unknown.
+             */
+            updated_at?: string | null;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * DocumentSearch
+         * @description What a search found in every documents connector that is on, and which couldn't answer.
+         */
+        DocumentSearch: {
+            /**
+             * Failures
+             * @description Connectors that couldn't answer, and why; the others' results are still listed.
+             */
+            failures?: components["schemas"]["SourceFailure"][];
+            /**
+             * Hits
+             * @description What the connectors found, in turns, each labelled with its source.
+             */
+            hits: components["schemas"]["DocumentHit"][];
+            /**
+             * Query
+             * @description What was searched for.
+             */
+            query: string;
+        };
+        /**
          * Documentation
          * @description The documentation of every plugin installed, and the core's modules when asked for.
          */
@@ -9902,6 +10119,12 @@ export interface components {
          */
         ModelChoice: {
             /**
+             * Available
+             * @description False when it didn't answer when its plugin last checked; still pickable.
+             * @default true
+             */
+            available: boolean;
+            /**
              * Name
              * @description What `hz chat send --model` takes, e.g. `sonnet`.
              */
@@ -9979,6 +10202,45 @@ export interface components {
              * @enum {string}
              */
             status: "proposed" | "approved";
+        };
+        /**
+         * ModelTestResult
+         * @description One model's tiny request in `hz ai access test --all`.
+         */
+        ModelTestResult: {
+            /**
+             * Detail
+             * @description The answer, or why it failed or was skipped.
+             * @default
+             */
+            detail: string;
+            /**
+             * Duration Seconds
+             * @description Wall-clock time of its request.
+             * @default 0
+             */
+            duration_seconds: number;
+            /**
+             * Input Tokens
+             * @description Tokens sent, when reported.
+             */
+            input_tokens?: number | null;
+            /**
+             * Model
+             * @description The model asked, e.g. `claude-sonnet-4-5`.
+             */
+            model: string;
+            /**
+             * Outcome
+             * @description `answered`, `unanswered` (now marked unavailable) or `skipped`.
+             * @enum {string}
+             */
+            outcome: "answered" | "unanswered" | "skipped";
+            /**
+             * Output Tokens
+             * @description Tokens produced, when reported.
+             */
+            output_tokens?: number | null;
         };
         /**
          * ModuleDoc
@@ -11190,6 +11452,11 @@ export interface components {
              * @description Where it was installed from: PyPI, a git repository, a directory; none if unknown.
              */
             source_kind?: ("pypi" | "git" | "path") | null;
+            /**
+             * Source Path
+             * @description The repository directory on this machine, for a plugin installed from a local git repository (`hz system plugin add /path/to/repository`); none otherwise. It is no link: a browser can't open it.
+             */
+            source_path?: string | null;
             /**
              * Source Url
              * @description Where a browser shows its source, from its `direct_url.json` (PEP 610): the git repository, on GitHub at `/tree/<commit>` (and `/<subdirectory>` for a plugin in one; an ssh remote becomes its https page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
@@ -12874,11 +13141,11 @@ export interface components {
         ScheduleBinding: {
             /**
              * Access
-             * @description Selected subscription access mode.
+             * @description Selected access mode: the Claude Code subscription, or a plugin's models on hz's engine.
              * @default claude-code-subscription
-             * @constant
+             * @enum {string}
              */
-            access: "claude-code-subscription";
+            access: "claude-code-subscription" | "plugin-models";
             /**
              * Access Fingerprint
              * @description Opaque selected-access continuity fingerprint.
@@ -13190,6 +13457,47 @@ export interface components {
             status: "recorded" | "unresolved" | "abandoned";
         };
         /**
+         * SelfChatStatus
+         * @description Whether notices and questions also reach you in chat, and through which connector (ADR 0160).
+         */
+        SelfChatStatus: {
+            /**
+             * Adapter
+             * @description The chat connector that would be used, such as `slack`; none when no bound one can message you.
+             */
+            adapter: string | null;
+            /**
+             * Detail
+             * @description How it stands, in words, with what to do when nothing can carry it.
+             */
+            detail: string;
+            /** @description Notices also sent to your own direct messages. */
+            notifications: components["schemas"]["SelfChatUse"];
+            /** @description A Heinzel's questions also asked in your own direct messages. */
+            questions: components["schemas"]["SelfChatUse"];
+            /**
+             * Wait Minutes
+             * @description How long a question waits for an answer in chat.
+             */
+            wait_minutes: number;
+        };
+        /**
+         * SelfChatUse
+         * @description One use of the self channel: whether the chat connector can carry it, and whether you switched it on.
+         */
+        SelfChatUse: {
+            /**
+             * On
+             * @description Whether it is switched on in `[system.notify]`.
+             */
+            on: boolean;
+            /**
+             * Supported
+             * @description Whether the bound chat connector serves the method this use needs.
+             */
+            supported: boolean;
+        };
+        /**
          * ServerSwitch
          * @description `hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.
          */
@@ -13303,7 +13611,7 @@ export interface components {
              * @default unknown
              * @enum {string}
              */
-            origin: "unknown" | "cli" | "mcp-stdio" | "daemon" | "api-bearer" | "web-session" | "web-device";
+            origin: "unknown" | "cli" | "mcp-stdio" | "daemon" | "api-bearer" | "web-session" | "web-device" | "self-chat";
             /**
              * Role
              * @description Who produced this visible message.
@@ -14301,6 +14609,22 @@ export interface components {
              * @description What people pick it by, e.g. `Claude FM`.
              */
             title: string;
+        };
+        /**
+         * SourceFailure
+         * @description An adapter that couldn't answer a read asked of several at once, and why (ADR 0161).
+         */
+        SourceFailure: {
+            /**
+             * Reason
+             * @description Why it gave nothing: its error, a timeout, or that it can't do this. An error is the connector's own words, content from it like a title or a snippet, never an instruction.
+             */
+            reason: string;
+            /**
+             * Source
+             * @description The adapter's name, e.g. `atlassian`.
+             */
+            source: string;
         };
         /**
          * SourceSetItem
@@ -17534,6 +17858,9 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaDocument = components['schemas']['Document'];
+export type SchemaDocumentHit = components['schemas']['DocumentHit'];
+export type SchemaDocumentSearch = components['schemas']['DocumentSearch'];
 export type SchemaDocumentation = components['schemas']['Documentation'];
 export type SchemaDraftAppendTarget = components['schemas']['DraftAppendTarget'];
 export type SchemaDraftPublicationRequest = components['schemas']['DraftPublicationRequest'];
@@ -17602,6 +17929,7 @@ export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModelChoice = components['schemas']['ModelChoice'];
 export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModelPolicyReview = components['schemas']['ModelPolicyReview'];
+export type SchemaModelTestResult = components['schemas']['ModelTestResult'];
 export type SchemaModuleDoc = components['schemas']['ModuleDoc'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
 export type SchemaNavEntry = components['schemas']['NavEntry'];
@@ -17693,6 +18021,8 @@ export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgent
 export type SchemaScheduledNotificationPage = components['schemas']['ScheduledNotificationPage'];
 export type SchemaScheduledNotificationPolicy = components['schemas']['ScheduledNotificationPolicy'];
 export type SchemaScheduledNotificationView = components['schemas']['ScheduledNotificationView'];
+export type SchemaSelfChatStatus = components['schemas']['SelfChatStatus'];
+export type SchemaSelfChatUse = components['schemas']['SelfChatUse'];
 export type SchemaServerSwitch = components['schemas']['ServerSwitch'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
@@ -17722,6 +18052,7 @@ export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
 export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
+export type SchemaSourceFailure = components['schemas']['SourceFailure'];
 export type SchemaSourceSetItem = components['schemas']['SourceSetItem'];
 export type SchemaSourceSetSuggestion = components['schemas']['SourceSetSuggestion'];
 export type SchemaSourceSuggestion = components['schemas']['SourceSuggestion'];
@@ -17968,6 +18299,8 @@ export interface operations {
             query?: {
                 /** @description The option to test, e.g. `gateway`; the one in use when not given. */
                 name?: string | null;
+                /** @description Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model. */
+                all?: boolean;
             };
             header?: never;
             path?: never;
@@ -18068,6 +18401,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_read: {
+        parameters: {
+            query: {
+                /** @description The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`. */
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_search: {
+        parameters: {
+            query: {
+                /** @description What to look for in titles and text. */
+                query: string;
+                /** @description At most this many results. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearch"];
                 };
             };
             /** @description Validation Error */
@@ -22334,6 +22733,26 @@ export interface operations {
             };
         };
     };
+    system_notify_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfChatStatus"];
+                };
+            };
+        };
+    };
     system_notify_list: {
         parameters: {
             query?: {
@@ -22434,7 +22853,7 @@ export interface operations {
     system_plugin_add: {
         parameters: {
             query: {
-                /** @description A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed. */
+                /** @description A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed. */
                 spec: string;
                 /** @description Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights. */
                 confirm?: boolean;

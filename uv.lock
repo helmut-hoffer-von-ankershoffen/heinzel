@@ -1052,7 +1052,7 @@ wheels = [
 
 [[package]]
 name = "heinzel"
-version = "0.9.42"
+version = "0.9.43"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
@@ -1104,7 +1104,7 @@ dev = [
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "prek" },
-    { name = "pydantic-ai-slim", extra = ["openai"] },
+    { name = "pydantic-ai-slim", extra = ["anthropic", "openai"] },
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
     { name = "pytest-timeout" },
@@ -1131,7 +1131,7 @@ test = [
     { name = "jsonschema" },
     { name = "markdown" },
     { name = "prek" },
-    { name = "pydantic-ai-slim", extra = ["openai"] },
+    { name = "pydantic-ai-slim", extra = ["anthropic", "openai"] },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
@@ -1184,7 +1184,7 @@ dev = [
     { name = "mypy", specifier = ">=1.19.0,<3" },
     { name = "pip-audit", specifier = ">=2.10.0,<3" },
     { name = "prek", specifier = ">=0.2" },
-    { name = "pydantic-ai-slim", extras = ["openai"], specifier = "==2.61.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic", "openai"], specifier = "==2.61.0" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
@@ -1209,7 +1209,7 @@ test = [
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "markdown", specifier = ">=3.10" },
     { name = "prek", specifier = ">=0.2" },
-    { name = "pydantic-ai-slim", extras = ["openai"], specifier = "==2.61.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic", "openai"], specifier = "==2.61.0" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8" },

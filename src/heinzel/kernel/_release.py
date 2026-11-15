@@ -93,6 +93,14 @@ class ReleaseSource:
         """
         raise NotImplementedError
 
+    def requires_python(self, version: str, timeout: float) -> str | None:
+        """The `Requires-Python` of release `version`, so an update can move onto a newer interpreter it needs.
+
+        None when the source can't tell; the update then stays on the interpreter the tool runs on.
+        """
+        del version, timeout
+        return None
+
     def accepted(self, version: str, timeout: float) -> bool:
         """Whether release `version` passed its acceptance run, which automatic updates require (ADR 0116).
 

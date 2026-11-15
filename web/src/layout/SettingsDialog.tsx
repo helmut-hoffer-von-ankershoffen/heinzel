@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { ChatChannelSettings } from "@/notifications/ChatChannelSettings";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
@@ -29,6 +30,7 @@ import {
   group,
   type Heading,
   inWords,
+  loadedPlugins,
   type Page,
   PLUGINS,
   plainSummary,
@@ -116,7 +118,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
     return !schema?.deprecated && !schema?.["x-hidden"] && (expert || !schema?.["x-expert"]);
   });
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
-  const nav = settingsNav(groups, plugins.data ?? [], navigation.data ?? []);
+  const nav = settingsNav(groups, loadedPlugins(plugins), navigation.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
   // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is the
   // first page's.
@@ -248,6 +250,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         ) : current === CONNECTORS ? (
           <ConnectorsSection
             connectors={nav.connectors}
+            loading={nav.loading}
             open={connector}
             settings={settings}
             onOpen={go}
@@ -291,6 +294,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 />
               </div>
             )}
+            {current === "notifications" && <ChatChannelSettings />}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
               <>

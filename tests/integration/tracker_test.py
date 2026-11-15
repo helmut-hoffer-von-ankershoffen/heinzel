@@ -236,6 +236,7 @@ def test_capability_list_shows_the_tracker_can_read_and_write_and_who_writes(ker
             "capability": "tracker",
             "modes": ["read", "write"],
             "hosts": ["acme.invalid"],
+            "links": ["acme.invalid"],
             "module": "acme",
             "distribution": "heinzel-test",
         }

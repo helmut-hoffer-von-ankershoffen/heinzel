@@ -26,6 +26,9 @@ class _Selected:
     def __init__(self):
         self.targets = []
 
+    def owning(self, reference):
+        return self
+
     def target(self, reference):
         self.targets.append(reference)
         return CapturedWriteTarget(

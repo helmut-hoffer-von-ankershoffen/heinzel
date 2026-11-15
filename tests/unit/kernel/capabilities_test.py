@@ -93,7 +93,12 @@ def test_an_attachment_has_a_size_that_is_never_negative():
 
 
 def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
-    assert CAPABILITIES["chat"].methods == {"messages": "read", "post": "write"}
+    assert CAPABILITIES["chat"].methods == {
+        "messages": "read",
+        "post": "write",
+        "notify_self": "write",
+        "ask_self": "write",
+    }
     assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcripts": "read", "transcript": "read"}
     assert CAPABILITIES["calendar"].methods == {
         "events": "read",
@@ -110,7 +115,10 @@ def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
 
 @pytest.mark.parametrize("name", sorted(set(CAPABILITIES) - {"agent-runner"}))
 def test_read_methods_take_only_required_json_shaped_arguments_so_contracts_can_name_them(name):
-    """A contract input passes fixed `args` once (ADR 0021): no optional parameter, every one a string or a window."""
+    """A contract input passes fixed `args` once (ADR 0021): no optional parameter, every one a string or a window.
+
+    Or a count: `Documents.search` takes its `limit` as a whole number (ADR 0161), which contract `args` hold as JSON.
+    """
     spec = CAPABILITIES[name]
     for method, mode in spec.methods.items():
         if mode != "read":
@@ -120,7 +128,7 @@ def test_read_methods_take_only_required_json_shaped_arguments_so_contracts_can_
             if parameter.name == "self":
                 continue
             assert parameter.default is inspect.Parameter.empty, f"{name}.{method}: {parameter.name} is optional"
-            assert hints[parameter.name] in {str, Window}, f"{name}.{method}: {parameter.name} isn't str or Window"
+            assert hints[parameter.name] in {str, int, Window}, f"{name}.{method}: {parameter.name} isn't str or Window"
         windows = [p for p, hint in hints.items() if hint is Window]
         assert len(windows) <= 1, f"{name}.{method} takes {len(windows)} windows; a contract input sets one"
 
@@ -274,5 +282,5 @@ def test_one_capability_cannot_be_pinned_to_two_adapters():
 
 
 def test_documents_write_method_is_marked_write():
-    assert CAPABILITIES["documents"].methods == {"read": "read", "replace_section": "write"}
+    assert CAPABILITIES["documents"].methods == {"read": "read", "replace_section": "write", "search": "read"}
     assert CAPABILITIES["documents"].protocol is Documents

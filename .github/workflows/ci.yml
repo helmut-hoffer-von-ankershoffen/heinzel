@@ -859,7 +859,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: a1f583edc824cffe363f9d2570b539a396d67b92 # Core 0.9.40 candidate locks and galleries; restore main after SDK publication
+          ref: fc74dfc89d2cb9b43856c29c1e1ad020c31d7be3 # heinzel-plugins #113 head: main 0bee8da plus the ADR 0161 contract-test fix; restore main after it merges
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -896,7 +896,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: a1f583edc824cffe363f9d2570b539a396d67b92 # Core 0.9.40 candidate locks and galleries; restore main after SDK publication
+          ref: fc74dfc89d2cb9b43856c29c1e1ad020c31d7be3 # heinzel-plugins #113 head: main 0bee8da plus the ADR 0161 contract-test fix; restore main after it merges
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

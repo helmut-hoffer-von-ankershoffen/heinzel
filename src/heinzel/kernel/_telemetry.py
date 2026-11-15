@@ -54,12 +54,21 @@ TARGET_FORMS = (
 )
 
 
-def _secret_problem(text: str, what: str, *, free_text: bool = False) -> None:
+def looks_like_credential(text: str, *, free_text: bool = False) -> bool:
+    """Whether `text` holds what looks like a token or key.
+
+    A well-known prefix, a JWT or a PEM block anywhere; in free text also a long run of key alphabet mixing cases and
+    digits.
+    """
     runs = _RUN.findall(text) if free_text else []
     mixed = any(
         any(c.isupper() for c in r) and any(c.islower() for c in r) and any(c.isdigit() for c in r) for r in runs
     )
-    if mixed or _SECRETS.search(text):
+    return mixed or _SECRETS.search(text) is not None
+
+
+def _secret_problem(text: str, what: str, *, free_text: bool = False) -> None:
+    if looks_like_credential(text, free_text=free_text):
         msg = f"{what} looks like it holds a credential; report what happened, never a token or key"
         raise ValueError(msg)
 

@@ -817,3 +817,58 @@ def test_a_running_writer_keeps_its_marker(tool):
         assert marker.exists()
     finally:
         os.close(held)
+
+
+def _recreate(prefix: Path) -> None:
+    """What uv does for another interpreter: the same files, in a new folder; the continuity files are gone."""
+    aside = prefix.with_name("aside")
+    prefix.rename(aside)
+    prefix.mkdir()
+    for entry in aside.iterdir():
+        if entry.name not in {".heinzel-startup-state", ".heinzel-startup-pending"}:
+            entry.rename(prefix / entry.name)
+
+
+def test_a_recreated_folder_with_the_same_files_matches_only_by_content(tool):
+    generation, content = tool.startup_fingerprint(), tool.content_fingerprint()
+    _recreate(tool.prefix)
+    assert tool.startup_fingerprint() != generation  # the folder is another one
+    assert tool.content_fingerprint() == content  # its files are the same
+    (tool.prefix / "bin/hz").write_text("changed")
+    assert tool.content_fingerprint() != content
+
+
+def test_the_continuity_files_survive_an_install_that_recreates_the_folder(tool):
+    _record(tool)
+    record = (tool.prefix / ".heinzel-startup-state").read_bytes()
+    (tool.prefix / ".heinzel-startup-pending").write_bytes(b"")
+    (tool.prefix / ".heinzel-startup-pending").chmod(0o600)
+    kept = _installation_continuity.kept_records(tool.prefix)
+    assert set(kept) == {".heinzel-startup-state", ".heinzel-startup-pending"}
+    _recreate(tool.prefix)
+    _installation_continuity.put_back_records(tool.prefix, kept)
+    assert (tool.prefix / ".heinzel-startup-state").read_bytes() == record
+    assert (tool.prefix / ".heinzel-startup-pending").stat().st_mode & 0o777 == 0o600
+    (tool.prefix / ".heinzel-startup-state").write_bytes(b"newer")
+    _installation_continuity.put_back_records(tool.prefix, kept)  # an existing one is never replaced
+    assert (tool.prefix / ".heinzel-startup-state").read_bytes() == b"newer"
+    _installation_continuity.put_back_records(tool.prefix, {})
+
+
+def test_only_private_continuity_files_are_kept(tool, tmp_path):
+    _record(tool)
+    (tool.prefix / ".heinzel-startup-state").chmod(0o644)
+    assert _installation_continuity.kept_records(tool.prefix) == {}
+    assert _installation_continuity.kept_records(tmp_path / "missing") == {}
+    (tool.prefix / ".heinzel-startup-state").unlink()
+    (tool.prefix / ".heinzel-startup-state").symlink_to(tmp_path)
+    assert _installation_continuity.kept_records(tool.prefix) == {}
+
+
+def test_content_fingerprint_refuses_an_alias(tool, tmp_path):
+    alias = tmp_path / "alias"
+    alias.symlink_to(tool.prefix)
+    with pytest.raises(HeinzelError, match="physical path"):
+        _installation_continuity.content_fingerprint(alias, lambda: None)
+    with pytest.raises(HeinzelError, match="inspect"):
+        _installation_continuity.content_fingerprint(tmp_path / "missing", lambda: None)

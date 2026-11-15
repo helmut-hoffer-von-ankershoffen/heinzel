@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
 from heinzel.kernel._ai import AiAccess
+from heinzel.kernel._ai_models import AiModels
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -55,12 +56,41 @@ class Capability:
     """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
     is the person's explicit choice, whatever happens to be installed."""
 
+    listed: bool = True
+    """Whether Settings and the connector page offer a binding for it. Not for `ai-models`: a person picks AI access,
+    and each `ai-models` adapter is one of its options (ADR 0159)."""
+
     inspection_methods: frozenset[str] = frozenset()
     """Offline inventory methods, never live actions; available only through explicit module inspection grants."""
 
+    optional: frozenset[str] = frozenset()
+    """Methods added after adapters shipped (ADR 0160): an adapter that doesn't define one doesn't support it, as if it
+    listed it in its `unsupported` attribute (ADR 0159), so it keeps loading."""
+
+    core_only: frozenset[str] = frozenset()
+    """Methods only hz itself calls, through its own trusted view (ADR 0160): no requester's handle offers them, in any
+    mode, so no operation or playbook can talk to the user in their own direct messages or read their answers."""
+
+    multiple: bool = False
+    """Whether several adapters may serve it at once, bound as a list (ADR 0161): the first is the default."""
+    routes: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    """With several adapters: each method that acts on one item, with the parameter naming it. A call goes to the
+    adapter whose links match the item's URL, that returned the item before, or that the `adapter:id` form names."""
+    fan_out: frozenset[str] = frozenset()
+    """With several adapters: read methods that return a list, asked of every adapter at once and merged."""
+
     def __post_init__(self) -> None:
+        if not (self.optional | self.core_only) <= set(self.methods):
+            msg = f"Capability {self.name!r} optional and core-only methods must be declared methods"
+            raise ValueError(msg)
         if any(self.methods.get(name) != "read" for name in self.inspection_methods):
             msg = f"Capability {self.name!r} inspection methods must be declared read methods"
+            raise ValueError(msg)
+        if any(self.methods.get(name) != "read" for name in self.fan_out):
+            msg = f"Capability {self.name!r} fan-out methods must be declared read methods"
+            raise ValueError(msg)
+        if not set(self.routes).isdisjoint(self.fan_out) or not set(self.routes) <= set(self.methods):
+            msg = f"Capability {self.name!r}: routed and fan-out methods must be distinct declared methods"
             raise ValueError(msg)
 
     @property
@@ -85,8 +115,20 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 name="ai-access",
                 protocol=AiAccess,
                 summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
-                methods=MappingProxyType({"status": "read", "test": "read"}),
+                methods=MappingProxyType({"status": "read", "test": "read", "test_model": "read"}),
                 inspection_methods=frozenset({"status"}),
+                optional=frozenset({"test_model"}),
+            ),
+            Capability(
+                name="ai-models",
+                title="AI models",
+                purpose="models a plugin reaches its own way, run by hz's own engine",
+                protocol=AiModels,
+                summary="Models a plugin reaches its own way: the models it offers, and a ready Pydantic AI model for "
+                "one, which hz's engine runs; each adapter is also an AI access option of the same name.",
+                methods=MappingProxyType({"models": "read", "model": "read"}),
+                automatic=False,
+                listed=False,
             ),
             Capability(
                 name="calendar",
@@ -112,8 +154,13 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Chat",
                 purpose="the channels your team talks in",
                 protocol=Chat,
-                summary="Channels people talk in: read their messages; post through publish operations.",
-                methods=MappingProxyType({"messages": "read", "post": "write"}),
+                summary="Channels people talk in: read their messages; post through publish operations; notify and ask "
+                "the user in their own direct messages (ADR 0160).",
+                methods=MappingProxyType(
+                    {"messages": "read", "post": "write", "notify_self": "write", "ask_self": "write"}
+                ),
+                optional=frozenset({"notify_self", "ask_self"}),
+                core_only=frozenset({"notify_self", "ask_self"}),
             ),
             Capability(
                 name="code-host",
@@ -136,8 +183,13 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Documents",
                 purpose="the pages and docs you read and update",
                 protocol=Documents,
-                summary="Documents: read their text; replace a marked section through publish operations.",
-                methods=MappingProxyType({"read": "read", "replace_section": "write"}),
+                summary="Documents: read their text and search them; replace a marked section through publish "
+                "operations. Several connectors may serve it at once.",
+                methods=MappingProxyType({"read": "read", "replace_section": "write", "search": "read"}),
+                multiple=True,
+                routes=MappingProxyType({"read": "ref", "replace_section": "ref"}),
+                fan_out=frozenset({"search"}),
+                optional=frozenset({"search"}),
             ),
             Capability(
                 name="mail",
@@ -199,6 +251,20 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
     }
 )
 """Every capability the core defines, by name."""
+
+
+def declared_unsupported(adapter: object, capability: Capability) -> frozenset[str]:
+    """The methods of `capability` an adapter (class or instance) declares it doesn't support (ADR 0159).
+
+    Read from its `unsupported` attribute, an iterable of method names; anything that isn't a method of the capability,
+    or an attribute that isn't such an iterable, counts as nothing declared. An optional method the adapter doesn't
+    define counts as declared too (ADR 0160).
+    """
+    absent = frozenset(name for name in capability.optional if not callable(getattr(adapter, name, None)))
+    declared: object = getattr(adapter, "unsupported", ())
+    if isinstance(declared, str | bytes) or not isinstance(declared, Iterable):
+        return absent
+    return absent | frozenset(name for name in cast("Iterable[object]", declared) if name in capability.methods)  # type: ignore[misc]
 
 
 def capability_of(protocol: Any) -> Capability | None:  # noqa: ANN401 - any annotation

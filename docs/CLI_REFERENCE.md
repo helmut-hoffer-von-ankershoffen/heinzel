@@ -21,6 +21,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `ai`: (expert) How hz reaches AI, and what it...
 * `app`: Manage the native Heinzel desktop app.
 * `chat`: Chat with the agent runner in this...
+* `document`: (expert) Open and search your documents in...
 * `graph`: Show your team&#x27;s contracts: who keeps...
 * `heinzel`: Your Heinzelmännchen: durable Heinzels...
 * `join`: Join a team from its invite line: finds...
@@ -134,6 +135,7 @@ $ hz ai access test [OPTIONS]
 **Options**:
 
 * `--name <str>`: The option to test, e.g. `gateway`; the one in use when not given.
+* `--all / --no-all`: Ask every model of a plugin&#x27;s models one tiny request each, at most 24, and mark the ones that don&#x27;t answer unavailable in the model picker; a few tokens per model.  [default: no-all]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -754,6 +756,66 @@ $ hz chat show [OPTIONS] {session}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz document`
+
+(expert) Open and search your documents in every documents connector that is on.
+
+**Usage**:
+
+```console
+$ hz document [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `read`: (expert) Read a document&#x27;s text through...
+* `search`: (expert) Search every documents connector...
+
+### `hz document read`
+
+(expert) Read a document&#x27;s text through the connector it belongs to.
+
+**Usage**:
+
+```console
+$ hz document read [OPTIONS] {ref}
+```
+
+**Arguments**:
+
+* `ref <str>`: The document: its link, an id a search returned, or `&lt;connector&gt;:&lt;id&gt;`, e.g. `wiki:123456`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz document search`
+
+(expert) Search every documents connector at once; one that fails or is slow is reported, not fatal.
+
+**Usage**:
+
+```console
+$ hz document search [OPTIONS] {query}
+```
+
+**Arguments**:
+
+* `query <str>`: What to look for in titles and text.  [required]
+
+**Options**:
+
+* `--limit <int>`: At most this many results.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3130,6 +3192,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ack`: (expert) Mark notices as shown, so the...
+* `chat`: (expert) Show whether notices and...
 * `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
@@ -3150,6 +3213,22 @@ $ hz system notify ack [OPTIONS] {ids}
 **Arguments**:
 
 * `ids <str>`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify chat`
+
+(expert) Show whether notices and questions also reach you in chat, and through which connector.
+
+**Usage**:
+
+```console
+$ hz system notify chat [OPTIONS]
+```
 
 **Options**:
 
@@ -3308,7 +3387,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 **Arguments**:
 
-* `spec <str>`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository&#x27;s distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
+* `spec <str>`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository&#x27;s distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
 
 **Options**:
 

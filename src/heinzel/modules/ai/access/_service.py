@@ -1,10 +1,12 @@
 """Service of the access module: every installed AI access option, the one in use, live tests and the switch."""
 
+import fcntl
 import logging
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +21,8 @@ from heinzel import (
     Config,
     ConfigEditor,
     HeinzelError,
+    NotSupportedError,
+    Progress,
     Settings,
     Status,
     UsageEntry,
@@ -34,8 +38,11 @@ from heinzel.modules.ai.access._models import (
     AccessUse,
     Bindings,
     LastTest,
+    ModelTestResult,
+    Outcome,
     Setup,
 )
+from heinzel.modules.ai.access._plugin_models import failure
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +50,18 @@ CAPABILITY = "ai-access"
 SECTION = "capabilities"
 KEY = f"{SECTION}.ai_access"
 RUNNER_KEY = f"{SECTION}.agent_runner"
+PLUGIN_MODEL_KEY = "ai.access.plugin_model"
+ENGINE_RUNNER = "engine"
+"""The agent runner that runs a plugin's models for the chat with the picker and coding (ADR 0159)."""
 VARIABLE = "HZ_CAPABILITIES__AI_ACCESS"
 DEFAULT = "claude-code"
 TESTS_FILE = "tests.json"
 _TESTS = TypeAdapter(dict[str, LastTest])
 DETAIL_LIMIT = 300
+MAX_MODELS_TESTED = 24
+"""The most models one `hz ai access test --all` asks, so a long list never runs for long or spends much."""
+RUN_LOCK = ".test-all.lock"
+"""Held while `hz ai access test --all` runs, so a second run, from any head, is refused instead of spending twice."""
 
 
 _CLIENT = re.compile(r"heinzel\[([a-z0-9-]+)\]")
@@ -73,6 +87,10 @@ def setup_of(name: str, status: AccessStatus) -> tuple[Setup | None, str]:  # no
 
     Options are built into hz: what one lacks is a setting, a sign-in or an optional client, never a plugin.
     """
+    if status.core_engine:
+        if not status.installed:
+            return None, f"{status.title} offers no models"
+        return "plugin-model", ("Pick another model" if status.fix else "")
     if match := _CLIENT.search(status.fix):
         client = CLIENTS.get(match[1], match[1])
         return "client", f"Add the {client} client"
@@ -118,14 +136,14 @@ class ResultStore:
 
 
 def _isolated[T](name: str, what: str, call: Callable[[], T]) -> T | str:
-    """`call()`, or why it failed: a plugin's option never breaks the listing."""
+    """`call()`, or why it failed, by kind only: a plugin's option never breaks the listing."""
     try:
         return call()
     except Exception as exc:  # noqa: BLE001 - isolate plugins: one broken option leaves the others listed
         log_event(
             logger, "ai.access.option_failed", level=logging.WARNING, option=name, call=what, error=type(exc).__name__
         )
-        return clean_text(f"its {what} failed ({type(exc).__name__}: {exc})")[:DETAIL_LIMIT]
+        return f"its {what} failed ({failure(exc)})"  # never the error's text: a provider's may echo a secret
 
 
 class AccessService:
@@ -189,6 +207,9 @@ class AccessService:
                 "fix": status.fix,
                 "models": status.models,
                 "runner": status.runner,
+                "model": status.model,
+                "core_engine": status.core_engine,
+                "unavailable_models": status.unavailable_models,
             }
         )
 
@@ -210,7 +231,7 @@ class AccessService:
         elif chosen is None:
             note = f"No installed option is called {selected!r}; install its plugin or pick another."
             next_steps = [f"hz ai access use {o.name}" for o in options][:1]
-        elif chosen.runner and chosen.runner != runner:
+        elif not chosen.core_engine and chosen.runner and chosen.runner != runner:
             note = (
                 f"{chosen.title} names the agent runner {chosen.runner}, but {runner or 'none'} is bound, so the chat "
                 f"doesn't follow the AI access."
@@ -223,6 +244,21 @@ class AccessService:
         elif chosen.status == "not tested":
             next_steps = [f"hz ai access test --name {chosen.name}"]
         through = f"the agent runner {runner}" if runner else "nothing: no agent runner is bound"
+        if chosen is not None and chosen.core_engine:
+            # A plugin's models: hz's own engine runs chat, drafts and schedules on them (ADR 0159).
+            engine = f"hz's own engine on the models of {chosen.title}"
+            uses = [
+                AccessUse(use="chat", access=selected, runs=engine),
+                AccessUse(use="turns", access=selected, runs=f"{engine}, for drafts and schedules"),
+                AccessUse(
+                    use="coding",
+                    access=selected,
+                    runs=f"{engine}, with read-only file tools in the session's folder"
+                    if runner == ENGINE_RUNNER
+                    else f"{through}, outside these models",
+                ),
+            ]
+            return AccessList(selected=selected, options=options, uses=uses, note=note, next=next_steps)
         uses = [
             AccessUse(use="chat", access=selected, runs=through),
             AccessUse(
@@ -256,6 +292,9 @@ class AccessService:
         missing = None
         if not isinstance(status, AccessStatus):
             missing = f"{name}'s status couldn't be read, so no agent runner was bound: {status}"
+        elif status.core_engine:
+            # hz's own engine runs its models: chat needs no runner; coding binds the engine runner once installed.
+            missing = self._use_models(status, runner)
         elif runner is None:
             missing = f"{name} has no agent of its own; the chat keeps its agent runner."
         elif runner in self._view.installed("agent-runner"):
@@ -268,8 +307,29 @@ class AccessService:
             return listing.model_copy(update={"note": overridden, "next": [f"unset {VARIABLE}"]})
         return listing.model_copy(update={"note": " ".join(p for p in (missing, listing.note) if p) or None})
 
-    def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
-        """Run the live check of `name`, or of the option in use, and keep its result for the listing.
+    def _use_models(self, status: AccessStatus, runner: str | None) -> str | None:
+        """Pin the plugin's model and bind the engine runner for coding; a note when coding stays elsewhere.
+
+        The model in use is written to `ai.access.plugin_model`, so a new first row in the plugin's list never changes
+        it, nor the fingerprint approved schedules are bound to (ADR 0159).
+        """
+        if status.model is None and (usable := [m for m in status.models if m not in status.unavailable_models]):
+            self._editor.write(PLUGIN_MODEL_KEY, usable[0], "user")
+        elif status.model is not None:
+            self._editor.write(PLUGIN_MODEL_KEY, status.model, "user")
+        if runner is not None and runner in self._view.installed("agent-runner"):
+            self._editor.write(RUNNER_KEY, runner, "user")
+            return None
+        bound = self.bindings().agent_runner
+        if bound is None:
+            return None
+        return (
+            f"Chat, drafts and schedules use {status.title}; coding handoffs still run on the agent runner {bound}, "
+            "outside these models."
+        )
+
+    def _tested(self, name: str | None) -> str:
+        """`name`, or the option in use, once known to be installed.
 
         Raises:
             HeinzelError: If no installed option has that name, or none is in use and none was named.
@@ -280,17 +340,19 @@ class AccessService:
                 msg = f"No AI access is chosen; name one to test, e.g. `hz ai access test --name {DEFAULT}`."
                 raise HeinzelError(msg)
         self._known(name)
+        return name
+
+    def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
+        """Run the live check of `name`, or of the option in use, and keep its result for the listing.
+
+        Raises:
+            HeinzelError: If no installed option has that name, or none is in use and none was named.
+        """
+        name = self._tested(name)
         result = _isolated(name, "test", options[name].test)
         if isinstance(result, str):
             result = AccessTest(ok=False, detail=result)
-        last = LastTest(
-            at=datetime.now(UTC),
-            ok=result.ok,
-            detail=result.detail,
-            model=result.model,
-            cost_usd=result.cost_usd,
-            duration_seconds=result.duration_seconds,
-        )
+        last = self._keep(name, result)
         self._usage.record(
             UsageEntry(
                 at=last.at,
@@ -302,11 +364,127 @@ class AccessService:
                 cost_usd=result.cost_usd,
             )
         )
+        return AccessTestReport(name=name, **result.model_dump())
+
+    def _keep(self, name: str, result: AccessTest) -> LastTest:
+        """Keep `result` as the last test of `name` for the listing; a file that can't be written is only logged."""
+        last = LastTest(
+            at=datetime.now(UTC),
+            ok=result.ok,
+            detail=result.detail,
+            model=result.model,
+            cost_usd=result.cost_usd,
+            duration_seconds=result.duration_seconds,
+        )
         try:
             self._tests.keep(name, last)
         except OSError as exc:
             log_event(logger, "ai.access.keep_test_failed", level=logging.WARNING, option=name, error=str(exc))
-        return AccessTestReport(name=name, **result.model_dump())
+        return last
+
+    def test_all(self, name: str | None, options: Adapters[AiAccess], progress: Progress) -> AccessTestReport:
+        """Ask every model of `name`, or of the option in use, one tiny request each, one after another (ADR 0159).
+
+        Only when a person asks. At most `MAX_MODELS_TESTED` models, each bounded by the option itself; the option
+        keeps which answered, so the picker marks the others unavailable until a later test answers. Each request is
+        recorded as usage, cause `test`. Ctrl-C stops between or during models; what was learned so far is kept. One
+        run at a time per profile, whichever head starts it.
+
+        Raises:
+            HeinzelError: If no installed option has that name, none is in use and none was named, its models can't
+                be listed, it can't test its models one by one, or another run is going on.
+        """
+        name = self._tested(name)
+        option = options[name]
+        status = self.status_of(name)
+        if isinstance(status, str):
+            msg = f"Couldn't list the models of {name}: {status}"
+            raise HeinzelError(msg)
+        if not status.models:
+            msg = f"{status.title} names no models to test; `hz ai access test --name {name}` checks it."
+            raise HeinzelError(msg)
+        asked, untested = status.models[:MAX_MODELS_TESTED], status.models[MAX_MODELS_TESTED:]
+        rows: list[ModelTestResult] = []
+        with self._one_run():
+            for index, model_id in enumerate(asked, 1):
+                with progress.task(f"Testing {model_id} ({index}/{len(asked)})"):
+                    rows.append(self._test_model(name, option, model_id, status.title))
+        return self._summary(name, rows, untested)
+
+    @contextmanager
+    def _one_run(self) -> Generator[None]:
+        """Hold the one check of every model this profile may run at a time, across processes.
+
+        Raises:
+            HeinzelError: If another check of every model runs now, in a terminal or the app.
+        """
+        root = self._tests.path.parent
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle = os.open(root / RUN_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                msg = "A check of every model is already running, in a terminal or the app; wait for it to finish."
+                raise HeinzelError(msg) from None
+            yield
+        finally:
+            os.close(handle)  # closing releases the lock
+
+    def _test_model(self, name: str, option: AiAccess, model_id: str, title: str) -> ModelTestResult:
+        """One model's tiny request through `option`, recorded as usage when one was sent.
+
+        Raises:
+            HeinzelError: If the option can't test its models one by one.
+        """
+        try:
+            result = option.test_model(model_id)
+        except NotSupportedError:
+            msg = f"{title} can't test its models one by one; `hz ai access test --name {name}` checks the one in use."
+            raise HeinzelError(msg) from None
+        except Exception as exc:  # noqa: BLE001 - a plugin's failing check is a result
+            detail = f"its test failed ({failure(exc)})"
+            result = AccessTest(ok=False, detail=detail, model=model_id)
+        if not result.skipped or result.input_tokens or result.output_tokens:
+            self._usage.record(
+                UsageEntry(
+                    at=datetime.now(UTC),
+                    cause="test",
+                    access=name,
+                    model=model_id,
+                    input_tokens=result.input_tokens or 0,
+                    output_tokens=result.output_tokens or 0,
+                )
+            )
+        outcome: Outcome = "skipped" if result.skipped else "answered" if result.ok else "unanswered"
+        return ModelTestResult(
+            model=model_id,
+            outcome=outcome,
+            detail=clean_text(result.detail)[:DETAIL_LIMIT],
+            duration_seconds=result.duration_seconds,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+        )
+
+    def _summary(self, name: str, rows: list[ModelTestResult], untested: list[str]) -> AccessTestReport:
+        """The report of a `--all` run, also kept as the option's last test."""
+        count = {o: sum(r.outcome == o for r in rows) for o in ("answered", "unanswered", "skipped")}
+        parts = [f"{count['answered']} of {count['answered'] + count['unanswered']} models answered"]
+        if count["unanswered"]:
+            parts.append(f"{count['unanswered']} marked unavailable until a test answers")
+        if count["skipped"]:
+            parts.append(f"{count['skipped']} skipped")
+        if untested:
+            parts.append(f"{len(untested)} not tested: at most {MAX_MODELS_TESTED} per run")
+        result = AccessTest(
+            ok=count["answered"] > 0,
+            detail="; ".join(parts),
+            duration_seconds=sum(r.duration_seconds for r in rows),
+            input_tokens=sum(r.input_tokens or 0 for r in rows),
+            output_tokens=sum(r.output_tokens or 0 for r in rows),
+        )
+        self._keep(name, result)
+        return AccessTestReport(name=name, models=rows, untested=untested, **result.model_dump())
 
     def checks(self) -> list[Check]:
         """Doctor: the AI access in use is installed and signed in, and the bound agent runner is the one it names."""

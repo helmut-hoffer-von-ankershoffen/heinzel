@@ -7,12 +7,13 @@ failure escapes and stops the turn. Only an already policy-checked Model belongs
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from copy import copy
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from typing import Literal
 
+import pydantic_ai
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 from pydantic_ai import Agent, Conversation, ConversationTypeAdapter, ModelRequestContext, RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -21,6 +22,8 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRun
 from pydantic_ai.usage import RunUsage, UsageLimits
+
+pydantic_ai.BANNER_ENABLED = False  # once for every turn on this engine: stdout may be the MCP head's protocol
 
 
 class DoneCheck(BaseModel):
@@ -377,6 +380,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
     conversation: Conversation | None = None,
     resume_from: EngineCheckpoint | None = None,
     dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None,
+    capabilities: Sequence[AbstractCapability[TurnDeps]] = (),
 ) -> EngineResult:
     """Drive and checkpoint every node, retaining completed state when a cap or model validation fails.
 
@@ -409,7 +413,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
             deps=deps,
             usage_limits=limits.usage_limits(),
             timeout=limits.timeout_seconds,
-            capabilities=[accounting],
+            capabilities=[accounting, *capabilities],
             model_settings={"max_tokens": limits.output_tokens} if limits.output_tokens is not None else None,
         ) as run:
             return await _drive(run, deps, progress)
