@@ -124,8 +124,7 @@ private struct WorkspaceWidgetView: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                Image(systemName: workspaceSymbol)
-                    .font(.system(size: 23, weight: .semibold))
+                CrewMark(width: 44, height: 44)
                     .widgetAccentable()
             }
             .accessibilityLabel("Open Heinzel workspace")
