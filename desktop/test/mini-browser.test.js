@@ -675,3 +675,52 @@ test("a refused icon answer is aborted, so its body is never downloaded", async 
   await f.icon(["https://example.com/html"]);
   assert.equal(f.fetched[0][1].signal.aborted, true);
 });
+
+/** As Electron does once a window is destroyed: it says so, and everything else of it throws. */
+function destroyWindow(owner) {
+  const gone = () => { throw new TypeError("Object has been destroyed"); };
+  owner.isDestroyed = () => true;
+  for (const key of ["webContents", "contentView"]) Object.defineProperty(owner, key, { get: gone });
+  owner.isFocused = gone;
+  owner.getContentSize = gone;
+}
+
+test("quit after the window is gone: closeAll never throws, closes every tab and leaves no listener", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  // The window closes, the app quits from its own "closed" listener, and only then is the browser told to close.
+  destroyWindow(f.owner);
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.deepEqual(f.calls.filter(([name]) => name === "remove"), []);
+  for (const name of ["closed", "blur"]) assert.equal(f.owner.listenerCount(name), 0, name);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+  // The window's own "closed" arrives after that: nothing is left to do, and nothing throws.
+  assert.doesNotThrow(() => f.owner.emit("closed"));
+  await assert.rejects(f.invoke({ action: "state" }));
+});
+
+test("quit: a tab that cannot be closed does not keep the others or the network open", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  f.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert.equal(f.views[1].webContents.isDestroyed(), true);
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.equal(f.owner.listenerCount("closed"), 0);
+  // Even a window whose listeners cannot be taken off any more does not stop the quit.
+  const g = fixture();
+  await g.invoke({ action: "navigate", url: "https://one.example.com" });
+  g.owner.off = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => g.controller.closeAll());
+  assert.equal(g.views[0].webContents.isDestroyed(), true);
+  assert.equal(g.sender.listenerCount("did-start-navigation"), 0);
+});

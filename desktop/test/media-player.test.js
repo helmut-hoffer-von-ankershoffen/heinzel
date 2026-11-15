@@ -250,3 +250,36 @@ test("main hands the player's page to the browser's lease, so Clear browsing dat
   const wiring = /const mediaPlayer = createMediaPlayer\(\{([\s\S]*?)\n\}\);/.exec(main)?.[1] ?? "";
   assert.match(wiring, /\blease: \((\w+)\) => miniBrowser\.lease\(\1\),/, "the lease must forward the page it is given");
 });
+
+/** As Electron does once a window is destroyed: it says so, and everything else of it throws. */
+function destroyWindow(owner) {
+  const gone = () => { throw new TypeError("Object has been destroyed"); };
+  owner.isDestroyed = () => true;
+  for (const key of ["webContents", "contentView"]) Object.defineProperty(owner, key, { get: gone });
+  owner.isFocused = gone;
+  owner.getContentSize = gone;
+}
+
+test("quit after the window is gone: the player closes, gives its lease back and leaves no listener", async () => {
+  const f = fixture();
+  await f.play({ action: "open", video: VIDEO });
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  destroyWindow(f.owner);
+  assert.doesNotThrow(() => f.player.closeAll());
+  assert.equal(f.views[0].webContents.isDestroyed(), true);
+  for (const name of ["closed", "blur"]) assert.equal(f.owner.listenerCount(name), 0, name);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+  // The lease is back: with no tab open either, the shared network closes.
+  assert.doesNotThrow(() => f.browser.closeAll());
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.doesNotThrow(() => f.owner.emit("closed"));
+  // A player whose view cannot be closed any more still gives its lease back.
+  const g = fixture();
+  await g.play({ action: "open", video: VIDEO });
+  g.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => g.player.closeAll());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(g.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+});
