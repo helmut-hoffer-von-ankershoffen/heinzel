@@ -154,7 +154,7 @@ function guestFacts() {
 }
 
 /** What both journeys must have left behind once the agent did the free and the forbidden steps. */
-async function assertInputs(tab, race) {
+async function assertInputs(tab, race, { inSight }) {
   await settled("press:mousedown", 1);
   assert.equal(site.count("note:click"), 1, "The ordinary button must be clicked once, by a trusted click.");
   for (const [zone, shown] of [["hover", "hover:swapped"], ["press", "press:swapped"], ["race-a", "race-a:shown"], ["race-b", "race-b:shown"]]) {
@@ -172,7 +172,10 @@ async function assertInputs(tab, race) {
   found.raceInFrame = site.countOf("widget-race-", "pointerdown");
   found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
   assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
-  if (visible) assert.ok(found.raceInFrame > 0, `With a shown window at least one of ${RACE_TRIES} raced presses must land in the frame, or nothing is proven about it.`);
+  // A press reaches the other site's process only through a shown surface: a shown window and the tab in sight. That
+  // is the outside agent's journey under the virtual display, and there the race must be won at least once. In a
+  // never-shown tab (the Heinzel's) the count is only reported.
+  if (visible && inSight) assert.ok(found.raceInFrame > 0, `With a shown window and tab at least one of ${RACE_TRIES} raced presses must land in the frame, or nothing is proven about it.`);
   // What a called-off press must never do (ADR 0162, safety 3 and 5.5):
   // 1. The frame of the other site gets no release and no click, whichever try put a press into it.
   assert.equal(site.countOf("widget-", "mouseup") + site.countOf("widget-", "click"), 0,
@@ -253,7 +256,7 @@ async function heinzelJourney(page, origin) {
   assert.ok(refused(report.click_hover_swap, "covered"), `A covered target must be refused: ${report.click_hover_swap}`);
   assert.ok(refused(report.click_press_swap, "swapped"), `A target swapped on the press must be refused: ${report.click_press_swap}`);
   assert.ok(proposed(report.send), `Sending the form is a commit and must be proposed: ${report.send}`);
-  await assertInputs(report.tab, report.race);
+  await assertInputs(report.tab, report.race, { inSight: false });
   const [tab] = await agentTabs(page);
   assert.equal(tab?.id, report.tab);
   assert.equal(tab.agent.kind, "heinzel");
@@ -374,7 +377,7 @@ async function mcpJourney(page, origin) {
   const card = await agent.call("read", { tab: cardTab });
   await expectRefused("A card field", "secret", "type", { tab: cardTab, ref: refOf(card, "textbox", "Card number"), text: "4111111111111111" });
   await agent.call("close", { tab: cardTab });
-  await assertInputs(tab, race);
+  await assertInputs(tab, race, { inSight: true });
   const [shown] = await agentTabs(page);
   assert.equal(shown?.id, tab);
   assert.equal(shown.agent.kind, "external");
