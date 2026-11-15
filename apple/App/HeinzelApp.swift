@@ -203,6 +203,12 @@ struct ConnectionView: View {
         return endpoint?.origin
     }
 
+    private var mayRequestStartupNotifications: Bool {
+        scenePhase == .active && !showingColdStart && !connecting && !loadingWorkspace &&
+            !stoppingLocalWorkspace && !showConnection && !showConnectionHelp && !helpAfterConnection &&
+            sharedWorkspace == nil && !editingLink
+    }
+
     var body: some View {
         content
         .accessibilityHidden(choosingWorkspace)
@@ -226,6 +232,14 @@ struct ConnectionView: View {
             await openInitialWorkspace()
             try? await ContinuousClock().sleep(until: earliest)
             showingColdStart = false
+        }
+        .task(id: mayRequestStartupNotifications) {
+            guard mayRequestStartupNotifications else { return }
+            // Give the startup view or connection sheet time to leave before presenting the system prompt.
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            await WorkspaceNotifications.shared.requestStartupAuthorization {
+                mayRequestStartupNotifications
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && draftOrigin != nil { draftRevision += 1 }
@@ -1012,6 +1026,30 @@ private struct ConnectionHelp: View {
         #endif
     }
 
+    private var systemName: String {
+        #if os(macOS)
+        "macOS"
+        #else
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
+        #endif
+    }
+
+    private var detectedSystem: String {
+        #if os(macOS)
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        let number = version.patchVersion == 0
+            ? "\(version.majorVersion).\(version.minorVersion)"
+            : "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+        #else
+        let number = UIDevice.current.systemVersion
+        #endif
+        #if targetEnvironment(simulator)
+        return "Simulator running \(systemName) \(number)"
+        #else
+        return "Running \(systemName) \(number)"
+        #endif
+    }
+
     private var systemAudio: Result {
         if canTestSystemAudio {
             #if os(macOS)
@@ -1023,10 +1061,10 @@ private struct ConnectionHelp: View {
         #if os(macOS)
         return Result(.action, "Open a local Mac workspace to test sharing")
         #elseif targetEnvironment(simulator)
-        return Result(.unavailable, "System audio needs an iPhone or iPad running iOS or iPadOS 27 or later")
+        return Result(.unavailable, "Requires a physical device running \(systemName) 27 or later")
         #else
         if #unavailable(iOS 27) {
-            return Result(.unavailable, "Requires iOS or iPadOS 27 or later")
+            return Result(.unavailable, "Requires \(systemName) 27 or later")
         }
         return Result(.unavailable, "The system sharing picker is unavailable on this device")
         #endif
@@ -1058,9 +1096,14 @@ private struct ConnectionHelp: View {
                         .font(.callout)
                         .padding(.top, 8)
                 }
+                Text(heinzelAppVersion)
+                    .font(.caption)
+                    .foregroundStyle(ConnectionPalette.muted)
             }
             .frame(maxWidth: 460, alignment: .leading)
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
         }
         .safeAreaInset(edge: .top, spacing: 0) { diagnosticsHeader }
@@ -1081,50 +1124,49 @@ private struct ConnectionHelp: View {
     }
 
     private var diagnosticsHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Connection Help")
-                        .font(.system(.title, design: .serif, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(heinzelAppVersion).font(.caption).foregroundStyle(ConnectionPalette.muted)
-                }
+                Text("Connection Help")
+                    .font(.system(.title, design: .serif, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                    Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
             }
-            if checking {
-                let finished = results.values.filter { $0.status != .checking }.count
-                ProgressView(value: Double(finished), total: Double(Check.allCases.count)) {
-                    Text("\(finished) of \(Check.allCases.count) checks complete")
-                        .font(.callout)
-                        .accessibilityIdentifier("diagnosticsProgress")
-                }
-            } else {
-                if let summary = connectionSummary {
-                    Text(summary)
-                        .font(.callout.weight(.semibold))
-                        .accessibilityIdentifier("diagnosticsProgress")
-                }
+            let finished = results.values.filter { $0.status != .checking }.count
+            HStack(spacing: 8) {
+                Text(checking ? "Checking connection… \(finished)/\(Check.allCases.count)" : connectionSummary ?? "Connection status unavailable")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(ConnectionPalette.muted)
+                    .accessibilityIdentifier("diagnosticsProgress")
+                Spacer(minLength: 0)
                 Button {
                     checking = true
                     results = [:]
                     run += 1
                 } label: {
-                    Label("Check Again", systemImage: "arrow.clockwise")
-                        .frame(minHeight: 44)
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
-                .disabled(testingAudio || askingPermission)
+                .buttonStyle(.plain)
+                .foregroundStyle(ConnectionPalette.accent)
+                .accessibilityLabel("Check connection again")
+                .help("Check connection again")
+                .disabled(checking || testingAudio || askingPermission)
+                .opacity(checking || testingAudio || askingPermission ? 0.35 : 1)
             }
+            ProgressView(value: Double(finished), total: Double(Check.allCases.count))
+                .opacity(checking ? 1 : 0)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: 460, alignment: .leading)
         .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .background(Color("StartupBackground"))
     }
@@ -1151,6 +1193,9 @@ private struct ConnectionHelp: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(check.rawValue).font(.callout.weight(.semibold))
                     Text(result.detail).font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                    if check == .systemAudio {
+                        Text(detectedSystem).font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                    }
                 }
                 Spacer(minLength: 0)
                 if result.status == .checking {

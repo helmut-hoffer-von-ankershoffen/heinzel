@@ -11,10 +11,21 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private let preference = "heinzelNativeNotificationWorkspaces"
     private var authorizing: String?
+    private var requestingStartupAuthorization = false
     private var authorizationCancelled = false
     private var openedRoute: (scope: String, path: String)?
 
     func install() { center.delegate = self }
+
+    func requestStartupAuthorization(whileForeground: () -> Bool) async {
+        guard !requestingStartupAuthorization, authorizing == nil else { return }
+        requestingStartupAuthorization = true
+        defer { requestingStartupAuthorization = false }
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .notDetermined, !Task.isCancelled, whileForeground() else { return }
+        _ = try? await center.requestAuthorization(options: [.alert])
+        NotificationCenter.default.post(name: Self.changed, object: nil)
+    }
 
     private func scope(for endpoint: Endpoint) -> String {
         // The locally owned Mac service binds a fresh loopback port at each launch.
@@ -52,7 +63,9 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
             NotificationCenter.default.post(name: Self.changed, object: nil)
             return await status(for: endpoint)
         }
-        guard authorizing == nil, !enabled.contains(key) else { return await status(for: endpoint) }
+        guard authorizing == nil, !requestingStartupAuthorization, !enabled.contains(key) else {
+            return await status(for: endpoint)
+        }
         authorizing = key
         authorizationCancelled = false
         defer { authorizing = nil }
