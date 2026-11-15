@@ -48,7 +48,9 @@ it("shows a Heinzel's proposal as a card and runs it only on Confirm", async () 
 
 it("never shows a chat that is bound to another Heinzel", async () => {
   mockApi({
-    "/api/system/runner/chat/heinzel-actions": () => [{ ...chat, personal_session_id: "hz-ZZZZZZZZZZZZZZZZZZZZZZZZZZ" }],
+    "/api/system/runner/chat/heinzel-actions": () => [
+      { ...chat, personal_session_id: "hz-ZZZZZZZZZZZZZZZZZZZZZZZZZZ" },
+    ],
   });
   show();
   expect(await screen.findByRole("alert")).toHaveTextContent("couldn't be loaded");

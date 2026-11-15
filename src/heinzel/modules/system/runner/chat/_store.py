@@ -23,6 +23,7 @@ from pydantic import JsonValue, ValidationError
 
 from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
 from heinzel.kernel import McpChatSessions
+from heinzel.kernel._browser import BROWSER_MODULE
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -34,6 +35,7 @@ from heinzel.modules.system.runner.chat._models import (
     ChatSummary,
 )
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
+from heinzel.modules.ui.browser._service import QUOTED_NOTICE
 
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
@@ -233,7 +235,9 @@ class ChatStore(McpChatSessions):
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
                 )
-            else:
+            elif not (action.module == BROWSER_MODULE and action.command.endswith(QUOTED_NOTICE)):
+                # A browser commit keeps the browser's own summary of the described target, cut and with the
+                # notice last (ADR 0162); the long fingerprint in its arguments is no card for a person.
                 action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
         return chat
