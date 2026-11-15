@@ -23,11 +23,11 @@ dialog.showMessageBox = async (...args) => {
 };
 
 // Diagnostic: an error box is never shown here (the shared bootstrap records its title); its text is kept as well,
-// so a main-process error at quit says what it was.
+// so a main-process error at quit says what it was. Anything after a # is cut: an address may end in the session's token.
 let errorBox = () => {};
 Object.defineProperty(dialog, "showErrorBox", {
   configurable: true,
-  get: () => (title, content) => { record("main-errors", `${title}: ${String(content).slice(0, 4000)}`); return errorBox(title, content); },
+  get: () => (title, content) => { record("main-errors", `${title}: ${String(content).replace(/#\S*/g, "#…").slice(0, 4000)}`); return errorBox(title, content); },
   set: (handler) => { errorBox = handler; },
 });
 
