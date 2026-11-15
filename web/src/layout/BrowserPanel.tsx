@@ -364,12 +364,14 @@ export function BrowserPanel({
                 key={tab.id}
                 className={`flex max-w-40 shrink-0 items-center rounded-md border border-border text-xs ${tab.selected ? "bg-muted" : ""}`}
               >
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   role="tab"
                   aria-selected={tab.selected}
                   title={tab.url || undefined}
-                  className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1 text-left"
+                  className="h-auto min-w-0 flex-1 justify-start gap-1 py-1 text-left"
                   onClick={() => void request({ action: "select-tab", tab: tab.id })}
                 >
                   {tab.agent && <AgentFace kind={tab.agent.kind} />}
@@ -381,16 +383,18 @@ export function BrowserPanel({
                       <span className="sr-only">, {t("browser.commitWaiting")}</span>
                     </>
                   )}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   aria-label={`${t("browser.closeTab")} ${tabLabel(tab)}`}
                   title={t("browser.closeTab")}
-                  className="px-1 py-1 text-muted-foreground"
+                  className="size-auto px-1 py-1 text-muted-foreground"
                   onClick={() => closeTab(tab.id)}
                 >
                   <X aria-hidden className="size-3" />
-                </button>
+                </Button>
               </div>
             ))}
             <Button

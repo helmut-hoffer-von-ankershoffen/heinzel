@@ -3,6 +3,7 @@ import { ChevronRight, Folder } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaBookmark } from "@/api/client";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Favicon } from "./Favicon";
@@ -63,15 +64,16 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
       <ul aria-label={t("bookmarks.title")} className="mt-2 flex flex-col items-center gap-0.5">
         {top.map((entry) => (
           <li key={entry.id}>
-            <button
+            <Button
               type="button"
-              className={linkClass}
+              variant="ghost"
+              className={cn(linkClass, "h-auto px-[inherit]")}
               title={entry.title}
               aria-label={entry.title}
               onClick={() => openBookmark(entry.url)}
             >
               {icon(entry)}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -96,14 +98,15 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
   };
   return (
     <div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={() => navigate("/bookmarks")}
-        className="mt-5 mb-1.5 flex items-center rounded-md pr-3 pl-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
+        className="mt-5 mb-1.5 h-auto justify-start rounded-md pr-3 pl-2.5 text-ui-sm font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
         title={t("bookmarks.manage")}
       >
         {t("bookmarks.title")}
-      </button>
+      </Button>
       {/* A long tree scrolls here, inside its section, and leaves the rest of the navigation where it is. */}
       <div
         ref={tree}
@@ -120,13 +123,14 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
             "data-bookmark": entry.id,
             tabIndex: entry.id === tabStop ? 0 : -1,
             onFocus: () => setFocused(entry.id),
-            className: cn(linkClass, "w-full text-left"),
+            className: cn(linkClass, "h-auto w-full justify-start text-left font-normal"),
             style: { paddingLeft: `${0.625 + depth * 0.875}rem` },
           } as const;
           return entry.kind === "folder" ? (
-            <button
+            <Button
               key={entry.id}
               type="button"
+              variant="ghost"
               {...shared}
               aria-expanded={open.has(entry.id)}
               onClick={() => setFolder(entry.id, !open.has(entry.id))}
@@ -134,18 +138,19 @@ export function BookmarkNavigation({ compact = false, linkClass }: Props) {
               <ChevronRight aria-hidden className={cn("transition-transform", open.has(entry.id) && "rotate-90")} />
               <Folder aria-hidden />
               <span className="truncate">{entry.title}</span>
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               key={entry.id}
               type="button"
+              variant="ghost"
               {...shared}
               title={entry.url ?? undefined}
               onClick={() => openBookmark(entry.url)}
             >
               {icon(entry)}
               <span className="truncate">{entry.title}</span>
-            </button>
+            </Button>
           );
         })}
       </div>

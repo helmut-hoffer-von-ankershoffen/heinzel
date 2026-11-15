@@ -387,13 +387,14 @@ describe("the bookmark manager", () => {
     const user = userEvent.setup();
     await open();
     await user.click(screen.getByRole("button", { name: "Remove News" }));
-    const note = await screen.findByRole("status");
-    expect(note).toHaveTextContent("Removed “News”.");
+    // The shell keeps an empty live region of its own, so the note is found by its words.
+    const note = (await screen.findByText("Removed “News”.")).closest<HTMLElement>('[role="status"]') as HTMLElement;
+    expect(note).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove News" })).toBeNull();
     await user.click(within(note).getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(writes).toContainEqual(["restore", { entry: "b-4" }]));
     expect(await screen.findByRole("button", { name: "Remove News" })).toBeVisible();
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("Removed “News”.")).toBeNull();
   });
 
   it("says so when there are none, and shows what hz answered when a change is refused", async () => {

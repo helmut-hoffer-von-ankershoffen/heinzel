@@ -168,14 +168,15 @@ function Manager({ list }: Readonly<{ list: SchemaBookmarkList }>) {
                 ) : entry.kind === "folder" ? (
                   <span className="min-w-0 flex-[1_1_10rem] truncate text-sm font-medium">{entry.title}</span>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     title={entry.url ?? undefined}
-                    className="h-9 min-w-0 flex-[1_1_10rem] truncate text-left text-sm"
+                    className="min-w-0 flex-[1_1_10rem] justify-start truncate px-0 text-left text-sm font-normal hover:bg-transparent"
                     onClick={() => openBookmark(entry.url)}
                   >
                     {entry.title}
-                  </button>
+                  </Button>
                 )}
                 <select
                   aria-label={t("bookmarks.moveTo", { title: entry.title })}
