@@ -20,15 +20,16 @@
 000000000000000000000066 = {isa = PBXBuildFile; fileRef = 000000000000000000000061;};
 000000000000000000000067 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeinzelWidgets.swift; sourceTree = "<group>";};
 000000000000000000000068 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>";};
-000000000000000000000069 = {isa = PBXGroup; children = (000000000000000000000067,000000000000000000000068,00000000000000000000007C,); path = Widgets; sourceTree = "<group>";};
+000000000000000000000083 = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MacWidget.entitlements; sourceTree = "<group>";};
+000000000000000000000069 = {isa = PBXGroup; children = (000000000000000000000083,000000000000000000000067,000000000000000000000068,00000000000000000000007C,); path = Widgets; sourceTree = "<group>";};
 00000000000000000000006A = {isa = PBXBuildFile; fileRef = 000000000000000000000067;};
 00000000000000000000006B = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = HeinzelWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR;};
-00000000000000000000006C = {isa = PBXBuildFile; fileRef = 00000000000000000000006B; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};};
+00000000000000000000006C = {isa = PBXBuildFile; fileRef = 00000000000000000000006B; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};};
 00000000000000000000006D = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (00000000000000000000006C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0;};
 00000000000000000000006E = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000064,00000000000000000000006A,00000000000000000000007A,); runOnlyForDeploymentPostprocessing = 0;};
 00000000000000000000006F = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000066,00000000000000000000007E,); runOnlyForDeploymentPostprocessing = 0;};
 000000000000000000000070 = {isa = PBXContainerItemProxy; containerPortal = 000000000000000000000001; proxyType = 1; remoteGlobalIDString = 000000000000000000000073; remoteInfo = HeinzelWidgets;};
-000000000000000000000071 = {isa = PBXTargetDependency; platformFilter = ios; target = 000000000000000000000073; targetProxy = 000000000000000000000070;};
+000000000000000000000071 = {isa = PBXTargetDependency; target = 000000000000000000000073; targetProxy = 000000000000000000000070;};
 000000000000000000000072 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000074,000000000000000000000075,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 000000000000000000000073 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000072; buildPhases = (00000000000000000000006E,00000000000000000000006F,); buildRules = (); dependencies = (); name = HeinzelWidgets; productName = HeinzelWidgets; productReference = 00000000000000000000006B; productType = "com.apple.product-type.app-extension";};
 000000000000000000000076 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeinzelShortcuts.swift; sourceTree = "<group>";};
@@ -40,7 +41,10 @@
         GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = Widgets/Info.plist;
         IPHONEOS_DEPLOYMENT_TARGET = 18.0; TARGETED_DEVICE_FAMILY = "1,2";
         PRODUCT_NAME = HeinzelWidgets; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple.widgets;
-        SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        SDKROOT = auto; SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+        MACOSX_DEPLOYMENT_TARGET = 15.0; ENABLE_HARDENED_RUNTIME = YES;
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_ENTITLEMENTS)";
+        "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
     };};
 000000000000000000000075 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
@@ -50,7 +54,10 @@
         GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = Widgets/Info.plist;
         IPHONEOS_DEPLOYMENT_TARGET = 18.0; TARGETED_DEVICE_FAMILY = "1,2";
         PRODUCT_NAME = HeinzelWidgets; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple.widgets;
-        SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        SDKROOT = auto; SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+        MACOSX_DEPLOYMENT_TARGET = 15.0; ENABLE_HARDENED_RUNTIME = YES;
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_ENTITLEMENTS)";
+        "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-O";
     };};
 00000000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceNotifications.swift; sourceTree = "<group>";};
@@ -77,7 +84,7 @@
 000000000000000000000003 = {isa = PBXGroup; children = (000000000000000000000004,000000000000000000000062,000000000000000000000069,000000000000000000000005,); sourceTree = "<group>";};
 000000000000000000000007 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000080,000000000000000000000063,000000000000000000000077,000000000000000000000079,00000000000000000000003C,00000000000000000000002F,00000000000000000000002E,00000000000000000000002D,000000000000000000000028,000000000000000000000029,00000000000000000000002A,00000000000000000000002B,); runOnlyForDeploymentPostprocessing = 0;};
 000000000000000000000008 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000002C,000000000000000000000065,00000000000000000000007D,000000000000000000000082,); runOnlyForDeploymentPostprocessing = 0;};
-00000000000000000000000C = {isa = XCBuildConfiguration; name = Debug; buildSettings = {};};
+00000000000000000000000C = {isa = XCBuildConfiguration; name = Debug; buildSettings = {HEINZEL_MAC_WIDGET_GROUP = "$(DEVELOPMENT_TEAM).team.heinzel.apple.activity"; HEINZEL_MAC_WIDGET_ENTITLEMENTS = Widgets/MacWidget.entitlements;};};
 00000000000000000000000E = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
         PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
         SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator"; SDKROOT = auto;
@@ -89,11 +96,12 @@
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = "$(HEINZEL_MAC_ENTITLEMENTS)";
         HEINZEL_MAC_ENTITLEMENTS = App/Heinzel.entitlements;
+        "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         HEINZEL_IOS_ENTITLEMENTS = Shared/WidgetActivity.entitlements;
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
     };};
-00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {};};
+00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {HEINZEL_MAC_WIDGET_GROUP = "$(DEVELOPMENT_TEAM).team.heinzel.apple.activity"; HEINZEL_MAC_WIDGET_ENTITLEMENTS = Widgets/MacWidget.entitlements;};};
 00000000000000000000000F = {isa = XCBuildConfiguration; name = Release; buildSettings = {
         PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
         SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator"; SDKROOT = auto;
@@ -105,6 +113,7 @@
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ENABLE_HARDENED_RUNTIME = YES; CODE_SIGN_ENTITLEMENTS = "$(HEINZEL_MAC_ENTITLEMENTS)";
         HEINZEL_MAC_ENTITLEMENTS = App/Heinzel.entitlements;
+        "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         HEINZEL_IOS_ENTITLEMENTS = Shared/WidgetActivity.entitlements;
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;

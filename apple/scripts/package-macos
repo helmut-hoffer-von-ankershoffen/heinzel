@@ -15,12 +15,19 @@ case "$https_links" in
     YES|NO) ;;
     *) printf '%s\n' 'HEINZEL_HTTPS_LINKS must be YES or NO.' >&2; exit 2 ;;
 esac
+signing=()
+if [[ -n "${HEINZEL_MAC_SIGNING_TEAM:-}" ]]; then
+    [[ "$HEINZEL_MAC_SIGNING_TEAM" =~ ^[A-Z0-9]{10}$ ]]
+    signing+=("DEVELOPMENT_TEAM=$HEINZEL_MAC_SIGNING_TEAM"
+        "HEINZEL_MAC_ENTITLEMENTS=App/MacWidgetApp.entitlements"
+        "HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetGroup.entitlements")
+fi
 out="$PWD/.build/package"
 stage="$(mktemp -d)"
 trap 'rm -rf -- "$stage"' EXIT
 xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES \
-    HEINZEL_HTTPS_LINKS="$https_links" build -quiet
+    HEINZEL_HTTPS_LINKS="$https_links" ${signing[@]+"${signing[@]}"} build -quiet
 app="$stage/Heinzelmaennchen.app"
 /usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
 /usr/bin/codesign --verify --strict --deep "$app"

@@ -1,8 +1,5 @@
 import SwiftUI
 import WebKit
-#if os(iOS)
-import WidgetKit
-#endif
 #if DEBUG
 import OSLog
 #endif
@@ -19,11 +16,183 @@ struct HeinzelChatRequest: Equatable {
     let request = UUID()
 }
 
+struct NativePromptRequest: Codable, Equatable {
+    let workspaceScope: String
+    let recipientID: String
+    let recipientName: String
+    let text: String
+    let requestID: String
+
+    var isValid: Bool {
+        workspaceScope.wholeMatch(of: /[a-f0-9]{64}/) != nil && NativeRoute.isSessionID(recipientID) &&
+        UUID(uuidString: requestID) != nil && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        text.unicodeScalars.count <= 32_000
+    }
+}
+
+enum NativePromptOutcome: Equatable {
+    case accepted
+    case unavailable
+    case signIn
+    case unconfirmed
+    case rejected
+}
+
+/// Draft text stays in the app's private container, never in widget storage or a URL.
+@MainActor @Observable
+final class NativePromptComposer {
+    var recipientID = ""
+    var text = ""
+    var roster: [WidgetHeinzel] = []
+    private(set) var scope: String?
+    private(set) var pending: NativePromptRequest?
+    private(set) var sending = false
+    private(set) var accepted = false
+    private(set) var message: String?
+    @ObservationIgnored weak var navigation: Navigation?
+
+    var canSend: Bool {
+        scope != nil && !sending && !accepted &&
+        (pending != nil || roster.contains { $0.id == recipientID }) &&
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.unicodeScalars.count <= 32_000
+    }
+
+    func prepare(scope newScope: String?, roster: [WidgetHeinzel]) {
+        guard !sending else { return }
+        self.roster = roster
+        guard scope != newScope else { return }
+        scope = newScope
+        pending = nil
+        recipientID = ""
+        text = ""
+        message = nil
+        accepted = false
+        guard let newScope else { return }
+        do {
+            let directory = try draftDirectory(scope: newScope)
+            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            guard let url = files.filter({ $0.pathExtension == "json" })
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first else { return }
+            let saved = try JSONDecoder().decode(NativePromptRequest.self, from: Data(contentsOf: url))
+            guard saved.isValid, saved.workspaceScope == newScope,
+                  url.deletingPathExtension().lastPathComponent == saved.requestID else { throw CocoaError(.fileReadCorruptFile) }
+            pending = saved
+            recipientID = saved.recipientID
+            text = saved.text
+            message = "Delivery wasn’t confirmed. Retry this saved prompt safely, or check the chat."
+        } catch {
+            message = "The saved prompt could not be read. Open the chat to check its delivery before writing another."
+            // Keep a corrupt pending file from being silently replaced by a new request.
+            scope = nil
+        }
+    }
+
+    func send() async {
+        guard !sending, !accepted else { return }
+        guard canSend, let scope, let navigation else {
+            message = "Open the workspace and sign in before sending. Your prompt is still here."
+            return
+        }
+        let request = pending ?? NativePromptRequest(
+            workspaceScope: scope, recipientID: recipientID,
+            recipientName: roster.first { $0.id == recipientID }?.name ?? "Heinzel",
+            text: text, requestID: UUID().uuidString
+        )
+        guard request.isValid else { return }
+        // Retain the identity even if an atomic write succeeds but a later file operation fails.
+        pending = request
+        do {
+            let url = try draftDirectory(scope: scope).appendingPathComponent(request.requestID + ".json")
+            let data = try JSONEncoder().encode(request)
+            #if os(iOS)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            #else
+            try data.write(to: url, options: .atomic)
+            #endif
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        } catch {
+            message = "Your prompt couldn’t be saved safely. Nothing was sent. Try again."
+            return
+        }
+        sending = true
+        message = nil
+        let outcome = await navigation.sendPrompt(request)
+        sending = false
+        switch outcome {
+        case .accepted:
+            accepted = true
+            message = "Prompt received. Open the chat to follow the response."
+            if let directory = try? draftDirectory(scope: scope) {
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(request.requestID + ".json"))
+            }
+        case .unavailable:
+            message = "The workspace isn’t ready. Open it, then retry this saved prompt."
+        case .signIn:
+            message = "Sign in to the workspace, then retry this saved prompt."
+        case .unconfirmed:
+            message = "Delivery wasn’t confirmed. Retry uses the same request, so it won’t send a duplicate."
+        case .rejected:
+            if removePendingFile() {
+                pending = nil
+                message = "The host rejected this prompt. Check the recipient and text, then send again."
+            }
+        }
+    }
+
+    func discardPending() {
+        guard !sending, removePendingFile() else { return }
+        pending = nil
+        text = ""
+        accepted = false
+        message = nil
+    }
+
+    @discardableResult
+    private func removePendingFile() -> Bool {
+        guard let pending else { return true }
+        do {
+            let url = try draftDirectory(scope: pending.workspaceScope).appendingPathComponent(pending.requestID + ".json")
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            return true
+        } catch {
+            message = "The saved prompt couldn’t be removed. It is still available to retry."
+            return false
+        }
+    }
+
+    func newPrompt() {
+        guard accepted else { return }
+        let previousScope = scope
+        scope = nil
+        accepted = false
+        pending = nil
+        text = ""
+        message = nil
+        prepare(scope: previousScope, roster: roster)
+    }
+
+    private func draftDirectory(scope: String) throws -> URL {
+        guard scope.wholeMatch(of: /[a-f0-9]{64}/) != nil else { throw CocoaError(.fileWriteInvalidFileName) }
+        var directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                    appropriateFor: nil, create: true)
+            .appendingPathComponent("HeinzelPromptDrafts", isDirectory: true)
+            .appendingPathComponent(scope, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+        return directory
+    }
+}
+
 struct WorkspaceView: WebRepresentable {
     let endpoint: Endpoint
     let isObscured: Bool
     var reportsWidgetActivity = false
+    var isWidgetWorkspaceCurrent: () -> Bool = { false }
     var chatRequest: HeinzelChatRequest?
+    var promptComposer: NativePromptComposer?
     var widgetRefreshRevision = 0
     var ready: () -> Void
     var reportHostName: (String) -> Void = { _ in }
@@ -31,7 +200,8 @@ struct WorkspaceView: WebRepresentable {
     var appearance: @MainActor @Sendable (Color) -> Void = { _ in }
 
     func makeCoordinator() -> Navigation {
-        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportError: reportError)
+        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportError: reportError,
+                   isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent)
     }
 
     private func makeWebView(_ context: Context) -> WKWebView {
@@ -218,6 +388,7 @@ struct WorkspaceView: WebRepresentable {
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
     func updateNSView(_ view: WKWebView, context: Context) {
         view.setAccessibilityHidden(isObscured)
+        updateWidgetActivity(context.coordinator)
     }
     static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #else
@@ -225,11 +396,16 @@ struct WorkspaceView: WebRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         view.accessibilityElementsHidden = isObscured
         view.isUserInteractionEnabled = !isObscured
-        context.coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
-        if let chatRequest { context.coordinator.openChat(chatRequest) }
+        updateWidgetActivity(context.coordinator)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
+
+    private func updateWidgetActivity(_ coordinator: Navigation) {
+        promptComposer?.navigation = coordinator
+        coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
+        if let chatRequest { coordinator.openChat(chatRequest) }
+    }
 }
 
 private extension WKWebViewConfiguration {
@@ -292,15 +468,48 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     weak var workspace: WKWebView?
     #if os(iOS)
     private var backgroundObservation: NSKeyValueObservation?
+    #endif
     private var widgetActivity: Task<Void, Never>?
     private var widgetRefreshRevision = 0
     private var lastChatRequest: HeinzelChatRequest?
 
+    func sendPrompt(_ request: NativePromptRequest) async -> NativePromptOutcome {
+        guard request.isValid, let workspace,
+              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              hasCommittedWorkspace, case .idle = provisionalLoad,
+              workspace.url.map(endpoint.owns) == true else { return .unavailable }
+        let revision = documentRevision
+        do {
+            let result = try await inspectWorkspace(in: workspace, arguments: [
+                "sessionID": request.recipientID, "requestID": request.requestID, "prompt": request.text
+            ], body: """
+                const response = await fetch('/api/heinzel/chat', {
+                    ...options, method: 'POST',
+                    headers: { ...options.headers, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionID, request_id: requestID, message: prompt, when_busy: 'follow_up' })
+                });
+                if (response.status === 401 || response.status === 403) return 'sign-in';
+                if (response.status === 404 || response.status === 422) return 'rejected';
+                if (!response.ok) return 'unconfirmed';
+                const answer = await response.json();
+                return answer.session_id === sessionID && answer.request_id === requestID &&
+                    ['started', 'queued', 'steered'].includes(answer.disposition) &&
+                    Number.isInteger(answer.inbox_position) && answer.inbox_position > 0 ? 'accepted' : 'unconfirmed';
+                """) as? String
+            guard revision == documentRevision, isWidgetWorkspaceCurrent(),
+                  workspace.url.map(endpoint.owns) == true else { return .unconfirmed }
+            if result == "accepted" { return .accepted }
+            if result == "sign-in" || result == "" { return .signIn }
+            if result == "rejected" { return .rejected }
+            return .unconfirmed
+        } catch {
+            return .unconfirmed
+        }
+    }
+
     func openChat(_ request: HeinzelChatRequest) {
-        let address = endpoint.origin.absoluteString
         guard lastChatRequest != request, NativeRoute.isSessionID(request.id), let workspace,
-              request.workspaceScope == ActivityWidgetData.scope(for: address),
-              UserDefaults.standard.string(forKey: "serverOrigin") == address,
+              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true,
               var url = URLComponents(url: endpoint.origin, resolvingAgainstBaseURL: false) else { return }
@@ -329,9 +538,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func refreshWidgetActivity() async {
-        guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        guard isWidgetWorkspaceCurrent(), let workspace, workspace.url.map(endpoint.owns) == true else { return }
         let revision = documentRevision
-        // Read only aggregate counts. The session and device tokens stay inside WebKit.
+        // The session and device tokens stay inside WebKit.
         let details = ActivityWidgetData.requestedDetails
         let artwork = Self.widgetArtwork
         let result = try? await inspectWorkspace(in: workspace, arguments: ["detailIDs": details], body: """
@@ -384,13 +593,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 roster
             });
             """) as? String
-        guard !Task.isCancelled, revision == documentRevision, self.workspace === workspace, let result,
-              UserDefaults.standard.string(forKey: "serverOrigin") == endpoint.origin.absoluteString else { return }
+        guard !Task.isCancelled, revision == documentRevision, self.workspace === workspace,
+              let result, isWidgetWorkspaceCurrent() else { return }
         let changed: Bool
         if result.isEmpty { changed = ActivityWidgetData.clear() }
         else if let snapshot = try? JSONDecoder().decode(WidgetSnapshotResponse.self, from: Data(result.utf8)) {
             changed = ActivityWidgetData.save(awake: snapshot.awake, waiting: snapshot.waiting, heinzels: snapshot.roster,
-                                              workspaceScope: ActivityWidgetData.scope(for: endpoint.origin.absoluteString))
+                                              workspaceScope: ActivityWidgetData.scope(for: endpoint.origin))
         } else { return }
         if changed { ActivityWidgetData.reload() }
     }
@@ -407,6 +616,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         let roster: [WidgetHeinzel]
     }
 
+    #if os(iOS)
     func observeBackground(of view: WKWebView, onChange: @escaping @MainActor @Sendable (Color) -> Void) {
         backgroundObservation = view.observe(\.underPageBackgroundColor, options: [.initial, .new]) { [weak view] _, _ in
             Task { @MainActor in
@@ -431,13 +641,15 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private weak var noticeAlert: UIAlertController?
     #endif
     private let reportError: (WorkspaceProblem) -> Void
+    private let isWidgetWorkspaceCurrent: () -> Bool
 
     init(endpoint: Endpoint, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
-         reportError: @escaping (WorkspaceProblem) -> Void) {
+         reportError: @escaping (WorkspaceProblem) -> Void, isWidgetWorkspaceCurrent: @escaping () -> Bool) {
         self.endpoint = endpoint
         self.ready = ready
         self.reportHostName = reportHostName
         self.reportError = reportError
+        self.isWidgetWorkspaceCurrent = isWidgetWorkspaceCurrent
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
@@ -779,10 +991,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
         backgroundObservation?.invalidate()
-        setWidgetActivityEnabled(false)
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
         #endif
+        setWidgetActivityEnabled(false)
         stopAudio()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAudio", contentWorld: .page)
         browser.reset()

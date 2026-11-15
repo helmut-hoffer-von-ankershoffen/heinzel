@@ -5,6 +5,7 @@ enum NativeRoute: Equatable {
     case workspace
     case connectionHelp
     case chooseHeinzel
+    case writePrompt
     case chat(workspace: String, id: String)
 
     var url: URL {
@@ -13,6 +14,7 @@ enum NativeRoute: Equatable {
         case .workspace: path = "workspace"
         case .connectionHelp: path = "connection-help"
         case .chooseHeinzel: path = "choose-heinzel"
+        case .writePrompt: path = "write-prompt"
         case .chat(let workspace, let id): path = "chat/\(workspace)/\(id)"
         }
         return URL(string: "heinzel://app/\(path)")!
@@ -26,6 +28,7 @@ enum NativeRoute: Equatable {
         case "/workspace": self = .workspace
         case "/connection-help": self = .connectionHelp
         case "/choose-heinzel": self = .chooseHeinzel
+        case "/write-prompt": self = .writePrompt
         default:
             guard parts.percentEncodedPath.hasPrefix("/chat/") else { return nil }
             let path = parts.percentEncodedPath.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)

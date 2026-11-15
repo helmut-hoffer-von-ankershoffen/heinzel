@@ -1,9 +1,9 @@
 import AVFoundation
 import SwiftUI
 import UserNotifications
-#if os(iOS)
-import WidgetKit
-#endif
+
+private let workspaceSwitchTitle = "Switch Workspace"
+private let workspaceSwitchSymbol = "arrow.left.arrow.right"
 
 private let heinzelTagline = "Durable agents accelerating product teams, like the little elves from Cologne."
 
@@ -213,6 +213,8 @@ struct ConnectionView: View {
     @AppStorage("workspaceHistory") private var workspaceHistory = Data()
     @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
     @State private var syncedWorkspaces: [RecentWorkspace] = []
+    @State private var attemptedCloudSignIns: [String: Date] = [:]
+    @State private var cloudSignInInProgress = false
     #if os(macOS)
     @AppStorage("syncWorkspaceSignIn") private var syncWorkspaceSignIn = false
     @AppStorage("publishedWorkspaceOrigin") private var publishedWorkspaceOrigin = ""
@@ -234,6 +236,7 @@ struct ConnectionView: View {
     @State private var helpAfterConnection = false
     #if os(iOS)
     @State private var shortcutRouter = AppShortcutRouter.shared
+    #endif
     @State private var pendingShortcutURL: NativeRoute?
     @State private var showHeinzelPicker = false
     @State private var pickerRoster: [WidgetHeinzel] = []
@@ -241,7 +244,9 @@ struct ConnectionView: View {
     @State private var pickerTimedOut = false
     @State private var widgetRefreshRevision = 0
     @State private var chatRequest: HeinzelChatRequest?
-    #endif
+    @State private var showPromptComposer = false
+    @State private var dismissingPromptComposer = false
+    @State private var promptComposer = NativePromptComposer()
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
@@ -270,17 +275,29 @@ struct ConnectionView: View {
         return parseWorkspaceLink(link)
     }
 
+    private var forgottenWorkspaceDates: [String: Date] {
+        (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+    }
+
+    private var availableCloudWorkspaces: [RecentWorkspace] {
+        let forgotten = forgottenWorkspaceDates
+        return syncedWorkspaces.filter { $0.lastUsed > (forgotten[$0.address] ?? .distantPast) }
+    }
+
+    private var shouldRefreshSyncedWorkspaces: Bool {
+        scenePhase == .active && (endpoint == nil || choosingWorkspace || showConnection || loadFailure == .signIn)
+    }
+
     private var recentWorkspaces: [RecentWorkspace] {
         let local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
-        let forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
-        let cloud = syncedWorkspaces.filter { $0.lastUsed > (forgotten[$0.address] ?? .distantPast) }
+        let forgotten = forgottenWorkspaceDates
         var entries: [String: RecentWorkspace] = [:]
-        for item in local + cloud {
+        for item in local + availableCloudWorkspaces {
             guard let target = Endpoint(item.address), target.token == nil, target.origin.absoluteString == item.address else { continue }
             let origin = item.address
             if let known = entries[origin] {
                 entries[origin] = RecentWorkspace(address: origin, hostName: item.hostName ?? known.hostName,
-                                                  lastUsed: known.lastUsed, source: known.source ?? item.source)
+                                                  lastUsed: known.lastUsed, source: item.source ?? known.source)
             } else {
                 entries[origin] = item
             }
@@ -347,16 +364,23 @@ struct ConnectionView: View {
             sharedWorkspace == nil && !editingLink
     }
 
-    #if os(iOS)
     private var canOpenShortcut: Bool {
         scenePhase == .active && !showingColdStart && !stoppingLocalWorkspace &&
-            !showDisconnectConfirmation && (sharedWorkspace == nil || endpoint == nil)
+            !showDisconnectConfirmation && !promptComposer.sending && !dismissingPromptComposer &&
+            (sharedWorkspace == nil || endpoint == nil)
     }
 
     private func openShortcut(_ shortcut: NativeRoute) {
         editingLink = false
+        if showPromptComposer && shortcut != .writePrompt {
+            pendingShortcutURL = shortcut
+            dismissingPromptComposer = true
+            showPromptComposer = false
+            return
+        }
         switch shortcut {
         case .workspace:
+            showPromptComposer = false
             showHeinzelPicker = false
             helpAfterConnection = false
             showConnectionHelp = false
@@ -373,6 +397,12 @@ struct ConnectionView: View {
             showConnection = false
             showConnectionHelp = false
             showHeinzelPicker = true
+        case .writePrompt:
+            showConnection = false
+            showConnectionHelp = false
+            showHeinzelPicker = false
+            if endpoint != nil { choosingWorkspace = false }
+            showPromptComposer = true
         case .chat(let scope, let id):
             if let snapshot = currentWidgetSnapshot, snapshot.workspaceScope == scope,
                snapshot.roster.contains(where: { $0.id == id }) {
@@ -387,11 +417,29 @@ struct ConnectionView: View {
         }
     }
 
+    private var widgetWorkspaceScope: String? {
+        guard let endpoint else { return nil }
+        #if os(macOS)
+        guard endpoint.origin.scheme == "http" else { return nil }
+        #else
+        guard endpoint.origin.absoluteString == serverOrigin else { return nil }
+        #endif
+        return ActivityWidgetData.scope(for: endpoint.origin)
+    }
+
     private var currentWidgetSnapshot: ActivityWidgetData? {
-        guard let endpoint, endpoint.origin.absoluteString == serverOrigin,
-              let snapshot = ActivityWidgetData.read(),
-              snapshot.workspaceScope == ActivityWidgetData.scope(for: serverOrigin) else { return nil }
+        guard let scope = widgetWorkspaceScope, let snapshot = ActivityWidgetData.read(),
+              snapshot.workspaceScope == scope else { return nil }
         return snapshot
+    }
+
+    private var mayRefreshWidgetActivity: Bool {
+        #if os(macOS)
+        // Keep the desktop widgets useful while another app is frontmost.
+        widgetWorkspaceScope != nil
+        #else
+        scenePhase == .active && widgetWorkspaceScope != nil
+        #endif
     }
 
     private var heinzelPicker: some View {
@@ -400,7 +448,20 @@ struct ConnectionView: View {
                 connectionSheetHeader("Choose a Heinzel") {
                     connectionIconButton("xmark", label: "Close") { showHeinzelPicker = false }
                 }
-                if endpoint == nil || loadFailure != nil || endpoint?.origin.absoluteString != serverOrigin {
+                if widgetWorkspaceScope == nil || loadFailure != nil {
+                    #if os(macOS)
+                    Text("Open the local workspace to load its Heinzels.")
+                        .font(.callout).foregroundStyle(ConnectionPalette.muted)
+                    Button("Open Local Workspace") {
+                        showHeinzelPicker = false
+                        if endpoint?.origin.scheme != "http" {
+                            Task { await startLocal() }
+                        } else if loadFailure != nil {
+                            retryWorkspace()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    #else
                     Text("Open your current workspace to load its Heinzels.")
                         .font(.callout).foregroundStyle(ConnectionPalette.muted)
                     Button("Open Workspace") {
@@ -410,6 +471,7 @@ struct ConnectionView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    #endif
                 } else if pickerRoster.isEmpty {
                     if pickerHasSnapshot {
                         Text("No Heinzels yet").font(.callout).foregroundStyle(ConnectionPalette.muted)
@@ -431,8 +493,8 @@ struct ConnectionView: View {
                                 }
                             } label: {
                                 HStack(spacing: 10) {
-                                    if let data = item.portrait, let image = UIImage(data: data) {
-                                        Image(uiImage: image).resizable().scaledToFit()
+                                    if let image = item.portraitImage {
+                                        image.resizable().scaledToFit()
                                             .frame(width: 35, height: 35).accessibilityHidden(true)
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
@@ -458,6 +520,9 @@ struct ConnectionView: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .presentationBackground(Color("StartupBackground"))
+        #if os(macOS)
+        .frame(width: 460, height: 440)
+        #endif
         .task(id: widgetRefreshRevision) {
             pickerTimedOut = false
             let start = ContinuousClock.now
@@ -470,7 +535,6 @@ struct ConnectionView: View {
             }
         }
     }
-    #endif
 
     var body: some View {
         content
@@ -496,9 +560,25 @@ struct ConnectionView: View {
             )
                 .presentationBackground(Color("StartupBackground"))
         }
-        #if os(iOS)
         .sheet(isPresented: $showHeinzelPicker) { heinzelPicker }
-        #endif
+        .sheet(isPresented: $showPromptComposer, onDismiss: { dismissingPromptComposer = false }) {
+            NativePromptSheet(composer: promptComposer, openWorkspace: {
+                showPromptComposer = false
+            }, openChat: { request in
+                showPromptComposer = false
+                if request.workspaceScope == widgetWorkspaceScope {
+                    chatRequest = HeinzelChatRequest(id: request.recipientID, workspaceScope: request.workspaceScope)
+                }
+            })
+            .presentationBackground(Color("StartupBackground"))
+            .task {
+                widgetRefreshRevision += 1
+                while !Task.isCancelled {
+                    promptComposer.prepare(scope: widgetWorkspaceScope, roster: currentWidgetSnapshot?.roster ?? [])
+                    do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                }
+            }
+        }
         .task {
             guard !started else { return }
             started = true
@@ -508,10 +588,14 @@ struct ConnectionView: View {
             try? await ContinuousClock().sleep(until: earliest)
             showingColdStart = false
         }
-        .task(id: scenePhase == .active && (endpoint == nil || choosingWorkspace)) {
-            while !Task.isCancelled, scenePhase == .active, endpoint == nil || choosingWorkspace {
-                syncedWorkspaces = WorkspaceKeychain.workspaces()
-                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+        .task(id: shouldRefreshSyncedWorkspaces) {
+            var fastReads = 0
+            while !Task.isCancelled, shouldRefreshSyncedWorkspaces {
+                refreshSyncedWorkspaces()
+                resumeCloudSignInIfReady()
+                let delay = fastReads < 5 ? 2 : 10
+                fastReads += 1
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             }
         }
         #if os(macOS)
@@ -551,12 +635,12 @@ struct ConnectionView: View {
             guard let origin = monitoredOrigin else { return }
             await watchConnection(to: origin)
         }
-        #if os(iOS)
         .task(id: canOpenShortcut ? pendingShortcutURL : nil) { @MainActor in
             guard !Task.isCancelled, canOpenShortcut, let shortcut = pendingShortcutURL else { return }
             pendingShortcutURL = nil
             openShortcut(shortcut)
         }
+        #if os(iOS)
         .task(id: canOpenShortcut ? shortcutRouter.pending : nil) { @MainActor in
             guard !Task.isCancelled, canOpenShortcut, let shortcut = shortcutRouter.pending else { return }
             shortcutRouter.pending = nil
@@ -564,12 +648,10 @@ struct ConnectionView: View {
         }
         #endif
         .onOpenURL { url in
-            #if os(iOS)
             if let shortcut = NativeRoute(url: url) {
                 pendingShortcutURL = shortcut
                 return
             }
-            #endif
             guard let target = Endpoint.sharedWorkspace(url) else {
                 if endpoint == nil { error = "This Heinzel link is incomplete. Ask the host to share it again." }
                 return
@@ -606,6 +688,7 @@ struct ConnectionView: View {
         startupStage = "Starting the local workspace…"
         await startLocal()
         #else
+        refreshSyncedWorkspaces()
         if !serverOrigin.isEmpty && sharedWorkspace == nil {
             startupStage = "Checking workspace connection…"
             await connectRecent(serverOrigin, checkHost: false)
@@ -615,20 +698,8 @@ struct ConnectionView: View {
         #endif
     }
 
-    private var requestedWidgetRefresh: Int {
-        #if os(iOS)
-        widgetRefreshRevision
-        #else
-        0
-        #endif
-    }
-
     private var requestedChat: HeinzelChatRequest? {
-        #if os(iOS)
         !loadingWorkspace && loadFailure == nil ? chatRequest : nil
-        #else
-        nil
-        #endif
     }
 
     @ViewBuilder
@@ -640,8 +711,10 @@ struct ConnectionView: View {
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
             VStack(spacing: 0) {
                 WorkspaceView(endpoint: endpoint, isObscured: obscured,
-                              reportsWidgetActivity: scenePhase == .active && !obscured && serverOrigin == endpoint.origin.absoluteString,
-                              chatRequest: requestedChat, widgetRefreshRevision: requestedWidgetRefresh, ready: {
+                              reportsWidgetActivity: mayRefreshWidgetActivity && !obscured,
+                              isWidgetWorkspaceCurrent: {
+                    self.endpoint == endpoint && loadRevision == revision && widgetWorkspaceScope != nil
+                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
                     loadFailure = nil
@@ -657,11 +730,7 @@ struct ConnectionView: View {
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
-                            #if os(iOS)
-                            if issue == nil, UserDefaults.standard.string(forKey: "serverOrigin") == endpoint.origin.absoluteString {
-                                clearWidgetActivity()
-                            }
-                            #endif
+                            if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
                             loadingWorkspace = false
                         }
                     } else {
@@ -757,8 +826,10 @@ struct ConnectionView: View {
         GeometryReader { geometry in
             let bottom = geometry.safeAreaInsets.bottom
             if bottom >= 18 {
-                workspaceCircle(size: min(28, bottom - 2), hitHeight: bottom)
-                    .padding(.leading, 3)
+                // Center the 44-point touch target under the workspace sidebar's 56-point rail.
+                workspaceCircle(size: min(26, bottom - 2), hitHeight: bottom, alignment: .top,
+                                visualOffset: CGSize(width: -0.5, height: -4.5))
+                    .padding(.leading, (56 - 44) / 2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .ignoresSafeArea(.container, edges: .bottom)
             } else {
@@ -769,7 +840,8 @@ struct ConnectionView: View {
         }
     }
 
-    private func workspaceCircle(size: CGFloat, hitHeight: CGFloat) -> some View {
+    private func workspaceCircle(size: CGFloat, hitHeight: CGFloat, alignment: Alignment = .center,
+                                 visualOffset: CGSize = .zero) -> some View {
         Button {
             showConnection = true
         } label: {
@@ -777,7 +849,8 @@ struct ConnectionView: View {
                 .font(.system(size: size * 0.52, weight: .semibold))
                 .frame(width: size, height: size)
                 .background(.regularMaterial, in: Circle())
-                .frame(width: 44, height: hitHeight)
+                .offset(visualOffset)
+                .frame(width: 44, height: hitHeight, alignment: alignment)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -819,6 +892,10 @@ struct ConnectionView: View {
                     }
                     .font(.callout.weight(.semibold))
                     .accessibilityIdentifier("workspaceConnectionState")
+                    if endpoint.origin.scheme == "https", workspaceName(endpoint.origin) != endpoint.origin.host() {
+                        workspaceIdentity(endpoint.origin)
+                            .font(.callout.weight(.medium))
+                    }
                     Text(endpoint.origin.absoluteString)
                         .font(.footnote.monospaced())
                         .foregroundStyle(ConnectionPalette.muted)
@@ -846,7 +923,7 @@ struct ConnectionView: View {
                     }
                 }
                 VStack(spacing: 0) {
-                    Button(action: chooseAnotherWorkspace) { connectionRow("Switch Workspace", "arrow.left.arrow.right") }
+                    Button(action: chooseAnotherWorkspace) { connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol) }
                         .foregroundStyle(ConnectionPalette.accent)
                     Divider()
                     Button {
@@ -922,8 +999,14 @@ struct ConnectionView: View {
                 workspaceAddress(endpoint.origin, opensConnection: !choosingWorkspace)
             }
             if problem == .signIn {
-                signInActions(for: endpoint)
-                Button("Switch Workspace") { chooseDifferentWorkspace(from: endpoint) }
+                if cloudSignInInProgress {
+                    ProgressView("Signing in with iCloud…")
+                        .controlSize(.small)
+                        .font(.callout)
+                } else {
+                    signInActions(for: endpoint)
+                }
+                Button(workspaceSwitchTitle, systemImage: workspaceSwitchSymbol) { chooseDifferentWorkspace(from: endpoint) }
                     .buttonStyle(.borderless)
                     .controlSize(.large)
                     .disabled(connecting)
@@ -935,7 +1018,7 @@ struct ConnectionView: View {
                 Button("Try Again") { retryWorkspace() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                Button("Switch Workspace", action: chooseAnotherWorkspace)
+                Button(workspaceSwitchTitle, systemImage: workspaceSwitchSymbol, action: chooseAnotherWorkspace)
                     .buttonStyle(.bordered)
                     .controlSize(.large)
             }
@@ -952,11 +1035,13 @@ struct ConnectionView: View {
             } else {
                 Image(systemName: "link").accessibilityHidden(true)
             }
-            Text(origin.absoluteString)
-                .textSelection(.enabled)
-                .padding(.vertical, 8)
+            Group {
+                if opensConnection { workspaceIdentity(origin).font(.callout.weight(.medium)) }
+                else { Text(origin.absoluteString).font(.footnote.monospaced()) }
+            }
+            .textSelection(.enabled)
+            .padding(.vertical, 8)
         }
-        .font(.footnote.monospaced())
         .foregroundStyle(ConnectionPalette.muted)
         .multilineTextAlignment(.leading)
         .padding(.leading, opensConnection ? 0 : 12)
@@ -966,6 +1051,14 @@ struct ConnectionView: View {
 
     private func signInActions(for endpoint: Endpoint) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let cloud = availableCloudWorkspaces.first(where: { $0.address == endpoint.origin.absoluteString }) {
+                Button("Sign In with iCloud", systemImage: "icloud") {
+                    Task { await connectCloudWorkspace(cloud) }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                Divider()
+            }
             if endpoint.origin.host?.hasSuffix(".ts.net") == true {
                 Text("On the computer running Heinzel, open **Tailscale** at the bottom of the signed-in workspace. Choose **Copy link** or **Share**, send yourself the link privately, then paste it here.")
                     .font(.callout)
@@ -1187,15 +1280,31 @@ struct ConnectionView: View {
             VStack(alignment: .leading, spacing: 20) {
                 brandHeader(compact: editingLink).frame(maxWidth: .infinity)
                 if choosingWorkspace, let endpoint {
+                    let cloud = availableCloudWorkspaces.first { $0.address == endpoint.origin.absoluteString }
                     Button {
-                        error = nil
-                        link = ""
-                        choosingWorkspace = false
+                        if let cloud, loadFailure == .signIn {
+                            choosingWorkspace = false
+                            Task { await connectCloudWorkspace(cloud) }
+                        } else {
+                            error = nil
+                            link = ""
+                            choosingWorkspace = false
+                        }
                     } label: {
-                        Label("Back to \(workspaceName(endpoint.origin))", systemImage: "chevron.backward")
-                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 8) {
+                            Label(loadFailure == .signIn && cloud != nil
+                                  ? "Sign in to \(workspaceName(endpoint.origin))"
+                                  : "Back to \(workspaceName(endpoint.origin))",
+                                  systemImage: "chevron.backward")
+                            if cloud != nil {
+                                Image(systemName: "icloud")
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .multilineTextAlignment(.leading)
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityValue(cloud == nil ? "" : "Sign-in synced with iCloud")
                 }
                 #if os(macOS)
                 if endpoint?.origin.scheme != "http" {
@@ -1276,7 +1385,7 @@ struct ConnectionView: View {
                 .foregroundStyle(ConnectionPalette.muted)
             linkField("Workspace link", submit: connectDraft)
             if let origin = draftOrigin { reachability(for: origin) }
-            if let message = error ?? (draftWorkspace == nil && !trimmedLink.isEmpty ? "Enter the full workspace link from the host." : nil) {
+            if let message = error ?? (draftWorkspace == nil && !trimmedLink.isEmpty && !editingLink ? "Enter the full workspace link from the host." : nil) {
                 Label(message, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(ConnectionPalette.warning)
@@ -1288,6 +1397,16 @@ struct ConnectionView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(!canConnectDraft)
+            #if os(iOS)
+            DisclosureGroup("Where do I find my link?") {
+                Text("Ask the person hosting your workspace for a sign-in link, then paste it here. Already connected on another device? You can also choose a recent workspace above when one is available.")
+                    .font(.footnote)
+                    .foregroundStyle(ConnectionPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            }
+            .font(.footnote.weight(.medium))
+            #endif
         }
         .connectionPanel()
     }
@@ -1305,7 +1424,13 @@ struct ConnectionView: View {
                     .foregroundStyle(draftIssue == nil ? Color(red: 0.19, green: 0.37, blue: 0.27) : ConnectionPalette.warning)
                     .accessibilityIdentifier("workspaceReachability")
                 if draftIssue != nil {
+                    #if os(iOS)
+                    Button("Check Again", systemImage: "arrow.clockwise") { draftRevision += 1 }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                    #else
                     connectionIconButton("arrow.clockwise", label: "Check Again") { draftRevision += 1 }
+                    #endif
                 }
             } else {
                 ProgressView("Checking workspace…")
@@ -1327,12 +1452,52 @@ struct ConnectionView: View {
         Task { await connect(value) }
     }
 
+    private func refreshSyncedWorkspaces() {
+        if let workspaces = WorkspaceKeychain.workspaces() { syncedWorkspaces = workspaces }
+    }
+
+    private func resumeCloudSignInIfReady() {
+        guard !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
+              !showConnectionHelp, !showConnection, sharedWorkspace == nil, loadFailure == .signIn,
+              let address = endpoint?.origin.absoluteString,
+              let cloud = availableCloudWorkspaces.first(where: { $0.address == address }),
+              attemptedCloudSignIns[address] != cloud.lastUsed else { return }
+        // The chosen workspace stays the same; only its credential arrived after the first load.
+        Task {
+            guard !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
+                  loadFailure == .signIn, endpoint?.origin.absoluteString == address else { return }
+            await connectCloudWorkspace(cloud, reportMissing: false)
+        }
+    }
+
+    private func connectCloudWorkspace(_ workspace: RecentWorkspace, reportMissing: Bool = true) async {
+        guard let credential = WorkspaceKeychain.signIn(address: workspace.address,
+                                                       newerThan: forgottenWorkspaceDates[workspace.address]) else {
+            if reportMissing { error = "The iCloud sign-in is temporarily unavailable. Try again or paste a sign-in link." }
+            return
+        }
+        await connectUsingCloud(credential)
+    }
+
     private func connectRecent(_ address: String, checkHost: Bool = true, source: RecentWorkspace.Source? = nil) async {
-        let forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
-        let link = WorkspaceKeychain.signInLink(address: address, newerThan: forgotten[address])
-        let previous = recentWorkspaces.first { $0.address == address }?.source
-        await connect(link ?? address, checkHost: checkHost, fallBackToWorkspace: link != nil,
-                      source: source ?? previous ?? (link == nil ? nil : .iCloud))
+        if let credential = WorkspaceKeychain.signIn(address: address, newerThan: forgottenWorkspaceDates[address]) {
+            await connectUsingCloud(credential, checkHost: checkHost, fallBackToWorkspace: true)
+        } else {
+            let previous = recentWorkspaces.first { $0.address == address }?.source
+            await connect(address, checkHost: checkHost, source: source ?? previous)
+        }
+    }
+
+    private func connectUsingCloud(_ credential: (link: String, workspace: RecentWorkspace),
+                                   checkHost: Bool = true, fallBackToWorkspace: Bool = false) async {
+        guard !connecting else { return }
+        let item = credential.workspace
+        attemptedCloudSignIns[item.address] = item.lastUsed
+        syncedWorkspaces.removeAll { $0.address == item.address }
+        syncedWorkspaces.append(item)
+        cloudSignInInProgress = true
+        defer { cloudSignInInProgress = false }
+        await connect(credential.link, checkHost: checkHost, fallBackToWorkspace: fallBackToWorkspace, source: .iCloud)
     }
 
     private func connect(_ input: String, remember: Bool = true, checkHost: Bool = true,
@@ -1359,13 +1524,18 @@ struct ConnectionView: View {
             return
         }
         do {
+            var cloudSignInRejected = false
             do { try await target.verify() }
             catch ConnectionError.authentication where fallBackToWorkspace {
                 guard let addressOnly = Endpoint(target.origin.absoluteString) else { throw ConnectionError.authentication }
                 target = addressOnly
+                cloudSignInRejected = source == .iCloud
             }
             if remember {
-                #if os(iOS)
+                #if os(macOS)
+                clearWidgetActivity()
+                chatRequest = nil
+                #else
                 if serverOrigin != target.origin.absoluteString {
                     clearWidgetActivity()
                     chatRequest = nil
@@ -1373,7 +1543,10 @@ struct ConnectionView: View {
                 #endif
                 serverOrigin = target.origin.absoluteString
                 let provenance = source ?? .pasted
-                rememberWorkspace(target, source: provenance)
+                let cloudName = provenance == .iCloud
+                    ? availableCloudWorkspaces.first { $0.address == target.origin.absoluteString }?.hostName
+                    : nil
+                rememberWorkspace(target, hostName: cloudName, source: provenance)
                 if provenance == .pasted, target.token != nil {
                     var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
                     forgotten.removeValue(forKey: target.origin.absoluteString)
@@ -1388,6 +1561,7 @@ struct ConnectionView: View {
             }
             endpoint = target
             choosingWorkspace = false
+            if cloudSignInRejected { error = "The workspace didn’t accept the saved iCloud sign-in." }
             #if os(macOS)
             await service.stop()
             #endif
@@ -1408,8 +1582,19 @@ struct ConnectionView: View {
         error = nil
     }
 
+    private func workspaceIdentity(_ origin: URL) -> some View {
+        HStack(spacing: 6) {
+            Text(workspaceName(origin))
+            if availableCloudWorkspaces.contains(where: { $0.address == origin.absoluteString }) {
+                Image(systemName: "icloud").accessibilityLabel("Sign-in synced with iCloud")
+            }
+        }
+    }
+
     private func workspaceName(_ origin: URL) -> String {
-        origin.scheme == "http" ? "Local Workspace" : origin.host() ?? origin.absoluteString
+        if origin.scheme == "http" { return "Local Workspace" }
+        let address = origin.absoluteString
+        return recentWorkspaces.first { $0.address == address }?.name ?? RecentWorkspace.displayName(for: address)
     }
 
     private func disconnect() {
@@ -1430,21 +1615,17 @@ struct ConnectionView: View {
         choosingWorkspace = false
         endpoint = nil
         serverOrigin = ""
-        #if os(iOS)
         clearWidgetActivity()
         chatRequest = nil
-        #endif
         link = ""
         loadFailure = nil
         connectionIssue = nil
         error = nil
     }
 
-    #if os(iOS)
     private func clearWidgetActivity() {
         if ActivityWidgetData.clear() { ActivityWidgetData.reload() }
     }
-    #endif
 
     private func retryWorkspace() {
         loadFailure = nil
@@ -1520,6 +1701,10 @@ struct ConnectionView: View {
         }
         do {
             let target = try await service.start()
+            if let snapshot = ActivityWidgetData.read(), snapshot.workspaceScope != ActivityWidgetData.scope(for: target.origin) {
+                clearWidgetActivity()
+                chatRequest = nil
+            }
             choosingWorkspace = false
             loadFailure = nil
             connectionIssue = nil
@@ -1532,6 +1717,138 @@ struct ConnectionView: View {
     #endif
 }
 
+
+private struct NativePromptSheet: View {
+    @Bindable var composer: NativePromptComposer
+    let openWorkspace: () -> Void
+    let openChat: (NativePromptRequest) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var editing: Bool
+    @State private var confirmingDiscard = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                connectionSheetHeader("Write a Prompt") {
+                    connectionIconButton("xmark", label: "Close") { dismiss() }
+                        .disabled(composer.sending)
+                }
+                if composer.scope == nil {
+                    ContentUnavailableView("Open a workspace first", systemImage: "link",
+                                           description: Text(composer.message ?? "Connect to your workspace to choose a Heinzel."))
+                    Button("Open Workspace", action: openWorkspace).buttonStyle(.borderedProminent)
+                } else {
+                    recipient
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Prompt").font(.callout.weight(.semibold))
+                        ZStack(alignment: .topLeading) {
+                            if composer.text.isEmpty {
+                                Text("What would you like this Heinzel to do?")
+                                    .foregroundStyle(ConnectionPalette.muted)
+                                    .padding(.horizontal, 5).padding(.vertical, 8)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $composer.text)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 160, maxHeight: 260)
+                                .focused($editing)
+                                .disabled(composer.pending != nil)
+                                .accessibilityLabel("Prompt")
+                                .accessibilityIdentifier("nativePromptText")
+                        }
+                        .padding(8)
+                        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(ConnectionPalette.rule) }
+                        if composer.text.unicodeScalars.count > 32_000 {
+                            Text("Keep the prompt under 32,000 characters.")
+                                .font(.footnote).foregroundStyle(ConnectionPalette.warning)
+                        }
+                    }
+                    if let message = composer.message {
+                        Label(message, systemImage: composer.accepted ? "checkmark.circle.fill" : "info.circle")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(composer.accepted ? ConnectionPalette.accent : ConnectionPalette.warning)
+                            .accessibilityIdentifier("nativePromptResult")
+                    }
+                    if composer.accepted {
+                        if let request = composer.pending {
+                            Button("Open Chat", systemImage: "bubble.left.and.bubble.right") { openChat(request) }
+                                .buttonStyle(.borderedProminent).controlSize(.large)
+                        }
+                        Button("Write Another Prompt") { composer.newPrompt(); editing = true }
+                            .buttonStyle(.bordered)
+                    } else {
+                        Button {
+                            editing = false
+                            Task { await composer.send() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if composer.sending { ProgressView().controlSize(.small) }
+                                Text(composer.sending ? "Sending…" : composer.pending == nil ? "Send Prompt" : "Retry Same Prompt")
+                                if !composer.sending { Image(systemName: "arrow.up") }
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(!composer.canSend)
+                        .accessibilityIdentifier("nativePromptSend")
+                        if let request = composer.pending, !composer.sending {
+                            HStack {
+                                Button("Check Chat") { openChat(request) }.buttonStyle(.bordered)
+                                Spacer()
+                                Button("Discard…", role: .destructive) { confirmingDiscard = true }
+                                    .buttonStyle(.borderless)
+                            }
+                        }
+                        Text(composer.pending == nil ? "Sends to this Heinzel’s chat. If busy, it is queued as a follow-up." :
+                             "Recipient and text stay fixed until delivery is confirmed.")
+                            .font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                    }
+                }
+            }
+            .frame(maxWidth: 460, alignment: .leading)
+            .padding(24)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(idealWidth: 520, minHeight: 460, idealHeight: 630)
+        .environment(\.colorScheme, .light)
+        .foregroundStyle(ConnectionPalette.ink)
+        .tint(ConnectionPalette.accent)
+        .interactiveDismissDisabled(composer.sending)
+        .confirmationDialog("Discard this saved prompt?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+            Button("Discard Saved Prompt", role: .destructive) { composer.discardPending() }
+            Button("Keep Prompt", role: .cancel) {}
+        } message: {
+            Text("The host may have received it. This removes the saved retry copy from this device; it does not cancel work. Check the chat first if you’re unsure.")
+        }
+        .privacySensitive()
+    }
+
+    @ViewBuilder
+    private var recipient: some View {
+        if let request = composer.pending {
+            LabeledContent("To", value: request.recipientName)
+        } else if composer.roster.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("No Heinzels available yet").font(.headline)
+                Text("Open the workspace to refresh your list or create a Heinzel.")
+                    .font(.callout).foregroundStyle(ConnectionPalette.muted)
+                Button("Open Workspace", action: openWorkspace).buttonStyle(.bordered)
+            }
+        } else {
+            Picker("To", selection: $composer.recipientID) {
+                Text("Choose a Heinzel").tag("")
+                ForEach(composer.roster) { item in Text(item.name).tag(item.id) }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("nativePromptRecipient")
+            if let item = composer.roster.first(where: { $0.id == composer.recipientID }), let image = item.portraitImage {
+                image.resizable().scaledToFit().frame(width: 48, height: 48).accessibilityHidden(true)
+            }
+        }
+    }
+}
 
 private struct ConnectionHelp: View {
     let origin: URL?
@@ -1549,6 +1866,9 @@ private struct ConnectionHelp: View {
     @State private var testingAudio = false
     @State private var askingPermission = false
     @State private var results: [Check: Result] = [:]
+    #if os(iOS)
+    @State private var showingDeviceFeatures = false
+    #endif
 
     private enum Check: String, CaseIterable {
         case internet = "Internet", workspace = "Workspace", microphone = "Microphone"
@@ -1670,7 +1990,23 @@ private struct ConnectionHelp: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                #if os(iOS)
+                connectionSummary
+                #endif
                 diagnosticGroup([.internet, .workspace])
+                #if os(iOS)
+                DisclosureGroup(isExpanded: $showingDeviceFeatures) {
+                    diagnosticGroup([.microphone, .systemAudio, .notifications])
+                        .padding(.top, 8)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Device Features").font(.callout.weight(.semibold))
+                        Text("Optional microphone, audio and notifications")
+                            .font(.footnote)
+                            .foregroundStyle(ConnectionPalette.muted)
+                    }
+                }
+                #else
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Device Features")
                         .font(.footnote.weight(.semibold))
@@ -1678,6 +2014,7 @@ private struct ConnectionHelp: View {
                         .accessibilityAddTraits(.isHeader)
                     diagnosticGroup([.microphone, .systemAudio, .notifications])
                 }
+                #endif
 
                 DisclosureGroup("Which link should I use?") {
                     Text("Start with the link your workspace host sent you. If Heinzel asks you to sign in, ask the host for a sign-in link. It gives this device access, so keep it private.")
@@ -1720,6 +2057,49 @@ private struct ConnectionHelp: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
     }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var connectionSummary: some View {
+        if !checking, let workspace = results[.workspace] {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(connectionSummaryTitle(workspace))
+                    .font(.system(.title3, design: .serif, weight: .semibold))
+                    .foregroundStyle(ConnectionPalette.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Text(connectionSummaryDetail(workspace))
+                    .font(.callout)
+                    .foregroundStyle(ConnectionPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if origin == nil {
+                    Button("Enter Workspace Link") { dismiss() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                } else if workspace.status == .passed {
+                    Button(activeWorkspace == nil ? "Back to Connect" : "Back to Workspace") { dismiss() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("connectionSummary")
+        }
+    }
+
+    private func connectionSummaryTitle(_ workspace: Result) -> String {
+        if origin == nil { return "Add your workspace" }
+        if workspace.status == .passed { return activeWorkspace == nil ? "Ready to connect" : "Your workspace is connected" }
+        if needsSignIn && workspace.status == .action { return "Sign in to continue" }
+        return "Workspace unavailable"
+    }
+
+    private func connectionSummaryDetail(_ workspace: Result) -> String {
+        if origin == nil { return "Paste the link your workspace host shared with you to check its connection." }
+        if workspace.status == .passed { return "The workspace is reachable. Device features below are optional." }
+        if needsSignIn && workspace.status == .action { return "Ask the host for a fresh sign-in link, then return to the sign-in screen." }
+        return "Check that the host computer is awake. For a private workspace, make sure Tailscale is connected, then check again."
+    }
+    #endif
 
     private var diagnosticsHeader: some View {
         VStack(alignment: .leading, spacing: 4) {

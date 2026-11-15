@@ -6,4 +6,6 @@
     <string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>keychain-access-groups</key>
     <array><string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string></array>
+    <key>com.apple.security.application-groups</key>
+    <array><string>$(HEINZEL_MAC_WIDGET_GROUP)</string></array>
 </dict></plist>

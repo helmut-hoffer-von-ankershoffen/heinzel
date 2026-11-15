@@ -157,12 +157,19 @@ struct Endpoint: Equatable {
 
     #if os(macOS)
     func sharedSignInOrigin() async throws -> Endpoint? {
-        guard origin.scheme == "http" else { return nil }
+        guard origin.scheme == "http", let token else { return nil }
         let (body, status) = try await readAuthenticatedAPI("api/tailscale/status")
         guard status == 200, let sharing = try? JSONDecoder().decode(Sharing.self, from: body),
               sharing.state == "ready", let address = sharing.origin,
               let target = Endpoint(address), target.token == nil, target.origin.scheme == "https",
-              target.origin.host()?.hasSuffix(".ts.net") == true else { return nil }
+              target.origin.host()?.hasSuffix(".ts.net") == true,
+              let remote = Endpoint(target.origin.absoluteString + "/#token=" + token) else { return nil }
+        // Serve can point at a different hz process on this Mac. Check the private
+        // HTTPS endpoint accepts this exact sign-in before publishing it.
+        async let localIdentity = readLifecycle()
+        async let remoteIdentity = remote.readLifecycle()
+        let (local, shared) = try await (localIdentity, remoteIdentity)
+        guard local.instance == shared.instance else { throw ConnectionError.authentication }
         return target
     }
 

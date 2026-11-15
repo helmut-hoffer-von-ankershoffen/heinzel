@@ -9,5 +9,6 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.widgetkit-extension</string>
     </dict>
+    <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
 </dict>
 </plist>

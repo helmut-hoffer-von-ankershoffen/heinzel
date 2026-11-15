@@ -13,7 +13,7 @@ Electron remains the release default during the spike. See [ADR 0147](../docs/ad
 
 The app lists recently used workspaces by name when one is known. A cloud icon identifies entries from iCloud. Use the trash icon to forget an entry on this device. A fresh synced sign-in or a new pasted sign-in can add it again.
 
-On a Mac signed for the same Apple Developer team as the iPhone app, open the local workspace’s Connection pane and enable **Sync Sign-in with iCloud**. The Mac publishes its current sign-in through iCloud Keychain when private Tailscale sharing is ready. Your other devices use that sign-in when you select the workspace. This requires the same Apple Account and iCloud Keychain on those devices. Build the Mac app with an eligible team provisioning profile and `HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements HEINZEL_ICLOUD_SIGN_IN=YES` to enable this option.
+On a Mac signed for the same Apple Developer team as the iPhone app, open the local workspace’s Connection pane and enable **Sync Sign-in with iCloud**. The Mac publishes its current sign-in through iCloud Keychain when private Tailscale sharing is ready. Select the workspace on your other devices to use its synced sign-in. If an already selected workspace is waiting for sign-in, Heinzel tries once when its iCloud credential arrives. This requires the same Apple Account and iCloud Keychain on those devices. Build the Mac app with an eligible team provisioning profile and `HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements HEINZEL_ICLOUD_SIGN_IN=YES` to enable this option.
 
 Use the **Share** icon in Workspace Connection to share the workspace address. Builds with `HEINZEL_HTTPS_LINKS=YES` share a `https://heinzel.team/open/#server=…` Universal Link. Other builds share a `heinzel://connect?server=…` link. A new device signs in separately using the host's session link.
 
@@ -21,7 +21,9 @@ In the local Mac app, turn on private sharing and choose **Copy app link** in th
 
 The Swift shell uses the same title-bar layout and Browser panel as Electron. The Browser panel uses a separate WebKit session. Enable the host’s `sidebar_browser` feature flag to use the Browser panel. The browser uses an authenticated loopback HTTPS proxy with public-only DNS resolution and no direct fallback. The guest enables WebKit Lockdown Mode to disable peer connections. Mac, iPhone simulator, and iPad simulator probes confirmed that public HTTPS works through the proxy, loopback HTTP and WebRTC STUN are blocked, and closing the proxy stops public navigation. Lockdown Mode may limit some websites. See [ADR 0140](../docs/adr/0140-isolate-sidebar-browser-content-in-the-desktop.md).
 
-On iPhone and iPad, add **Workspace** from the **Heinzelmännchen** entry in the widget gallery. The medium Home Screen widget also opens **Connection Help**. On the Lock Screen, add the circular **Workspace** widget or the rectangular **Connection Help** widget. These launchers show artwork and labels. The separate **Active Heinzels** Home Screen widget shows awake and waiting counts from the workspace API. The app refreshes this count during use, and the widget shows when it last refreshed. Stale snapshots give way to an Open to refresh prompt as WidgetKit advances the timeline. In Shortcuts, use **Open Workspace** or **Open Connection Help**. Assign either shortcut to the Action Button on supported iPhones.
+Add **Workspace**, **Active Heinzels**, **Heinzel Status**, **Heinzel Picker**, or **Heinzel Roster** from the **Heinzelmännchen** entry in the widget gallery. Edit the Status widget to pin a Heinzel. Tap a roster entry to open its chat. Stale snapshots show when they were last updated and hide old statuses. On the iPhone and iPad Lock Screen, add **Workspace** or **Connection Help**. In Shortcuts, use **Open Workspace** or **Open Connection Help**, including with the Action Button on supported iPhones.
+
+On Mac, the app starts and signs in to its local workspace automatically. To open a remote workspace, choose **Heinzel → Connection → Switch Workspace**. The activity widgets show the local workspace while the app is running. Shared widget data requires an app and extension signed by the same Apple Developer team. For a signed local package, run `HEINZEL_MAC_SIGNING_TEAM=TEAM_ID apple/scripts/package-macos VERSION`. The teamless package supports the workspace and help launchers. For an iCloud-enabled Mac build with activity widgets, use `HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetGroup.entitlements HEINZEL_ICLOUD_SIGN_IN=YES` and your team ID.
 
 In notification settings, choose **Notify me on this device**. Heinzel confirms the workspace and asks for system permission. Notifications come from the connected workspace while the app is open. Tapping an alert opens the notice when its workspace is connected. On iPhone and iPad, keep Heinzel active to receive new notices.
 
@@ -53,3 +55,10 @@ the expected app ID and `/open/` path, then tap a shared link in Messages on a
 fresh signed installation. The
 fallback page reads the workspace address from the URL fragment, which keeps it
 out of the page request.
+
+The **Write a Prompt** Home Screen or desktop widget opens a native composer. Choose a Heinzel, write the prompt,
+then select **Send Prompt**. A widget cannot contain a text editor. Sending uses the signed-in workspace and
+the existing durable chat API; the regular web interface is unchanged. A confirmed receipt opens the exact chat
+to follow the response. Unconfirmed sends keep a private copy on this device and retry with the same request ID,
+so a lost acknowledgement does not duplicate the prompt. **Discard** removes that retry copy but does not cancel
+work the host may already have accepted. Prompt text is never saved in shared widget storage or widget links.

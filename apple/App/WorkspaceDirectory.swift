@@ -13,11 +13,15 @@ struct RecentWorkspace: Codable, Identifiable {
 
     var id: String { address }
 
-    var name: String {
+    var name: String { Self.displayName(for: address, hostName: hostName) }
+
+    static func displayName(for address: String, hostName: String? = nil) -> String {
         let host = hostName ?? URL(string: address)?.host() ?? address
         if host.hasSuffix(".ts.net") || host.hasSuffix(".local") {
-            let firstLabel = String(host.split(separator: ".").first ?? Substring(host))
-            return firstLabel.replacingOccurrences(of: "-", with: " ").localizedCapitalized
+            let firstLabel = host.split(separator: ".").first ?? Substring(host)
+            return firstLabel.split(separator: "-").map { word in
+                word.lowercased() == "macbook" ? "MacBook" : String(word).localizedCapitalized
+            }.joined(separator: " ")
         }
         return host
     }
@@ -53,22 +57,26 @@ enum WorkspaceKeychain {
         return try? JSONDecoder().decode(SyncedWorkspace.self, from: data)
     }
 
-    static func workspaces() -> [RecentWorkspace] {
+    // nil means Keychain could not answer. Only an authoritative empty result clears the directory.
+    static func workspaces() -> [RecentWorkspace]? {
         var query = query()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? [Data] else { return [] }
-        return data.compactMap { try? JSONDecoder().decode(SyncedWorkspace.self, from: $0).workspace }
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let data = result as? [Data] else { return nil }
+        let workspaces = data.compactMap { try? JSONDecoder().decode(SyncedWorkspace.self, from: $0).workspace }
+        return workspaces.count == data.count ? workspaces : nil
     }
 
-    static func signInLink(address: String, newerThan forgotten: Date?) -> String? {
+    static func signIn(address: String, newerThan forgotten: Date?) -> (link: String, workspace: RecentWorkspace)? {
         guard let entry = entry(address: address), entry.workspace.lastUsed > (forgotten ?? .distantPast),
               let url = URL(string: address),
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         components.fragment = "token=\(entry.token)"
-        return components.url.flatMap { Endpoint($0.absoluteString)?.url.absoluteString }
+        guard let value = components.url.flatMap({ Endpoint($0.absoluteString)?.url.absoluteString }) else { return nil }
+        return (value, entry.workspace)
     }
 
     static func publish(workspace: RecentWorkspace, token: String) -> Bool {
