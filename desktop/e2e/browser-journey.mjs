@@ -48,6 +48,8 @@ const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electr
 let app, electronProcess, ownedPid, site;
 let stopped = false, launchAttempted = false;
 // What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
+// Diagnostic: the answers of the outside agent's first calls, printed when a journey fails.
+const trace = [];
 const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [] };
 
 // Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
@@ -348,7 +350,9 @@ async function mcpJourney(page, origin) {
   for (let turn = 0; turn < 20 && !/"available": ?true/.test(tabs); turn += 1) { if (turn) await delay(1000); tabs = await agent.call("tabs"); }
   assert.match(tabs, /"available": ?true/, `The desktop's bridge never connected: ${tabs}`);
   assert.ok(refused(await agent.call("open", { url: NOT_PUBLIC[0] }), "address"), "A tab on a literal address must be refused.");
-  const tab = tabOf(await agent.call("open", { url: SHOP_URL }));
+  const opened = await agent.call("open", { url: SHOP_URL });
+  trace.push({ tabs: tabs.slice(0, 400), open: opened.slice(0, 400) });
+  const tab = tabOf(opened);
   // The outside agent works in sight: the person opens the panel on its tab.
   await showPanel(page, tab);
   let read = await agent.call("read", { tab });
@@ -481,6 +485,13 @@ try {
     // What the guest itself says when a step failed: its size, its visibility and what lies at the first button.
     console.error(`Guest facts: ${JSON.stringify(await guestFacts().catch((failed) => String(failed)))}`);
     console.error(`Found so far: ${JSON.stringify(found)}; page events: ${JSON.stringify(site.state.events)}`);
+    // Diagnostic: what the agent's first calls answered, what the panel lists and every page the app holds.
+    const scripted = await readFile(join(root, "sync", "trace.json"), "utf8").catch(() => "none");
+    console.error(`First calls: ${JSON.stringify(trace)}; scripted model: ${scripted}`);
+    console.error(`Panel: ${JSON.stringify(await panel(page, { action: "tabs" }).catch((failed) => String(failed)))}`);
+    console.error(`Pages: ${JSON.stringify(await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((contents) =>
+      ({ url: contents.getURL().replace(/#.*$/, ""), loading: contents.isLoading(), attached: contents.debugger.isAttached() }))).catch((failed) => String(failed)))}`);
+    console.error(`Guest dialled: ${JSON.stringify(site.state.connects)}`);
     throw error;
   }
   assertNothingElseDialled();

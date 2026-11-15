@@ -90,8 +90,12 @@ def first_turn() -> Script:
         time.sleep(1)
     report["tabs"] = answer
     report["open_not_public"] = yield "open", {"url": NOT_PUBLIC[0]}
-    tab = tab_of((yield "open", {"url": SHOP + "/"}))
+    opened = yield "open", {"url": SHOP + "/"}
+    tab = tab_of(opened)
     report["tab"] = tab
+    # Diagnostic: what the first calls answered, for the journey to print when the tab is not what it expects.
+    trace = {"tabs": report["tabs"], "open_not_public": report["open_not_public"], "open": opened}
+    (SYNC / "trace.json").write_text(json.dumps(shorten(trace)), encoding="utf-8")
     wait_for_the_person("tab-open", "panel-shown")
     page = yield "read", {"tab": tab}
     report["read"] = page
