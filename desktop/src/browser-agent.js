@@ -18,6 +18,10 @@
  *   scroll     {tab, direction?, amount?, ref? or x?, y?}     -> {url}
  *   describe   {tab, action: click|type|key, ref? or x?, y?}  -> {target, fingerprint}
  *   click      {tab, ref or x, y, button?, count?, modifiers?, expect} -> {url}
+ *              (with `confirmed: false` when the target is a frame or an unknown place: the click was sent, and
+ *              nothing in this document can say that it arrived; with `navigated: true` when the page was already
+ *              another one before the click could be confirmed, and then also `confirmed: false` unless the page
+ *              first went to the address the pressed link had)
  *   type       {tab, text, ref?, expect}                      -> {url}
  *   key        {tab, keys, expect}                            -> {url}
  *   confirm    {tab, summary, fingerprint, seconds}           -> {approved}   (outside agents only)
@@ -28,6 +32,21 @@
  * target again just before it acts and refuses with `changed` when anything differs. A click is checked once more
  * between press and release: a recorder in the isolated world says what was really pressed, and a press that landed
  * anywhere else, such as in a frame the page slid under the pointer, is let go outside the page so nothing is clicked.
+ * The last look before the release is a single call. After the release the engine asks whether the click reached
+ * the described control and answers done only then; otherwise `changed`, "Not confirmed ...".
+ *
+ * The press guard: from the moment a press is armed until it is over, a trusted mouseup, pointerup, click, auxclick
+ * or dblclick that would reach anything but the described control is stopped and prevented in the isolated world,
+ * at the window, before any listener of the page. It is armed for one press, disarmed in a finally, and over by
+ * itself after a second. Its listeners are put into each document when it commits (the debugger is attached before
+ * a tab's first page for that) and again before every press. They are early, not guaranteed first: registering them
+ * ahead of every script needs Page.enable, which stays off: how a page's dialogs behave with it on is not proven
+ * (a hang once seen in a test was a fault of the test page, shown in neither direction). So a page that itself listens
+ * on `window` in the capture phase, from a script that ran before, can still see a stray release or click; a label
+ * or a button that listens on itself or on the document cannot.
+ * Limits: it covers the tab's main document only. Frames in the page are not armed; a frame of another site rests on
+ * the checks before the release and on the release outside the page. A click the person makes elsewhere in the tab
+ * during that second is stopped as well. A page's dialogs are never answered: no dialog method is on the list.
  * Text and keys reach only the element that had the focus when it was checked: until the input is in, a guard in the
  * isolated world cancels input anywhere else.
  *
@@ -47,7 +66,7 @@ export class BridgeError extends Error {
 /** Every protocol method the engine may send. No cookie, storage, network, target or browser domain. */
 export const CDP_METHODS = Object.freeze([
   "Accessibility.getFullAXTree", "Accessibility.getPartialAXTree",
-  "DOM.enable", "DOM.resolveNode", "DOM.getNodeForLocation", "DOM.scrollIntoViewIfNeeded", "DOM.getBoxModel", "DOM.focus",
+  "DOM.enable", "DOM.resolveNode", "DOM.scrollIntoViewIfNeeded", "DOM.getBoxModel", "DOM.focus",
   "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText",
   "Page.getFrameTree", "Page.createIsolatedWorld", "Page.getLayoutMetrics", "Page.captureScreenshot",
   "Runtime.callFunctionOn", "Runtime.evaluate",
@@ -59,10 +78,12 @@ const WORLD = "hz-browser-agent";
 const ALLOWED = new Set(CDP_METHODS);
 
 // The only page scripts. Each runs in an isolated world, so the page can neither see nor replace what they use.
+// The element a description is of: the control a node belongs to, or the node itself.
+const CONTROL = "button, a[href], input, select, textarea, summary, label, iframe, frame, object, embed, [role=button], [role=link], [role=menuitem], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=option], [role=textbox], [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only]";
 const DESCRIBE = `function () {
   const start = this && this.nodeType === 1 ? this : this && this.parentElement;
   if (!start) return null;
-  const el = start.closest("button, a[href], input, select, textarea, summary, label, iframe, frame, object, embed, [role=button], [role=link], [role=menuitem], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=option], [role=textbox], [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only]") || start;
+  const el = start.closest(${JSON.stringify(CONTROL)}) || start;
   const cut = (value) => String(value == null ? "" : value).replace(/\\s+/g, " ").trim().slice(0, 200);
   const attr = (name) => cut(el.getAttribute(name));
   const tag = el.tagName.toLowerCase();
@@ -106,12 +127,12 @@ const ACTIVE = `(() => {
   return !active || active === document.body || active === document.documentElement ? null : active;
 })()`;
 const FOCUSED = `(() => { const active = ${ACTIVE}; return active ? (${DESCRIBE}).call(active) : null; })()`;
-const CONTAINS = "function (other) { return this === other || (typeof this.contains === \"function\" && this.contains(other)); }";
 const PAGE_TEXT = "(() => String((document.body && document.body.innerText) || \"\").slice(0, 200000))()";
 // One state object per document in the isolated world. Its listeners are the first to be added on the window in
 // that world; only trusted events count, so a page cannot fake a press or an input.
 const STATE = `(globalThis.__hzAgent || (globalThis.__hzAgent = (() => {
-  const state = { path: null, armed: false, allowed: null, blocked: 0 };
+  const state = { path: null, armed: false, allowed: null, blocked: 0, target: null, until: 0, awaited: false, click: null, stopped: 0,
+    ids: new WeakMap(), count: 0 };
   window.addEventListener("pointerdown", (event) => { if (event.isTrusted) state.path = event.composedPath(); }, { capture: true, passive: true });
   const guard = (event) => {
     if (!state.armed || !event.isTrusted) return;
@@ -123,10 +144,58 @@ const STATE = `(globalThis.__hzAgent || (globalThis.__hzAgent = (() => {
   };
   window.addEventListener("keydown", guard, { capture: true });
   window.addEventListener("beforeinput", guard, { capture: true });
+  // While one press of the engine is under way, the release and the click belong to its target alone. Whatever of
+  // them would reach anything else in this document is stopped here, before any listener of the page. It is over
+  // by itself a second after it was armed, so the person's own clicks always work again.
+  const release = (event) => {
+    if (!event.isTrusted || !state.target || !(state.until > Date.now())) return;
+    // A label hands its click on to its control, which may sit outside it: that click is the target's own too.
+    const path = event.composedPath();
+    const hit = path.includes(state.target) || Boolean(state.target.control && path.includes(state.target.control));
+    const click = event.type === "click" || event.type === "auxclick" || event.type === "contextmenu";
+    if (click && state.awaited) { state.awaited = false; state.click = hit; }
+    if (hit || event.type === "contextmenu") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    state.stopped += 1;
+  };
+  for (const type of ["pointerup", "mouseup", "click", "auxclick", "dblclick", "contextmenu"]) window.addEventListener(type, release, { capture: true });
   return state;
 })()))`;
-// Before a press: forget the last one. After it: was the described element really what was pressed?
-const ARM_PRESS = `(() => { ${STATE}.path = null; return true; })()`;
+// Put into each document of an agent tab as soon as it is there, and again before every press.
+const INSTALL = `(() => { ${STATE}; return true; })()`;
+const ARMED_MS = 1000;
+// Before a press, called on the target: forget the last press and click, and give this press's release and click
+// to the described control alone. After the press: was the described element really what was pressed?
+const ARM_PRESS = `function () {
+  const state = ${STATE};
+  const element = this.nodeType === 1 ? this : this.parentElement;
+  state.path = null;
+  state.click = null;
+  state.awaited = true;
+  state.target = element ? element.closest(${JSON.stringify(CONTROL)}) || element : null;
+  state.until = Date.now() + ${ARMED_MS};
+  // Where the control leads if it is a link, read now: a page that swaps the address later does not change it.
+  const link = state.target && state.target.closest ? state.target.closest("a[href]") : null;
+  return { armed: Boolean(state.target), href: link ? String(link.href) : null };
+}`;
+// The element at a point of the viewport, the same point a mouse event of the engine goes to; into open shadow
+// trees, and null where there is nothing.
+const AT = `function (x, y) {
+  let hit = document.elementFromPoint(x, y);
+  while (hit && hit.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  return hit;
+}`;
+// A number that stays with an element for as long as its document lives: two elements never share one.
+const IDENT = `function () {
+  const state = ${STATE};
+  if (!state.ids.has(this)) state.ids.set(this, ++state.count);
+  return state.ids.get(this);
+}`;
 const PRESSED = `function () {
   const state = ${STATE};
   const path = state.path;
@@ -135,7 +204,28 @@ const PRESSED = `function () {
   if (/^(IFRAME|FRAME|OBJECT|EMBED)$/i.test((path[0] && path[0].tagName) || "")) return false;
   return path.includes(this.nodeType === 1 ? this : this.parentElement);
 }`;
-// Before text or a key: say what has the focus and let input reach only that element until it is disarmed.
+// Is the element under this point of the viewport the target or a part of it? A frame there is a no, whatever it
+// sits in. Asked before the press and, in one call, as the last look before the button is let go; while a press is
+// armed it also gives the release its full second.
+const HIT = `function (x, y) {
+  const state = ${STATE};
+  if (state.target) state.until = Date.now() + ${ARMED_MS};
+  const element = this.nodeType === 1 ? this : this.parentElement;
+  let hit = document.elementFromPoint(x, y);
+  while (hit && hit.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  if (!element || !hit || /^(IFRAME|FRAME|OBJECT|EMBED)$/i.test(hit.tagName || "")) return false;
+  for (let node = hit; node; node = node.parentNode || node.host) if (node === element) return true;
+  return false;
+}`;
+// Before a press is let go outside the page: the release still has its full second.
+const HOLD = `(() => { const state = ${STATE}; if (state.target) state.until = Date.now() + ${ARMED_MS}; return true; })()`;
+// True: the click reached the described control. False: a click went somewhere else and was stopped. Null: none yet.
+const CLICKED = `(() => ${STATE}.click)()`;
+const CLICK_OVER = `(() => { const state = ${STATE}; state.target = null; state.until = 0; state.awaited = false; state.click = null; return true; })()`;
 const ARM_INPUT = `(() => {
   const state = ${STATE};
   const active = ${ACTIVE};
@@ -156,7 +246,8 @@ const ARM_NODE = `function () {
 }`;
 const DISARM = `(() => { const state = ${STATE}; state.armed = false; state.allowed = null; return state.blocked; })()`;
 /** The fixed page scripts by name; tests tell them apart with this. */
-export const PAGE_SCRIPTS = Object.freeze({ DESCRIBE, FOCUSED, CONTAINS, PAGE_TEXT, ARM_PRESS, PRESSED, ARM_INPUT, ARM_NODE, DISARM });
+export const PAGE_SCRIPTS = Object.freeze({ DESCRIBE, FOCUSED, PAGE_TEXT, AT, IDENT, ARM_PRESS, PRESSED, HIT, HOLD, CLICKED, CLICK_OVER, INSTALL, ARM_INPUT, ARM_NODE,
+  DISARM });
 const SCRIPTS = new Set(Object.values(PAGE_SCRIPTS));
 
 const FRAME_TAGS = new Set(["iframe", "frame", "object", "embed"]);
@@ -181,6 +272,14 @@ export function neverField(raw) {
 
 const text = (value, limit = 200) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
+/** Two addresses that are the same page: equal once the part after `#` is left out. */
+export function sameAddress(first, second) {
+  try {
+    const [a, b] = [new URL(first), new URL(second)];
+    a.hash = ""; b.hash = "";
+    return a.href === b.href;
+  } catch { return false; }
+}
 const UNRESOLVED = (host) => ({ resolved: false, host, role: "", name: "", tag: "", type: "", autocomplete: "", editable: false,
   submit: false, in_form: false, form_has_password: false, payment_page: false, href_host: null, never: null });
 
@@ -333,6 +432,7 @@ const MESSAGES = {
   stale: "The page changed, read it again.",
   never: "Only the person may type here: ask the person to take over.",
   url: "Only public HTTPS addresses can be opened.",
+  unconfirmed: "Not confirmed: the page changed under the pointer and the click may not have reached its target. Read the page again.",
   silent: "The page did not answer. Try again in a moment.",
   blank: "This tab has no page yet. Navigate it to an address first.",
   unsized: "This tab has no size while it is hidden, so nothing in it can be pointed at. Ask the person to open it in the browser panel.",
@@ -362,7 +462,7 @@ function checkArgs(command, args) {
  * `loadMs` caps how long a navigation is waited for before the tab's state is returned as it is. `firstMs` caps the
  * first protocol call after the debugger attaches, `sizeMs` the whole attempt to give a hidden tab its viewport.
  */
-export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000, firstMs = 5000, now = () => Date.now(),
+export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000, firstMs = 5000, clickMs = 500, now = () => Date.now(),
   log = (line) => console.warn(line) }) {
   const salt = randomBytes(16).toString("hex");
   const pages = new WeakMap();
@@ -372,15 +472,24 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
   const pageOf = (guest) => {
     let page = pages.get(guest);
     if (page) return page;
-    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null, unsized: false, sent: false, attempt: 0 };
+    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null, unsized: false, sent: false, attempt: 0, primed: false,
+      pressing: false, went: null };
     pages.set(guest, page);
     // The person looks at the tab: it has its real size again at once, whether or not the agent calls again.
     guest.onShown = (shown) => { if (shown) void unsize(guest); };
     const fresh = () => { page.refs.clear(); page.nodes.clear(); page.named.clear(); page.document += 1; };
     const contents = guest.view.webContents;
-    // A new main document ends every ref and every fingerprint of the old one.
-    contents.on("did-navigate", fresh);
+    // A new main document ends every ref and every fingerprint of the old one. It gets the engine's listeners the
+    // moment it is there: early, though a script of the page that runs at once may have put its own first.
+    contents.on("did-navigate", () => {
+      fresh();
+      if (guest.agent && !contents.isDestroyed() && contents.debugger.isAttached()) void install(guest.agent.id, guest);
+    });
     contents.on("render-process-gone", fresh);
+    // Where the page goes first after a press: only that says whether a navigation was the pressed link's own.
+    contents.on("did-start-navigation", (details) => {
+      if (page.pressing && page.went === null && details?.isMainFrame && !details.isSameDocument && typeof details.url === "string") page.went = details.url;
+    });
     return page;
   };
 
@@ -395,7 +504,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
       throw new BridgeError("failed", "That browser protocol method is not allowed.");
     if (!tabs.holds(id, guest)) throw new BridgeError("unknown_tab", "Unknown tab.");
     // A guest that never loaded a page does not answer the protocol: a call to it would wait forever.
-    if (guest.blank) throw new BridgeError("failed", MESSAGES.blank);
+    if (guest.blank && !pageOf(guest).primed) throw new BridgeError("failed", MESSAGES.blank);
     // Only the size of the view the tab has when it is shown, as a plain desktop page: no screen, position, scale or
     // viewport parameter, and never while the person looks at the tab.
     if (method === "Emulation.setDeviceMetricsOverride") {
@@ -421,6 +530,8 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
         try { wire.detach(); } catch { /* already gone */ }
         throw new BridgeError("timeout", MESSAGES.silent);
       }
+      // The listeners for the document that is there now; every later one gets them when it commits.
+      await install(id, guest);
     }
     // What counts for clearing is that an override was ever sent on this session, not that its answer came: an
     // answer may be late or never come while the override is in effect all the same.
@@ -484,13 +595,20 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     if (guest) void unsize(guest);
   });
 
+  /** The engine's listeners into the document that is there now; bounded, and never fatal. */
+  const install = async (id, guest) => {
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(resolve, firstMs); timer.unref?.(); });
+    try { await Promise.race([quiet(async () => evaluate(id, guest, INSTALL, await world(id, guest))), late]); } finally { clearTimeout(timer); }
+  };
   const world = async (id, guest) => {
     const { frameTree } = await cdp(id, guest, "Page.getFrameTree");
     const { executionContextId } = await cdp(id, guest, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: WORLD });
     return executionContextId;
   };
-  const objectOf = async (id, guest, backendNodeId, context) =>
-    (await cdp(id, guest, "DOM.resolveNode", { backendNodeId, executionContextId: context })).object.objectId;
+  // A node is named by its backend id (a ref), or held as an object of the isolated world (the element at a point).
+  const objectOf = async (id, guest, node, context) => (typeof node === "object" ? node.object
+    : (await cdp(id, guest, "DOM.resolveNode", { backendNodeId: node, executionContextId: context })).object.objectId);
   const describeNode = async (id, guest, backendNodeId) => {
     try {
       const context = await world(id, guest);
@@ -510,15 +628,18 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
       return null;
     }
   };
-  const nodeAt = async (id, guest, x, y) => {
-    try {
-      const found = await cdp(id, guest, "DOM.getNodeForLocation", { x, y, includeUserAgentShadowDOM: false, ignorePointerEventsNone: true });
-      return Number.isInteger(found?.backendNodeId) ? found.backendNodeId : null;
-    } catch (error) {
-      if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
-      return null;
-    }
-  };
+  /**
+   * The element at a point, as `{object, ident}`, or null. Found by the page's own hit test in the isolated world,
+   * in the coordinates the engine's mouse events use, whatever the page is scrolled to.
+   */
+  const nodeAt = (id, guest, x, y) => quiet(async () => {
+    const context = await world(id, guest);
+    const found = (await cdp(id, guest, "Runtime.callFunctionOn", { executionContextId: context, functionDeclaration: AT,
+      arguments: [{ value: x }, { value: y }], returnByValue: false })).result;
+    if (typeof found?.objectId !== "string") return null;
+    const ident = (await cdp(id, guest, "Runtime.callFunctionOn", { objectId: found.objectId, functionDeclaration: IDENT, returnByValue: true })).result?.value;
+    return Number.isInteger(ident) ? { object: found.objectId, ident } : null;
+  });
   const nodeOfRef = (guest, ref) => {
     const node = pageOf(guest).refs.get(ref);
     if (node === undefined) throw new BridgeError("stale_ref", MESSAGES.stale);
@@ -544,11 +665,11 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     }
     if (Object.hasOwn(args, "x")) {
       const node = await nodeAt(id, guest, args.x, args.y);
-      const anchor = ["point", args.x, args.y, node];
+      const anchor = ["point", args.x, args.y, node?.ident ?? null];
       if (node === null) return { node: null, anchor, target: UNRESOLVED(host) };
       let ax = null;
       try {
-        const [first] = (await cdp(id, guest, "Accessibility.getPartialAXTree", { backendNodeId: node, fetchRelatives: false })).nodes ?? [];
+        const [first] = (await cdp(id, guest, "Accessibility.getPartialAXTree", { objectId: node.object, fetchRelatives: false })).nodes ?? [];
         if (first && !first.ignored) ax = { role: first.role?.value, name: first.name?.value };
       } catch (error) {
         if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
@@ -568,15 +689,34 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
   const callOn = async (id, guest, node, context, functionDeclaration, extra = {}) =>
     (await cdp(id, guest, "Runtime.callFunctionOn", { objectId: await objectOf(id, guest, node, context), functionDeclaration,
       returnByValue: true, ...extra })).result?.value;
-  /** Is the element at this point the described one, or inside it? */
-  const under = async (id, guest, node, at) => {
-    const hit = await nodeAt(id, guest, at.x, at.y);
-    if (hit === null) return false;
-    return (await quiet(async () => {
-      const context = await world(id, guest);
-      return callOn(id, guest, node, context, CONTAINS, { arguments: [{ objectId: await objectOf(id, guest, hit, context) }] });
-    })) === true;
+  /** One protocol question about a click, answered within `ms` or not at all. */
+  const within = (ms, work) => {
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), Math.max(1, ms)); timer.unref?.(); });
+    return Promise.race([quiet(work), late]).finally(() => clearTimeout(timer));
   };
+  /**
+   * After a release: did the click reach the target? Asked for `clickMs` at most, each question within what is left
+   * of it. A list (`select`) opens on the press and gets no click, so its press is its confirmation.
+   */
+  const reached = async (id, guest, context, target, generation) => {
+    if (target.tag === "select") return true;
+    const started = Date.now();
+    for (;;) {
+      const answer = await within(clickMs - (Date.now() - started), () => evaluate(id, guest, CLICKED, context));
+      if (answer === true || answer === false) return answer;
+      // The page is already another one: the press was on the target, and a link that is quick takes the record
+      // of its click with it. That is told as what it is, so the agent does not click again on the new page.
+      if (pageOf(guest).document !== generation) return "navigated";
+      if (Date.now() - started >= clickMs) return false;
+      await new Promise((resolve) => { setTimeout(resolve, Math.min(50, clickMs)).unref?.(); });
+    }
+  };
+  /** The press is over: the page gets its releases and clicks back. If this is not answered, a second ends it. */
+  const over = (id, guest, context) => within(clickMs, () => evaluate(id, guest, CLICK_OVER, context));
+  /** Is the element at this point the described one, or inside it? */
+  const under = async (id, guest, node, at) => (await quiet(async () =>
+    callOn(id, guest, node, await world(id, guest), HIT, { arguments: [{ value: at.x }, { value: at.y }] }))) === true;
   /**
    * Let input reach only what has the focus now, and say what that is. With `node` the focus must be on that element.
    * Returns the raw description, or null when nothing fitting has the focus; `disarm` tells how much was held back.
@@ -616,10 +756,32 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
   const address = (value) => {
     try { return tabs.url(value); } catch { throw new BridgeError("refused_url", MESSAGES.url); }
   };
-  const load = async (guest, url) => {
+  /**
+   * A tab's first page: an empty page first, because a guest that loaded nothing does not answer the protocol and
+   * the engine's listeners have to be registered before the real page runs a single script. Then the real address.
+   */
+  const prime = async (id, guest) => {
+    const state = pageOf(guest);
+    if (!guest.blank || state.primed) return false;
+    const contents = guest.view.webContents;
+    await loaded(contents, contents.loadURL("about:blank").catch(() => {}));
+    state.primed = true;
+    // Attaches, and with that registers the listeners (see `cdp`); within its own limits, and never fatal.
+    await quiet(() => cdp(id, guest, "Page.getFrameTree"));
+    return true;
+  };
+  const load = async (id, guest, url) => {
+    const first = await prime(id, guest);
     guest.blank = false;
     const contents = guest.view.webContents;
     await loaded(contents, contents.loadURL(url).catch(() => { guest.status = "unavailable"; }));
+    // The empty page was only there to get ready: once the real page is the current one, Back must not lead to it.
+    if (first) {
+      try {
+        const history = contents.navigationHistory;
+        if (history.getActiveIndex() > 0 && history.getEntryAtIndex(0)?.url === "about:blank") history.removeEntryAtIndex(0);
+      } catch { /* a history that cannot be trimmed is left as it is */ }
+    }
   };
 
   const run = {
@@ -637,7 +799,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
       pageOf(guest);
       try {
         // The page first, then its size: a guest that never loaded anything is not touched through the protocol.
-        if (url) { await load(guest, url); await fit(who.id, guest); }
+        if (url) { await load(who.id, guest, url); await fit(who.id, guest); }
         return tabOf(guest);
       } catch (error) {
         // An open that fails leaves no tab behind.
@@ -648,7 +810,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     close: async (who, args, guest) => { await unsize(guest); tabs.close(who.id, args.tab); return {}; },
     async navigate(who, args, guest) {
       const contents = guest.view.webContents;
-      if (Object.hasOwn(args, "url")) await load(guest, address(args.url));
+      if (Object.hasOwn(args, "url")) await load(who.id, guest, address(args.url));
       else {
         const history = contents.navigationHistory;
         const moves = args.to === "reload" || (args.to === "back" ? history.canGoBack() : history.canGoForward());
@@ -752,30 +914,52 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
       await verify();
       // A frame or an unknown target has no element of this document to be pressed; the checks above and below stand.
       const watched = node !== null && target.resolved;
+      const generation = pageOf(guest).document;
       for (let count = 1; count <= (args.count ?? 1); count += 1) {
         const context = watched ? await world(id, guest) : null;
-        if (watched) await evaluate(id, guest, ARM_PRESS, context);
-        await mouse("mousePressed", { button, clickCount: count });
-        // Between press and release: the press must have landed on the described element, which must still be it.
-        // A press that went into a frame, or to anything else, is let go far outside, so no click happens there.
-        const landed = await quiet(async () => {
-          if (watched && (await callOn(id, guest, node, context, PRESSED)) !== true) return false;
-          try { await verify(); } catch (error) {
-            if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
-            return false;
+        try {
+          // From here until the finally below, the release and the click of this press belong to the target alone:
+          // in this document, whatever of them would reach anything else is stopped before the page sees it.
+          const page = pageOf(guest);
+          Object.assign(page, { pressing: true, went: null });
+          const armed = watched ? await callOn(id, guest, node, context, ARM_PRESS) : null;
+          if (watched && armed?.armed !== true) throw new BridgeError("stale_ref", MESSAGES.stale);
+          await mouse("mousePressed", { button, clickCount: count });
+          // Between press and release: the press must have landed on the described element, which must still be it.
+          const landed = await quiet(async () => {
+            if (watched && (await callOn(id, guest, node, context, PRESSED)) !== true) return false;
+            try { await verify(); } catch (error) {
+              if (error instanceof BridgeError && error.code === "unknown_tab") throw error;
+              return false;
+            }
+            // The very last look is one call, so the time a page has to change things before the release is one
+            // answer long: the element under the pointer must still be the target or a part of it.
+            return !watched || (await callOn(id, guest, node, context, HIT, { arguments: [{ value: at.x }, { value: at.y }] })) === true;
+          });
+          if (landed !== true) {
+            // Let go far outside the page, with the pointer never moved in between: no element of a frame is under
+            // the release, so no widget in a frame is clicked, and in this document the release and its click are
+            // stopped. Without the engine's listeners (a frame target has none) the page's own root may see them.
+            if (watched) await quiet(() => evaluate(id, guest, HOLD, context));
+            await quiet(() => mouse("mouseReleased", { x: -1, y: -1, button, clickCount: count }));
+            throw new BridgeError("changed", "The page put something else under the pointer. The target was not clicked: read the page again.");
           }
-          return true;
-        });
-        if (landed !== true) {
-          // Let go far outside the page, with the pointer never moved in between: no element of a frame is under
-          // the release, so no widget in a frame is clicked. The page's own document may see a click on itself; a
-          // page already runs its own handlers whenever it likes, so that gives it nothing (ADR 0162).
-          await quiet(() => mouse("mouseReleased", { x: -1, y: -1, button, clickCount: count }));
-          throw new BridgeError("changed", "The page put something else under the pointer. The target was not clicked: read the page again.");
+          await mouse("mouseReleased", { button, clickCount: count });
+          // Done is only said once the click is known to have reached the target. A page may still have changed
+          // what is under the pointer between the last look and the release: that click was stopped.
+          const arrived = watched ? await reached(id, guest, context, target, generation) : true;
+          // The page is another one already. That is the click's own doing only if the page first went where the
+          // pressed link led when it was armed; a redirect on a timer, a swapped address or a button is not that.
+          if (arrived === "navigated")
+            return { url: urlOf(guest), navigated: true, ...(sameAddress(armed.href, page.went) ? {} : { confirmed: false }) };
+          if (arrived !== true) throw new BridgeError("changed", MESSAGES.unconfirmed);
+        } finally {
+          pageOf(guest).pressing = false;
+          if (watched) await over(id, guest, context);
         }
-        await mouse("mouseReleased", { button, clickCount: count });
       }
-      return { url: urlOf(guest) };
+      // A frame or an unknown place has no element of this document that could say it was clicked.
+      return watched ? { url: urlOf(guest) } : { url: urlOf(guest), confirmed: false };
     },
     async type(who, args, guest) {
       const id = who.id;

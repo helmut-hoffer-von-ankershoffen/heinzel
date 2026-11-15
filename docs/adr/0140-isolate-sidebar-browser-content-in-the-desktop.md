@@ -38,6 +38,11 @@ its cookies, storage, cache and authentication cache, revokes device grants and 
 shown. Electron keeps a device without a serial number outside the permission handler, so that grant lasts until the
 device is unplugged or the app quits.
 
+A website session fetches nothing on its own: every request in it comes from a page. Chromium's own spell checker
+downloads its dictionaries from a server, so guests of the website partition get spell check only on macOS, where
+the system's spell checker is used and nothing is downloaded; on other platforms it is off for the partition and
+for every guest view, the media player's included. The product's own session is outside this rule.
+
 WebAuthn is not refused. Electron serves no platform passkey (iCloud Keychain, Touch ID) for third-party sites: that
 needs a signed app whose identifier each relying party lists in its `apple-app-site-association`. The page then only
 sees `NotAllowedError`, so a passkey step or WebAuthn failure shows a visible note that passkeys may not work, with

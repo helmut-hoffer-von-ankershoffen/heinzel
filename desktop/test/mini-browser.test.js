@@ -13,6 +13,8 @@ function fixture(configure = async () => {}, extra = {}) {
     connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }),
     createSession: (partition, config) => {
       const session = Object.assign(new EventEmitter(), { partition, config, clearStorageData: async () => calls.push(["clear"]),
+        setSpellCheckerEnabled: (enabled) => calls.push(["spellcheck", enabled]),
+        setSpellCheckerLanguages: (languages) => calls.push(["languages", languages]),
         setPermissionCheckHandler: (handler) => { session.check = handler; },
         setPermissionRequestHandler: (handler) => { session.request = handler; },
         setDevicePermissionHandler: (handler) => { session.device = handler; },
@@ -723,4 +725,31 @@ test("quit: a tab that cannot be closed does not keep the others or the network 
   assert.doesNotThrow(() => g.controller.closeAll());
   assert.equal(g.views[0].webContents.isDestroyed(), true);
   assert.equal(g.sender.listenerCount("did-start-navigation"), 0);
+});
+
+test("spell check: websites get it only where it downloads nothing, so no dictionary is ever fetched for them", async () => {
+  // Chromium's own spell checker fetches its dictionaries from a server; a website session fetches nothing on its own.
+  for (const platform of ["linux", "win32"]) {
+    const f = fixture(undefined, { platform });
+    await f.invoke({ action: "navigate", url: "https://one.example.com" });
+    await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+    assert(f.options.every((option) => option.webPreferences.spellcheck === false), platform);
+    assert.deepEqual(f.calls.filter(([name]) => name === "spellcheck" || name === "languages"), [["spellcheck", false], ["languages", []]], platform);
+    // Switched off on the partition before any guest exists, so the media player's guest is covered too.
+    assert(f.calls.findIndex(([name]) => name === "spellcheck") < f.calls.findIndex(([name]) => name === "add"));
+  }
+  // macOS uses the system's spell checker, which downloads nothing: it stays.
+  const mac = fixture(undefined, { platform: "darwin" });
+  await mac.invoke({ action: "navigate", url: "https://one.example.com" });
+  assert.equal(mac.options[0].webPreferences.spellcheck, true);
+  assert.deepEqual(mac.calls.filter(([name]) => name === "spellcheck" || name === "languages"), []);
+});
+
+test("a website's dialogs stay off: an alert shows nothing and a confirm() is never a yes", async () => {
+  // The agent engine never answers a page's dialog; that these are refused in the guest is what keeps a click from
+  // becoming an unapproved "OK".
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert(f.options.every((option) => option.webPreferences.disableDialogs === true && option.webPreferences.safeDialogs === true));
 });

@@ -127,7 +127,10 @@ export function deviceDialog({ host, devices }) {
  */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView,
   createNetwork = createGuestNetwork, chooseDevice = async () => null, openExternal = async () => false,
-  faviconImage = smallPng, faviconTimeout = FAVICON_TIMEOUT_MS, now = () => Date.now() }) {
+  faviconImage = smallPng, faviconTimeout = FAVICON_TIMEOUT_MS, now = () => Date.now(), platform = process.platform }) {
+  // A website session fetches nothing on its own (ADR 0140). Chromium's own spell checker downloads its dictionaries
+  // from a server; the macOS one is the system's and downloads nothing. So websites get spell check on macOS only.
+  const spellcheck = platform === "darwin";
   // window -> { tabs: Map(id -> guest), selected, bounds, shown, opening, pending }: every tab shares one partition.
   const surfaces = new Map();
   const opening = new Set();
@@ -244,6 +247,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const partitionFor = () => {
     if (partition) return partition;
     partition = createSession(BROWSER_PARTITION);
+    // For every guest of the partition, the media player's included: no dictionary is asked for or fetched.
+    if (!spellcheck) { partition.setSpellCheckerEnabled?.(false); partition.setSpellCheckerLanguages?.([]); }
     partition.setPermissionCheckHandler((_contents, permission) => DEVICE_PERMISSIONS.has(permission));
     partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     // Only a device the person picked for this origin is granted, until browsing data is cleared.
@@ -396,7 +401,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       view = createView({ webPreferences: {
         session: partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
-        safeDialogs: true, disableDialogs: true,
+        safeDialogs: true, disableDialogs: true, spellcheck,
       } });
       const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false, expected: [],
         blank: true, view, session: partition, network, status: "empty", notice: null };
