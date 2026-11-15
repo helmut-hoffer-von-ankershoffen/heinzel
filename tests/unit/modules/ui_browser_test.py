@@ -359,7 +359,10 @@ def test_a_click_the_desktop_could_not_confirm_is_never_told_as_done(kernel, des
     desktop.answers["click"] = {"url": "https://elsewhere.example.org/", "navigated": True, "confirmed": False}
     answer = call("click", tab=tab, ref="ref_1")
     assert (answer["done"], answer["navigated"]) == (False, True)
-    assert answer["note"].startswith("Sent, not confirmed: the page went to https://elsewhere.example.org/")
+    # The page went on: the click may have done its work, so the agent is told not to repeat it, only to read.
+    assert answer["note"].startswith("Sent, not confirmed: the page went on to https://elsewhere.example.org/")
+    assert "Do not click or submit it again" in answer["note"]
+    assert "read the page first" in answer["note"]
     assert audit.calls()[-1]["outcome"] == "unconfirmed"
     # The desktop saying the click missed its target is a refusal, with its words for the agent.
     del desktop.answers["click"]

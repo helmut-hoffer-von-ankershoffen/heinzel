@@ -65,8 +65,9 @@ _LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 _NUMERIC_LABEL = re.compile(r"(0x[0-9a-f]*|\d+)")
 PAGE_CHANGED: Final = "The page changed since this target was described; read it again."
 WENT_ELSEWHERE: Final = (
-    "Sent, not confirmed: the page went to {url}, which is not where the pressed link led. Read the page before you "
-    "act on it."
+    "Sent, not confirmed: the page went on to {url}, which is not where the pressed link led. The click may already "
+    "have done its work (a form may be sent). Do not click or submit it again: read the page first and go by what "
+    "it shows."
 )
 SENT_NOT_CONFIRMED: Final = (
     "Sent, not confirmed: the target is a frame or a place hz cannot see into, so nothing says the click arrived. "
