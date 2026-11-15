@@ -31,7 +31,7 @@ SYNC = Path(os.environ.get("HZ_JOURNEY_SYNC", "."))
 PREFIX = "mcp__hz__ui_browser_"
 KEPT = 400
 """How much of each tool result goes into the report."""
-RACE_TRIES = 8
+RACE_TRIES = int(os.environ.get("HZ_JOURNEY_RACE_TRIES", "0"))
 """How often the script clicks a button over which the page shows a frame a moment after the pointer arrives."""
 PAGE_KEPT = 4000
 """How much of the page the agent read goes into the report."""

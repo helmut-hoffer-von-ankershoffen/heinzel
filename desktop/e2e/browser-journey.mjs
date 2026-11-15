@@ -14,9 +14,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
-import { SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
+import { RACE_TRIES, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
 
 const journey = process.argv[2];
+// HZ_JOURNEY_VISIBLE=1, on Linux under a virtual display only (Xvfb, see browser-journey.Dockerfile): the window is
+// really shown, and then at least one raced press must land inside the frame of the other site's process.
+const visible = process.env.HZ_JOURNEY_VISIBLE === "1";
+if (visible && process.platform !== "linux") throw new Error("A shown window is for Linux under Xvfb only; everywhere else the app stays hidden.");
 if (journey !== "heinzel" && journey !== "mcp") throw new Error("Say which journey: heinzel or mcp.");
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const python = process.env.HZ_JOURNEY_PYTHON;
@@ -162,6 +166,7 @@ async function assertInputs(tab, race) {
   found.raceInFrame = site.countOf("widget-race-", "pointerdown");
   found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
   assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
+  if (visible) assert.ok(found.raceInFrame > 0, `With a shown window at least one of ${RACE_TRIES} raced presses must land in the frame, or nothing is proven about it.`);
   assert.equal(site.countOf("widget-race-", "mouseup") + site.countOf("widget-race-", "click"), 0,
     "A press that landed in the frame of another site must get no release and no click there.");
   assert.equal(site.count("document:click"), 1 + found.raceClicks, "No release may become a click anywhere in the page, the page around a button included.");
@@ -333,7 +338,7 @@ async function mcpJourney(page, origin) {
   await expectRefused("A covered target", "covered", "click", { tab, ref: refOf(read, "button", "Show delivery times") });
   await expectRefused("A target swapped on the press", "swapped", "click", { tab, ref: refOf(read, "button", "Show opening hours") });
   const race = [];
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < RACE_TRIES; attempt += 1) {
     race.push(await agent.call("click", { tab, ref: refOf(read, "button", attempt % 2 ? "Show prices tomorrow" : "Show prices today") }));
     await delay(800);  // the page takes its frame away again
   }
@@ -398,6 +403,8 @@ try {
     HOME: join(root, "home"), TMPDIR: join(root, "tmp"), PATH: `${join(root, "bin")}:/usr/bin:/bin:/usr/sbin:/sbin`,
     USER: process.env.USER || "", LOGNAME: process.env.LOGNAME || "", LANG: "en_US.UTF-8",
     ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}),
+    ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
+    ...(visible ? { HZ_JOURNEY_VISIBLE: "1" } : {}), HZ_JOURNEY_RACE_TRIES: String(RACE_TRIES),
     XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
     XDG_CACHE_HOME: join(root, "cache"), HZ_CONFIG_HOME: join(root, "config"), HZ_DATA_DIR: join(root, "data"),
     HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
@@ -419,8 +426,8 @@ try {
   ownedPid = Number(await readFile(join(root, "owned-pid"), "utf8"));
   const origin = new URL(page.url()).origin;
   assert.equal(new URL(origin).hostname, "127.0.0.1");
-  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), false,
-    "The journey's app must stay hidden.");
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), visible,
+    visible ? "Under the virtual display the window must be shown." : "The journey's app must stay hidden.");
   try {
     if (journey === "heinzel") await heinzelJourney(page, origin);
     else await mcpJourney(page, origin);
@@ -435,8 +442,8 @@ try {
   assert.notEqual(await kept("proxy-calls"), "", "The product must have configured its guests' network itself; the fixture only answers in its place.");
   assert.equal(await kept("dialogs"), "", "No native question may have been asked.");
   assert.equal(await kept("public-media"), "", "Nothing may have been handed to the system's browser.");
-  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), false,
-    "The journey's app must stay hidden.");
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), visible,
+    visible ? "Under the virtual display the window must be shown." : "The journey's app must stay hidden.");
   const exited = new Promise((done) => electronProcess.once("exit", (code, signal) => done({ code, signal })));
   await page.close();
   const result = await withTimeout(exited, 20_000, "Electron did not exit after close.");
@@ -445,7 +452,7 @@ try {
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
     "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
     `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
-    `Race: the frame was shown in ${found.raceShown} of 8 tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first.`);
+    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first.`);
 } finally {
   site?.close();
   await cleanupHarness({

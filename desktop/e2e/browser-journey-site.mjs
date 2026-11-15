@@ -12,6 +12,9 @@ export const SHOP = "shop.heinzel-journey.example";
 export const WIDGET = "times.heinzel-widget.example";
 const HOSTS = new Set([SHOP, WIDGET]);
 const ZONES = ["hover", "press", "race-a", "race-b"];
+/** Milliseconds between the pointer's arrival and the frame's appearance, one per raced try. */
+const RACE_WAITS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20];
+export const RACE_TRIES = RACE_WAITS.length;
 
 const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font:16px system-ui;margin:24px}button,input,label{font:inherit;display:block;margin:8px 0}
@@ -56,7 +59,7 @@ document.querySelector("#hover button").addEventListener("mousemove", () => swap
 document.querySelector("#press button").addEventListener("mousedown", () => swap("press"));
 // The race: a moment after the pointer arrives the frame is shown, so that a press may land inside it; each try
 // waits a little longer, and the frame leaves again for the next one.
-const waits = [0, 1, 2, 4, 8, 16, 0, 3];
+const waits = ${JSON.stringify(RACE_WAITS)};
 let tries = 0;
 for (const zone of ["race-a", "race-b"]) {
   const box = document.getElementById(zone);

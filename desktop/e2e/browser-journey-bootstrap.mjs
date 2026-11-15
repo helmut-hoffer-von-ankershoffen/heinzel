@@ -25,7 +25,10 @@ dialog.showMessageBox = async (...args) => {
 // Hidden: no window is shown, focused or raised, and macOS gets no Dock icon and no activation. The product shows a
 // guest only in a focused window, so the never-shown window says it is focused: the journey's person can then select
 // the agent's tab in the panel, which gives that tab's view its size, with nothing on any screen.
-for (const name of ["show", "showInactive", "focus", "moveTop"]) BrowserWindow.prototype[name] = function hidden() {};
+// Only on Linux, and only when the journey says its display is a virtual one (Xvfb), is the window really shown:
+// a shown window is what lets the compositor route a press into a frame of another site's process.
+const shown = process.platform === "linux" && process.env.HZ_JOURNEY_VISIBLE === "1";
+if (!shown) for (const name of ["show", "showInactive", "focus", "moveTop"]) BrowserWindow.prototype[name] = function hidden() {};
 BrowserWindow.prototype.isFocused = function focused() { return true; };
 if (process.platform === "darwin") {
   app.setActivationPolicy("accessory");
