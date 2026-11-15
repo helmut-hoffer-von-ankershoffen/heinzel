@@ -425,7 +425,12 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000
     // What counts for clearing is that an override was ever sent on this session, not that its answer came: an
     // answer may be late or never come while the override is in effect all the same.
     if (method === "Emulation.setDeviceMetricsOverride") pageOf(guest).sent = true;
-    return wire.sendCommand(method, params);
+    // The agent's own press or key down: the tab is told to expect it, so it is not read as the person taking over.
+    const kind = method === "Input.dispatchMouseEvent" && params.type === "mousePressed" ? "mouseDown"
+      : method === "Input.dispatchKeyEvent" && (params.type === "keyDown" || params.type === "rawKeyDown") ? "keyDown" : null;
+    if (!kind) return wire.sendCommand(method, params);
+    const done = tabs.expect(guest, kind);
+    try { return await wire.sendCommand(method, params); } finally { done(); }
   };
   /**
    * A hidden view has no size (its page sees a 0 by 0 window), so nothing in it can be laid out or hit-tested. A tab

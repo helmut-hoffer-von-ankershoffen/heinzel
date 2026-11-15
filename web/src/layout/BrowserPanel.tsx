@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, CornerDownLeft, ExternalLink, Plus, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, CornerDownLeft, ExternalLink, Plus, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
 import { Favicon } from "@/bookmarks/Favicon";
+import { HeinzelFace } from "@/components/HeinzelFace";
 import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -19,6 +20,10 @@ type BrowserTab = {
   favicon?: string | null;
   /** Set on a tab an agent opened (ADR 0162): the name the tab shows. */
   agent?: { name: string; kind: string } | null;
+  /** The person took this agent tab over: the agent's calls wait until Hand back. */
+  paused?: boolean;
+  /** An outside agent's commit that waits for the person: the sentence naming the action and its target. */
+  commit?: { summary: string; id: string } | null;
 };
 /** The person's own tabs per window, as the desktop enforces. */
 const MAX_TABS = 8;
@@ -59,6 +64,13 @@ function pageLabel(tab: BrowserTab): string {
   } catch {
     return t("browser.newTabTitle");
   }
+}
+/** A Heinzel's tab shows the Heinzel's face; an outside agent's tab shows a neutral agent mark. */
+function AgentFace({ kind }: Readonly<{ kind: string }>) {
+  const Icon = kind === "heinzel" ? HeinzelFace : Bot;
+  return (
+    <Icon aria-hidden data-agent-kind={kind === "heinzel" ? "heinzel" : "external"} className="size-3.5 shrink-0" />
+  );
 }
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 const SEARCH = "https://www.google.com/search";
@@ -167,6 +179,12 @@ export function BrowserPanel({
     void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
   };
   const closeTab = (id: string) => void request({ action: "close-tab", tab: id });
+  // The selected tab when an agent opened it: the bar and the commit card are about this tab only.
+  const agentTab = tabs.find((tab) => tab.id === selectedId && tab.agent);
+  // An answer names the card that is on screen, by its id: the desktop refuses it for any other card on that tab.
+  const answer = (action: "commit-approve" | "commit-refuse") => {
+    if (agentTab?.commit) void request({ action, tab: agentTab.id, commit: agentTab.commit.id });
+  };
   // The listener is bound once per panel state and always calls the latest handler.
   const shortcut = useRef<(event: KeyboardEvent) => void>(() => {});
   shortcut.current = (event) => {
@@ -354,8 +372,15 @@ export function BrowserPanel({
                   className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1 text-left"
                   onClick={() => void request({ action: "select-tab", tab: tab.id })}
                 >
+                  {tab.agent && <AgentFace kind={tab.agent.kind} />}
                   {tab.favicon && <Favicon image={tab.favicon} className="size-3" />}
-                  <span className="truncate">{tabLabel(tab)}</span>
+                  <span className="min-w-0 flex-1 truncate">{tabLabel(tab)}</span>
+                  {tab.commit && (
+                    <>
+                      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-destructive" />
+                      <span className="sr-only">, {t("browser.commitWaiting")}</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -426,9 +451,62 @@ export function BrowserPanel({
               {t(NOTICES[state.notice])}
             </p>
           )}
+          {agentTab?.agent && (
+            <fieldset
+              aria-label={t("browser.agentUsing", { name: agentTab.agent.name })}
+              className="m-0 flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-0 border-t-[0.5px] border-foreground/20 bg-muted px-3 py-1.5 text-xs"
+            >
+              <AgentFace kind={agentTab.agent.kind} />
+              <p role="status" className="min-w-0 flex-1">
+                {t(agentTab.paused ? "browser.agentPaused" : "browser.agentUsing", { name: agentTab.agent.name })}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void request({ action: agentTab.paused ? "hand-back" : "take-over", tab: agentTab.id })}
+              >
+                {t(agentTab.paused ? "browser.handBack" : "browser.takeOver")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title={t("browser.stopAgentHint", { name: agentTab.agent.name })}
+                onClick={() => void request({ action: "stop-agent", tab: agentTab.id })}
+              >
+                {t("browser.stopAgent")}
+              </Button>
+            </fieldset>
+          )}
+          {agentTab?.agent && agentTab.commit && (
+            <section
+              // A section, not a dialog: a dialog would hide the page the person is asked about.
+              aria-label={t("browser.commitAsk", { name: agentTab.agent.name })}
+              aria-describedby="browser-commit-summary"
+              data-browser-commit
+              className="flex shrink-0 flex-wrap items-center gap-2 border-t-[0.5px] border-foreground/20 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">{t("browser.commitAsk", { name: agentTab.agent.name })}</p>
+                {/* The daemon's own sentence, shown whole and unchanged: the action and its target. */}
+                <p id="browser-commit-summary" className="break-words font-medium">
+                  {agentTab.commit.summary}
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => answer("commit-refuse")}>
+                {t("browser.commitDecline")}
+              </Button>
+              <Button type="button" size="sm" onClick={() => answer("commit-approve")}>
+                {t("browser.commitApprove")}
+              </Button>
+            </section>
+          )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
           <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
-            <p className="min-w-0 flex-1">{t("browser.private")}</p>
+            <p className="min-w-0 flex-1">
+              {t("browser.private")} {t("browser.automationNote")}
+            </p>
             <Button
               type="button"
               variant="ghost"

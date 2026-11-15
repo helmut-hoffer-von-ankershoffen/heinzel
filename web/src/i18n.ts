@@ -1355,6 +1355,19 @@ const en = {
   "settings.linksInBrowser": "Open links in the built-in browser",
   "settings.linksInBrowserHelp":
     "On: links in Heinzel, in embeds and in pages open in a new tab of the built-in browser. Off: they open in your default browser.",
+  "browser.agentUsing": "{name} is using this tab",
+  "browser.agentPaused": "You took over this tab. {name} waits until you hand it back.",
+  "browser.takeOver": "Take over",
+  "browser.handBack": "Hand back",
+  "browser.stopAgent": "Stop",
+  "browser.stopAgentHint": "Close every tab of {name} and refuse its use of the browser until you allow it again.",
+  "browser.commitAsk": "{name} asks for your yes:",
+  "browser.commitApprove": "Approve",
+  "browser.commitDecline": "Decline",
+  "browser.commitNotice": "{name} waits for your OK in the browser",
+  "browser.commitWaiting": "waiting for your answer",
+  "browser.agentsActive": "an agent is using a tab",
+  "browser.agentsWaiting": "an agent is waiting for your answer",
   "browser.newTab": "New tab",
   "browser.newTabTitle": "New tab",
   "browser.closeTab": "Close tab",
@@ -1371,6 +1384,8 @@ const en = {
   "browser.unavailable": "This site could not open here",
   "browser.private":
     "Websites get their own session, separate from your Heinzel. Sign-ins stay until you clear browsing data. Downloads and popups are unavailable.",
+  "browser.automationNote":
+    "Some websites forbid automated use of an account: whether an agent may use a site with your sign-ins is your choice.",
   "browser.openInBrowser": "Open in browser",
   "browser.refusedNote":
     "This address can't open in the built-in browser: only public https websites work here, not local or private addresses.",
