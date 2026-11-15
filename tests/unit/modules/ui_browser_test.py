@@ -509,6 +509,7 @@ def stdio(kernel, calls: list[tuple[str, dict]]):
     return anyio.run(run)
 
 
+@pytest.mark.timeout(30)  # each stdio call starts an MCP session: slow on a loaded runner
 def test_an_outside_agent_over_stdio_is_local_and_its_commit_waits_for_the_card(kernel, desktop, audit):
     [(_, opened)] = stdio(kernel, [("ui_browser_open", {"url": "https://shop.example.org/"})])
     tab = json.loads(opened[0].text)["id"]
@@ -983,6 +984,7 @@ def test_an_input_whose_target_cannot_be_described_never_runs(kernel, desktop, c
     assert pending(kernel, call.session) == []
 
 
+@pytest.mark.timeout(30)  # each stdio call starts an MCP session: slow on a loaded runner
 def test_a_desktop_that_approves_nothing_clearly_does_not_approve(kernel, desktop):
     [(_, opened)] = stdio(kernel, [("ui_browser_open", {})])
     tab = json.loads(opened[0].text)["id"]
