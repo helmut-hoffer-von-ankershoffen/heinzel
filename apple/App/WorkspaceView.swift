@@ -64,6 +64,9 @@ struct WorkspaceView: WebRepresentable {
         #else
         let chrome = ""
         #endif
+        let connection = endpoint.origin.scheme == "https"
+            ? "remoteWorkspace: true,"
+            : "workspaceLinkStyle: '\(Endpoint.sharesHTTPSLinks ? "https" : "scheme")',"
         configuration.userContentController.addUserScript(WKUserScript(
             source: """
             (() => {
@@ -95,7 +98,7 @@ struct WorkspaceView: WebRepresentable {
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) browser, notices, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,

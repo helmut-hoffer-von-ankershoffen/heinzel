@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { App } from "@/App";
 import { acmeTheme, config, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { GIVE_UP_MS, initial, reduce, type SplashEvent } from "./machine";
@@ -315,6 +316,40 @@ describe("the splash", () => {
     expect(signInFromLink("http://127.0.0.1:9999/#token=abc", here)).toEqual({ ok: false, reason: "elsewhere" });
     expect(signInFromLink("http://127.0.0.1:8737/", here)).toEqual({ ok: false, reason: "invalid" });
     expect(signInFromLink("not a link", here)).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("asks for the host's sign-in link on a new native remote connection", async () => {
+    vi.stubGlobal("heinzelDesktop", { remoteWorkspace: true });
+    try {
+      mount(async () => ({ kind: "refused" }));
+      await passes(0);
+      expect(screen.getByRole("alert")).toHaveTextContent("Ask your host for the private sign-in link");
+      expect(screen.getByLabelText("Private sign-in link")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
+      expect(screen.queryByText(/press Ctrl\+C/)).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("accepts only the loaded workspace's sign-in link on a fresh native launch", () => {
+    vi.stubGlobal("heinzelDesktop", { remoteWorkspace: true });
+    try {
+      render(<App hasToken={false} />);
+      const field = screen.getByLabelText("Private sign-in link");
+      expect(field).toHaveAttribute("type", "password");
+      const submit = screen.getByRole("button", { name: "Sign in" });
+      fireEvent.change(field, { target: { value: "https://other.example/#token=fixture" } });
+      fireEvent.click(submit);
+      expect(screen.getByRole("alert")).toHaveTextContent(`Use the sign-in link for ${window.location.origin}`);
+      expect(window.location.hash).toBe("");
+      fireEvent.change(field, { target: { value: `${window.location.origin}/#token=fixture` } });
+      fireEvent.click(submit);
+      expect(window.location.hash).toBe("#token=fixture");
+    } finally {
+      window.history.replaceState({}, "", window.location.pathname);
+      vi.unstubAllGlobals();
+    }
   });
 
   it("ignores a blip, but comes back over the app when hz is gone, and gives focus back when it returns", async () => {

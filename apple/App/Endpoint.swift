@@ -58,12 +58,16 @@ struct Endpoint: Equatable {
         return endpoint
     }
 
+    static var sharesHTTPSLinks: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "HeinzelHTTPSLinks") as? String == "YES"
+    }
+
     var shareURL: URL? {
         guard origin.scheme == "https" else { return nil }
         var payload = URLComponents()
         payload.queryItems = [URLQueryItem(name: "server", value: origin.absoluteString)]
         var parts = URLComponents()
-        if Bundle.main.object(forInfoDictionaryKey: "HeinzelHTTPSLinks") as? String == "YES" {
+        if Self.sharesHTTPSLinks {
             parts.scheme = "https"
             parts.host = "heinzel.team"
             parts.path = "/open/"

@@ -201,6 +201,7 @@ const en = {
   "contrib.toggle.notOff": "Could not turn it off. Try again.",
   "contrib.toggle.details": "Details",
   "contrib.toggle.copyUrl": "Copy link",
+  "contrib.toggle.copyAppLink": "Copy app link",
   "contrib.toggle.shareUrl": "Share",
   "contrib.toggle.shareFailed": "Could not share the link; copy it instead.",
   "contrib.toggle.copySignIn": "Copy sign-in link",
@@ -513,6 +514,12 @@ const en = {
     "{command} isn't running on this machine, or it stopped. An installed hz starts again on its own, and this app connects by itself once it runs.",
   "splash.unreachableCommand": "If it does not, start it in a terminal:",
   "splash.tokenTitle": "Sign in again",
+  "splash.remoteTitle": "Sign in to this workspace",
+  "splash.remoteToken": "Ask your host for the private sign-in link and paste it here.",
+  "splash.remoteOffline": "Check that you're on the workspace's private network.",
+  "splash.remotePasteLabel": "Private sign-in link",
+  "splash.remotePasteProblem": "Use the sign-in link for {address}.",
+  "splash.signIn": "Sign in",
   "splash.token":
     "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
   "splash.tokenApp":

@@ -151,7 +151,7 @@ export function signInFromLink(
   return { ok: true, hash: `#token=${encodeURIComponent(token)}` };
 }
 
-function PasteLink() {
+function PasteLink({ remote }: { remote: boolean }) {
   const [value, setValue] = useState("");
   const [reason, setReason] = useState<"invalid" | "elsewhere" | null>(null);
   return (
@@ -169,23 +169,27 @@ function PasteLink() {
       }}
     >
       <label htmlFor="splash-paste" className="text-xs text-muted-foreground">
-        {t("splash.pasteLabel")}
+        {t(remote ? "splash.remotePasteLabel" : "splash.pasteLabel")}
       </label>
       <div className="flex gap-2">
         <CodeInput
           id="splash-paste"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="http://127.0.0.1:…/#token=…"
+          placeholder={remote ? undefined : "http://127.0.0.1:…/#token=…"}
+          type={remote ? "password" : "text"}
+          className={remote ? "h-11 min-w-0 text-base" : undefined}
+          autoCapitalize="none"
+          autoCorrect="off"
           aria-describedby={reason ? "splash-paste-problem" : undefined}
         />
-        <Button type="submit" size="sm" disabled={!value.trim()}>
-          {t("splash.tokenTitle")}
+        <Button type="submit" size="sm" className={remote ? "h-11" : undefined} disabled={!value.trim()}>
+          {t(remote ? "splash.signIn" : "splash.tokenTitle")}
         </Button>
       </div>
       {reason && (
         <p id="splash-paste-problem" role="alert" className="text-xs text-bad">
-          {t("splash.pasteProblem", {
+          {t(remote ? "splash.remotePasteProblem" : "splash.pasteProblem", {
             address: window.location.origin,
           })}
         </p>
@@ -194,21 +198,50 @@ function PasteLink() {
   );
 }
 
+export const isRemoteWorkspace = () =>
+  (window as Window & { heinzelDesktop?: { remoteWorkspace?: boolean } }).heinzelDesktop?.remoteWorkspace === true;
+
+export function RemoteWorkspaceSignIn() {
+  return (
+    <>
+      <h1 className="text-lg font-semibold text-foreground">{t("splash.remoteTitle")}</h1>
+      <p className="text-muted-foreground">{t("splash.remoteToken")}</p>
+      <PasteLink remote />
+    </>
+  );
+}
+
 /** The fix for a problem: what happened, what to do, and the command that does it. */
 function Fix({ problem }: { problem: Problem }) {
+  const remote = isRemoteWorkspace();
+  if (remote && problem === "token") {
+    return (
+      <div role="alert" className="flex w-full max-w-md flex-col items-center gap-3 text-sm">
+        <RemoteWorkspaceSignIn />
+      </div>
+    );
+  }
   const installed = installState() === "installed";
   const [title, text, lead] =
     problem === "token"
       ? (["splash.tokenTitle", installed ? "splash.tokenApp" : "splash.token", "splash.tokenCommand"] as const)
-      : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
+      : ([
+          "splash.unreachableTitle",
+          remote ? "splash.remoteOffline" : "splash.unreachable",
+          "splash.unreachableCommand",
+        ] as const);
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
       {problem === "unreachable" && <SleepingUnderTree />}
       <h1 className="text-lg font-semibold text-foreground">{t(title)}</h1>
       <p className="text-muted-foreground">{t(text, { command: START })}</p>
-      <p className="text-muted-foreground">{t(lead, { command: START })}</p>
-      <Command command={START} />
-      {problem === "token" && <PasteLink />}
+      {!remote && (
+        <>
+          <p className="text-muted-foreground">{t(lead, { command: START })}</p>
+          <Command command={START} />
+        </>
+      )}
+      {problem === "token" && <PasteLink remote={false} />}
       {problem === "unreachable" && <p className="text-xs text-muted-foreground">{t("splash.retrying")}</p>}
     </div>
   );
