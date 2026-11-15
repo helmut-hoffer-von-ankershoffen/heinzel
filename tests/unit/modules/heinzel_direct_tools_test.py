@@ -176,7 +176,8 @@ def test_the_turn_records_each_call_by_name_and_outcome_and_holds_its_chat(kerne
 
     with box.answering():
         assert store(kernel).turn_running(box.actions)  # the browser relay accepts this turn's calls
-        result = Agent(FunctionModel(model), tools=tools).run_sync("Look, then publish")
+        # Not `run_sync`: it leaves its event loop open, and the loop's unclosed socket fails a later test.
+        result = asyncio.run(Agent(FunctionModel(model), tools=tools).run("Look, then publish"))
     assert result.output == "Done."
     assert ran == ["look"]
     assert seen == [
