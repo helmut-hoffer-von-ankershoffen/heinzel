@@ -26,8 +26,13 @@ const tell = (kind) => fetch("/event", { method: "POST", body: kind, keepalive: 
 for (const element of document.querySelectorAll("[data-watch]"))
   for (const type of ["mousedown", "mouseup", "click"])
     element.addEventListener(type, () => tell(element.dataset.watch + ":" + type));
-// Every press, release and click in this document, wherever it lands: a click on the page around a button counts too.
-for (const type of ["mousedown", "mouseup", "click"]) document.addEventListener(type, () => tell("document:" + type), true);
+// Every press, release and click in this document, wherever it lands. One that hits no watched button is a stray one,
+// told with what it hit: the page around a button, or the frame element itself.
+for (const type of ["mousedown", "mouseup", "click"]) document.addEventListener(type, (event) => {
+  tell("document:" + type);
+  const hit = event.target instanceof Element ? event.target : null;
+  if (!hit || !hit.closest("[data-watch]")) tell("stray:" + type + ":" + (hit ? hit.tagName : "none"));
+}, true);
 }</script></body></html>`;
 
 // The page shows a frame of another site over a button: on the pointer's move, or on its press. Both frames are
@@ -164,6 +169,8 @@ export async function startSite(directory) {
   return {
     state, proxyPort, certificate: tls.path,
     count: (kind) => state.events.filter((event) => event === kind).length,
+    /** How many events start with this, e.g. every stray click whatever it hit. */
+    starting: (start) => state.events.filter((event) => event.startsWith(start)).length,
     /** How many events start with this, e.g. every `widget-race-` event. */
     countOf: (start, type) => state.events.filter((event) => event.startsWith(start) && event.endsWith(`:${type}`)).length,
     close() { for (const socket of sockets) socket.destroy(); site.close(); proxy.close(); },

@@ -36,7 +36,8 @@ the person, a click let go when the page swaps its target, refused password and 
 addresses, and Stop. The journey's person selects the agent's tab in the panel before the agent clicks: a tab whose view was never
 visible has no size, and the run's last line says what size it had before and after. A press that lands inside a frame of another site's
 process can only be raced in a really shown window, so that part runs on Linux under Xvfb, in a container without
-network: `git archive --format=tar HEAD | docker build -f desktop/e2e/browser-journey.Dockerfile -t hz-browser-journey -`,
+network. Commit the head first (after a rebase too), since the image is built from the commit:
+`git archive --format=tar HEAD | docker build -f desktop/e2e/browser-journey.Dockerfile -t hz-browser-journey -`,
 then `docker run --rm --network none --cap-add=SYS_ADMIN --shm-size=1g hz-browser-journey`. It does not use the product's own CONNECT broker, and it confirms through the calls the
 confirmation cards make, not through their pixels.
 

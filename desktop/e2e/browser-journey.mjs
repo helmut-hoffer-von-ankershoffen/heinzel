@@ -48,7 +48,7 @@ const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electr
 let app, electronProcess, ownedPid, site;
 let stopped = false, launchAttempted = false;
 // What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
-const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0 };
+const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0 };
 
 // Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
 const REASONS = {
@@ -162,24 +162,41 @@ async function assertInputs(tab, race) {
   // or a click there.
   for (const answer of race)
     assert.ok(ran(answer) || refused(answer, "covered") || refused(answer, "swapped") || refused(answer, "changed"), `A raced click must run or be refused as changed: ${answer}`);
+  assert.equal(race.length, RACE_TRIES, "Every raced try must have been made.");
   found.raceShown = site.count("race-a:shown") + site.count("race-b:shown");
   found.raceInFrame = site.countOf("widget-race-", "pointerdown");
   found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
   assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
   if (visible) assert.ok(found.raceInFrame > 0, `With a shown window at least one of ${RACE_TRIES} raced presses must land in the frame, or nothing is proven about it.`);
-  assert.equal(site.countOf("widget-race-", "mouseup") + site.countOf("widget-race-", "click"), 0,
-    "A press that landed in the frame of another site must get no release and no click there.");
-  assert.equal(site.count("document:click"), 1 + found.raceClicks, "No release may become a click anywhere in the page, the page around a button included.");
-  assert.equal(site.count("document:mousedown"), 2 + site.count("race-a:mousedown") + site.count("race-b:mousedown"),
-    "The only presses in the page are the ordinary click, the press answered with a swap and the raced buttons' own.");
+  // What a called-off press must never do (ADR 0162, safety 3 and 5.5):
+  // 1. The frame of the other site gets no release and no click, whichever try put a press into it.
+  assert.equal(site.countOf("widget-", "mouseup") + site.countOf("widget-", "click"), 0,
+    "No frame of the other site may get a release or a click.");
+  // 2. The agent's own target gets no release and no click: a raced button is released only when it is clicked.
+  for (const zone of ["race-a", "race-b"])
+    assert.equal(site.count(`${zone}:mouseup`), site.count(`${zone}:click`), `A called-off press must not be released on its button (${zone}).`);
+  // 3. The button is let go outside the page, so the page's own document may hear that release as a click on what
+  // lies around the button. That is the page's own event in its own document, and it reaches nothing of another
+  // site. It is allowed only as that: at most one per called-off press, never on a button and never on a frame.
+  const calledOff = 1 + race.filter((answer) => refused(answer, "swapped")).length;
+  found.strayClicks = site.starting("stray:click:");
+  assert.ok(found.strayClicks <= calledOff, `At most one stray click per called-off press: ${found.strayClicks} for ${calledOff}.`);
+  assert.ok(site.starting("stray:mouseup:") <= calledOff && found.strayClicks <= site.starting("stray:mouseup:"),
+    "A stray click comes only from the release of a called-off press, at most one each.");
+  for (const tag of ["BUTTON", "IFRAME", "INPUT", "A"])
+    assert.equal(site.count(`stray:click:${tag}`) + site.count(`stray:mouseup:${tag}`), 0, `No stray release or click may hit a ${tag}.`);
+  assert.equal(site.count("document:click"), 1 + found.raceClicks + found.strayClicks, "Every click in the page is the ordinary one, a raced button's own or a stray one.");
+  assert.equal(site.count("document:mousedown"), 2 + site.count("race-a:mousedown") + site.count("race-b:mousedown") + site.starting("stray:mousedown:"),
+    "Every press in the page is the ordinary click's, the one answered with a swap, a raced button's own or one on the frame element.");
+  assert.ok(site.starting("stray:mousedown:") <= race.filter((answer) => refused(answer, "swapped")).length, "A press beside every button belongs to a raced try that was called off.");
   assert.equal(site.count("hover:swapped"), 1, "The page must have slid its frame in when the pointer moved.");
   assert.equal(site.count("hover:mousedown") + site.count("hover:click"), 0, "Nothing may be pressed once a frame covers the target.");
-  assert.equal(site.count("widget-hover:mousedown") + site.count("widget-hover:click"), 0, "The covering frame must get no press.");
+  assert.equal(site.starting("widget-hover:") - site.count("widget-hover:ready"), 0, "The covering frame must get no press at all.");
   assert.equal(site.count("press:swapped"), 1, "The page must have slid its frame in on the press.");
   assert.equal(site.count("press:mousedown"), 1, "The press must have reached the described button.");
   assert.equal(site.count("press:click"), 0, "A press that the page answered with a swap must not become a click.");
   assert.equal(site.count("press:mouseup"), 0, "The release must not land on the button.");
-  assert.equal(site.count("widget-press:click") + site.count("widget-press:mouseup"), 0, "The frame slid under the pointer must get no release and no click.");
+  assert.equal(site.starting("widget-press:") - site.count("widget-press:ready"), 0, "The frame shown on the press must get nothing: no press, no release, no click.");
   assert.deepEqual(site.state.orders, [], "Nothing may be sent before the person's yes.");
   assert.equal(site.count("send:click"), 0, "The commit must wait.");
   assert.ok(tab, "The agent must have opened a tab.");
@@ -242,7 +259,8 @@ async function heinzelJourney(page, origin) {
   assert.equal(done.status, "done", `The confirmed click did not run: ${done.result}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
-  assert.equal(site.count("document:click"), 2 + found.raceClicks, "No click besides the ordinary one, the raced buttons' own and the confirmed one.");
+  assert.equal(site.starting("stray:click:"), found.strayClicks, "The confirmed click adds no stray one.");
+  assert.equal(site.count("document:click"), 2 + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop, while the Heinzel is at work: its next calls are refused and its tabs are gone.
@@ -260,7 +278,7 @@ async function heinzelJourney(page, origin) {
     assert.ok(refused(after[step], "stopped"), `After Stop ${step} must be refused as stopped: ${after[step]}`);
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
-  assert.equal(site.count("document:click"), 3 + found.raceClicks, "No click after Stop.");
+  assert.equal(site.count("document:click"), 3 + found.raceClicks + found.strayClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
@@ -373,7 +391,8 @@ async function mcpJourney(page, origin) {
   assert.ok(ran(approved), `The approved commit must run: ${approved}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
-  assert.equal(site.count("document:click"), 2 + found.raceClicks, "No click besides the ordinary one, the raced buttons' own and the confirmed one.");
+  assert.equal(site.starting("stray:click:"), found.strayClicks, "The confirmed click adds no stray one.");
+  assert.equal(site.count("document:click"), 2 + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop: the agent's calls are refused and its tabs are gone.
@@ -387,7 +406,7 @@ async function mcpJourney(page, origin) {
   await expectRefused("A new tab after Stop", "stopped", "open", { url: SHOP_URL });
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
-  assert.equal(site.count("document:click"), 3 + found.raceClicks, "No click after Stop.");
+  assert.equal(site.count("document:click"), 3 + found.raceClicks + found.strayClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
@@ -452,7 +471,7 @@ try {
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
     "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
     `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
-    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first.`);
+    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button.`);
 } finally {
   site?.close();
   await cleanupHarness({
