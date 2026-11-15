@@ -12,6 +12,7 @@ pytestmark = pytest.mark.unit
 
 def test_a_bug_in_a_streamed_operation_logs_an_event_and_streams_a_plain_error(monkeypatch, caplog):
     monkeypatch.setattr(_stream, "mark_authenticated_presence", lambda kernel, module: None)
+    monkeypatch.setattr(_stream, "request_person", lambda kernel: None)  # the fake kernel has no CurrentUser
 
     def exploding(operation, **arguments):
         msg = "secret detail"
@@ -37,6 +38,7 @@ def test_a_streamed_error_carries_the_code_the_plain_call_answers_with(monkeypat
     from heinzel.kernel._errors import SubscriptionUsageLimitError
 
     monkeypatch.setattr(_stream, "mark_authenticated_presence", lambda kernel, module: None)
+    monkeypatch.setattr(_stream, "request_person", lambda kernel: None)  # the fake kernel has no CurrentUser
 
     def limited(operation, **arguments):
         raise SubscriptionUsageLimitError
@@ -57,6 +59,7 @@ def test_a_streamed_not_supported_error_names_the_capability_and_method(monkeypa
     from heinzel.kernel._errors import NotSupportedError
 
     monkeypatch.setattr(_stream, "mark_authenticated_presence", lambda kernel, module: None)
+    monkeypatch.setattr(_stream, "request_person", lambda kernel: None)  # the fake kernel has no CurrentUser
 
     def unsupported(operation, **arguments):
         capability, method = "documents", "replace_section"
