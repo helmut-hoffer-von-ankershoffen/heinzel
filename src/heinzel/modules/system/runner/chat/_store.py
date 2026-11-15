@@ -9,10 +9,12 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import secrets
 import shlex
 import shutil
 import stat
+import time
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +23,7 @@ from pydantic import JsonValue, ValidationError
 
 from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
 from heinzel.kernel import McpChatSessions
+from heinzel.kernel._browser import BROWSER_MODULE, QUOTED_NOTICE
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -40,8 +43,32 @@ MAX_PROPOSALS = 100
 MAX_MESSAGES = 200
 """Messages a session may hold; then it is full and the person opens a new one."""
 SESSION = "session.json"
+BROWSER_COMMITS = frozenset({"click", "type", "key"})
+"""The browser inputs that can be commits; nothing else of the browser is ever proposed."""
+BOUND_KINDS = frozenset({"check-in", "heinzel"})
+"""Contexts bound to one owner's durable session: the check-in chat, and a Heinzel's actions chat (ADR 0162)."""
+PERSONAL_OPERATIONS = frozenset(
+    {
+        "schedule-control",
+        "propose-check-in",
+        "publish-draft-workflow",
+        "share-draft-link",
+        "approve-model-grant",
+        "accept-agent-contract",
+        "execute-captured-write",
+        "deliver-channel-item",
+        "approve-connected-read",
+        "approve-connected-read-set",
+        "approve-agent-schedule",
+        "queue-agent-notification",
+    }
+)
+"""The `heinzel` reviews a personal chat may hold; a Heinzel's actions chat may hold none of them."""
 PROPOSALS = "proposals.jsonl"
 LOCK = "session.lock"
+LOCK_TRIES = 5
+LOCK_PAUSE_SECONDS = 0.05
+"""A session held for an instant by a probe is asked for again; one held by a turn is busy after a quarter second."""
 
 
 def now() -> datetime:
@@ -158,7 +185,7 @@ class ChatStore(McpChatSessions):
             msg = f"Chat session {session} holds another session's file; `hz chat remove {session}`."
             raise HeinzelError(msg)
         personal = chat.personal_session_id is not None or chat.personal_owner_id is not None
-        if personal or (chat.context is not None and chat.context.kind == "check-in"):
+        if personal or (chat.context is not None and chat.context.kind in BOUND_KINDS):
             if self._current is None or chat.personal_session_id is None or chat.personal_owner_id is None:
                 msg = "This personal chat has no verified owner binding"
                 raise HeinzelError(msg)
@@ -167,7 +194,7 @@ class ChatStore(McpChatSessions):
                 raise HeinzelError(msg)
             if (
                 chat.context is not None
-                and chat.context.kind == "check-in"
+                and chat.context.kind in BOUND_KINDS
                 and (chat.context.owner_id != chat.personal_owner_id or chat.context.ref != chat.personal_session_id)
             ):
                 msg = "This personal chat has an inconsistent session binding"
@@ -209,6 +236,11 @@ class ChatStore(McpChatSessions):
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
                 )
+            elif action.module == BROWSER_MODULE and action.command.endswith(QUOTED_NOTICE):
+                # A browser commit runs on a ref and a fingerprint, which tell a person nothing. Its card keeps the
+                # sentence hz's own gate wrote when it described the target ("Click button "Send" on ..."), which
+                # ends by saying whose words the quoted name is.
+                pass
             else:
                 action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
@@ -217,24 +249,13 @@ class ChatStore(McpChatSessions):
     def _check_personal_action(
         self, chat: ChatSession, module: str, operation: str, arguments: dict[str, JsonValue]
     ) -> None:
-        if chat.personal_session_id is not None and (
-            module != "heinzel"
-            or operation
-            not in {
-                "schedule-control",
-                "propose-check-in",
-                "publish-draft-workflow",
-                "share-draft-link",
-                "approve-model-grant",
-                "accept-agent-contract",
-                "execute-captured-write",
-                "deliver-channel-item",
-                "approve-connected-read",
-                "approve-connected-read-set",
-                "approve-agent-schedule",
-                "queue-agent-notification",
-            }
-        ):
+        if chat.context is not None and chat.context.kind == "heinzel":
+            # A Heinzel's actions chat holds what `StoreGate.propose` lets its turn propose (ADR 0162), never one
+            # of the reviewed approval flows, which have their own surfaces.
+            if module == "heinzel" and operation in PERSONAL_OPERATIONS:
+                msg = "A Heinzel's actions chat cannot hold that review; it has its own"
+                raise HeinzelError(msg)
+        elif chat.personal_session_id is not None and (module != "heinzel" or operation not in PERSONAL_OPERATIONS):
             msg = "This personal chat cannot authorize that action"
             raise HeinzelError(msg)
         if module != "heinzel" or ("session_id" not in arguments and operation != "schedule-control"):
@@ -352,6 +373,85 @@ class ChatStore(McpChatSessions):
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
+    def turn_running(self, session_id: str) -> bool:
+        """Whether another holder has the session right now; asked without waiting, and nothing is kept."""
+        with self.held(self.directory(session_id)) as free:
+            return not free
+
+    def heinzel_actions(self, durable_session: str) -> str:
+        """The owner-bound chat a Heinzel's turn proposes into; the newest with room, or a new one (ADR 0162).
+
+        Raises:
+            HeinzelError: If the id is not a Heinzel's, or no owner is signed in.
+        """
+        if re.fullmatch(r"hz-[0-9A-HJKMNP-TV-Z]{26}", durable_session) is None:
+            msg = "That is not a Heinzel's chat"
+            raise HeinzelError(msg)
+        owner = self.personal_owner()
+        with self.proposal_request_lock():  # two turns of one Heinzel never make two chats at once
+            newest: tuple[datetime, ChatSession] | None = None
+            for chat in self._actions_chats(durable_session, owner):
+                if len(chat.actions) < MAX_PROPOSALS and (newest is None or chat.created > newest[0]):
+                    newest = (chat.created, chat)
+            if newest is not None:
+                return newest[1].id
+            context = ChatContext(kind="heinzel", ref=durable_session, owner_id=owner)
+            return self.create(context, personal_session_id=durable_session).id
+
+    def heinzel_actions_chats(self, durable_session: str) -> list[ChatSession]:
+        """Every actions chat of one of the owner's Heinzels, oldest first; none before its first proposal."""
+        chats = self._actions_chats(durable_session, self.personal_owner())
+        return sorted(chats, key=lambda chat: chat.created)
+
+    def _actions_chats(self, durable_session: str, owner: str) -> list[ChatSession]:
+        found: list[ChatSession] = []
+        paths = sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []
+        for path in paths:
+            try:
+                raw = ChatSession.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValidationError):
+                continue
+            context = raw.context
+            if context is None or context.kind != "heinzel" or context.ref != durable_session:
+                continue
+            if raw.personal_session_id != durable_session or raw.personal_owner_id != owner:
+                continue
+            with contextlib.suppress(HeinzelError):
+                found.append(self.load(path.parent.name))
+        return found
+
+    def heinzel_of(self, session_id: str) -> str | None:
+        """The Heinzel's chat an actions chat belongs to, from its verified binding; None for any other chat."""
+        chat = self.load(session_id)
+        if chat.context is None or chat.context.kind != "heinzel":
+            return None
+        return chat.personal_session_id
+
+    @contextlib.contextmanager
+    def answering(self, session_id: str) -> Generator[None]:
+        """Hold the session while a Heinzel's turn runs, so the browser relay sees a running turn (ADR 0162).
+
+        Yields:
+            Nothing; the session is released afterwards.
+
+        Raises:
+            HeinzelError: If another process holds it.
+        """
+        # The lock only, not the chat: the turn runs as whoever started it, and its chat was checked when it was
+        # found for this owner (`heinzel_actions`). A probe (`turn_running`) holds it for an instant: ask again.
+        folder = self.directory(session_id)
+        for _ in range(LOCK_TRIES - 1):
+            with self.held(folder) as holding:
+                if holding:
+                    yield
+                    return
+            time.sleep(LOCK_PAUSE_SECONDS)
+        with self.held(folder) as holding:
+            if not holding:
+                msg = f"Chat session {session_id} is busy right now; try again when the current operation is done."
+                raise HeinzelError(msg)
+            yield
+
     @contextlib.contextmanager
     def locked(self, session: str) -> Generator[ChatSession]:
         """The session, held exclusively while the block runs, so one process at a time answers or confirms.
@@ -362,7 +462,16 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If there is no such session, or another process holds it.
         """
-        with self.held(self.directory(session)) as holding:
+        folder = self.directory(session)
+        for _ in range(LOCK_TRIES - 1):
+            # Another process may hold it for an instant only to ask whether a turn is running (`turn_running`):
+            # that must never cost the person their message, so ask again a few times before saying busy.
+            with self.held(folder) as holding:
+                if holding:
+                    yield self.load(session)
+                    return
+            time.sleep(LOCK_PAUSE_SECONDS)
+        with self.held(folder) as holding:
             if not holding:
                 msg = f"Chat session {session} is busy right now; try again when the current operation is done."
                 raise HeinzelError(msg)
@@ -483,6 +592,8 @@ class ChatStore(McpChatSessions):
                 raise HeinzelError(msg)
             if raw.personal_session_id != session_id or raw.personal_owner_id != self.personal_owner():
                 continue
+            if raw.context is not None and raw.context.kind == "heinzel":
+                continue  # the Heinzel's actions chat (ADR 0162), not its conversation
             chat = self.load(path.parent.name)
             if found is not None:
                 msg = "This personal session has multiple bound chats; inspect them before continuing"
@@ -589,6 +700,12 @@ class StoreGate(ActionGate):
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
         chat = self._store.load(call.session)
+        if call.module == BROWSER_MODULE and (
+            call.operation not in BROWSER_COMMITS or not isinstance(call.arguments.get("expected"), str)
+        ):
+            # Only the browser's own commit path proposes: an input pinned to the target it described (ADR 0162).
+            msg = "A browser proposal must be a commit pinned to its described target"
+            raise HeinzelError(msg)
         if call.module == "heinzel" and call.operation in {
             "publish-draft-workflow",
             "share-draft-link",

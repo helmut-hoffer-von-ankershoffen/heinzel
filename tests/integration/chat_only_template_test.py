@@ -106,7 +106,7 @@ elif n == 4:
 )}}
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'playbook:propose','arguments':args}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  report=(('Which information and output should I use?')
          if n == 2 else 'Draft ready for review')
  wire={{'kind':'tool','name':name,'arguments':{{'report':report}},'text':None}}

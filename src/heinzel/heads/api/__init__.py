@@ -37,9 +37,11 @@ from starlette.datastructures import Headers
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
 from heinzel.heads._presence import mark_authenticated_presence
-from heinzel.heads._stream import error_body, streamed
+from heinzel.heads._served_tools import bind_served_tools
+from heinzel.heads._stream import error_body, request_person, streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
+from heinzel.kernel._agent_writes import calling
 from heinzel.kernel._errors import NotSupportedError as NotSupportedError
 from heinzel.kernel._errors import SubscriptionUsageLimitError as SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
@@ -99,6 +101,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     _validate_auth(head, token, credentials, audience)
     selected = API_PRIVATE if credentials is not None and head == HEAD else head
     user = kernel.resolve(CurrentUser)
+    bind_served_tools(kernel)
     app = FastAPI(
         title="Heinzelmännchen",
         version=__version__,
@@ -310,7 +313,8 @@ def endpoint(
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         mark_authenticated_presence(kernel, item.record.qualname)
-        result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
+        with calling(request_person(kernel)):
+            result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
         if item.operation.exit_code is not None and item.operation.exit_code(result):
             response.status_code = UNAVAILABLE
         return result

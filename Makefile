@@ -309,7 +309,7 @@ licenses: ## Check that runtime dependencies' licenses are on .license-allowlist
 template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
 	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
 
-docs: ## Regenerate the references (MODULES, CLI_REFERENCE, CONFIGURATION) and every plugin's page from the code
+docs: ## Regenerate the references (MODULES, CLI_REFERENCE, MCP_REFERENCE, CONFIGURATION) and every plugin's page from the code
 	uv run python scripts/generate_docs.py
 
 attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text

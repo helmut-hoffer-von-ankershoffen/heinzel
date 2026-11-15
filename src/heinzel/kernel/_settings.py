@@ -180,6 +180,14 @@ class Settings(ModuleSettings):
         examples=["https://workstation.example.ts.net"],
         json_schema_extra={"x-expert": True, "x-private": True},
     )
+    mcp_http: bool = Field(
+        default=False,
+        title="MCP for other agents",
+        description="Serve Heinzel's tools to outside agents (Claude Code, Codex, Cursor) at /mcp on the web app's "
+        "address, with a token for each agent. Off by default; the web app follows it at once, and nothing else has "
+        "to run. Heinzels in hz never need it.",
+        json_schema_extra={"x-live": True},  # the web app's server reads it again with every /mcp request
+    )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         title="Other host names for the API",
@@ -196,6 +204,7 @@ class Settings(ModuleSettings):
             "auto_update_min_age_hours",
             "auto_update_plugin_min_age_hours",
             "expert",
+            "mcp_http",
             "ui_allowed_origins",
             "ui_port",
             "update_check",

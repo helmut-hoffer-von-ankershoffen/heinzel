@@ -45,7 +45,7 @@ open({str(directory / "prompt-input")!r},'w').write(json.dumps(payload))
 if len(payload['messages']) == 1:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':{tool!r},'arguments':{arguments!r}}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  wire={{'kind':'tool','name':name,'arguments':{final or {"report": "A real recorded reply"}!r},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,
  'permission_denials':[], 'structured_output':wire}}))

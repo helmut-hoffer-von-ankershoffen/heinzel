@@ -26,7 +26,6 @@ from heinzel.kernel import (
     record_usage,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
-from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel._autonomous_schedule import (
     AutonomousSchedules,
     ScheduleBinding,
@@ -479,7 +478,9 @@ def _check_in_context_source(service: SessionCrud) -> CheckInChatContextSource:
 def _register_skill_operations(module: Module) -> None:
     """Declare private draft and sharing-review operations; no sharing authority is issued."""
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private", "mcp-stdio"}, audience="everyday")
+    @module.operation(
+        private=True, read_only=False, heads={"web", "api-private", "mcp-stdio"}, audience="everyday", agents="propose"
+    )
     def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete private draft and intended scope
         service: SessionCrud,
         session_id: Identity,
@@ -562,7 +563,7 @@ def _register_contract_review_operations(module: Module) -> None:
         proposal = service.scheduled_agent_proposal(session_id, request_id)
         return ContractReviewView(proposal=proposal, accepted=review.applied(session_id, request_id))
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def accept_agent_contract(  # noqa: PLR0913, PLR0917 - exact trusted confirmation
         service: SessionCrud,
         confirmation: ApprovalConfirmation,
@@ -650,13 +651,13 @@ def _register_connected_read_operations(module: Module) -> None:
         """Inspect current exact connected-read proposal; this does not approve it."""
         return service.review(session_id, request_id)
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def revoke_connected_read(service: ConnectedReadGrants, session_id: Identity, request_id: Request) -> bool:
         """Revoke this exact connected-read grant before future tool calls."""
         service.revoke(session_id, request_id)
         return True
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def approve_connected_read(  # noqa: PLR0913, PLR0917 - exact human confirmation
         service: ConnectedReadGrants,
         confirmation: ApprovalConfirmation,
@@ -724,7 +725,7 @@ def _register_connected_read_set_operations(module: Module) -> None:
         """Inspect the latest valid, unrevoked whole-set approval without executing a read."""
         return service.approved(session_id)
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def approve_connected_read_set(  # noqa: PLR0913, PLR0917 - exact human confirmation
         service: ConnectedReadSetApprovals,
         confirmation: ApprovalConfirmation,
@@ -736,7 +737,7 @@ def _register_connected_read_set_operations(module: Module) -> None:
         """Record an exact trusted human-confirmed read-set approval; do not execute a read."""
         return service.approve(session_id, request_id, review, approval_proof, confirmation)
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def revoke_connected_read_set(
         service: ConnectedReadSetApprovals, session_id: Identity, request_id: Request
     ) -> bool:
@@ -803,7 +804,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
         service.pause(session_id, request_id)
         return service.review(session_id, request_id)
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def approve_agent_schedule(  # noqa: PLR0913, PLR0917 - exact trusted action confirmation
         service: AutonomousSchedules,
         confirmation: ApprovalConfirmation,
@@ -818,7 +819,6 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
 
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
-    _register_frontdoor_operations(module)
     register_level_operations(module)
     _register_lifecycle_operations(module)
 
@@ -913,6 +913,7 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         models=KernelPluginModels(kernel),
         usage=lambda entry: record_usage(kernel, entry),
         emitter=lambda: kernel.resolve(Progress).emitter(),
+        tools_kernel=kernel,
     )
     service.questions = QuestionRelay(
         service,
@@ -1024,37 +1025,6 @@ def _register_history_search(module: Module) -> None:
         return indexed_search(service, request)
 
 
-def _register_frontdoor_operations(module: Module) -> None:
-    """Register the bounded prompt frontdoor without changing the CLI parser or granting runtime authority."""
-
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
-    def start_helper(  # noqa: PLR0913, PLR0917 - exact prompt and independent injected services
-        kernel: Kernel,
-        service: SessionCrud,
-        chat: UserChatService,
-        request_id: Request,
-        name: Annotated[str, Field(description="Your Heinzel's display name.", min_length=1, max_length=100)],
-        prompt: Annotated[
-            str,
-            Field(
-                description="The exact first chat message; grants no connected access or schedule.",
-                min_length=1,
-                max_length=32000,
-            ),
-        ],
-    ) -> UserChatAnswer:
-        """Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-
-        Raises:
-            HeinzelError: If the feature is off, request changed or selected model access is unavailable.
-        """
-        if not feature_enabled(kernel.settings, "connected_frontdoor"):
-            msg = "The connected Heinzel frontdoor is not enabled"
-            raise HeinzelError(msg)
-        created = service.new_chat(request_id, name, initial_message=prompt)
-        return asyncio.run(chat.answer(created.session_id, request_id))
-
-
 _HUMAN_ORIGINS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 
 
@@ -1107,7 +1077,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     module.service(ApprovalConfirmation, _approval_confirmation)
     module.service(CheckInChatContextSource, _check_in_context_source)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def new_chat(
         service: SessionCrud,
         request_id: Request,
@@ -1136,7 +1106,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn."""
         return service.snapshot(session_id, cursor=cursor, limit=limit)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def profile(  # noqa: PLR0913 - flat private HTTP body binds request identity and optimistic profile revision
         service: SessionCrud,
         session_id: Identity,
@@ -1161,6 +1131,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         # exact-intent human approval, and mcp-stdio keeps it out of unauthenticated streamable HTTP.
         heads=frozenset({"cli", "web", "api-private", "mcp-stdio", "mcp-check-in"}),
         audience="everyday",
+        agents="propose",
     )
     def propose_check_in(
         service: SessionCrud,
@@ -1173,7 +1144,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def associate_artifact(
         service: SessionCrud,
         session_id: Identity,
@@ -1195,7 +1166,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """List local principal-submitted file associations without accessing the provider."""
         return service.personal_artifacts(session_id)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
         service: SessionCrud,
         session_id: Identity,
@@ -1212,7 +1183,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """Save an inert agent execution proposal; it neither approves nor starts a model turn."""
         return service.propose_scheduled_agent(session_id, request_id, contract, max_usd, timeout_seconds)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete flat private API terms
         service: SessionCrud,
         session_id: Identity,
@@ -1245,7 +1216,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """Inspect the exact inert proposal; a separate future human approval is required to run it."""
         return service.scheduled_agent_proposal(session_id, request_id)
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def schedule_control(  # noqa: PLR0913, PLR0917 - flat private HTTP input binds the approval to its preview
         service: SessionCrud,
         current: CurrentUser,
@@ -1317,7 +1288,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
                 expected_preview_hash,
             )
 
-    @module.operation(private=True, read_only=False, audience="everyday")
+    @module.operation(private=True, read_only=False, audience="everyday", agents="propose")
     def chat(
         service: SessionCrud,
         session_id: Identity,

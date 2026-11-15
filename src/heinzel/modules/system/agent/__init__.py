@@ -15,13 +15,13 @@ def skills(service: AgentService) -> list[Skill]:
     return service.skills()
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def install(service: AgentService) -> list[InstalledSkill]:
     """Copy Heinzelmännchen's skills into each configured agent skill directory."""
     return service.install()
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def uninstall(service: AgentService) -> list[InstalledSkill]:
     """Remove Heinzelmännchen's skills from each configured agent skill directory."""
     return service.uninstall()

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { BROWSER_PARTITION, createMiniBrowser, deviceDialog } from "../src/mini-browser.js";
+import { BROWSER_PARTITION, MAX_FAVICON_BYTES, MAX_FAVICON_DOWNLOAD, createMiniBrowser, deviceDialog, smallFavicon, smallPng } from "../src/mini-browser.js";
 
 function fixture(configure = async () => {}, extra = {}) {
   const frame = { processId: 1, frameToken: "main", url: "http://127.0.0.1:8737/", detached: false, isDestroyed: () => false };
@@ -13,6 +13,8 @@ function fixture(configure = async () => {}, extra = {}) {
     connection: () => ({ origin: "http://127.0.0.1:8737", token: "a".repeat(32) }),
     createSession: (partition, config) => {
       const session = Object.assign(new EventEmitter(), { partition, config, clearStorageData: async () => calls.push(["clear"]),
+        setSpellCheckerEnabled: (enabled) => calls.push(["spellcheck", enabled]),
+        setSpellCheckerLanguages: (languages) => calls.push(["languages", languages]),
         setPermissionCheckHandler: (handler) => { session.check = handler; },
         setPermissionRequestHandler: (handler) => { session.request = handler; },
         setDevicePermissionHandler: (handler) => { session.device = handler; },
@@ -205,7 +207,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
   const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
-  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
   assert.deepEqual(opened, ["https://example.com/page?q=1"]);
@@ -407,4 +409,347 @@ test("clear waits for a guest that is still opening before it wipes", async () =
   await clearing;
   const order = f.calls.map(([name, target]) => (name === "load" ? target : name));
   assert.ok(order.indexOf("about:blank") < order.indexOf("clear"), order.join(" "));
+});
+
+const BOUNDS = { x: 0, y: 40, width: 400, height: 300 };
+
+test("tabs: open, select and close; every tab shares the one partition and is tagged with its owner", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const second = await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  const blank = await f.invoke({ action: "new-tab" });
+  assert.equal(blank.tabs.length, 3);
+  assert.deepEqual(blank.tabs.map((tab) => tab.owner), ["person", "person", "person"]);
+  assert(blank.tabs.every((tab) => /^t-[0-9a-f]{8}$/.test(tab.id)));
+  assert.equal(blank.selected, blank.tabs[2].id);
+  assert.equal(f.sessions.length, 1);
+  assert(f.options.every((o) => o.webPreferences.session === f.sessions[0] && o.webPreferences.sandbox === true));
+  assert.equal(second.tabs[1].url, "https://two.example.com/");
+  const [a, b] = blank.tabs;
+  // Only the selected tab with a page is shown.
+  await f.invoke({ action: "layout", bounds: BOUNDS });
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [false, false, false]);
+  assert.equal((await f.invoke({ action: "select-tab", tab: a.id })).selected, a.id);
+  assert.deepEqual(f.calls.filter((c) => c[0] === "visible").slice(-3).map((c) => c[1]), [true, false, false]);
+  assert.equal((await f.invoke({ action: "state" })).url, "https://one.example.com/");
+  assert.equal((await f.invoke({ action: "close-tab", tab: a.id })).selected, b.id);
+  assert.equal(f.views[0].webContents.isDestroyed(), true);
+  const last = (await f.invoke({ action: "close-tab", tab: blank.tabs[2].id }));
+  assert.equal(last.selected, b.id);
+  assert.equal((await f.invoke({ action: "close-tab", tab: b.id })).tabs.length, 0);
+  assert.equal((await f.invoke({ action: "state" })).status, "empty");
+});
+
+test("tabs: ids are checked, the limit is 8, and bad tab commands are refused", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (const bad of [{ action: "select-tab" }, { action: "select-tab", tab: "t-00000000" }, { action: "close-tab", tab: "../x" },
+    { action: "close-tab", tab: 5 }, { action: "state", tab: "nope" }, { action: "new-tab", tab: "t-00000000" },
+    { action: "tabs", extra: 1 }, { action: "new-tab", url: "http://127.0.0.1:8737/" }, { action: "new-tab", url: "https://x.example.com:8443" }])
+    await assert.rejects(f.invoke(bad), /./, JSON.stringify(bad));
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 8);
+});
+
+test("tabs: every ADR 0140 rule holds in each tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  for (const view of f.views) {
+    const contents = view.webContents;
+    let prevented = 0;
+    contents.emit("will-redirect", { url: "http://127.0.0.1:8737", preventDefault: () => prevented++ });
+    contents.emit("will-navigate", { url: "file:///etc/passwd", preventDefault: () => prevented++ });
+    contents.emit("will-attach-webview", { preventDefault: () => prevented++ });
+    assert.equal(prevented, 3);
+    assert.deepEqual(contents.popup({ url: "https://x.example.com" }), { action: "deny" });
+  }
+  assert(f.calls.filter((c) => c[0] === "webrtc").length === 2);
+});
+
+test("tabs: Clear browsing data and closing the window cover every tab", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "clear" });
+  const loads = f.calls.filter((c) => c[0] === "load").map((c) => c[1]);
+  assert.deepEqual(loads.filter((u) => u === "about:blank").length, 2);
+  assert.equal(loads.filter((u) => u === "https://two.example.com/").length, 2);
+  f.owner.emit("closed");
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  await settle();
+  assert.equal(f.calls.filter((c) => c[0] === "network-close").length, 1);
+});
+
+test("tabs: the product page navigating or the panel hiding keeps tabs; only a new document closes them", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  await f.invoke({ action: "hide" });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true });
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+  f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+});
+
+test("tabs: the limit counts the person's own tabs, and a foreign-owner tab does not use it", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  for (let i = 1; i < 8; i++) await f.invoke({ action: "new-tab" });
+  await assert.rejects(f.invoke({ action: "new-tab" }), /Too many tabs/);
+});
+
+test("links: a link opens a new selected tab; a refused address or a full strip leaves a note with the link", async () => {
+  const opened = [];
+  const f = fixture(undefined, { openExternal: async (url) => { opened.push(url); return true; } });
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const first = await f.controller.openLink(f.owner, "https://two.example.com/page");
+  assert.equal(first.tabs.length, 2);
+  assert.equal(first.selected, first.tabs[1].id);
+  assert.equal(first.tabs[1].url, "https://two.example.com/page");
+  assert.equal(first.link, null);
+  const refused = await f.controller.openLink(f.owner, "http://example.com/plain");
+  assert.deepEqual(refused.link, { url: "http://example.com/plain", reason: "refused", external: true });
+  assert.equal(refused.tabs.length, 2);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["http://example.com/plain"]);
+  opened.length = 0;
+  const local = await f.controller.openLink(f.owner, "https://localhost/x");
+  assert.equal(local.link.reason, "refused");
+  assert.equal(local.link.external, false);
+  // Nothing is offered for a local target, so the command opens nothing.
+  assert.equal((await f.invoke({ action: "link-external" })).link.reason, "refused");
+  assert.deepEqual(opened, []);
+  for (let i = 2; i < 8; i++) await f.invoke({ action: "new-tab" });
+  const full = await f.controller.openLink(f.owner, "https://late.example.com/");
+  assert.deepEqual(full.link, { url: "https://late.example.com/", reason: "limit", external: true });
+  assert.equal(full.tabs.length, 8);
+  assert.equal((await f.invoke({ action: "link-external" })).link, null);
+  assert.deepEqual(opened, ["https://late.example.com/"]);
+  assert.equal((await f.controller.openLink(f.owner, "https://late.example.com/")).link.reason, "limit");
+  assert.equal((await f.invoke({ action: "link-dismiss" })).link, null);
+});
+
+test("links: a page's target=_blank opens a tab only right after the person's input", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  const contents = f.views[0].webContents;
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 1);
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  assert.deepEqual(contents.popup({ url: "https://pop.example.com/" }), { action: "deny" });
+  await settle();
+  const after = await f.invoke({ action: "tabs" });
+  assert.equal(after.tabs.length, 2);
+  assert.equal(after.tabs[1].url, "https://pop.example.com/");
+  contents.emit("before-input-event", {}, { type: "mouseDown" });
+  contents.popup({ url: "http://127.0.0.1:8737/" });
+  await settle();
+  assert.equal((await f.invoke({ action: "tabs" })).tabs.length, 2);
+});
+
+// --- favicons: the page's own icon, read in the guest partition, kept small per origin ---
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24)]);
+const PNG_URL = `data:image/png;base64,${PNG.toString("base64")}`;
+// A real streamed body, so the reader, the cap and the cancel are the ones the app uses.
+const iconResponse = (body = PNG, type = "image/png", ok = true) => {
+  const response = new Response(body, { status: ok ? 200 : 404, headers: { "content-type": type } });
+  response.arrayBuffer = async () => { throw new Error("the whole body must never be buffered"); };
+  return response;
+};
+const iconSettled = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function withIcon(fetch, extra = {}) {
+  const f = fixture(async () => {}, extra);
+  await f.invoke({ action: "navigate", url: "https://example.com/page" });
+  const fetched = [];
+  f.sessions[0].fetch = async (url, init) => { fetched.push([url, init]); return fetch(url); };
+  return { ...f, fetched, icon: async (urls) => { f.views[0].webContents.emit("page-favicon-updated", {}, urls); await iconSettled(); await iconSettled(); } };
+}
+
+test("a tab carries the icon its page showed, read without credentials in the guest partition", async () => {
+  const f = await withIcon(() => iconResponse());
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  await f.icon(["https://example.com/favicon.png"]);
+  assert.equal(f.fetched.length, 1);
+  assert.equal(f.fetched[0][0], "https://example.com/favicon.png");
+  assert.equal(f.fetched[0][1].credentials, "omit");
+  assert.ok(f.fetched[0][1].signal instanceof AbortSignal);
+  const state = await f.invoke({ action: "state" });
+  assert.equal(state.tabs[0].favicon, PNG_URL);
+});
+
+test("an icon is kept per origin: another tab of the same site shows it, another site does not", async () => {
+  const f = await withIcon(() => iconResponse());
+  await f.icon(["https://example.com/favicon.png"]);
+  await f.invoke({ action: "new-tab", url: "https://example.com/other" });
+  await f.invoke({ action: "new-tab", url: "https://example.org/" });
+  const { tabs } = await f.invoke({ action: "state" });
+  assert.deepEqual(tabs.map((tab) => tab.favicon), [PNG_URL, PNG_URL, null]);
+});
+
+test("icons that are not public HTTPS, not images, failing or too large are skipped for the next candidate", async () => {
+  const f = await withIcon((url) => url.endsWith("good.png") ? iconResponse()
+    : url.endsWith("html") ? iconResponse(PNG, "text/html")
+      : url.endsWith("missing") ? iconResponse(PNG, "image/png", false)
+        : url.endsWith("big") ? iconResponse(Buffer.concat([PNG, Buffer.alloc(MAX_FAVICON_BYTES)]))
+          : Promise.reject(new Error("offline")));
+  await f.icon(["http://example.com/plain.png", "data:image/png;base64,AAAA", "http://127.0.0.1:8737/favicon.ico",
+    "https://example.com/html"]);
+  assert.deepEqual(f.fetched.map(([url]) => url), ["https://example.com/html"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  await f.icon(["https://example.com/missing", "https://example.com/big", "https://example.com/offline", "https://example.com/good.png"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+  await f.icon("not a list");
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("clearing browsing data forgets the icons", async () => {
+  const f = await withIcon(() => iconResponse());
+  await f.icon(["https://example.com/favicon.png"]);
+  await f.invoke({ action: "clear" });
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+});
+
+test("the app's decoder reduces any icon to a small PNG and refuses what it cannot read", async () => {
+  const image = (size, empty = false) => ({ isEmpty: () => empty, getSize: () => ({ width: size, height: size }),
+    resize: (to) => { image.resized = to; return image(32); }, toPNG: () => PNG });
+  assert.equal(smallFavicon(Buffer.from("ico"), () => image(256)), PNG_URL);
+  assert.deepEqual(image.resized, { width: 32, height: 32, quality: "best" });
+  image.resized = null;
+  assert.equal(smallFavicon(Buffer.from("ico"), () => image(16)), PNG_URL);
+  assert.equal(image.resized, null);
+  assert.equal(smallFavicon(Buffer.from("junk"), () => image(0, true)), null);
+  assert.equal(smallFavicon(PNG, () => image(0, true)), PNG_URL);
+  assert.equal(smallFavicon(PNG, () => { throw new Error("decoder"); }), null);
+  assert.equal(smallPng("text"), null);
+  assert.equal(smallPng(Buffer.concat([PNG, Buffer.alloc(MAX_FAVICON_BYTES)])), null);
+  const f = await withIcon(() => iconResponse(Buffer.from("ico"), "image/x-icon"), { faviconImage: () => "javascript:alert(1)" });
+  await f.icon(["https://example.com/favicon.ico"]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+});
+
+test("a chunked icon body without a length is cancelled at the cap, not buffered", async () => {
+  let pulled = 0, cancelled = false;
+  const endless = () => new Response(new ReadableStream({
+    pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(64 * 1024)); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 }), { headers: { "content-type": "image/png" } });
+  const f = await withIcon((url) => url.endsWith("endless") ? endless() : iconResponse());
+  await f.icon(["https://example.com/endless"]);
+  for (let turn = 0; turn < 50 && !cancelled; turn += 1) await iconSettled();
+  assert.equal(cancelled, true);
+  assert.ok(pulled * 64 * 1024 <= MAX_FAVICON_DOWNLOAD + 2 * 64 * 1024, `read ${pulled} chunks`);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, null);
+  // The next candidate still gets its turn.
+  await f.icon(["https://example.com/endless", "https://example.com/good.png"]);
+  for (let turn = 0; turn < 50 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1) await iconSettled();
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("an icon whose answer or body never ends is given up after the timeout", async () => {
+  const signals = [];
+  // Like the network: the pending answer and the pending read both fail when the request is aborted.
+  const onAbort = (signal, fail) => signal.addEventListener("abort", () => fail(new Error("aborted")), { once: true });
+  const f = await withIcon(() => iconResponse(), { faviconTimeout: 20 });
+  f.sessions[0].fetch = async (url, init) => {
+    signals.push(init.signal);
+    if (url.endsWith("no-answer")) return new Promise((_resolve, reject) => onAbort(init.signal, reject));
+    if (url.endsWith("stalled")) return new Response(new ReadableStream({
+      start(controller) { controller.enqueue(PNG); onAbort(init.signal, (error) => controller.error(error)); },
+    }), { headers: { "content-type": "image/png" } });
+    return iconResponse();
+  };
+  f.views[0].webContents.emit("page-favicon-updated", {}, ["https://example.com/no-answer", "https://example.com/stalled",
+    "https://example.com/good.png"]);
+  for (let turn = 0; turn < 200 && !(await f.invoke({ action: "state" })).tabs[0].favicon; turn += 1)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(signals.map((signal) => signal.aborted), [true, true, false]);
+  assert.equal((await f.invoke({ action: "state" })).tabs[0].favicon, PNG_URL);
+});
+
+test("a refused icon answer is aborted, so its body is never downloaded", async () => {
+  const f = await withIcon((url) => iconResponse(PNG, url.endsWith("html") ? "text/html" : "image/png"));
+  await f.icon(["https://example.com/html"]);
+  assert.equal(f.fetched[0][1].signal.aborted, true);
+});
+
+/** As Electron does once a window is destroyed: it says so, and everything else of it throws. */
+function destroyWindow(owner) {
+  const gone = () => { throw new TypeError("Object has been destroyed"); };
+  owner.isDestroyed = () => true;
+  for (const key of ["webContents", "contentView"]) Object.defineProperty(owner, key, { get: gone });
+  owner.isFocused = gone;
+  owner.getContentSize = gone;
+}
+
+test("quit after the window is gone: closeAll never throws, closes every tab and leaves no listener", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  // The window closes, the app quits from its own "closed" listener, and only then is the browser told to close.
+  destroyWindow(f.owner);
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert(f.views.every((view) => view.webContents.isDestroyed()));
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.deepEqual(f.calls.filter(([name]) => name === "remove"), []);
+  for (const name of ["closed", "blur"]) assert.equal(f.owner.listenerCount(name), 0, name);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+  // The window's own "closed" arrives after that: nothing is left to do, and nothing throws.
+  assert.doesNotThrow(() => f.owner.emit("closed"));
+  await assert.rejects(f.invoke({ action: "state" }));
+});
+
+test("quit: a tab that cannot be closed does not keep the others or the network open", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  f.views[0].webContents.close = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => f.controller.closeAll());
+  assert.equal(f.views[1].webContents.isDestroyed(), true);
+  // The network is let go once its guests are closed, a moment later.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.calls.filter(([name]) => name === "network-close"), [["network-close"]]);
+  assert.equal(f.owner.listenerCount("closed"), 0);
+  // Even a window whose listeners cannot be taken off any more does not stop the quit.
+  const g = fixture();
+  await g.invoke({ action: "navigate", url: "https://one.example.com" });
+  g.owner.off = () => { throw new TypeError("Object has been destroyed"); };
+  assert.doesNotThrow(() => g.controller.closeAll());
+  assert.equal(g.views[0].webContents.isDestroyed(), true);
+  assert.equal(g.sender.listenerCount("did-start-navigation"), 0);
+});
+
+test("spell check: websites get it only where it downloads nothing, so no dictionary is ever fetched for them", async () => {
+  // Chromium's own spell checker fetches its dictionaries from a server; a website session fetches nothing on its own.
+  for (const platform of ["linux", "win32"]) {
+    const f = fixture(undefined, { platform });
+    await f.invoke({ action: "navigate", url: "https://one.example.com" });
+    await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+    assert(f.options.every((option) => option.webPreferences.spellcheck === false), platform);
+    assert.deepEqual(f.calls.filter(([name]) => name === "spellcheck" || name === "languages"), [["spellcheck", false], ["languages", []]], platform);
+    // Switched off on the partition before any guest exists, so the media player's guest is covered too.
+    assert(f.calls.findIndex(([name]) => name === "spellcheck") < f.calls.findIndex(([name]) => name === "add"));
+  }
+  // macOS uses the system's spell checker, which downloads nothing: it stays.
+  const mac = fixture(undefined, { platform: "darwin" });
+  await mac.invoke({ action: "navigate", url: "https://one.example.com" });
+  assert.equal(mac.options[0].webPreferences.spellcheck, true);
+  assert.deepEqual(mac.calls.filter(([name]) => name === "spellcheck" || name === "languages"), []);
+});
+
+test("a website's dialogs stay off: an alert shows nothing and a confirm() is never a yes", async () => {
+  // The agent engine never answers a page's dialog; that these are refused in the guest is what keeps a click from
+  // becoming an unapproved "OK".
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://one.example.com" });
+  await f.invoke({ action: "new-tab", url: "https://two.example.com" });
+  assert(f.options.every((option) => option.webPreferences.disableDialogs === true && option.webPreferences.safeDialogs === true));
 });

@@ -40,7 +40,8 @@ from heinzel.heads import _stream as operation_stream
 from heinzel.heads import api, mcp, web
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
-from heinzel.kernel import Config, Kernel, boot
+from heinzel.kernel import ChatTool, Config, Kernel, boot
+from heinzel.kernel._chat_tools import agent_item
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest
 from heinzel.modules.heinzel._session_operations import _crud
@@ -100,7 +101,7 @@ def fake_runner_module(script: Script, ran: list[str]) -> Module:
             surface = {item.name: item for item in exposed(script.kernel, head)}
             for name, arguments in script.calls:
                 emit("tool", {"name": name})
-                mcp.chat_tool(script.kernel, surface[name], session, local=True)(**arguments)
+                mcp.chat_tool(ChatTool(script.kernel, surface[name], session))(**arguments)
             if script.result is not None:
                 return script.result
             for word in WORDS:
@@ -936,7 +937,7 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
         for item in exposed(kernel, mcp.HEAD)
         if item.record.qualname == "heinzel" and item.operation.name == "schedule-control"
     )
-    handler = mcp.tool(kernel, mcp._mcp_item(item), local=True)
+    handler = mcp.tool(kernel, agent_item(item), local=True)
 
     async def schema():
         async with Client(mcp.build(kernel)) as client:

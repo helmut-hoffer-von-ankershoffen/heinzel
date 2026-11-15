@@ -150,7 +150,7 @@ if n in (0,2,4):
         4:{{}}}}[n]
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':name,'arguments':args}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  wire={{'kind':'tool','name':name,'arguments':{{'report':'Read complete.','summary':'Read complete.'}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permission_denials':[],'structured_output':wire}}))
 """,

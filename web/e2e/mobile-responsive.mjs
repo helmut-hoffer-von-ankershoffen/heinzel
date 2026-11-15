@@ -76,6 +76,8 @@ const result = {
 };
 
 async function viewportFacts(page, name) {
+  // The chat renders after the page: measure its scroll owner only once the conversation is there.
+  await page.locator('[aria-label="Chat"] .overflow-y-auto').first().waitFor({ state: "attached", timeout: 10_000 });
   const facts = await page.evaluate(() => {
     const root = document.documentElement;
     const shell = document.querySelector('[data-testid="app-shell"]');

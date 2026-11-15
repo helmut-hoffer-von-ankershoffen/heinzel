@@ -3,6 +3,7 @@ status: proposed
 date: 2026-11-05
 implementation: partial
 decision-makers: maintainer, owner (device and security-key prompts, kept sign-ins, player shares the sign-in)
+amended-by: 0162
 related: 0039, 0045, 0115
 ---
 
@@ -37,6 +38,11 @@ survive closing the panel and restarting the app. "Clear browsing data" takes op
 its cookies, storage, cache and authentication cache, revokes device grants and reloads the pages; a failed wipe is
 shown. Electron keeps a device without a serial number outside the permission handler, so that grant lasts until the
 device is unplugged or the app quits.
+
+A website session fetches nothing on its own: every request in it comes from a page. Chromium's own spell checker
+downloads its dictionaries from a server, so guests of the website partition get spell check only on macOS, where
+the system's spell checker is used and nothing is downloaded; on other platforms it is off for the partition and
+for every guest view, the media player's included. The product's own session is outside this rule.
 
 WebAuthn is not refused. Electron serves no platform passkey (iCloud Keychain, Touch ID) for third-party sites: that
 needs a signed app whose identifier each relying party lists in its `apple-app-site-association`. The page then only
@@ -83,6 +89,52 @@ The ordinary web application offers an address field and a user-clicked external
 It explains that browsing inside the panel needs the desktop application. No CSP, iframe, backend, plugin or service
 permission changes are part of this feature. The former `sidebar_browser` preview flag is retired: the panel is always available in the desktop application
 (a setting that still names it is ignored). Every safety rule here stays in force.
+
+Since 0.9.45 the panel has tabs: up to 8 of the person's own per window, opened with the plus button or Cmd/Ctrl-T and
+closed with Cmd/Ctrl-W. Every tab is its own guest in the one `persist:hz-browser` partition and keeps every rule above.
+Each tab carries an `owner` (`person` today), so tabs of agents can be told apart later. Closing the panel hides the
+tabs. They end with the product window or its next document, and Clear browsing data covers all of them.
+
+In the desktop app, links open in the built-in browser by default, in a new selected tab with the panel opened. That
+covers links in the Heinzel UI (chat messages, cards, "Learn more"), `window.open` and target=_blank from embeds, and
+target=_blank from pages inside the browser. Only http and https links go there. Each needs the person's own input
+right before it (the gesture rule of the external opener), at most one every half second.
+
+The rules of a typed address apply: a link to a non-public or non-HTTPS target is refused with a visible note. When all
+8 tabs are in use the link is not lost: the panel shows a note with the link and a button to open it in the default
+browser. Links with `mailto:` and other schemes go to the system as before, and so does the "Open in browser" button.
+
+A switch in Settings > Browser, "Open links in the built-in browser", is on by default and applies with no restart.
+Off, links open in the default browser as before. The choice is a setting of the desktop app itself, kept in a small
+file in its own data folder by the main process and read by the page through the bridge. A reset of the page's storage
+cannot turn it on again. In the PWA nothing changes: a link opens a new browser tab.
+
+Since 0.9.45 the browser has bookmarks. They are owner data in hz, not browser state: one ordered tree of folders and
+bookmarks per owner, kept by the `system.bookmark` module in the data directory and changed only through its operations
+(`list`, `add`, `folder`, `edit`, `move`, `remove`, `restore`). Nothing of it lives in the `persist:hz-browser`
+partition, so Clear browsing data keeps every bookmark. A bookmark is an HTTPS address without sign-in details, as the
+browser opens no other. A removed entry, a folder with everything in it, stays restorable until newer removals push it
+out.
+
+The address bar has a star that adds the shown page and then edits its name and folder or removes it. The manager at
+`/bookmarks` shows the tree: folders, rename, drag and buttons to reorder and move, and remove with undo.
+
+The left navigation shows the whole tree: folders open and close, and which are open is remembered in that browser;
+every bookmark has its favicon and title. It is a tree view for the keyboard and screen readers: arrow keys move, right
+opens a folder, left folds it, Enter opens. A long tree scrolls inside its own section. The collapsed rail keeps the
+top-level bookmarks as icons.
+
+A bookmark opens a new tab of the built-in browser in the desktop app, and a new browser tab in the PWA. Its rows are
+buttons, like the rest of the navigation.
+
+A favicon is the icon the page itself named (`page-favicon-updated`): the desktop reads it inside the guest partition,
+under the same public-HTTPS rule and proxy as the page, reduces it to a 32-pixel PNG and keeps it per origin for its
+tabs. For the origin of a bookmark the page hands that small image to hz, which checks it and caches it per origin in
+the cache directory. No third-party favicon service is asked; an origin without an icon shows a globe.
+
+Agents can read the tree and add to it: `list`, `add` and `folder` are MCP tools over stdio, and a chat proposes an
+`add` like any other write. Rename, move, remove, restore and the favicon cache are the person's (CLI and web app only),
+so no agent can propose them. The unauthenticated REST and HTTP MCP heads get none of the bookmark operations.
 
 ### Consequences
 

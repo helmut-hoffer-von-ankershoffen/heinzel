@@ -105,7 +105,7 @@ def list_(
     return service.listing(limit, before=before, resolved=resolved)
 
 
-@module.operation(read_only=False, heads=HEADS)
+@module.operation(read_only=False, heads=HEADS, agents="approve")
 def ack(
     service: NotifyService,
     ids: Annotated[

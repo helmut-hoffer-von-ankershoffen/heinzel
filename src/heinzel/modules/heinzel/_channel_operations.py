@@ -31,7 +31,7 @@ def register_channel_operations(module: Module) -> None:
         """Stage exact posting terms for separate human consent; no message is sent."""
         return delivery.propose(session_id, request_id, channel, notice=notice, write_request=write_request)
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def deliver_channel_item(  # noqa: PLR0913, PLR0917 - exact confirmation and injected services
         delivery: ChannelDelivery,
         confirmation: ApprovalConfirmation,

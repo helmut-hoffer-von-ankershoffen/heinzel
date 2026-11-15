@@ -4,6 +4,7 @@
 // is the daemon, the files, what comes from Claude and updates. A module gets its own entry only where it adds a page
 // of its own; installed providers declare their own pages and semantic icons.
 import {
+  AppWindow,
   Bell,
   Cpu,
   Download,
@@ -20,6 +21,7 @@ import {
   UserRound,
   Users,
   WandSparkles,
+  Waypoints,
 } from "lucide-react";
 import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
 import { ICONS } from "@/components/Contributions";
@@ -128,6 +130,14 @@ export const PAGES: Page[] = [
     keywords: "notices alerts desktop browser",
   },
   {
+    id: "browser",
+    title: "Browser",
+    icon: AppWindow,
+    heading: "preferences",
+    owns: [],
+    keywords: "links open built-in browser default tabs",
+  },
+  {
     id: "ai",
     title: "AI",
     icon: Sparkles,
@@ -188,6 +198,14 @@ export const PAGES: Page[] = [
     heading: "computer",
     owns: [],
     keywords: "restart reconnect browser ui service",
+  },
+  {
+    id: "mcp",
+    title: "MCP",
+    icon: Waypoints,
+    heading: "computer",
+    owns: ["hz.mcp_http"],
+    keywords: "agents claude code codex cursor tokens connect endpoint",
   },
   {
     id: "daemon",

@@ -26,6 +26,7 @@ import { createPortal } from "react-dom";
 import { Link, matchPath, NavLink, useLocation } from "react-router";
 import { useContracts, useExpert, useNavigation, usePlayful, useProfile, useSetExpert } from "@/api/queries";
 import { setVizStage } from "@/audio/viz/stage";
+import { BookmarkNavigation } from "@/bookmarks/BookmarkNavigation";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -234,6 +235,7 @@ function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
           ))}
         </ul>
         <ProviderNavigation />
+        <BookmarkNavigation linkClass={link({ isActive: false })} />
       </nav>
       {/* Spaced from the navigation only while it holds something: an empty slot leaves no band behind. */}
       <div className="not-empty:mt-4 flex shrink-0 flex-col">
@@ -358,6 +360,7 @@ function Rail({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
           </NavLink>
         ))}
         <ProviderNavigation compact />
+        <BookmarkNavigation compact linkClass={railLink({ isActive: false })} />
       </nav>
       <div ref={registerSlot} data-sound-dock data-sound-compact="true" className="shrink-0" />
       <Footer compact />

@@ -23,6 +23,7 @@ import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
+import { useBrowserAgents, useCommitAttention } from "./browserAgents";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -113,6 +114,7 @@ function Layout() {
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
+  const browserAgents = useBrowserAgents();
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
@@ -490,6 +492,11 @@ function Layout() {
       selectPanel("browser");
     }
   };
+  // An agent's commit waits at most two minutes: the card comes to the person, not the other way round.
+  useCommitAttention(browserAgents.waiting, browserEnabled && browserOpen && selectedPanel === "browser", () => {
+    setBrowserOpen(true);
+    selectPanel("browser");
+  });
   const toggleTerminal = (canClose: boolean) => {
     if (canClose && terminalOpen && selectedPanel === "terminal") {
       setTerminalOpen(false);
@@ -510,6 +517,7 @@ function Layout() {
           "sidebar",
           "terminal",
           "browser",
+          "browser-show",
           "chat",
           "notifications",
           "help",
@@ -519,7 +527,10 @@ function Layout() {
           if (action === "search") setSearchOpen(true);
           else if (action === "sidebar") setNavOpen((open) => !open);
           else if (action === "terminal") menu.current.toggleTerminal(true);
-          else if (action === "browser") {
+          else if (action === "browser-show") {
+            // A link opened a tab: show the panel without toggling it shut.
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(false);
+          } else if (action === "browser") {
             if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
           } else if (action === "chat") menu.current.toggleChat(true);
           else if (action === "notifications" || action === "help")
@@ -677,7 +688,11 @@ function Layout() {
                           id: "browser",
                           title: t("browser.title"),
                           content: (
-                            <BrowserPanel active={selectedPanel === "browser"} onClose={() => setBrowserOpen(false)} />
+                            <BrowserPanel
+                              bookmarks
+                              active={selectedPanel === "browser"}
+                              onClose={() => setBrowserOpen(false)}
+                            />
                           ),
                         },
                       ]
@@ -737,6 +752,7 @@ function Layout() {
             onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
             onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
+            browserAgents={browserAgents.mark}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => toggleTerminal(beside)}
           />,

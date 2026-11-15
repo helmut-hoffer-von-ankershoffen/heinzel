@@ -22,6 +22,7 @@ import { ChatSearch } from "@/chat/ChatSearch";
 import { setConversationBusy } from "@/chat/conversationBusy";
 import { rememberHeinzel } from "@/chat/defaultHeinzel";
 import { useDurableDraft } from "@/chat/durableDraft";
+import { HeinzelActions } from "@/chat/HeinzelActions";
 import { HeinzelHeader } from "@/chat/HeinzelHeader";
 import { MessageState } from "@/chat/MessageState";
 import { DayHeading, MessageTime } from "@/chat/MessageTime";
@@ -1288,6 +1289,7 @@ function DurableSessionView({
               />
             )),
           )}
+        <HeinzelActions sessionId={sessionId} refresh={newestKey} />
         {pendingAgentActions.length > 0 && (
           <ol className="space-y-2">
             {pendingAgentActions.map((action) => {

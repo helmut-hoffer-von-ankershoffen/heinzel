@@ -89,7 +89,7 @@ def _report(  # noqa: PLR0913 - one entry's fields
     return service.report({k: v for k, v in fields.items() if v is not None}, at=at)
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="direct")
 def read(  # noqa: PLR0913, PLR0917 - one entry's fields
     service: TelemetryService,
     heinzel: Heinzel,
@@ -110,7 +110,7 @@ def read(  # noqa: PLR0913, PLR0917 - one entry's fields
     )  # fmt: skip
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="direct")
 def drafted(  # noqa: PLR0913, PLR0917 - one entry's fields
     service: TelemetryService,
     heinzel: Heinzel,
@@ -128,7 +128,7 @@ def drafted(  # noqa: PLR0913, PLR0917 - one entry's fields
     )  # fmt: skip
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="approve")
 def approved(  # noqa: PLR0913, PLR0917 - one entry's fields
     service: TelemetryService,
     heinzel: Heinzel,
@@ -146,7 +146,7 @@ def approved(  # noqa: PLR0913, PLR0917 - one entry's fields
     )  # fmt: skip
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="approve")
 def published(  # noqa: PLR0913, PLR0917 - one entry's fields
     service: TelemetryService,
     heinzel: Heinzel,
@@ -164,7 +164,7 @@ def published(  # noqa: PLR0913, PLR0917 - one entry's fields
     )  # fmt: skip
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="direct")
 def fell_back(  # noqa: PLR0913, PLR0917 - one entry's fields
     service: TelemetryService,
     heinzel: Heinzel,
@@ -182,7 +182,7 @@ def fell_back(  # noqa: PLR0913, PLR0917 - one entry's fields
     )  # fmt: skip
 
 
-@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday", agents="direct")
 def heartbeat(
     service: TelemetryService,
     heinzel: Heinzel,
@@ -193,7 +193,7 @@ def heartbeat(
     return _report(service, "heartbeat", heinzel, None, description="", contract=contract, part=None, at=at)
 
 
-@module.operation(read_only=False, render=render_synced, heads=HEADS)
+@module.operation(read_only=False, render=render_synced, heads=HEADS, agents="direct")
 def sync(service: TelemetryService) -> Synced:
     """Copy your Heinzelmännchen's logs into your team repository's checkout, for you to commit and push."""
     return service.sync()

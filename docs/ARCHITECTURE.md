@@ -113,7 +113,10 @@ its operations as server-sent events at `/api/stream/<path>` (`heinzel.heads._st
 through `Progress.emitter()`, then its result. The chat (`system.runner.chat`, ADR 0045, proposed) runs the agent
 runner with hz's operations as tools from the MCP head in chat mode (`hz system serve mcp --chat <session>`, stdio
 only): read operations run, every other one goes to the kernel's `ActionGate` as a proposal that only the person's
-`hz chat confirm`, on the CLI and web heads only, runs. The typed client in `web/src/api/` is
+`hz chat confirm`, on the CLI and web heads only, runs. A Heinzel's own turn (`hz heinzel answer-chat`, a scheduled
+turn) runs its model inside hz and calls the same tools in-process, the browser's and found MCP servers' among them
+(ADR 0162, `modules/heinzel/_direct_tools.py`); what it proposes waits in the Heinzel's actions chat, a runner chat of
+the context kind `heinzel` bound to the owner, and shows as a card in the Heinzel's chat. The typed client in `web/src/api/` is
 generated from the OpenAPI document by `make fix` and checked by `make check`. The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
 a foreground loop; installed, launchd or systemd start that tick every few minutes instead
 ([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and

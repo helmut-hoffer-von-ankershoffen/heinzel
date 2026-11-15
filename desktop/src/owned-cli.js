@@ -120,6 +120,8 @@ export function createOwnedCli({
   spawn = nodeSpawn,
   executable = () => "hz",
   parse = parseConnection,
+  // Extra variables for the service only, such as the browser bridge token; never added to this process's own.
+  env = {},
   startupTimeoutMs = STARTUP_TIMEOUT_MS,
   stopTimeoutMs = STOP_TIMEOUT_MS,
   forceStopTimeoutMs = FORCE_STOP_TIMEOUT_MS,
@@ -166,6 +168,7 @@ export function createOwnedCli({
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "ignore"],
+          ...(Object.keys(env).length ? { env: { ...process.env, ...env } } : {}),
         });
       } catch {
         fail();

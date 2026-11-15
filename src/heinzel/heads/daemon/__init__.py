@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 from heinzel.kernel import HeinzelError, Kernel, OperationLet, using_tick_interval
+from heinzel.kernel._agent_writes import Caller, calling
 
 TICK_MODULE = "system.daemon"
 TICK_OPERATION = "tick"
@@ -48,7 +49,8 @@ def serve(
     with using_tick_interval(interval):
         while ticks is None or done < ticks:
             try:
-                report(kernel.invoke(operation))
+                with calling(Caller("daemon", "tick")):
+                    report(kernel.invoke(operation))
             except Exception as exc:  # noqa: BLE001 - isolate a single failing tick
                 report(exc)
             done += 1

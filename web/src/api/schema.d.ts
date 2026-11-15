@@ -2028,29 +2028,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/heinzel/start-helper": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-         * @description Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
-         *
-         *     Raises:
-         *         HeinzelError: If the feature is off, request changed or selected model access is unavailable.
-         */
-        post: operations["heinzel_start_helper"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/heinzel/tool-activity": {
         parameters: {
             query?: never;
@@ -2305,6 +2282,166 @@ export interface paths {
          * @description Remove Heinzelmännchen's skills from each configured agent skill directory.
          */
         post: operations["system_agent_uninstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a bookmark; an address already in that folder is kept once.
+         * @description Add a bookmark; an address already in that folder is kept once.
+         */
+        post: operations["system_bookmark_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rename a bookmark or folder, or change a bookmark's address.
+         * @description Rename a bookmark or folder, or change a bookmark's address.
+         */
+        post: operations["system_bookmark_edit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/favicon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the small icon a bookmarked site showed, per origin.
+         * @description Keep the small icon a bookmarked site showed, per origin.
+         */
+        post: operations["system_bookmark_favicon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an empty bookmark folder.
+         * @description Add an empty bookmark folder.
+         */
+        post: operations["system_bookmark_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the bookmarks and folders in their order, with each entry's id and folder.
+         * @description List the bookmarks and folders in their order, with each entry's id and folder.
+         */
+        get: operations["system_bookmark_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a bookmark or folder into another folder or to another place in its own.
+         * @description Move a bookmark or folder into another folder or to another place in its own.
+         */
+        post: operations["system_bookmark_move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+         * @description Remove a bookmark, or a folder with everything in it; `restore` brings it back.
+         */
+        post: operations["system_bookmark_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/bookmark/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring back a removed bookmark or folder to where it was.
+         * @description Bring back a removed bookmark or folder to where it was.
+         */
+        post: operations["system_bookmark_restore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3760,6 +3897,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/heinzel-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+         * @description Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+         *
+         *     Raises:
+         *         HeinzelError: If no owner is signed in.
+         */
+        get: operations["system_runner_chat_heinzel_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/list": {
         parameters: {
             query?: never;
@@ -4315,6 +4475,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every operation and tool with its heads, parameters and result, in four formats.
+         * @description List every operation and tool with its heads, parameters and result, in four formats.
+         */
+        get: operations["system_tools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/ui/actions": {
         parameters: {
             query?: never;
@@ -4541,6 +4721,66 @@ export interface paths {
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
         post: operations["system_update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/write/allow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Allow the writes a plugin marks direct to run without asking, for its installed version.
+         * @description Allow the writes a plugin marks direct to run without asking, for its installed version.
+         */
+        post: operations["system_write_allow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/write/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the writes agents asked for: what ran, what waited for you, and a line per agent.
+         * @description List the writes agents asked for: what ran, what waited for you, and a line per agent.
+         */
+        get: operations["system_write_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/write/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the plugin operations that ask to run directly for agents, and whether you allowed them.
+         * @description List the plugin operations that ask to run directly for agents, and whether you allowed them.
+         */
+        get: operations["system_write_plugins"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5215,6 +5455,82 @@ export interface components {
             warnings?: string[];
         };
         /**
+         * AgentWrite
+         * @description One write an agent asked for; the arguments only as a digest.
+         */
+        AgentWrite: {
+            /**
+             * Arguments
+             * @description A digest of the call's arguments; the arguments themselves are not kept.
+             */
+            arguments: string;
+            /**
+             * At
+             * Format: date-time
+             * @description When it was asked for.
+             */
+            at: string;
+            /**
+             * Attended
+             * @description Whether the person started that turn and watched it.
+             */
+            attended: boolean;
+            /**
+             * Caller
+             * @description Who asked: `heinzel:<session>`, `token:<key id>`, `local-agent:mcp-stdio`.
+             */
+            caller: string;
+            /**
+             * Module
+             * @description The module of the operation, e.g. `system.bookmark`.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation, e.g. `add`.
+             */
+            operation: string;
+            /**
+             * Outcome
+             * @description What happened.
+             * @enum {string}
+             */
+            outcome: "ran" | "failed" | "proposed" | "refused" | "over-budget";
+            /**
+             * Policy
+             * @description The operation's rule for agents.
+             * @enum {string}
+             */
+            policy: "direct" | "propose" | "approve" | "never";
+            /**
+             * Target
+             * @description The id of what it changed, where the call named one.
+             */
+            target?: string | null;
+        };
+        /**
+         * AgentWrites
+         * @description The writes agents asked for, latest first, and a line per agent.
+         */
+        AgentWrites: {
+            /**
+             * Callers
+             * @description One line per agent, busiest first.
+             */
+            callers?: components["schemas"]["CallerActivity"][];
+            /**
+             * Unattended Ran
+             * @description Writes that ran in turns nobody watched, in the last 24 hours: the digest's count.
+             * @default 0
+             */
+            unattended_ran: number;
+            /**
+             * Writes
+             * @description The entries asked for, latest first.
+             */
+            writes?: components["schemas"]["AgentWrite"][];
+        };
+        /**
          * AssetTypeDoc
          * @description An asset type of a playbook (ADR 0037).
          */
@@ -5484,6 +5800,77 @@ export interface components {
             state: "written" | "kept" | "skipped" | "conflict" | "removed";
         };
         /**
+         * Bookmark
+         * @description One entry of the tree: a bookmark with an address, or a folder holding entries.
+         */
+        Bookmark: {
+            /**
+             * Depth
+             * @description How deep it sits: 0 at the top level.
+             * @default 0
+             */
+            depth: number;
+            /**
+             * Id
+             * @description The entry's id, e.g. `b-1a2b3c4d`; the other operations take it.
+             */
+            id: string;
+            /**
+             * Kind
+             * @description A bookmark with an address, or a folder.
+             * @enum {string}
+             */
+            kind: "bookmark" | "folder";
+            /**
+             * Origin
+             * @description The address's origin, the key of its favicon.
+             */
+            origin?: string | null;
+            /**
+             * Parent
+             * @description The folder it is in; none at the top level.
+             */
+            parent?: string | null;
+            /**
+             * Title
+             * @description The name shown.
+             */
+            title: string;
+            /**
+             * Url
+             * @description The address; a folder has none.
+             */
+            url?: string | null;
+        };
+        /**
+         * BookmarkList
+         * @description The owner's bookmarks, depth-first in their order, with the cached favicons of their origins.
+         */
+        BookmarkList: {
+            /**
+             * Bookmarks
+             * @description Every entry, depth-first in order; `parent` and `depth` give the tree.
+             */
+            bookmarks?: components["schemas"]["Bookmark"][];
+            /**
+             * Changed
+             * @description The id of the entry this call added or changed.
+             */
+            changed?: string | null;
+            /**
+             * Favicons
+             * @description A small image per origin as a `data:` URL, where a page showed one.
+             */
+            favicons?: {
+                [key: string]: string;
+            };
+            /**
+             * Restorable
+             * @description Ids of removed entries `restore` can still bring back, latest first.
+             */
+            restorable?: string[];
+        };
+        /**
          * CalendarReminderStatus
          * @description Whether calendar reads are enabled and what the supervisor reports.
          */
@@ -5536,6 +5923,37 @@ export interface components {
              * @description The exclusive end of the week in your time zone.
              */
             until: string;
+        };
+        /**
+         * CallerActivity
+         * @description What one agent did: for a token, the line shown beside it in Settings.
+         */
+        CallerActivity: {
+            /**
+             * Caller
+             * @description The agent, as in `AgentWrite.caller`.
+             */
+            caller: string;
+            /**
+             * Last
+             * @description Its latest write that ran.
+             */
+            last?: string | null;
+            /**
+             * Ran
+             * @description Writes that ran, in the entries kept.
+             */
+            ran: number;
+            /**
+             * Ran Today
+             * @description Writes that ran in the last 24 hours.
+             */
+            ran_today: number;
+            /**
+             * Refused
+             * @description Writes refused, proposed or over budget, in the entries kept.
+             */
+            refused: number;
         };
         /**
          * Candidate
@@ -6361,10 +6779,10 @@ export interface components {
             detail: string;
             /**
              * Kind
-             * @description The context kind; `check-in` is created only by the durable-session flow.
+             * @description The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a Heinzel's own proposals (ADR 0162).
              * @enum {string}
              */
-            kind: "route" | "contract" | "draft" | "event" | "text" | "check-in";
+            kind: "route" | "contract" | "draft" | "event" | "text" | "check-in" | "heinzel";
             /**
              * Owner Id
              * @description Authenticated owner of a durable personal chat.
@@ -12085,6 +12503,58 @@ export interface components {
             status: "upgraded" | "unchanged" | "failed";
         };
         /**
+         * PluginWrite
+         * @description A plugin operation that asks to run directly for agents, and whether you allowed it.
+         */
+        PluginWrite: {
+            /**
+             * Allowed
+             * @description Whether you allowed it to run directly; until then it is proposed.
+             */
+            allowed: boolean;
+            /**
+             * Capped
+             * @description Whether hz holds it at approval whatever you allow: it writes mail, chat or a calendar.
+             */
+            capped: boolean;
+            /**
+             * Module
+             * @description The module of the operation.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation.
+             */
+            operation: string;
+            /**
+             * Plugin
+             * @description The plugin's distribution, e.g. `heinzel-crm`.
+             */
+            plugin: string;
+            /**
+             * Summary
+             * @description What the operation does, in its own words.
+             */
+            summary: string;
+        };
+        /**
+         * PluginWrites
+         * @description Every plugin operation that asks to run directly for agents.
+         */
+        PluginWrites: {
+            /**
+             * Next
+             * @description Commands that allow what is waiting.
+             */
+            next?: string[];
+            /**
+             * Writes
+             * @description The operations, by plugin.
+             */
+            writes?: components["schemas"]["PluginWrite"][];
+        };
+        /**
          * PrerequisiteCheck
          * @description An observed tool state, separate from Python package installation and account authentication.
          */
@@ -16399,6 +16869,28 @@ export interface components {
             turn_id: string;
         };
         /**
+         * ToolReference
+         * @description The reference, rendered.
+         */
+        ToolReference: {
+            /**
+             * Count
+             * @description How many operations it describes.
+             */
+            count: number;
+            /**
+             * Format
+             * @description The format of `text`.
+             * @enum {string}
+             */
+            format: "text" | "markdown" | "yaml" | "json";
+            /**
+             * Text
+             * @description The reference in that format.
+             */
+            text: string;
+        };
+        /**
          * TurnLevel
          * @description What a turn recorded about its level: asked, ran as, by which rule, and how the model was chosen.
          */
@@ -17926,24 +18418,6 @@ export interface components {
              */
             session_id: string;
         };
-        /** heinzel_start_helper_Input */
-        heinzel_start_helper_Input: {
-            /**
-             * Name
-             * @description Your Heinzel's display name.
-             */
-            name: string;
-            /**
-             * Prompt
-             * @description The exact first chat message; grants no connected access or schedule.
-             */
-            prompt: string;
-            /**
-             * Request Id
-             * @description A stable client request id; reuse it only for an exact retry.
-             */
-            request_id: string;
-        };
         /** system_claude_acknowledge_Input */
         system_claude_acknowledge_Input: {
             /**
@@ -18048,6 +18522,8 @@ export type SchemaAdapterDoc = components['schemas']['AdapterDoc'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
+export type SchemaAgentWrite = components['schemas']['AgentWrite'];
+export type SchemaAgentWrites = components['schemas']['AgentWrites'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
@@ -18057,8 +18533,11 @@ export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
 export type SchemaBindingResult = components['schemas']['BindingResult'];
+export type SchemaBookmark = components['schemas']['Bookmark'];
+export type SchemaBookmarkList = components['schemas']['BookmarkList'];
 export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
+export type SchemaCallerActivity = components['schemas']['CallerActivity'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -18247,6 +18726,8 @@ export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
 export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
+export type SchemaPluginWrite = components['schemas']['PluginWrite'];
+export type SchemaPluginWrites = components['schemas']['PluginWrites'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
 export type SchemaPrerequisiteDefinition = components['schemas']['PrerequisiteDefinition'];
 export type SchemaPrerequisiteDoc = components['schemas']['PrerequisiteDoc'];
@@ -18364,6 +18845,7 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaToolActivity = components['schemas']['ToolActivity'];
+export type SchemaToolReference = components['schemas']['ToolReference'];
 export type SchemaTurnLevel = components['schemas']['TurnLevel'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
@@ -18430,7 +18912,6 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelSetLevelInput = components['schemas']['heinzel_set_level_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
-export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
 export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
 export type SchemaSystemClaudeDisableInput = components['schemas']['system_claude_disable_Input'];
 export type SchemaSystemClaudeEnableInput = components['schemas']['system_claude_enable_Input'];
@@ -21654,39 +22135,6 @@ export interface operations {
             };
         };
     };
-    heinzel_start_helper: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["heinzel_start_helper_Input"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserChatAnswer"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     heinzel_tool_activity: {
         parameters: {
             query: {
@@ -22018,6 +22466,270 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstalledSkill"][];
+                };
+            };
+        };
+    };
+    system_bookmark_add: {
+        parameters: {
+            query: {
+                /** @description The page's https:// address. */
+                url: string;
+                /** @description The name shown; the host when left out. */
+                title?: string | null;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_edit: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+                /** @description The new name. */
+                title?: string | null;
+                /** @description The new https:// address of a bookmark. */
+                url?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_favicon: {
+        parameters: {
+            query: {
+                /** @description The origin the icon belongs to, e.g. `https://example.com`. */
+                origin: string;
+                /** @description The icon as a small base64 `data:` URL (PNG, JPEG, GIF or ICO). */
+                image: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_folder: {
+        parameters: {
+            query: {
+                /** @description The folder's name. */
+                title: string;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+        };
+    };
+    system_bookmark_move: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+                /** @description The folder's id to put it in; the top level when left out. */
+                parent?: string | null;
+                /** @description The id of the entry in that folder to put it before; else last. */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_remove: {
+        parameters: {
+            query: {
+                /** @description The entry's id, as `hz system bookmark list` shows it. */
+                entry: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_bookmark_restore: {
+        parameters: {
+            query?: {
+                /** @description The removed entry's id; the latest removal when left out. */
+                entry?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -24000,6 +24712,38 @@ export interface operations {
             };
         };
     };
+    system_runner_chat_heinzel_actions: {
+        parameters: {
+            query: {
+                /** @description The Heinzel's own chat. */
+                durable_session: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_runner_chat_list: {
         parameters: {
             query?: never;
@@ -24839,6 +25583,42 @@ export interface operations {
             };
         };
     };
+    system_tools: {
+        parameters: {
+            query?: {
+                /** @description How to write the list; the CLI's own `--format json` wraps the whole result instead. */
+                output?: "text" | "markdown" | "yaml" | "json";
+                /** @description Only what this head exposes; its input schemas too. */
+                head?: "all" | "cli" | "mcp" | "rest" | "web";
+                /** @description Only these modules and the ones under them, e.g. `system.config`. */
+                module?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolReference"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_ui_actions: {
         parameters: {
             query?: {
@@ -25103,6 +25883,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_allow: {
+        parameters: {
+            query: {
+                /** @description The plugin, e.g. `crm` or `heinzel-crm`. */
+                plugin: string;
+                /** @description Take the allowance back: its writes are proposed again. */
+                revoke?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginWrites"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_list: {
+        parameters: {
+            query?: {
+                /** @description Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`. */
+                caller?: string | null;
+                /** @description Only writes of turns nobody watched. */
+                unattended?: boolean;
+                /** @description How many entries, latest first. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWrites"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_write_plugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginWrites"];
                 };
             };
         };

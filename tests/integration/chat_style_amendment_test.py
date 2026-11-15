@@ -43,7 +43,7 @@ if n in (0,3,5):
 elif n == 2:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'agent:current','arguments':{{}}}},'text':None}}
 else:
- name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
+ name=[t['name'] for t in payload['tools'] if t['name'] != 'use_tool'][-1]
  wire={{'kind':'tool','name':name,'arguments':{{'report':'Ready for review'}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,
                    'permission_denials':[], 'structured_output':wire}}))

@@ -17,6 +17,8 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 Billing = Literal["plan", "api"]
 """Who pays: `plan`, a subscription the agent is signed in with (the cost it reports is what the run would cost at
 API prices); `api`, an API key, billed per token."""
+ChatToolSet = Literal["everyday", "all", "personal-check-in"]
+"""Which operations a chat's agent gets: the everyday ones (ADR 0041, 0057), all, or a check-in's one proposal."""
 
 
 class McpServer(BaseModel):
@@ -29,6 +31,26 @@ class McpServer(BaseModel):
 
     command: list[str] = Field(min_length=1, description="The server's command line, one argument per item.")
     env: dict[str, str] = Field(default_factory=dict, description="Variables to set for it besides the run's own.")
+
+
+class HzTools(BaseModel):
+    """hz's own operations for one chat turn, which a runner that runs its model inside hz calls directly (ADR 0162).
+
+    The same turn also lists hz's private stdio pipe in `mcp_servers` under `server`, for a runner that drives an
+    agent CLI, which takes tools only over MCP. A runner that calls the tools in-process (`chat_tools` and
+    `ChatTool.call` in the kernel) leaves that entry out and starts no process: the toolset and its policy are the
+    same on both paths.
+    """
+
+    session: str = Field(min_length=1, description="The chat session the tools act for; proposals wait in it.")
+    tools: ChatToolSet = Field(default="everyday", description="Which of hz's operations the chat's agent gets.")
+    attended: bool = Field(
+        default=False,
+        description="Whether the person started this turn and watches it; a turn nobody watches writes less.",
+    )
+    server: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")] = Field(
+        default="hz", description="The `mcp_servers` entry that is this toolset's stdio pipe, for agent CLIs."
+    )
 
 
 class ToolProfile(BaseModel):
@@ -52,6 +74,11 @@ class ToolProfile(BaseModel):
         description="Local MCP servers whose tools the agent may call, by name. Each must change nothing on its own "
         "(hz's chat server only proposes; ADR 0045), so the session stays read-only. A runner that can't hand them to "
         "its agent says so in the result's warnings.",
+    )
+    hz_tools: HzTools | None = Field(
+        default=None,
+        description="hz's own operations for a chat turn, for a runner that calls them in-process instead of "
+        "starting their stdio pipe in `mcp_servers` (ADR 0162).",
     )
 
 

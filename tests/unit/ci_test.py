@@ -81,6 +81,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "the secret must be configured in this repo"
         ),
         "unzip -l ": "asserts what the built wheel contains",
+        "bash scripts/bootstrap-pyyaml.sh --wheel-dir": (
+            "builds the reviewed PyYAML wheel the plugin tooling finds through UV_FIND_LINKS; installs nothing"
+        ),
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",

@@ -15,6 +15,7 @@ type Message = { id: string; seq: number; role: string; text: string; status?: s
 function mockHelmi(messages: Message[], extra: Record<string, unknown> = {}) {
   return mockApi({
     ...base,
+    "/api/system/runner/chat/heinzel-actions": () => [],
     "/api/heinzel/sessions": {
       sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: at }],
     },

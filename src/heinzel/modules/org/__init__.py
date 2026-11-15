@@ -5,12 +5,14 @@ in your user configuration, `[org]`; nothing about you is written to a repositor
 for `ProfileService` by type to learn who is acting.
 """
 
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 from rich.console import RenderableType
 
 from heinzel import (
+    ByArguments,
     Calendar,
     Check,
     ConfigEditor,
@@ -164,8 +166,19 @@ def profile(service: ProfileService, recommendations: SyncService) -> list[Check
     return [Check(name="profile", status=Status.UP, detail=detail), *drift]
 
 
+def _accepts(arguments: Mapping[str, Any]) -> bool:
+    """Whether `sync` applies recommendations to the user file: a settings change, so an agent's call waits."""
+    return arguments.get("accept") is not None
+
+
 # It writes your configuration on your say-so; a web page can reach a local REST server, so the CLI and MCP get it.
-@module.operation(read_only=False, render=render_sync, heads={"cli", "mcp"}, audience="everyday")
+@module.operation(
+    read_only=False,
+    render=render_sync,
+    heads={"cli", "mcp"},
+    audience="everyday",
+    agents=ByArguments("direct", "approve", _accepts, "when it applies recommendations"),
+)
 def sync(
     service: SyncService,
     accept: Annotated[

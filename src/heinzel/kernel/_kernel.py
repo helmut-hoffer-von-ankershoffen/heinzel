@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
 
+from heinzel.kernel._agent_writes import Caller, current_caller
 from heinzel.kernel._ai_models import AiModelOptions, AiModels, AiModelsSource
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
@@ -241,10 +242,14 @@ class Kernel:
         return found
 
     def provides(self, kind: object) -> bool:
-        """Whether the kernel can inject a parameter annotated with `kind`: a service, settings or a capability."""
+        """Whether the kernel injects a parameter annotated `kind`: a service, settings, a capability, the caller."""
         kind = _injected_type(kind)
         return isinstance(kind, type) and (
-            kind in self._instances or kind in self._factories or capability_of(kind) is not None or kind is Adapters
+            kind in self._instances
+            or kind in self._factories
+            or capability_of(kind) is not None
+            or kind is Adapters
+            or kind is Caller
         )
 
     def bind[T](self, kind: type[T], instance: T) -> None:
@@ -613,6 +618,10 @@ class Kernel:
                 raise HeinzelError(msg)
         func = operation.func
         signature = inspect.signature(func, eval_str=True)
+        # Who calls is what the head established, never an argument: no head, model or request can pass one.
+        if forged := [n for n, p in signature.parameters.items() if n in kwargs and _is_caller(p.annotation)]:
+            msg = f"{operation.name} takes no {', '.join(forged)} argument: the caller is never an argument"
+            raise HeinzelError(msg)
         # What the kernel injects is its own and not validated; everything the caller passes is, before anything is
         # injected, so invalid input never builds a service or an adapter. Capability protocols aren't
         # runtime-checkable, so a caller passing one explicitly is validated as Any.
@@ -639,6 +648,10 @@ class Kernel:
         self.refresh_live_bindings()
         for name, parameter in inspect.signature(func, eval_str=True).parameters.items():
             annotation = _injected_type(parameter.annotation)
+            if annotation is Caller:
+                # Also when a keyword of that name came along: only the head's own word counts (ADR 0162).
+                kwargs[name] = current_caller()
+                continue
             if name in kwargs:
                 continue
             if annotation is Adapters:
@@ -1005,6 +1018,11 @@ def _provided_types(module: Module) -> set[type[Any]]:
 def _service_contract(kind: object) -> bool:
     kind = _injected_type(kind)
     return isinstance(kind, type) and issubclass(kind, ServiceContract)
+
+
+def _is_caller(annotation: Any) -> bool:  # noqa: ANN401 - arbitrary inspected Python annotations
+    """Whether a parameter asks for the caller of the call (ADR 0162)."""
+    return _injected_type(annotation) is Caller
 
 
 def _injected_type(annotation: Any) -> Any:  # noqa: ANN401 - arbitrary inspected Python annotations

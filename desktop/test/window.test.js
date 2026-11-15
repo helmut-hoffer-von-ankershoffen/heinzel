@@ -16,7 +16,7 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
-  assert.match(main, /activations\.set\(window\.webContents, guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\)\)\)/);
+  assert.match(main, /activations\.set\(window\.webContents, guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\), \{/);
   assert.match(main, /ipcMain\.handle\("hz:user-activation", \(event\) => \{\n    try \{\n      if \(isOwnedMainFrame\(event, \{/);
   assert.match(main, /openProductUi\(/);
   assert.match(main, /cancelled: \(\) => stopping \|\| quitting/);
@@ -77,10 +77,11 @@ function quitHarness(result, rejects = false) {
     BrowserWindow: { getAllWindows: () => [window] },
     dialog: { showErrorBox: (...args) => dialogs.push(args) },
     ipcMain: { handle() {} }, lifecycle: {}, path: {},
+    createBrowserAgent: () => ({}), newBridgeToken: () => "token", BRIDGE_TOKEN_ENV: "HEINZEL_UI_BROWSER_BRIDGE", createBrowserBridge: () => ({ start() {}, stop() {} }),
     Menu: {}, shell: {}, isAllowedHelpUrl: () => false, appMenuTemplate: () => [], menuScript: () => "", createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
-    createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
+    createMiniBrowser: () => ({ handle() {}, closeAll() {}, agents: { listen() {} } }),
     createMediaPlayer: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
     createPublicMediaHandler, stopWithReport, shouldRefresh, hideWindows, showWindows, quitLogLine,

@@ -13,8 +13,7 @@ from typer.testing import CliRunner
 from heinzel import Config, Module, Settings
 from heinzel.heads._exposure import exposed, input_schema, restricts
 from heinzel.heads.cli import build
-from heinzel.heads.cli._chat import command_words
-from heinzel.kernel import Kernel, discover
+from heinzel.kernel import Kernel, command_words, discover
 
 pytestmark = pytest.mark.integration
 runner = CliRunner()

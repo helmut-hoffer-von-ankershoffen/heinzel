@@ -84,7 +84,7 @@ def signals(service: ThemeService) -> ThemeSignalsView:
     return service.signals()
 
 
-@module.operation(read_only=False, render=render)
+@module.operation(read_only=False, render=render, agents="direct")
 def use(
     service: ThemeService,
     name: Annotated[str, Field(description="The theme to use, one `hz system theme list` shows, e.g. `default`.")],

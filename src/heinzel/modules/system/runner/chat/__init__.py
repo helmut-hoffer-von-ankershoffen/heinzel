@@ -167,7 +167,7 @@ def send(  # noqa: PLR0913, PLR0917 - one parameter per input of the operation
     return service.send(runner, session, message, budget_usd, model=model, effort=effort, request_id=request_id)
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="never")
 def confirm(service: ChatService, session: Session, action: Action) -> ChatSession:
     """Run an action the agent proposed, with exactly the arguments shown; only you can confirm.
 
@@ -177,7 +177,7 @@ def confirm(service: ChatService, session: Session, action: Action) -> ChatSessi
     return service.confirm(session, action)
 
 
-@module.operation(read_only=False, heads=frozenset({"cli", "web"}), audience="everyday")
+@module.operation(read_only=False, heads=frozenset({"cli", "web"}), audience="everyday", agents="never")
 def authorize_for_mcp(service: ChatService, current: CurrentUser, session: Session, action: Action) -> ChatSession:
     """Authorize one reviewed schedule action for a single MCP run; keep its proof private.
 
@@ -206,13 +206,13 @@ def authorize_for_mcp(service: ChatService, current: CurrentUser, session: Sessi
     return service.authorize_for_mcp(session, action)
 
 
-@module.operation(read_only=False, heads=frozenset({"mcp"}), audience="everyday")
+@module.operation(read_only=False, heads=frozenset({"mcp"}), audience="everyday", agents="propose")
 def confirm_authorized_mcp(service: ChatService, session: Session, action: Action) -> ChatSession:
     """Run a schedule action once after a person authorized it; accept no proof here."""
     return service.confirm_authorized_mcp(session, action)
 
 
-@module.operation(read_only=False, heads=HEADS, audience="everyday")
+@module.operation(read_only=False, heads=HEADS, audience="everyday", agents="never")
 def decline(service: ChatService, session: Session, action: Action) -> ChatSession:
     """Decline an action the agent proposed; it never runs.
 
@@ -305,7 +305,7 @@ def propose_captured_write(
     return service.propose_captured_write(durable_session, request_id)
 
 
-@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
+@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday", agents="never")
 def propose_release_draft_share(
     service: ChatService,
     durable_session: Annotated[
@@ -397,6 +397,21 @@ def show(store: ChatStore, session: Session) -> ChatSession:
         HeinzelError: If there is no such session.
     """
     return store.load(session)
+
+
+@module.operation(heads=HEADS, audience="everyday")
+def heinzel_actions(
+    store: ChatStore,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The Heinzel's own chat.")
+    ],
+) -> list[ChatSession]:
+    """Show what a Heinzel's turns proposed, oldest chat first; each waits for your Confirm (ADR 0162).
+
+    Raises:
+        HeinzelError: If no owner is signed in.
+    """
+    return store.heinzel_actions_chats(durable_session)
 
 
 @module.operation(name="list", heads=HEADS, audience="everyday")

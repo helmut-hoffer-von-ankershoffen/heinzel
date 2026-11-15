@@ -2,15 +2,18 @@ import { spawn } from "node:child_process";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, WebContentsView, webContents } from "electron";
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
+import { createBrowserAgent } from "./browser-agent.js";
+import { BRIDGE_TOKEN_ENV, createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMediaPlayer } from "./media-player.js";
-import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
+import { createMiniBrowser, deviceDialog, smallFavicon } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
+import { createSettingsStore } from "./settings-store.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
@@ -87,12 +90,22 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url)));
+      activations.set(window.webContents, guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url), {
+        browserOn: () => settings().get("linksInBrowser"),
+        browser: async (url) => {
+          await miniBrowser.openLink(window, url);
+          // Show the panel on the new tab: the page opens it without toggling it shut.
+          if (!window.isDestroyed()) void window.webContents.executeJavaScript(menuScript("browser-show")).catch(() => {});
+        },
+      }));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
 });
 
+// Settings > Browser > "Open links in the built-in browser": a setting of the app itself, live and kept across restarts.
+let settingsStore;
+const settings = () => (settingsStore ??= createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") }));
 const miniBrowser = createMiniBrowser({
   windows,
   fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -106,6 +119,8 @@ const miniBrowser = createMiniBrowser({
   },
   // "Open in browser" needs the person's click in that window and shares its external-link rate limit.
   openExternal: (url, window) => activations.get(window.webContents)?.open(url) ?? false,
+  // A page's icon becomes a 32-pixel PNG: small enough for a tab, a bookmark and the navigation.
+  faviconImage: (buffer) => smallFavicon(buffer, (bytes) => nativeImage.createFromBuffer(bytes)),
 });
 // The media player's embed shares the sidebar browser's website partition, so one sign-in counts in both.
 const mediaPlayer = createMediaPlayer({
@@ -117,11 +132,37 @@ const mediaPlayer = createMediaPlayer({
   createView: (options) => new WebContentsView(options),
   openExternal: (url) => shell.openExternal(url),
 });
+// Agents drive their own tabs through the daemon (ADR 0162): one socket to the local service, and an engine that only
+// ever gets guests of the browser's tab table.
+const ownedWindows = () => BrowserWindow.getAllWindows().filter((window) => windows.has(window) && !window.isDestroyed());
+// Known to this process and to the service it starts, and to no window: the product page holds the session token only.
+const bridgeToken = newBridgeToken();
+const browserBridge = createBrowserBridge({
+  connection: () => (stopping || quitting ? null : instance.currentConnection()),
+  token: bridgeToken,
+  engine: createBrowserAgent({
+    tabs: miniBrowser.agents,
+    window: () => {
+      const focused = BrowserWindow.getFocusedWindow();
+      return focused && windows.has(focused) && !focused.isDestroyed() ? focused : ownedWindows()[0] ?? null;
+    },
+  }),
+  listen: miniBrowser.agents.listen,
+});
 const managedMac = app.isPackaged && process.platform === "darwin";
-const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
+const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
+  ipcMain.handle("hz:link-mode", (event, inBrowser) => {
+    const owned = isOwnedMainFrame(event, {
+      windows,
+      fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+      connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    });
+    if (owned && typeof inBrowser === "boolean") settings().set("linksInBrowser", inBrowser);
+    return settings().get("linksInBrowser");
+  });
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -186,6 +227,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     // it already reported a crash). Hide the windows before the service stops so none repaints the disconnected page.
     stopping = true;
     permissions?.revoke();
+    browserBridge.stop();
     mediaPlayer.closeAll();
     miniBrowser.closeAll();
     workspaceAudio?.revoke();
@@ -234,10 +276,19 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (allowed) void shell.openExternal(url);
       },
       send: (action) => {
-        const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        // Close Tab acts on the focused window only: with none focused it must never close a background window.
+        const window = action === "close-tab" ? BrowserWindow.getFocusedWindow()
+          : BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
         const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
         console.info(menuLogLine(action, ready ? "sent" : "no_window"));
-        if (ready) void window.webContents.executeJavaScript(menuScript(action));
+        if (!ready) return;
+        const sent = window.webContents.executeJavaScript(menuScript(action));
+        // Cmd+W closes the browser's selected tab when the page takes it, and otherwise the window as before.
+        if (action === "close-tab") void sent.then((taken) => {
+          console.info(menuLogLine(action, taken === true ? "taken" : "not_taken"));
+          if (taken !== true && !window.isDestroyed()) window.close();
+        }, () => {});
+        else void sent;
       },
     })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
@@ -254,6 +305,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
       instance.setConnection(connection);
       instance.setReady();
       serviceStarted = true;
+      browserBridge.start();
       return instance.open();
     });
   }).catch((error) => {

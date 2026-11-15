@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 from rich.console import RenderableType
 
+from heinzel.kernel._agent_writes import AGENT_WRITES, AgentWrites, ByArguments
 from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._text import clean_text
@@ -145,12 +146,17 @@ class OperationLet(Let):
     aliases: tuple[str, ...] = ()
     """Old command paths that still run it for one minor release (`"workflow run"`), hidden from help: the CLI names
     the new command on stderr and MCP keeps the old tool name, marked deprecated (ADR 0051)."""
+    agents: AgentWrites | ByArguments | None = None
+    """What an agent's call of this write does (ADR 0162): `direct` runs, `approve` waits for the person, `never` is
+    the person's own, `propose` is the behaviour before the policy. None, the default, is treated as `propose`.
+    As strict as everything the operation can trigger. Write operations only."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
 
         Raises:
-            ValueError: If a read-only operation requires a `write` mode.
+            ValueError: If a read-only operation requires a `write` mode or carries an `agents` marker, the marker
+                or the audience is unknown, or a publish operation is optional.
         """
         if self.read_only and (writes := [str(r) for r in self.requires if "write" in r.modes]):
             msg = (
@@ -163,6 +169,12 @@ class OperationLet(Let):
                 f"Operation {self.name!r} can't make its requirements optional: a publish operation's are checked "
                 f"before it runs"
             )
+            raise ValueError(msg)
+        if self.agents is not None and self.read_only:
+            msg = f"Operation {self.name!r} only reads, so it takes no agents= marker; agents run every read"
+            raise ValueError(msg)
+        if self.agents is not None and not isinstance(self.agents, ByArguments) and self.agents not in AGENT_WRITES:
+            msg = f"Operation {self.name!r} has agents={self.agents!r}; use one of {', '.join(sorted(AGENT_WRITES))}"
             raise ValueError(msg)
         if self.audience not in AUDIENCES:
             msg = f"Operation {self.name!r} has audience {self.audience!r}; use one of {', '.join(sorted(AUDIENCES))}"

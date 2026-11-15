@@ -64,7 +64,10 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
       submenu: [
         { label: "New Chat", accelerator: "CommandOrControl+N", click: () => send("new-chat") },
         { type: "separator" },
-        { role: "close" },
+        // The page may take Cmd+W for the browser's selected tab; the window closes when it does not.
+        { label: "New Tab", accelerator: "CommandOrControl+T", click: () => send("new-tab") },
+        { label: "Close Tab", accelerator: "CommandOrControl+W", click: () => send("close-tab") },
+        { role: "close", label: "Close Window", accelerator: "CommandOrControl+Shift+W" },
       ],
     },
     { role: "editMenu" },
@@ -128,16 +131,21 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
   ];
 }
 
+/** Actions the app itself asks of the page, with no menu item: a link opened a browser tab, so show the panel. */
+export const APP_ACTIONS = ["browser-show"];
 export const ACTIONS = [
   "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
-  "search", "sidebar", "terminal", "browser", "chat", "new-chat", "notifications", "help",
+  "search", "sidebar", "terminal", "browser", "chat", "new-chat", "new-tab", "close-tab", "notifications", "help",
   "go:today", "go:heinzel", "go:team", "go:plugins",
 ];
 
-/** The script that tells the page which menu item was chosen; the action is one of a fixed few. */
+/**
+ * The script that tells the page which menu item was chosen; the action is one of a fixed few. It evaluates to true
+ * when the page took the action and called preventDefault on the (cancelable) event.
+ */
 export function menuScript(action) {
-  if (!ACTIONS.includes(action)) throw new Error("Unknown menu action.");
-  return `window.dispatchEvent(new CustomEvent(${JSON.stringify(MENU_EVENT)}, { detail: ${JSON.stringify(action)} }))`;
+  if (!ACTIONS.includes(action) && !APP_ACTIONS.includes(action)) throw new Error("Unknown menu action.");
+  return `!window.dispatchEvent(new CustomEvent(${JSON.stringify(MENU_EVENT)}, { detail: ${JSON.stringify(action)}, cancelable: true }))`;
 }
 
 /** One structured log line per menu action: stable event name, fields, no data from the page. */

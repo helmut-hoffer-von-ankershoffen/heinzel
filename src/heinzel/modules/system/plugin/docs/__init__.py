@@ -59,7 +59,7 @@ def show(
     return service.documentation(plugin=plugin, scenes=_scenes(scenes), builtin=builtin)
 
 
-@module.operation(private=True, read_only=False, heads=WRITES)
+@module.operation(private=True, read_only=False, heads=WRITES, agents="propose")
 def build(  # noqa: PLR0913, PLR0917 - what to document, where, and how; all with defaults, options on the CLI
     service: DocsService,
     directory: Annotated[

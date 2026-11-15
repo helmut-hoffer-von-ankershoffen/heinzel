@@ -604,6 +604,8 @@ def isolated_environment(selected, monkeypatch):
     environment = {
         key: value for key, value in selected.env.items() if not key.upper().startswith("HZ_") and key != "VIRTUAL_ENV"
     } | {"HZ_OFFLINE_MANAGER_FIXTURE": str(selected.root)}
+    # The product mutates the tool as a user's does: uv would record an inherited find-links as resolver policy.
+    environment.pop("UV_FIND_LINKS", None)
     for key, value in environment.items():
         if key in {"HOME", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON"}:
             monkeypatch.setenv(key, value)
@@ -891,11 +893,9 @@ def installed_uninstall(selected, environment, change):
     "change",
     [
         "none",
-        "old015-upgrade",
-        "old015-web-migrate",
-        "old015-web-retire",
-        "old015-web-recovery",
-        "old015-web-foreign",
+        # The old015-* cases (upgrade from the published 0.9.15 on its older Python to the Python 3.15 build) are
+        # retired as an unsupported path. Owner, 2026-11-15: "we don't need to support migration from .43 to 3.15 - i
+        # already upgraded all installations". Same-Python upgrade and uninstall cases stay.
         "recovery",
         "calendar",
         "calendar-recovery",

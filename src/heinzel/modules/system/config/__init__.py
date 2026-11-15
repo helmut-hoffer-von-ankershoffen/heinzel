@@ -36,7 +36,7 @@ def show(service: ConfigService) -> ConfigReport:
     return service.report()
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def init(
     service: ConfigService,
     path: Annotated[Path | None, Field(description="Where to write; defaults to the user configuration file.")] = None,
@@ -56,7 +56,7 @@ def get(service: ConfigService, key: Key) -> SettingInfo:
     return service.get(key)
 
 
-@module.operation(name="set", read_only=False)
+@module.operation(name="set", read_only=False, agents="approve")
 def set_(
     service: ConfigService,
     key: Key,
@@ -67,7 +67,7 @@ def set_(
     return service.set(key, value, scope)
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, agents="approve")
 def unset(service: ConfigService, key: Key, scope: ScopeOption = "user") -> Path:
     """Remove a setting from the user or project configuration file, so its default applies again."""
     return service.unset(key, scope)

@@ -66,7 +66,7 @@ def register_captured_write_operations(module: Module) -> None:
         CapturedWriteHost(crud, current, selected).draft(draft)
         return proposal.request_id
 
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday", agents="never")
     def execute_captured_write(  # noqa: PLR0913, PLR0917 - exact confirmation and injected services
         crud: SessionCrud,
         current: CurrentUser,

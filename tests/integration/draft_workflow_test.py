@@ -125,7 +125,7 @@ def workflow(tmp_path, monkeypatch, settings):
         _discovery, "entry_points", lambda **_kwargs: [installed_entry(root, "workflowfixture", package, declared=True)]
     )
     monkeypatch.syspath_prepend(str(tmp_path))
-    features = frozenset({"connected_frontdoor", "connected_channels"})
+    features = frozenset({"connected_channels"})
     config = Config(
         files=(),
         data={"capabilities": {"documents": "fixture", "code-host": "fixture"}, "hz": {"features": sorted(features)}},

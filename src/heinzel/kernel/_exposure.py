@@ -91,3 +91,33 @@ def input_schema(item: Exposed) -> dict[str, Any]:
         fields[parameter.name] = (annotation, Field(default, description=description))
     model = create_model(item.name, **fields)
     return TypeAdapter(model).json_schema(mode="validation")
+
+
+_CHAT_PATH = ("system", "runner", "chat")
+
+
+def command_words(path: tuple[str, ...]) -> tuple[str, ...]:
+    """The words of an operation's CLI command, `hz chat ...` for the chat's (mounted at the top level only)."""
+    return ("chat", *path[len(_CHAT_PATH) :]) if path[: len(_CHAT_PATH)] == _CHAT_PATH else path
+
+
+@dataclass(frozen=True, slots=True)
+class ServedTool:
+    """A tool as an MCP client sees it."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    read_only: bool
+
+
+class ServedTools:
+    """The tools the stdio MCP server lists. A head binds it; modules read it without importing a head."""
+
+    def tools(self) -> dict[str, ServedTool]:
+        """The served tools by name, aliases included, in the order the server lists them.
+
+        Raises:
+            NotImplementedError: Always; the head's subclass answers.
+        """
+        raise NotImplementedError
