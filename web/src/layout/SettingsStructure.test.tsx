@@ -519,6 +519,31 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(within(dialog).queryByText(/source review/i)).toBeNull();
   });
 
+  it("counts every connector switched on for documents as in use, not only the default", async () => {
+    const drive = plugin({ name: "drive", capabilities: ["drive:documents"], kinds: ["connector"] });
+    const wiki = plugin({ name: "wiki", capabilities: ["wiki:documents"], kinds: ["connector"] });
+    mockApi({
+      ...answers,
+      "/api/system/plugin/list": [drive, wiki],
+      "/api/system/capability/list": {
+        capabilities: [
+          { name: "documents", summary: "Documents", modes: ["read"], bound: "drive", adapters: ["drive", "wiki"] },
+        ],
+        adapters: [],
+        uses: [],
+      },
+    });
+    renderAt("/doctor?settings=connectors");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const cards = await within(dialog).findAllByText("Connects: documents");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(
+        await within(card.closest("button") as HTMLElement).findByText("In use for documents"),
+      ).toBeInTheDocument();
+    }
+  });
+
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
     mockApi(answers);
     const user = userEvent.setup();

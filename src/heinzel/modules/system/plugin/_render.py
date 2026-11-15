@@ -78,7 +78,11 @@ def render_list(plugins: list[PluginInfo]) -> RenderableType:
         table.add_row(
             f"{escape(plugin.distribution)}\n{state}",
             plugin.version,
-            Text(f"{origin}: {plugin.source_url}" if plugin.source_url else origin),
+            Text(
+                f"{origin}: {plugin.source_url or plugin.source_path}"
+                if plugin.source_url or plugin.source_path
+                else origin
+            ),
             Text(", ".join(brings)),
         )
     return table

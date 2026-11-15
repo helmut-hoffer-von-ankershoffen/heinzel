@@ -1,4 +1,4 @@
-"""Internal model admission for bounded, owner-bound direct-API research turns.
+"""Internal model admission for bounded, owner-bound model turns: the built-in Model API or a plugin's models.
 
 This is not registered as a product operation or a human approval boundary. Callers must supply trusted binding
 state. Dollar-capped policies are refused until a hard pre-request cost ceiling can be enforced.
@@ -14,7 +14,15 @@ from heinzel.modules.heinzel._session_protocol import SessionRepository
 
 
 class ConnectedModelFactory(Protocol):
-    """An installed model provider owns credential resolution and constructs its model for the current owner."""
+    """An installed model provider owns credential resolution and constructs its model for the current owner.
+
+    The built-in `pydantic-ai` option is one; a plugin's `ai-models` option is another (ADR 0159).
+    """
+
+    @property
+    def access(self) -> str:
+        """The AI access option whose models it builds; the selection must name it."""
+        ...
 
     def turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - provider-specific model
         """Build the exactly configured model after checking its credential and authenticated owner."""
@@ -46,7 +54,7 @@ def connected_model(  # noqa: PLR0913 - each policy dimension must be checked se
         msg = "The model binding belongs to a different authenticated owner"
         raise HeinzelError(msg)
     repository.control_read(session_id)
-    if not selected_access or selected_access != approved_access or selected_access != "pydantic-ai":
+    if not selected_access or selected_access != approved_access or selected_access != factory.access:
         msg = "The selected AI access does not match the approved model binding"
         raise HeinzelError(msg)
     if limits.cost_usd is not None:

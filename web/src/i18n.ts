@@ -651,6 +651,11 @@ const en = {
   "settings.exists": "exists",
   "settings.missing": "not there",
   "settings.notSet": "not set",
+  "settings.onlyInstalled": "not set: {adapter} serves it, the only one installed",
+  "settings.linkOverlap": "Links refused: two connectors claim the same host",
+  "settings.stagedDropped": "Changed elsewhere: your unsaved change was dropped.",
+  "settings.severalOn":
+    "Links open in the connector they belong to, and a search asks each one. {adapter}, the first, is the default.",
   "profile.team": "Team",
   "teamGraph.titled": "{name} · Team graph",
   "profile.retiredRole": 'Your saved role "{role}" is no longer offered. Choose one of the four roles in Settings.',
@@ -667,6 +672,23 @@ const en = {
   "aiAccess.needs": "{state}: {needs}",
   "aiAccess.details": "Details",
   "aiAccess.setUpOne": "Set up {title}",
+  "aiAccess.pickModel": "Pick a model of {title}",
+  "aiAccess.models.intro":
+    "{title} brings its own models. Heinzel runs chat, drafts and schedules on the one you pick.",
+  "aiAccess.models.unavailable": "unavailable",
+  "aiAccess.models.unavailableNote": "It didn't answer when {title} or a test last checked; you can still pick it.",
+  "aiAccess.models.none": "{title} offers no models right now.",
+  "aiAccess.models.saved": "Saved. Test it to see it answer.",
+  "aiAccess.models.testAll": "Check every model",
+  "aiAccess.models.testingAll": "Checking each model…",
+  "aiAccess.models.testAllCost":
+    "Heinzel asks each of {count} models one tiny question, one after another: a few tokens each, billed by your plugin's provider. The ones that don't answer are marked unavailable until a check answers.",
+  "aiAccess.models.testAllConfirm": "Check them",
+  "aiAccess.models.testAllCancel": "Cancel",
+  "aiAccess.models.testedAll": "{detail}; {tokens} tokens",
+  "aiAccess.models.answered": "answered",
+  "aiAccess.models.unanswered": "didn't answer",
+  "aiAccess.models.skipped": "skipped",
   "aiAccess.state.signedIn": "Signed in",
   "aiAccess.state.tested": "Tested",
   "aiAccess.state.notSignedIn": "Not signed in",
@@ -920,6 +942,7 @@ const en = {
   "plugins.kind.capability": "Capability",
   "plugins.kind.playbook": "Playbook",
   "plugins.sourceUnknown": "source not reported yet",
+  "plugins.localRepository": "Local repository",
   "plugins.yoursIntro": "Installed on this machine. Their modules, themes and playbooks are part of hz now.",
   "plugins.discoverIntro":
     "Not installed yet: first-party plugins and community ones from GitHub. Add installs any other, e.g. your company's private plugin.",
@@ -935,6 +958,7 @@ const en = {
   "connectors.title": "Connectors",
   "connectors.intro": "Plugins that connect hz to your tools. Open one for its settings.",
   "connectors.none": "No connector installed yet. Find some under Plugins → Discover.",
+  "connectors.loading": "Looking for installed connectors…",
   "connectors.connects": "Connects: {what}",
   "connectors.usedFor": "In use for {what}",
   "connectors.signIn": "Sign-in",
@@ -959,6 +983,16 @@ const en = {
   "settings.light": "Light",
   "settings.dark": "Dark",
   "notify.title": "Notifications",
+  "selfChat.title": "Also in chat",
+  "selfChat.uses": "Through {connector}, in your own direct messages. The app keeps showing everything.",
+  "selfChat.notifications": "Notices also in chat",
+  "selfChat.notificationsHelp":
+    "Each notice that pops up also goes to {connector}: its title and text, at the same time, under the same rules.",
+  "selfChat.questions": "Questions also in chat",
+  "selfChat.questionsHelp":
+    "A Heinzel's message that asks you something goes to {connector} as written, also quoting what it read. The first answer counts; after {minutes} min it stays open here.",
+  "selfChat.answeredIn": "Answered in {connector}",
+  "selfChat.answeredInChat": "Answered in chat",
   "notify.open": "Notifications",
   "notify.openUnread": "Notifications, {count} unread",
   "notify.close": "Close notifications",
@@ -1467,8 +1501,16 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   return en[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in values ? String(values[name]) : match));
 }
 
-const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 4 });
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", hourCycle: "h23" });
+const usd = new Intl.NumberFormat("en", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 4,
+});
+const dateTime = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  hourCycle: "h23",
+});
 const date = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
 
 export const format = {

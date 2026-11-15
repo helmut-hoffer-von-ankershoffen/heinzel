@@ -34,7 +34,7 @@ from heinzel.kernel import boot, DaemonOverview
 from heinzel.heads import cli
 import typer
 kernel = boot(Settings(plugins_enabled=False, update_check=False, auto_update=False))
-assert len(kernel.modules) == 32
+assert len(kernel.modules) == 33
 assert any(record.qualname == 'system.prerequisite' for record in kernel.modules)
 assert 'ui' in typer.main.get_command(cli.build(kernel, ui_only=True)).commands
 from heinzel.heads.web import build

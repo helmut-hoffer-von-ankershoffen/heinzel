@@ -37,7 +37,7 @@ def test_host_observation_rejects_invalid_provider_account(monkeypatch):
     lease = SourceGuardedConnectedLease(Guard(), "source-host")
     subject = SimpleNamespace(
         owner=valid.owner,
-        kernel=object(),
+        kernel=SimpleNamespace(capability_route=lambda *_: None),
         _check_current_config=lambda *_: None,
         _selected=lambda *_: (SimpleNamespace(qualname="provider"), object()),
     )

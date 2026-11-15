@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from heinzel.kernel import Mode
+from heinzel.kernel import How, Mode
 
 
 class CapabilityInfo(BaseModel):
@@ -14,6 +14,16 @@ class CapabilityInfo(BaseModel):
     summary: str = Field(description="What the capability covers.")
     modes: list[Mode] = Field(description="The modes it has: read, and write if any method writes.")
     bound: str | None = Field(description="The adapter bound in the `[capabilities]` table; none if unbound.")
+    adapters: list[str] = Field(
+        default_factory=list[str],
+        description="Every adapter that serves it, the default first: several only where several may (ADR 0161).",
+    )
+    multiple: bool = Field(default=False, description="Whether several adapters may serve it at once (ADR 0161).")
+    how: How = Field(
+        default="unbound",
+        description="How it got its adapter: `configured`, `automatic` (the only one installed), the core's "
+        "`default`, `off` or `unbound` (ADR 0055).",
+    )
 
 
 class AdapterInfo(BaseModel):
@@ -23,6 +33,10 @@ class AdapterInfo(BaseModel):
     capability: str = Field(description="The capability it implements.")
     modes: list[Mode] = Field(description="The modes it serves.")
     hosts: list[str] = Field(description="Hosts it sends data to; `unknown (configured)` when configuration decides.")
+    links: list[str] = Field(
+        default_factory=list[str],
+        description="Hosts of the links it opens, which route a link to it when several serve its capability.",
+    )
     module: str = Field(description="Qualified name of the module that provides it.")
     distribution: str = Field(description="Distribution that ships the module.")
 

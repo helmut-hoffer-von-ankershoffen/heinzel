@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from heinzel import CurrentUser, HeinzelError, SessionWriter
 from heinzel.kernel import CapturedWriteDraft
-from heinzel.modules.heinzel._captured_write_binding import OPERATION, SelectedWriteService
+from heinzel.modules.heinzel._captured_write_binding import NEW_FILE, OPERATION, SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost
 from heinzel.modules.heinzel._session_crud import SessionCrud
 
@@ -90,7 +90,7 @@ class DocumentDraftTools:
             ValidationError: If the request is invalid.
         """
         request = _NewFile.model_validate(arguments)
-        return self._record(f"new:{request.kind}:{call}", request.title, request.content, call, "document:create")
+        return self._record(f"{NEW_FILE}{request.kind}:{call}", request.title, request.content, call, "document:create")
 
     def dispatch(self, arguments: dict[str, JsonValue], call: int) -> str:
         """Record an inert draft against the document's current revision.
@@ -109,7 +109,9 @@ class DocumentDraftTools:
         if not self._crud.repository.is_main_writer(self._session, self._writer):
             msg = "Drafting requires its owning turn lock"
             raise HeinzelError(msg)
-        target = self._selected.target(reference)
+        # The connector that holds the document takes the draft, routed as its read was (ADR 0161).
+        selected = self._selected.owning(reference)
+        target = selected.target(reference)
         if target.reference != reference:
             msg = "The document target changed"
             raise HeinzelError(msg)
@@ -118,8 +120,8 @@ class DocumentDraftTools:
             owner=self._current.principal().id,
             session=self._session,
             request_id="draft-" + identity,
-            provider=self._selected.record.qualname,
-            binding_id=self._selected.binding_id,
+            provider=selected.record.qualname,
+            binding_id=selected.binding_id,
             account=target.account,
             source=target.source,
             reference=target.reference,
@@ -129,5 +131,5 @@ class DocumentDraftTools:
             write_scope=target.write_scope,
             content=SecretStr(f"{DRAFT_MARK}\n{content}"),
         )
-        CapturedWriteHost(self._crud, self._current, self._selected).draft_in_turn(draft, self._turn, self._writer)
+        CapturedWriteHost(self._crud, self._current, selected).draft_in_turn(draft, self._turn, self._writer)
         return json.dumps({"request_id": draft.request_id, "status": "waiting for your owner"}, separators=(",", ":"))

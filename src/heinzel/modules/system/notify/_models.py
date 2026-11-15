@@ -88,8 +88,34 @@ class NotifySettings(ModuleSettings):
         "notify-send on Linux) when no web app is open.",
     )
 
+    chat_notifications: bool = Field(
+        default=False,
+        title="Notices also in chat",
+        description="Also send every notice that pops up to your own direct messages, through your chat connector, "
+        "if it can. The app keeps showing them.",
+        json_schema_extra={"x-hidden": True},
+    )
+    chat_questions: bool = Field(
+        default=False,
+        title="Questions also in chat",
+        description="Also ask a Heinzel's questions in your own direct messages, through your chat connector, if it "
+        "can: its whole message, which may quote what it read. The first answer counts, in the app or in chat.",
+        json_schema_extra={"x-hidden": True, "x-live": True},
+    )
+    chat_wait_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        title="Wait for a chat answer",
+        description="How long a question waits for your answer in chat; then it stays open in the app.",
+        json_schema_extra={"x-unit": "minutes", "x-hidden": True, "x-live": True},
+    )
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
+            "chat_notifications",
+            "chat_questions",
+            "chat_wait_minutes",
             "enabled",
             "draft",
             "heinzel",
@@ -221,3 +247,22 @@ class Recovered(BaseModel):
         description="Notices whose condition holds, such as a stale release notice: resolved with --apply, else found.",
     )
     receipt: str | None = Field(default=None, description="The recovery's archive directory, with its receipt.")
+
+
+class SelfChatUse(BaseModel):
+    """One use of the self channel: whether the chat connector can carry it, and whether you switched it on."""
+
+    supported: bool = Field(description="Whether the bound chat connector serves the method this use needs.")
+    on: bool = Field(description="Whether it is switched on in `[system.notify]`.")
+
+
+class SelfChatStatus(BaseModel):
+    """Whether notices and questions also reach you in chat, and through which connector (ADR 0160)."""
+
+    adapter: str | None = Field(
+        description="The chat connector that would be used, such as `slack`; none when no bound one can message you."
+    )
+    notifications: SelfChatUse = Field(description="Notices also sent to your own direct messages.")
+    questions: SelfChatUse = Field(description="A Heinzel's questions also asked in your own direct messages.")
+    wait_minutes: int = Field(description="How long a question waits for an answer in chat.")
+    detail: str = Field(description="How it stands, in words, with what to do when nothing can carry it.")

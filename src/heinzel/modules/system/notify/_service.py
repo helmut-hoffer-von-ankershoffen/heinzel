@@ -15,6 +15,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -38,8 +39,9 @@ from heinzel import (
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
+from heinzel.kernel._self_chat import STATE, SelfChat
+from heinzel.modules.system.notify import _chat, _resolve
 from heinzel.modules.system.notify import _policy as policy
-from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
     SHOWN,
     DaemonState,
@@ -57,6 +59,8 @@ from heinzel.modules.system.notify._models import (
     NotifySettings,
     Opened,
     Recovered,
+    SelfChatStatus,
+    SelfChatUse,
     Tested,
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
@@ -138,6 +142,11 @@ class NotifyService(Notifications):
         """The health checks that aren't up, for a notice's `checks_up`; set by `for_user`, None asks nothing."""
         self._health_resolved_at: datetime | None = None
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
+        self.self_chat: Callable[[], SelfChat | None] = lambda: None
+        """The bound chat adapter's self channel (ADR 0160); set by `for_user`, None sends nothing to chat."""
+        self.chat_ledger = _chat.notice_ledger(settings.state_dir / STATE)
+        self._chat_busy = threading.Lock()
+        self._chat_again = threading.Event()
 
     @classmethod
     def for_user(cls, kernel: Kernel) -> "NotifyService":
@@ -162,6 +171,7 @@ class NotifyService(Notifications):
         service.daemon = lambda: daemon_state(kernel)
         service.capability = _resolve.kernel_probe(kernel)
         service.problems = lambda: doctor_problems(kernel)
+        service.self_chat = kernel.self_chat
         return service
 
     @property
@@ -254,7 +264,7 @@ class NotifyService(Notifications):
             return notice
 
         try:
-            return self.store.change(now, record)
+            recorded = self.store.change(now, record)
         except OSError:
             log_event(
                 _EVENTS,
@@ -264,6 +274,8 @@ class NotifyService(Notifications):
                 directory=str(self.store.directory),
             )
             return None
+        self.kick_chat()
+        return recorded
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
         self,
@@ -305,7 +317,7 @@ class NotifyService(Notifications):
             )
 
         try:
-            return self.store.change_once(now, key, record, expires=expires)
+            recorded = self.store.change_once(now, key, record, expires=expires)
         except OSError:
             log_event(
                 _EVENTS,
@@ -315,6 +327,8 @@ class NotifyService(Notifications):
                 directory=str(self.store.directory),
             )
             return False
+        self.kick_chat()
+        return recorded
 
     def withdraw(self, key: str) -> bool:
         """Suppress pending matching notices atomically while retaining their replay keys."""
@@ -558,6 +572,12 @@ class NotifyService(Notifications):
         if check_health:
             self._health_resolved_at = now
         self.resolve(check_health=check_health)
+        try:
+            return self._post_due_natively()
+        finally:
+            self.kick_chat()  # after the pop-ups, in the background: a slow chat never holds them or the tick
+
+    def _post_due_natively(self) -> int:
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
         # Claimed before they pop up, under the store's lock, so a web app can't show the same ones meanwhile.
@@ -598,6 +618,80 @@ class NotifyService(Notifications):
         if claimed:
             self.store.native_result(self._clock(), problem)
         return posted
+
+    # Chat as an extra place (ADR 0160) -------------------------------------------------------------------------------
+
+    def _channel(self) -> SelfChat | None:
+        """The self channel if notices go there and it can carry them; None otherwise, also when it can't be built.
+
+        Reads the switch afresh, so switching it on or off needs no restart.
+        """
+        try:
+            self.settings = self._refresh_settings()
+            if not self.settings.chat_notifications:
+                return None
+            channel = self.self_chat()
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs a notice
+            log_event(_EVENTS, "notify.chat.unavailable", level=logging.WARNING, problem=type(exc).__name__)
+            return None
+        return channel if channel is not None and channel.notifies else None
+
+    def post_chat(self) -> int:
+        """Send the due notices to your own direct messages too, if switched on; how many went. Never raises."""
+        channel = self._channel()
+        if channel is None:
+            return 0
+        try:
+            notices = sorted(self.store.read(), key=lambda notice: notice.id)
+        except (OSError, ValueError):
+            return 0
+        url: Callable[[Notice], str | None] = lambda notice: self._ui_url(event_route(notice))  # noqa: E731 - one use
+        return _chat.send(notices, channel, self.chat_ledger, self._clock(), url)
+
+    def kick_chat(self) -> None:
+        """Send due notices to chat in the background, so recording a notice never waits for the chat adapter.
+
+        One sender runs at a time per process; a kick while it runs makes it look once more when it is done.
+        """
+        self._chat_again.set()
+        if not self._chat_busy.acquire(blocking=False):
+            return
+
+        def run() -> None:
+            try:
+                while self._chat_again.is_set():
+                    self._chat_again.clear()
+                    self.post_chat()
+            finally:
+                self._chat_busy.release()
+
+        threading.Thread(target=run, name="hz-notify-chat", daemon=True).start()
+
+    def chat_status(self) -> SelfChatStatus:
+        """Whether notices and questions also reach you in chat, and through which connector."""
+        self.settings = self._refresh_settings()
+        try:
+            channel = self.self_chat()
+            problem = None
+        except HeinzelError as exc:
+            channel, problem = None, str(exc)
+        if channel is None:
+            detail = problem or (
+                "No chat connector that can message you is set up: install one that can, such as heinzel-slack, "
+                "and bind it under Connectors."
+            )
+        else:
+            serves = [use for use in ("notifications", "questions") if channel.serves(use)]
+            detail = f"{channel.adapter} can carry {' and '.join(serves)}."
+        return SelfChatStatus(
+            adapter=channel.adapter if channel is not None else None,
+            notifications=SelfChatUse(
+                supported=channel is not None and channel.notifies, on=self.settings.chat_notifications
+            ),
+            questions=SelfChatUse(supported=channel is not None and channel.asks, on=self.settings.chat_questions),
+            wait_minutes=self.settings.chat_wait_minutes,
+            detail=detail,
+        )
 
     def _end_leftover_instances(self, *, install: bool = True) -> None:
         """End Heinzel Notifier processes that outlived any notification: a build that couldn't end itself, or a hang.

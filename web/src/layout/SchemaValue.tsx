@@ -47,9 +47,29 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
       );
     case "installed":
       return control.source === "adapters" ? (
-        <AdapterChoices {...{ id, label, schema, control, value, disabled, onChange }} />
+        <AdapterChoices
+          {...{
+            id,
+            label,
+            schema,
+            control,
+            value,
+            disabled,
+            onChange,
+          }}
+        />
       ) : (
-        <ModuleChoices {...{ id, label, schema, control, value, disabled, onChange }} />
+        <ModuleChoices
+          {...{
+            id,
+            label,
+            schema,
+            control,
+            value,
+            disabled,
+            onChange,
+          }}
+        />
       );
     case "choice":
       return (
@@ -103,7 +123,10 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
     case "range": {
       const pair = Array.isArray(value) && value.length === 2 ? value : initial(schema);
       const [from, to] = pair as [number, number];
-      const choice = { kind: "choice", options: control.options } as const;
+      const choice = {
+        kind: "choice",
+        options: control.options,
+      } as const;
       return (
         <span className="flex items-center gap-3">
           <SchemaValue
@@ -306,7 +329,16 @@ function Table({
                         value={row[key] === undefined ? "" : String(row[key])}
                         disabled={disabled}
                         onCommit={(text) =>
-                          onChange(rows.map((other, at) => (at === index ? { ...other, [key]: text } : other)))
+                          onChange(
+                            rows.map((other, at) =>
+                              at === index
+                                ? {
+                                    ...other,
+                                    [key]: text,
+                                  }
+                                : other,
+                            ),
+                          )
                         }
                         className={cn(field, "w-40")}
                       />
@@ -318,7 +350,16 @@ function Table({
                         value={row[key] ?? initial(schema)}
                         disabled={disabled}
                         onChange={(next) =>
-                          onChange(rows.map((other, at) => (at === index ? { ...other, [key]: next } : other)))
+                          onChange(
+                            rows.map((other, at) =>
+                              at === index
+                                ? {
+                                    ...other,
+                                    [key]: next,
+                                  }
+                                : other,
+                            ),
+                          )
                         }
                       />
                     )}
@@ -392,22 +433,70 @@ function Table({
   );
 }
 
-type InstalledProps = Props & { control: Extract<Control, { kind: "installed" }> };
+type InstalledProps = Props & {
+  control: Extract<Control, { kind: "installed" }>;
+};
 type InstalledOption = { value: string; label: string };
 
 function AdapterChoices(props: InstalledProps) {
   const query = useCapabilities();
   const options = (query.data?.adapters ?? [])
     .filter((adapter) => adapter.capability === props.control.capability)
-    .map((adapter) => ({ value: adapter.adapter, label: `${adapter.adapter} · ${adapter.distribution}` }));
-  if (props.control.none !== undefined) options.unshift({ value: props.control.none, label: "None" });
-  return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
+    .map((adapter) => ({
+      value: adapter.adapter,
+      label: `${adapter.adapter} · ${adapter.distribution}`,
+    }));
+  // Several on at once (ADR 0161) need no "None": switching every one off is none.
+  if (props.control.none !== undefined && !props.control.multiple) {
+    options.unshift({ value: props.control.none, label: "None" });
+  }
+  // Nothing configured, yet an adapter may serve it: hz binds the only installed one by itself (ADR 0055). Only then
+  // is it "the only one installed"; a core default may be one of several.
+  const capability = query.data?.capabilities?.find((found) => found.name === props.control.capability);
+  const serving = capability?.how === "automatic" ? capability.bound : null;
+  const selected = Array.isArray(props.value) ? props.value.map(String) : [];
+  // Connectors that are on and open links on the same host: such links are refused (ADR 0161), as doctor says.
+  const owners = new Map<string, string[]>();
+  for (const adapter of query.data?.adapters ?? []) {
+    if (adapter.capability !== props.control.capability || !selected.includes(adapter.adapter)) continue;
+    for (const host of adapter.links ?? []) owners.set(host, [...(owners.get(host) ?? []), adapter.adapter]);
+  }
+  const overlaps = [...owners].filter(([, names]) => names.length > 1);
+  return (
+    <InstalledChoices
+      {...props}
+      options={options}
+      pending={!query.data}
+      error={query.error?.message}
+      unset={serving ? t("settings.onlyInstalled", { adapter: shortName(serving) }) : undefined}
+      unsetTitle={serving ? t("settings.onlyInstalled", { adapter: serving }) : undefined}
+      // With several on, the first is where a new document goes: say which, so the order is no secret.
+      note={
+        props.control.multiple && selected.length > 1
+          ? t("settings.severalOn", { adapter: selected[0] ?? "" })
+          : undefined
+      }
+      warning={props.control.multiple && overlaps.length > 0 ? t("settings.linkOverlap") : undefined}
+      warningTitle={overlaps.map(([host, names]) => `${host}: ${names.join(", ")}`).join("; ")}
+    />
+  );
 }
 
 function ModuleChoices(props: InstalledProps) {
   const query = useInfo();
-  const options = (query.data?.modules ?? []).map((module) => ({ value: module.qualname, label: module.qualname }));
+  const options = (query.data?.modules ?? []).map((module) => ({
+    value: module.qualname,
+    label: module.qualname,
+  }));
   return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
+}
+
+/** The copy around an adapter's name leaves it this many characters within the pane's 60. */
+const ADAPTER_NAME_LIMIT = 17;
+
+/** A long adapter name cut short with an ellipsis; the full copy is the control's tooltip. */
+function shortName(name: string): string {
+  return name.length > ADAPTER_NAME_LIMIT ? `${name.slice(0, ADAPTER_NAME_LIMIT - 1)}…` : name;
 }
 
 /** Keep saved choices visible when their provider is absent; fetching options must never replace a value. */
@@ -422,22 +511,46 @@ function InstalledChoices({
   options,
   pending,
   error,
+  unset,
+  unsetTitle,
+  note,
+  warning,
+  warningTitle,
 }: InstalledProps & {
   options: InstalledOption[];
   pending: boolean;
   error?: string;
+  /** What the empty choice says instead of "not set": which adapter serves it while nothing is configured. */
+  unset?: string;
+  /** The whole of `unset` when it was cut short, as a tooltip. */
+  unsetTitle?: string;
+  /** A line under the choices, e.g. which of several is the default. */
+  note?: string;
+  /** A problem with the choices as they are, e.g. two connectors that are on claim the same link host. */
+  warning?: string;
+  /** The whole of `warning`, e.g. each shared host and its connectors, as a tooltip. */
+  warningTitle?: string;
 }) {
-  const selected = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  const saved = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  // A list of switches has no "None": a saved `none` is every switch off.
+  // Each one once: a list that names one twice (a stale or hand-written save) is neither shown nor saved twice.
+  const selected = control.multiple ? [...new Set(saved)].filter((item) => item !== control.none) : saved;
   const available = new Set(options.map((option) => option.value));
   const choices = [
     ...options,
-    ...selected.filter((item) => !available.has(item)).map((item) => ({ value: item, label: `${item} (unavailable)` })),
+    // While the choices load, a saved value is not known to be missing: show it plainly, never "(unavailable)".
+    ...selected
+      .filter((item) => !available.has(item))
+      .map((item) => ({
+        value: item,
+        label: pending ? item : `${item} (unavailable)`,
+      })),
   ];
   const labels = unwrap(schema)?.["x-labels"];
   return (
     <div className="min-w-0">
       {control.multiple ? (
-        <div className="flex flex-wrap gap-3">
+        <fieldset aria-label={label} className="m-0 flex min-w-0 flex-wrap gap-3 border-0 p-0">
           {choices.map((option) => (
             <label key={option.value} className="flex items-center gap-1.5 text-sm">
               <input
@@ -455,7 +568,7 @@ function InstalledChoices({
               {labels?.[option.value] ?? option.label}
             </label>
           ))}
-        </div>
+        </fieldset>
       ) : (
         <select
           id={id}
@@ -463,11 +576,12 @@ function InstalledChoices({
           value={selected[0] ?? ""}
           disabled={disabled || pending}
           onChange={(event) => onChange(event.target.value)}
+          title={selected.length === 0 ? unsetTitle : undefined}
           className={selectField}
         >
           {selected.length === 0 && (
             <option value="" disabled>
-              {t("settings.notSet")}
+              {unset ?? t("settings.notSet")}
             </option>
           )}
           {choices.map((option) => (
@@ -476,6 +590,17 @@ function InstalledChoices({
             </option>
           ))}
         </select>
+      )}
+      {control.multiple && selected.length === 0 && unset && !pending && (
+        <p className="text-xs text-muted-foreground" title={unsetTitle}>
+          {unset}
+        </p>
+      )}
+      {note && !pending && <p className="text-xs text-muted-foreground">{note}</p>}
+      {warning && !pending && (
+        <p className="text-xs text-warn" title={warningTitle}>
+          {warning}
+        </p>
       )}
       {error && (
         <p role="alert" className="text-xs text-bad">
@@ -494,7 +619,12 @@ function InstalledChoices({
 // The custom duration format uses kernel/_duration.py's DURATION_PATTERN. Keep its integer text and unit;
 // final validation (including timedelta overflow) belongs to the setting's server-side validator.
 const durationPattern = /^([1-9][0-9]*)([smhd])$/;
-const durationUnits = { s: "seconds", m: "minutes", h: "hours", d: "days" } as const;
+const durationUnits = {
+  s: "seconds",
+  m: "minutes",
+  h: "hours",
+  d: "days",
+} as const;
 
 function DurationValue({ id, label, value, disabled, onChange }: Omit<Props, "schema">) {
   const parts = typeof value === "string" ? durationPattern.exec(value) : null;

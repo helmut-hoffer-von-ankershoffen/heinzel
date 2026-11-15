@@ -168,12 +168,20 @@ export function sourceLabel(
   privateRepository?: boolean | null,
   sourceUrl?: string | null,
 ): string {
-  const repository = knownRepository(sourceUrl ?? plugin.source_url ?? plugin.homepage);
+  const url = sourceUrl ?? plugin.source_url ?? plugin.homepage;
+  // A repository on this machine (`hz system plugin add /path`): its own source, whatever its remote says.
+  if (isLocalSource(url)) return t("plugins.localRepository");
+  const repository = knownRepository(url);
   if (repository === "heinzel" || repository === "heinzel-plugins") return t("plugins.firstParty");
   if (repository === "heinzel-contrib") return t("plugins.community");
   if (privateRepository === true) return t("plugins.private");
   if (privateRepository === false) return t("plugins.custom");
   return t("plugins.sourceUnknown");
+}
+
+/** A path or `file:` URL: a git repository on this machine, never a link. */
+function isLocalSource(url: string | null | undefined): boolean {
+  return !!url && /^(git\+)?file:|^[/~]/i.test(url);
 }
 
 /** Compare complete GitHub repository identities; a similarly prefixed fork is a different source. */
@@ -228,7 +236,11 @@ export function ModuleHeader({
                 className="h-auto rounded-md bg-transparent px-1.5 py-0 text-[11px] font-normal hover:bg-accent/60"
                 title={t("settings.openPlugin")}
               >
-                {sourceLabel(plugin, plugin.private_repository, plugin.source_url ?? plugin.homepage)}
+                {sourceLabel(
+                  plugin,
+                  plugin.private_repository,
+                  plugin.source_path ?? plugin.source_url ?? plugin.homepage,
+                )}
               </Button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
@@ -297,6 +309,14 @@ function sourceLink(url: string | null | undefined, name: string) {
 
 /** "from github.com/owner/repo", the repository a link; "source unknown" until the backend says. */
 function RepositoryLine({ url }: { url: string | null | undefined }) {
+  // A source that is no https URL (a repository on this machine) is shown as plain text: no link, no URL parsing.
+  if (url && !/^https:\/\//i.test(url)) {
+    return (
+      <span className="block truncate text-xs text-muted-foreground/80" title={url}>
+        {t("plugins.fromPrefix")} {url.replace(/^git\+/, "")}
+      </span>
+    );
+  }
   return url ? (
     <span className="block truncate text-xs text-muted-foreground/80">
       {t("plugins.fromPrefix")}{" "}
@@ -941,7 +961,7 @@ function Yours({
                   const rowKey = `yours:${plugin.distribution}`;
                   const entry = known.get(plugin.distribution);
                   const url = plugin.source_url ?? plugin.homepage ?? null;
-                  const source = sourceLabel(plugin, plugin.private_repository, url);
+                  const source = sourceLabel(plugin, plugin.private_repository, plugin.source_path ?? url);
                   const enabled = plugin.enabled ?? true;
                   return (
                     <li key={plugin.distribution} className="border-b border-border/70 last:border-b-0">

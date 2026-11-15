@@ -25,12 +25,29 @@ from heinzel.kernel._ai import (
     UsageLog,
     record_usage,
 )
+from heinzel.kernel._ai_models import (
+    AI_MODELS_INTERFACE,
+    AiModelOptions,
+    AiModels,
+    AiModelsSource,
+    ModelId,
+    ModelOffer,
+    ModelUnavailableError,
+)
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._captured_write import (
@@ -167,7 +184,7 @@ from heinzel.kernel._draft_append import (
     ReviewedLinkChannel,
 )
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
-from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
+from heinzel.kernel._errors import HeinzelError, NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
@@ -285,12 +302,16 @@ from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     RESPONSES,
+    SELF_CONTEXT_LENGTH,
+    SELF_OPTION_LENGTH,
+    SELF_OPTIONS,
     Attachment,
     Calendar,
     Chat,
     CodeHost,
     Directory,
     Document,
+    DocumentHit,
     Documents,
     DraftedMail,
     Event,
@@ -298,6 +319,7 @@ from heinzel.kernel._protocols import (
     EventChange,
     EventDraft,
     FreeBusy,
+    Gathered,
     Issue,
     Mail,
     MailContent,
@@ -315,7 +337,10 @@ from heinzel.kernel._protocols import (
     PullRequest,
     Relation,
     SectionReplacement,
+    SelfAnswer,
+    SelfMessage,
     SentMail,
+    SourceFailure,
     TeamGraph,
     TimeSpan,
     Tracker,
@@ -433,6 +458,7 @@ from heinzel.kernel._tool_uninstall import (
 from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
+    "AI_MODELS_INTERFACE",
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
     "CORE_DISTRIBUTION",
@@ -464,6 +490,9 @@ __all__ = [
     "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
     "RESPONSES",
+    "SELF_CONTEXT_LENGTH",
+    "SELF_OPTIONS",
+    "SELF_OPTION_LENGTH",
     "SETUP_PHASES",
     "SIGNALS",
     "SOUND_CSP",
@@ -482,6 +511,9 @@ __all__ = [
     "AiAccess",
     "AiAccessWebAttempt",
     "AiAccessWebSignIn",
+    "AiModelOptions",
+    "AiModels",
+    "AiModelsSource",
     "ApprovalChannel",
     "AssetType",
     "Attachment",
@@ -568,6 +600,7 @@ __all__ = [
     "Directory",
     "DiscoveryHint",
     "Document",
+    "DocumentHit",
     "Documents",
     "DraftAppendAttempt",
     "DraftAppendLease",
@@ -590,6 +623,7 @@ __all__ = [
     "FinishOn",
     "FlowState",
     "FreeBusy",
+    "Gathered",
     "GitRunner",
     "Grant",
     "GrantState",
@@ -648,12 +682,16 @@ __all__ = [
     "Message",
     "MetricWidget",
     "Mode",
+    "ModelId",
+    "ModelOffer",
+    "ModelUnavailableError",
     "Module",
     "ModuleRecord",
     "ModuleSettings",
     "NavLet",
     "NavSettings",
     "Navigate",
+    "NotSupportedError",
     "Notice",
     "NoticeHelper",
     "NoticeKind",
@@ -722,6 +760,8 @@ __all__ = [
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
+    "SelfAnswer",
+    "SelfMessage",
     "SentMail",
     "ServiceContract",
     "ServiceLet",
@@ -755,6 +795,7 @@ __all__ = [
     "SoundStream",
     "Soundscape",
     "SoundscapeLet",
+    "SourceFailure",
     "SourceGuardedConnectedService",
     "Span",
     "Status",
@@ -814,6 +855,7 @@ __all__ = [
     "clean_text",
     "collapses",
     "daypart",
+    "declared_unsupported",
     "discover",
     "draft_reporting_lines",
     "env_prefix",

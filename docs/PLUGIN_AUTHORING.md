@@ -193,6 +193,219 @@ cannot drift from what the code does. Test a declaration with `hz system prerequ
 (`HZ_SHARING__ENABLED=1` selects the example above; `--context feature` asks for a `feature` program that has no
 predicate) and `hz system prerequisite list --json`, against the released SDK; no Core checkout is needed.
 
+## Bring your own AI models and connectors
+
+A plugin can bring its own AI models and its own connectors. This needs Heinzelmännchen 0.9.43 or later, the first
+release with [ADR 0159](adr/0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md). See the public
+`heinzel-acme-connectors` plugin, in the `heinzel-acme` repository of the made-up reference company, for a worked
+example of all of it.
+
+### AI models: the `ai-models` interface
+
+A plugin is a model provider that plugs into [Pydantic AI](https://ai.pydantic.dev): it says which models it has,
+and hands Heinzel a Pydantic AI model for one. How it reaches the models, and how it signs in, is up to the plugin.
+Heinzel runs the model with Pydantic AI itself, with its own tools, streaming, history, limits and usage records.
+
+```python
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+
+from heinzel import ModelOffer, ModelUnavailableError, Module
+
+module = Module("acme-ai", "ACME's models.")
+
+
+@module.provides("ai-models", modes={"read"}, hosts=["ai.acme.example"], name="acme")
+class AcmeModels:
+    title = "ACME AI"
+
+    def models(self) -> list[ModelOffer]:
+        # From your own cache: Heinzel waits 5 seconds at most.
+        return [ModelOffer(id="acme-large", thinking="adaptive", efforts=["low", "medium", "high"])]
+
+    def model(self, model_id: str) -> AnthropicModel:
+        if model_id not in {offer.id for offer in self.models()}:
+            raise ModelUnavailableError(model_id)
+        provider = AnthropicProvider(base_url="https://ai.acme.example", http_client=your_http_client())
+        return AnthropicModel(model_id, provider=provider)
+```
+
+The option shows up as "ACME AI" next to Claude Code in Settings and in `hz ai access list`. People choose it with
+`hz ai access use acme`, then pick a model per chat in the chat's model picker. Reference
+(`from heinzel import ...`, interface `AI_MODELS_INTERFACE = "1.0"`):
+
+| Name | What it is |
+| --- | --- |
+| `AiModels.models() -> list[ModelOffer]` | The models on offer, the default first. Heinzel calls it off the event loop, with a 5 s timeout, reuses an answer for 3 s, and shows the last good list if a call fails. A bad row is skipped, not the list. |
+| `AiModels.model(model_id) -> Model` | A ready `pydantic_ai.models.Model`, built without calling it. Called only with a listed, available id, off the event loop, once per turn. Raise `ModelUnavailableError` for an id you can't serve. |
+| `AiModels.test(model_id) -> AccessTest` | Optional: your own live check. Without it, Heinzel sends one short request. |
+| `title`, `summary` | Optional attributes: what the option is called and one sentence about it. |
+| `ModelOffer` | `id` (required), and optional `title` (shown instead of the id), `description`, `aliases`, `context_window`, `efforts`, `tools` (default true), `thinking` (`"adaptive"` or `"budget"`: Anthropic's two effort styles, which Heinzel maps; leave unset to handle effort yourself) `available` (default true; false keeps it visible, marked unavailable, and refused) and `level` (`"low"`, `"medium"` or `"high"`: the model Heinzel picks for that level; mark at most one offer per level). |
+| `ModelUnavailableError(model_id, others=None, reason="")` | The model can't be used now; the message names others to pick. |
+
+Within interface 1.x, changes are additive only: new optional fields and new optional methods. Never put a secret
+into an exception message: Heinzel shows failure messages, cut short.
+
+Heinzel sets each request's `max_tokens` itself: 16384 tokens of output, plus the thinking budget for a `budget`
+model. It also turns on Pydantic AI's Anthropic prompt
+caching of instructions and tool definitions; models of other APIs ignore it. The conformance kit only warns when
+`model()` accepts an unknown or unavailable id, since Heinzel never asks for one; refuse it anyway.
+
+### Connectors
+
+Provide `mail`, `calendar`, `documents`, `tracker`, `chat`, `meetings` or `code-host` as for any connector. A
+method your system can't do raises `NotSupportedError(capability, method, reason)`. Or list it in a class
+attribute, `unsupported = frozenset({"replace_section"})`: then Heinzel refuses the call before it reaches you, and
+the method may be left out. People see a plain "can't do that here" in the CLI, the web app and the chat.
+
+#### A chat that can message its owner
+
+A `chat` connector may also reach the person in their own direct messages
+([ADR 0160](adr/0160-chat-is-an-extra-place-for-notices-and-questions.md)). Implement either or both:
+
+```python
+import threading
+from collections.abc import Sequence
+
+from heinzel import SelfAnswer, SelfMessage
+
+
+class OwnChat:
+    unsupported = frozenset({"messages", "post"})  # this one talks only to its owner
+
+    def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
+        ...  # send `text` to the owner, as a reply in `thread` if given; label it with `context`
+        return SelfMessage(id="m-1", thread=thread or "m-1")
+
+    def ask_self(
+        self,
+        question: str,
+        *,
+        options: Sequence[str] = (),
+        timeout: float,
+        thread: str | None = None,
+        context: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> SelfAnswer:
+        ...  # options as buttons; wait for a button or a reply in the thread, checking `cancel` every few seconds
+        return SelfAnswer(thread="m-1", timed_out=True)
+```
+
+Heinzel calls them itself, in a worker thread, when the person switches on "Notices also in chat" or "Questions also
+in chat" under Settings, Notifications; no operation, playbook or other plugin can. Return `SelfAnswer(option=label,
+text=label)` for a button, `SelfAnswer(text=reply)` for a typed reply, and `SelfAnswer(timed_out=True)` when the time
+ran out or `cancel` was set; never raise for those. Count only the owner's own answer. Neutralise mention syntax as
+for `post`, and pass every string you return through `clean_text`. These buttons answer a question, never approve a
+write: keep them apart from any approval buttons your plugin has. A connector written before these methods doesn't
+offer them.
+
+## Check your adapters with the conformance kit
+
+Core can't test a private plugin, so your plugin's own CI runs Core's checks. The kit comes with Heinzelmännchen:
+`heinzel.conformance`, and the `hz_conformance` pytest fixture, which needs no import or conftest. Point it at your
+module:
+
+```python
+import pytest
+
+from acme_plugin import module
+from heinzel import Window
+
+pytestmark = pytest.mark.integration
+
+
+def test_conforms(hz_conformance, fake_acme):
+    window = Window.model_validate({"since": "2026-11-01T00:00:00Z", "until": "2026-11-08T00:00:00Z"})
+    hz_conformance(
+        module,
+        samples={"mail": {"messages": {"query": "from:ada", "window": window}}},
+        writes=lambda: len(fake_acme.writes),
+    )
+```
+
+It builds each adapter your module provides as Heinzel does, and checks it against its capability's contract:
+
+- **Shape.** Every method of the modes you declare exists and takes the protocol's parameters and defaults, unless
+  `unsupported` lists it. Every name in `unsupported` is a method of the capability.
+- **Modes and hosts.** Each declared mode keeps a method you support. You name the hosts you send data to.
+- **Read calls.** It calls each read method once: those without parameters, and those you pass `samples` for. It
+  never calls a write method. A read call must return the protocol's type, or raise `NotSupportedError` with its
+  own capability and method. It must not write: calling one of your write methods, a write tool of an
+  `McpConnector`, or changing your `writes` counter fails the check. The counter is the guard that really counts:
+  the other two only see writes made through those paths on the calling thread.
+- **AI models.** `models()` answers within 5 seconds with valid `ModelOffer`s, unique ids and at most one offer per
+  `level`. `model(id)` returns a `pydantic_ai.models.Model`. An unknown or unavailable id should raise
+  `ModelUnavailableError`; the kit warns otherwise, since Heinzel refuses such an id before it calls `model()`. With
+  `live_request=True`, one request through your first model must answer.
+- **Sign-in and health.** A `@module.sign_in` provider's `status(live=False)` answers within 5 seconds without the
+  network, with a `SignInStatus` that lists every declared grant, says `live=False`, and names the account, never a
+  token. Offline `@module.health` checks run without the network and return a list of `Check`. Live checks and
+  `sign_in` itself are never called.
+
+A failure lists every problem at once, each with the method and what the contract says. A `ConformanceWarning`
+names what Heinzel tolerates but you should fix, such as one invalid model offer Heinzel skips; with pytest's
+`filterwarnings = ["error"]` it fails too. The report names
+the Heinzelmännchen version, the `ai-models` interface version, Pydantic AI and httpx2. Check one adapter on its own
+with `hz_conformance(adapter, "mail", modes={"read"})`.
+
+## Build a connector on an MCP server
+
+A company MCP gateway often gives each connector a local launcher that signs in by itself. `McpConnector` runs that
+launcher and speaks MCP with it, so your plugin holds no secret:
+
+```python
+from heinzel import Message, Module, Window
+from heinzel.connectors.mcp import ENVELOPE_UNTRUSTED, INLINE_UNTRUSTED, McpConnector, McpTool
+
+module = Module("acme-chat", "ACME chat through the company MCP gateway.")
+
+
+@module.provides("chat", modes={"read"}, hosts=["mcp.acme.example"], name="acme-chat")
+class AcmeChat:
+    unsupported = frozenset({"post"})
+
+    def __init__(self) -> None:
+        self._mcp = McpConnector(
+            ["acme-mcp", "launch", "chat"],
+            tools=[McpTool("channel_history", aliases=("history",)), McpTool("send", mode="write")],
+            markers=[INLINE_UNTRUSTED, ENVELOPE_UNTRUSTED],
+            modes={"read"},
+        )
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        result = self._mcp.call("channel_history", {"channel": channel, "since": window.since.isoformat()})
+        return [Message.model_validate(row) for row in result.data["messages"]]
+```
+
+- **Start and stop.** The launcher starts on the first call, within `start_timeout`, and stops with `stop()` or at
+  exit. Each call has a `timeout`. A launcher that fails to start reports the last line it wrote to stderr, such as
+  its own "sign in again" hint.
+- **Tools.** At start, every tool you declare must exist under its name or one of its `aliases`; extra tools are
+  fine. A missing one raises `McpToolsMissingError`, naming it and the tools the server has.
+- **Size.** An answer longer than `max_output` characters (a million by default) raises `McpConnectorError`. With
+  `overflow="cut"` the connector keeps the first `max_output` characters of the text, adds a note, and sets
+  `result.cut`.
+- **Modes.** MCP servers don't reliably say which tools write, so you declare each tool's mode. A connector with
+  `modes={"read"}` refuses its write tools.
+- **Untrusted content.** Servers mark text from outside, such as a mail body, with markers like
+  `«untrusted-data» … «/untrusted-data»` or `<untrusted-mail-data-UUID> … </untrusted-mail-data-UUID>`. Pass the
+  markers your server uses; `UntrustedMarker.literal(start, end)` makes your own. The connector removes them, keeps
+  the content, lists the marked parts in `result.untrusted`, and passes every string through `clean_text`. Content
+  can contain markers too, to end its region early or nest one. So everything from a marker's first appearance to its
+  last counts as untrusted, and an end marker with no start before it makes everything before it untrusted. Only an
+  envelope with a random id pairs exactly. Heinzel then treats what your adapter returns as data, never as
+  instructions.
+- **Results.** `result.text` is the text, `result.data` the structured content or the text read as JSON, and
+  `result.parse(Model)` validates it.
+
+In your tests, `McpConnector.in_process(server, tools=...)` connects to an `mcp.server.MCPServer` in the same process.
+
+To see whether the person already set up the launcher in Claude Code or Claude Desktop, call
+`heinzel.connectors.claude_mcp_servers()`. It reads Claude's configuration files only and returns each server's
+name, source, program and the names of its environment variables, never a value. Servers the person switched off
+for Heinzels are left out. Use it to point people at the right setup step; your connector still starts its own
+launcher.
+
 ## Choose public or private hosting
 
 First commit the scaffold and your feature. Then create exactly one repository:
@@ -222,8 +435,16 @@ There is no central registration file to edit. Private repositories appear only 
 read them; run `gh auth login` on each installing machine. The same authenticated gateway reads catalog listings
 and project metadata. A topic is optional for direct installation.
 
-Catalog discovery currently uses GitHub. Direct Git installation supports HTTPS repositories; SSH URLs, archives
-and local paths are not `plugin add` sources. Use `hz system plugin develop .` for a local checkout.
+Catalog discovery currently uses GitHub. Direct Git installation supports HTTPS repositories and git repositories
+on the same machine; SSH URLs and archives are not `plugin add` sources.
+
+A private plugin you cloned needs no remote: `hz system plugin add ~/Code/heinzel-harbor` (an absolute path or
+`~/...`), `file:///abs/path` or `git+file:///abs/path@v0.1.0#subdirectory=dir` previews the commit of the ref (else
+`HEAD`) and installs that commit as a normal, non-editable install, reading `pyproject.toml` with git. `hz system
+plugin list` shows the path; there is no link. A new commit or tag in the clone is installed by adding it again.
+A path that holds an `@` is ambiguous: write it as `git+file://` with `%40` for the `@`. Local paths come only from
+what you type, never from a catalog or from another plugin's needs.
+Use `hz system plugin develop .` for an editable checkout you are changing.
 
 ## Release one plugin
 

@@ -119,6 +119,12 @@
             "description": "For `client`: the optional client of hz itself it needs, e.g. `openai` (`heinzel[openai]`).",
             "title": "Client"
           },
+          "core_engine": {
+            "default": false,
+            "description": "Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's).",
+            "title": "Core Engine",
+            "type": "boolean"
+          },
           "detail": {
             "default": "",
             "description": "What it found, e.g. the CLI's path.",
@@ -154,6 +160,18 @@
               }
             ],
             "description": "The last `hz ai access test` of it, if any."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model it runs now, when it says.",
+            "title": "Model"
           },
           "models": {
             "description": "Models it offers or is configured with.",
@@ -210,7 +228,8 @@
                   "model",
                   "gateway",
                   "sign-in",
-                  "client"
+                  "client",
+                  "plugin-model"
                 ],
                 "type": "string"
               },
@@ -244,6 +263,14 @@
             "description": "What people pick it by, e.g. `Claude Code`.",
             "title": "Title",
             "type": "string"
+          },
+          "unavailable_models": {
+            "description": "Models it lists that didn't answer when last probed; still pickable.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Models",
+            "type": "array"
           }
         },
         "required": [
@@ -291,6 +318,18 @@
             "title": "Fix",
             "type": "string"
           },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, when reported; with `--all`, in total.",
+            "title": "Input Tokens"
+          },
           "model": {
             "anyOf": [
               {
@@ -303,6 +342,14 @@
             "description": "The model that answered, when reported.",
             "title": "Model"
           },
+          "models": {
+            "description": "With `--all`: each model tested, in the option's order.",
+            "items": {
+              "$ref": "#/components/schemas/ModelTestResult"
+            },
+            "title": "Models",
+            "type": "array"
+          },
           "name": {
             "description": "The option tested.",
             "title": "Name",
@@ -312,6 +359,26 @@
             "description": "Whether it answered.",
             "title": "Ok",
             "type": "boolean"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, when reported; with `--all`, in total.",
+            "title": "Output Tokens"
+          },
+          "untested": {
+            "description": "With `--all`: models beyond the cap of one run, not asked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untested",
+            "type": "array"
           }
         },
         "required": [
@@ -872,6 +939,14 @@
               "type": "string"
             },
             "title": "Hosts",
+            "type": "array"
+          },
+          "links": {
+            "description": "Hosts of the links it opens, which route a link to it when several serve its capability.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
             "type": "array"
           },
           "modes": {
@@ -1767,6 +1842,14 @@
       "CapabilityInfo": {
         "description": "A capability the core defines and the adapter bound to it.",
         "properties": {
+          "adapters": {
+            "description": "Every adapter that serves it, the default first: several only where several may (ADR 0161).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Adapters",
+            "type": "array"
+          },
           "bound": {
             "anyOf": [
               {
@@ -1779,6 +1862,19 @@
             "description": "The adapter bound in the `[capabilities]` table; none if unbound.",
             "title": "Bound"
           },
+          "how": {
+            "default": "unbound",
+            "description": "How it got its adapter: `configured`, `automatic` (the only one installed), the core's `default`, `off` or `unbound` (ADR 0055).",
+            "enum": [
+              "configured",
+              "automatic",
+              "default",
+              "off",
+              "unbound"
+            ],
+            "title": "How",
+            "type": "string"
+          },
           "modes": {
             "description": "The modes it has: read, and write if any method writes.",
             "items": {
@@ -1790,6 +1886,12 @@
             },
             "title": "Modes",
             "type": "array"
+          },
+          "multiple": {
+            "default": false,
+            "description": "Whether several adapters may serve it at once (ADR 0161).",
+            "title": "Multiple",
+            "type": "boolean"
           },
           "name": {
             "description": "Name in requirements and bindings, e.g. `tracker`.",
@@ -5952,6 +6054,171 @@
         "title": "Disposition",
         "type": "string"
       },
+      "Document": {
+        "description": "The text of a document, for reading.",
+        "properties": {
+          "ref": {
+            "description": "The reference it was read by: an id or URL in the adapter's notation.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revision read, if the adapter tracks revisions.",
+            "title": "Revision"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter it was read through, set by the core when several serve documents; adapters leave it.",
+            "title": "Source"
+          },
+          "text": {
+            "description": "Content as plain text or Markdown.",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title of the document.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "text"
+        ],
+        "title": "Document",
+        "type": "object"
+      },
+      "DocumentHit": {
+        "description": "A document a search found: enough to show it and to read it, not its text (ADR 0161).",
+        "properties": {
+          "ref": {
+            "description": "What `Documents.read` takes for it: an id or URL in the adapter's notation.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A short excerpt around the match, as plain text.",
+            "title": "Snippet"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter that found it, set by the core; adapters leave it empty.",
+            "title": "Source"
+          },
+          "title": {
+            "description": "Title of the document.",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it last changed; none if unknown.",
+            "title": "Updated At"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "ref",
+          "title"
+        ],
+        "title": "DocumentHit",
+        "type": "object"
+      },
+      "DocumentSearch": {
+        "description": "What a search found in every documents connector that is on, and which couldn't answer.",
+        "properties": {
+          "failures": {
+            "description": "Connectors that couldn't answer, and why; the others' results are still listed.",
+            "items": {
+              "$ref": "#/components/schemas/SourceFailure"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "hits": {
+            "description": "What the connectors found, in turns, each labelled with its source.",
+            "items": {
+              "$ref": "#/components/schemas/DocumentHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "query": {
+            "description": "What was searched for.",
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "hits"
+        ],
+        "title": "DocumentSearch",
+        "type": "object"
+      },
       "Documentation": {
         "description": "The documentation of every plugin installed, and the core's modules when asked for.",
         "properties": {
@@ -9559,6 +9826,12 @@
       "ModelChoice": {
         "description": "A model the AI access in use offers.",
         "properties": {
+          "available": {
+            "default": true,
+            "description": "False when it didn't answer when its plugin last checked; still pickable.",
+            "title": "Available",
+            "type": "boolean"
+          },
           "name": {
             "description": "What `hz chat send --model` takes, e.g. `sonnet`.",
             "title": "Name",
@@ -9692,6 +9965,68 @@
           "proposal"
         ],
         "title": "ModelPolicyReview",
+        "type": "object"
+      },
+      "ModelTestResult": {
+        "description": "One model's tiny request in `hz ai access test --all`.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "The answer, or why it failed or was skipped.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "default": 0.0,
+            "description": "Wall-clock time of its request.",
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, when reported.",
+            "title": "Input Tokens"
+          },
+          "model": {
+            "description": "The model asked, e.g. `claude-sonnet-4-5`.",
+            "title": "Model",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "`answered`, `unanswered` (now marked unavailable) or `skipped`.",
+            "enum": [
+              "answered",
+              "unanswered",
+              "skipped"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, when reported.",
+            "title": "Output Tokens"
+          }
+        },
+        "required": [
+          "model",
+          "outcome"
+        ],
+        "title": "ModelTestResult",
         "type": "object"
       },
       "ModuleDoc": {
@@ -11845,6 +12180,18 @@
             ],
             "description": "Where it was installed from: PyPI, a git repository, a directory; none if unknown.",
             "title": "Source Kind"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The repository directory on this machine, for a plugin installed from a local git repository (`hz system plugin add /path/to/repository`); none otherwise. It is no link: a browser can't open it.",
+            "title": "Source Path"
           },
           "source_url": {
             "anyOf": [
@@ -14622,9 +14969,12 @@
         "description": "Exact reviewed private schedule; no external tools or account permissions are granted.",
         "properties": {
           "access": {
-            "const": "claude-code-subscription",
             "default": "claude-code-subscription",
-            "description": "Selected subscription access mode.",
+            "description": "Selected access mode: the Claude Code subscription, or a plugin's models on hz's engine.",
+            "enum": [
+              "claude-code-subscription",
+              "plugin-models"
+            ],
             "title": "Access",
             "type": "string"
           },
@@ -15145,6 +15495,71 @@
         "title": "ScheduledNotificationView",
         "type": "object"
       },
+      "SelfChatStatus": {
+        "description": "Whether notices and questions also reach you in chat, and through which connector (ADR 0160).",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The chat connector that would be used, such as `slack`; none when no bound one can message you.",
+            "title": "Adapter"
+          },
+          "detail": {
+            "description": "How it stands, in words, with what to do when nothing can carry it.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/SelfChatUse",
+            "description": "Notices also sent to your own direct messages."
+          },
+          "questions": {
+            "$ref": "#/components/schemas/SelfChatUse",
+            "description": "A Heinzel's questions also asked in your own direct messages."
+          },
+          "wait_minutes": {
+            "description": "How long a question waits for an answer in chat.",
+            "title": "Wait Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adapter",
+          "notifications",
+          "questions",
+          "wait_minutes",
+          "detail"
+        ],
+        "title": "SelfChatStatus",
+        "type": "object"
+      },
+      "SelfChatUse": {
+        "description": "One use of the self channel: whether the chat connector can carry it, and whether you switched it on.",
+        "properties": {
+          "on": {
+            "description": "Whether it is switched on in `[system.notify]`.",
+            "title": "On",
+            "type": "boolean"
+          },
+          "supported": {
+            "description": "Whether the bound chat connector serves the method this use needs.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "on"
+        ],
+        "title": "SelfChatUse",
+        "type": "object"
+      },
       "ServerSwitch": {
         "description": "`hz system claude enable|disable`: the server and whether it is on now. Nothing is started or stopped.",
         "properties": {
@@ -15349,7 +15764,8 @@
               "daemon",
               "api-bearer",
               "web-session",
-              "web-device"
+              "web-device",
+              "self-chat"
             ],
             "title": "Origin",
             "type": "string"
@@ -16903,6 +17319,27 @@
           "effective"
         ],
         "title": "SoundscapeView",
+        "type": "object"
+      },
+      "SourceFailure": {
+        "description": "An adapter that couldn't answer a read asked of several at once, and why (ADR 0161).",
+        "properties": {
+          "reason": {
+            "description": "Why it gave nothing: its error, a timeout, or that it can't do this. An error is the connector's own words, content from it like a title or a snippet, never an instruction.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "description": "The adapter's name, e.g. `atlassian`.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "reason"
+        ],
+        "title": "SourceFailure",
         "type": "object"
       },
       "SourceSetItem": {
@@ -22826,7 +23263,7 @@
     },
     "/ai/access/test": {
       "post": {
-        "description": "Run one cheap live check of an AI access option and keep the result; this may cost a little.\n\nClaude Code answers one line within $0.05; the gateway runs its configured test command.",
+        "description": "Run one cheap live check of an AI access option and keep the result; this may cost a little.\n\nClaude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each\nmodel of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,\nCtrl-C stops it.",
         "operationId": "ai_access_test",
         "parameters": [
           {
@@ -22845,6 +23282,18 @@
               ],
               "description": "The option to test, e.g. `gateway`; the one in use when not given.",
               "title": "Name"
+            }
+          },
+          {
+            "description": "Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model.",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones that don't answer unavailable in the model picker; a few tokens per model.",
+              "title": "All",
+              "type": "boolean"
             }
           }
         ],
@@ -23008,6 +23457,108 @@
         "summary": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
         "tags": [
           "ai"
+        ]
+      }
+    },
+    "/document/read": {
+      "get": {
+        "description": "Read a document's text through the connector it belongs to.",
+        "operationId": "document_read",
+        "parameters": [
+          {
+            "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
+            "in": "query",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "description": "The document: its link, an id a search returned, or `<connector>:<id>`, e.g. `wiki:123456`.",
+              "title": "Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a document's text through the connector it belongs to.",
+        "tags": [
+          "document"
+        ]
+      }
+    },
+    "/document/search": {
+      "get": {
+        "description": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
+        "operationId": "document_search",
+        "parameters": [
+          {
+            "description": "What to look for in titles and text.",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "What to look for in titles and text.",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most this many results.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "At most this many results.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSearch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search every documents connector at once; one that fails or is slow is reported, not fatal.",
+        "tags": [
+          "document"
         ]
       }
     },
@@ -29210,6 +29761,28 @@
         ]
       }
     },
+    "/system/notify/chat": {
+      "get": {
+        "description": "Show whether notices and questions also reach you in chat, and through which connector.\n\nSwitch each on with `hz system config set system.notify.chat_notifications true` (or `chat_questions`); it\nworks once a bound chat connector can message you (ADR 0160). The app keeps showing everything.",
+        "operationId": "system_notify_chat",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfChatStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show whether notices and questions also reach you in chat, and through which connector.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/notify/list": {
       "get": {
         "description": "Show the latest notices, whether each popped up and who showed it, and how they reach you.",
@@ -29370,12 +29943,12 @@
         "operationId": "system_plugin_add",
         "parameters": [
           {
-            "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
+            "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
             "in": "query",
             "name": "spec",
             "required": true,
             "schema": {
-              "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
+              "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`), or a git repository on this machine: an absolute path or `~/...` (`~/Code/heinzel-crm`), or `git+file:///abs/path@v1.0.0#subdirectory=dir`; it installs the commit of the ref (else HEAD), not editable, and moving to a newer commit means adding it again. Private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.",
               "title": "Spec",
               "type": "string"
             }

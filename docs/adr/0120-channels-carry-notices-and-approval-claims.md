@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-04
 implementation: partial
+amended-by: 0160
 related: 0028, 0043, 0068, 0094
 ---
 

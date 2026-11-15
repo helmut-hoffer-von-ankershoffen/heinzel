@@ -116,6 +116,7 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
                 key={model.name}
                 label={model.title}
                 chosen={value.model === model.name}
+                note={model.available === false ? t("aiAccess.models.unavailable") : undefined}
                 onPick={() => pick({ model: model.name })}
               />
             ))}

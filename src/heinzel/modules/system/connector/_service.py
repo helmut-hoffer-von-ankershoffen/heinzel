@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable, Iterable
 
 from heinzel import Check, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, SetupLet, Status
-from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement
+from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement, declared_unsupported
 from heinzel.modules.system.connector._models import (
     Access,
     AdapterCandidate,
@@ -102,13 +102,14 @@ class ConnectorService:
         for let in adapters:
             spec = CAPABILITIES[let.capability]
             bound, how = self._view.binding(let.capability)
+            serving = self._view.bindings(let.capability)[0]
             uses.append(
                 ConnectorCapability(
                     capability=let.capability,
                     title=spec.title or let.capability,
                     adapter=let.adapter,
                     modes=[mode for mode in MODES if mode in let.modes],
-                    used=bound == let.adapter,
+                    used=let.adapter in serving,
                     bound=bound,
                     how=how,
                 )
@@ -121,7 +122,7 @@ class ConnectorService:
                     summary=_summary(getattr(spec.protocol, method)),
                 )
                 for method, mode in spec.methods.items()
-                if mode in let.modes
+                if mode in let.modes and method not in declared_unsupported(let.factory, spec)
             )
         setup = any(r.qualname == record.qualname for r, _ in self._kernel.lets(SetupLet))
         sign_in = record.qualname in self._sign_ins.supported()
@@ -153,6 +154,8 @@ class ConnectorService:
         by_name = {connector.name: connector for connector in connectors}
         choices: list[CapabilityChoice] = []
         for spec in CAPABILITIES.values():
+            if not spec.listed:  # chosen as an AI access option, not bound here (ADR 0159)
+                continue
             bound, how = self._view.binding(spec.name)
             # No modes: whether the chosen adapter is installed and unambiguous, whatever a requester needs.
             problem = self._view.serves(Requirement(spec.name, frozenset()))[1] if bound is not None else None

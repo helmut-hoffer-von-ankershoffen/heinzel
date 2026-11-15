@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
 
+from heinzel.kernel._ai_models import AiModelOptions, AiModels, AiModelsSource
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
@@ -20,7 +21,7 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
+from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of, declared_unsupported
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
@@ -49,6 +50,7 @@ from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._self_chat import SelfChat
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
@@ -166,6 +168,8 @@ class Kernel:
         }
         self._factory_instances: dict[type[Any], object] = {}
         """Instances constructed by registered factories; explicit binds invalidate this provenance."""
+        self._self_chat: tuple[tuple[str | None, tuple[int, ...]], tuple[Adapter, ...], SelfChat | None] | None = None
+        """The last `self_chat()` and the binding it was found for: settings show it often, the binding rarely moves."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
             CurrentUser: _current_user,
@@ -367,8 +371,12 @@ class Kernel:
             raise HeinzelError(msg)
         return self.resolve_registered_service(matches[0], record)
 
-    def selected_capability_service[T](self, contract: type[T], capability: str) -> tuple[ModuleRecord, T]:
+    def selected_capability_service[T](
+        self, contract: type[T], capability: str, adapter: str | None = None
+    ) -> tuple[ModuleRecord, T]:
         """Resolve an installed read service from the actual capability binding in this kernel.
+
+        `adapter` picks one of several bound adapters (ADR 0161), as `capability_route` chose it; None is the default.
 
         This identifies registered selection only. The caller must recheck current configuration, source and
         human authorization before use; it establishes neither approval nor publisher authentication.
@@ -376,16 +384,23 @@ class Kernel:
         Raises:
             HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
         """
-        record, _provider = self.selected_capability_provider(capability)
+        record, _provider = self.selected_capability_provider(capability, adapter)
         return record, self.resolve_selected_service(contract, record)
 
-    def selected_capability_provider(self, capability: str) -> tuple[ModuleRecord, ProviderLet]:
+    def selected_capability_provider(
+        self, capability: str, adapter: str | None = None
+    ) -> tuple[ModuleRecord, ProviderLet]:
         """Identify the actual uniquely selected provider with read mode; this is not an access grant.
 
+        `adapter` picks one of several bound adapters (ADR 0161); None, or one bound adapter, is the default.
+
         Raises:
-            HeinzelError: If the read adapter is unavailable or ambiguous.
+            HeinzelError: If the read adapter is unavailable or ambiguous, or `adapter` is not bound.
         """
-        selected = self._capabilities.bound(capability)
+        bound = self._capabilities.bindings(capability)[0]
+        selected = (bound[0] if bound else None) if adapter is None else adapter
+        if selected is not None and selected not in bound:
+            selected = None
         providers = self._capabilities.adapters.get((capability, selected), []) if selected is not None else []
         if len(providers) != 1 or "read" not in providers[0].let.modes:
             msg = "The selected read adapter is unavailable or ambiguous"
@@ -396,6 +411,14 @@ class Kernel:
             msg = "The selected read adapter registration changed"
             raise HeinzelError(msg)
         return record, provider.let
+
+    def capability_route(self, capability: str, method: str, arguments: Mapping[str, object]) -> str | None:
+        """The adapter a call goes to while several serve `capability`; None for the default (ADR 0161).
+
+        Raises:
+            HeinzelError: If the call's item names none or several of the bound adapters.
+        """
+        return self._capabilities.route(capability, method, arguments)
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
@@ -701,8 +724,10 @@ class Kernel:
                 problem = f"another module already provides {let.capability} as {let.adapter!r}"
             elif missing := _missing_methods(let):
                 problem = f"adapter {let.name} lacks {', '.join(missing)} of {let.capability}"
-            elif foreign := self._foreign_settings(let, record):
+            elif foreign := self._foreign_settings(let.configured_hosts, record):
                 problem = f"the hosts of adapter {let.name} read settings {record.qualname} doesn't declare: {foreign}"
+            elif foreign := self._foreign_settings(let.configured_links, record):
+                problem = f"the links of adapter {let.name} read settings {record.qualname} doesn't declare: {foreign}"
             if problem is None:
                 adapters.append(Adapter(module=record.qualname, distribution=record.origin.distribution, let=let))
             elif record.origin.builtin:
@@ -713,13 +738,126 @@ class Kernel:
                     logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=record.qualname, problem=problem
                 )
                 self.errors[record.qualname] = f"Adapter skipped: {problem}"
-        return adapters
+        adapters = [a for a in adapters if not self._shadows_access(a, adapters)]
+        return adapters + self._derived_access(adapters)
 
-    def _foreign_settings(self, let: ProviderLet, record: ModuleRecord) -> str:
-        """Settings classes the adapter's hosts function reads that its own module doesn't declare, comma-separated."""
-        if let.configured_hosts is None:
+    def _shadows_access(self, adapter: Adapter, adapters: list[Adapter]) -> bool:
+        """Whether an `ai-models` adapter takes the name of another distribution's AI access option (ADR 0159).
+
+        Such an adapter is skipped and reported: chat would otherwise run on its models while Settings shows the
+        other option, such as a plugin naming its models `claude-code`. A plugin may provide both under one name.
+        """
+        if adapter.let.capability != "ai-models":
+            return False
+        clash = [
+            a
+            for a in adapters
+            if a.let.capability == "ai-access"
+            and a.let.adapter == adapter.let.adapter
+            and a.distribution != adapter.distribution
+        ]
+        if not clash:
+            return False
+        problem = f"its AI models are called {adapter.let.adapter!r}, an AI access option {clash[0].distribution} has"
+        log_event(logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=adapter.module, problem=problem)
+        self.errors[adapter.module] = f"Adapter skipped: {problem}"
+        return True
+
+    def _derived_access(self, adapters: list[Adapter]) -> list[Adapter]:
+        """An `ai-access` adapter for each `ai-models` adapter, by the same name and hosts (ADR 0159).
+
+        Not when an `ai-access` adapter of that name is installed already: a plugin that provides both keeps its own.
+        """
+        taken = {a.let.adapter for a in adapters if a.let.capability == "ai-access"}
+        derived: list[Adapter] = []
+        for adapter in adapters:
+            let = adapter.let
+            if let.capability != "ai-models" or let.adapter in taken:
+                continue
+            taken.add(let.adapter)
+            access = ProviderLet(
+                name=f"{let.adapter}:ai-access",
+                adapter=let.adapter,
+                capability="ai-access",
+                modes=frozenset({"read"}),
+                hosts=let.hosts,
+                factory=self._models_option(let.adapter),
+                configured_hosts=let.configured_hosts,
+            )
+            derived.append(Adapter(module=adapter.module, distribution=adapter.distribution, let=access))
+        return derived
+
+    def _models_option(self, name: str) -> Callable[[], object]:
+        def option() -> object:
+            return self.resolve(AiModelOptions).option(name, lambda: self.ai_models(name))
+
+        option.__qualname__ = f"ai-models option {name}"
+        return option
+
+    def ai_models(self, name: str) -> AiModelsSource:
+        """The `ai-models` adapter `name` itself with its plugin's name and version, for hz's own engine (ADR 0159).
+
+        Trusted core code only: hz's chat, draft and schedule turns and the derived AI access option. A module gets
+        the AI access option instead, which never hands out the adapter.
+
+        Raises:
+            HeinzelError: If no adapter or two adapters have that name, or it can't be built.
+        """
+        adapter, instance = self._capabilities.instance("ai-models", name)
+        record = self._records[adapter.module]
+        return AiModelsSource(
+            name=name,
+            module=adapter.module,
+            distribution=record.origin.distribution,
+            version=record.origin.version,
+            adapter=cast("AiModels", instance),
+            kept=self.settings.state_dir.expanduser() / "ai" / "plugin-models" / f"{name}.json",
+            unanswered=self.settings.state_dir.expanduser() / "ai" / "plugin-models" / f"{name}.unanswered.json",
+        )
+
+    def self_chat(self) -> SelfChat | None:
+        """The bound chat adapter's self channel, for hz's own notices and questions (ADR 0160).
+
+        Trusted core code only, like `ai_models`: modules never get the adapter. None when no chat adapter is bound,
+        it can't write, or it serves neither `notify_self` nor `ask_self`. A class-based adapter is built on first use.
+        Kept until the binding changes: a factory-built adapter is built once to see what it serves, not on every call.
+
+        Raises:
+            HeinzelError: If a factory-built adapter must be built to see what it serves, and can't be.
+        """
+        name = self._capabilities.bound("chat")
+        providers = self._capabilities.adapters.get(("chat", name), []) if name is not None else []
+        # The adapters by identity (the cache holds them, so an id isn't reused): a rebuilt adapter is a new binding.
+        key = (name, tuple(map(id, providers)))
+        cached = self._self_chat
+        if cached is not None and cached[0] == key:
+            return cached[2]
+        channel = self._find_self_chat(name, providers)
+        self._self_chat = (key, tuple(providers), channel)
+        return channel
+
+    def _find_self_chat(self, name: str | None, providers: Sequence[Adapter]) -> SelfChat | None:
+        if name is None or len(providers) != 1 or "write" not in providers[0].let.modes:
+            return None
+        chat = name
+
+        def build() -> object:
+            return self._capabilities.instance("chat", chat)[1]
+
+        factory = providers[0].let.factory
+        unsupported = declared_unsupported(factory if isinstance(factory, type) else build(), CAPABILITIES["chat"])
+        notifies, asks = "notify_self" not in unsupported, "ask_self" not in unsupported
+        return SelfChat(adapter=name, notifies=notifies, asks=asks, build=build) if notifies or asks else None
+
+    def offers_ai_models(self, name: str | None) -> bool:
+        """Whether `name` is an installed `ai-models` adapter, so its AI access option runs on hz's own engine."""
+        return name is not None and ("ai-models", name) in self._capabilities.adapters
+
+    def _foreign_settings(self, function: Callable[..., Any] | None, record: ModuleRecord) -> str:
+        """Settings classes a hosts or links function reads that the adapter's own module doesn't declare, joined."""
+        if function is None:
             return ""
-        models = settings_parameters(let.configured_hosts).values()
+        models = settings_parameters(function).values()
         return ", ".join(m.__name__ for m in models if self._providers.get(m) != record.qualname)
 
     def _requesters(self) -> tuple[list[Requester], dict[Callable[..., Any], Requester]]:
@@ -841,9 +979,12 @@ def _missing_methods(let: ProviderLet) -> list[str]:
     """Methods of its declared modes a class-based adapter doesn't define; a factory's result is checked when built."""
     if not isinstance(let.factory, type):
         return []
-    methods = CAPABILITIES[let.capability].methods
+    capability = CAPABILITIES[let.capability]
+    unsupported = declared_unsupported(let.factory, capability)
     return [
-        name for name, mode in methods.items() if mode in let.modes and not callable(getattr(let.factory, name, None))
+        name
+        for name, mode in capability.methods.items()
+        if mode in let.modes and name not in unsupported and not callable(getattr(let.factory, name, None))
     ]
 
 

@@ -41,6 +41,7 @@ function option(name: string, fields: Partial<SchemaAccessOption> = {}): SchemaA
     needs: "",
     setup: null,
     client: null,
+    core_engine: false,
     ...fields,
   };
 }
@@ -164,6 +165,124 @@ describe("AI access", () => {
     const model = container.querySelector('[data-option="pydantic-ai"] details');
     expect(model?.textContent).toContain("hz system config set ai.access.model");
     expect(container.textContent).not.toMatch(/restart `?hz ui serve/);
+  });
+
+  it("lets a plugin's own models be picked, an unavailable one marked but pickable (ADR 0159)", async () => {
+    const bridge = option("bridge", {
+      title: "Example bridge",
+      in_use: true,
+      status: "not tested",
+      setup: "plugin-model",
+      core_engine: true,
+      models: ["bridge-fast", "bridge-slow", "bridge-retired"],
+      unavailable_models: ["bridge-retired"],
+      model: "bridge-fast",
+    });
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": { selected: "bridge", options: [option("claude-code"), bridge], uses: [], next: [] },
+      "/api/system/config/set": "config.toml",
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Pick a model of Example bridge" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pick a model of Example bridge" });
+    expect(within(dialog).getByRole("radio", { name: "bridge-fast" })).toHaveAttribute("aria-checked", "true");
+    const retired = within(dialog).getByRole("radio", { name: /^bridge-retired/ });
+    expect(retired).toHaveTextContent("unavailable");
+    expect(retired).toBeEnabled();
+    await user.click(within(dialog).getByRole("radio", { name: "bridge-slow" }));
+    expect(await within(dialog).findByText("Saved. Test it to see it answer.")).toBeInTheDocument();
+    const set = calls.find((call) => call.url.includes("/system/config/set"));
+    expect(new URL(set?.url ?? "").searchParams.get("key")).toBe("ai.access.plugin_model");
+    expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("bridge-slow");
+  });
+
+  it("checks every model of a plugin only after a cost confirmation, with progress, and marks the silent ones", async () => {
+    let tested = false;
+    let finish = () => {};
+    const report = {
+      name: "bridge",
+      ok: true,
+      detail: "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped",
+      input_tokens: 12,
+      output_tokens: 2,
+      models: [
+        { model: "bridge-fast", outcome: "answered", detail: "OK", duration_seconds: 0.4 },
+        { model: "bridge-slow", outcome: "unanswered", detail: "no answer within 15s", duration_seconds: 15 },
+        { model: "bridge-retired", outcome: "skipped", detail: "", duration_seconds: 0 },
+      ],
+      untested: [],
+    };
+    const bridge = () =>
+      option("bridge", {
+        title: "Example bridge",
+        in_use: true,
+        status: "tested",
+        setup: "plugin-model",
+        core_engine: true,
+        models: ["bridge-fast", "bridge-slow", "bridge-retired"],
+        unavailable_models: tested ? ["bridge-slow", "bridge-retired"] : ["bridge-retired"],
+        model: "bridge-fast",
+      });
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": () => ({
+        selected: "bridge",
+        options: [option("claude-code"), bridge()],
+        uses: [],
+        next: [],
+      }),
+      "/api/stream/ai/access/test": () => {
+        tested = true;
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const send = (kind: string, data: object) =>
+                controller.enqueue(new TextEncoder().encode(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`));
+              send("task", { text: "Testing bridge-slow (2/3)" });
+              finish = () => {
+                send("result", { data: report });
+                controller.close();
+              };
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      },
+    });
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Pick a model of Example bridge" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pick a model of Example bridge" });
+    expect(within(dialog).getByRole("radio", { name: "bridge-slow" })).not.toHaveTextContent("unavailable");
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Check every model" }));
+    expect(within(dialog).getByText(/Heinzel asks each of 3 models one tiny question/)).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(within(dialog).queryByText(/Heinzel asks each of 3 models/)).not.toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Check every model" }));
+    await user.click(within(dialog).getByRole("button", { name: "Check them" }));
+    expect(await within(dialog).findByText("Testing bridge-slow (2/3)")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Checking each model…" })).toBeDisabled();
+    finish();
+    expect(
+      await within(dialog).findByText(
+        "1 of 2 models answered; 1 marked unavailable until a test answers; 1 skipped; 14 tokens",
+      ),
+    ).toBeInTheDocument();
+    const test = calls.find((call) => call.url.includes("/ai/access/test"));
+    expect(new URL(test?.url ?? "").searchParams.get("all")).toBe("true");
+    expect(new URL(test?.url ?? "").searchParams.get("name")).toBe("bridge");
+    expect(dialog.querySelector('[data-model-test="bridge-slow"]')).toHaveTextContent("didn't answer");
+    const picker = () => screen.getByRole("dialog", { name: "Pick a model of Example bridge" });
+    await waitFor(() =>
+      expect(within(picker()).getByRole("radio", { name: /^bridge-slow/ })).toHaveTextContent("unavailable"),
+    );
+    expect(within(picker()).getByRole("radio", { name: /^bridge-slow/ })).toBeEnabled();
+    await expectAccessible(container);
   });
 
   it("sets the Model API up in a dialog, then tests it there with the result inline", async () => {

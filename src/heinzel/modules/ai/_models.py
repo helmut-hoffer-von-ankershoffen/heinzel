@@ -15,6 +15,9 @@ class ModelChoice(BaseModel):
 
     name: str = Field(description="What `hz chat send --model` takes, e.g. `sonnet`.")
     title: str = Field(description="What the picker shows, e.g. `Sonnet`.")
+    available: bool = Field(
+        default=True, description="False when it didn't answer when its plugin last checked; still pickable."
+    )
 
 
 class EffortChoice(BaseModel):
@@ -56,7 +59,10 @@ def models(options: Adapters[AiAccess], view: CapabilityView) -> ModelList:
         access=selected,
         title=status.title,
         billing=status.billing,
-        models=[ModelChoice(name=m, title=m.replace("-", " ").title()) for m in status.models],
+        models=[
+            ModelChoice(name=m, title=m.replace("-", " ").title(), available=m not in status.unavailable_models)
+            for m in status.models
+        ],
         efforts=[
             EffortChoice(
                 name=effort,

@@ -6,13 +6,19 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from heinzel import ModuleSettings
+from heinzel.kernel import Effort
+from heinzel.kernel._ai_models import MODEL_ID_PATTERN
 
 ADAPTER_PATTERN = r"^[a-z][a-z0-9-]*$"
 
 AccessState = Literal["signed in", "not signed in", "not tested", "tested", "test failed", "needs setup", "error"]
-Setup = Literal["model", "gateway", "sign-in", "client"]
-"""What setting an option up takes: a model and key, a gateway command, a sign-in, or an optional Python client."""
+Setup = Literal["model", "gateway", "sign-in", "client", "plugin-model"]
+"""What setting an option up takes: a model and key, a gateway command, a sign-in, an optional Python client, or a
+pick among a plugin's models."""
 Use = Literal["chat", "turns", "coding"]
+Outcome = Literal["answered", "unanswered", "skipped"]
+"""What `hz ai access test --all` learned of one model: it answered, it didn't (marked unavailable until a test
+answers), or no request was sent, e.g. its plugin marks it unavailable."""
 
 
 class AccessSettings(ModuleSettings):
@@ -105,6 +111,29 @@ class AccessSettings(ModuleSettings):
         description="The model used with your ChatGPT plan, one it offers through Sign in with ChatGPT; sign in first.",
         json_schema_extra={"x-expert": True},
     )
+    api: Literal["openai", "anthropic"] | None = Field(
+        default=None,
+        title="Endpoint API",
+        description="Which API the Pydantic AI endpoint at the base address speaks: OpenAI's (the default) or "
+        "Anthropic's Messages API, as a company proxy may. Headers from ANTHROPIC_CUSTOM_HEADERS in hz's environment "
+        "are never sent there.",
+        json_schema_extra={"x-expert": True},
+    )
+    plugin_model: str | None = Field(
+        default=None,
+        pattern=MODEL_ID_PATTERN,
+        title="Plugin model",
+        description="The model hz runs chat, drafts and schedules on when your AI access is a plugin's models, one it "
+        "lists; its first available one when not set.",
+        json_schema_extra={"x-expert": True, "x-live": True},  # read again before every turn
+    )
+    plugin_effort: Effort | None = Field(
+        default=None,
+        title="Plugin model effort",
+        description="How hard a plugin's model thinks, low to max, for a model that takes an effort; the model's own "
+        "default when not set.",
+        json_schema_extra={"x-expert": True, "x-live": True},  # read again before every turn
+    )
 
     model: str | None = Field(
         default=None,
@@ -140,6 +169,9 @@ class AccessSettings(ModuleSettings):
             "gateway_models",
             "gateway_env",
             "chatgpt_model",
+            "plugin_model",
+            "plugin_effort",
+            "api",
         }
     )
 
@@ -203,6 +235,13 @@ class AccessOption(BaseModel):
     fix: str = Field(default="", description="A command that makes it usable; often empty.")
     models: list[str] = Field(default_factory=list[str], description="Models it offers or is configured with.")
     runner: str | None = Field(default=None, description="The agent runner that serves its chat and coding uses.")
+    model: str | None = Field(default=None, description="The model it runs now, when it says.")
+    core_engine: bool = Field(
+        default=False, description="Whether hz's own engine runs chat, drafts and schedules on its models (a plugin's)."
+    )
+    unavailable_models: list[str] = Field(
+        default_factory=list[str], description="Models it lists that didn't answer when last probed; still pickable."
+    )
     hosts: list[str] = Field(default_factory=list[str], description="Hosts it passes prompts to, when known.")
     last_test: LastTest | None = Field(default=None, description="The last `hz ai access test` of it, if any.")
 
@@ -225,6 +264,17 @@ class AccessList(BaseModel):
     next: list[str] = Field(default_factory=list[str], description="What to run next.")
 
 
+class ModelTestResult(BaseModel):
+    """One model's tiny request in `hz ai access test --all`."""
+
+    model: str = Field(description="The model asked, e.g. `claude-sonnet-4-5`.")
+    outcome: Outcome = Field(description="`answered`, `unanswered` (now marked unavailable) or `skipped`.")
+    detail: str = Field(default="", description="The answer, or why it failed or was skipped.")
+    duration_seconds: float = Field(default=0.0, description="Wall-clock time of its request.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, when reported.")
+    output_tokens: int | None = Field(default=None, description="Tokens produced, when reported.")
+
+
 class AccessTestReport(BaseModel):
     """The outcome of `hz ai access test`, also kept for the listing."""
 
@@ -235,3 +285,13 @@ class AccessTestReport(BaseModel):
     model: str | None = Field(default=None, description="The model that answered, when reported.")
     cost_usd: float | None = Field(default=None, description="What it cost in US dollars, when reported.")
     duration_seconds: float = Field(default=0.0, description="Wall-clock time of the check.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, when reported; with `--all`, in total.")
+    output_tokens: int | None = Field(
+        default=None, description="Tokens produced, when reported; with `--all`, in total."
+    )
+    models: list[ModelTestResult] = Field(
+        default_factory=list[ModelTestResult], description="With `--all`: each model tested, in the option's order."
+    )
+    untested: list[str] = Field(
+        default_factory=list[str], description="With `--all`: models beyond the cap of one run, not asked."
+    )

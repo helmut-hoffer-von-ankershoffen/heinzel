@@ -90,6 +90,11 @@ class PluginInfo(BaseModel):
         "page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory "
         "or when unknown.",
     )
+    source_path: str | None = Field(
+        default=None,
+        description="The repository directory on this machine, for a plugin installed from a local git repository "
+        "(`hz system plugin add /path/to/repository`); none otherwise. It is no link: a browser can't open it.",
+    )
     revision: str | None = Field(default=None, description="The git commit installed, for a git source.")
     homepage: str | None = Field(default=None, description="Its source repository, from its metadata.")
     first_party: bool = Field(

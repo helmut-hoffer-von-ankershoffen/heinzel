@@ -1,7 +1,8 @@
 """The access module of ai: how hz reaches AI, chosen like the theme (ADR 0057).
 
 An AI access option is an adapter of the `ai-access` capability: `claude-code` (the Claude Code CLI, from
-`system.runner`), `gateway` (a company CLI described in `[ai.access]`) or one a plugin adds. `[capabilities] ai_access`
+`system.runner`), `gateway` (a company CLI described in `[ai.access]`) or one a plugin adds, also by providing
+`ai-models`, whose models hz's own engine runs (ADR 0159). `[capabilities] ai_access`
 is the one choice; `hz ai access use <name>` sets it, and binds the agent runner the option names so the chat follows.
 """
 
@@ -14,12 +15,13 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Credentials, Module, Progress
-from heinzel.kernel import AiAccessWebSignIn
+from heinzel.kernel import AiAccessWebSignIn, AiModelOptions
 from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
 from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
 from heinzel.modules.ai.access._configured import TrustedConfiguredApiAccess
+from heinzel.modules.ai.access._engine_runner import ENGINE, EngineRunner
 from heinzel.modules.ai.access._gateway import NAME as GATEWAY
 from heinzel.modules.ai.access._gateway import GatewayAccess, configured_hosts
 from heinzel.modules.ai.access._models import (
@@ -30,6 +32,7 @@ from heinzel.modules.ai.access._models import (
     AccessTestReport,
     AccessUse,
 )
+from heinzel.modules.ai.access._plugin_models import PluginModelOptions
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, model_hosts
 from heinzel.modules.ai.access._pydantic import NAME as PYDANTIC_AI
 from heinzel.modules.ai.access._service import AccessService
@@ -54,6 +57,8 @@ module.add(CHATGPT_LOGIN)
 module.provides("ai-access", modes={"read"}, hosts=CHATGPT_HOSTS, name=CHATGPT)(ChatGptAccess)
 module.service(ChatGptAccess)  # `hz ai access login` signs in through it
 module.service(AiAccessWebSignIn, ChatGptAccess)
+module.service(AiModelOptions, PluginModelOptions)  # the option of each plugin's `ai-models` adapter (ADR 0159)
+module.provides("agent-runner", modes={"read"}, name=ENGINE)(EngineRunner)  # coding and chat on hz's engine (ADR 0159)
 
 STYLES = {"signed in": "green", "tested": "green", "not signed in": "yellow", "test failed": "red", "error": "red"}
 
@@ -83,8 +88,36 @@ def render(result: AccessList) -> RenderableType:
     return Group(*parts)
 
 
+OUTCOME_STYLES = {"answered": "green", "unanswered": "red", "skipped": "yellow"}
+
+
+def _tokens(sent: int | None, produced: int | None) -> str:
+    """Tokens in and out, e.g. `12 in, 1 out`; empty when none were reported."""
+    return f"{sent or 0} in, {produced or 0} out" if sent is not None or produced is not None else ""
+
+
+def render_test_all(result: AccessTestReport) -> RenderableType:
+    """Each model's outcome, time and tokens, then how many answered and what the run cost in tokens."""
+    table = Table(box=None, pad_edge=False)
+    for column in ("Model", "Outcome", "Time", "Tokens", "Detail"):
+        table.add_column(column, overflow="fold")
+    for row in result.models:
+        table.add_row(
+            Text(row.model),
+            Text(row.outcome, style=OUTCOME_STYLES[row.outcome]),
+            Text(f"{row.duration_seconds:.1f}s"),
+            Text(_tokens(row.input_tokens, row.output_tokens) or "-"),
+            Text(row.detail),
+        )
+    spent = f"tokens: {used}" if (used := _tokens(result.input_tokens, result.output_tokens)) else "no tokens reported"
+    head = Text(f"{result.name}: {result.detail}; {spent}", style="green" if result.ok else "red")
+    return Group(table, head)
+
+
 def render_test(result: AccessTestReport) -> RenderableType:
     """Whether the option answered, what it said or why not, and what it cost."""
+    if result.models:
+        return render_test_all(result)
     cost = f", ${result.cost_usd:.4f}" if result.cost_usd is not None else ""
     model = f" ({result.model})" if result.model else ""
     head = Text(
@@ -137,17 +170,29 @@ def use(
 def live_check(
     service: AccessService,
     options: Adapters[AiAccess],
+    progress: Progress,
     name: Annotated[
         str | None,
         Field(
             pattern=ADAPTER_PATTERN, description="The option to test, e.g. `gateway`; the one in use when not given."
         ),
     ] = None,
+    all: Annotated[  # noqa: A002 - the flag people type is `--all`
+        bool,
+        Field(
+            description="Ask every model of a plugin's models one tiny request each, at most 24, and mark the ones "
+            "that don't answer unavailable in the model picker; a few tokens per model."
+        ),
+    ] = False,
 ) -> AccessTestReport:
     """Run one cheap live check of an AI access option and keep the result; this may cost a little.
 
-    Claude Code answers one line within $0.05; the gateway runs its configured test command.
+    Claude Code answers one line within $0.05; the gateway runs its configured test command. With `--all`, each
+    model of a plugin's models gets one tiny request, one after another, within 15 seconds each; in a terminal,
+    Ctrl-C stops it.
     """
+    if all:
+        return service.test_all(name, options, progress)
     return service.test(name, options)
 
 

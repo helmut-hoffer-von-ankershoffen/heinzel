@@ -76,7 +76,7 @@ class DraftWorkflowBinding[T: ServiceContract]:
         original = self.kernel.capability_settings
         record, registration = self.kernel.selected_capability_provider(self.capability)
         if (
-            configured.bound(self.capability) != original.bound(self.capability)
+            configured.bound_all(self.capability) != original.bound_all(self.capability)
             or configured.configured(self.capability) != original.configured(self.capability)
             or configured.defaulted(self.capability) != original.defaulted(self.capability)
             or settings.disabled_modules != self.kernel.settings.disabled_modules
