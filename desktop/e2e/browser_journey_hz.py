@@ -21,6 +21,7 @@ from pathlib import Path
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import UsageLimits
 
 import heinzel.kernel._boot as boot
 from heinzel.kernel import AgentResult, Budget, Kernel, Module, ToolProfile, direct_tools, pydantic_ai_tools
@@ -211,7 +212,8 @@ class JourneyRunner:
             instructions=contract,
             tools=pydantic_ai_tools(hz, counted=called.append),
         )
-        answer = asyncio.run(agent.run(prompt))
+        # One request per scripted call: the long race under the virtual display needs more than the default fifty.
+        answer = asyncio.run(agent.run(prompt, usage_limits=UsageLimits(request_limit=400)))
         return AgentResult(
             runner="journey",
             status="completed",

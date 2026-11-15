@@ -14,7 +14,11 @@ const HOSTS = new Set([SHOP, WIDGET]);
 const ZONES = ["hover", "press", "race-a", "race-b"];
 /** Milliseconds between the pointer's arrival and the frame's appearance, one per raced try. */
 // The press follows the pointer by the few milliseconds the engine's checks take, so the band is walked twice.
-const RACE_WAITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+const RACE_BAND = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+// Under the virtual display the race is the proof that a press can land inside the frame at all, and that is rare:
+// the frame must be shown after the engine's last look and be on screen before the press. So the band is walked six
+// times there, and twice elsewhere.
+export const RACE_WAITS = Array.from({ length: process.env.HZ_JOURNEY_VISIBLE === "1" ? 6 : 2 }, () => RACE_BAND).flat();
 export const RACE_TRIES = RACE_WAITS.length;
 
 const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>
@@ -94,10 +98,17 @@ for (const zone of ["race-a", "race-b"]) {
   box.querySelector("button").addEventListener("mousemove", () => {
     if (busy || tries >= waits.length) return;
     busy = true;
-    setTimeout(() => {
+    // Every other time the frame is shown at the start of the page's next picture, so that it is on screen as soon
+    // as it can be; a tab that draws no pictures shows it at once.
+    const show = () => {
+      if (box.classList.contains("swapped")) return;
       box.classList.add("swapped");
       tell(zone + ":shown");
       setTimeout(() => { box.classList.remove("swapped"); busy = false; }, 700);
+    };
+    const attempt = tries;
+    setTimeout(() => {
+      if (attempt % 4 >= 2 && document.visibilityState === "visible") { requestAnimationFrame(show); setTimeout(show, 40); } else show();
     }, waits[tries++]);
   });
 }

@@ -14,7 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
-import { RACE_TRIES, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
+import { RACE_TRIES, RACE_WAITS, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
 
 const journey = process.argv[2];
 // Under the virtual display each journey notes how many raced presses landed inside the other site's frame; `tally`
@@ -110,7 +110,12 @@ const RACE_ZONES = ["race-a", "race-b"];
 const heard = () => ({
   clicks: Object.fromEntries(RACE_ZONES.map((zone) => [zone, site.count(`${zone}:click`)])),
   strays: site.starting("stray:click:"), orders: site.state.orders.length, send: site.starting("send:"),
+  inFrame: site.countOf("widget-race-", "pointerdown"),
 });
+// A raced try takes its turn slowly enough that an agent's calls stay under a minute's limit, however many tries.
+const TRY_PAUSE = 1300;
+/** For the run's last line: what each try ended as, by the page's wait. C clicked, c covered, x called off, u not confirmed, F pressed in the frame. */
+const raceLine = [];
 /**
  * One raced try against what it added to the page. Answered as clicked: exactly one click, on its own button, and no
  * stray one. Any other answer: no button was clicked, and a stray click only if that same answer says the click was
@@ -121,6 +126,10 @@ function checkTry(attempt, answer, before, after) {
   const clicks = after.clicks[zone] - before.clicks[zone], strays = after.strays - before.strays;
   assert.equal(after.clicks[other] - before.clicks[other], 0, `Try ${attempt + 1} must not click the other button.`);
   assert.deepEqual([after.orders, after.send], [0, 0], `Try ${attempt + 1} must send no order and touch no commit button.`);
+  // A press that landed inside the other site's frame can never be answered as clicked.
+  const inFrame = after.inFrame - before.inFrame;
+  assert.ok(inFrame === 0 || !ran(answer), `Try ${attempt + 1} pressed inside the frame and was answered as clicked: ${answer}`);
+  raceLine.push(`${RACE_WAITS[attempt]}${inFrame ? "F" : ran(answer) ? "C" : refused(answer, "covered") ? "c" : refused(answer, "unconfirmed") ? "u" : "x"}`);
   if (ran(answer)) assert.deepEqual({ clicks, strays }, { clicks: 1, strays: 0 }, `Try ${attempt + 1} was answered as clicked: ${answer}`);
   else {
     assert.equal(clicks, 0, `Try ${attempt + 1} was not answered as clicked, so its button must not be clicked: ${answer}`);
@@ -346,7 +355,7 @@ async function heinzelJourney(page, origin) {
   const notes = [];
   for (let mark = 0; mark <= RACE_TRIES; mark += 1) {
     await signalled(`try-${mark}`, `The Heinzel never reached raced try ${mark}.`, running);
-    await delay(800);
+    await delay(TRY_PAUSE);
     notes.push(heard());
     await signal(`try-${mark}-seen`);
   }
@@ -522,7 +531,7 @@ async function mcpJourney(page, origin) {
     const before = heard();
     const answer = await agent.call("click", { tab, ref: refOf(read, "button", attempt % 2 ? "Show prices tomorrow" : "Show prices today") });
     race.push(answer);
-    await delay(800);  // the page takes its frame away again, and the try's events are in
+    await delay(TRY_PAUSE);  // the page takes its frame away again, and the try's events are in
     checkTry(attempt, answer, before, heard());
   }
   // The page opens an alert and a confirm on this click; the next call must still be answered, and soon.
@@ -674,7 +683,7 @@ try {
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
     "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
     `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
-    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}. The person's own click after a called-off press: ${found.personClicks ? `went through, tab paused by it: ${found.personPaused}` : "not part of this journey"}.`);
+    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}. Tries by the page's wait in ms: ${raceLine.join(" ")}. The person's own click after a called-off press: ${found.personClicks ? `went through, tab paused by it: ${found.personPaused}` : "not part of this journey"}.`);
 } finally {
   site?.close();
   await cleanupHarness({
