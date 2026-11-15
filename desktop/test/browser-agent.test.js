@@ -82,7 +82,7 @@ function fixture() {
         } };
       const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
         close: () => { dead = true; }, getURL: () => url, getTitle: () => "Title", debugger: wire,
-        loadURL: async (target) => { url = target; contents.emit("did-navigate"); }, reload: () => { sent.push(["reload"]); contents.emit("did-stop-loading"); },
+        loadURL: async (target) => { url = target; sent.push(["load", target]); contents.emit("did-navigate"); }, reload: () => { sent.push(["reload"]); contents.emit("did-stop-loading"); },
         navigationHistory: { canGoBack: () => false, canGoForward: () => false },
         capturePage: async (_rect, options) => { sent.push(["capture", options]); return page.shot; },
         setWebRTCIPHandlingPolicy: () => {}, setWindowOpenHandler: (handler) => { contents.popup = handler; } });
@@ -162,7 +162,8 @@ test("ownership: the person's tab and another agent's tab do not exist for an ag
   assert.deepEqual((await f.call(HEINZEL, "tabs")).tabs, []);
   // Nothing was attached to or captured from those tabs, and the product window was never touched.
   assert.deepEqual(methods(f.views[0]).filter((name) => name === "attach" || name === "capture"), []);
-  assert.deepEqual(methods(f.views[1]).filter((name) => name === "attach" || name === "capture"), []);
+  // The other agent's tab saw only its own opening: nothing was read, captured or typed there.
+  assert.deepEqual(methods(f.views[1]).filter((name) => !["bounds", "visible", "attach", "DOM.enable", "Emulation.setDeviceMetricsOverride", "load"].includes(name)), []);
   assert.equal(f.productWire.attached, 0);
   assert.equal((await f.invoke({ action: "state" })).tabs.length, 2);
 });
@@ -469,6 +470,64 @@ test("field and key rules as data", () => {
   ];
   assert.equal(outline(nodes, { refOf: (node) => `ref_${node}` }), '- link "Home" [ref_3]\n- text "Welcome"');
   assert.equal(outline(nodes, { filter: "interactive", refOf: (node) => `ref_${node}` }), '- link "Home" [ref_3]');
+});
+
+test("a tab the person is not looking at has a viewport of the panel's size, gone the moment it is shown", async () => {
+  const f = fixture();
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  // The person's own tab, so the panel can be laid out; then the agent's, never shown.
+  await f.invoke({ action: "navigate", url: "https://mine.example.com" });
+  const mine = (await f.invoke({ action: "state" })).selected;
+  const tab = (await f.call(HEINZEL, "open", { url: "https://shop.example.com/" })).id;
+  const view = f.views[1];
+  const sizes = () => view.sent.filter(([name]) => name.startsWith("Emulation.")).map(([name, params]) => [name.split(".")[1], params.width, params.height]);
+  // Sized before its first page loads, as a plain desktop page and with nothing but a width and a height.
+  assert(methods(view).indexOf("Emulation.setDeviceMetricsOverride") < methods(view).indexOf("load"));
+  assert.deepEqual(view.sent.find(([name]) => name === "Emulation.setDeviceMetricsOverride")[1], { width: 1280, height: 800, deviceScaleFactor: 0, mobile: false });
+  // It stays from call to call, so the page keeps its layout and scroll position.
+  await f.call(HEINZEL, "read", { tab });
+  await f.call(HEINZEL, "scroll", { tab });
+  assert.deepEqual(sizes(), [["setDeviceMetricsOverride", 1280, 800]]);
+  // The panel is laid out: the hidden tab follows its size at the next call.
+  await f.invoke({ action: "layout", bounds: { x: 0, y: 40, width: 400, height: 300 } });
+  await f.call(HEINZEL, "text", { tab });
+  assert.deepEqual(sizes().at(-1), ["setDeviceMetricsOverride", 400, 300]);
+  // The person selects the agent's tab: the override goes at once, without any call of the agent.
+  await f.invoke({ action: "select-tab", tab });
+  await settle();
+  assert.deepEqual(sizes().at(-1), ["clearDeviceMetricsOverride", undefined, undefined]);
+  const shown = sizes().length;
+  await f.call(HEINZEL, "read", { tab });
+  await f.call(HEINZEL, "screenshot", { tab });
+  assert.equal(sizes().length, shown);
+  // No override while the person looks at it, and never another size or another kind of page.
+  const guest = f.controller.agents.find(HEINZEL.id, tab);
+  const fits = { width: 400, height: 300, deviceScaleFactor: 0, mobile: false };
+  await assert.rejects(f.engine.protocol(HEINZEL.id, guest, "Emulation.setDeviceMetricsOverride", fits), /not allowed/);
+  await f.invoke({ action: "select-tab", tab: mine });
+  for (const params of [{ ...fits, width: 401 }, { ...fits, height: 8000 }, { ...fits, mobile: true }, { ...fits, deviceScaleFactor: 2 },
+    { ...fits, screenWidth: 400 }, { ...fits, positionX: 0 }, { ...fits, viewport: { x: 0, y: 0, width: 400, height: 300, scale: 1 } }, { width: 400, height: 300 }])
+    await assert.rejects(f.engine.protocol(HEINZEL.id, guest, "Emulation.setDeviceMetricsOverride", params), /not allowed/);
+  await assert.rejects(f.engine.protocol(HEINZEL.id, guest, "Emulation.clearDeviceMetricsOverride", { extra: 1 }), /not allowed/);
+  assert.equal(sizes().length, shown);
+  // Hidden again: sized again at the next call. Take over and hand back each give the tab its own size back.
+  await f.call(HEINZEL, "read", { tab });
+  assert.deepEqual(sizes().at(-1), ["setDeviceMetricsOverride", 400, 300]);
+  await f.invoke({ action: "take-over", tab });
+  await settle();
+  assert.deepEqual(sizes().at(-1), ["clearDeviceMetricsOverride", undefined, undefined]);
+  await f.invoke({ action: "hand-back", tab });
+  await f.call(HEINZEL, "read", { tab });
+  assert.deepEqual(sizes().at(-1), ["setDeviceMetricsOverride", 400, 300]);
+  await f.invoke({ action: "take-over", tab });
+  await f.invoke({ action: "hand-back", tab });
+  await settle();
+  assert.deepEqual(sizes().slice(-2).map(([name]) => name), ["setDeviceMetricsOverride", "clearDeviceMetricsOverride"]);
+  // The person's own tab never gets one, and closing the tab ends the session that set it.
+  assert.deepEqual(methods(f.views[0]).filter((name) => name.startsWith("Emulation.") || name === "attach"), []);
+  await f.call(HEINZEL, "read", { tab });
+  await f.call(HEINZEL, "close", { tab });
+  assert.equal(methods(view).at(-1), "detach");
 });
 
 test("screenshot: the guest view only, hidden or not, 1568 pixels at most", async () => {

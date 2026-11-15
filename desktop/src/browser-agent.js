@@ -50,7 +50,11 @@ export const CDP_METHODS = Object.freeze([
   "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText",
   "Page.getFrameTree", "Page.createIsolatedWorld", "Page.getLayoutMetrics", "Page.captureScreenshot",
   "Runtime.callFunctionOn", "Runtime.evaluate",
+  // A tab the person is not looking at is a hidden view, and a hidden view has no size: nothing can be hit-tested or
+  // laid out in it. This gives such a tab a viewport, and takes it away again when the tab is shown.
+  "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride",
 ]);
+const WORLD = "hz-browser-agent";
 const ALLOWED = new Set(CDP_METHODS);
 
 // The only page scripts. Each runs in an isolated world, so the page can neither see nor replace what they use.
@@ -314,6 +318,9 @@ const ARGS = {
 /** The commands the engine knows. */
 export const COMMANDS = Object.freeze(Object.keys(ARGS));
 const NAVIGATIONS = new Set(["open", "navigate"]);
+// The commands that need the page laid out in a viewport.
+const SIZED = new Set(["navigate", "read", "text", "screenshot", "scroll", "describe", "click", "type", "key"]);
+const hasOnly = (value, keys) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const COMMANDS_A_MINUTE = 240;
 const NAVIGATIONS_A_MINUTE = 20;
 const MESSAGES = {
@@ -356,8 +363,10 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
   const pageOf = (guest) => {
     let page = pages.get(guest);
     if (page) return page;
-    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1 };
+    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null };
     pages.set(guest, page);
+    // The person looks at the tab: it has its real size again at once, whether or not the agent calls again.
+    guest.onShown = (shown) => { if (shown) void unsize(guest); };
     const fresh = () => { page.refs.clear(); page.nodes.clear(); page.named.clear(); page.document += 1; };
     const contents = guest.view.webContents;
     // A new main document ends every ref and every fingerprint of the old one.
@@ -376,17 +385,57 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     if (method === "Page.createIsolatedWorld" && (params.grantUniveralAccess || params.grantUniversalAccess))
       throw new BridgeError("failed", "That browser protocol method is not allowed.");
     if (!tabs.holds(id, guest)) throw new BridgeError("unknown_tab", "Unknown tab.");
+    // Only the size of the view the tab has when it is shown, as a plain desktop page: no screen, position, scale or
+    // viewport parameter, and never while the person looks at the tab.
+    if (method === "Emulation.setDeviceMetricsOverride") {
+      const view = tabs.size(guest);
+      if (guest.shown || !hasOnly(params, ["width", "height", "deviceScaleFactor", "mobile"]) || params.width !== view.width ||
+          params.height !== view.height || params.deviceScaleFactor !== 0 || params.mobile !== false)
+        throw new BridgeError("failed", "That browser protocol method is not allowed.");
+    }
+    if (method === "Emulation.clearDeviceMetricsOverride" && Object.keys(params).length)
+      throw new BridgeError("failed", "That browser protocol method is not allowed.");
     const wire = guest.view.webContents.debugger;
     if (!wire.isAttached()) {
       wire.attach("1.3");
+      // An override ends with the session that set it.
+      pageOf(guest).sized = null;
       await wire.sendCommand("DOM.enable", {});
     }
     return wire.sendCommand(method, params);
   };
+  /**
+   * A hidden view has no size (its page sees a 0 by 0 window), so nothing in it can be laid out or hit-tested. A tab
+   * the person is not looking at therefore gets a viewport of the size its view has when shown. It stays while the
+   * tab is hidden, so the page keeps its layout and scroll position from one call to the next; it is gone the moment
+   * the tab is shown, taken over, handed back or closed.
+   */
+  const size = async (id, guest) => {
+    const state = pageOf(guest);
+    if (guest.shown) { await unsize(guest); return; }
+    const { width, height } = tabs.size(guest);
+    if (state.sized && state.sized.width === width && state.sized.height === height && guest.view.webContents.debugger.isAttached()) return;
+    await cdp(id, guest, "Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 0, mobile: false });
+    state.sized = { width, height };
+  };
+  async function unsize(guest) {
+    const state = pageOf(guest);
+    if (!state.sized) return;
+    state.sized = null;
+    await quiet(async () => {
+      if (guest.agent && guest.view.webContents.debugger.isAttached()) await cdp(guest.agent.id, guest, "Emulation.clearDeviceMetricsOverride");
+    });
+  }
+  // The person takes a tab over or hands it back: it is theirs to look at, at its own size.
+  tabs.listen(({ event, agent, tab }) => {
+    if (event !== "take-over" && event !== "hand-back") return;
+    const guest = tabs.list(agent).find((entry) => entry.id === tab);
+    if (guest) void unsize(guest);
+  });
 
   const world = async (id, guest) => {
     const { frameTree } = await cdp(id, guest, "Page.getFrameTree");
-    const { executionContextId } = await cdp(id, guest, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: "hz-browser-agent" });
+    const { executionContextId } = await cdp(id, guest, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: WORLD });
     return executionContextId;
   };
   const objectOf = async (id, guest, backendNodeId, context) =>
@@ -535,6 +584,8 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
         throw new BridgeError("failed", "The browser could not open a tab.");
       }
       pageOf(guest);
+      // The tab has a size before it loads its first page.
+      try { await size(who.id, guest); } catch (error) { await unsize(guest); throw error; }
       if (url) await load(guest, url);
       return tabOf(guest);
     },
@@ -659,6 +710,9 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
           return true;
         });
         if (landed !== true) {
+          // Let go far outside the page, with the pointer never moved in between: no element of a frame is under
+          // the release, so no widget in a frame is clicked. The page's own document may see a click on itself; a
+          // page already runs its own handlers whenever it likes, so that gives it nothing (ADR 0162).
           await quiet(() => mouse("mouseReleased", { x: -1, y: -1, button, clickCount: count }));
           throw new BridgeError("changed", "The page put something else under the pointer. Nothing was clicked: read the page again.");
         }
@@ -749,6 +803,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       pageOf(guest);
     }
     try {
+      if (guest && SIZED.has(command)) await size(who.id, guest);
       const result = await run[command](who, args, guest);
       // The person may have taken over or stopped the agent while the call ran.
       if (guest && command !== "close" && tabs.stopped(who.id)) throw new BridgeError("stopped", MESSAGES.stopped);
@@ -756,6 +811,9 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     } catch (error) {
       if (error instanceof BridgeError) throw error;
       throw new BridgeError("failed", "The browser could not do that.");
+    } finally {
+      // Never left on a tab the person can see by now.
+      if (guest?.shown) await unsize(guest);
     }
   };
 

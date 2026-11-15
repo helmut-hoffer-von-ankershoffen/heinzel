@@ -280,6 +280,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       const visible = surface.shown && surface.selected === guest.id && !guest.blank && window.isFocused() &&
         guest.status !== "unavailable";
       if (!guest.view.webContents.isDestroyed()) guest.view.setVisible(Boolean(visible));
+      // The agent engine gives a hidden tab a viewport and takes it away the moment the tab is shown.
+      const shown = Boolean(visible);
+      if (guest.agent && guest.shown !== shown) { guest.shown = shown; try { guest.onShown?.(shown); } catch { /* never breaks a tab */ } }
     }
   };
   // A fresh id that no tab of this window holds, retried on a collision.
@@ -295,7 +298,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, pendingAgents: 0, link: null };
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
-    const onBlur = () => { for (const guest of surface.tabs.values()) guest.view.setVisible(false); };
+    const onBlur = () => { for (const guest of surface.tabs.values()) { guest.view.setVisible(false); if (guest.agent) guest.shown = false; } };
     surface.detach = () => {
       window.off("closed", onClosed);
       window.off("blur", onBlur);
@@ -380,7 +383,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
         safeDialogs: true, disableDialogs: true,
       } });
-      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false,
+      const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false,
         blank: true, view, session: partition, network, status: "empty", notice: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
@@ -633,6 +636,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         } };
         guest.commit = entry;
       });
+    },
+    /** The size the tab's view has when it is shown: the panel's, or a default before the panel was ever laid out. */
+    size(guest) {
+      const bounds = everyGuest().find(([, entry]) => entry === guest)?.[2].bounds ?? DEFAULT_BOUNDS;
+      return { width: bounds.width, height: bounds.height };
     },
     /** The address policy of every navigation, for the engine's own loads. */
     url: (value) => browserUrl(value, connection()?.origin),
