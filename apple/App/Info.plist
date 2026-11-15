@@ -25,6 +25,7 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>HeinzelManagedInstall</key><string>$(HEINZEL_MANAGED_INSTALL)</string>
+    <key>HeinzelCloudSignIn</key><string>$(HEINZEL_ICLOUD_SIGN_IN)</string>
     <key>HeinzelHTTPSLinks</key><string>$(HEINZEL_HTTPS_LINKS)</string>
     <key>CFBundleDisplayName</key><string>Heinzelmännchen</string>
     <key>ITSAppUsesNonExemptEncryption</key><false/>

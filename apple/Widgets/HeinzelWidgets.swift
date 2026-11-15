@@ -1,4 +1,6 @@
+import AppIntents
 import SwiftUI
+import UIKit
 import WidgetKit
 
 @main
@@ -6,6 +8,10 @@ struct HeinzelWidgets: WidgetBundle {
     var body: some Widget {
         WorkspaceWidget()
         ConnectionHelpWidget()
+        ActivityWidget()
+        PinnedHeinzelWidget()
+        HeinzelChooserWidget()
+        HeinzelRosterWidget()
     }
 }
 
@@ -135,3 +141,267 @@ private struct ConnectionHelpWidget: Widget {
         .supportedFamilies([.accessoryRectangular])
     }
 }
+
+private struct ActivityEntry: TimelineEntry {
+    let date: Date
+    let activity: ActivityWidgetData?
+}
+
+private struct ActivityProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ActivityEntry {
+        ActivityEntry(date: .now, activity: ActivityWidgetData(awake: 2, waiting: 1, updatedAt: .now))
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ActivityEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : current(at: .now))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
+        let entry = current(at: .now)
+        var entries = [entry]
+        if let activity = entry.activity { entries.append(ActivityEntry(date: activity.expiresAt, activity: nil)) }
+        completion(Timeline(entries: entries, policy: .never))
+    }
+
+    private func current(at date: Date) -> ActivityEntry {
+        let snapshot = ActivityWidgetData.read()
+        return ActivityEntry(date: date, activity: snapshot.flatMap { $0.expiresAt > date ? $0 : nil })
+    }
+}
+
+private struct ActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: ActivityWidgetData.kind, provider: ActivityProvider()) { entry in
+            ActivityWidgetView(entry: entry)
+                .widgetURL(NativeRoute.workspace.url)
+                .containerBackground(for: .widget) {
+                    Color(red: 0.97, green: 0.95, blue: 0.90)
+                }
+        }
+        .configurationDisplayName("Active Heinzels")
+        .description("See how many Heinzels are awake or waiting for attention in your workspace.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct ActivityWidgetView: View {
+    let entry: ActivityEntry
+    @Environment(\.widgetRenderingMode) private var renderingMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Heinzels").font(.system(.headline, design: .serif)).widgetAccentable()
+                Spacer(minLength: 4)
+                Image("HeinzelCrew")
+                    .resizable()
+                    .widgetAccentedRenderingMode(.accentedDesaturated)
+                    .scaledToFit()
+                    .frame(width: 30, height: 27)
+                    .accessibilityHidden(true)
+            }
+            Spacer(minLength: 2)
+            if let activity = entry.activity {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(activity.awake) awake")
+                        .font(.system(.title2, design: .serif, weight: .semibold))
+                        .widgetAccentable()
+                    if activity.waiting > 0 {
+                        Label("Needs attention · \(activity.waiting)", systemImage: "bell.badge")
+                            .font(.caption2)
+                            .lineLimit(1)
+                    }
+                    Text("Updated \(activity.updatedAt, style: .relative) ago")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .privacySensitive()
+            } else {
+                Label("Open to refresh", systemImage: "arrow.up.right")
+                    .font(.subheadline.weight(.medium))
+            }
+        }
+        .foregroundStyle(renderingMode == .fullColor ? Color(red: 0.15, green: 0.23, blue: 0.20) : Color.primary)
+        .minimumScaleFactor(0.7)
+    }
+}
+
+private struct HeinzelChoice: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Heinzel"
+    static let defaultQuery = HeinzelChoiceQuery()
+
+    let id: String
+    let name: String
+
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+}
+
+private struct HeinzelChoiceQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [HeinzelChoice] {
+        (try await suggestedEntities()).filter { identifiers.contains($0.id) }
+    }
+
+    func suggestedEntities() async throws -> [HeinzelChoice] {
+        guard let snapshot = ActivityWidgetData.read(), let scope = snapshot.workspaceScope else { return [] }
+        return snapshot.roster.map { HeinzelChoice(id: scope + "/" + $0.id, name: $0.name) }
+    }
+}
+
+private struct SelectHeinzelIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "Choose a Heinzel"
+
+    @Parameter(title: "Heinzel")
+    var heinzel: HeinzelChoice?
+}
+
+private struct PinnedHeinzelEntry: TimelineEntry {
+    let date: Date
+    let heinzel: WidgetHeinzel?
+    let fresh: Bool
+    let workspaceScope: String?
+}
+
+private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> PinnedHeinzelEntry {
+        PinnedHeinzelEntry(date: .now, heinzel: nil, fresh: false, workspaceScope: nil)
+    }
+
+    func snapshot(for configuration: SelectHeinzelIntent, in context: Context) async -> PinnedHeinzelEntry {
+        entry(for: configuration, from: ActivityWidgetData.read(), at: .now)
+    }
+
+    func timeline(for configuration: SelectHeinzelIntent, in context: Context) async -> Timeline<PinnedHeinzelEntry> {
+        let snapshot = ActivityWidgetData.read()
+        let date = Date.now
+        let current = entry(for: configuration, from: snapshot, at: date)
+        if let id = current.heinzel?.id { ActivityWidgetData.requestDetails(for: id) }
+        var entries = [current]
+        if let expiry = snapshot?.expiresAt, expiry > date {
+            entries.append(entry(for: configuration, from: snapshot, at: expiry))
+        }
+        return Timeline(entries: entries, policy: .never)
+    }
+
+    private func entry(for configuration: SelectHeinzelIntent, from snapshot: ActivityWidgetData?, at date: Date) -> PinnedHeinzelEntry {
+        let scope = snapshot?.workspaceScope
+        let item = scope.flatMap { scope in snapshot?.roster.first { scope + "/" + $0.id == configuration.heinzel?.id } }
+        return PinnedHeinzelEntry(date: date, heinzel: item, fresh: snapshot.map { $0.expiresAt > date } == true,
+                                  workspaceScope: scope)
+    }
+}
+
+private struct PinnedHeinzelWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: ActivityWidgetData.pinnedKind, intent: SelectHeinzelIntent.self,
+                               provider: PinnedHeinzelProvider()) { entry in
+            VStack(alignment: .leading, spacing: 6) {
+                if let item = entry.heinzel {
+                    HStack(spacing: 8) {
+                        HeinzelPortrait(item: item, size: 34)
+                        Text(item.name).font(.system(.headline, design: .serif)).lineLimit(1)
+                    }
+                    if entry.fresh {
+                        Text(item.status).font(.subheadline.weight(.semibold))
+                        if let asks = item.asks {
+                            Label("Open asks · \(asks)", systemImage: "questionmark.bubble")
+                                .font(.caption2)
+                        }
+                        if let next = item.nextWake {
+                            Text("Next wake \(Date(timeIntervalSince1970: next), style: .relative)").font(.caption2)
+                        } else if let approved = item.lastApproved {
+                            Text("Approved \(Date(timeIntervalSince1970: approved), style: .relative) ago").font(.caption2)
+                        }
+                    } else {
+                        Text("Open to refresh").font(.footnote)
+                    }
+                } else {
+                    Label("Choose a Heinzel", systemImage: "person.2")
+                        .font(.system(.headline, design: .serif))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .privacySensitive()
+            .widgetURL(entry.heinzel.flatMap { item in entry.workspaceScope.map { NativeRoute.chat(workspace: $0, id: item.id).url } }
+                       ?? NativeRoute.chooseHeinzel.url)
+            .containerBackground(for: .widget) { widgetPaper }
+        }
+        .configurationDisplayName("Heinzel Status")
+        .description("Pick one Heinzel for its status, open asks, and next wake. Tap to open its chat.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct HeinzelChooserWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "HeinzelChooser", provider: ShortcutProvider()) { _ in
+            VStack(alignment: .leading, spacing: 8) {
+                Image("HeinzelCrew").resizable().scaledToFit().frame(height: 48).accessibilityHidden(true)
+                Text("Choose a Heinzel").font(.system(.headline, design: .serif))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .widgetURL(NativeRoute.chooseHeinzel.url)
+            .containerBackground(for: .widget) { widgetPaper }
+        }
+        .configurationDisplayName("Heinzel Picker")
+        .description("Choose which Heinzel to chat with each time you open the widget.")
+        .supportedFamilies([.systemSmall])
+    }
+}
+
+private struct HeinzelRosterWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: ActivityWidgetData.rosterKind, provider: ActivityProvider()) { entry in
+            HeinzelRosterView(items: entry.activity?.roster ?? [], workspaceScope: entry.activity?.workspaceScope)
+                .widgetURL(NativeRoute.chooseHeinzel.url)
+                .containerBackground(for: .widget) { widgetPaper }
+        }
+        .configurationDisplayName("Heinzel Roster")
+        .description("See your Heinzels’ current status. Tap a name to open that chat.")
+        .supportedFamilies([.systemMedium, .systemLarge])
+    }
+}
+
+private struct HeinzelRosterView: View {
+    let items: [WidgetHeinzel]
+    let workspaceScope: String?
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Your Heinzels").font(.system(.headline, design: .serif))
+            if items.isEmpty { Text("Open to refresh").font(.footnote) }
+            ForEach(items.prefix(family == .systemLarge ? 6 : 3)) { item in
+                Link(destination: workspaceScope.map { NativeRoute.chat(workspace: $0, id: item.id).url }
+                     ?? NativeRoute.chooseHeinzel.url) {
+                    HStack(spacing: 7) {
+                        HeinzelPortrait(item: item, size: 23)
+                        Text(item.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                        Spacer(minLength: 2)
+                        Text(item.status).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
+                    }
+                }
+                .privacySensitive()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private struct HeinzelPortrait: View {
+    let item: WidgetHeinzel
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let data = item.portrait, let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().widgetAccentedRenderingMode(.accentedDesaturated).scaledToFit()
+            } else {
+                Image(systemName: "person.crop.circle").resizable().scaledToFit().foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+private let widgetPaper = Color(red: 0.97, green: 0.95, blue: 0.90)

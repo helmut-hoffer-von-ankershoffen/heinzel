@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+#if os(iOS)
+import WidgetKit
+#endif
 #if DEBUG
 import OSLog
 #endif
@@ -10,14 +13,26 @@ typealias WebRepresentable = NSViewRepresentable
 typealias WebRepresentable = UIViewRepresentable
 #endif
 
+struct HeinzelChatRequest: Equatable {
+    let id: String
+    let workspaceScope: String
+    let request = UUID()
+}
+
 struct WorkspaceView: WebRepresentable {
     let endpoint: Endpoint
     let isObscured: Bool
+    var reportsWidgetActivity = false
+    var chatRequest: HeinzelChatRequest?
+    var widgetRefreshRevision = 0
     var ready: () -> Void
+    var reportHostName: (String) -> Void = { _ in }
     var reportError: (WorkspaceProblem) -> Void
     var appearance: @MainActor @Sendable (Color) -> Void = { _ in }
 
-    func makeCoordinator() -> Navigation { Navigation(endpoint: endpoint, ready: ready, reportError: reportError) }
+    func makeCoordinator() -> Navigation {
+        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportError: reportError)
+    }
 
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -210,6 +225,8 @@ struct WorkspaceView: WebRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         view.accessibilityElementsHidden = isObscured
         view.isUserInteractionEnabled = !isObscured
+        context.coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
+        if let chatRequest { context.coordinator.openChat(chatRequest) }
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
@@ -270,9 +287,125 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     private let endpoint: Endpoint
     private let ready: () -> Void
+    private let reportHostName: (String) -> Void
+    private var lookedUpHostName = false
     weak var workspace: WKWebView?
     #if os(iOS)
     private var backgroundObservation: NSKeyValueObservation?
+    private var widgetActivity: Task<Void, Never>?
+    private var widgetRefreshRevision = 0
+    private var lastChatRequest: HeinzelChatRequest?
+
+    func openChat(_ request: HeinzelChatRequest) {
+        let address = endpoint.origin.absoluteString
+        guard lastChatRequest != request, NativeRoute.isSessionID(request.id), let workspace,
+              request.workspaceScope == ActivityWidgetData.scope(for: address),
+              UserDefaults.standard.string(forKey: "serverOrigin") == address,
+              hasCommittedWorkspace, case .idle = provisionalLoad,
+              workspace.url.map(endpoint.owns) == true,
+              var url = URLComponents(url: endpoint.origin, resolvingAgainstBaseURL: false) else { return }
+        url.path = "/heinzel"
+        url.queryItems = [URLQueryItem(name: "chat", value: request.id)]
+        guard let destination = url.url else { return }
+        lastChatRequest = request
+        if workspace.url != destination { workspace.load(URLRequest(url: destination)) }
+    }
+
+    func setWidgetActivityEnabled(_ enabled: Bool, revision: Int = 0) {
+        guard enabled else {
+            widgetActivity?.cancel()
+            widgetActivity = nil
+            return
+        }
+        guard widgetActivity == nil || widgetRefreshRevision != revision else { return }
+        widgetRefreshRevision = revision
+        widgetActivity?.cancel()
+        widgetActivity = Task { [weak self] in
+            while !Task.isCancelled, self != nil {
+                await self?.refreshWidgetActivity()
+                do { try await Task.sleep(for: .seconds(45)) } catch { return }
+            }
+        }
+    }
+
+    private func refreshWidgetActivity() async {
+        guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        let revision = documentRevision
+        // Read only aggregate counts. The session and device tokens stay inside WebKit.
+        let details = ActivityWidgetData.requestedDetails
+        let artwork = Self.widgetArtwork
+        let result = try? await inspectWorkspace(in: workspace, arguments: ["detailIDs": details], body: """
+            \(artwork)
+            const response = await fetch('/api/heinzel/sessions', options);
+            if (response.status === 401 || response.status === 403) return '';
+            if (!response.ok) return null;
+            const { sessions } = await response.json();
+            if (!Array.isArray(sessions) || sessions.some(session => typeof session?.state !== 'string')) return null;
+            const poses = {
+                paused: 'paused', stuck: 'blocked', waiting_for_you: 'waiting', overloaded: 'overloaded',
+                working: 'hammering', waiting_on_others: 'watching', proud: 'done', asleep: 'asleep'
+            };
+            const seconds = value => typeof value === 'string' && Number.isFinite(Date.parse(value))
+                ? Date.parse(value) / 1000 : null;
+            const makePortrait = async (appearance, activity) => {
+                if (typeof heinzelSvg !== 'function') return null;
+                const svg = heinzelSvg({ ...appearance, state: poses[activity] ?? 'dozing' }, 'bust');
+                const image = new Image();
+                image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+                await image.decode();
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 100;
+                const context = canvas.getContext('2d');
+                if (!context) return null;
+                context.drawImage(image, 0, 0, 100, 100);
+                return canvas.toDataURL('image/png').split(',')[1] ?? null;
+            };
+            const roster = await Promise.all(sessions.filter(item =>
+                typeof item.session_id === 'string' && /^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(item.session_id) &&
+                typeof item.name === 'string' && item.state !== 'retired').slice(0, 40).map(async item => {
+                const details = detailIDs.includes(item.session_id) ? fetch(
+                    '/api/heinzel/session?session_id=' + encodeURIComponent(item.session_id) + '&limit=1', options
+                ).then(response => response.ok ? response.json() : null).catch(() => null) : null;
+                const [portrait, detail] = await Promise.all([
+                    makePortrait(item.appearance ?? {}, item.activity).catch(() => null), details
+                ]);
+                return {
+                    id: item.session_id, name: item.name.slice(0, 128), state: item.state,
+                    activity: typeof item.activity === 'string' ? item.activity : null,
+                    asks: Number.isInteger(item.waiting_count) && item.waiting_count >= 0 ? item.waiting_count : null,
+                    lastApproved: seconds(item.last_approved_at),
+                    nextWake: detail?.schedule?.status === 'active' ? seconds(detail.schedule.next_wake) : null,
+                    portrait
+                };
+            }));
+            return JSON.stringify({
+                awake: sessions.filter(session => session.state === 'awake').length,
+                waiting: sessions.filter(session => session.state === 'waiting').length,
+                roster
+            });
+            """) as? String
+        guard !Task.isCancelled, revision == documentRevision, self.workspace === workspace, let result,
+              UserDefaults.standard.string(forKey: "serverOrigin") == endpoint.origin.absoluteString else { return }
+        let changed: Bool
+        if result.isEmpty { changed = ActivityWidgetData.clear() }
+        else if let snapshot = try? JSONDecoder().decode(WidgetSnapshotResponse.self, from: Data(result.utf8)) {
+            changed = ActivityWidgetData.save(awake: snapshot.awake, waiting: snapshot.waiting, heinzels: snapshot.roster,
+                                              workspaceScope: ActivityWidgetData.scope(for: endpoint.origin.absoluteString))
+        } else { return }
+        if changed { ActivityWidgetData.reload() }
+    }
+
+
+    private static let widgetArtwork: String = {
+        guard let url = Bundle.main.url(forResource: "HeinzelArtwork", withExtension: "js") else { return "" }
+        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }()
+
+    private struct WidgetSnapshotResponse: Decodable {
+        let awake: Int
+        let waiting: Int
+        let roster: [WidgetHeinzel]
+    }
 
     func observeBackground(of view: WKWebView, onChange: @escaping @MainActor @Sendable (Color) -> Void) {
         backgroundObservation = view.observe(\.underPageBackgroundColor, options: [.initial, .new]) { [weak view] _, _ in
@@ -299,9 +432,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
     private let reportError: (WorkspaceProblem) -> Void
 
-    init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (WorkspaceProblem) -> Void) {
+    init(endpoint: Endpoint, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
+         reportError: @escaping (WorkspaceProblem) -> Void) {
         self.endpoint = endpoint
         self.ready = ready
+        self.reportHostName = reportHostName
         self.reportError = reportError
         super.init()
         NotificationCenter.default.addObserver(
@@ -644,6 +779,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
         backgroundObservation?.invalidate()
+        setWidgetActivityEnabled(false)
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
         #endif
@@ -688,10 +824,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     """) as? Bool
                 guard workspace === webView, revision == documentRevision else { return }
                 if needsSignIn == true { reportError(.signIn) }
-                else { ready() }
+                else {
+                    ready()
+                    await resolveWorkspaceName(in: webView)
+                }
             }
         } else {
             ready()
+            Task { await resolveWorkspaceName(in: webView) }
         }
         #if DEBUG
         Task {
@@ -707,6 +847,44 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             }
         }
         #endif
+    }
+
+    private func resolveWorkspaceName(in view: WKWebView) async {
+        guard !lookedUpHostName, endpoint.origin.scheme == "https", view.url.map(endpoint.owns) == true else { return }
+        lookedUpHostName = true
+        let revision = documentRevision
+        let name = try? await inspectWorkspace(in: view, body: """
+            const response = await fetch('/api/system/doctor', options);
+            if (!response.ok && response.status !== 503) return null;
+            const { checks } = await response.json();
+            if (!checks || typeof checks !== 'object') return null;
+            for (const items of Object.values(checks)) {
+                if (!Array.isArray(items)) continue;
+                const match = items.find(item => item?.name === 'hostname' && typeof item.detail === 'string');
+                if (match) return match.detail;
+            }
+            return null;
+            """) as? String
+        guard workspace === view, revision == documentRevision, let name else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && trimmed.count <= 128 && trimmed.rangeOfCharacter(from: .controlCharacters) == nil {
+            reportHostName(trimmed)
+        }
+    }
+
+    private func inspectWorkspace(in view: WKWebView, arguments: [String: Any] = [:], body: String) async throws -> Any? {
+        var arguments = arguments
+        arguments["origin"] = endpoint.origin.absoluteString
+        return try await view.callAsyncJavaScript("""
+            if (location.origin !== new URL(origin).origin) return null;
+            const token = sessionStorage.getItem('hz.token') ?? localStorage.getItem('hz.device');
+            if (!token) return '';
+            const options = {
+                headers: { Authorization: `Bearer ${token}` }, redirect: 'error',
+                credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(5000)
+            };
+            \(body)
+            """, arguments: arguments, in: nil, contentWorld: .defaultClient)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

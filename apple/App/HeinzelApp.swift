@@ -1,6 +1,9 @@
 import AVFoundation
 import SwiftUI
 import UserNotifications
+#if os(iOS)
+import WidgetKit
+#endif
 
 private let heinzelTagline = "Durable agents accelerating product teams, like the little elves from Cologne."
 
@@ -24,16 +27,50 @@ private struct ConnectionFooter: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            if showTagline { Text(heinzelTagline) }
-            Text(heinzelAppVersion)
+            if showTagline { Text(heinzelTagline).font(.footnote) }
+            Text(heinzelAppVersion).font(.caption2)
         }
-        .font(.caption2)
         .foregroundStyle(ConnectionPalette.muted)
         .multilineTextAlignment(.center)
         .frame(maxWidth: 460)
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
+    }
+}
+
+private func connectionIcon(_ symbol: String, label: String) -> some View {
+    Image(systemName: symbol)
+        .font(.body.weight(.medium))
+        .foregroundStyle(ConnectionPalette.accent)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(label)
+}
+
+@MainActor
+private func connectionIconButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) { connectionIcon(symbol, label: label) }
+        .buttonStyle(.plain)
+        .help(label)
+}
+
+@MainActor
+private func connectionSheetHeader<Actions: View>(_ title: String, @ViewBuilder actions: () -> Actions) -> some View {
+    let heading = Text(title)
+        .font(.system(.title2, design: .serif, weight: .semibold))
+        .accessibilityAddTraits(.isHeader)
+    let buttons = HStack(spacing: 0, content: actions)
+    return ViewThatFits(in: .horizontal) {
+        HStack(spacing: 4) {
+            heading.fixedSize()
+            Spacer(minLength: 0)
+            buttons
+        }
+        VStack(alignment: .leading, spacing: 0) {
+            heading
+            buttons.frame(maxWidth: .infinity, alignment: .trailing)
+        }
     }
 }
 
@@ -173,6 +210,15 @@ struct ConnectionView: View {
     @State private var startupStage = "Preparing Heinzelmännchen…"
     @State private var startupIsSlow = false
     @AppStorage("serverOrigin") private var serverOrigin = ""
+    @AppStorage("workspaceHistory") private var workspaceHistory = Data()
+    @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
+    @State private var syncedWorkspaces: [RecentWorkspace] = []
+    #if os(macOS)
+    @AppStorage("syncWorkspaceSignIn") private var syncWorkspaceSignIn = false
+    @AppStorage("publishedWorkspaceOrigin") private var publishedWorkspaceOrigin = ""
+    @State private var syncStatus: String?
+    private let offersCloudSignIn = Bundle.main.object(forInfoDictionaryKey: "HeinzelCloudSignIn") as? String == "YES"
+    #endif
     @State private var link = ""
     @State private var endpoint: Endpoint?
     @State private var connecting = false
@@ -189,6 +235,12 @@ struct ConnectionView: View {
     #if os(iOS)
     @State private var shortcutRouter = AppShortcutRouter.shared
     @State private var pendingShortcutURL: NativeRoute?
+    @State private var showHeinzelPicker = false
+    @State private var pickerRoster: [WidgetHeinzel] = []
+    @State private var pickerHasSnapshot = false
+    @State private var pickerTimedOut = false
+    @State private var widgetRefreshRevision = 0
+    @State private var chatRequest: HeinzelChatRequest?
     #endif
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
@@ -218,6 +270,60 @@ struct ConnectionView: View {
         return parseWorkspaceLink(link)
     }
 
+    private var recentWorkspaces: [RecentWorkspace] {
+        let local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
+        let forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+        let cloud = syncedWorkspaces.filter { $0.lastUsed > (forgotten[$0.address] ?? .distantPast) }
+        var entries: [String: RecentWorkspace] = [:]
+        for item in local + cloud {
+            guard let target = Endpoint(item.address), target.token == nil, target.origin.absoluteString == item.address else { continue }
+            let origin = item.address
+            if let known = entries[origin] {
+                entries[origin] = RecentWorkspace(address: origin, hostName: item.hostName ?? known.hostName,
+                                                  lastUsed: known.lastUsed, source: known.source ?? item.source)
+            } else {
+                entries[origin] = item
+            }
+        }
+        if let saved = Endpoint(serverOrigin), entries[saved.origin.absoluteString] == nil,
+           forgotten[saved.origin.absoluteString] == nil {
+            let address = saved.origin.absoluteString
+            entries[address] = RecentWorkspace(address: address, lastUsed: .distantPast)
+        }
+        return entries.values.sorted {
+            $0.lastUsed == $1.lastUsed ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : $0.lastUsed > $1.lastUsed
+        }
+    }
+
+    private func rememberWorkspace(_ target: Endpoint, hostName: String? = nil, source: RecentWorkspace.Source? = nil) {
+        guard target.origin.scheme == "https" else { return }
+        let address = target.origin.absoluteString
+        var local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
+        let previous = local.first(where: { $0.address == address })
+        let item = RecentWorkspace(address: address, hostName: hostName ?? previous?.hostName, lastUsed: .now,
+                                   source: source ?? previous?.source ?? .pasted)
+        local.removeAll { $0.address == address }
+        local.insert(item, at: 0)
+        if let encoded = try? JSONEncoder().encode(Array(local.prefix(12))) { workspaceHistory = encoded }
+    }
+
+    private func forgetWorkspace(_ item: RecentWorkspace) {
+        var local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
+        local.removeAll { $0.address == item.address }
+        if let encoded = try? JSONEncoder().encode(local) { workspaceHistory = encoded }
+        var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+        let latestSync = syncedWorkspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
+        forgotten[item.address] = max(.now, latestSync)
+        if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
+        if serverOrigin == item.address { serverOrigin = "" }
+    }
+
+    private var diagnosticOrigin: URL? {
+        if choosingWorkspace { return draftOrigin }
+        if endpoint == nil, let sharedWorkspace { return sharedWorkspace.origin }
+        return draftOrigin ?? endpoint?.origin ?? Endpoint(serverOrigin)?.origin
+    }
+
     private var trimmedLink: String { link.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var visibleProblem: WorkspaceProblem? {
@@ -233,7 +339,10 @@ struct ConnectionView: View {
     }
 
     private var mayRequestStartupNotifications: Bool {
-        scenePhase == .active && !showingColdStart && !connecting && !loadingWorkspace &&
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["HZ_SPIKE_SERVER"] != nil { return false }
+        #endif
+        return scenePhase == .active && !showingColdStart && !connecting && !loadingWorkspace &&
             !stoppingLocalWorkspace && !showConnection && !showConnectionHelp && !helpAfterConnection &&
             sharedWorkspace == nil && !editingLink
     }
@@ -259,6 +368,104 @@ struct ConnectionView: View {
             } else {
                 showConnectionHelp = true
             }
+        case .chooseHeinzel:
+            showConnection = false
+            showConnectionHelp = false
+            showHeinzelPicker = true
+        case .chat(let scope, let id):
+            if let snapshot = currentWidgetSnapshot, snapshot.workspaceScope == scope,
+               snapshot.roster.contains(where: { $0.id == id }) {
+                showConnection = false
+                showConnectionHelp = false
+                if endpoint != nil { choosingWorkspace = false }
+                chatRequest = HeinzelChatRequest(id: id, workspaceScope: scope)
+            } else {
+                showHeinzelPicker = true
+            }
+        }
+    }
+
+    private var currentWidgetSnapshot: ActivityWidgetData? {
+        guard let endpoint, endpoint.origin.absoluteString == serverOrigin,
+              let snapshot = ActivityWidgetData.read(),
+              snapshot.workspaceScope == ActivityWidgetData.scope(for: serverOrigin) else { return nil }
+        return snapshot
+    }
+
+    private var heinzelPicker: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                connectionSheetHeader("Choose a Heinzel") {
+                    connectionIconButton("xmark", label: "Close") { showHeinzelPicker = false }
+                }
+                if endpoint == nil || loadFailure != nil || endpoint?.origin.absoluteString != serverOrigin {
+                    Text("Open your current workspace to load its Heinzels.")
+                        .font(.callout).foregroundStyle(ConnectionPalette.muted)
+                    Button("Open Workspace") {
+                        showHeinzelPicker = false
+                        if !serverOrigin.isEmpty, endpoint?.origin.absoluteString != serverOrigin {
+                            Task { await connectRecent(serverOrigin) }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else if pickerRoster.isEmpty {
+                    if pickerHasSnapshot {
+                        Text("No Heinzels yet").font(.callout).foregroundStyle(ConnectionPalette.muted)
+                    } else if pickerTimedOut {
+                        Text("Heinzels are unavailable right now.")
+                            .font(.callout).foregroundStyle(ConnectionPalette.muted)
+                        Button("Try Again") { widgetRefreshRevision += 1 }.buttonStyle(.borderedProminent)
+                    } else {
+                        ProgressView("Loading Heinzels…").controlSize(.small)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(pickerRoster) { item in
+                            Button {
+                                if let snapshot = currentWidgetSnapshot, let scope = snapshot.workspaceScope,
+                                   snapshot.roster.contains(where: { $0.id == item.id }) {
+                                    chatRequest = HeinzelChatRequest(id: item.id, workspaceScope: scope)
+                                    showHeinzelPicker = false
+                                }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if let data = item.portrait, let image = UIImage(data: data) {
+                                        Image(uiImage: image).resizable().scaledToFit()
+                                            .frame(width: 35, height: 35).accessibilityHidden(true)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name).fontWeight(.medium)
+                                        Text(item.status).font(.caption).foregroundStyle(ConnectionPalette.muted)
+                                    }
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "chevron.forward").accessibilityHidden(true)
+                                }
+                                .frame(minHeight: 48).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .connectionPanel()
+                }
+                ConnectionFooter()
+            }
+            .frame(maxWidth: 420, alignment: .leading)
+            .padding(24)
+            .frame(maxWidth: .infinity)
+        }
+        .environment(\.colorScheme, .light)
+        .tint(ConnectionPalette.accent)
+        .presentationBackground(Color("StartupBackground"))
+        .task(id: widgetRefreshRevision) {
+            pickerTimedOut = false
+            let start = ContinuousClock.now
+            while !Task.isCancelled {
+                let snapshot = currentWidgetSnapshot
+                pickerRoster = snapshot?.roster ?? []
+                pickerHasSnapshot = snapshot != nil
+                pickerTimedOut = ContinuousClock.now >= start + .seconds(8)
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
         }
     }
     #endif
@@ -280,13 +487,16 @@ struct ConnectionView: View {
         }
         .sheet(isPresented: $showConnectionHelp) {
             ConnectionHelp(
-                origin: choosingWorkspace ? draftOrigin : draftOrigin ?? endpoint?.origin ?? Endpoint(serverOrigin)?.origin,
+                origin: diagnosticOrigin,
                 activeWorkspace: !choosingWorkspace && draftOrigin == nil && loadFailure == nil && !loadingWorkspace ? endpoint : nil,
                 needsSignIn: !choosingWorkspace && loadFailure == .signIn,
                 workspaceIsCurrent: { target in endpoint == target && loadFailure == nil && !loadingWorkspace }
             )
                 .presentationBackground(Color("StartupBackground"))
         }
+        #if os(iOS)
+        .sheet(isPresented: $showHeinzelPicker) { heinzelPicker }
+        #endif
         .task {
             guard !started else { return }
             started = true
@@ -296,6 +506,20 @@ struct ConnectionView: View {
             try? await ContinuousClock().sleep(until: earliest)
             showingColdStart = false
         }
+        .task(id: scenePhase == .active && (endpoint == nil || choosingWorkspace)) {
+            while !Task.isCancelled, scenePhase == .active, endpoint == nil || choosingWorkspace {
+                syncedWorkspaces = WorkspaceKeychain.workspaces()
+                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+            }
+        }
+        #if os(macOS)
+        .task(id: syncWorkspaceSignIn ? endpoint?.origin : nil) {
+            await publishLocalSignIn()
+        }
+        .onChange(of: syncWorkspaceSignIn) { _, enabled in
+            if !enabled { removePublishedSignIn() }
+        }
+        #endif
         .task(id: mayRequestStartupNotifications) {
             guard mayRequestStartupNotifications else { return }
             // Give the startup view or connection sheet time to leave before presenting the system prompt.
@@ -354,7 +578,7 @@ struct ConnectionView: View {
                 sharedWorkspace = target
             }
         }
-        .alert("Open Heinzel workspace?", isPresented: Binding(
+        .alert("Open workspace?", isPresented: Binding(
             get: { sharedWorkspace != nil && endpoint != nil && !showConnection && !showConnectionHelp && !connecting },
             set: { if !$0 { sharedWorkspace = nil } }
         ), presenting: sharedWorkspace) { target in
@@ -382,10 +606,26 @@ struct ConnectionView: View {
         #else
         if !serverOrigin.isEmpty && sharedWorkspace == nil {
             startupStage = "Checking workspace connection…"
-            await connect(serverOrigin, checkHost: false)
+            await connectRecent(serverOrigin, checkHost: false)
         } else {
             startupStage = "Looking for a saved workspace…"
         }
+        #endif
+    }
+
+    private var requestedWidgetRefresh: Int {
+        #if os(iOS)
+        widgetRefreshRevision
+        #else
+        0
+        #endif
+    }
+
+    private var requestedChat: HeinzelChatRequest? {
+        #if os(iOS)
+        !loadingWorkspace && loadFailure == nil ? chatRequest : nil
+        #else
+        nil
         #endif
     }
 
@@ -397,10 +637,16 @@ struct ConnectionView: View {
             let revision = loadRevision
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
             VStack(spacing: 0) {
-                WorkspaceView(endpoint: endpoint, isObscured: obscured, ready: {
+                WorkspaceView(endpoint: endpoint, isObscured: obscured,
+                              reportsWidgetActivity: scenePhase == .active && !obscured && serverOrigin == endpoint.origin.absoluteString,
+                              chatRequest: requestedChat, widgetRefreshRevision: requestedWidgetRefresh, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
                     loadFailure = nil
+                }, reportHostName: { name in
+                    guard self.endpoint == endpoint, serverOrigin == endpoint.origin.absoluteString,
+                          loadRevision == revision else { return }
+                    rememberWorkspace(endpoint, hostName: name)
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
@@ -409,6 +655,11 @@ struct ConnectionView: View {
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
+                            #if os(iOS)
+                            if issue == nil, UserDefaults.standard.string(forKey: "serverOrigin") == endpoint.origin.absoluteString {
+                                clearWidgetActivity()
+                            }
+                            #endif
                             loadingWorkspace = false
                         }
                     } else {
@@ -437,18 +688,21 @@ struct ConnectionView: View {
                     loadFailure = .slow
                 }
                 .overlay(alignment: .top) {
-                    if let connectionIssue, !loadingWorkspace, loadFailure == nil {
+                    if let connectionIssue, !obscured {
                         Button {
-                            showConnectionHelp = true
+                            showConnection = true
                         } label: {
-                            Label(connectionIssue.title, systemImage: connectionIssue.icon)
-                                .font(.footnote.weight(.medium))
-                                .padding(.horizontal, 12)
-                                .frame(minHeight: 44)
-                                .background(.regularMaterial, in: Capsule())
+                            HStack(spacing: 8) {
+                                Label(connectionIssue.title, systemImage: connectionIssue.icon)
+                                Image(systemName: "chevron.forward").accessibilityHidden(true)
+                            }
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 44)
+                            .background(.regularMaterial, in: Capsule())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens Connection Help")
+                        .accessibilityHint("Opens Workspace Connection")
                         .padding(.top, 8)
                     }
                 }
@@ -478,11 +732,11 @@ struct ConnectionView: View {
             startup
         } else if let target = sharedWorkspace {
             launchCard(compactBrand: true) {
-                Text("Open this workspace?")
+                Text("Open workspace?")
                     .font(.system(.title2, design: .serif, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
                 workspaceAddress(target.origin)
-                Button("Open Workspace") {
+                Button("Open") {
                     sharedWorkspace = nil
                     Task { await connect(target.origin.absoluteString) }
                 }
@@ -530,42 +784,39 @@ struct ConnectionView: View {
     }
     #endif
 
-    private var workspaceControl: some View {
-        Button {
-            showConnection = true
-        } label: {
-            Label("Workspace", systemImage: "point.3.connected.trianglepath.dotted")
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 10)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows the address, connection status, and workspace actions")
-    }
-
     private func connectionSheet(for endpoint: Endpoint) -> some View {
         let problem = visibleProblem ?? connectionIssue
         let confirmed = !loadingWorkspace && (endpoint.origin.scheme == "http" || verifiedConnectionOrigin == endpoint.origin)
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Workspace Connection")
-                        .font(.system(.title2, design: .serif, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 4)
-                    Button { showConnection = false } label: {
-                        Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
+                connectionSheetHeader("Workspace") {
+                    if let shareURL = endpoint.shareURL {
+                        ShareLink(item: shareURL) { connectionIcon("square.and.arrow.up", label: "Share Workspace Link") }
+                            .buttonStyle(.plain)
+                            .help("Share Workspace Link")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
+                    connectionIconButton("questionmark.circle", label: "Connection Help") {
+                        helpAfterConnection = true
+                        showConnection = false
+                    }
+                    connectionIconButton("xmark", label: "Close") { showConnection = false }
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    Label(problem == .signIn ? "Sign-in needed" : problem?.title ?? (confirmed ? "Connected" : "Checking connection…"),
-                          systemImage: problem?.icon ?? (confirmed ? "checkmark.circle.fill" : "ellipsis.circle"))
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(problem == nil && confirmed ? Color(red: 0.19, green: 0.37, blue: 0.27) : ConnectionPalette.muted)
-                        .accessibilityIdentifier("workspaceConnectionState")
+                    Group {
+                        if let problem {
+                            Label(problem == .signIn ? "Sign-in required" : problem.title, systemImage: problem.icon)
+                                .foregroundStyle(ConnectionPalette.warning)
+                        } else if confirmed {
+                            Label("Connected", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(ConnectionPalette.accent)
+                        } else {
+                            ProgressView("Checking connection…")
+                                .controlSize(.small)
+                                .foregroundStyle(ConnectionPalette.muted)
+                        }
+                    }
+                    .font(.callout.weight(.semibold))
+                    .accessibilityIdentifier("workspaceConnectionState")
                     Text(endpoint.origin.absoluteString)
                         .font(.footnote.monospaced())
                         .foregroundStyle(ConnectionPalette.muted)
@@ -577,29 +828,44 @@ struct ConnectionView: View {
                         .font(.callout)
                         .foregroundStyle(ConnectionPalette.warning)
                 }
-                VStack(spacing: 0) {
-                    if let shareURL = endpoint.shareURL {
-                        ShareLink(item: shareURL) { connectionRow("Share Workspace Link", "square.and.arrow.up") }
-                        Divider()
+                if let problem {
+                    if problem == .signIn || problem == .wrongAddress {
+                        Button(problem == .signIn ? "Enter Sign-in Link" : "Enter Workspace Link") {
+                            if problem == .wrongAddress { chooseAnotherWorkspace() }
+                            showConnection = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else if loadFailure != nil || problem.canReconnectAutomatically {
+                        Button(loadFailure != nil ? "Try Again" : "Reload Workspace") {
+                            showConnection = false
+                            retryWorkspace()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
+                }
+                VStack(spacing: 0) {
                     Button(action: chooseAnotherWorkspace) { connectionRow("Switch Workspace", "arrow.left.arrow.right") }
+                        .foregroundStyle(ConnectionPalette.accent)
                     Divider()
                     Button {
-                        helpAfterConnection = true
-                        showConnection = false
+                        showDisconnectConfirmation = true
                     } label: {
-                        connectionRow("Connection Help", "questionmark.circle")
+                        connectionRow("Disconnect…", "rectangle.portrait.and.arrow.right")
                     }
+                    .foregroundStyle(ConnectionPalette.warning)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ConnectionPalette.accent)
-                Button {
-                    showDisconnectConfirmation = true
-                } label: {
-                    connectionRow("Disconnect…", "rectangle.portrait.and.arrow.right")
+                #if os(macOS)
+                if endpoint.origin.scheme == "http", offersCloudSignIn {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Sync Sign-in with iCloud", isOn: $syncWorkspaceSignIn)
+                        if syncWorkspaceSignIn, let syncStatus {
+                            Text(syncStatus).font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                        }
+                    }
+                    .connectionPanel()
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ConnectionPalette.muted)
+                #endif
                 ConnectionFooter()
             }
             .frame(maxWidth: 420, alignment: .leading)
@@ -644,16 +910,18 @@ struct ConnectionView: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(ConnectionPalette.accent)
             } else {
-                Text(problem.detail)
+                Text(problem == .unavailable && endpoint.origin.host?.hasSuffix(".ts.net") == true
+                    ? "Check Tailscale and make sure the host computer is awake. Heinzel will try again."
+                    : problem.detail)
                     .font(.callout)
                     .foregroundStyle(ConnectionPalette.muted)
             }
             if endpoint.origin.scheme == "https" {
-                workspaceAddress(endpoint.origin)
+                workspaceAddress(endpoint.origin, opensConnection: !choosingWorkspace)
             }
             if problem == .signIn {
                 signInActions(for: endpoint)
-                Button("Choose a Different Workspace") { chooseDifferentWorkspace(from: endpoint) }
+                Button("Switch Workspace") { chooseDifferentWorkspace(from: endpoint) }
                     .buttonStyle(.borderless)
                     .controlSize(.large)
                     .disabled(connecting)
@@ -665,37 +933,32 @@ struct ConnectionView: View {
                 Button("Try Again") { retryWorkspace() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                Button("Use Another Workspace", action: chooseAnotherWorkspace)
+                Button("Switch Workspace", action: chooseAnotherWorkspace)
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-            }
-            if !choosingWorkspace {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        workspaceControl
-                        helpButton
-                    }
-                    VStack(spacing: 4) {
-                        workspaceControl
-                        helpButton
-                    }
-                }
             }
         }
         .multilineTextAlignment(.center)
     }
 
-    private func workspaceAddress(_ origin: URL) -> some View {
-        Label {
-            Text(origin.absoluteString).textSelection(.enabled)
-        } icon: {
-            Image(systemName: "link").accessibilityHidden(true)
+    private func workspaceAddress(_ origin: URL, opensConnection: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            if opensConnection {
+                connectionIconButton("point.3.connected.trianglepath.dotted", label: "Workspace") {
+                    showConnection = true
+                }
+            } else {
+                Image(systemName: "link").accessibilityHidden(true)
+            }
+            Text(origin.absoluteString)
+                .textSelection(.enabled)
+                .padding(.vertical, 8)
         }
         .font(.footnote.monospaced())
         .foregroundStyle(ConnectionPalette.muted)
         .multilineTextAlignment(.leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.leading, opensConnection ? 0 : 12)
+        .padding(.trailing, 12)
         .background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
 
@@ -735,7 +998,7 @@ struct ConnectionView: View {
         let target = parseWorkspaceLink(link)
         guard let target else { return "Enter the full sign-in link from the host." }
         guard endpoint.owns(target.origin) else {
-            return "This link is for a different workspace. Choose a different workspace to use it."
+            return "This link is for another workspace."
         }
         guard target.token != nil else {
             return "This link has no sign-in access. Get a link from the signed-in workspace on the host computer."
@@ -757,7 +1020,10 @@ struct ConnectionView: View {
     }
 
     private func linkField(_ title: String, submit: @escaping () -> Void) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
+            Image(systemName: "link")
+                .foregroundStyle(ConnectionPalette.muted)
+                .accessibilityHidden(true)
             SecureField(title, text: $link)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
@@ -820,14 +1086,7 @@ struct ConnectionView: View {
             }
             .foregroundStyle(Color(red: 0.337, green: 0.404, blue: 0.369))
             .accessibilityElement(children: .combine)
-            if startupIsSlow && !stoppingLocalWorkspace {
-                Text("Taking longer than usual. You can check the connection while you wait.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Connection Help", systemImage: "questionmark.circle") { showConnectionHelp = true }
-                    .buttonStyle(.bordered)
-            }
+
         }
         .task(id: stoppingLocalWorkspace) {
             startupIsSlow = false
@@ -839,12 +1098,9 @@ struct ConnectionView: View {
 
     private var startupText: String {
         if stoppingLocalWorkspace { return "Stopping workspace…" }
+        if startupIsSlow { return "Still trying to open the workspace…" }
         if showingColdStart { return startupStage }
         return "Opening workspace…"
-    }
-
-    private var versionFooter: some View {
-        ConnectionFooter()
     }
 
     private func launchCard(
@@ -853,11 +1109,6 @@ struct ConnectionView: View {
         ScrollView {
             VStack(spacing: 14) {
                 brandHeader(loading: loading, compact: compactBrand || editingLink)
-                Capsule()
-                    .fill(Color(red: 0.68, green: 0.33, blue: 0.22).opacity(0.5))
-                    .frame(width: 40, height: 1)
-                    .accessibilityHidden(true)
-                    .padding(.vertical, 4)
                 actions()
             }
             .frame(maxWidth: 420)
@@ -869,7 +1120,14 @@ struct ConnectionView: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
-        .safeAreaInset(edge: .bottom, spacing: 0) { if !editingLink { versionFooter } }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !editingLink { ConnectionFooter(showTagline: !loading) }
+        }
+        .overlay(alignment: .topTrailing) {
+            if !loading || startupIsSlow && !stoppingLocalWorkspace {
+                helpButton.padding(.trailing, 12)
+            }
+        }
     }
 
     private func brandHeader(loading: Bool = false, compact: Bool = false) -> some View {
@@ -885,24 +1143,14 @@ struct ConnectionView: View {
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
-            if !loading && !editingLink {
-                Text(heinzelTagline)
-                    .font(.callout)
-                    .foregroundStyle(ConnectionPalette.muted)
-                    .multilineTextAlignment(.center)
-            }
         }
     }
 
     private var helpButton: some View {
-        Button {
+        connectionIconButton("questionmark.circle", label: "Connection Help") {
+            editingLink = false
             showConnectionHelp = true
-        } label: {
-            Label("Connection Help", systemImage: "questionmark.circle")
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
     }
 
     private var paperBackground: some View {
@@ -956,12 +1204,43 @@ struct ConnectionView: View {
                     Divider()
                 }
                 #endif
-                setupForm
-                if !choosingWorkspace, let saved = Endpoint(serverOrigin) {
-                    Button("Reconnect to \(workspaceName(saved.origin))") { Task { await connect(serverOrigin) } }
-                        .buttonStyle(.bordered)
+                let choices = recentWorkspaces.filter { $0.address != endpoint?.origin.absoluteString }
+                if !choices.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Recent Workspaces")
+                            .font(.system(.headline, design: .serif))
+                            .foregroundStyle(ConnectionPalette.ink)
+                            .accessibilityAddTraits(.isHeader)
+                        ForEach(choices) { item in
+                            HStack(spacing: 0) {
+                                Button { Task { await connectRecent(item.address, source: item.source) } } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "link").accessibilityHidden(true)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.name).fontWeight(.medium)
+                                            if choices.contains(where: { $0.id != item.id && $0.name == item.name }) {
+                                                Text(item.address).font(.caption).foregroundStyle(ConnectionPalette.muted)
+                                            }
+                                        }
+                                        if item.source == .iCloud {
+                                            Image(systemName: "icloud")
+                                                .font(.footnote)
+                                                .foregroundStyle(ConnectionPalette.muted)
+                                                .accessibilityHidden(true)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                    .frame(minHeight: 44).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityValue(item.source == .iCloud ? "Synced with iCloud" : "Added on this device")
+                                connectionIconButton("trash", label: "Forget \(item.name)") { forgetWorkspace(item) }
+                            }
+                        }
+                    }
+                    .connectionPanel()
                 }
-                helpButton
+                setupForm
             }
             .disabled(connecting)
             .frame(maxWidth: 450, alignment: .leading)
@@ -977,7 +1256,10 @@ struct ConnectionView: View {
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingLink { versionFooter }
+            if !editingLink { ConnectionFooter(showTagline: true) }
+        }
+        .overlay(alignment: .topTrailing) {
+            helpButton.padding(.trailing, 12)
         }
     }
 
@@ -992,13 +1274,8 @@ struct ConnectionView: View {
                 .foregroundStyle(ConnectionPalette.muted)
             linkField("Workspace link", submit: connectDraft)
             if let origin = draftOrigin { reachability(for: origin) }
-            if draftWorkspace == nil && !trimmedLink.isEmpty {
-                Label("Enter the full workspace link from the host.", systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(ConnectionPalette.warning)
-            }
-            if let error {
-                Label(error, systemImage: "exclamationmark.circle")
+            if let message = error ?? (draftWorkspace == nil && !trimmedLink.isEmpty ? "Enter the full workspace link from the host." : nil) {
+                Label(message, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(ConnectionPalette.warning)
             }
@@ -1026,12 +1303,7 @@ struct ConnectionView: View {
                     .foregroundStyle(draftIssue == nil ? Color(red: 0.19, green: 0.37, blue: 0.27) : ConnectionPalette.warning)
                     .accessibilityIdentifier("workspaceReachability")
                 if draftIssue != nil {
-                    Button {
-                        draftRevision += 1
-                    } label: {
-                        Text("Check Again").frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
+                    connectionIconButton("arrow.clockwise", label: "Check Again") { draftRevision += 1 }
                 }
             } else {
                 ProgressView("Checking workspace…")
@@ -1053,10 +1325,19 @@ struct ConnectionView: View {
         Task { await connect(value) }
     }
 
-    private func connect(_ input: String, remember: Bool = true, checkHost: Bool = true) async {
+    private func connectRecent(_ address: String, checkHost: Bool = true, source: RecentWorkspace.Source? = nil) async {
+        let forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+        let link = WorkspaceKeychain.signInLink(address: address, newerThan: forgotten[address])
+        let previous = recentWorkspaces.first { $0.address == address }?.source
+        await connect(link ?? address, checkHost: checkHost, fallBackToWorkspace: link != nil,
+                      source: source ?? previous ?? (link == nil ? nil : .iCloud))
+    }
+
+    private func connect(_ input: String, remember: Bool = true, checkHost: Bool = true,
+                         fallBackToWorkspace: Bool = false, source: RecentWorkspace.Source? = nil) async {
         guard !connecting else { return }
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let target = parseWorkspaceLink(value) else {
+        guard var target = parseWorkspaceLink(value) else {
             error = "Enter the full workspace link from the host."
             return
         }
@@ -1076,8 +1357,27 @@ struct ConnectionView: View {
             return
         }
         do {
-            try await target.verify()
-            if remember { serverOrigin = target.origin.absoluteString }
+            do { try await target.verify() }
+            catch ConnectionError.authentication where fallBackToWorkspace {
+                guard let addressOnly = Endpoint(target.origin.absoluteString) else { throw ConnectionError.authentication }
+                target = addressOnly
+            }
+            if remember {
+                #if os(iOS)
+                if serverOrigin != target.origin.absoluteString {
+                    clearWidgetActivity()
+                    chatRequest = nil
+                }
+                #endif
+                serverOrigin = target.origin.absoluteString
+                let provenance = source ?? .pasted
+                rememberWorkspace(target, source: provenance)
+                if provenance == .pasted, target.token != nil {
+                    var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+                    forgotten.removeValue(forKey: target.origin.absoluteString)
+                    if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
+                }
+            }
             link = ""
             if endpoint?.origin != target.origin { connectionIssue = nil }
             if endpoint != target {
@@ -1128,11 +1428,21 @@ struct ConnectionView: View {
         choosingWorkspace = false
         endpoint = nil
         serverOrigin = ""
+        #if os(iOS)
+        clearWidgetActivity()
+        chatRequest = nil
+        #endif
         link = ""
         loadFailure = nil
         connectionIssue = nil
         error = nil
     }
+
+    #if os(iOS)
+    private func clearWidgetActivity() {
+        if ActivityWidgetData.clear() { ActivityWidgetData.reload() }
+    }
+    #endif
 
     private func retryWorkspace() {
         loadFailure = nil
@@ -1158,6 +1468,44 @@ struct ConnectionView: View {
     }
 
     #if os(macOS)
+    private func removePublishedSignIn() {
+        guard !publishedWorkspaceOrigin.isEmpty else { return }
+        if WorkspaceKeychain.remove(address: publishedWorkspaceOrigin) {
+            publishedWorkspaceOrigin = ""
+            syncStatus = nil
+        } else {
+            syncStatus = "Couldn’t remove the synced sign-in."
+        }
+    }
+
+    private func publishLocalSignIn() async {
+        guard offersCloudSignIn, syncWorkspaceSignIn, let endpoint, endpoint.origin.scheme == "http", let token = endpoint.token else { return }
+        while !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint {
+            do {
+                let target = try await endpoint.sharedSignInOrigin()
+                guard !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint else { return }
+                if let target {
+                    let address = target.origin.absoluteString
+                    if publishedWorkspaceOrigin != address { removePublishedSignIn() }
+                    let item = RecentWorkspace(address: address, hostName: Host.current().localizedName, lastUsed: .now, source: .iCloud)
+                    if WorkspaceKeychain.publish(workspace: item, token: token) {
+                        publishedWorkspaceOrigin = address
+                        syncStatus = "Available to your devices through iCloud Keychain."
+                    } else {
+                        syncStatus = "iCloud Keychain couldn’t save the sign-in."
+                    }
+                } else {
+                    removePublishedSignIn()
+                    syncStatus = "Enable private Tailscale sharing first."
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                syncStatus = "Checking private sharing…"
+            }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        }
+    }
+
     private func startLocal() async {
         guard !connecting else { return }
         connecting = true
@@ -1206,7 +1554,7 @@ private struct ConnectionHelp: View {
     }
 
     private enum Status {
-        case pending, checking, passed, action, failed, unavailable
+        case pending, checking, passed, action, optional, off, failed, unavailable
 
         var symbol: String {
             switch self {
@@ -1214,7 +1562,9 @@ private struct ConnectionHelp: View {
             case .checking: "circle"
             case .passed: "checkmark.circle.fill"
             case .action: "exclamationmark.circle.fill"
-            case .failed, .unavailable: "xmark.circle.fill"
+            case .optional: "info.circle"
+            case .off, .unavailable: "minus.circle.fill"
+            case .failed: "xmark.circle.fill"
             }
         }
 
@@ -1223,7 +1573,9 @@ private struct ConnectionHelp: View {
             case .pending: "Waiting"
             case .checking: "Checking"
             case .passed: "Passed"
-            case .action: "Action available"
+            case .action: "Needs attention"
+            case .optional: "Optional"
+            case .off: "Off"
             case .failed: "Failed"
             case .unavailable: "Unavailable"
             }
@@ -1233,7 +1585,7 @@ private struct ConnectionHelp: View {
             switch self {
             case .passed: Color(red: 0.19, green: 0.37, blue: 0.27)
             case .action: Color(red: 0.52, green: 0.32, blue: 0.12)
-            case .failed, .unavailable: Color(red: 0.65, green: 0.21, blue: 0.20)
+            case .failed: Color(red: 0.65, green: 0.21, blue: 0.20)
             default: .secondary
             }
         }
@@ -1251,10 +1603,10 @@ private struct ConnectionHelp: View {
 
     private var microphone: Result {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: Result(.passed, "Microphone access allowed")
-        case .denied: Result(.failed, "Microphone access is off in Settings")
-        case .restricted: Result(.failed, "Restricted on this device")
-        case .notDetermined: Result(.action, "Allow access to use the microphone visualizer")
+        case .authorized: Result(.passed, "Access allowed")
+        case .denied: Result(.off, "Access is off in Settings")
+        case .restricted: Result(.unavailable, "Restricted on this device")
+        case .notDetermined: Result(.optional, "Allow access to use the microphone visualizer")
         @unknown default: Result(.failed, "Microphone permission could not be read")
         }
     }
@@ -1296,13 +1648,13 @@ private struct ConnectionHelp: View {
     private var systemAudio: Result {
         if canTestSystemAudio {
             #if os(macOS)
-            return Result(.action, "Check access to audio from other apps")
+            return Result(.optional, "Check access to audio from other apps")
             #else
-            return Result(.action, "Choose an app or window in the system picker")
+            return Result(.optional, "Choose an app or window in the system picker")
             #endif
         }
         #if os(macOS)
-        return Result(.action, "Open a local Mac workspace to test sharing")
+        return Result(.optional, "Open a local Mac workspace to test sharing")
         #elseif targetEnvironment(simulator)
         return Result(.unavailable, "Requires a physical device running \(systemName) 27 or later")
         #else
@@ -1316,13 +1668,14 @@ private struct ConnectionHelp: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Check.allCases, id: \.self) { check in
-                        if check != .internet { Divider().padding(.vertical, 12) }
-                        diagnostic(check)
-                    }
+                diagnosticGroup([.internet, .workspace])
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Device Features")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(ConnectionPalette.muted)
+                        .accessibilityAddTraits(.isHeader)
+                    diagnosticGroup([.microphone, .systemAudio, .notifications])
                 }
-                .connectionPanel()
 
                 DisclosureGroup("Which link should I use?") {
                     Text("Start with the link your workspace host sent you. If Heinzel asks you to sign in, ask the host for a sign-in link. It gives this device access, so keep it private.")
@@ -1367,44 +1720,26 @@ private struct ConnectionHelp: View {
     }
 
     private var diagnosticsHeader: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                Text("Connection Help")
-                    .font(.system(.title, design: .serif, weight: .semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
-            }
-            let finished = results.values.filter { $0.status != .checking }.count
-            HStack(spacing: 8) {
-                Text(checking ? "Checking connection… \(finished)/\(Check.allCases.count)" : connectionSummary ?? "Connection status unavailable")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(ConnectionPalette.muted)
-                    .accessibilityIdentifier("diagnosticsProgress")
-                Spacer(minLength: 0)
-                Button {
+        VStack(alignment: .leading, spacing: 4) {
+            connectionSheetHeader("Connection Help") {
+                connectionIconButton("arrow.clockwise", label: "Check Again") {
                     checking = true
                     results = [:]
                     run += 1
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ConnectionPalette.accent)
-                .accessibilityLabel("Check connection again")
-                .help("Check connection again")
                 .disabled(checking || testingAudio || askingPermission)
                 .opacity(checking || testingAudio || askingPermission ? 0.35 : 1)
+                connectionIconButton("xmark", label: "Close") { dismiss() }
             }
-            ProgressView(value: Double(finished), total: Double(Check.allCases.count))
-                .opacity(checking ? 1 : 0)
-                .accessibilityHidden(true)
+            if checking {
+                let finished = results.values.filter { $0.status != .checking }.count
+                ProgressView(value: Double(finished), total: Double(Check.allCases.count)) {
+                    Text("Checking \(finished)/\(Check.allCases.count)")
+                        .font(.footnote)
+                        .foregroundStyle(ConnectionPalette.muted)
+                }
+                .accessibilityIdentifier("diagnosticsProgress")
+            }
         }
         .frame(maxWidth: 460, alignment: .leading)
         .padding(.horizontal, 24)
@@ -1414,14 +1749,14 @@ private struct ConnectionHelp: View {
         .background(Color("StartupBackground"))
     }
 
-    private var connectionSummary: String? {
-        if let workspace = results[.workspace], workspace.status == .passed {
-            if needsSignIn { return "Workspace reached. Sign-in needed." }
-            if activeWorkspace != nil { return "Workspace open" }
-            return "Workspace reachable"
+    private func diagnosticGroup(_ checks: [Check]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(checks, id: \.self) { check in
+                if check != checks.first { Divider().padding(.vertical, 10) }
+                diagnostic(check)
+            }
         }
-        if results[.internet]?.status == .failed { return "Internet check failed" }
-        return results[.workspace]?.detail
+        .connectionPanel()
     }
 
     private func refreshPermissions() async {
@@ -1432,19 +1767,26 @@ private struct ConnectionHelp: View {
     }
 
     private func diagnostic(_ check: Check) -> some View {
-        let result = results[check] ?? Result(.pending, "Waiting to check")
+        let result = results[check] ?? Result(.pending, "")
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(check.rawValue).font(.callout.weight(.semibold))
-                    Text(result.detail).font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                    if !result.detail.isEmpty && result.status != .checking {
+                        Text(result.detail).font(.footnote).foregroundStyle(ConnectionPalette.muted)
+                    }
+                    if check == .workspace, let origin {
+                        Text(origin.absoluteString)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(ConnectionPalette.muted)
+                    }
                     if check == .systemAudio {
                         Text(detectedSystem).font(.footnote).foregroundStyle(ConnectionPalette.muted)
                     }
                 }
                 Spacer(minLength: 0)
                 if result.status == .checking {
-                    ProgressView().controlSize(.small).accessibilityLabel("Checking")
+                    ProgressView().controlSize(.small).accessibilityLabel(result.detail)
                 } else {
                     Image(systemName: result.status.symbol)
                         .foregroundStyle(result.status.color)
@@ -1473,9 +1815,9 @@ private struct ConnectionHelp: View {
                 Button("Test System Audio") { audioRun += 1 }.buttonStyle(.bordered)
             }
         case .notifications:
-            if results[.notifications]?.status == .action {
+            if results[.notifications]?.status == .optional {
                 Button("Enable Notifications") { Task { await requestNotifications() } }.buttonStyle(.bordered)
-            } else if results[.notifications]?.status == .failed {
+            } else if results[.notifications]?.status == .off {
                 permissionSettings
             }
         default:
@@ -1518,8 +1860,8 @@ private struct ConnectionHelp: View {
             do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
             results[check] = result
         }
-        if let summary = connectionSummary {
-            AccessibilityNotification.Announcement(summary).post()
+        if let status = results[.workspace] {
+            AccessibilityNotification.Announcement(status.detail).post()
         }
     }
 
@@ -1534,16 +1876,16 @@ private struct ConnectionHelp: View {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {
         case .denied:
-            return Result(.failed, "Notification access is off in Settings")
+            return Result(.off, "Access is off in Settings")
         case .notDetermined, .provisional:
-            return Result(.action, "Allow alerts for workspace updates")
+            return Result(.optional, "Allow alerts for workspace updates")
         case .authorized, .ephemeral:
             guard settings.alertSetting == .enabled || settings.notificationCenterSetting == .enabled else {
-                return Result(.failed, "Turn on alerts in Settings")
+                return Result(.off, "Turn on alerts in Settings")
             }
             if let activeWorkspace {
                 let state = await WorkspaceNotifications.shared.status(for: activeWorkspace)
-                if state == "off" { return Result(.action, "Turn on alerts for this workspace") }
+                if state == "off" { return Result(.optional, "Turn on alerts for this workspace") }
             }
             return Result(.passed, activeWorkspace == nil ? "App alerts allowed. Open a workspace to enable its alerts." : "Workspace alerts on")
         @unknown default:
@@ -1587,7 +1929,7 @@ private struct ConnectionHelp: View {
             guard !Task.isCancelled else { return }
             results[.systemAudio] = started
                 ? Result(.passed, "Sharing started and stopped")
-                : Result(.action, "Sharing didn’t start. Try again and choose a source if asked.")
+                : Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
         }
         #endif
     }
@@ -1614,6 +1956,8 @@ private struct ConnectionHelp: View {
         if let issue = await Endpoint.connectionIssue(at: origin, using: session) {
             return Result(.failed, issue.title)
         }
-        return Result(.passed, "Reached \(origin.host() ?? "the workspace")")
+        if needsSignIn { return Result(.action, "Reachable · Sign-in required") }
+        if activeWorkspace != nil { return Result(.passed, "Connected") }
+        return Result(.passed, "Reachable")
     }
 }

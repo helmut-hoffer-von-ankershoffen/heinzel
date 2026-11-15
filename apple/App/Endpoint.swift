@@ -32,6 +32,8 @@ struct Endpoint: Equatable {
         }
         var origin = parts
         origin.fragment = nil
+        if origin.scheme == "https", origin.port == 443 { origin.port = nil }
+        origin.host = host
         origin.path = ""
         self.origin = origin.url!
         self.url = url
@@ -144,6 +146,33 @@ struct Endpoint: Equatable {
     }
 
     func readLifecycle() async throws -> Lifecycle {
+        let (body, status) = try await readAuthenticatedAPI("api/lifecycle")
+        guard status == 200,
+              let lifecycle = try? JSONDecoder().decode(Lifecycle.self, from: body),
+              !lifecycle.instance.isEmpty, !lifecycle.version.isEmpty else {
+            throw ConnectionError.authentication
+        }
+        return lifecycle
+    }
+
+    #if os(macOS)
+    func sharedSignInOrigin() async throws -> Endpoint? {
+        guard origin.scheme == "http" else { return nil }
+        let (body, status) = try await readAuthenticatedAPI("api/tailscale/status")
+        guard status == 200, let sharing = try? JSONDecoder().decode(Sharing.self, from: body),
+              sharing.state == "ready", let address = sharing.origin,
+              let target = Endpoint(address), target.token == nil, target.origin.scheme == "https",
+              target.origin.host()?.hasSuffix(".ts.net") == true else { return nil }
+        return target
+    }
+
+    private struct Sharing: Decodable {
+        let state: String
+        let origin: String?
+    }
+    #endif
+
+    private func readAuthenticatedAPI(_ route: String) async throws -> (Data, Int) {
         guard let token else { throw ConnectionError.authentication }
         let configuration = URLSessionConfiguration.ephemeral
         #if os(macOS)
@@ -161,17 +190,13 @@ struct Endpoint: Equatable {
         let session = URLSession(configuration: configuration, delegate: RefuseRedirects(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         var request = URLRequest(
-            url: origin.appending(path: "api/lifecycle"), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6
+            url: origin.appending(path: route), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6
         )
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (body, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200,
-              let lifecycle = try? JSONDecoder().decode(Lifecycle.self, from: body),
-              !lifecycle.instance.isEmpty, !lifecycle.version.isEmpty else {
-            throw ConnectionError.authentication
-        }
-        return lifecycle
+        guard let response = response as? HTTPURLResponse else { throw ConnectionError.authentication }
+        return (body, response.statusCode)
     }
 
     struct Lifecycle: Decodable {
@@ -210,7 +235,7 @@ enum WorkspaceProblem {
         case .offline: "You’re offline"
         case .unavailable: "Workspace out of reach"
         case .slow: "Still trying to connect"
-        case .signIn: "Sign in to your workspace"
+        case .signIn: "Sign-in required"
         case .denied: "This workspace denied access"
         case .wrongAddress: "No Heinzel workspace at this address"
         case .insecure: "Secure connection unavailable"
@@ -221,7 +246,7 @@ enum WorkspaceProblem {
     var detail: String {
         switch self {
         case .offline: "Connect to Wi-Fi or mobile data. Heinzel will try again when your network returns."
-        case .unavailable: "Check Tailscale and make sure your workspace host is awake. Heinzel will keep trying."
+        case .unavailable: "Check that the workspace host is running. Heinzel will try again."
         case .slow: "Heinzel is waiting for the workspace to answer. You can try again now or choose another workspace."
         case .signIn: "Ask the host for a fresh private sign-in link, then paste it into Heinzel."
         case .denied: "Check that you have access to the host’s private network, or ask the host for help."
@@ -234,7 +259,8 @@ enum WorkspaceProblem {
     var icon: String {
         switch self {
         case .offline: "wifi.slash"
-        case .unavailable, .slow, .interrupted: "arrow.clockwise"
+        case .unavailable, .interrupted: "exclamationmark.circle"
+        case .slow: "clock"
         case .signIn: "person.crop.circle.badge.exclamationmark"
         case .denied, .insecure: "lock"
         case .wrongAddress: "link"
