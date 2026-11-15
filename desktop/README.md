@@ -33,8 +33,8 @@ with a write token. It needs the built web app (`uv run --script scripts/web_bui
 and the only site is a fixture on loopback, served to the guest under two made-up public names through a test proxy,
 so nothing reaches the network. It checks reading with refs, typing, an ordinary click, a form submit that waits for
 the person, a click let go when the page swaps its target, refused password and card fields, refused non-public
-addresses, and Stop. The journey's person selects the agent's tab in the panel before the agent clicks: a tab whose view was never
-visible has no size, and the run's last line says what size it had before and after. A press that lands inside a frame of another site's
+addresses, and Stop. The Heinzel works in a tab that is never shown, which must have a real size all the same; for the
+outside agent the person opens the panel on its tab. The run's last line says what size the tab had. A press that lands inside a frame of another site's
 process can only be raced in a really shown window, so that part runs on Linux under Xvfb, in a container without
 network. Commit the head first (after a rebase too), since the image is built from the commit:
 `git archive --format=tar HEAD | docker build -f desktop/e2e/browser-journey.Dockerfile -t hz-browser-journey -`,

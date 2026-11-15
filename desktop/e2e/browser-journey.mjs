@@ -106,12 +106,17 @@ async function signalled(name, message, running) {
   assert.fail(message);
 }
 const viewportOf = async () => (await guestFacts()).find((fact) => fact.url === SHOP_URL)?.page?.inner ?? null;
+/** An agent's tab that was never shown must have a real size all the same: agents work with the panel closed. */
+async function backgroundSize() {
+  found.closed = await viewportOf();
+  assert.ok(found.closed?.[0] > 0 && found.closed[1] > 0, `A never-shown agent tab must have a size: ${JSON.stringify(found.closed)}`);
+}
 /**
  * The person opens the browser panel and selects the agent's tab. Until then the tab's view was never visible; what
  * size the page had before and has after is kept for the run's last line.
  */
 async function showPanel(page, tab) {
-  found.closed = await viewportOf();
+  await backgroundSize();
   await panel(page, { action: "select-tab", tab });
   await panel(page, { action: "layout", bounds: { x: 300, y: 80, width: 760, height: 640 } });
   for (let turn = 0; turn < 20; turn += 1) {
@@ -232,7 +237,8 @@ async function heinzelJourney(page, origin) {
   await signalled("tab-open", "The Heinzel never opened its tab.", running);
   const [opened1] = await agentTabs(page);
   assert.ok(opened1, "The Heinzel's tab must be in the panel's strip.");
-  await showPanel(page, opened1.id);
+  // The Heinzel works in the background: the person never opens the panel in this journey.
+  await backgroundSize();
   await signal("panel-shown");
   const first = await running;
   const report = first.report;
@@ -340,6 +346,7 @@ async function mcpJourney(page, origin) {
   assert.match(tabs, /"available": ?true/, `The desktop's bridge never connected: ${tabs}`);
   assert.ok(refused(await agent.call("open", { url: NOT_PUBLIC[0] }), "address"), "A tab on a literal address must be refused.");
   const tab = tabOf(await agent.call("open", { url: SHOP_URL }));
+  // The outside agent works in sight: the person opens the panel on its tab.
   await showPanel(page, tab);
   let read = await agent.call("read", { tab });
   assert.ok(read.includes("Add a gift note") && /\[ref_\d+\]/.test(read), `The page must be read with refs: ${read.slice(0, 300)}`);
