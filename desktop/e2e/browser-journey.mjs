@@ -66,7 +66,7 @@ let stopped = false, launchAttempted = false;
 // What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
 // Diagnostic: the answers of the outside agent's first calls, printed when a journey fails.
 const trace = [];
-const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [], personClicks: 0, personPaused: null };
+const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [], personClicks: 0, personPaused: null, pointClicks: 0 };
 
 // Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
 const REASONS = {
@@ -144,6 +144,8 @@ const formState = () => withTimeout(app.evaluate(async ({ webContents }, url) =>
     path: location.pathname, banner: document.getElementById("banner").classList.contains("swapped") })`) : null;
 }, SHOP_URL), 15_000, "The guest did not answer.");
 const refused = (text, reason) => typeof text === "string" && text.startsWith("Error:") && (!reason || REASONS[reason].test(text));
+/** An input that was sent and replaced the page before anything could confirm it: `done` false, `navigated` true. */
+const wentOn = (text) => typeof text === "string" && !refused(text) && !proposed(text) && /"done": ?false/.test(text) && /"navigated": ?true/.test(text);
 /** The answer of a click that was pressed and then called off or not confirmed: the only tries that may leave a stray click. */
 const notClicked = (text) => refused(text, "swapped") || refused(text, "unconfirmed");
 const proposed = (text) => typeof text === "string" && text.startsWith("Not run:");
@@ -245,7 +247,7 @@ function guestFacts() {
 /** What both journeys must have left behind once the agent did the free and the forbidden steps. */
 async function assertInputs(tab, race) {
   await settled("press:mousedown", 1);
-  assert.equal(site.count("note:click"), 1 + found.personClicks, "The ordinary button must be clicked once by the agent, and once more where the person clicked it.");
+  assert.equal(site.count("note:click"), 1 + found.personClicks + found.pointClicks, "The ordinary button must be clicked once by the agent by ref, and once more by the person and by the agent at a point where the journey has them do so.");
   for (const [zone, shown] of [["hover", "hover:swapped"], ["press", "press:swapped"], ["race-a", "race-a:shown"], ["race-b", "race-b:shown"]]) {
     assert.equal(site.count(`widget-${zone}:ready`), 1, `The ${zone} frame must be loaded, with its listeners.`);
     const first = site.state.events.indexOf(shown);
@@ -286,8 +288,8 @@ async function assertInputs(tab, race) {
   // form holds what was typed and nothing else.
   assert.equal(site.starting("send:"), 0, "Nothing may have reached the commit's button.");
   assert.deepEqual(await formState(), { name: "Mira", password: "", path: "/", banner: true }, "The form and the page must be as the agent left them.");
-  assert.equal(site.count("document:click"), 2 + found.personClicks + found.raceClicks + found.strayClicks, "Every click in the page is one of the two ordinary ones, the person's own, a raced button's own or a stray one.");
-  assert.equal(site.count("document:mousedown"), 4 + found.personClicks + site.count("race-a:mousedown") + site.count("race-b:mousedown") + site.starting("stray:mousedown:"),
+  assert.equal(site.count("document:click"), 2 + found.personClicks + found.pointClicks + found.raceClicks + found.strayClicks, "Every click in the page is one of the two ordinary ones, the person's own, a raced button's own or a stray one.");
+  assert.equal(site.count("document:mousedown"), 4 + found.personClicks + found.pointClicks + site.count("race-a:mousedown") + site.count("race-b:mousedown") + site.starting("stray:mousedown:"),
 "Every press in the page is the ordinary click's, the two answered with a cover, a raced button's own or one on the frame element.");
   assert.ok(site.starting("stray:mousedown:") <= race.filter((answer) => refused(answer, "swapped")).length, "A press beside every button belongs to a raced try that was called off.");
   assert.equal(site.count("hover:swapped"), 1, "The page must have slid its frame in when the pointer moved.");
@@ -381,7 +383,7 @@ async function heinzelJourney(page, origin) {
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
   assert.equal(site.starting("stray:click:"), found.strayClicks, "The confirmed click adds no stray one.");
-  assert.equal(site.count("document:click"), 3 + found.personClicks + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
+  assert.equal(site.count("document:click"), 3 + found.personClicks + found.pointClicks + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop, while the Heinzel is at work: its next calls are refused and its tabs are gone.
@@ -399,7 +401,7 @@ async function heinzelJourney(page, origin) {
     assert.ok(refused(after[step], "stopped"), `After Stop ${step} must be refused as stopped: ${after[step]}`);
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
-  assert.equal(site.count("document:click"), 4 + found.personClicks + found.raceClicks + found.strayClicks, "No click after Stop.");
+  assert.equal(site.count("document:click"), 4 + found.personClicks + found.pointClicks + found.raceClicks + found.strayClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
@@ -497,6 +499,21 @@ async function mcpJourney(page, origin) {
   // Their input in an agent's tab takes it over; they hand it back so the agent can go on.
   found.personPaused = (await agentTabs(page)).find((entry) => entry.id === tab)?.paused ?? null;
   if (found.personPaused) await panel(page, { action: "hand-back", tab });
+  // Handed back, and on a scrolled page, the agent can click again: by a point here, by refs in the race below.
+  const scrolled = await agent.call("scroll", { tab, direction: "down", amount: 1 });
+  assert.ok(ran(scrolled), `Scrolling after the hand-back must run: ${scrolled}`);
+  await delay(500);
+  const at = await withTimeout(app.evaluate(async ({ webContents }, url) => {
+    const guest = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL() === url);
+    return guest.executeJavaScript(`(() => { const box = document.querySelector("[data-watch=note]").getBoundingClientRect();
+      return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2), scrollY: Math.round(scrollY), height: innerHeight }; })()`);
+  }, SHOP_URL), 15_000, "The guest did not answer.");
+  assert.ok(at.scrollY > 0 && at.y > 0 && at.y < at.height, `The page must be scrolled with the button still in view: ${JSON.stringify(at)}`);
+  const pointed = await agent.call("click", { tab, x: at.x, y: at.y });
+  assert.ok(ran(pointed), `A click at a point on a scrolled page, after the hand-back, must run: ${pointed}`);
+  found.pointClicks = 1;
+  await settled("note:click", 3);
+  assert.equal(site.count("note:click"), 3, "The click at a point must reach the button that is there.");
   const race = [];
   for (let attempt = 0; attempt < RACE_TRIES; attempt += 1) {
     const before = heard();
@@ -556,11 +573,13 @@ async function mcpJourney(page, origin) {
   await delay(750);
   assert.deepEqual(site.state.orders, [], "A declined commit sends nothing.");
   const approved = await answerCard("commit-approve", declined.id);
-  assert.ok(ran(approved.answer), `The approved commit must run: ${approved.answer}`);
+  // The submit replaces the page. The answer is either done, or "sent" with the page gone on: then nothing could read
+  // the click, and what proves it is what follows here: one click on the send button and the order's arrival.
+  assert.ok(ran(approved.answer) || wentOn(approved.answer), `The approved commit must run: ${approved.answer}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
   assert.equal(site.starting("stray:click:"), found.strayClicks, "The confirmed click adds no stray one.");
-  assert.equal(site.count("document:click"), 3 + found.personClicks + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
+  assert.equal(site.count("document:click"), 3 + found.personClicks + found.pointClicks + found.raceClicks + found.strayClicks, "No click besides the ordinary one, the raced buttons' own, the called-off presses' stray ones and the confirmed one.");
   assert.deepEqual(site.state.orders, [{ name: "Mira", password: "" }], "The form must arrive with the typed name and no secret.");
 
   // Stop: the agent's calls are refused and its tabs are gone.
@@ -574,7 +593,7 @@ async function mcpJourney(page, origin) {
   await expectRefused("A new tab after Stop", "stopped", "open", { url: SHOP_URL });
   await settled("receipt:click", 1);
   assert.equal(site.count("receipt:click"), 1, "After Stop nothing is clicked.");
-  assert.equal(site.count("document:click"), 4 + found.personClicks + found.raceClicks + found.strayClicks, "No click after Stop.");
+  assert.equal(site.count("document:click"), 4 + found.personClicks + found.pointClicks + found.raceClicks + found.strayClicks, "No click after Stop.");
   assert.deepEqual(await agentTabs(page), [], "Stop must close every tab of the agent.");
 }
 
