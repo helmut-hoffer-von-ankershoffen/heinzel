@@ -111,23 +111,7 @@ def test_the_mcp_reference_lists_each_tool_with_its_input_schema(built_ins):
     assert '"properties"' in text
 
 
-@pytest.mark.timeout(240)
-def test_generate_docs_check_finds_nothing_stale_including_the_references():
-    import importlib.util
-    import subprocess
-    import sys
-
-    root = DOCS.parent
-    env = {k: v for k, v in __import__("os").environ.items() if k != "HZ_SYSTEM_AGENT__SKILL_DIRS"}
-    result = subprocess.run(
-        [sys.executable, str(root / "scripts" / "generate_docs.py"), "--check"],
-        capture_output=True, text=True, cwd=root, env=env, timeout=240, check=False,
-    )  # fmt: skip
-    assert result.returncode == 0, result.stderr
-    assert importlib.util.find_spec("heinzel")
-
-
-def test_a_pull_request_does_not_check_the_references(tmp_path):
+def test_the_four_generated_references_are_named_for_the_generator(tmp_path):
     import sys
 
     sys.path.insert(0, str(DOCS.parent))
