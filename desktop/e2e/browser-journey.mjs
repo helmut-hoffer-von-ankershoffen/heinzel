@@ -376,7 +376,7 @@ async function mcpJourney(page, origin) {
   // The commit waits for the card on that tab: first the person says no, then yes.
   read = await agent.call("read", { tab });
   const send = { tab, ref: refOf(read, "button", "Send order") };
-  const answerCard = async (action) => {
+  const answerCard = async (action, earlier = null) => {
     const call = agent.call("click", send);
     // The card on the tab, as the panel shows it: its summary and the id that the person's answer must name.
     let card = null;
@@ -389,18 +389,23 @@ async function mcpJourney(page, origin) {
     // An answer that names no card, or another one, is refused and decides nothing.
     await assert.rejects(panel(page, { action, tab }), "An answer without the card's id must be refused.");
     await assert.rejects(panel(page, { action, tab, commit: `${card.id}x` }), "An answer for another card must be refused.");
+    if (earlier) {
+      // No reuse and no replay: a new card has a new id, and the answer to an earlier card decides nothing on it.
+      assert.notEqual(card.id, earlier, "Every card must have its own id.");
+      await assert.rejects(panel(page, { action: "commit-approve", tab, commit: earlier }), "The id of an earlier card must be refused on a new one.");
+    }
     assert.ok((await agentTabs(page)).some((entry) => entry.id === tab && entry.commit?.id === card.id), "A refused answer must leave the card waiting.");
     assert.deepEqual(site.state.orders, [], "While the card waits, nothing is sent.");
     assert.equal(site.count("send:click"), 0);
     await panel(page, { action, tab, commit: card.id });
-    return call;
+    return { answer: await call, id: card.id };
   };
   const declined = await answerCard("commit-refuse");
-  assert.ok(refused(declined) || proposed(declined), `A declined commit must not run: ${declined}`);
+  assert.ok(refused(declined.answer) || proposed(declined.answer), `A declined commit must not run: ${declined.answer}`);
   await delay(750);
   assert.deepEqual(site.state.orders, [], "A declined commit sends nothing.");
-  const approved = await answerCard("commit-approve");
-  assert.ok(ran(approved), `The approved commit must run: ${approved}`);
+  const approved = await answerCard("commit-approve", declined.id);
+  assert.ok(ran(approved.answer), `The approved commit must run: ${approved.answer}`);
   await settled("send:click", 1);
   assert.equal(site.count("send:click"), 1, "The confirmed commit must click exactly once.");
   assert.equal(site.starting("stray:click:"), found.strayClicks, "The confirmed click adds no stray one.");
