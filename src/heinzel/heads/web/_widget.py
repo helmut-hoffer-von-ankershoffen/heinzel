@@ -9,9 +9,8 @@ from fastapi.responses import JSONResponse
 
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
-from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel
+from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, OperationLet
 from heinzel.kernel._identity import LOCAL_READ_PERMISSIONS
-from heinzel.modules.heinzel._session_crud import SessionCrud
 
 NO_STORE = {"Cache-Control": "no-store"}
 
@@ -51,7 +50,20 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
                 return JSONResponse({"error": "Invalid widget credential."}, status_code=401, headers=NO_STORE)
             identity = CallIdentity(owner, "web-device", device, "hz-widget", LOCAL_READ_PERMISSIONS)
             with user.using(identity):
-                sessions = kernel.resolve(SessionCrud).listing().sessions
+                operation = next(
+                    (
+                        op
+                        for record, op in kernel.lets(OperationLet)
+                        if record.qualname == "heinzel"
+                        and record.origin.builtin
+                        and op.name == "sessions"
+                        and op.read_only
+                    ),
+                    None,
+                )
+                if operation is None:
+                    return JSONResponse({"error": "Widget snapshot unavailable."}, status_code=503, headers=NO_STORE)
+                sessions = kernel.invoke(operation).sessions
             roster = [
                 {
                     "id": item.session_id,
