@@ -30,7 +30,7 @@ from heinzel.modules.system.claude._client import Client, HttpClient, StdioClien
 from heinzel.modules.system.claude._launch import Launch, NotUsableError, launch
 from heinzel.modules.system.claude._models import FoundServer
 from heinzel.modules.system.claude._scan import Scanner
-from heinzel.modules.system.claude._switch import SwitchStore, apply, switch_file
+from heinzel.modules.system.claude._switch import SwitchStore, apply, claude_home, switch_file
 
 logger = logging.getLogger("heinzel.claude")
 
@@ -99,7 +99,7 @@ class FoundConnections(FoundMcpServers):
     @classmethod
     def for_user(cls) -> "FoundConnections":
         """The client for your own home directory and switches."""
-        return cls(Path.home(), SwitchStore(switch_file()))
+        return cls(claude_home(), SwitchStore(switch_file()))
 
     # --- what is switched on
 

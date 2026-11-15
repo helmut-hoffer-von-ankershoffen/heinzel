@@ -472,3 +472,22 @@ def test_a_trickling_http_stream_is_cut_at_one_deadline(tmp_path, store, http_ur
         assert time.monotonic() - began < 3
     finally:
         found.stop_all()
+
+
+def test_no_test_reads_the_claude_configuration_of_whoever_runs_it(tmp_path, log, monkeypatch):
+    # A "real" home with a server in it: what a test would start if discovery followed HOME.
+    real = tmp_path / "real-home"
+    configure(real, {"telegram": server(log)})
+    monkeypatch.setenv("HOME", str(real))
+    isolated = Path(os.environ["HZ_CLAUDE_HOME"])  # every test gets an empty one (heinzel.testing)
+    assert isolated != real
+    assert not list(isolated.iterdir())
+    from heinzel.modules.system.claude import ClaudeService
+
+    found = FoundConnections.for_user()
+    try:
+        assert found.tools() == []
+        assert ClaudeService.for_user().scan().servers == []
+        assert not started(log)
+    finally:
+        found.stop_all()

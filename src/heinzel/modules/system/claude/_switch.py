@@ -31,6 +31,18 @@ PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
 
 
+def claude_home() -> Path:
+    """The home directory whose Claude configuration is read: yours, unless `HZ_CLAUDE_HOME` names another.
+
+    Tests and isolated instances point it at a folder of their own (`heinzel.testing` gives every test an empty
+    one), so nothing they run ever lists, or starts, the MCP servers of whoever runs them. A daemon does not
+    inherit it.
+    """
+    if explicit := os.environ.get("HZ_CLAUDE_HOME"):
+        return Path(explicit).expanduser()
+    return Path.home()
+
+
 def switch_file() -> Path:
     """Where the switches are kept: the platform's state folder of your home directory.
 

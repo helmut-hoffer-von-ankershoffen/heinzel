@@ -19,7 +19,14 @@ from heinzel.modules.system.claude._models import (
     ServerSwitch,
 )
 from heinzel.modules.system.claude._scan import LINK, Scanner
-from heinzel.modules.system.claude._switch import STATE_FILE, SwitchState, SwitchStore, apply, switch_file
+from heinzel.modules.system.claude._switch import (
+    STATE_FILE,
+    SwitchState,
+    SwitchStore,
+    apply,
+    claude_home,
+    switch_file,
+)
 
 logger = logging.getLogger("heinzel.claude")
 
@@ -35,7 +42,7 @@ class ClaudeService:
     @classmethod
     def for_user(cls) -> "ClaudeService":
         """The service for your own home directory; its switches are kept where no setting can move them."""
-        return cls(Path.home(), SwitchStore(switch_file()))
+        return cls(claude_home(), SwitchStore(switch_file()))
 
     def _state(self) -> SwitchState | None:
         return SwitchState() if self._store is None else self._store.read()

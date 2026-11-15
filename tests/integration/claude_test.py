@@ -29,7 +29,7 @@ def kernel(make_kernel, tmp_path: Path, monkeypatch):
     (home / ".claude.json").write_text(
         json.dumps({"mcpServers": {"tickets": {"command": "npx", "env": {"API_KEY": SECRET}}}})
     )
-    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("HZ_CLAUDE_HOME", str(home))
     return make_kernel(builtins=True)
 
 
