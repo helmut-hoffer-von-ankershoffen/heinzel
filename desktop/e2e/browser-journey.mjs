@@ -48,7 +48,7 @@ const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electr
 let app, electronProcess, ownedPid, site;
 let stopped = false, launchAttempted = false;
 // What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
-const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0 };
+const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [] };
 
 // Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
 const REASONS = {
@@ -183,8 +183,11 @@ async function assertInputs(tab, race) {
   assert.ok(found.strayClicks <= calledOff, `At most one stray click per called-off press: ${found.strayClicks} for ${calledOff}.`);
   assert.ok(site.starting("stray:mouseup:") <= calledOff && found.strayClicks <= site.starting("stray:mouseup:"),
     "A stray click comes only from the release of a called-off press, at most one each.");
-  for (const tag of ["BUTTON", "IFRAME", "INPUT", "A"])
-    assert.equal(site.count(`stray:click:${tag}`) + site.count(`stray:mouseup:${tag}`), 0, `No stray release or click may hit a ${tag}.`);
+  // Only the page's root may hear it. Anything below the root could act on a click: a label clicks its control, a
+  // summary toggles, a row or a card may carry a handler.
+  found.strayTargets = [...new Set(site.state.events.filter((event) => /^stray:(mouseup|click):/.test(event)).map((event) => event.split(":")[2]))];
+  assert.deepEqual(found.strayTargets.filter((tag) => tag !== "HTML" && tag !== "BODY"), [],
+    `A stray release or click may hit the page's root only, not: ${found.strayTargets}`);
   assert.equal(site.count("document:click"), 1 + found.raceClicks + found.strayClicks, "Every click in the page is the ordinary one, a raced button's own or a stray one.");
   assert.equal(site.count("document:mousedown"), 2 + site.count("race-a:mousedown") + site.count("race-b:mousedown") + site.starting("stray:mousedown:"),
     "Every press in the page is the ordinary click's, the one answered with a swap, a raced button's own or one on the frame element.");
@@ -471,7 +474,7 @@ try {
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
     "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
     `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
-    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button.`);
+    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}.`);
 } finally {
   site?.close();
   await cleanupHarness({
