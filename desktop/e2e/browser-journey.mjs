@@ -501,9 +501,14 @@ try {
   assert.equal(await kept("public-media"), "", "Nothing may have been handed to the system's browser.");
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((window) => window.isVisible())), visible,
     visible ? "Under the virtual display the window must be shown." : "The journey's app must stay hidden.");
+  // Diagnostic: every check of the journey held; what follows is only the app's own quit.
+  console.log(`Browser journey "${journey}": every check passed, closing the app. Found: ${JSON.stringify(found)}`);
   const exited = new Promise((done) => electronProcess.once("exit", (code, signal) => done({ code, signal })));
   await page.close();
-  const result = await withTimeout(exited, 20_000, "Electron did not exit after close.");
+  const result = await withTimeout(exited, 20_000, "Electron did not exit after close.").catch(async (failed) => {
+    console.error(`The app did not quit. Main-process errors: ${await kept("main-errors") || "none recorded"}; phases: ${(await kept("phases")).split("\n").slice(-8).join(" | ")}`);
+    throw failed;
+  });
   stopped = true;
   assert.equal(result.code, 0, `Electron closed abnormally: ${JSON.stringify(result)}`);
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +

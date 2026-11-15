@@ -22,6 +22,15 @@ dialog.showMessageBox = async (...args) => {
   return { response: Number.isInteger(options.cancelId) ? options.cancelId : 0, checkboxChecked: false };
 };
 
+// Diagnostic: an error box is never shown here (the shared bootstrap records its title); its text is kept as well,
+// so a main-process error at quit says what it was.
+let errorBox = () => {};
+Object.defineProperty(dialog, "showErrorBox", {
+  configurable: true,
+  get: () => (title, content) => { record("main-errors", `${title}: ${String(content).slice(0, 4000)}`); return errorBox(title, content); },
+  set: (handler) => { errorBox = handler; },
+});
+
 // Hidden: no window is shown, focused or raised, and macOS gets no Dock icon and no activation. The product shows a
 // guest only in a focused window, so the never-shown window says it is focused: the journey's person can then select
 // the agent's tab in the panel, which gives that tab's view its size, with nothing on any screen.
