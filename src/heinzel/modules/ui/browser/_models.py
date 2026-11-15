@@ -54,6 +54,9 @@ class InputDone(BaseModel):
     notice: str = WEBSITE_NOTICE
     tab: str
     url: str
-    done: Literal[True] = True
+    done: bool = True
+    """False when the input was sent and nothing could say that it arrived: read the page before acting on it."""
     target: str = ""
     """What it hit, as the page names it, e.g. `button "Next"`."""
+    note: str = ""
+    """Why `done` is false."""

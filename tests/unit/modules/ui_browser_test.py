@@ -337,6 +337,26 @@ def test_a_heinzel_s_commit_is_proposed_and_runs_only_after_the_person_s_yes(ker
     assert audit.calls()[-1]["outcome"] == "ran"
 
 
+def test_a_click_the_desktop_could_not_confirm_is_never_told_as_done(kernel, desktop, audit):
+    call = heinzel(kernel)
+    tab = call("open", url="https://shop.example.org/")["id"]
+    assert call("click", tab=tab, ref="ref_1")["done"] is True
+    assert audit.calls()[-1]["outcome"] == "ran"
+    # A frame or a place the desktop cannot see into: the click was sent, and nothing says it arrived.
+    desktop.answers["click"] = {"url": "https://shop.example.org/", "confirmed": False}
+    answer = call("click", tab=tab, ref="ref_1")
+    assert answer["done"] is False
+    assert answer["note"].startswith("Sent, not confirmed")
+    assert "Read the page again" in answer["note"]
+    assert audit.calls()[-1]["outcome"] == "unconfirmed"
+    # The desktop saying the click missed its target is a refusal, with its words for the agent.
+    del desktop.answers["click"]
+    desktop.fail["click"] = "changed"
+    with pytest.raises(ChatToolError):
+        call("click", tab=tab, ref="ref_1")
+    assert audit.calls()[-1]["outcome"] == "refused"
+
+
 def test_a_confirmed_commit_does_not_run_on_a_page_that_changed(kernel, desktop):
     call = heinzel(kernel)
     tab = call("open")["id"]

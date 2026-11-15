@@ -49,7 +49,7 @@ const FIELDS = { open: ["action", "video"], layout: ["action", "bounds"], hide: 
   play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"] };
 
 export function createMediaPlayer({ windows, fromWebContents, connection, lease, createView, openExternal,
-  now = Date.now }) {
+  now = Date.now, platform = process.platform }) {
   const players = new Map();
   const generations = new WeakMap();
   let stopped = false;
@@ -86,6 +86,8 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     const view = createView({ webPreferences: {
       session, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false,
       webviewTag: false, navigateOnDragDrop: false, safeDialogs: true, disableDialogs: true,
+      // As for every guest of the website partition: spell check only where it downloads nothing (ADR 0140).
+      spellcheck: platform === "darwin",
     } });
     const contents = view.webContents;
     const player = { view, video, release, status: "loading" };

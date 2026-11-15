@@ -64,6 +64,10 @@ _PRIVATE_SUFFIXES: Final = (
 _LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 _NUMERIC_LABEL = re.compile(r"(0x[0-9a-f]*|\d+)")
 PAGE_CHANGED: Final = "The page changed since this target was described; read it again."
+SENT_NOT_CONFIRMED: Final = (
+    "Sent, not confirmed: the target is a frame or a place hz cannot see into, so nothing says the click arrived. "
+    "Read the page again before you act on it."
+)
 
 
 def public_host(url: str) -> str:
@@ -246,6 +250,12 @@ class _Page(BaseModel):
     content: str = ""
 
 
+class _Sent(BaseModel):
+    url: str = ""
+    confirmed: bool = True
+    """False for a click into a frame or at a place the desktop cannot see into: sent, and nothing says it arrived."""
+
+
 class _Picture(BaseModel):
     url: str = ""
     data: str
@@ -287,7 +297,7 @@ class Browser:
             if not caller.approved:  # a commit the person confirmed is theirs: it never waits on the agent's pace
                 self._limits.count(actor, navigation=navigation)
             result = work(caller, fields)
-            outcome = "ran"
+            outcome = "unconfirmed" if fields.get("unconfirmed") else "ran"
         except BrowserCommitError:
             outcome = "proposed"
             raise
@@ -303,7 +313,7 @@ class Browser:
             log_event(
                 audit,
                 "browser.call",
-                level=logging.INFO if outcome in {"ran", "proposed"} else logging.WARNING,
+                level=logging.INFO if outcome in {"ran", "proposed", "unconfirmed"} else logging.WARNING,
                 actor=actor,
                 tool=tool,
                 tab=tab,
@@ -457,8 +467,12 @@ class Browser:
                 self._ask_the_person(caller, tab, sentence, fingerprint)
             if follows_link(action, target, keys) and not caller.approved:
                 self._limits.follow(caller.actor)  # walking links is navigating, at the same 10 a minute
-            page = _Page.model_validate(self._send(caller, action, tab, {**where, **what, "expect": fingerprint}))
-            return InputDone(tab=tab, url=clean_text(page.url)[:URL_LIMIT], target=label(target))
+            sent = _Sent.model_validate(self._send(caller, action, tab, {**where, **what, "expect": fingerprint}))
+            url = clean_text(sent.url)[:URL_LIMIT]
+            if not sent.confirmed:  # never told as done: the agent reads the page before it builds on this
+                fields["unconfirmed"] = True
+                return InputDone(tab=tab, url=url, target=label(target), done=False, note=SENT_NOT_CONFIRMED)
+            return InputDone(tab=tab, url=url, target=label(target))
 
         return self.call(f"ui_browser_{action}", tab, work, typed=len(text) if action == "type" else None)
 
