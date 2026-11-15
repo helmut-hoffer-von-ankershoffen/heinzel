@@ -29,6 +29,8 @@ PRIVATE_FILE = 0o600
 KEEP = 2000
 """Entries the journal keeps; past twice that it is cut back to the latest `KEEP`."""
 MAX_LINE = 2000
+TRIM_BYTES = 2 * KEEP * 300
+"""The journal's size at which it is cut back; an entry is about 300 bytes."""
 SALT_BYTES = 16
 
 
@@ -118,7 +120,7 @@ class WriteLog(AgentWriteLog):
             fcntl.flock(journal, fcntl.LOCK_EX)
             journal.write(line)
             journal.flush()
-            if journal.tell() > 2 * KEEP * 300:  # an entry is about 300 bytes
+            if journal.tell() > TRIM_BYTES:
                 kept = self._journal.read_bytes().splitlines(keepends=True)[-KEEP:]
                 self._replace(self._journal, b"".join(kept))
 

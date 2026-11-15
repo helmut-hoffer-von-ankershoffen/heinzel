@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 import pytest
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from heinzel import ActionGate, ByArguments, Caller, HeinzelError, Kernel, Module, ModuleRecord
@@ -15,6 +15,7 @@ from heinzel.kernel import (
     OperationLet,
     WriteBudget,
     agent_writes,
+    audit_write,
     calling,
     chat_tools,
     current_caller,
@@ -412,19 +413,35 @@ def test_audit_names_the_target_and_only_a_digest_of_the_arguments():
     assert arguments_digest(arguments, b"a" * 16) == arguments_digest(arguments, b"a" * 16)
 
 
+def test_the_audit_line_is_a_valid_event_for_every_outcome_and_caller(caplog):
+    """`log_event` refuses a field named like a log record's own attribute; no outcome may trip over that."""
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
+        for outcome in ("ran", "failed", "proposed", "refused", "over-budget"):
+            for caller in (Caller("heinzel", "s1", session="s1"), None):
+                audit_write(caller, "desk", "jot", {"entry": "b-1"}, policy="direct", outcome=outcome, error="X")
+    lines = audit_lines(caplog)
+    assert len(lines) == 10
+    assert {line["write_module"] for line in lines} == {"desk"}
+    assert {line["caller"] for line in lines} == {"heinzel:s1", "unknown"}
+    assert lines[0]["target"] == "b-1"
+    clash = set(logging.LogRecord("n", 0, "p", 0, "m", None, None).__dict__)
+    assert not {"caller", "attended", "write_module", "write_operation", "target", "arguments", "policy", "outcome",
+                "error"} & clash  # fmt: skip
+
+
 # --- a Heinzel's turn ---
 
 
 def test_a_direct_write_runs_once_as_the_heinzel_and_is_audited(kernel, ran, caplog):
     jot, session = tool(kernel, "desk_jot")
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
         answer = jot.call({"text": "milk", "caller": {"kind": "person", "id": "cli"}})
     assert ran == [("jot", Caller("heinzel", session, session=session, attended=True))]
     assert '"by": "heinzel:' in answer
     assert "example.org" not in answer  # redacted like a read
     assert kernel.resolve(ActionGate).calls == []
     (line,) = audit_lines(caplog)
-    assert (line["caller"], line["module"], line["operation"], line["policy"], line["outcome"]) == (
+    assert (line["caller"], line["write_module"], line["write_operation"], line["policy"], line["outcome"]) == (
         f"heinzel:{session}",
         "desk",
         "jot",
@@ -457,7 +474,7 @@ def test_a_direct_write_never_gets_private_write_rights(kernel):
 def test_approve_and_unmarked_writes_are_proposed_and_do_not_run(kernel, ran, caplog):
     send, _ = tool(kernel, "desk_send")
     legacy, _ = tool(kernel, "desk_legacy")
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
         assert "waits for the person's confirmation" in send.call({"to": "team"})
         assert "waits for the person's confirmation" in legacy.call({"text": "x"})
     assert ran == []
@@ -471,7 +488,7 @@ def test_approve_and_unmarked_writes_are_proposed_and_do_not_run(kernel, ran, ca
 def test_the_persons_own_operation_is_refused_for_a_heinzel(kernel, ran, caplog):
     confirm, _ = tool(kernel, "desk_confirm")
     with (
-        caplog.at_level(logging.INFO, logger="heinzel.audit.agent"),
+        caplog.at_level(logging.INFO, logger="heinzel.agent.audit"),
         pytest.raises(ChatToolError, match="person's own"),
     ):
         confirm.call({"action": "a1"})
@@ -503,7 +520,7 @@ def test_a_heinzel_names_only_its_own_session_and_cannot_speak_for_another_heinz
     assert bound_to_caller("direct", Caller("person", "cli"), {"session_id": "any"}) == "direct"
     # On the path itself: telemetry in another Heinzel's name waits for the person, and nothing is logged as run.
     drafted, _ = tool(kernel, "report_drafted")
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
         answer = drafted.call({"heinzel": "team:weekly-digest", "target": "https://example.com/doc"})
     assert "waits for the person's confirmation" in answer
     assert [(line["policy"], line["outcome"]) for line in audit_lines(caplog)] == [("approve", "proposed")]
@@ -511,7 +528,7 @@ def test_a_heinzel_names_only_its_own_session_and_cannot_speak_for_another_heinz
 
 def test_a_failed_direct_write_is_audited_without_its_message(kernel, caplog):
     broken, _ = tool(kernel, "desk_broken")
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"), pytest.raises(ChatToolError) as refused:
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"), pytest.raises(ChatToolError) as refused:
         broken.call({"text": "plans"})
     assert "example.org" not in str(refused.value)
     (line,) = audit_lines(caplog)
@@ -523,7 +540,7 @@ def test_an_unattended_turn_has_the_smaller_budget(kernel, ran, caplog):
     for _ in range(UNATTENDED.minute):
         jot.call({"text": "x"})
     with (
-        caplog.at_level(logging.INFO, logger="heinzel.audit.agent"),
+        caplog.at_level(logging.INFO, logger="heinzel.agent.audit"),
         pytest.raises(ChatToolError, match="write budget"),
     ):
         jot.call({"text": "x"})
@@ -558,7 +575,7 @@ def stdio(kernel, path: tuple[str, ...]):
 
 
 def test_stdio_runs_direct_writes_as_a_local_agent_not_the_person(kernel, ran, caplog):
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
         assert stdio(kernel, ("desk", "jot"))(text="milk")["by"] == "local-agent:mcp-stdio"
         assert stdio(kernel, ("desk", "legacy"))(text="x") == "done"  # unmarked: as before the policy
     assert [(line["caller"], line["policy"], line["outcome"]) for line in audit_lines(caplog)] == [
@@ -568,7 +585,7 @@ def test_stdio_runs_direct_writes_as_a_local_agent_not_the_person(kernel, ran, c
 
 
 def test_stdio_refuses_approve_with_the_persons_command_and_never_outright(kernel, ran, caplog):
-    with caplog.at_level(logging.INFO, logger="heinzel.audit.agent"):
+    with caplog.at_level(logging.INFO, logger="heinzel.agent.audit"):
         with pytest.raises(ToolError, match=r"needs the person's approval.*hz desk send --to team"):
             stdio(kernel, ("desk", "send"))(to="team")
         with pytest.raises(ToolError, match="person's own"):

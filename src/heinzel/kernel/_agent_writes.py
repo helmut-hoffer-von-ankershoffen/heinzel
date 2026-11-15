@@ -34,12 +34,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final, Literal, get_args
 
 from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._logging import log_event
+from heinzel.kernel._logging import get_logger, log_event
 
 if TYPE_CHECKING:
     from heinzel.kernel._lets import OperationLet
 
-audit = logging.getLogger("heinzel.audit.agent")
+audit = get_logger("agent.audit")
 
 AgentWrites = Literal["direct", "propose", "approve", "never"]
 AGENT_WRITES: Final = frozenset(get_args(AgentWrites))
@@ -333,8 +333,9 @@ def audit_write(  # noqa: PLR0913 - one flat audit line
         level=logging.INFO if outcome in {"ran", "proposed"} else logging.WARNING,
         caller=str(caller) if caller else "unknown",
         attended=caller.attended if caller else None,
-        module=module,
-        operation=operation,
+        # `module` is a log record's own attribute (the source file's), so the fields say whose it is.
+        write_module=module,
+        write_operation=operation,
         target=target_of(arguments),
         arguments=arguments_digest(arguments, salt),
         policy=policy,

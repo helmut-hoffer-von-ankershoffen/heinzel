@@ -23,7 +23,7 @@ from heinzel.kernel._chat_tools import write_log, write_policy
 from heinzel.modules.system import writes
 from heinzel.modules.system.runner.chat._service import ChatService
 from heinzel.modules.system.writes import WriteLog, health, render_plugins, render_writes
-from heinzel.modules.system.writes._service import KEEP
+from heinzel.modules.system.writes._service import KEEP, TRIM_BYTES
 
 pytestmark = pytest.mark.unit
 
@@ -139,7 +139,7 @@ def test_argument_digests_are_keyed_with_a_private_salt_of_this_installation(ker
 def test_the_digest_counts_what_ran_with_nobody_watching(kernel, log):
     watched, unwatched = Caller("heinzel", "s1", session="s1", attended=True), Caller("heinzel", "s2", session="s2")
     assert log.listing(None, unattended=True, limit=5).unattended_ran == 0
-    assert health(log) == []
+    assert [check.name for check in health(log)] == ["direct writes of heinzel-crm"]  # the plugin waits
     log.record(watched, "system.bookmark", "add", {}, policy="direct", outcome="ran")
     log.record(unwatched, "system.bookmark", "add", {}, policy="direct", outcome="ran")
     log.record(unwatched, "system.bookmark", "remove", {}, policy="approve", outcome="proposed")
@@ -159,7 +159,8 @@ def test_the_journal_is_bounded_and_skips_torn_lines(kernel, log, tmp_path):
     journal = tmp_path / "state/agent-writes/journal.jsonl"
     log.record(caller, "crm", "create", {}, policy="direct", outcome="ran")
     one = journal.read_bytes()
-    journal.write_bytes(b"{torn\n" + b"x" * 5000 + b"\n" + one * (2 * KEEP + 50))
+    # Past the size at which it is cut back, whatever one entry weighs.
+    journal.write_bytes(b"{torn\n" + b"x" * 5000 + b"\n" + one * (TRIM_BYTES // len(one) + 50))
     log.record(caller, "crm", "create", {}, policy="direct", outcome="ran")
     assert len(journal.read_bytes().splitlines()) == KEEP
     assert stat.S_IMODE(journal.stat().st_mode) == 0o600
