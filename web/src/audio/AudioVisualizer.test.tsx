@@ -384,7 +384,10 @@ describe("AudioVisualizer", () => {
       lost = false;
       const third = screen.getByTestId("audio-aurora");
       expect(third.dataset.vizRender).toBe("memory");
-      expect(getContext).toHaveBeenLastCalledWith("2d", { willReadFrequently: true });
+      await waitFor(() => {
+        const calls = getContext.mock.calls.filter((_, index) => getContext.mock.contexts[index] === third);
+        expect(calls).toContainEqual(["2d", { willReadFrequently: true }]);
+      });
       // The new canvases are drawn: the loop runs again on them.
       await waitFor(() => expect(frames.length).toBeGreaterThan(0));
       const filled = draw.fill.mock.calls.length;
