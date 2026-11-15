@@ -58,6 +58,14 @@ import SQLite3
                 })
                 precondition(!result.revoked)
                 try Data().write(to: flag(url, "invalidate-done"))
+            } else if mode == "secure-crash-invalidate" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                _ = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
+                    try! Data().write(to: flag(url, "tombstone-ready"))
+                    waitFor(flag(url, "never"))
+                    return false
+                })
+                fatalError("interrupted invalidation unexpectedly returned")
             }
             return
         }
@@ -183,6 +191,18 @@ import SQLite3
         let active = ActivityCatalog.activation(url: url)!
         precondition(active.credentialGeneration != nil)
         precondition(!store.publish(scope: active.scope!, generation: "old", snapshot: Data("old".utf8), entries: [], expectedToken: pendingToken))
+        try JSONEncoder().encode(active).write(to: flag(url, "activation"))
+        let interruptedInvalidation = Process()
+        interruptedInvalidation.executableURL = writer.executableURL
+        interruptedInvalidation.arguments = [url.path, "secure-crash-invalidate"]
+        try interruptedInvalidation.run()
+        waitFor(flag(url, "tombstone-ready"))
+        interruptedInvalidation.terminate()
+        interruptedInvalidation.waitUntilExit()
+        precondition(ActivityCatalog.activation(url: url) == nil)
+        let afterCrash = ActivityCatalog.refreshToken(url: url)!
+        precondition(!store.publish(scope: active.scope!, generation: "after-crash", snapshot: Data("old".utf8), entries: [], expectedToken: afterCrash))
+        precondition(ActivityCatalog.invalidate(url: url, expected: active, deleteCredential: { true }).complete)
         print("catalog checks passed")
     }
 }
