@@ -42,7 +42,7 @@ jobs:
       - name: Retain the source confidentiality check
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require
       - name: Retain runtime license compatibility verification
         run: make licenses
       - name: Download and independently verify the genuine signed release assets
@@ -52,7 +52,7 @@ jobs:
           version="${TAG#v}"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts \
             --pattern "heinzel-$version-py3-none-any.whl" --pattern "heinzel-$version.tar.gz" --pattern artifact-manifest.json
-          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py promote "$TAG" release-artifacts
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py promote "$TAG" release-artifacts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: core-pypi-distributions

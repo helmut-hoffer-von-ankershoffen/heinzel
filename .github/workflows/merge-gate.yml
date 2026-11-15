@@ -89,7 +89,7 @@ jobs:
           FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
           FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           PYTHONPATH: .
-          UV_PYTHON: "3.14.8"
+          UV_PYTHON: "3.15"
         run: uv run --no-build --frozen --script scripts/focused_gate.py
       - name: Report both verdicts; a gate that didn't pass, or didn't run, fails closed
         if: always() && steps.start.outputs.merge_gate != '' && steps.start.outputs.coverage_floor != ''

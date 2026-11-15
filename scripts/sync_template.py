@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Derive the plugin template's Makefile, CI workflow and tool configuration from ours, so they never drift.

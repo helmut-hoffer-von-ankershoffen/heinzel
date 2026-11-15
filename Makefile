@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -52,8 +52,13 @@ MANAGED_TYPES := "&managed-types=$(MANAGED) exec tsc --noEmit --project ."
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+pyyaml: ## Build the reviewed PyYAML into .venv (Python 3.15 has no wheel), so no later sync builds it from source
+	@uv venv --quiet --allow-existing --python 3.15
+	@bash scripts/bootstrap-pyyaml.sh
+
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
+	@$(MAKE) --no-print-directory pyyaml # no wheel on Python 3.15: the reviewed build goes in before any sync
 	@uv run --quiet --script scripts/build.py sync && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
@@ -224,7 +229,7 @@ commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conve
 		'&branch=[ -z "$$BRANCH" ] || uv run --script scripts/check_confidentiality.py --text "$$BRANCH"'
 
 test-all-pythons: ## Run unit and integration tests on every supported Python, in isolated environments
-	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
+	$(STEPS) $(foreach python,3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
 
 test-unit: ## Run unit tests
 	uv run pytest -m unit
@@ -307,7 +312,7 @@ docs: ## Regenerate the references (MODULES, CLI_REFERENCE, CONFIGURATION) and e
 attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text
 	uv run --quiet --script scripts/attributions.py
 
-fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
+fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, paused: no atheris wheel for Python 3.15)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
 demo: ## Render the README's intro, docs/assets/demo.{gif,webp,mp4}: the demo tape's CLI part, then the UI scenes of docs/scenes.toml

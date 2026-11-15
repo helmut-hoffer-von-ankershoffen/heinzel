@@ -23,7 +23,7 @@ def test_standalone_make_build_prepares_a_cold_cache_for_sdist_and_wheel(tmp_pat
     (project / "src/fixture_build/__init__.py").write_bytes(source)
     (project / "scripts/build.py").write_bytes((ROOT / "scripts/build.py").read_bytes())
     (project / "pyproject.toml").write_text(
-        '[project]\nname = "fixture-build"\nversion = "1.0.0"\nrequires-python = ">=3.12"\n'
+        '[project]\nname = "fixture-build"\nversion = "1.0.0"\nrequires-python = ">=3.15"\n'
         '[dependency-groups]\nbuild = ["hatchling>=1.32.4", "editables>=0.5"]\n'
         '[build-system]\nrequires = ["hatchling>=1.32.4"]\nbuild-backend = "hatchling.build"\n'
         '[tool.hatch.build.targets.wheel]\npackages = ["src/fixture_build"]\n'
@@ -71,7 +71,7 @@ def test_wheel_preparation_also_supplies_the_isolated_editable_backend(tmp_path)
     (project / "src/fixture_build/__init__.py").write_text('VALUE = "isolated"\n')
     (project / "scripts/build.py").write_bytes((ROOT / "scripts/build.py").read_bytes())
     (project / "pyproject.toml").write_text(
-        '[project]\nname = "fixture-build"\nversion = "1.0.0"\nrequires-python = ">=3.12"\n'
+        '[project]\nname = "fixture-build"\nversion = "1.0.0"\nrequires-python = ">=3.15"\n'
         '[dependency-groups]\nbuild = ["hatchling>=1.32.4", "editables>=0.5"]\n'
         '[build-system]\nrequires = ["hatchling>=1.32.4"]\nbuild-backend = "hatchling.build"\n'
         '[tool.hatch.build.targets.wheel]\npackages = ["src/fixture_build"]\n'

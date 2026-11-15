@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Assemble the README demo's VHS tape from the core intro and the snippets modules contribute.

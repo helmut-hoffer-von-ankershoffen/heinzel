@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "[[ author_name ]]", email = "[[ author_email ]]" }]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 keywords = ["heinzel", "heinzel-plugin", "heinzelmaennchen"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -66,6 +66,10 @@ requires = ["core:plugin-api@1"]
 provides = []
 
 [tool.ruff]
+# The code runs on 3.15, but lints and formats as 3.13 on purpose: from 3.14 on ruff treats annotations as lazy and wants
+# typing-only imports in TYPE_CHECKING blocks (breaks the pydantic and typer annotations read at runtime) and drops the
+# parentheses around multiple exception types. Adopt the 3.14+ style in one deliberate pass.
+target-version = "py313"
 line-length = 120
 fix = true
 
@@ -260,7 +264,7 @@ tag_pattern = "^v[0-9].*"
 [tool.pyright]
 include = ["src"]
 typeCheckingMode = "strict"
-pythonVersion = "3.12"
+pythonVersion = "3.15"
 venvPath = "."
 venv = ".venv"
 

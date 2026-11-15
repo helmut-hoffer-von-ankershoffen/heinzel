@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["packaging==26.3"]
 # ///
 """Generate ATTRIBUTIONS.md: every open-source package hz ships to its users, with its license text. Thank you!
@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "ATTRIBUTIONS.md"
 PYTHON_SECTION = "Python packages"
 WEB_SECTION = "Web app (JavaScript) packages"
-PYTHONS = ("3.12", "3.13", "3.14", "3.15")
+PYTHONS = ("3.15",)
 """The Pythons hz supports (pyproject's classifiers); a dependency needed on any of them is listed."""
 PLATFORMS = {
     "aarch64-apple-darwin": {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "arm64"},

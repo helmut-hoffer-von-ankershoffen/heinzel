@@ -805,7 +805,7 @@ def _finish_cleanup(journal: dict[str, Any], path: Path) -> None:
 
 
 @contextmanager
-def _locks(journal: dict[str, Any]) -> Generator[None, None, None]:
+def _locks(journal: dict[str, Any]) -> Generator[None]:
     descriptors: list[int] = []
     try:
         for name in journal["locks"]:

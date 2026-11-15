@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """The quarantine lane: a known-flaky test leaves the required CI jobs for at most seven days, and still runs.

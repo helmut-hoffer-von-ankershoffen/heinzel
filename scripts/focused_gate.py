@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["coverage==7.17.0"]
 # ///
 """Judge exact focused CI evidence from the protected default-branch workflow."""

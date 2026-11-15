@@ -602,7 +602,7 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     (plugin / "src" / "heinzel_sidecar").mkdir(parents=True)
     (plugin / "pyproject.toml").write_text(
         '[project]\nname = "heinzel-sidecar"\nversion = "1.0.0"\ndescription = "A plugin installed outside the app."\n'
-        'requires-python = ">=3.12"\ndependencies = []\n'
+        'requires-python = ">=3.15"\ndependencies = []\n'
         '[project.entry-points."heinzel.modules"]\nsidecar = "heinzel_sidecar"\n'
         '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
         '[tool.hatch.build.targets.wheel]\npackages = ["src/heinzel_sidecar"]\n',

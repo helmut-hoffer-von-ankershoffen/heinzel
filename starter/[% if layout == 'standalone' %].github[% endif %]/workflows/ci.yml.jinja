@@ -16,7 +16,7 @@ jobs:
       contents: read
     env:
       PLUGIN_PRIVATE: ${{ github.event.repository.private }}
-      TOOLING: heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7
+      TOOLING: heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38
       CORE: ${{ vars.CORE_ARTIFACT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - name: Check and test only this plugin's built artifact
-        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" hz-plugin verify-release --core "$CORE" --output release-dist
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/plugin_tooling.py --toolkit "$TOOLING" hz-plugin verify-release --core "$CORE" --output release-dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: plugin-artifacts

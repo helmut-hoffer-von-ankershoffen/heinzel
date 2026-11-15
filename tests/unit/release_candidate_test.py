@@ -112,9 +112,9 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 69
+    assert len(value["jobs"]) == 57
     assert next(job for job in value["jobs"] if job["name"].startswith("Focused tests ("))["conclusion"] == "skipped"
-    assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 16
+    assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 4
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 8
 
 
@@ -205,9 +205,9 @@ def test_incomplete_or_changed_job_inventory_is_refused(defect):
     elif defect == "duplicate":
         jobs[-1] = copy.deepcopy(jobs[0])
     elif defect == "short-matrix":
-        result["jobs"] = [j for j in jobs if "Python 3.13" not in j["name"]]
+        result["jobs"] = [j for j in jobs if j["name"] != "Test (macos-latest, Python 3.15, unit)"]
     else:
-        job = next(j for j in jobs if j["name"] == "Test (macos-latest, Python 3.14, unit)")
+        job = next(j for j in jobs if j["name"] == "Test (macos-latest, Python 3.15, unit)")
         job[{"rerun": "run_attempt", "never-started": "runner_id"}.get(defect, "conclusion")] = {
             "cancelled": "cancelled",
             "rerun": 2,
@@ -315,7 +315,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 69
+    assert result["job_count"] == 57
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
@@ -517,3 +517,13 @@ def test_an_incomplete_or_rerun_quarantine_lane_is_refused(defect):
         value["jobs"][-1]["run_attempt"] = 2
     with pytest.raises(candidate.CandidateError, match="quarantine lane"):
         validate(value)
+
+
+@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
+def test_candidate_demands_exactly_the_python_3_15_test_cells(event):
+    names = {name for name in candidate.expected_jobs(event) if name.startswith("Test (")}
+    assert names == {
+        f"Test ({runner}, Python 3.15, {level})"
+        for runner in ("ubuntu-24.04", "macos-latest")
+        for level in ("unit", "integration")
+    }

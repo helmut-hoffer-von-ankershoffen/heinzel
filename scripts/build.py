@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Prepare the locked controller and build in isolation from its hash-verified backend cache (ADR 0125).

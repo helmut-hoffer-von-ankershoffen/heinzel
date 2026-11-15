@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Run the released plugin toolkit from a disposable, hash-locked wheel environment, without installing core."""
@@ -25,8 +25,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    "tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl"
-    "#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7"
+    "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
+    "#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38"
 )
 
 REQUIREMENTS = Path(__file__).with_name("plugin-tooling-requirements.txt")
@@ -338,7 +338,7 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
         environment = Path(temporary)
         interpreter = environment / "bin/python"
         # Resolved uv, disposable environment
-        subprocess.run([uv, "venv", "--python", "3.14", str(environment)], check=True, timeout=120)  # noqa: S603
+        subprocess.run([uv, "venv", "--python", "3.15", str(environment)], check=True, timeout=120)  # noqa: S603
         if toolkit != TOOLKIT:
             selection = [str(candidate_wheel(toolkit, environment))]
         else:
