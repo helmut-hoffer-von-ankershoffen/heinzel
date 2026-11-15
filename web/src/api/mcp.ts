@@ -58,6 +58,34 @@ export function useRevokeMcpToken() {
   });
 }
 
+/** What one agent changed, from `hz system write list`: the line under a token. */
+export type AgentActivity = { caller: string; ran: number; ran_today: number; refused: number; last: string | null };
+export const writesKey = ["system", "write", "list"] as const;
+
+/** `hz system write list`: a line per agent. Read with the tokens, so a token's changes show beside it. */
+export const useAgentWrites = () =>
+  useQuery({
+    queryKey: writesKey,
+    queryFn: async () => {
+      const response = await globalThis.fetch(
+        new Request(`${window.location.origin}/api/system/write/list?limit=1`, {
+          headers: { Authorization: `Bearer ${token() ?? ""}` },
+          signal: AbortSignal.timeout(15_000),
+        }),
+      );
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw problem(response.status, body);
+      return ((body as { callers?: AgentActivity[] } | null)?.callers ?? []) as AgentActivity[];
+    },
+    refetchInterval: 30_000,
+    // An older hz has no record of agents' writes: the tokens show without that line.
+    retry: false,
+  });
+
+/** The activity of the token with this key id; undefined while unknown or when it never asked for a write. */
+export const activityOf = (lines: AgentActivity[] | undefined, id: string): AgentActivity | undefined =>
+  lines?.find((line) => line.caller === `token:${id}`);
+
 /** The line that connects Claude Code; the token is the one just made, or a placeholder to fill in. */
 export const claudeAddLine = (origin: string, secret = "<token>") =>
   `claude mcp add --transport http hz ${origin}/mcp --header "Authorization: Bearer ${secret}"`;

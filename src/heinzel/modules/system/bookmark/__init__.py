@@ -1,30 +1,33 @@
-"""The bookmark module of system: the owner's bookmark tree for the built-in browser (ADR 0140).
+"""The bookmark module of system: the owner's bookmark tree for the built-in browser (ADR 0140, 0162).
 
 One ordered tree of folders and bookmarks per owner, kept as owner data and never in the browser's own storage, so
-clearing browsing data keeps it. The web app stars pages into it, manages it and lists the top level in its
-navigation. Agents can read it and add to it; changing, moving and removing entries is the person's, so those
-operations aren't MCP tools.
+clearing browsing data keeps it. The web app stars pages into it, manages it and shows it in its navigation.
+Every operation is a CLI command and an MCP tool, over stdio and at `/mcp`. An agent's `add`, `folder`, `move`,
+`restore` and a rename run at once; removing an entry and changing a bookmark's address wait for the person
+(`agents=`).
 """
 
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from pydantic import Field
 from rich.console import RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Module
-from heinzel.kernel import MCP_STDIO
+from heinzel import ByArguments, Module
 from heinzel.modules.system.bookmark._models import Bookmark, BookmarkList
 from heinzel.modules.system.bookmark._service import BookmarkService
 
 module = Module("bookmark", "Keep the built-in browser's bookmarks: a tree of folders and bookmarks.")
 module.service(BookmarkService)
 
-# Bookmarks are as private as a browsing habit: the unauthenticated REST and HTTP MCP heads get none of it.
-READ_ADD = {"cli", MCP_STDIO, "web"}
-# Rename, move, remove, restore and the favicon cache stay with the person: no MCP tool, so no agent proposes them.
-PERSON = {"cli", "web"}
+# Bookmarks are as private as a browsing habit: the unauthenticated REST head gets none of it. MCP has them on
+# both transports: over stdio for an agent you started, and at `/mcp` for a token (reads with any token, writes
+# with a write token; removing or repointing still waits for you).
+HEADS = {"cli", "mcp", "web"}
+# The favicon cache is the web app's own: the desktop hands over what a page showed.
+WEB = {"web"}
 
 Entry = Annotated[str, Field(description="The entry's id, as `hz system bookmark list` shows it.")]
 Parent = Annotated[str | None, Field(description="The folder's id to put it in; the top level when left out.")]
@@ -44,13 +47,13 @@ def render(result: BookmarkList) -> RenderableType:
     return table
 
 
-@module.operation(name="list", render=render, heads=READ_ADD)
+@module.operation(name="list", render=render, heads=HEADS)
 def list_(service: BookmarkService) -> BookmarkList:
     """List the bookmarks and folders in their order, with each entry's id and folder."""
     return service.listing()
 
 
-@module.operation(read_only=False, render=render, heads=READ_ADD)
+@module.operation(read_only=False, render=render, heads=HEADS, agents="direct")
 def add(
     service: BookmarkService,
     url: Annotated[str, Field(description="The page's https:// address.")],
@@ -62,7 +65,7 @@ def add(
     return service.add(url, title, parent, before)
 
 
-@module.operation(read_only=False, render=render, heads=READ_ADD)
+@module.operation(read_only=False, render=render, heads=HEADS, agents="direct")
 def folder(
     service: BookmarkService,
     title: Annotated[str, Field(description="The folder's name.")],
@@ -73,7 +76,17 @@ def folder(
     return service.folder(title, parent, before)
 
 
-@module.operation(read_only=False, render=render, heads=PERSON)
+def _changes_address(arguments: Mapping[str, Any]) -> bool:
+    """Whether `edit` repoints a bookmark: a page could ask an agent to send "Bank" elsewhere, so that waits."""
+    return arguments.get("url") is not None
+
+
+@module.operation(
+    read_only=False,
+    render=render,
+    heads=HEADS,
+    agents=ByArguments("direct", "approve", _changes_address, "when it changes the address"),
+)
 def edit(
     service: BookmarkService,
     entry: Entry,
@@ -84,19 +97,19 @@ def edit(
     return service.edit(entry, title, url)
 
 
-@module.operation(read_only=False, render=render, heads=PERSON)
+@module.operation(read_only=False, render=render, heads=HEADS, agents="direct")
 def move(service: BookmarkService, entry: Entry, parent: Parent = None, before: Before = None) -> BookmarkList:
     """Move a bookmark or folder into another folder or to another place in its own."""
     return service.move(entry, parent, before)
 
 
-@module.operation(read_only=False, render=render, heads=PERSON)
+@module.operation(read_only=False, render=render, heads=HEADS, agents="approve")
 def remove(service: BookmarkService, entry: Entry) -> BookmarkList:
     """Remove a bookmark, or a folder with everything in it; `restore` brings it back."""
     return service.remove(entry)
 
 
-@module.operation(read_only=False, render=render, heads=PERSON)
+@module.operation(read_only=False, render=render, heads=HEADS, agents="direct")
 def restore(
     service: BookmarkService,
     entry: Annotated[str | None, Field(description="The removed entry's id; the latest removal when left out.")] = None,
@@ -106,7 +119,7 @@ def restore(
 
 
 # The desktop app hands over the icon a page itself showed; nothing is fetched from a third party.
-@module.operation(read_only=False, render=render, heads={"web"})
+@module.operation(read_only=False, render=render, heads=WEB, agents="never")
 def favicon(
     service: BookmarkService,
     origin: Annotated[str, Field(description="The origin the icon belongs to, e.g. `https://example.com`.")],

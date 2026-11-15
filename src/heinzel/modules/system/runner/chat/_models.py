@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, JsonValue, StringConstraints
 from heinzel import ModuleSettings
 from heinzel.kernel import Billing, Effort
 
-ContextKind = Literal["route", "contract", "draft", "event", "text", "check-in"]
+ContextKind = Literal["route", "contract", "draft", "event", "text", "check-in", "heinzel"]
 SessionId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{16}$")]
 """16 hex characters: a session's directory name, so never a path."""
 ActionId = Annotated[str, StringConstraints(pattern=r"^a[0-9]{1,4}$")]
@@ -61,7 +61,10 @@ class ChatSettings(ModuleSettings):
 class ChatContext(BaseModel):
     """What a chat was opened about: the screen, a contract, a draft or a notification event; it seeds the chat."""
 
-    kind: ContextKind = Field(description="The context kind; `check-in` is created only by the durable-session flow.")
+    kind: ContextKind = Field(
+        description="The context kind; `check-in` is created only by the durable-session flow, `heinzel` only for a "
+        "Heinzel's own proposals (ADR 0162)."
+    )
     ref: str = Field(
         default="",
         max_length=300,

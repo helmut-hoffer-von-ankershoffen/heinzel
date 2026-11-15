@@ -15,13 +15,14 @@ kernel calls `CompiledJobs`' factory each time the daemon lists its jobs, so an 
 `write` capability.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, JsonValue
 from rich.console import RenderableType
 
-from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
+from heinzel import ByArguments, Check, Config, ConfigEditor, HeinzelError, Module, Prompter
 from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._measure import Measurements, Sent
@@ -177,11 +178,21 @@ def list_(
     return service.listing(state=state, contract=contract, artifact=artifact)
 
 
+def _into_team(arguments: Mapping[str, Any]) -> bool:
+    """Whether `new` writes into the team repository: publishing, so an agent's call waits for the person."""
+    return bool(arguments.get("team"))
+
+
 # A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
 # the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
 # the daemon by itself.
 @module.operation(
-    read_only=False, render=render_new, heads={"cli", "mcp"}, audience="everyday", aliases=["workflow new"]
+    read_only=False,
+    render=render_new,
+    heads={"cli", "mcp"},
+    audience="everyday",
+    aliases=["workflow new"],
+    agents=ByArguments("direct", "approve", _into_team, "when it writes into the team repository"),
 )
 def new(
     service: HeinzelService,
@@ -282,7 +293,9 @@ def drafts(
 
 
 # It reads a file you name and writes a small record next to the draft; like `drafts`, only the CLI and MCP get it.
-@module.operation(read_only=False, render=render_sent, heads={"cli", "mcp"}, aliases=["workflow sent"])
+@module.operation(
+    read_only=False, render=render_sent, heads={"cli", "mcp"}, aliases=["workflow sent"], agents="approve"
+)
 def sent(  # noqa: PLR0913, PLR0917 - one option per place the approved text can be, and the draft
     service: HeinzelService,
     name: Name,
@@ -331,7 +344,12 @@ def check(
 
 # A render spends money; REST is reachable from a browser, so only the CLI and MCP get it.
 @module.operation(
-    read_only=False, render=render_run, heads={"cli", "mcp"}, audience="everyday", aliases=["workflow run"]
+    read_only=False,
+    render=render_run,
+    heads={"cli", "mcp"},
+    audience="everyday",
+    aliases=["workflow run"],
+    agents="approve",
 )
 def wake(
     service: HeinzelService,
@@ -350,6 +368,7 @@ def wake(
     exit_code=_prune_exit_code,
     heads={"cli", "mcp"},
     aliases=["workflow prune"],
+    agents="approve",
 )
 def prune(
     service: HeinzelService,

@@ -11,11 +11,11 @@ from collections.abc import Callable, Sequence
 from copy import copy
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 import pydantic_ai
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
-from pydantic_ai import Agent, Conversation, ConversationTypeAdapter, ModelRequestContext, RunContext
+from pydantic_ai import Agent, Conversation, ConversationTypeAdapter, ModelRequestContext, RunContext, Tool
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import RunCancelled, RunTimedOut, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelResponse
@@ -295,10 +295,16 @@ class _Progress:
 
 
 def build_agent(
-    model: Model, instructions: str, dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None
+    model: Model,
+    instructions: str,
+    dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None,
+    tools: Sequence[Tool[Any]] = (),
 ) -> Agent[TurnDeps, Outcome]:
-    """Build a typed turn; only an explicitly supplied host dispatcher can execute a tool."""
-    agent = Agent(model, output_type=Outcome, deps_type=TurnDeps, instructions=instructions, retries=2)
+    """Build a typed turn; only an explicitly supplied host dispatcher or host-built tools can execute a tool.
+
+    `tools` are the turn's direct tools (ADR 0162), each already bound to its policy (`kernel/_chat_tools.py`).
+    """
+    agent = Agent(model, output_type=Outcome, deps_type=TurnDeps, instructions=instructions, retries=2, tools=tools)
     if dispatch is not None:
 
         def use_tool(name: str, arguments: dict[str, JsonValue]) -> str:
@@ -381,6 +387,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
     resume_from: EngineCheckpoint | None = None,
     dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None,
     capabilities: Sequence[AbstractCapability[TurnDeps]] = (),
+    tools: Sequence[Tool[Any]] = (),
 ) -> EngineResult:
     """Drive and checkpoint every node, retaining completed state when a cap or model validation fails.
 
@@ -391,7 +398,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
         asyncio.CancelledError: If the caller cancels the task; a completed partial snapshot is retained first.
         ValueError: If a dispatched turn attempts an unsupported resume.
     """
-    if dispatch is not None and resume_from is not None:
+    if (dispatch is not None or tools) and resume_from is not None:
         msg = "Tool-dispatched turns cannot resume until tool authority can be revalidated"
         raise ValueError(msg)
     context_hash = _context_hash(model, deps, instructions, limits)
@@ -405,7 +412,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
         terminal = EngineResult("budget", current, progress.steps + 1, problem="Saved usage has no priced cost")
         progress.save("UnpricedUsage", current.messages, current.usage, current.conversation_id, terminal)
         return EngineResult("budget", progress.current, progress.steps, problem=terminal.problem)
-    agent = build_agent(model, instructions, dispatch)
+    agent = build_agent(model, instructions, dispatch, tools)
     try:
         async with agent.iter(
             prompt,

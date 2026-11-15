@@ -125,7 +125,7 @@ def showcase(
     return service.showcase(spec)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_change)
+@module.operation(read_only=False, heads=CHANGES, render=render_change, agents="approve")
 def add(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
     service: PluginService,
     prompter: Prompter,
@@ -188,7 +188,7 @@ def add(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
     return change.model_copy(update={"previewed": True})
 
 
-@module.operation(read_only=False, heads=CHANGES)
+@module.operation(read_only=False, heads=CHANGES, agents="approve")
 def add_extra(
     service: PluginService,
     extra: Annotated[
@@ -200,7 +200,7 @@ def add_extra(
     return service.add_extra(extra)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_repair)
+@module.operation(read_only=False, heads=CHANGES, render=render_repair, agents="approve")
 def repair(
     service: PluginService,
     automatic: Annotated[
@@ -264,19 +264,19 @@ def develop(
     return service.develop(path)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_change)
+@module.operation(read_only=False, heads=CHANGES, render=render_change, agents="approve")
 def remove(service: PluginService, distribution: Distribution) -> PluginChange:
     """Remove a plugin."""
     return service.remove(distribution)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_change)
+@module.operation(read_only=False, heads=CHANGES, render=render_change, agents="approve")
 def disable(service: PluginService, distribution: Distribution) -> PluginChange:
     """Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file."""
     return service.disable(distribution)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_change)
+@module.operation(read_only=False, heads=CHANGES, render=render_change, agents="approve")
 def enable(service: PluginService, distribution: Distribution) -> PluginChange:
     """Switch a disabled plugin on again."""
     return service.enable(distribution)
@@ -432,7 +432,7 @@ def checklist(
     return service.checklist(module)
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_bind)
+@module.operation(read_only=False, heads=CHANGES, render=render_bind, agents="approve")
 def bind(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
     service: SetupService,
     plugin: Annotated[
@@ -476,7 +476,7 @@ def bind(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
     )
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_bind)
+@module.operation(read_only=False, heads=CHANGES, render=render_bind, agents="approve")
 def unbind(
     service: SetupService,
     by: Annotated[str, Field(description="The module whose recommended bindings to remove, e.g. `acme`.")],

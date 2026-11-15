@@ -1,6 +1,16 @@
 import { Check, Copy, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { claudeAddLine, type McpMade, useMakeMcpToken, useMcp, useRevokeMcpToken, useSwitchMcp } from "@/api/mcp";
+import {
+  type AgentActivity,
+  activityOf,
+  claudeAddLine,
+  type McpMade,
+  useAgentWrites,
+  useMakeMcpToken,
+  useMcp,
+  useRevokeMcpToken,
+  useSwitchMcp,
+} from "@/api/mcp";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
@@ -24,12 +34,25 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+/** What a token's agent changed, as hz recorded it: a write token always has the line, a read token only if it tried. */
+function TokenWrites({ activity, write }: Readonly<{ activity: AgentActivity | undefined; write: boolean }>) {
+  if (!activity && !write) return null;
+  const refused = activity?.refused ?? 0;
+  return (
+    <p className="text-muted-foreground" data-token-writes>
+      {activity?.ran ? t("mcp.writes", { today: activity.ran_today, total: activity.ran }) : t("mcp.noWrites")}
+      {refused > 0 && ` ${t("mcp.writesRefused", { count: refused })}`}
+    </p>
+  );
+}
+
 /** Settings, MCP (ADR 0162): the one switch for MCP at /mcp, and the tokens of the agents that connect. */
 export function McpSettings() {
   const state = useMcp();
   const toggle = useSwitchMcp();
   const make = useMakeMcpToken();
   const revoke = useRevokeMcpToken();
+  const writes = useAgentWrites();
   const [actor, setActor] = useState("");
   const [scope, setScope] = useState<"read" | "write">("read");
   const [made, setMade] = useState<McpMade | null>(null);
@@ -85,6 +108,7 @@ export function McpSettings() {
                               ? t("mcp.lastUsed", { when: format.dateTime(item.last_used) })
                               : t("mcp.neverUsed")}
                           </p>
+                          <TokenWrites activity={activityOf(writes.data, item.id)} write={item.scope === "write"} />
                         </div>
                         <Button
                           type="button"
