@@ -38,6 +38,7 @@ pyyaml: ## Build the reviewed PyYAML into .venv (Python 3.15 has no wheel), so n
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
+	@$(MAKE) --no-print-directory pyyaml # no wheel on Python 3.15: the reviewed build goes in before any sync
 	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install
 

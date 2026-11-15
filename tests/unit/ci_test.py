@@ -947,8 +947,12 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
     assert "TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" in makefile
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     script = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
-    assert "\nuv lock --quiet\nmake setup\n" not in script, "a fresh render must run the documented make setup unlocked"
     assert "[[ ! -e uv.lock ]]" in script
+    # a fresh render runs the documented `make setup` unlocked: nothing that locks, makes the venv or builds PyYAML
+    # may stand between the assertion and the command (the Makefile's install does all of it)
+    between = script.split("[[ ! -e uv.lock ]]", 1)[1].split("\nmake setup\n", 1)[0]
+    for step in ("uv lock", "uv venv", "bootstrap-pyyaml", "make pyyaml"):
+        assert step not in between, f"template-test must not run `{step}` before make setup"
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
 
@@ -1945,8 +1949,6 @@ def test_no_script_or_workflow_resolves_a_fresh_environment_that_would_build_pyy
         assert "--isolated" not in text, f"{name}: use a throwaway environment with the reviewed PyYAML"
     # the local multi-Python target is the one exception, and CI never calls it
     assert not any("test-all-pythons" in text for text in texts.values())
-    rendered = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
-    assert rendered.index('bash "$repo_root/scripts/bootstrap-pyyaml.sh"') < rendered.index("\nmake setup")
 
 
 def test_end_to_end_installs_resolve_the_reviewed_pyyaml_wheel():
@@ -1996,3 +1998,29 @@ def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
     assert build < launch
     assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
+
+
+@pytest.mark.parametrize("makefile", ["Makefile", "template/Makefile"])
+def test_install_builds_the_reviewed_pyyaml_after_the_lock_and_before_the_first_sync(makefile):
+    """`make setup` is the documented command: it must not leave PyYAML to a source build on Python 3.15."""
+    text = (REPO / makefile).read_text(encoding="utf-8")
+    recipe = text.split("\ninstall:", 1)[1].split("\n\n", 1)[0]
+    lock = recipe.index("uv lock --quiet")
+    pyyaml = recipe.index("pyyaml")
+    sync = min(recipe.index(token) for token in ("uv sync", "build.py sync") if token in recipe)
+    assert lock < pyyaml < sync
+
+
+def test_the_setup_uv_guard_matches_this_checkouts_lock():
+    """The action builds PyYAML only where uv.lock says >=3.15; a changed floor must not switch that off silently."""
+    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
+    step = next(item for item in action["runs"]["steps"] if "bootstrap-pyyaml.sh" in item.get("run", ""))
+    pattern = re.search(r"grep -q '([^']+)' uv\.lock", step["run"])
+    assert pattern, "the guard must stay a grep on uv.lock"
+    assert re.search(pattern[1], (REPO / "uv.lock").read_text(encoding="utf-8"), re.MULTILINE)
+
+
+def test_the_readme_install_environment_carries_no_github_token():
+    source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
+    assert "if key not in TOKENS" in source
+    assert "launch_documented_app(block, launch_env," in source
