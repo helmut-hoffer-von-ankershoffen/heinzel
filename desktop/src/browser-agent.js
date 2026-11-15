@@ -714,7 +714,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
           // the release, so no widget in a frame is clicked. The page's own document may see a click on itself; a
           // page already runs its own handlers whenever it likes, so that gives it nothing (ADR 0162).
           await quiet(() => mouse("mouseReleased", { x: -1, y: -1, button, clickCount: count }));
-          throw new BridgeError("changed", "The page put something else under the pointer. Nothing was clicked: read the page again.");
+          throw new BridgeError("changed", "The page put something else under the pointer. The target was not clicked: read the page again.");
         }
         await mouse("mouseReleased", { button, clickCount: count });
       }

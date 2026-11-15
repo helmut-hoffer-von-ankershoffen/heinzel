@@ -309,7 +309,7 @@ test("click race: a frame the page slides under the pointer is never clicked", a
     if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") view.page.pressed = false;
   };
   await assert.rejects(f.call(HEINZEL, "click", { tab, ref: "ref_1", expect: fingerprint }),
-    (error) => error.code === "changed" && /Nothing was clicked/.test(error.message));
+    (error) => error.code === "changed" && /put something else under the pointer\. The target was not clicked/.test(error.message));
   assert.deepEqual(mouse(), [["mouseMoved", 20, 15], ["mousePressed", 20, 15], ["mouseReleased", -1, -1]]);
   // The press landed on the button, but the page turned it into something else before the release.
   view.sent.length = 0; view.page.pressed = true;
