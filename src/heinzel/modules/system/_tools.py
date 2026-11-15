@@ -1,6 +1,5 @@
 """The reference of every operation and tool: one renderer for `hz system tools` and the generated documents."""
 
-import asyncio
 import json
 from collections.abc import Iterable
 from typing import Any, Literal
@@ -8,9 +7,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, TypeAdapter
 
-from heinzel.heads._exposure import Exposed, exposed, input_schema
-from heinzel.heads.cli._chat import command_words
-from heinzel.kernel import HeinzelError, Kernel
+from heinzel.kernel import Exposed, HeinzelError, Kernel, ServedTool, ServedTools, command_words, exposed, input_schema
 
 Format = Literal["text", "markdown", "yaml", "json"]
 HeadFilter = Literal["all", "cli", "mcp", "rest", "web"]
@@ -113,11 +110,13 @@ def _parameters(schema: dict[str, Any]) -> list[ParameterInfo]:
     ]
 
 
-def served_mcp_tools(kernel: Kernel) -> dict[str, Any]:
-    """The tools the stdio MCP server lists, by name: what a client sees, with its schemas, hints and aliases."""
-    from heinzel.heads.mcp import build as build_mcp  # noqa: PLC0415 - the MCP head is loaded only for a reference
+def served_mcp_tools(kernel: Kernel) -> dict[str, ServedTool]:
+    """The tools the stdio MCP server lists, by name: what a client sees, with its schemas, hints and aliases.
 
-    return {tool.name: tool for tool in asyncio.run(build_mcp(kernel, "stdio").list_tools())}
+    Raises:
+        HeinzelError: If no head bound the service that lists them.
+    """
+    return kernel.resolve(ServedTools).tools()
 
 
 def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "all") -> list[ToolInfo]:
@@ -263,20 +262,19 @@ Each tool lists its description and the JSON Schema of its input.
 """
 
 
-def mcp_reference(entries: list[ToolInfo], served: dict[str, Any]) -> str:
+def mcp_reference(entries: list[ToolInfo], served: dict[str, ServedTool]) -> str:
     """Every tool the stdio MCP server lists, as a client sees it: description, hints and JSON input schema."""
     by_name = {e.heads.mcp: e for e in entries if e.heads.mcp}
     lines = [MCP_HEADER]
     for name, tool in served.items():
-        hints = tool.annotations
-        read_only = bool(hints and hints.read_only_hint)
+        read_only = tool.read_only
         entry = by_name.get(name)
         origin = f"Module `{entry.module}`. " if entry else ""
         result = f" Result: `{_cell(entry.result)}`." if entry else ""
         lines += [
             f"## `{name}`",
             "",
-            tool.description or "",
+            tool.description,
             "",
             f"{origin}{'Read-only' if read_only else 'Changes state'}.{result}",
             "",

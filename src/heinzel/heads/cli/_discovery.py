@@ -12,7 +12,7 @@ from pydantic_core import to_jsonable_python
 from typer.core import TyperGroup, TyperOption
 
 from heinzel.heads._exposure import exposed, input_schema
-from heinzel.heads.cli._chat import command_words
+from heinzel.kernel import command_words
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

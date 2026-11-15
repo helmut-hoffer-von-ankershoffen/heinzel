@@ -36,6 +36,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry
+from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.cli import build
 from heinzel.kernel import discover, env_prefix
 from heinzel.modules.graph import TeamGraphDocument
@@ -89,7 +90,9 @@ def kernel() -> Kernel:
     """The built-in modules alone, with default settings: the same output on every machine."""
     config = Config.empty()
     records = discover(plugins=False)[0]
-    return Kernel(config.settings(Settings, "hz"), records, config=config)
+    built = Kernel(config.settings(Settings, "hz"), records, config=config)
+    bind_served_tools(built)  # the MCP head lists its tools through the kernel, as in every head
+    return built
 
 
 def end_help_at_form_feed(group: typer.Typer) -> typer.Typer:
