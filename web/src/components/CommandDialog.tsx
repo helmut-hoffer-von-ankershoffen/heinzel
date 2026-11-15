@@ -4,9 +4,11 @@ import { runCommand } from "@/components/CommandActions";
 import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
+import { useOverlayTarget } from "@/lib/overlayTarget";
 
 /** What a contributed command button opens: the command to copy, and a button the person presses to run it. */
 export function CommandDialog({ command, onClose }: Readonly<{ command: string; onClose: () => void }>) {
+  const overlayTarget = useOverlayTarget();
   return createPortal(
     <div
       role="alertdialog"
@@ -39,6 +41,6 @@ export function CommandDialog({ command, onClose }: Readonly<{ command: string; 
         </PaneAction>
       </PaneActions>
     </div>,
-    document.body,
+    overlayTarget(),
   );
 }

@@ -101,6 +101,30 @@ struct Endpoint: Equatable {
         return parts.percentEncodedPath.wholeMatch(of: /\/embed\/[A-Za-z0-9_-]{11}/) != nil
     }
 
+    static func probeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForResource = 5
+        return URLSession(configuration: configuration, delegate: RefuseRedirects(), delegateQueue: nil)
+    }
+
+    static func connectionIssue(at origin: URL, using session: URLSession) async -> WorkspaceProblem? {
+        let request = URLRequest(
+            url: origin.appending(path: "manifest.webmanifest"),
+            cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4
+        )
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  (200..<300).contains(response.statusCode),
+                  response.mimeType == "application/manifest+json" else { return .unavailable }
+            return nil
+        } catch {
+            return WorkspaceProblem(navigationError: error)
+        }
+    }
+
     func verify() async throws {
         if token != nil { _ = try await readLifecycle() }
     }
@@ -141,6 +165,73 @@ struct Endpoint: Equatable {
         let version: String
         let restartable: Bool?
     }
+}
+
+enum WorkspaceProblem {
+    case offline, unavailable, slow, signIn, denied, wrongAddress, insecure, interrupted
+
+    init(navigationError: Error) {
+        switch (navigationError as? URLError)?.code {
+        case .notConnectedToInternet: self = .offline
+        case .serverCertificateHasBadDate, .serverCertificateUntrusted, .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid, .secureConnectionFailed: self = .insecure
+        case .userAuthenticationRequired: self = .signIn
+        case .timedOut: self = .slow
+        default: self = .unavailable
+        }
+    }
+
+    init?(response status: Int) {
+        switch status {
+        case 401: self = .signIn
+        case 403: self = .denied
+        case 404, 410: self = .wrongAddress
+        case 400..<600: self = .unavailable
+        default: return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .offline: "You’re offline"
+        case .unavailable: "Workspace out of reach"
+        case .slow: "Still trying to connect"
+        case .signIn: "Sign in to your workspace"
+        case .denied: "This workspace denied access"
+        case .wrongAddress: "Workspace address not found"
+        case .insecure: "Secure connection unavailable"
+        case .interrupted: "The workspace closed unexpectedly"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .offline: "Connect to Wi-Fi or mobile data. Heinzel will try again when your network returns."
+        case .unavailable: "Check Tailscale and make sure your workspace host is awake. Heinzel will keep trying."
+        case .slow: "Heinzel is waiting for the workspace to answer. You can try again now or choose another workspace."
+        case .signIn: "Ask the host for a fresh private sign-in link, then paste it into Heinzel."
+        case .denied: "Check that you have access to the host’s private network, or ask the host for help."
+        case .wrongAddress: "Ask the host to share the workspace address again."
+        case .insecure: "Ask the host to check the workspace’s HTTPS certificate."
+        case .interrupted: "Open the workspace again to continue."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .offline: "wifi.slash"
+        case .unavailable, .slow, .interrupted: "arrow.clockwise"
+        case .signIn: "person.crop.circle.badge.exclamationmark"
+        case .denied, .insecure: "lock"
+        case .wrongAddress: "link"
+        }
+    }
+
+    var canReconnectAutomatically: Bool {
+        self == .offline || self == .unavailable || self == .slow
+    }
+
+    var shouldEnterLink: Bool { self == .signIn || self == .wrongAddress }
 }
 
 private final class RefuseRedirects: NSObject, URLSessionTaskDelegate {

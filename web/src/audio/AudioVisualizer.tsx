@@ -175,7 +175,13 @@ function captureProblem(error: unknown) {
  * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
  * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
-export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
+export function AudioVisualizer({
+  enabled = true,
+  compact = false,
+}: {
+  readonly enabled?: boolean;
+  readonly compact?: boolean;
+}) {
   const own = useOwnAudio();
   const settings = useVizSettings();
   const [remembered, setRemembered] = useState<Remembered>(readSource);
@@ -703,10 +709,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         content={
           <>
             <AudioLines aria-hidden className="size-5" />
-            <span className="text-[10px]">{controlWord}</span>
+            {!compact && <span className="text-[10px]">{controlWord}</span>}
           </>
         }
-        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${
+        className={`${compact ? "size-11 rounded-full" : "h-12 min-w-11 flex-col gap-0.5 px-1"} ${
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
@@ -816,7 +822,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           ref={railCanvas}
           role="img"
           aria-label="Shared audio spectrum"
-          className="pointer-events-none min-h-0 w-full flex-1 px-0.5 pb-1"
+          className={cn(
+            "pointer-events-none min-h-0 w-full",
+            compact ? "absolute inset-x-1 bottom-0 h-1.5 w-[calc(100%-0.5rem)]" : "flex-1 px-0.5 pb-1",
+          )}
         />
       ) : (
         <div className="min-h-0 flex-1" aria-hidden />

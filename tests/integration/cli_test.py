@@ -713,7 +713,10 @@ def test_every_operation_accepts_json(make_kernel):
     assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP | DESKTOP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text
-    assert "Heinzelmännchen: Heinzels accelerating product teams" not in help_text
+    assert (
+        "Heinzelmännchen: Durable agents accelerating product teams, like the little elves from Cologne."
+        not in help_text
+    )
 
 
 def test_the_cli_loads_no_serving_stack():

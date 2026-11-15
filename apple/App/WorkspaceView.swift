@@ -12,8 +12,10 @@ typealias WebRepresentable = UIViewRepresentable
 
 struct WorkspaceView: WebRepresentable {
     let endpoint: Endpoint
+    let isObscured: Bool
     var ready: () -> Void
-    var reportError: (String) -> Void
+    var reportError: (WorkspaceProblem) -> Void
+    var appearance: @MainActor @Sendable (Color) -> Void = { _ in }
 
     func makeCoordinator() -> Navigation { Navigation(endpoint: endpoint, ready: ready, reportError: reportError) }
 
@@ -62,7 +64,7 @@ struct WorkspaceView: WebRepresentable {
             : ""
         let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(localCommands)"
         #else
-        let chrome = ""
+        let chrome = "mobileWorkspace: true,"
         #endif
         let connection = endpoint.origin.scheme == "https"
             ? "remoteWorkspace: true,"
@@ -110,6 +112,9 @@ struct WorkspaceView: WebRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.allowsBackForwardNavigationGestures = true
+        #if os(iOS)
+        context.coordinator.observeBackground(of: view, onChange: appearance)
+        #endif
         view.load(URLRequest(url: endpoint.url))
         return view
     }
@@ -196,11 +201,16 @@ struct WorkspaceView: WebRepresentable {
     """
 
     func makeNSView(context: Context) -> WKWebView { makeWebView(context) }
-    func updateNSView(_ view: WKWebView, context: Context) {}
+    func updateNSView(_ view: WKWebView, context: Context) {
+        view.setAccessibilityHidden(isObscured)
+    }
     static func dismantleNSView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #else
     func makeUIView(context: Context) -> WKWebView { makeWebView(context) }
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        view.accessibilityElementsHidden = isObscured
+        view.isUserInteractionEnabled = !isObscured
+    }
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
 }
@@ -261,6 +271,18 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private let endpoint: Endpoint
     private let ready: () -> Void
     weak var workspace: WKWebView?
+    #if os(iOS)
+    private var backgroundObservation: NSKeyValueObservation?
+
+    func observeBackground(of view: WKWebView, onChange: @escaping @MainActor @Sendable (Color) -> Void) {
+        backgroundObservation = view.observe(\.underPageBackgroundColor, options: [.initial, .new]) { [weak view] _, _ in
+            Task { @MainActor in
+                guard let view else { return }
+                onChange(Color(uiColor: view.underPageBackgroundColor))
+            }
+        }
+    }
+    #endif
     private let browser = IntegratedBrowser()
     private var nativeAudio: AnyObject?
     private var externalLinks = ExternalLinkHandoff()
@@ -275,15 +297,18 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var noticeConfirmation: CheckedContinuation<Bool, Never>?
     private weak var noticeAlert: UIAlertController?
     #endif
-    private let reportError: (String) -> Void
+    private let reportError: (WorkspaceProblem) -> Void
 
-    init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (String) -> Void) {
+    init(endpoint: Endpoint, ready: @escaping () -> Void, reportError: @escaping (WorkspaceProblem) -> Void) {
         self.endpoint = endpoint
         self.ready = ready
         self.reportError = reportError
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(nativeNoticeChanged), name: WorkspaceNotifications.changed, object: nil
         )
         #if os(macOS)
         NotificationCenter.default.addObserver(
@@ -302,13 +327,23 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             decisionHandler(.allow)
             return
         }
-        if action.targetFrame?.isMainFrame != false { handOffExternalNavigation(action, from: webView) }
+        if action.targetFrame?.isMainFrame == true && !hasCommittedWorkspace {
+            reportError(.denied)
+        } else if action.targetFrame?.isMainFrame != false {
+            handOffExternalNavigation(action, from: webView)
+        }
         decisionHandler(.cancel)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        guard let url = response.response.url else { return .cancel }
-        return endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) ? .allow : .cancel
+        guard let url = response.response.url,
+              endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) else { return .cancel }
+        if response.isForMainFrame, let http = response.response as? HTTPURLResponse,
+           let problem = WorkspaceProblem(response: http.statusCode) {
+            reportError(problem)
+            return .cancel
+        }
+        return .allow
     }
 
     func webView(
@@ -533,6 +568,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
     #endif
 
+    @objc private func nativeNoticeChanged() {
+        guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-notification-permissions-changed'))")
+    }
+
     @objc private func nativeNoticeOpened() {
         guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('hz:native-notice'))") { _, _ in }
@@ -592,6 +632,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         if workspace === view { workspace = nil }
         documentRevision &+= 1
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
+        NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.changed, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(
             forName: "heinzelExternalLink", contentWorld: .defaultClient
@@ -602,6 +643,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
+        backgroundObservation?.invalidate()
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
         #endif
@@ -634,7 +676,23 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         endProvisionalLoad(navigation)
-        ready()
+        if endpoint.origin.scheme == "https", endpoint.token == nil {
+            let revision = documentRevision
+            Task {
+                // A host installed before native onboarding may show its desktop command on a fresh phone.
+                // Inspect only whether this workspace has credentials. Keep their values inside WebKit.
+                let needsSignIn = try? await webView.evaluateJavaScript("""
+                    document.getElementById('root') !== null &&
+                    !sessionStorage.getItem('hz.token') && !localStorage.getItem('hz.device') &&
+                    !new URLSearchParams(location.hash.slice(1)).has('token')
+                    """) as? Bool
+                guard workspace === webView, revision == documentRevision else { return }
+                if needsSignIn == true { reportError(.signIn) }
+                else { ready() }
+            }
+        } else {
+            ready()
+        }
         #if DEBUG
         Task {
             for _ in 0..<30 {
@@ -675,7 +733,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         #endif
         stopAudio()
         browser.reset()
-        reportError("The workspace closed unexpectedly. Reconnect to open it again.")
+        reportError(.interrupted)
     }
 
     private func pageFailed(_ error: Error) {
@@ -683,8 +741,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorCancelled { return }
         // WebKit reports a cancelled policy decision as a frame load interruption. The previous
         // workspace remains visible when a cross-origin redirect or external handoff is denied.
-        if hasCommittedWorkspace, failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
-        ready()
-        reportError("The workspace could not load. Check that the server is running and reachable.")
+        if failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
+        reportError(WorkspaceProblem(navigationError: error))
     }
 }

@@ -61,7 +61,8 @@ SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: the logo, not an app icon."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
 """The built-in theme's logo (ADR 0044): the swarm as its mark, and wordmarks made from it."""
-COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": SWARM}
+APPLE_CREW = ROOT / "apple" / "App" / "Assets.xcassets" / "HeinzelCrew.imageset" / "HeinzelCrew.svg"
+COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": SWARM, APPLE_CREW: SWARM}
 """Byte-for-byte copies of the artwork, for what can't reach it where it is."""
 WORDMARKS = {"wordmark-light.svg": ("light", "#263b32"), "wordmark-dark.svg": ("dark", "#e9ede5")}
 """The built-in theme's wordmarks: the background each is for, and the name's colour on it."""

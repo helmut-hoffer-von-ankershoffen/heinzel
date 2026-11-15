@@ -13,7 +13,7 @@ hide:
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Heinzels draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
+<p class="hz-lead">Durable agents accelerating product teams, like the little elves from Cologne. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
 [Install Heinzelmännchen ↗](guides/install.md){ .hz-button }

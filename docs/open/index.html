@@ -4,10 +4,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Open Heinzelmännchen</title>
+<style>
+  :root {
+    color: #283a30;
+    color-scheme: light;
+    font: 100% system-ui, sans-serif;
+    background: radial-gradient(ellipse at 50% 30%, #fffbf1, #f0e6d4);
+    min-height: 100%;
+  }
+  body {
+    min-height: 100svh;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 1.5rem;
+    display: grid;
+    place-items: center;
+  }
+  main { width: min(100%, 27rem); text-align: center; }
+  img { display: block; width: 6.5rem; height: 6.5rem; margin: 0 auto 1rem; }
+  h1 { font: 600 clamp(1.8rem, 6vw, 2.6rem)/1.1 Georgia, serif; margin: 0; }
+  h1::after {
+    content: "";
+    display: block;
+    width: 2.5rem;
+    height: 1px;
+    margin: 1.25rem auto;
+    background: #bf8b72;
+  }
+  p { line-height: 1.5; margin: 0 0 1rem; }
+  #destination { overflow-wrap: anywhere; font-weight: 600; }
+  #launch {
+    display: inline-grid;
+    place-items: center;
+    min-height: 2.75rem;
+    padding: 0.25rem 1.15rem;
+    border-radius: 0.65rem;
+    background: #30483a;
+    color: #fffdf6;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  #launch[hidden] { display: none; }
+  #launch:focus-visible { outline: 2px solid #93462e; outline-offset: 4px; }
+  #help { color: #49594e; }
+</style>
 <main>
+  <img src="../assets/website/mark.svg" alt="" width="104" height="104">
   <h1>Open Heinzelmännchen</h1>
+  <p>Durable agents accelerating product teams, like the little elves from Cologne.</p>
   <p id="destination" hidden></p>
-  <p><a id="launch" hidden>Open in Heinzelmännchen</a></p>
+  <p id="action" hidden><a id="launch">Open Workspace</a></p>
   <p id="help">Open this page from a shared workspace link.</p>
 </main>
 <script>
@@ -23,8 +69,8 @@
     destination.textContent = server.origin;
     destination.hidden = false;
     launch.href = "heinzel://connect?" + new URLSearchParams({ server: server.origin });
-    launch.hidden = false;
-    help.textContent = "Install Heinzelmännchen on this device to open the workspace.";
+    document.getElementById("action").hidden = false;
+    help.textContent = "If Heinzel is installed, tap Open Workspace to continue in the app.";
   } catch {}
 </script>
 </html>

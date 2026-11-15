@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { isIOS } from "@/lib/browser";
 
 const KEY = "hz.notifications";
+const NATIVE_PERMISSION_EVENT = "heinzel-notification-permissions-changed";
 const listeners = new Set<() => void>();
 
 export type DesktopState = "unsupported" | "install" | "off" | "on" | "denied";
@@ -110,6 +111,7 @@ function subscribe(listener: () => void) {
   listeners.add(listener);
   if (listeners.size === 1 && nativeNotices()) {
     window.addEventListener("focus", refreshNativeState);
+    window.addEventListener(NATIVE_PERMISSION_EVENT, refreshNativeState);
     document.addEventListener("visibilitychange", refreshNativeState);
     refreshNativeState();
   }
@@ -117,6 +119,7 @@ function subscribe(listener: () => void) {
     listeners.delete(listener);
     if (listeners.size === 0) {
       window.removeEventListener("focus", refreshNativeState);
+      window.removeEventListener(NATIVE_PERMISSION_EVENT, refreshNativeState);
       document.removeEventListener("visibilitychange", refreshNativeState);
     }
   };

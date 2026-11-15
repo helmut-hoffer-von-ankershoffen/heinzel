@@ -13,7 +13,7 @@ DESCRIPTION = (
 )
 TAIL = DESCRIPTION.removeprefix("Heinzelmännchen is an ")  # fields that already name the project drop the subject
 TAGLINE = "Less busywork. More good work."
-DESCRIPTOR = "Heinzels accelerating product teams"
+DESCRIPTOR = "Durable agents accelerating product teams, like the little elves from Cologne."
 
 
 def read(name: str) -> str:
@@ -38,9 +38,15 @@ def test_tagline_is_the_hero_of_pypi_and_the_home_page():
     assert "Less busywork.<br>More good work." in read("docs/README.md")
 
 
-def test_descriptor_is_the_manifest_description_and_the_cli_tagline():
+def test_descriptor_is_consistent_across_public_surfaces():
     assert f'"description": "{DESCRIPTOR}"' in read("web/public/manifest.webmanifest")
     assert f'TAGLINE = "{DESCRIPTOR}"' in read("src/heinzel/heads/cli/_branding.py")
+    assert DESCRIPTOR in read("docs/README.md")
+    assert DESCRIPTOR in read("docs/BRANDING.md")
+    first, _, second = DESCRIPTOR.partition(", ")
+    translations = read("web/src/i18n.ts")
+    assert f'"status.tagline": "{first},"' in translations
+    assert f'"status.origin": "{second}"' in translations
 
 
 @pytest.mark.parametrize("name", ["README.md", "PYPI.md", "docs/README.md", "docs/CATALOG.md", "docs/VISION.md"])

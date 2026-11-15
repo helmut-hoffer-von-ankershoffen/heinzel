@@ -6,6 +6,7 @@ import UserNotifications
 final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = WorkspaceNotifications()
     static let opened = Notification.Name("heinzelWorkspaceNoticeOpened")
+    static let changed = Notification.Name("heinzelWorkspaceNoticeChanged")
 
     private let center = UNUserNotificationCenter.current()
     private let preference = "heinzelNativeNotificationWorkspaces"
@@ -48,6 +49,7 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
         if !choice {
             if authorizing == key { authorizationCancelled = true }
             enabled.remove(key)
+            NotificationCenter.default.post(name: Self.changed, object: nil)
             return await status(for: endpoint)
         }
         guard authorizing == nil, !enabled.contains(key) else { return await status(for: endpoint) }
@@ -60,6 +62,7 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
         if (try? await center.requestAuthorization(options: [.alert])) == true,
            !authorizationCancelled, workspaceIsCurrent() {
             enabled.insert(key)
+            NotificationCenter.default.post(name: Self.changed, object: nil)
         }
         return await status(for: endpoint)
     }

@@ -106,7 +106,10 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     app = FastAPI(
         title="Heinzelmännchen",
         version=__version__,
-        description="Heinzels accelerating product teams. Every endpoint is also a `hz` command.",
+        description=(
+            "Durable agents accelerating product teams, like the little elves from Cologne. "
+            "Every endpoint is also a `hz` command."
+        ),
         docs_url="/docs" if docs and credentials is None else None,
         redoc_url="/redoc" if docs and credentials is None else None,
         # Middleware verifies the credential; this dependency describes its header in authenticated OpenAPI.

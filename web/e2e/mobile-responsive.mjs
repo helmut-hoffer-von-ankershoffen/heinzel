@@ -39,7 +39,7 @@ const cases = [
 assert.ok(
   section === "all" ||
     section === "phone" ||
-    ["updates-actions", "share-chromium", "share-webkit"].includes(section) ||
+    ["updates-actions", "share-chromium", "share-webkit", "native-layout"].includes(section) ||
     cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
 );
@@ -405,6 +405,50 @@ async function updateActionTargets() {
 }
 
 try {
+  if (section === "native-layout") {
+    const page = await browser.newPage({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true });
+    await page.addInitScript(() => {
+      window.heinzelDesktop = { mobileWorkspace: true };
+    });
+    await page.goto(url);
+    await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
+    await page.locator("#splash").waitFor({ state: "hidden" });
+    const trigger = page.getByRole("button", { name: "Open navigation", exact: true });
+    const drawer = page.locator("dialog.mobile-navigation");
+    for (const [name, width, height] of [
+      ["iphone-portrait", 430, 932],
+      ["iphone-landscape", 956, 440],
+      ["ipad-narrow", 820, 1180],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await trigger.waitFor();
+      await page.waitForFunction(() => {
+        const main = document.querySelector("main");
+        return main && main.getBoundingClientRect().width >= innerWidth - 2;
+      });
+      await viewportFacts(page, name);
+      for (const action of await page.locator(".workspace-topbar button:visible").all())
+        await assertTouchTarget(action, "Compact workspace action", name);
+    }
+    await trigger.click();
+    await drawer.waitFor();
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Open navigation");
+    await trigger.click();
+    await drawer.getByRole("link", { name: "Team roster", exact: true }).click();
+    await drawer.waitFor({ state: "hidden" });
+    assert.equal(new URL(page.url()).pathname, "/team");
+    await page.getByRole("button", { name: "More workspace actions" }).click();
+    await page.getByRole("menuitem", { name: "Open calendar" }).click();
+    await page.getByRole("tab", { name: "Calendar", exact: true }).waitFor();
+    await page.setViewportSize({ width: 1366, height: 1024 });
+    await trigger.waitFor({ state: "hidden" });
+    await page.locator('[data-placement="beside"]').waitFor();
+    result.nativeLayout = { compact: true, widePad: true, navigation: true, calendar: true };
+    await page.close();
+  }
+
   if (section === "all" || section === "updates-actions") {
     stage("updates-actions");
     result.updateActions = await updateActionTargets();
