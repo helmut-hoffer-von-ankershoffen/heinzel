@@ -18,7 +18,7 @@ from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens, require_reachable_only_as_asked
 from heinzel.kernel._logging import record_fields
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 
 BASE = "http://127.0.0.1:8765"
 
