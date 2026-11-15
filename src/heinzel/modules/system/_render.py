@@ -13,10 +13,13 @@ from rich.text import Text
 from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
 from heinzel.modules.system._plugin_standing import standing
 
-try:
+if TYPE_CHECKING:
     from heinzel.modules.system._models import ToolReference
-except ImportError:  # an hz updated in place renders its update with its older, loaded models, which lack this one
-    ToolReference = Any  # type: ignore[assignment,misc]
+else:
+    try:
+        from heinzel.modules.system._models import ToolReference
+    except ImportError:  # an hz updated in place renders its update with its older, loaded models, which lack this one
+        ToolReference = Any
 
 if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
     from heinzel.modules.system._models import AutomaticUpdates, UpdatePlan
