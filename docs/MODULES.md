@@ -40,7 +40,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
-| [`system.writes`](#systemwrites) | See what agents changed, and allow a plugin's writes to run without asking. |
+| [`system.write`](#systemwrite) | See what agents changed, and allow a plugin's writes to run without asking. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`ui`](#ui) | Open the web workspace or manage its optional persistent service. |
 
@@ -535,15 +535,15 @@ Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
 
 Health checks: reported by `hz system doctor`.
 
-## `system.writes`
+## `system.write`
 
 See what agents changed, and allow a plugin's writes to run without asking.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the writes agents asked for: what ran, what waited for you, and a line per agent. | `hz system writes list` | — | — | `GET /api/system/writes/list` |  | expert |
-| List the plugin operations that ask to run directly for agents, and whether you allowed them. | `hz system writes plugins` | — | — | `GET /api/system/writes/plugins` |  | expert |
-| Allow the writes a plugin marks direct to run without asking, as its installed version declares them. | `hz system writes allow` | — | — | `POST /api/system/writes/allow` | yes | expert |
+| List the writes agents asked for: what ran, what waited for you, and a line per agent. | `hz system write list` | — | — | `GET /api/system/write/list` |  | expert |
+| List the plugin operations that ask to run directly for agents, and whether you allowed them. | `hz system write plugins` | — | — | `GET /api/system/write/plugins` |  | expert |
+| Allow the writes a plugin marks direct to run without asking, for its installed version. | `hz system write allow` | — | — | `POST /api/system/write/allow` | yes | expert |
 
 Health checks: reported by `hz system doctor`.
 

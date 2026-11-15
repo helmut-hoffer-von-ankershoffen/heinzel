@@ -34457,10 +34457,10 @@
         ]
       }
     },
-    "/system/writes/allow": {
+    "/system/write/allow": {
       "post": {
-        "description": "Allow the writes a plugin marks direct to run without asking, as its installed version declares them.",
-        "operationId": "system_writes_allow",
+        "description": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
+        "operationId": "system_write_allow",
         "parameters": [
           {
             "description": "The plugin, e.g. `crm` or `heinzel-crm`.",
@@ -34508,16 +34508,16 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Allow the writes a plugin marks direct to run without asking, as its installed version declares them.",
+        "summary": "Allow the writes a plugin marks direct to run without asking, for its installed version.",
         "tags": [
           "system"
         ]
       }
     },
-    "/system/writes/list": {
+    "/system/write/list": {
       "get": {
         "description": "List the writes agents asked for: what ran, what waited for you, and a line per agent.",
-        "operationId": "system_writes_list",
+        "operationId": "system_write_list",
         "parameters": [
           {
             "description": "Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`.",
@@ -34590,10 +34590,10 @@
         ]
       }
     },
-    "/system/writes/plugins": {
+    "/system/write/plugins": {
       "get": {
         "description": "List the plugin operations that ask to run directly for agents, and whether you allowed them.",
-        "operationId": "system_writes_plugins",
+        "operationId": "system_write_plugins",
         "responses": {
           "200": {
             "content": {

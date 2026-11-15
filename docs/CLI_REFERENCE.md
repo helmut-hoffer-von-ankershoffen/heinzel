@@ -2219,7 +2219,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `ui`: (expert) List what modules add to the web...
 * `uninstall`: Uninstall the verified Heinzel tool...
 * `update`: Update Heinzelmännchen, every plugin and...
-* `writes`: (expert) See what agents changed, and...
+* `write`: (expert) See what agents changed, and...
 
 ### `hz system agent`
 
@@ -4920,14 +4920,14 @@ $ hz system update [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz system writes`
+### `hz system write`
 
 (expert) See what agents changed, and allow a plugin&#x27;s writes to run without asking.
 
 **Usage**:
 
 ```console
-$ hz system writes [OPTIONS] COMMAND [ARGS]...
+$ hz system write [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -4940,14 +4940,14 @@ $ hz system writes [OPTIONS] COMMAND [ARGS]...
 * `list`: (expert) List the writes agents asked for:...
 * `plugins`: (expert) List the plugin operations that...
 
-#### `hz system writes allow`
+#### `hz system write allow`
 
-(expert) Allow the writes a plugin marks direct to run without asking, as its installed version declares them.
+(expert) Allow the writes a plugin marks direct to run without asking, for its installed version.
 
 **Usage**:
 
 ```console
-$ hz system writes allow [OPTIONS] {plugin}
+$ hz system write allow [OPTIONS] {plugin}
 ```
 
 **Arguments**:
@@ -4961,14 +4961,14 @@ $ hz system writes allow [OPTIONS] {plugin}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-#### `hz system writes list`
+#### `hz system write list`
 
 (expert) List the writes agents asked for: what ran, what waited for you, and a line per agent.
 
 **Usage**:
 
 ```console
-$ hz system writes list [OPTIONS]
+$ hz system write list [OPTIONS]
 ```
 
 **Options**:
@@ -4980,14 +4980,14 @@ $ hz system writes list [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-#### `hz system writes plugins`
+#### `hz system write plugins`
 
 (expert) List the plugin operations that ask to run directly for agents, and whether you allowed them.
 
 **Usage**:
 
 ```console
-$ hz system writes plugins [OPTIONS]
+$ hz system write plugins [OPTIONS]
 ```
 
 **Options**:

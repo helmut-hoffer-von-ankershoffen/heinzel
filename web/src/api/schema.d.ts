@@ -4684,7 +4684,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/system/writes/allow": {
+    "/system/write/allow": {
         parameters: {
             query?: never;
             header?: never;
@@ -4694,17 +4694,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Allow the writes a plugin marks direct to run without asking, as its installed version declares them.
-         * @description Allow the writes a plugin marks direct to run without asking, as its installed version declares them.
+         * Allow the writes a plugin marks direct to run without asking, for its installed version.
+         * @description Allow the writes a plugin marks direct to run without asking, for its installed version.
          */
-        post: operations["system_writes_allow"];
+        post: operations["system_write_allow"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/system/writes/list": {
+    "/system/write/list": {
         parameters: {
             query?: never;
             header?: never;
@@ -4715,7 +4715,7 @@ export interface paths {
          * List the writes agents asked for: what ran, what waited for you, and a line per agent.
          * @description List the writes agents asked for: what ran, what waited for you, and a line per agent.
          */
-        get: operations["system_writes_list"];
+        get: operations["system_write_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4724,7 +4724,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/system/writes/plugins": {
+    "/system/write/plugins": {
         parameters: {
             query?: never;
             header?: never;
@@ -4735,7 +4735,7 @@ export interface paths {
          * List the plugin operations that ask to run directly for agents, and whether you allowed them.
          * @description List the plugin operations that ask to run directly for agents, and whether you allowed them.
          */
-        get: operations["system_writes_plugins"];
+        get: operations["system_write_plugins"];
         put?: never;
         post?: never;
         delete?: never;
@@ -25753,7 +25753,7 @@ export interface operations {
             };
         };
     };
-    system_writes_allow: {
+    system_write_allow: {
         parameters: {
             query: {
                 /** @description The plugin, e.g. `crm` or `heinzel-crm`. */
@@ -25787,7 +25787,7 @@ export interface operations {
             };
         };
     };
-    system_writes_list: {
+    system_write_list: {
         parameters: {
             query?: {
                 /** @description Only this agent, e.g. `token:k1a2b3` or `heinzel:<session>`. */
@@ -25823,7 +25823,7 @@ export interface operations {
             };
         };
     };
-    system_writes_plugins: {
+    system_write_plugins: {
         parameters: {
             query?: never;
             header?: never;

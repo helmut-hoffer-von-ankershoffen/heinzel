@@ -15,10 +15,10 @@ from rich.text import Text
 
 from heinzel import Check, Module, Status
 from heinzel.kernel import AgentWriteLog
-from heinzel.modules.system.writes._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
-from heinzel.modules.system.writes._service import WriteLog
+from heinzel.modules.system.write._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
+from heinzel.modules.system.write._service import WriteLog
 
-module = Module("writes", "See what agents changed, and allow a plugin's writes to run without asking.")
+module = Module("write", "See what agents changed, and allow a plugin's writes to run without asking.")
 module.service(WriteLog)
 module.service(AgentWriteLog, WriteLog)  # the kernel's chat tools and the MCP head record and ask through it
 
@@ -77,7 +77,7 @@ def health(service: WriteLog) -> list[Check]:
                 name="unwatched writes",
                 status=Status.UP,
                 detail=f"{count} writes ran in the last 24 hours in turns nobody watched; "
-                "see them with `hz system writes list --unattended`.",
+                "see them with `hz system write list --unattended`.",
             )
         )
     for step in service.plugin_writes().next:
@@ -87,7 +87,7 @@ def health(service: WriteLog) -> list[Check]:
                 name=f"direct writes of {plugin}",
                 status=Status.UP,
                 detail=f"{plugin} asks to run some writes for agents without asking you. Until you allow it they "
-                f"are proposed: `hz system writes plugins`, then `{step}`.",
+                f"are proposed: `hz system write plugins`, then `{step}`.",
             )
         )
     return checks
@@ -118,7 +118,7 @@ def allow(
     plugin: Annotated[str, Field(description="The plugin, e.g. `crm` or `heinzel-crm`.")],
     revoke: Annotated[bool, Field(description="Take the allowance back: its writes are proposed again.")] = False,
 ) -> PluginWrites:
-    """Allow the writes a plugin marks direct to run without asking, as its installed version declares them."""
+    """Allow the writes a plugin marks direct to run without asking, for its installed version."""
     return service.allow(plugin, revoke=revoke)
 
 

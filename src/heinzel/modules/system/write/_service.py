@@ -22,7 +22,7 @@ from heinzel import HeinzelError, Kernel
 from heinzel.kernel import AgentWriteLog, ByArguments, Caller, OperationLet, declared_agent_writes
 from heinzel.kernel._agent_writes import AgentWrites as Policy
 from heinzel.kernel._agent_writes import WriteOutcome, arguments_digest, reaches_people, target_of
-from heinzel.modules.system.writes._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
+from heinzel.modules.system.write._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
 
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
@@ -217,7 +217,7 @@ class WriteLog(AgentWriteLog):
             for plugin, module, operation in self._asking()
         ]
         waiting = sorted({write.plugin for write in writes if not write.allowed and not write.capped})
-        return PluginWrites(writes=writes, next=[f"hz system writes allow {plugin}" for plugin in waiting])
+        return PluginWrites(writes=writes, next=[f"hz system write allow {plugin}" for plugin in waiting])
 
     def allow(self, plugin: str, *, revoke: bool) -> PluginWrites:
         """Allow every direct write the installed version of `plugin` asks for, or take the allowance back.
@@ -231,7 +231,7 @@ class WriteLog(AgentWriteLog):
         if revoke:
             allowed.pop(name, None)
         elif not asking:
-            msg = f"No installed plugin named {name} asks to run a write directly; see `hz system writes plugins`."
+            msg = f"No installed plugin named {name} asks to run a write directly; see `hz system write plugins`."
             raise HeinzelError(msg)
         else:
             allowed[name] = sorted(asking)

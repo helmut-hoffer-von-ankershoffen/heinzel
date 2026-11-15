@@ -1,4 +1,4 @@
-"""The owner's record of agents' writes and their yes for a plugin's direct writes (system.writes, ADR 0162)."""
+"""The owner's record of agents' writes and their yes for a plugin's direct writes (system.write, ADR 0162)."""
 
 import json
 import stat
@@ -20,10 +20,10 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._agent_writes import arguments_digest
 from heinzel.kernel._chat_tools import write_log, write_policy
-from heinzel.modules.system import writes
+from heinzel.modules.system import write
 from heinzel.modules.system.runner.chat._service import ChatService
-from heinzel.modules.system.writes import WriteLog, health, render_plugins, render_writes
-from heinzel.modules.system.writes._service import KEEP, TRIM_BYTES
+from heinzel.modules.system.write import WriteLog, health, render_plugins, render_writes
+from heinzel.modules.system.write._service import KEEP, TRIM_BYTES
 
 pytestmark = pytest.mark.unit
 
@@ -149,7 +149,7 @@ def test_the_digest_counts_what_ran_with_nobody_watching(kernel, log):
     digest = next(check for check in health(log) if check.name == "unwatched writes")
     assert digest.status is Status.UP  # a note for the owner, never a fault
     assert "1 writes ran" in digest.detail
-    assert "hz system writes list --unattended" in digest.detail
+    assert "hz system write list --unattended" in digest.detail
     assert "(unwatched)" in text(render_writes(listed))
     assert "No agent has asked" in text(render_writes(type(listed)()))
 
@@ -178,10 +178,10 @@ def test_a_plugins_direct_write_is_proposed_until_the_owner_allows_the_plugin(ke
         ("heinzel-crm", "create", False, False),
         ("heinzel-crm", "send", False, True),
     ]
-    assert listed.next == ["hz system writes allow heinzel-crm"]
+    assert listed.next == ["hz system write allow heinzel-crm"]
     waiting = next(check for check in health(log) if check.name == "direct writes of heinzel-crm")
     assert waiting.status is Status.UP
-    assert "hz system writes allow heinzel-crm" in waiting.detail
+    assert "hz system write allow heinzel-crm" in waiting.detail
     assert "proposed" in text(render_plugins(listed))
 
     allowed = log.allow("crm", revoke=False)
@@ -225,12 +225,12 @@ def test_a_damaged_allowance_file_allows_nothing(kernel, log, tmp_path):
 def test_allowing_names_a_plugin_that_asks(kernel, log):
     with pytest.raises(HeinzelError, match="asks to run a write directly"):
         log.allow("clock", revoke=False)
-    assert log.allow("clock", revoke=True).next == ["hz system writes allow heinzel-crm"]  # nothing to take back
+    assert log.allow("clock", revoke=True).next == ["hz system write allow heinzel-crm"]  # nothing to take back
     assert "No installed plugin asks" in text(render_plugins(type(log.plugin_writes())()))
 
 
 def test_the_record_and_the_yes_are_the_owners_and_no_agents(kernel):
-    lets = {let.name: let for let in writes.module.lets if isinstance(let, OperationLet)}
+    lets = {let.name: let for let in write.module.lets if isinstance(let, OperationLet)}
     assert set(lets) == {"list", "plugins", "allow"}
     for let in lets.values():
         assert let.heads == {"cli", "web"}

@@ -265,7 +265,7 @@ _PROCESS_SALT: Final = secrets.token_bytes(16)
 
 
 class AgentWriteLog:
-    """What the owner sees and allows of agents' writes; a module provides a subclass (`system.writes`).
+    """What the owner sees and allows of agents' writes; a module provides a subclass (`system.write`).
 
     A base class rather than a protocol, so the kernel injects it by type. Without a provider nothing is recorded
     and no plugin write is acknowledged, which is the strict side.
