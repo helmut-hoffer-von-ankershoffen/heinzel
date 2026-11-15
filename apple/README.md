@@ -21,7 +21,14 @@ In notification settings, choose **Notify me on this device**. Heinzel confirms 
 
 In the local macOS workspace, system audio uses a private Core Audio tap and macOS audio recording permission. On iOS/iPadOS 27 or later, it uses the system ScreenCaptureKit picker where available. iOS Simulator builds omit system audio because their SDK does not expose ScreenCaptureKit. The microphone uses WebKit’s permission prompt in the workspace.
 
-Electron also offers **Workspace audio**. That source still needs an implementation for the Apple app. The iPhone and iPad ScreenCaptureKit picker filters audio at application scope, so it cannot isolate the workspace from the Browser panel. See [Apple’s capture-filter guidance](https://developer.apple.com/videos/play/wwdc2022/10155/).
+Electron also offers **Workspace audio**, which is still unavailable in Swift. In a macOS 27.0.1 playback probe,
+a standard WebKit workspace view and a separate nonpersistent Browser view in Lockdown Mode used the same Core Audio
+output process. Each view played a different test tone. Core Audio reported the same process with either view playing
+alone and with both playing, whichever started first. A process tap would include both views.
+See [Apple’s Core Audio tap documentation](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps).
+
+On iPhone and iPad, the ScreenCaptureKit picker filters audio at app scope, so selecting the workspace cannot exclude
+the Browser panel. See [Apple’s capture-filter guidance](https://developer.apple.com/videos/play/wwdc2022/10155/).
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `CODE_SIGN_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
