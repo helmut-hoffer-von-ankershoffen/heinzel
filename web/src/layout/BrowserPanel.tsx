@@ -23,7 +23,7 @@ type BrowserTab = {
   /** The person took this agent tab over: the agent's calls wait until Hand back. */
   paused?: boolean;
   /** An outside agent's commit that waits for the person: the sentence naming the action and its target. */
-  commit?: { summary: string } | null;
+  commit?: { summary: string; id: string } | null;
 };
 /** The person's own tabs per window, as the desktop enforces. */
 const MAX_TABS = 8;
@@ -181,6 +181,10 @@ export function BrowserPanel({
   const closeTab = (id: string) => void request({ action: "close-tab", tab: id });
   // The selected tab when an agent opened it: the bar and the commit card are about this tab only.
   const agentTab = tabs.find((tab) => tab.id === selectedId && tab.agent);
+  // An answer names the card that is on screen, by its id: the desktop refuses it for any other card on that tab.
+  const answer = (action: "commit-approve" | "commit-refuse") => {
+    if (agentTab?.commit) void request({ action, tab: agentTab.id, commit: agentTab.commit.id });
+  };
   // The listener is bound once per panel state and always calls the latest handler.
   const shortcut = useRef<(event: KeyboardEvent) => void>(() => {});
   shortcut.current = (event) => {
@@ -490,19 +494,10 @@ export function BrowserPanel({
                   {agentTab.commit.summary}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void request({ action: "commit-refuse", tab: agentTab.id })}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => answer("commit-refuse")}>
                 {t("browser.commitDecline")}
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void request({ action: "commit-approve", tab: agentTab.id })}
-              >
+              <Button type="button" size="sm" onClick={() => answer("commit-approve")}>
                 {t("browser.commitApprove")}
               </Button>
             </section>

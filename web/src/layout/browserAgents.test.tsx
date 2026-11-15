@@ -42,14 +42,18 @@ it("asks the desktop for its tabs while the panel is closed, and follows them", 
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "tabs" }));
   tabs = [agent];
   await waitFor(() => expect(result.current.mark).toBe("active"));
-  tabs = [{ ...agent, id: "t-000000aa", commit: { summary: "Click" } }];
+  tabs = [{ ...agent, id: "t-000000aa", commit: { summary: "Click", id: "a".repeat(16) } }];
   await waitFor(() => expect(result.current.mark).toBe("waiting"));
   const card = result.current.waiting;
-  expect(card).toEqual({ tab: "t-000000aa", name: "Ada", summary: "Click" });
+  expect(card).toEqual({ tab: "t-000000aa", card: "a".repeat(16), name: "Ada", summary: "Click" });
   // The same card stays the same object over the next polls, so it is acted on once.
   const polls = browser.mock.calls.length;
   await waitFor(() => expect(browser.mock.calls.length).toBeGreaterThan(polls + 1));
   expect(result.current.waiting).toBe(card);
+  // The next card on the same tab with the very same sentence is another card.
+  tabs = [{ ...agent, id: "t-000000aa", commit: { summary: "Click", id: "b".repeat(16) } }];
+  await waitFor(() => expect(result.current.waiting?.card).toBe("b".repeat(16)));
+  expect(result.current.waiting).not.toBe(card);
   tabs = [];
   await waitFor(() => expect(result.current).toEqual({ mark: "none", waiting: null }));
   // Only ever a read of the tab strip: nothing here opens, selects or answers.
@@ -119,9 +123,12 @@ it("the Browser button carries a mark while an agent has a tab, also with the pa
 
 it("names the waiting card's tab, agent and sentence; a person's tab never has one", () => {
   expect(waitingCommitOf(undefined)).toBeNull();
-  expect(waitingCommitOf([agent, { id: "t-00000001", commit: { summary: "Click" } }])).toBeNull();
-  expect(waitingCommitOf([{ ...agent, id: "t-000000aa", commit: { summary: "Click" } }])).toEqual({
+  expect(waitingCommitOf([agent, { id: "t-00000001", commit: { summary: "Click", id: "c".repeat(16) } }])).toBeNull();
+  // A card without an id cannot be answered, so it is not brought to the person as one.
+  expect(waitingCommitOf([{ ...agent, id: "t-000000aa", commit: { summary: "Click" } }])).toBeNull();
+  expect(waitingCommitOf([{ ...agent, id: "t-000000aa", commit: { summary: "Click", id: "c".repeat(16) } }])).toEqual({
     tab: "t-000000aa",
+    card: "c".repeat(16),
     name: "Ada",
     summary: "Click",
   });
@@ -129,6 +136,7 @@ it("names the waiting card's tab, agent and sentence; a person's tab never has o
 
 const CARD: WaitingCommit = {
   tab: "t-000000aa",
+  card: "a".repeat(16),
   name: "ci-bot",
   summary: 'Click button "Buy now" on shop.example.com',
 };
@@ -178,7 +186,7 @@ it("a commit that waits while the browser panel is closed opens the panel on tha
   expect(show).toHaveBeenCalledTimes(2);
   // The next card is a new one.
   rerender({ waiting: null, open: false });
-  rerender({ waiting: { ...CARD, summary: 'Click button "Pay"' }, open: false });
+  rerender({ waiting: { ...CARD, card: "b".repeat(16), summary: 'Click button "Pay"' }, open: false });
   expect(show).toHaveBeenCalledTimes(3);
   expect(shown).toHaveLength(2);
 });
@@ -238,3 +246,28 @@ it("the PWA opens nothing and pops up nothing, whatever it is told", () => {
   expect(show).not.toHaveBeenCalled();
   expect(created).not.toHaveBeenCalled();
 });
+
+it("a new card with the same sentence on the same tab opens the panel and notifies again", async () => {
+  const { shown, show } = attention();
+  let tabs = [{ ...agent, id: "t-000000aa", commit: { summary: "Click", id: "a".repeat(16) } }];
+  const browser = vi.fn(async (_request: Record<string, unknown>) => ({ status: "ready", tabs }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  renderHook(() => useCommitAttention(useBrowserAgents(20).waiting, false, show));
+  await waitFor(() => expect(show).toHaveBeenCalledTimes(1));
+  expect(shown).toHaveLength(1);
+  // Several polls of the same card change nothing.
+  const polls = sent(browser).length;
+  await waitFor(() => expect(sent(browser).length).toBeGreaterThan(polls + 1));
+  expect(show).toHaveBeenCalledTimes(1);
+  // Card A timed out and the agent asked again at once, in the same words: no poll saw the tab without a card.
+  tabs = [{ ...agent, id: "t-000000aa", commit: { summary: "Click", id: "b".repeat(16) } }];
+  await waitFor(() => expect(show).toHaveBeenCalledTimes(2));
+  expect(shown.map((notification) => notification.options?.tag)).toEqual([
+    `hz-commit-${"a".repeat(16)}`,
+    `hz-commit-${"b".repeat(16)}`,
+  ]);
+});
+
+function sent(browser: ReturnType<typeof vi.fn>) {
+  return browser.mock.calls.filter(([request]) => (request as { action?: string }).action === "tabs");
+}

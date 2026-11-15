@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n";
 import { desktopState } from "@/notifications/desktop";
 
-type AgentTab = { id?: string; agent?: { name: string; kind: string } | null; commit?: { summary: string } | null };
+type AgentTab = {
+  id?: string;
+  agent?: { name: string; kind: string } | null;
+  commit?: { summary: string; id?: string } | null;
+};
 type Browser = (request: Record<string, unknown>) => Promise<{ tabs?: AgentTab[] }>;
 
 /** What the toolbar's Browser button says about agents: one is using a tab, or one waits for the person's answer. */
 export type BrowserAgents = "none" | "active" | "waiting";
 /** The agent tab whose commit card waits for the person. */
-export type WaitingCommit = { tab: string; name: string; summary: string };
+export type WaitingCommit = { tab: string; card: string; name: string; summary: string };
 
 function desktopBrowser(): Browser | undefined {
   const browser = (window as Window & { heinzelDesktop?: { browser?: Browser } }).heinzelDesktop?.browser;
@@ -24,8 +28,12 @@ export function browserAgentsOf(tabs: readonly AgentTab[] | undefined): BrowserA
 
 /** The first agent tab with a commit card, or null. A person's tab never has one. */
 export function waitingCommitOf(tabs: readonly AgentTab[] | undefined): WaitingCommit | null {
-  const tab = (tabs ?? []).find((entry) => entry.agent && entry.commit && typeof entry.id === "string");
-  return tab?.agent && tab.commit && tab.id ? { tab: tab.id, name: tab.agent.name, summary: tab.commit.summary } : null;
+  const tab = (tabs ?? []).find(
+    (entry) => entry.agent && typeof entry.commit?.id === "string" && typeof entry.id === "string",
+  );
+  return tab?.agent && tab.commit?.id && tab.id
+    ? { tab: tab.id, card: tab.commit.id, name: tab.agent.name, summary: tab.commit.summary }
+    : null;
 }
 
 /**
@@ -45,9 +53,10 @@ export function useBrowserAgents(intervalMs = 2000): { mark: BrowserAgents; wait
           if (!live) return;
           setMark(browserAgentsOf(state?.tabs));
           const next = waitingCommitOf(state?.tabs);
-          // The same card keeps the same object, so it is acted on once.
+          // The same card (by its id) keeps the same object, so it is acted on once; the next card, also one
+          // with the same sentence on the same tab, is a new one.
           setWaiting((previous) =>
-            previous && next && previous.tab === next.tab && previous.summary === next.summary ? previous : next,
+            previous && next && previous.tab === next.tab && previous.card === next.card ? previous : next,
           );
         })
         .catch(() => {});
@@ -81,7 +90,7 @@ export function useCommitAttention(waiting: WaitingCommit | null, shown: boolean
     if (!away || desktopState() !== "on") return;
     try {
       const notification = new Notification(t("browser.commitNotice", { name: waiting.name }), {
-        tag: `hz-commit-${waiting.tab}`,
+        tag: `hz-commit-${waiting.card}`,
       });
       notification.onclick = () => {
         window.focus();

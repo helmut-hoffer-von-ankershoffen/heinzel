@@ -352,7 +352,7 @@ function agentBridge(kind = "heinzel", name = "Ada") {
     url: "https://shop.example.com/",
     title: "Shop",
     paused: false,
-    commit: null as { summary: string } | null,
+    commit: null as { summary: string; id: string } | null,
   };
   const mine = {
     id: "t-00000001",
@@ -449,7 +449,7 @@ it("the person's own tab has no agent bar and no commit card", async () => {
         status: "ready",
         url: "https://shop.example.com/",
         title: "Shop",
-        commit: { summary: 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)' },
+        commit: { summary: 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)', id: "c".repeat(16) },
       },
     ],
   }));
@@ -470,7 +470,7 @@ it.each([
   async (button, action) => {
     const { browser, tab } = agentBridge("external", "ci-bot");
     const summary = 'Click button "Buy now" on shop.example.com (browser tab t-000000aa)';
-    tab.commit = { summary };
+    tab.commit = { summary, id: "a".repeat(16) };
     render(<BrowserPanel active onClose={vi.fn()} />);
     const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
     expect(card).toHaveAccessibleDescription(summary);
@@ -483,7 +483,7 @@ it.each([
     expect(sent(browser, "commit-approve")).toEqual([]);
     expect(sent(browser, "commit-refuse")).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: button }));
-    expect(sent(browser, action)).toEqual([{ action, tab: tab.id }]);
+    expect(sent(browser, action)).toEqual([{ action, tab: tab.id, commit: "a".repeat(16) }]);
     expect(sent(browser, action === "commit-approve" ? "commit-refuse" : "commit-approve")).toEqual([]);
     await waitFor(() => expect(screen.queryByRole("region", { name: /asks for your yes/ })).toBeNull());
   },
@@ -510,3 +510,69 @@ it("the panel's help says that some websites forbid automated use of an account,
   render(<BrowserPanel active onClose={vi.fn()} />);
   expect(screen.queryByText(sentence)).toBeNull();
 });
+
+it.each([
+  ["Approve", "commit-approve"],
+  ["Decline", "commit-refuse"],
+])(
+  "%s on a card that is no longer the tab's card, or clicked twice, never answers the next card",
+  async (button, action) => {
+    // The desktop as it is: an answer counts only for the card it names; then the agent's next card is there at once.
+    const cardA = { summary: 'Click button "More" on shop.example.com', id: "a".repeat(16) };
+    const cardB = { summary: 'Click button "Pay 900" on shop.example.com', id: "b".repeat(16) };
+    let current: typeof cardA | null = cardA;
+    const answered: string[] = [];
+    const state = () => ({
+      status: "ready",
+      url: "https://shop.example.com/",
+      selected: "t-000000aa",
+      tabs: [
+        {
+          id: "t-000000aa",
+          owner: "agent:ci-bot",
+          agent: { name: "ci-bot", kind: "external" },
+          selected: true,
+          status: "ready",
+          url: "https://shop.example.com/",
+          title: "Shop",
+          commit: current,
+        },
+      ],
+    });
+    let hold: Promise<void> | null = null;
+    const browser = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.action === "commit-approve" || request.action === "commit-refuse") {
+        if (request.commit !== current?.id) throw new Error("Unknown tab.");
+        answered.push(`${request.action}:${request.commit}`);
+        current = cardB;
+        // The panel does not hear of card B yet: its answer is still on the way.
+        if (hold) await hold;
+      }
+      return state();
+    });
+    Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+    render(<BrowserPanel active onClose={vi.fn()} />);
+    const card = await screen.findByRole("region", { name: "ci-bot asks for your yes:" });
+    expect(card).toHaveAccessibleDescription(cardA.summary);
+    let release = () => {};
+    hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    // A double click on the card the person read: both clicks name card A.
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    release();
+    await waitFor(() => expect(sent(browser, action)).toHaveLength(2));
+    expect(sent(browser, action).map((request) => request.commit)).toEqual([cardA.id, cardA.id]);
+    expect(answered).toEqual([`${action}:${cardA.id}`]);
+    // Card B is still waiting, unanswered, and it is what the panel shows next.
+    expect(current).toBe(cardB);
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /asks for your yes/ })).toHaveAccessibleDescription(cardB.summary),
+    );
+    // Now the person reads B: only this click names B.
+    hold = null;
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    await waitFor(() => expect(answered).toEqual([`${action}:${cardA.id}`, `${action}:${cardB.id}`]));
+  },
+);
