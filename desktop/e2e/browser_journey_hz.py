@@ -109,12 +109,15 @@ def first_turn() -> Script:
     report["type_password"] = yield "type", {"tab": tab, "ref": password, "text": "not-a-real-secret"}
     report["click_hover_swap"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show delivery times")}
     report["click_press_swap"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show opening hours")}
+    report["click_banner"] = yield "click", {"tab": tab, "ref": ref_of(page, "button", "Show the menu")}
     race = []
+    wait_for_the_person("try-0", "try-0-seen")  # the journey notes the page's events before the first try
     for attempt in range(RACE_TRIES):  # the page shows a frame of another site a moment after the pointer arrives
         name = "Show prices today" if attempt % 2 == 0 else "Show prices tomorrow"
         answer = yield "click", {"tab": tab, "ref": ref_of(page, "button", name)}
         race.append(answer)
-        time.sleep(0.8)  # the page takes its frame away again
+        # The journey notes what this try left on the page; meanwhile the page takes its frame away again.
+        wait_for_the_person(f"try-{attempt + 1}", f"try-{attempt + 1}-seen")
     report["race"] = race
     card_tab = tab_of((yield "open", {"url": SHOP + "/card"}))
     card = yield "read", {"tab": card_tab}

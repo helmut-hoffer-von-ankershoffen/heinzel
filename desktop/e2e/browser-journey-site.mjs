@@ -21,7 +21,9 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 <style>body{font:16px system-ui;margin:24px}button,input,label{font:inherit;display:block;margin:8px 0}
 .zone{position:relative;width:280px;height:64px;margin:12px 0}.zone button{width:280px;height:64px;margin:0}
 .zone iframe{position:absolute;left:0;top:0;width:280px;height:64px;border:0;visibility:hidden}
-.zone.swapped iframe{visibility:visible}</style></head><body>${body}
+.zone.swapped iframe{visibility:visible}
+.zone .banner{position:absolute;left:0;top:0;width:280px;height:64px;background:#fd6;visibility:hidden}
+.zone.swapped .banner{visibility:visible}</style></head><body>${body}
 <script>{
 const tell = (kind) => fetch("/event", { method: "POST", body: kind, keepalive: true }).catch(() => {});
 for (const element of document.querySelectorAll("[data-watch]"))
@@ -49,6 +51,8 @@ const SHOP_PAGE = page("Tea shop", `<h1>Tea shop</h1>
 <iframe title="Times" src="https://${WIDGET}/widget?zone=hover"></iframe></div>
 <div class="zone" id="press"><button type="button" data-watch="press">Show opening hours</button>
 <iframe title="Times" src="https://${WIDGET}/widget?zone=press"></iframe></div>
+<div class="zone" id="banner"><button type="button" data-watch="banner">Show the menu</button>
+<div class="banner">Fresh tea this week</div></div>
 <div class="zone" id="race-a"><button type="button" data-watch="race-a">Show prices today</button>
 <iframe title="Times" src="https://${WIDGET}/widget?zone=race-a"></iframe></div>
 <div class="zone" id="race-b"><button type="button" data-watch="race-b">Show prices tomorrow</button>
@@ -63,6 +67,8 @@ const swap = (zone) => {
 };
 document.querySelector("#hover button").addEventListener("mousemove", () => swap("hover"));
 document.querySelector("#press button").addEventListener("mousedown", () => swap("press"));
+// The ordinary case on an ordinary page: something of the page's own, here a banner, covers the button on the press.
+document.querySelector("#banner button").addEventListener("mousedown", () => swap("banner"));
 // The race: a moment after the pointer arrives the frame is shown, so that a press may land inside it; each try
 // waits a little longer, and the frame leaves again for the next one.
 const waits = ${JSON.stringify(RACE_WAITS)};
