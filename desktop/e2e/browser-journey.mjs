@@ -14,7 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
-import { RACE_TRIES, RACE_WAITS, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
+import { RACE_TRIES, RACE_WAITS, SEAM_EVERY, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
 
 const journey = process.argv[2];
 // Under the virtual display each journey notes how many raced presses landed inside the other site's frame; `tally`
@@ -66,7 +66,7 @@ let stopped = false, launchAttempted = false;
 // What the run found, for its last line: the tab's viewport with the panel closed and open, and the race's outcome.
 // Diagnostic: the answers of the outside agent's first calls, printed when a journey fails.
 const trace = [];
-const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [], personClicks: 0, personPaused: null, pointClicks: 0 };
+const found = { closed: null, shown: null, raceShown: 0, raceInFrame: 0, raceClicks: 0, strayClicks: 0, strayTargets: [], personClicks: 0, personPaused: null, pointClicks: 0, seam: [] };
 
 // Why a call was refused, as the product words it; a refusal for any other reason (an unknown ref or tab) is a failure.
 const REASONS = {
@@ -112,9 +112,11 @@ const heard = () => ({
   strays: site.starting("stray:click:"), orders: site.state.orders.length, send: site.starting("send:"),
   inFrame: site.countOf("widget-race-", "pointerdown"),
 });
+/** The same, with how often the seam has held a press so far: the snapshot taken around every raced try. */
+const note = async () => ({ ...heard(), seam: (await kept("seam")).split("\n").filter(Boolean).length });
 // A raced try takes its turn slowly enough that an agent's calls stay under a minute's limit, however many tries.
 const TRY_PAUSE = 1300;
-/** For the run's last line: what each try ended as, by the page's wait. C clicked, c covered, x called off, u not confirmed, F pressed in the frame. */
+/** For the run's last line: what each try ended as, by the page's wait. C clicked, c covered, x called off, u not confirmed, F pressed in the frame; S marks a try whose press the seam held. */
 const raceLine = [];
 /**
  * One raced try against what it added to the page. Answered as clicked: exactly one click, on its own button, and no
@@ -129,7 +131,11 @@ function checkTry(attempt, answer, before, after) {
   // A press that landed inside the other site's frame can never be answered as clicked.
   const inFrame = after.inFrame - before.inFrame;
   assert.ok(inFrame === 0 || !ran(answer), `Try ${attempt + 1} pressed inside the frame and was answered as clicked: ${answer}`);
-  raceLine.push(`${RACE_WAITS[attempt]}${inFrame ? "F" : ran(answer) ? "C" : refused(answer, "covered") ? "c" : refused(answer, "unconfirmed") ? "u" : "x"}`);
+  // A press that the seam held until the other site's frame was drawn can never be answered as clicked either.
+  const held = after.seam - before.seam;
+  assert.ok(held <= 1, `Try ${attempt + 1} had its press held ${held} times.`);
+  assert.ok(held === 0 || !ran(answer), `Try ${attempt + 1} pressed with the other site's frame drawn over its button and was answered as clicked: ${answer}`);
+  raceLine.push(`${held ? "S" : ""}${RACE_WAITS[attempt]}${inFrame ? "F" : ran(answer) ? "C" : refused(answer, "covered") ? "c" : refused(answer, "unconfirmed") ? "u" : "x"}`);
   if (ran(answer)) assert.deepEqual({ clicks, strays }, { clicks: 1, strays: 0 }, `Try ${attempt + 1} was answered as clicked: ${answer}`);
   else {
     assert.equal(clicks, 0, `Try ${attempt + 1} was not answered as clicked, so its button must not be clicked: ${answer}`);
@@ -195,6 +201,7 @@ function api(page, method, path, { query = {}, body } = {}) {
 const panel = (page, request) => withTimeout(page.evaluate((command) => window.heinzelDesktop.browser(command), request),
   30_000, `The browser panel did not answer ${request.action}.`);
 const agentTabs = async (page) => (await panel(page, { action: "tabs" })).tabs.filter((tab) => tab.agent);
+const kept = async (name) => { try { return await readFile(join(root, name), "utf8"); } catch { return ""; } };
 const signal = (name) => writeFile(join(root, "sync", name), "done\n", { mode: 0o600 });
 /** Wait until the scripted model says it is at `name`; a turn that ended before that fails with its own reason. */
 async function signalled(name, message, running) {
@@ -275,8 +282,14 @@ async function assertInputs(tab, race) {
   found.raceInFrame = site.countOf("widget-race-", "pointerdown");
   found.raceClicks = site.count("race-a:click") + site.count("race-b:click");
   assert.equal(race.filter(ran).length, found.raceClicks, "Every raced click that ran, and no other, clicked its button.");
-  // Whether a press lands inside the frame is a matter of milliseconds: the count is noted, and `tally` requires at
-  // least one across both journeys. What must hold in every try is checked right here.
+  // The seam's tries: the engine's own press was held until the page had shown and drawn its frame of the other site.
+  const seamed = (await kept("seam")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  found.seam = seamed.map((use) => `${use.zone} ${use.waited} ms`);
+  assert.ok(seamed.length > 0 && seamed.length <= Math.ceil(RACE_TRIES / SEAM_EVERY), `The seam must have held the press of tries that are its own, and of no other: ${found.seam.join(", ")}`);
+  // Under the virtual display those presses land inside the frame, in each journey; `tally` adds the two up. In a
+  // window that is never shown they reach the frame's element in this document instead. Either way the frame got no
+  // release and no click, which is checked right here for every try.
+  if (visible) assert.ok(found.raceInFrame > 0, `With the frame drawn before the press, at least one press must land inside it: ${found.seam.join(", ")}`);
   // What a called-off press must never do (ADR 0162, safety 3 and 5.5):
   // 1. The frame of the other site gets no release and no click, whichever try put a press into it.
   assert.equal(site.countOf("widget-", "mouseup") + site.countOf("widget-", "click"), 0,
@@ -356,7 +369,7 @@ async function heinzelJourney(page, origin) {
   for (let mark = 0; mark <= RACE_TRIES; mark += 1) {
     await signalled(`try-${mark}`, `The Heinzel never reached raced try ${mark}.`, running);
     await delay(TRY_PAUSE);
-    notes.push(heard());
+    notes.push(await note());
     await signal(`try-${mark}-seen`);
   }
   const first = await running;
@@ -528,11 +541,11 @@ async function mcpJourney(page, origin) {
   assert.equal(site.count("note:click"), 3, "The click at a point must reach the button that is there.");
   const race = [];
   for (let attempt = 0; attempt < RACE_TRIES; attempt += 1) {
-    const before = heard();
+    const before = await note();
     const answer = await agent.call("click", { tab, ref: refOf(read, "button", attempt % 2 ? "Show prices tomorrow" : "Show prices today") });
     race.push(answer);
     await delay(TRY_PAUSE);  // the page takes its frame away again, and the try's events are in
-    checkTry(attempt, answer, before, heard());
+    checkTry(attempt, answer, before, await note());
   }
   // The page opens an alert and a confirm on this click; the next call must still be answered, and soon.
   const began = Date.now();
@@ -663,7 +676,6 @@ try {
     throw error;
   }
   assertNothingElseDialled();
-  const kept = async (name) => { try { return await readFile(join(root, name), "utf8"); } catch { return ""; } };
   assert.notEqual(await kept("proxy-calls"), "", "The product must have configured its guests' network itself; the fixture only answers in its place.");
   assert.equal(await kept("dialogs"), "", "No native question may have been asked.");
   assert.equal(await kept("public-media"), "", "Nothing may have been handed to the system's browser.");
@@ -683,7 +695,7 @@ try {
   console.log(`Browser journey "${journey}" passed: read with refs, typed, clicked, the commit waited for the person, ` +
     "swapped targets, secret fields and non-public addresses were refused, and Stop ended the agent's actions. " +
     `Tab viewport before the person opened the panel: ${JSON.stringify(found.closed)}, after: ${JSON.stringify(found.shown)}. ` +
-    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}. Tries by the page's wait in ms: ${raceLine.join(" ")}. The person's own click after a called-off press: ${found.personClicks ? `went through, tab paused by it: ${found.personPaused}` : "not part of this journey"}.`);
+    `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}. Tries by the page's wait in ms: ${raceLine.join(" ")}. Seam (the engine's press held until the frame was drawn): ${found.seam.join(", ")}. The person's own click after a called-off press: ${found.personClicks ? `went through, tab paused by it: ${found.personPaused}` : "not part of this journey"}.`);
 } finally {
   site?.close();
   await cleanupHarness({

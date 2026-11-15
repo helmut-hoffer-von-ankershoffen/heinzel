@@ -34,7 +34,8 @@ and the only site is a fixture on loopback, served to the guest under two made-u
 so nothing reaches the network. It checks reading with refs, typing, an ordinary click, a form submit that waits for
 the person, a click let go when the page swaps its target, refused password and card fields, refused non-public
 addresses, and Stop. The Heinzel works in a tab that is never shown, which must have a real size all the same; for the
-outside agent the person opens the panel on its tab. The run's last line says what size the tab had. A press that lands inside a frame of another site's
+outside agent the person opens the panel on its tab. The run's last line says what size the tab had. On every third raced try the journey's own bootstrap holds the engine's press until the page has drawn its frame
+of the other site, so that case does not depend on luck; it changes no command and records each use. A press that lands inside a frame of another site's
 process can only be raced in a really shown window, so that part runs on Linux under Xvfb, in a container without
 network. Commit the head first (after a rebase too), since the image is built from the commit:
 `git archive --format=tar HEAD | docker build -f desktop/e2e/browser-journey.Dockerfile -t hz-browser-journey -`,

@@ -15,10 +15,12 @@ const ZONES = ["hover", "press", "race-a", "race-b"];
 /** Milliseconds between the pointer's arrival and the frame's appearance, one per raced try. */
 // The press follows the pointer by the few milliseconds the engine's checks take, so the band is walked twice.
 const RACE_BAND = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
-// Under the virtual display the race is the proof that a press can land inside the frame at all, and that is rare:
-// the frame must be shown after the engine's last look and be on screen before the press. So the band is walked six
-// times there, and twice elsewhere.
-export const RACE_WAITS = Array.from({ length: process.env.HZ_JOURNEY_VISIBLE === "1" ? 6 : 2 }, () => RACE_BAND).flat();
+// The band is walked twice. A press that lands inside the frame by the page's own timing is rare: the frame must be
+// shown after the engine's last look and be on screen before the press. So every third try is left to the journey's
+// seam (browser-journey-bootstrap.mjs), which holds the engine's own press until the frame is on screen.
+export const RACE_WAITS = [...RACE_BAND, ...RACE_BAND];
+/** A try whose number divides by this is the seam's: the page itself shows no frame on it. */
+export const SEAM_EVERY = 3;
 export const RACE_TRIES = RACE_WAITS.length;
 
 const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>
@@ -92,6 +94,24 @@ document.querySelector("#banner button").addEventListener("mousedown", () => swa
 // waits a little longer, and the frame leaves again for the next one.
 const waits = ${JSON.stringify(RACE_WAITS)};
 let tries = 0;
+// The journey's seam asks this just before the engine's press goes out. Where the point is on a raced button whose try
+// is the seam's, the page shows that button's frame of the other site, waits until it has been drawn (two pictures;
+// a tab that draws none waits a moment instead) and says so. Anywhere else it does nothing.
+const seam = new Map();
+window.__journeySeam = async (x, y) => {
+  const hit = document.elementFromPoint(x, y);
+  const box = hit ? hit.closest(".zone") : null;
+  if (!box || !seam.has(box.id) || box.classList.contains("swapped")) return null;
+  const attempt = seam.get(box.id);
+  seam.delete(box.id);
+  const began = performance.now();
+  box.classList.add("swapped");
+  tell(box.id + ":shown");
+  const drawn = new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  await Promise.race([drawn, new Promise((done) => setTimeout(done, 150))]);
+  setTimeout(() => box.classList.remove("swapped"), 700);
+  return { attempt: attempt + 1, zone: box.id, waited: Math.round(performance.now() - began) };
+};
 for (const zone of ["race-a", "race-b"]) {
   const box = document.getElementById(zone);
   let busy = false;
@@ -107,6 +127,7 @@ for (const zone of ["race-a", "race-b"]) {
       setTimeout(() => { box.classList.remove("swapped"); busy = false; }, 700);
     };
     const attempt = tries;
+    if (attempt % ${SEAM_EVERY} === 0) { tries += 1; busy = false; seam.set(zone, attempt); return; }
     setTimeout(() => {
       if (attempt % 4 >= 2 && document.visibilityState === "visible") { requestAnimationFrame(show); setTimeout(show, 40); } else show();
     }, waits[tries++]);

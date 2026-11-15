@@ -63,4 +63,23 @@ session.fromPartition = (partition, options) => {
   return guest;
 };
 
+// The journey's seam, test-only: it makes the one case certain that the page's own timing wins only by chance, a
+// press that lands inside a frame shown after the engine's last look. Just before the engine's own press goes to a
+// guest, the fixture page is asked whether that point is its to cover; if so the page shows its frame and waits until
+// it is drawn. Then the engine's press is passed on exactly as it came. Nothing else is touched: no command is
+// changed, dropped or added, and every use is recorded.
+app.on("web-contents-created", (_event, contents) => {
+  if (!prepared.has(contents.session)) return;
+  const wire = contents.debugger;
+  const send = wire.sendCommand.bind(wire);
+  wire.sendCommand = async (method, params, ...rest) => {
+    if (method === "Input.dispatchMouseEvent" && params?.type === "mousePressed" && Number.isFinite(params.x) && Number.isFinite(params.y)) {
+      const used = await contents.executeJavaScript(
+        `typeof window.__journeySeam === "function" ? window.__journeySeam(${params.x}, ${params.y}) : null`).catch(() => null);
+      if (used) record("seam", JSON.stringify(used));
+    }
+    return send(method, params, ...rest);
+  };
+});
+
 await import("./real-backend-bootstrap.mjs");
