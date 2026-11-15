@@ -25,6 +25,9 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 .zone .banner{position:absolute;left:0;top:0;width:280px;height:64px;background:#fd6;visibility:hidden}
 .zone.swapped .banner{visibility:visible}</style></head><body>${body}
 <script>{
+// Every page of the shop asks before it is left. Sending the order leaves one, closing the card's tab another, and
+// Stop closes the last: none of that may wait on anyone.
+window.addEventListener("beforeunload", (event) => { event.preventDefault(); event.returnValue = "Leave the shop?"; });
 const tell = (kind) => fetch("/event", { method: "POST", body: kind, keepalive: true }).catch(() => {});
 for (const element of document.querySelectorAll("[data-watch]"))
   for (const type of ["mousedown", "mouseup", "click"])
@@ -68,8 +71,6 @@ const swap = (zone) => {
 };
 document.querySelector("#hover button").addEventListener("mousemove", () => swap("hover"));
 document.querySelector("#press button").addEventListener("mousedown", () => swap("press"));
-// A page that asks before it is left: sending the order leaves it, and that must not wait on anyone either.
-window.addEventListener("beforeunload", (event) => { event.preventDefault(); event.returnValue = "Leave the shop?"; });
 // A page that opens its own dialogs while the agent acts: none may leave the page or the agent waiting, and none
 // may be answered with a yes that no person gave.
 document.querySelector("[data-watch=dialog]").addEventListener("click", () => {
