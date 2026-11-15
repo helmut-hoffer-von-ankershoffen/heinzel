@@ -184,13 +184,18 @@ struct ExternalLinkHandoff {
 
     mutating func clearActivation() { activatedAt = nil }
 
+    mutating func consumeActivation(at time: ContinuousClock.Instant = .now) -> Bool {
+        let activation = activatedAt
+        clearActivation()
+        return activation.map { $0.duration(to: time) <= .seconds(1) } ?? false
+    }
+
     mutating func take(
         _ value: String, from endpoint: Endpoint, needsActivation: Bool, at time: ContinuousClock.Instant = .now
     ) -> URL? {
         guard let target = ExternalLink.destination(value), !endpoint.owns(target) else { return nil }
-        let activation = activatedAt
-        clearActivation()
-        if needsActivation, !(activation.map { $0.duration(to: time) <= .seconds(1) } ?? false) { return nil }
+        let activated = consumeActivation(at: time)
+        if needsActivation, !activated { return nil }
         if let openedAt, openedAt.duration(to: time) < .seconds(2) { return nil }
         openedAt = time
         return target

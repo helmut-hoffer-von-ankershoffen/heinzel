@@ -30,6 +30,9 @@ struct WorkspaceView: WebRepresentable {
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .page, name: "heinzelBrowser"
         )
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelNotices"
+        )
         var audioMember = ""
         #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), offersSystemAudio {
@@ -87,8 +90,9 @@ struct WorkspaceView: WebRepresentable {
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
+                const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) browser, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ \(chrome) browser, notices, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,
@@ -256,10 +260,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var externalLinks = ExternalLinkHandoff()
     private var provisionalLoad = ProvisionalLoad.idle
     private var hasCommittedWorkspace = false
+    private var documentRevision = 0
     #if os(macOS)
     private weak var observedWindow: NSWindow?
     private var mouseMonitor: Any?
     private var dragLayout: TitleBarDragLayout?
+    #else
+    private var noticeConfirmation: CheckedContinuation<Bool, Never>?
+    private weak var noticeAlert: UIAlertController?
     #endif
     private let reportError: (String) -> Void
 
@@ -268,6 +276,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         self.ready = ready
         self.reportError = reportError
         super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
+        )
         #if os(macOS)
         NotificationCenter.default.addObserver(
             self, selector: #selector(menuAction), name: WorkspaceMenuAction.notification, object: nil
@@ -341,8 +352,16 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             replyHandler(true, nil)
             return
         }
+        if message.name == "heinzelNotices", (message.body as? [String: Any])?["action"] as? String == "enable" {
+            guard case .idle = provisionalLoad, verifiedWorkspace(for: message) != nil,
+                  externalLinks.consumeActivation() else {
+                replyHandler(nil, "Choose notifications in workspace settings")
+                return
+            }
+        }
+        let revision = documentRevision
         Task {
-            let (value, error) = await handle(message)
+            let (value, error) = await handle(message, at: revision)
             replyHandler(value, error)
         }
     }
@@ -354,8 +373,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         return workspace
     }
 
-    private func handle(_ message: WKScriptMessage) async -> (Any?, String?) {
+    private func handle(_ message: WKScriptMessage, at revision: Int) async -> (Any?, String?) {
         guard let workspace = verifiedWorkspace(for: message) else { return (nil, "Workspace command unavailable") }
+        if message.name == "heinzelNotices", let request = message.body as? [String: Any] {
+            guard revision == documentRevision, case .idle = provisionalLoad else {
+                return (nil, "Workspace command unavailable")
+            }
+            return (await handleNotice(request, in: workspace), nil)
+        }
         if message.name == "heinzelExternalLink" {
             guard let value = message.body as? String,
                   let target = externalLinks.take(value, from: endpoint, needsActivation: false) else { return (false, nil) }
@@ -418,6 +443,69 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         nativeAudio = nil
     }
 
+    private func handleNotice(_ request: [String: Any], in view: WKWebView) async -> Any? {
+        let notices = WorkspaceNotifications.shared
+        let revision = documentRevision
+        let current = { self.workspace === view && self.documentRevision == revision }
+        switch request["action"] as? String {
+        case "status": return await notices.status(for: endpoint)
+        case "enable":
+            return await notices.setEnabled(true, for: endpoint, workspaceIsCurrent: current) {
+                await confirmNotices(in: view)
+            }
+        case "disable":
+            return await notices.setEnabled(false, for: endpoint, workspaceIsCurrent: current) { false }
+        case "show": return await notices.show(request, for: endpoint, workspaceIsCurrent: current)
+        case "take": return notices.takeOpenedPath(for: endpoint)
+        default: return nil
+        }
+    }
+
+    private func confirmNotices(in view: WKWebView) async -> Bool {
+        let title = "Allow workspace notifications?"
+        let source = endpoint.origin.scheme == "http" ? "this Mac workspace" : endpoint.origin.absoluteString
+        let message = "Show notifications from \(source) on this device while Heinzel is open."
+        #if os(macOS)
+        guard let window = view.window, window.isKeyWindow, window.attachedSheet == nil else { return false }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Enable notifications")
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
+        #else
+        guard let window = view.window, window.isKeyWindow,
+              window.windowScene?.activationState == .foregroundActive,
+              let presenter = window.rootViewController, presenter.presentedViewController == nil else { return false }
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        return await withCheckedContinuation { continuation in
+            noticeConfirmation = continuation
+            noticeAlert = alert
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                self?.finishNoticeConfirmation(false)
+            })
+            alert.addAction(UIAlertAction(title: "Enable notifications", style: .default) { [weak self] _ in
+                self?.finishNoticeConfirmation(true)
+            })
+            presenter.present(alert, animated: true)
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    private func finishNoticeConfirmation(_ choice: Bool) {
+        let confirmation = noticeConfirmation
+        noticeConfirmation = nil
+        noticeAlert = nil
+        confirmation?.resume(returning: choice)
+    }
+    #endif
+
+    @objc private func nativeNoticeOpened() {
+        guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        workspace.evaluateJavaScript("window.dispatchEvent(new Event('hz:native-notice'))") { _, _ in }
+    }
+
     private func openExternal(_ target: URL) async -> Bool {
         #if os(macOS)
         NSWorkspace.shared.open(target)
@@ -470,6 +558,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func close(_ view: WKWebView) {
         if workspace === view { workspace = nil }
+        documentRevision &+= 1
+        NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(
             forName: "heinzelExternalLink", contentWorld: .defaultClient
         )
@@ -478,6 +569,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         NotificationCenter.default.removeObserver(self, name: WorkspaceMenuAction.notification, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
+        #else
+        noticeAlert?.dismiss(animated: false)
+        finishNoticeConfirmation(false)
         #endif
         stopAudio()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAudio", contentWorld: .page)
@@ -487,6 +581,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        documentRevision &+= 1
+        #if os(iOS)
+        noticeAlert?.dismiss(animated: false)
+        finishNoticeConfirmation(false)
+        #endif
         provisionalLoad = .loading(navigation)
         externalLinks.clearActivation()
         #if os(macOS)
@@ -523,6 +622,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         endProvisionalLoad(navigation)
         pageFailed(error)
+        nativeNoticeOpened()
     }
 
     private func endProvisionalLoad(_ navigation: WKNavigation?) {
@@ -534,6 +634,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        documentRevision &+= 1
         provisionalLoad = .idle
         hasCommittedWorkspace = false
         externalLinks.clearActivation()

@@ -6,6 +6,8 @@ struct HeinzelApp: App {
     @NSApplicationDelegateAdaptor(LocalService.self) private var service
     #endif
 
+    init() { WorkspaceNotifications.shared.install() }
+
     var body: some Scene {
         #if os(macOS)
         Window("Heinzelmännchen", id: "workspace") {

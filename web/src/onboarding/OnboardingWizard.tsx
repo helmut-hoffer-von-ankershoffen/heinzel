@@ -22,7 +22,7 @@ import { isLocalServer } from "@/lib/browser";
 import { DAEMON_INSTALL } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import { setDesktop, useDesktopState } from "@/notifications/desktop";
+import { nativeNotices, notificationStateKey, setDesktop, useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
 import {
   contractName,
@@ -512,7 +512,10 @@ function Notifications({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <div className="flex max-w-lg flex-col gap-5">
-      <Item title={t("onboarding.notifications.browser")} hint={t(`notify.state.${state}`)}>
+      <Item
+        title={t(nativeNotices() ? "notify.native.channel" : "onboarding.notifications.browser")}
+        hint={t(notificationStateKey(state))}
+      >
         <Button
           variant="outline"
           disabled={busy || state === "on" || state === "unsupported" || state === "install" || state === "denied"}
