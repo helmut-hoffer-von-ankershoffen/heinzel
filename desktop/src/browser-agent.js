@@ -8,6 +8,7 @@
  *
  * Commands and results (the bridge carries them, see browser-bridge.js). `?` marks an optional key.
  *   tabs       {}                                             -> {tabs: [{id, url, title, status, paused}]}
+ *              (a tab also carries `sized: false` while it is hidden and could not be given a viewport)
  *   open       {url?}                                         -> {id, url, title, status, paused}
  *   close      {tab}                                          -> {}
  *   navigate   {tab, url} or {tab, to: back|forward|reload}   -> {id, url, title, status, paused}
@@ -319,7 +320,10 @@ const ARGS = {
 export const COMMANDS = Object.freeze(Object.keys(ARGS));
 const NAVIGATIONS = new Set(["open", "navigate"]);
 // The commands that need the page laid out in a viewport.
-const SIZED = new Set(["navigate", "read", "text", "screenshot", "scroll", "describe", "click", "type", "key"]);
+const SIZED = new Set(["read", "text", "screenshot", "scroll", "describe", "click", "type", "key"]);
+// The commands that point at a place in the page: without a viewport they cannot work.
+const LAID_OUT = new Set(["scroll", "describe", "click"]);
+const SILENT = Symbol("silent");
 const hasOnly = (value, keys) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const COMMANDS_A_MINUTE = 240;
 const NAVIGATIONS_A_MINUTE = 20;
@@ -329,6 +333,9 @@ const MESSAGES = {
   stale: "The page changed, read it again.",
   never: "Only the person may type here: ask the person to take over.",
   url: "Only public HTTPS addresses can be opened.",
+  silent: "The page did not answer. Try again in a moment.",
+  blank: "This tab has no page yet. Navigate it to an address first.",
+  unsized: "This tab has no size while it is hidden, so nothing in it can be pointed at. Ask the person to open it in the browser panel.",
 };
 
 function checkArgs(command, args) {
@@ -352,9 +359,11 @@ function checkArgs(command, args) {
 
 /**
  * `tabs` is the mini browser's `agents` table. `window()` is the product window new agent tabs belong to, or null.
- * `loadMs` caps how long a navigation is waited for before the tab's state is returned as it is.
+ * `loadMs` caps how long a navigation is waited for before the tab's state is returned as it is. `firstMs` caps the
+ * first protocol call after the debugger attaches, `sizeMs` the whole attempt to give a hidden tab its viewport.
  */
-export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => Date.now() }) {
+export function createBrowserAgent({ tabs, window, loadMs = 15000, sizeMs = 3000, firstMs = 5000, now = () => Date.now(),
+  log = (line) => console.warn(line) }) {
   const salt = randomBytes(16).toString("hex");
   const pages = new WeakMap();
   const calls = new Map();
@@ -363,7 +372,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
   const pageOf = (guest) => {
     let page = pages.get(guest);
     if (page) return page;
-    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null };
+    page = { refs: new Map(), nodes: new Map(), named: new Map(), next: 1, document: 1, sized: null, unsized: false };
     pages.set(guest, page);
     // The person looks at the tab: it has its real size again at once, whether or not the agent calls again.
     guest.onShown = (shown) => { if (shown) void unsize(guest); };
@@ -385,6 +394,8 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     if (method === "Page.createIsolatedWorld" && (params.grantUniveralAccess || params.grantUniversalAccess))
       throw new BridgeError("failed", "That browser protocol method is not allowed.");
     if (!tabs.holds(id, guest)) throw new BridgeError("unknown_tab", "Unknown tab.");
+    // A guest that never loaded a page does not answer the protocol: a call to it would wait forever.
+    if (guest.blank) throw new BridgeError("failed", MESSAGES.blank);
     // Only the size of the view the tab has when it is shown, as a plain desktop page: no screen, position, scale or
     // viewport parameter, and never while the person looks at the tab.
     if (method === "Emulation.setDeviceMetricsOverride") {
@@ -400,7 +411,16 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       wire.attach("1.3");
       // An override ends with the session that set it.
       pageOf(guest).sized = null;
-      await wire.sendCommand("DOM.enable", {});
+      // The first call to a guest is the one that may never be answered: it gets a limit, and a guest that stays
+      // silent is let go again, so the next call starts afresh.
+      let timer;
+      const late = new Promise((resolve) => { timer = setTimeout(() => resolve(SILENT), firstMs); timer.unref?.(); });
+      let first;
+      try { first = await Promise.race([wire.sendCommand("DOM.enable", {}), late]); } finally { clearTimeout(timer); }
+      if (first === SILENT) {
+        try { wire.detach(); } catch { /* already gone */ }
+        throw new BridgeError("timeout", MESSAGES.silent);
+      }
     }
     return wire.sendCommand(method, params);
   };
@@ -426,6 +446,22 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       if (guest.agent && guest.view.webContents.debugger.isAttached()) await cdp(guest.agent.id, guest, "Emulation.clearDeviceMetricsOverride");
     });
   }
+  /**
+   * Give a hidden tab its viewport if that can be done, within `sizeMs`. Never before the tab's first page: a guest
+   * that has not loaded anything may not answer the protocol at all. A tab that cannot be sized is used as it is.
+   */
+  const fit = async (id, guest) => {
+    if (guest.blank) return;
+    const state = pageOf(guest);
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), sizeMs); timer.unref?.(); });
+    let outcome;
+    try { outcome = await Promise.race([quiet(() => size(id, guest)).then(() => "done"), late]); } finally { clearTimeout(timer); }
+    // Never silent: a hidden tab without a size says so in its state, refuses what needs a layout, and is logged.
+    const unsized = !guest.shown && !state.sized;
+    if (unsized && !state.unsized) log(JSON.stringify({ event: "browser.agent.unsized", tab: guest.id, reason: outcome === "timeout" ? "timeout" : "refused" }));
+    state.unsized = unsized;
+  };
   // The person takes a tab over or hands it back: it is theirs to look at, at its own size.
   tabs.listen(({ event, agent, tab }) => {
     if (event !== "take-over" && event !== "hand-back") return;
@@ -559,7 +595,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
     Promise.resolve(started).then(done, done);
   });
   const tabOf = (guest) => ({ id: guest.id, url: urlOf(guest), title: String(guest.view.webContents.getTitle?.() ?? "").slice(0, 200),
-    status: guest.status, paused: guest.paused });
+    status: guest.status, paused: guest.paused, ...(pages.get(guest)?.unsized ? { sized: false } : {}) });
   const page = (guest, content, limit) => ({ url: urlOf(guest), title: tabOf(guest).title, content: content.slice(0, limit),
     truncated: content.length > limit });
   const address = (value) => {
@@ -584,10 +620,15 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
         throw new BridgeError("failed", "The browser could not open a tab.");
       }
       pageOf(guest);
-      // The tab has a size before it loads its first page.
-      try { await size(who.id, guest); } catch (error) { await unsize(guest); throw error; }
-      if (url) await load(guest, url);
-      return tabOf(guest);
+      try {
+        // The page first, then its size: a guest that never loaded anything is not touched through the protocol.
+        if (url) { await load(guest, url); await fit(who.id, guest); }
+        return tabOf(guest);
+      } catch (error) {
+        // An open that fails leaves no tab behind.
+        await quiet(async () => tabs.close(who.id, guest.id));
+        throw error;
+      }
     },
     close: async (who, args) => { tabs.close(who.id, args.tab); return {}; },
     async navigate(who, args, guest) {
@@ -604,6 +645,7 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
           await done;
         }
       }
+      await fit(who.id, guest);
       return tabOf(guest);
     },
     async read(who, args, guest) {
@@ -803,7 +845,8 @@ export function createBrowserAgent({ tabs, window, loadMs = 15000, now = () => D
       pageOf(guest);
     }
     try {
-      if (guest && SIZED.has(command)) await size(who.id, guest);
+      if (guest && SIZED.has(command)) await fit(who.id, guest);
+      if (guest && LAID_OUT.has(command) && pageOf(guest).unsized) throw new BridgeError("failed", MESSAGES.unsized);
       const result = await run[command](who, args, guest);
       // The person may have taken over or stopped the agent while the call ran.
       if (guest && command !== "close" && tabs.stopped(who.id)) throw new BridgeError("stopped", MESSAGES.stopped);
