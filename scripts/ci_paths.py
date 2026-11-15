@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """The paths that are not CI: product code and its tests, which a head may change without separate hosted validation.

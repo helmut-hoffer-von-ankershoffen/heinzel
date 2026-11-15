@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Write scripts/release_policy.json: the release facts other tools read from this exact commit, all derived here.
