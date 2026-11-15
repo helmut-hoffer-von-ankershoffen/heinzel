@@ -30,6 +30,7 @@ final class ActivityCatalog {
         let generation: String
         var activation: Activation? = nil
         var revoked: Bool? = nil
+        var cleanup: Activation? = nil
     }
 
     /// Non-secret authority shared by the app and extension. Secrets stay in Keychain.
@@ -51,6 +52,7 @@ final class ActivityCatalog {
     }
 
     private static func authorityURL(for url: URL) -> URL { url.appendingPathExtension("authority") }
+    private static func secureModeURL(for url: URL) -> URL { url.appendingPathExtension("secure-mode") }
 
     struct ClearResult {
         let revoked: Bool
@@ -131,6 +133,9 @@ final class ActivityCatalog {
               parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
               parts.port.map({ (1...65535).contains($0) }) ?? true else { return nil }
         return withWriterLock(url: url, failure: nil) {
+            // This durable, non-secret marker prevents an absent or damaged
+            // authority from being interpreted as a legacy writable store.
+            guard writeAuthority(Data("1".utf8), secureModeURL(for: url)) else { return nil }
             let activation = Activation(id: UUID().uuidString, endpoint: endpoint,
                                         workspaceID: nil, credentialGeneration: nil)
             let next = Authority(scope: "", generation: UUID().uuidString, activation: activation)
@@ -142,10 +147,11 @@ final class ActivityCatalog {
     /// Install while fenced against switch/forget. A failed authority write leaves
     /// an unusable orphan in Keychain; no secret is put in the shared container.
     static func installCredential(url: URL, expected: Activation, workspaceID: String,
-                                  generation: String, install: () -> Bool) -> Activation? {
+                                  generation: String, install: () -> Bool,
+                                  write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority) -> Activation? {
         guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
               expected.workspaceID == nil || expected.workspaceID == workspaceID,
-              UUID(uuidString: generation) != nil else { return nil }
+              UUID(uuidString: generation) != nil, generation != expected.credentialGeneration else { return nil }
         return withWriterLock(url: url, failure: nil) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
@@ -154,7 +160,7 @@ final class ActivityCatalog {
                                   workspaceID: workspaceID, credentialGeneration: generation)
             let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
             guard let encoded = try? JSONEncoder().encode(authority),
-                  writeAuthority(encoded, authorityURL(for: url)) else { return nil }
+                  write(encoded, authorityURL(for: url)) else { return nil }
             return next
         }
     }
@@ -164,11 +170,16 @@ final class ActivityCatalog {
     static func invalidate(url: URL, expected: Activation, deleteCredential: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
-                  let current = try? JSONDecoder().decode(Authority.self, from: data),
-                  current.activation == expected else { return ClearResult(revoked: false, purged: false) }
-            let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true)
-            guard let encoded = try? JSONEncoder().encode(tombstone),
-                  writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else {
+                return ClearResult(revoked: false, purged: false)
+            }
+            if current.activation == expected {
+                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected)
+                guard let encoded = try? JSONEncoder().encode(tombstone),
+                      writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            } else if current.revoked != true || current.cleanup != expected {
+                return ClearResult(revoked: false, purged: false)
+            }
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false
             return ClearResult(revoked: true, purged: deleted && purged)
@@ -223,6 +234,8 @@ final class ActivityCatalog {
         guard let token = try? JSONDecoder().decode(WriterToken.self, from: expectedToken) else { return false }
         let previous = try? JSONDecoder().decode(Authority.self, from: token.authority)
         guard token.authority.isEmpty || previous != nil else { return false }
+        if FileManager.default.fileExists(atPath: Self.secureModeURL(for: databaseURL).path),
+           previous?.activation == nil { return false }
         guard previous?.revoked != true else { return false }
         if let activation = previous?.activation {
             guard let boundScope = activation.scope, boundScope == scope else { return false }
@@ -271,8 +284,17 @@ final class ActivityCatalog {
                       remove: (URL) -> Bool = ActivityCatalog.removeAuthority) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             let authority = authorityURL(for: url)
-            let tombstone = try? JSONEncoder().encode(Authority(scope: "", generation: UUID().uuidString))
-            let revoked = tombstone.map { write($0, authority) } == true || remove(authority)
+            let previousData = try? Data(contentsOf: authority)
+            let previous = previousData.flatMap { try? JSONDecoder().decode(Authority.self, from: $0) }
+            // Secure activations must retain their tombstone: deleting the authority
+            // would make a later writer look like an unconfigured legacy install.
+            let secure = FileManager.default.fileExists(atPath: secureModeURL(for: url).path) ||
+                previous?.activation != nil || previous?.revoked == true
+            let next = Authority(scope: "", generation: UUID().uuidString,
+                                 revoked: secure ? true : nil, cleanup: previous?.activation ?? previous?.cleanup)
+            let tombstone = try? JSONEncoder().encode(next)
+            let written = tombstone.map { write($0, authority) } == true
+            let revoked = written || (!secure && remove(authority))
             // Cleanup is independent: even if authority revocation failed, removing
             // every generation makes the previous authority resolve to no data.
             let purged = ActivityCatalog(url: url)?.purge() ?? false

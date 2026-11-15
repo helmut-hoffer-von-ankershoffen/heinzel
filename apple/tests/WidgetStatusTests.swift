@@ -64,6 +64,16 @@ struct WidgetStatusTests {
         let bound = ActivityCatalog.installCredential(url: url, expected: activation, workspaceID: workspace,
                                                       generation: UUID().uuidString, install: { true })!
         precondition(ActivityCatalog.activation(url: url) == bound)
+        var reusedInstallCalled = false
+        precondition(ActivityCatalog.installCredential(url: url, expected: bound, workspaceID: workspace,
+                    generation: bound.credentialGeneration!, install: { reusedInstallCalled = true; return true }) == nil)
+        precondition(!reusedInstallCalled)
+        var installedGeneration = bound.credentialGeneration!
+        let failedGeneration = UUID().uuidString
+        precondition(ActivityCatalog.installCredential(url: url, expected: bound, workspaceID: workspace,
+                    generation: failedGeneration, install: { installedGeneration = failedGeneration; return true },
+                    write: { _, _ in false }) == nil)
+        precondition(installedGeneration != ActivityCatalog.activation(url: url)?.credentialGeneration)
         let boundToken = ActivityCatalog.refreshToken(url: url)!
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: boundToken, catalogOverride: catalog))
@@ -72,6 +82,9 @@ struct WidgetStatusTests {
         let staleWriter = ActivityCatalog.refreshToken(url: url)!
         let result = ActivityCatalog.invalidate(url: url, expected: bound, deleteCredential: { false })
         precondition(result.revoked && !result.complete && catalog.snapshot() == nil)
+        precondition(ActivityCatalog.clear(url: url).complete)
+        let retry = ActivityCatalog.invalidate(url: url, expected: bound, deleteCredential: { true })
+        precondition(retry.complete)
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: bound.scope!, expectedToken: staleWriter, catalogOverride: catalog))
         let revokedToken = ActivityCatalog.refreshToken(url: url)!
@@ -86,6 +99,18 @@ struct WidgetStatusTests {
                     generation: UUID().uuidString, install: { staleInstallCalled = true; return true }) == nil)
         precondition(!staleInstallCalled)
         precondition(ActivityCatalog.activate(url: url, endpoint: "http://example.test") == nil)
+        var removed = false
+        let failedClear = ActivityCatalog.clear(url: url, write: { _, _ in false }, remove: { _ in removed = true; return true })
+        precondition(!failedClear.revoked && !removed)
+        precondition(ActivityCatalog.clear(url: url).complete)
+        precondition(ActivityCatalog.invalidate(url: url, expected: replacement, deleteCredential: { true }).complete)
+        let afterClear = ActivityCatalog.refreshToken(url: url)!
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: afterClear, catalogOverride: catalog))
+        try! FileManager.default.removeItem(at: url.appendingPathExtension("authority"))
+        let missingAuthority = ActivityCatalog.refreshToken(url: url)!
+        precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
+                                              workspaceScope: scope, expectedToken: missingAuthority, catalogOverride: catalog))
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")
     }
 }
