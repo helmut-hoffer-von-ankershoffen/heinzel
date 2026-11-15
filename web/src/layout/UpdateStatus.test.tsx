@@ -9,7 +9,6 @@ import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { KEY } from "@/updates/autoUpdateApi";
 import { readUpdatePlan, startUpdate } from "@/updates/controller";
-import { preserveUpdateWork } from "@/updates/work";
 import { UpdateStatus } from "./UpdateStatus";
 
 vi.mock("@/updates/controller", async (load) => ({
@@ -113,28 +112,6 @@ it("shows a manual-install reason instead of overriding a deliberate pin", async
   expect(await screen.findByText(/Deliberate pin/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
-});
-
-it("does not start by itself and keeps the mounted Composer draft across the update reload", async () => {
-  mockApi({ ...shell, "/api/update-status": status });
-  const user = userEvent.setup();
-  const first = renderAt("/");
-  const draft = await screen.findByPlaceholderText("Ask about this screen, a contract, a command…");
-  await user.type(draft, "Keep this draft through the update");
-  expect(startUpdate).not.toHaveBeenCalled();
-
-  vi.mocked(startUpdate).mockImplementationOnce(async () => {
-    preserveUpdateWork();
-    return "Reloading";
-  });
-  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
-  await user.click(screen.getByRole("button", { name: "Update now" }));
-  await agree(user);
-  expect(sessionStorage.getItem("hz.update.composer")).toContain("Keep this draft through the update");
-  first.unmount();
-
-  renderAt("/");
-  expect(await screen.findByDisplayValue("Keep this draft through the update")).toBeInTheDocument();
 });
 
 it("reports an installer failure and never retries installation without another click", async () => {

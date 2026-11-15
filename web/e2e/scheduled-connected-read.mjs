@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { openChatJourney, openDetails, recurringTurns, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import {
+  createHeinzelWith,
+  openChatJourney,
+  openDetails,
+  recurringTurns,
+  revealChat,
+  runDaemonTurn,
+} from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 import { settleRoutes } from "./route-settlement.mjs";
 
@@ -98,9 +105,7 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
-  await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await createHeinzelWith(page, "Read my selected source.");
   await openDetails(page);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
@@ -108,7 +113,7 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  await page.getByLabel("Message your Heinzel").fill("Suggest an interval for this agent.");
+  await page.getByLabel(/^Message /).fill("Suggest an interval for this agent.");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByText("Suggest an interval for this agent.").waitFor();
   await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
@@ -194,7 +199,9 @@ try {
     const ready = Promise.withResolvers();
     const release = Promise.withResolvers();
     const inserted = Promise.withResolvers();
-    await page.route("**/api/system/doctor", async (route) => {
+    // The Heinzel's page grows late when its list answers ("How it is doing" appears above the reviews), as /doctor
+    // did when its report answered: hold that answer between a press and its release.
+    await page.route("**/api/heinzel/sessions", async (route) => {
       const response = await route.fetch();
       ready.resolve();
       await release.promise;

@@ -7,13 +7,11 @@ import { AboutDialog } from "@/about/AboutDialog";
 import { type MenuAction, onMenuAction } from "@/about/menu";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
-import { ChatProvider } from "@/chat/ChatContext";
-import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
-import { clearChatLink, OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
+import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -24,7 +22,7 @@ import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
-import { BrowserPanel } from "./BrowserPanel";
+import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -92,11 +90,9 @@ const GO: Record<string, string> = {
 export function Shell() {
   useVisualViewport();
   return (
-    <ChatProvider>
-      <AvatarThemeProvider>
-        <Layout />
-      </AvatarThemeProvider>
-    </ChatProvider>
+    <AvatarThemeProvider>
+      <Layout />
+    </AvatarThemeProvider>
   );
 }
 
@@ -115,8 +111,7 @@ function Layout() {
     [titlebar.bar, titlebar.fullscreen, navOpen],
   );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
-  const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
-  const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
+  const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -445,7 +440,14 @@ function Layout() {
     window.addEventListener(OPEN_TERMINAL, open);
     window.addEventListener(OPEN_CHAT, openChat);
     window.addEventListener(OPEN_NEW_CHAT, openChat);
+    // The menu's New Chat opens the chat on the default Heinzel (every chat is with a Heinzel, ADR 0157) and puts the
+    // cursor in its composer, or in the first start's name field.
+    const stopNewChat = onMenuAction(["new-chat"], () => {
+      window.dispatchEvent(new Event(OPEN_NEW_CHAT));
+      requestComposerFocus();
+    });
     return () => {
+      stopNewChat();
       window.removeEventListener(OPEN_TERMINAL, open);
       window.removeEventListener(OPEN_CHAT, openChat);
       window.removeEventListener(OPEN_NEW_CHAT, openChat);

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """The merge gate: `merge_gate.py sonar` and `merge_gate.py coverage`, one required check each.

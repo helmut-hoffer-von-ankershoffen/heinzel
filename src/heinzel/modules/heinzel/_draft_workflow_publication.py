@@ -37,7 +37,7 @@ from heinzel.modules.heinzel._draft_workflow_binding import DraftChannelBinding,
 from heinzel.modules.heinzel._draft_workflow_journal import DraftJournal, grant_payload, matching, target_key
 from heinzel.modules.heinzel._draft_workflow_models import DraftPublicationRequest, DraftPublicationTerms
 from heinzel.modules.heinzel._session_bodies import immutable_body
-from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_crud import SessionCrud, retired_after
 from heinzel.modules.heinzel._user_chat import UserChatService
 
 _HUMAN_HEADS = frozenset({"cli", "web-session", "web-device"})
@@ -166,6 +166,8 @@ class DraftWorkflowPublication:
         if active and (
             matching(events, "draft.revoked", arguments_hash(grant_payload(terms)))
             or matching(events, "draft.paused", arguments_hash(grant_payload(terms)))
+            # A retire after the publication paused it; a restore never resumes it (a new publication does).
+            or retired_after(events, event.seq)
             or (terms.request.expires_at is not None and self.crud.clock() >= terms.request.expires_at)
         ):
             msg = "The draft publication is revoked, paused or expired"
@@ -245,7 +247,7 @@ class DraftWorkflowPublication:
             channel_target=ChannelTarget.model_validate_json(target.model_dump_json()),
             notice_binding=ports.notice.digest,
             notice_target=OwnerNoticeTarget.model_validate_json(notice.model_dump_json()),
-            model_binding=model_binding_fingerprint(self.chat),
+            model_binding=model_binding_fingerprint(self.chat, session),
         )
         self.journal.record(
             session,
@@ -275,7 +277,7 @@ class DraftWorkflowPublication:
             or identity != terms.feed_baseline.identity
             or ports.notice.call(lambda service: service.owner_target()) != terms.notice_target
             or ports.share.call(lambda service: service.delivery_target()) != terms.channel_target
-            or model_binding_fingerprint(self.chat) != terms.model_binding
+            or model_binding_fingerprint(self.chat, terms.session_id) != terms.model_binding
         ):
             msg = "The reviewed draft workflow source, account or exact scope changed"
             raise HeinzelError(msg)

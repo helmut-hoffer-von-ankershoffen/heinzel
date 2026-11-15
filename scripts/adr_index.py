@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """The ADR index and the ADR pages of the documentation site (ADR 0001, ADR 0082).

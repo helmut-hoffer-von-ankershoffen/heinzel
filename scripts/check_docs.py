@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Check what a machine can about the style of hand-written documentation and user-visible copy.

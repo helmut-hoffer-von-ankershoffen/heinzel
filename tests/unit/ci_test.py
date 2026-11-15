@@ -77,7 +77,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
         "unzip -l ": "asserts what the built wheel contains",
@@ -101,19 +101,19 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
     "acceptance-sharded.yml": {
-        "uv python install 3.13": "the isolated acceptance study interpreter",
-        '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
+        "uv python install 3.15": "the isolated acceptance study interpreter",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
     },
     "acceptance.yml": {
-        "uv python install 3.13": "the interpreter the harness runs on",
-        '"$(uv python find 3.13)" -I scripts/acceptance/': (
+        "uv python install 3.15": "the interpreter the harness runs on",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': (
             "installs the published core with the public commands on a hosted runner and writes the receipt"
         ),
     },
     "docs.yml": {
         "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
-        "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
+        "uv run --quiet --frozen --no-build --no-install-package pyyaml --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
         ),
     },
@@ -122,16 +122,16 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'archive="heinzel-desktop-': "checks the transferred desktop assets before signing them",
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
         ),
-        "uv run --no-project --frozen --no-build --python 3.14 python -I scripts/acceptance/run_acceptance.py "
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/acceptance/run_acceptance.py "
         "--check-foreground-ui": "checks the Core version contract without running acceptance",
         'if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then': (
             "requires core's configured confidential terms while preserving the shared plugin publisher"
         ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_notes.py": (
             "writes the release notes"
         ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
@@ -157,7 +157,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before verification tooling",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require": (
             "requires the configured release term list"
         ),
         'version="${TAG#v}"\ngh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts': (
@@ -170,7 +170,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
             "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
         ),
-        'uv run --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
+        'uv run --no-project --frozen --no-build --python 3.15 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
         "python -m heinzel_plugin_tools.publishing": (
             "publishes the original verified plugin bytes through its protected generic host workflow"
         ),
@@ -188,7 +188,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         'files="$(git diff': "picks the review tier from the changed files",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/review_outcome.py": (
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/review_outcome.py": (
             "judges the review attempt; the job has no project environment"
         ),
         'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
@@ -227,7 +227,7 @@ def not_through_make(workflow: Path) -> list[str]:
 
 def test_finds_commands_not_run_through_make(tmp_path):
     workflow = tmp_path / "publish.yml"
-    unreviewed = "uv run --no-project --frozen --no-build --python 3.14 python scripts/unreviewed.py"
+    unreviewed = "uv run --no-project --frozen --no-build --python 3.15 python scripts/unreviewed.py"
     steps = [
         {"run": "make build"},
         {"run": "uv sync"},
@@ -947,8 +947,12 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
     assert "TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" in makefile
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     script = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
-    assert "\nuv lock --quiet\nmake setup\n" not in script, "a fresh render must run the documented make setup unlocked"
     assert "[[ ! -e uv.lock ]]" in script
+    # a fresh render runs the documented `make setup` unlocked: nothing that locks, makes the venv or builds PyYAML
+    # may stand between the assertion and the command (the Makefile's install does all of it)
+    between = script.split("[[ ! -e uv.lock ]]", 1)[1].split("\nmake setup\n", 1)[0]
+    for step in ("uv lock", "uv venv", "bootstrap-pyyaml", "make pyyaml"):
+        assert step not in between, f"template-test must not run `{step}` before make setup"
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
 
@@ -1116,12 +1120,12 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
     [
         ("pull_request", False, []),
         ("pull_request", True, []),
-        ("push", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("push", True, ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", True, ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", False, ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", False, ["3.15"]),
+        ("push", True, ["3.15"]),
+        ("schedule", False, ["3.15"]),
+        ("schedule", True, ["3.15"]),
+        ("workflow_dispatch", False, ["3.15"]),
+        ("workflow_dispatch", True, ["3.15"]),
     ],
 )
 def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
@@ -1658,6 +1662,9 @@ def _oses(value: str | list[str], event: str, *, macos_full: bool = False, relea
     """The matrix values for an event, from a plain list or a pull-request conditional."""
     if isinstance(value, list):
         return value
+    constant = re.fullmatch(r"\$\{\{ fromJSON\('(?P<all>\[[^']*\])'\) \}\}", value)
+    if constant:
+        return json.loads(constant["all"])
     match = re.fullmatch(
         r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
         r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?"
@@ -1741,18 +1748,18 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
 @pytest.mark.parametrize(
     ("event", "expected"),
     [
-        ("pull_request", ["3.12", "3.15"]),
-        ("push", ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+        ("pull_request", ["3.15"]),
+        ("push", ["3.15"]),
+        ("schedule", ["3.15"]),
+        ("workflow_dispatch", ["3.15"]),
     ],
 )
-def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
+def test_every_event_tests_only_python_3_15(event, expected):
     test = _ci_jobs()["test"]
     assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
     assert probe["if"] == (  # a cell every pull request runs, once
-        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit'"
+        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.15' && matrix.levels == 'unit'"
     )
     assert test["strategy"]["matrix"]["levels"] == ["unit", "integration"]  # Linux shards by level under the cap
 
@@ -1761,9 +1768,9 @@ def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_
     ("event", "expected"),
     [
         ("pull_request", ["3.15"]),
-        ("push", ["3.12", "3.13", "3.14", "3.15"]),
-        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
-        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", ["3.15"]),
+        ("schedule", ["3.15"]),
+        ("workflow_dispatch", ["3.15"]),
     ],
 )
 def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
@@ -1825,12 +1832,9 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
     } <= outputs
     jobs = _ci_jobs()
     assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
-        "3.12",
-        "3.13",
-        "3.14",
         "3.15",
     ]
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 8
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 2
     assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", macos_full=True) == [
         "ubuntu-24.04",
         "macos-latest",
@@ -1849,7 +1853,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "full_release" not in generated
     assert (
         "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
-        in (_ci_jobs()["test"]["strategy"]["matrix"]["python"])
+        in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
 
 
@@ -1858,3 +1862,165 @@ def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_release == 'true'", "run": "make test-web"}
     # Cancelled at 5:17 under five minutes in the 0.9.40 candidates; ten is about twice the observed duration.
     assert lint["timeout-minutes"] == 10
+
+
+def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
+    """Python 3.15 has no PyYAML wheel: no job may build it from source with an unpinned backend."""
+    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
+    steps = action["runs"]["steps"]
+    bootstrap = next(step for step in steps if "bootstrap-pyyaml.sh" in step.get("run", ""))
+    assert steps[-1] is bootstrap  # after uv and Python are set up, before the caller's first sync
+    assert "uv venv --allow-existing --python 3.15" in bootstrap["run"]
+    # the call itself, not only a guard that names the script
+    assert re.search(r"^\s*bash scripts/bootstrap-pyyaml\.sh$", bootstrap["run"], re.MULTILINE)
+    assert 'requires-python = ">=3.15"' in bootstrap["run"]
+    script = (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
+    assert 'install --lock uv.lock --python "$project_python"' in script
+    module = (REPO / "src" / "heinzel" / "bootstrap_pyyaml.py").read_text(encoding="utf-8")
+    assert '"direct_url.json").unlink(missing_ok=True)' in module  # a later sync never rebuilds it from source
+    for name, job in _ci_jobs().items():
+        for step in job.get("steps", []):
+            if "uv sync" in step.get("run", ""):
+                assert "--no-install-package pyyaml" in step["run"], f"{name}: syncs PyYAML from source"
+
+
+def _project_syncing(command: str) -> bool:
+    """Whether a `uv sync` or `uv run --no-build` line installs the project's locked dependencies."""
+    if not re.search(r"\buv (sync|run)\b", command) or "uvx" in command:
+        return False
+    if any(flag in command for flag in ("--no-project", "--script", "--no-sync", "UV_NO_SYNC")):
+        return False
+    return "uv sync" in command or "--no-build" in command
+
+
+def _commands_that_sync_the_project() -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
+        for name, job in jobs.items():
+            if str(job.get("env", {}).get("UV_NO_SYNC")) == "1":
+                continue
+            for step in job.get("steps", []):
+                lines = step.get("run", "").replace("\\\n", " ").splitlines()
+                found.extend((f"{path.name}:{name}", line) for line in lines)
+    for path in [REPO / "Makefile", *sorted((REPO / "scripts").glob("*.sh")), *sorted((REPO / "scripts").glob("*.mk"))]:
+        lines = path.read_text(encoding="utf-8").replace("\\\n", " ").splitlines()
+        found.extend((f"{path.name}:{number}", line) for number, line in enumerate(lines, 1))
+    return [(where, line) for where, line in found if _project_syncing(line)]
+
+
+def test_no_project_sync_on_python_3_15_builds_or_requires_a_pyyaml_source_build():
+    """`--no-build` fails to resolve PyYAML (no 3.15 wheel) even when it is installed; each sync must leave it out."""
+    offenders = [(where, line) for where, line in _commands_that_sync_the_project() if "--no-build" in line]
+    assert [(w, line) for w, line in offenders if "--no-install-package" not in line or "pyyaml" not in line] == []
+    from importlib import util
+
+    spec = util.spec_from_file_location("focused_job", REPO / "scripts" / "focused_job.py")
+    module = util.module_from_spec(spec)
+    sys.modules["focused_job"] = module
+    spec.loader.exec_module(module)
+    sync = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))[0]
+    assert sync[-2:] == ["--no-install-package", "pyyaml"]
+
+
+def test_every_job_with_its_own_uv_setup_builds_the_reviewed_pyyaml_before_it_syncs():
+    """The composite action does it for its callers; a workflow that sets uv up itself must do it explicitly."""
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
+        for name, job in jobs.items():
+            steps = job.get("steps", [])
+            direct = [i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")]
+            runs = [step.get("run", "") for step in steps]
+            if not direct or job.get("if") is False or not any(_project_syncing(run) or "make " in run for run in runs):
+                continue
+            bootstrap = [i for i, run in enumerate(runs) if "bootstrap-pyyaml.sh" in run or "make pyyaml" in run]
+            where = f"{path.name}:{name} syncs without the reviewed PyYAML"
+            assert bootstrap, where
+            assert bootstrap[0] > direct[0], where
+
+
+def test_no_script_or_workflow_resolves_a_fresh_environment_that_would_build_pyyaml():
+    """A fresh environment (`uv run --isolated`) resolves from the index: PyYAML would build from source."""
+    texts = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in [*(REPO / ".github" / "workflows").glob("*.yml"), *(REPO / "scripts").glob("*.sh")]
+    }
+    for name, text in texts.items():
+        assert "--isolated" not in text, f"{name}: use a throwaway environment with the reviewed PyYAML"
+    # the local multi-Python target is the one exception, and CI never calls it
+    assert not any("test-all-pythons" in text for text in texts.values())
+
+
+def test_end_to_end_installs_resolve_the_reviewed_pyyaml_wheel():
+    conftest = (REPO / "tests" / "e2e" / "conftest.py").read_text(encoding="utf-8")
+    assert "def reviewed_pyyaml(" in conftest
+    assert '"UV_FIND_LINKS"' in conftest
+    assert "autouse=True" in conftest
+    assert "--wheel-dir" in (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
+
+
+def _flagged_then_bootstrapped(lines: list[str]) -> bool:
+    """`uv sync` is exact: a sync that leaves PyYAML out removes one installed before it, so the build must follow."""
+    last = max(
+        (i for i, line in enumerate(lines) if "uv " in line and "--no-install-package pyyaml" in line), default=-1
+    )
+    return last < 0 or any("bootstrap-pyyaml.sh" in line or "make pyyaml" in line for line in lines[last + 1 :])
+
+
+def test_the_reviewed_pyyaml_is_built_after_the_last_sync_that_leaves_it_out():
+    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        for name, job in yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {}).items():
+            lines = [line for step in job.get("steps", []) for line in step.get("run", "").splitlines()]
+            assert _flagged_then_bootstrapped(lines), f"{path.name}:{name} removes PyYAML and never builds it again"
+    for path in sorted((REPO / "scripts").glob("*.sh")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert _flagged_then_bootstrapped(lines), f"{path.name} removes PyYAML and never builds it again"
+    spec = importlib.util.spec_from_file_location("focused_job_order", REPO / "scripts" / "focused_job.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["focused_job_order"] = module
+    spec.loader.exec_module(module)
+    sync, bootstrap, tests = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))
+    assert sync[:2] == ["uv", "sync"]
+    assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
+    assert "pytest" in tests
+
+
+def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links():
+    """The e2e fixture exports UV_FIND_LINKS; an inherited one would become resolver policy in the managed tool."""
+    source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
+    assert 'if not key.startswith(("HZ_", "UV_"))' in source  # the docs environment drops every UV_ variable
+    assert "UV_FIND_LINKS" not in source.replace("inherited UV_FIND_LINKS", "")
+
+
+def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
+    lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
+    build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
+    launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
+    assert build < launch
+    assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
+
+
+@pytest.mark.parametrize("makefile", ["Makefile", "template/Makefile"])
+def test_install_builds_the_reviewed_pyyaml_after_the_lock_and_before_the_first_sync(makefile):
+    """`make setup` is the documented command: it must not leave PyYAML to a source build on Python 3.15."""
+    text = (REPO / makefile).read_text(encoding="utf-8")
+    recipe = text.split("\ninstall:", 1)[1].split("\n\n", 1)[0]
+    lock = recipe.index("uv lock --quiet")
+    pyyaml = recipe.index("pyyaml")
+    sync = min(recipe.index(token) for token in ("uv sync", "build.py sync") if token in recipe)
+    assert lock < pyyaml < sync
+
+
+def test_the_setup_uv_guard_matches_this_checkouts_lock():
+    """The action builds PyYAML only where uv.lock says >=3.15; a changed floor must not switch that off silently."""
+    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
+    step = next(item for item in action["runs"]["steps"] if "bootstrap-pyyaml.sh" in item.get("run", ""))
+    pattern = re.search(r"grep -q '([^']+)' uv\.lock", step["run"])
+    assert pattern, "the guard must stay a grep on uv.lock"
+    assert re.search(pattern[1], (REPO / "uv.lock").read_text(encoding="utf-8"), re.MULTILINE)
+
+
+def test_the_readme_install_environment_carries_no_github_token():
+    source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
+    assert "if key not in TOKENS" in source
+    assert "launch_documented_app(block, launch_env," in source

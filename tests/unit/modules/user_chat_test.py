@@ -475,3 +475,19 @@ def test_a_stopped_turn_for_a_chat_answer_is_set_aside_from_the_app_like_a_typed
         service._set_aside(session, "from-chat")  # idempotent: already resolved
     with current.using(web):
         assert service.turn_state(session, "from-chat").status == "abandoned"
+
+
+def test_a_message_accepted_before_retire_is_not_answered_until_restore(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        crud.retire(session, "retire-after-accept")
+        with pytest.raises(HeinzelError, match="retired"):
+            asyncio.run(service.answer(session, "hello"))
+        events = crud.repository.control_read(session).events
+        assert not [event for event in events if event.kind == "interactive.started"]
+        assert not (tmp_path / "model-calls").exists()
+        crud.retire(session, "restore-after-accept", retired=False)
+        assert asyncio.run(service.answer(session, "hello")).message.text == "A real recorded reply"

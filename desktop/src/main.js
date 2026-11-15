@@ -7,7 +7,8 @@ import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
-import { createMiniBrowser } from "./mini-browser.js";
+import { createMediaPlayer } from "./media-player.js";
+import { createMiniBrowser, deviceDialog } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
@@ -98,23 +99,29 @@ const miniBrowser = createMiniBrowser({
   connection: () => (stopping || quitting ? null : instance.currentConnection()),
   createSession: (partition, options) => session.fromPartition(partition, options),
   createView: (options) => new WebContentsView(options),
-  enabled: async () => {
-    const connection = instance.currentConnection();
-    if (!connection || stopping || quitting) return false;
-    const response = await fetch(`${connection.origin}/api/system/config/show`, {
-      headers: { Authorization: `Bearer ${connection.token}` }, redirect: "error",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) return false;
-    const report = await response.json();
-    const features = report.settings?.find((row) => row.section === "hz" && row.key === "features")?.value;
-    return Array.isArray(features) && features.includes("sidebar_browser");
+  // The person picks the device or cancels; nothing is granted without that choice.
+  chooseDevice: async ({ window, host, devices }) => {
+    const { response } = await dialog.showMessageBox(window, deviceDialog({ host, devices }));
+    return devices[response]?.id ?? null;
   },
+  // "Open in browser" needs the person's click in that window and shares its external-link rate limit.
+  openExternal: (url, window) => activations.get(window.webContents)?.open(url) ?? false,
+});
+// The media player's embed shares the sidebar browser's website partition, so one sign-in counts in both.
+const mediaPlayer = createMediaPlayer({
+  windows,
+  fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+  connection: () => (stopping || quitting ? null : instance.currentConnection()),
+  // The player hands its page, so Clear browsing data blanks and restores the YouTube player too.
+  lease: (page) => miniBrowser.lease(page),
+  createView: (options) => new WebContentsView(options),
+  openExternal: (url) => shell.openExternal(url),
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
+  ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
   ipcMain.handle("hz:public-media", createPublicMediaHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -179,6 +186,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     // it already reported a crash). Hide the windows before the service stops so none repaints the disconnected page.
     stopping = true;
     permissions?.revoke();
+    mediaPlayer.closeAll();
     miniBrowser.closeAll();
     workspaceAudio?.revoke();
     const hidden = hideWindows(BrowserWindow.getAllWindows());

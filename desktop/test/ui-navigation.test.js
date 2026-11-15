@@ -189,6 +189,87 @@ test("scripted clicks and window.open without trusted input never reach the OS o
   assert.deepEqual(logs, [{ event: "desktop.external_link.without_gesture" }, { event: "desktop.external_link.without_gesture" }]);
 });
 
+/** A fake webContents: native input reaches it for any frame; window-open details carry no frame or gesture. */
+function embedContents() {
+  const contents = new EventEmitter();
+  contents.setWindowOpenHandler = (handler) => { contents.open = handler; };
+  return contents;
+}
+
+// Electron 45 window-open details from a click in the cross-origin YouTube embed: the referrer is the embed.
+const fromEmbed = (url) => ({
+  url, frameName: "_blank", features: "", disposition: "foreground-tab",
+  referrer: { url: "https://www.youtube-nocookie.com/embed/abcdefghijk", policy: "strict-origin-when-cross-origin" },
+});
+
+test("a click inside a cross-origin embed opens its link once in the default browser", async () => {
+  const contents = embedContents();
+  const opened = [], logs = [];
+  let clock = 10_000;
+  guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: (fields) => logs.push(fields) });
+  // Before the fix only the main-frame preload granted, so this open was refused as without_gesture.
+  contents.emit("input-event", {}, { type: "mouseDown" });
+  contents.emit("input-event", {}, { type: "mouseUp" });
+  assert.deepEqual(contents.open(fromEmbed("https://support.google.com/youtube/answer/14328491")), { action: "deny" });
+  clock += 5000;
+  contents.emit("before-mouse-event", {}, { type: "mouseDown", button: "left" });
+  contents.open(fromEmbed("https://accounts.google.com/ServiceLogin?service=youtube"));
+  clock += 5000;
+  contents.emit("before-input-event", {}, { type: "keyDown", key: "Enter" });
+  contents.open(fromEmbed("https://www.youtube.com/watch?v=abcdefghijk"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, [
+    "https://support.google.com/youtube/answer/14328491",
+    "https://accounts.google.com/ServiceLogin?service=youtube",
+    "https://www.youtube.com/watch?v=abcdefghijk",
+  ]);
+  assert.deepEqual(logs, []);
+});
+
+test("an embed's open without a gesture, after only moves or key-ups, or to another scheme is refused", async () => {
+  const contents = embedContents();
+  const opened = [], logs = [];
+  let clock = 10_000;
+  guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: (fields) => logs.push(fields) });
+  const ad = "https://ads.example.com/landing";
+  contents.open(fromEmbed(ad));
+  for (const type of ["mouseMove", "mouseEnter", "mouseWheel", "keyUp", "char", "gestureScrollBegin", undefined]) {
+    contents.emit("input-event", {}, { type });
+    contents.open(fromEmbed(ad));
+  }
+  contents.emit("input-event", {}, undefined);
+  contents.open(fromEmbed(ad));
+  // A gesture expires after its window and is spent by one open; a burst gets nothing more.
+  contents.emit("input-event", {}, { type: "mouseDown" });
+  clock += 1001;
+  contents.open(fromEmbed(ad));
+  for (const url of ["javascript:alert(1)", "file:///etc/passwd", "vnd.youtube://abcdefghijk", "intent://x#Intent;end", "http://192.168.1.2/"]) {
+    clock += 5000;
+    contents.emit("input-event", {}, { type: "mouseDown" });
+    assert.deepEqual(contents.open(fromEmbed(url)), { action: "deny" });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, []);
+  assert.deepEqual(logs, [{ event: "desktop.external_link.without_gesture" }]);
+});
+
+test("native input grants change nothing for main-frame navigation and app routes", async () => {
+  const contents = embedContents();
+  const opened = [];
+  let clock = 10_000;
+  guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
+  let blocked = 0;
+  const event = (url) => ({ url, isMainFrame: true, preventDefault: () => { blocked++; } });
+  contents.emit("will-navigate", event(`${connection.origin}/heinzel`));
+  contents.emit("will-navigate", event("https://example.com/no-gesture"));
+  contents.emit("input-event", {}, { type: "mouseDown" });
+  contents.emit("will-navigate", event("https://example.com/clicked"));
+  contents.emit("will-navigate", event("https://example.com/second"));
+  assert.equal(blocked, 3);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, ["https://example.com/clicked"]);
+});
+
 test("user activation expires after its window and is consumed by one open", () => {
   let clock = 0;
   const activation = createUserActivation({ now: () => clock, windowMs: 1000 });
@@ -280,4 +361,22 @@ test("failed UI load destroys its hidden native window", async () => {
   await assert.rejects(openProductUi({ connection, lifecycle: async () => {}, createWindow: () => window,
     prepareWindow: () => {}, cancelled: () => false }), /Load failed/);
   assert.equal(destroyed, true);
+});
+
+test("the window's own open (sidebar Open in browser) needs the person's gesture and shares the rate limit", async () => {
+  const contents = new EventEmitter();
+  contents.setWindowOpenHandler = () => {};
+  const opened = [];
+  let clock = 10_000;
+  const activation = guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
+  assert.equal(activation.open("https://example.com/a"), false);
+  activation.grant();
+  assert.equal(activation.open("https://example.com/b"), true);
+  activation.grant();
+  assert.equal(activation.open("https://example.com/c"), false);
+  clock += 5000;
+  activation.grant();
+  assert.equal(activation.open("file:///etc/passwd"), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, ["https://example.com/b"]);
 });

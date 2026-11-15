@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["nodejs-wheel-binaries==24.19.0"]
 # ///
 """Run the web head's frontend tools (web/) and build its app into the package, with no prerequisite beyond uv.

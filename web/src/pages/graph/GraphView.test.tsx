@@ -73,21 +73,16 @@ describe("the Team graph screen", () => {
     expect(rows.some((text) => text?.startsWith("Tracker update: priya"))).toBe(true);
   });
 
-  it("opens an artifact where it lives in a new tab, a Heinzelmännchen on its page or in the chat", async () => {
+  it("opens an artifact where it lives in a new tab and a Heinzelmännchen on its page", async () => {
     mockApi(withGraph);
     renderAt("/graph");
     const row = await card(/^Tracker update: costas/);
     expect(row).toHaveAttribute("href", "https://tracker.acme.example/boards/7#costas");
     expect(row).toHaveAttribute("target", "_blank");
     expect(row).toHaveAttribute("rel", "noreferrer noopener");
-    expect(screen.getByRole("link", { name: /^priya-tracker/ })).toHaveAttribute("href", "/heinzel/priya-tracker");
-    expect(screen.getByRole("link", { name: "Ask about priya-tracker in the chat" })).toHaveAttribute(
-      "href",
-      "/graph?chat-context=heinzel%3Apriya-tracker",
-    );
-    await userEvent.click(screen.getByRole("link", { name: /^priya-tracker/ }));
-    // No page for a Heinzelmännchen yet: the route is there to link to.
-    expect(await screen.findByRole("link", { name: "Go home" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^priya-tracker/ })).toHaveAttribute("href", "/contracts/priya-tracker");
+    // There is no general chat to ask in (ADR 0157): a Heinzel opens on its page.
+    expect(screen.queryByRole("link", { name: "Ask about priya-tracker in the chat" })).not.toBeInTheDocument();
   });
 
   it("copies the graph as Mermaid", async () => {

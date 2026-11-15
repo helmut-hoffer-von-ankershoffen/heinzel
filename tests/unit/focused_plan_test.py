@@ -93,7 +93,7 @@ def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan,
     assert focused_plan._selections({"selection": {"python": ids[:limit]}}, MERGE)["python"] == tuple(ids[:limit])
     with pytest.raises(focused_plan.CandidateError, match="broad focused lane python"):
         focused_plan._selections({"selection": {"python": ids}}, MERGE)
-    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
+    for lane in ("macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
         with pytest.raises(focused_plan.CandidateError, match="broad focused lane"):
             focused_plan._selections({"selection": {lane: ids[:11]}}, MERGE)
     with pytest.raises(focused_plan.CandidateError, match="duplicate selection"):

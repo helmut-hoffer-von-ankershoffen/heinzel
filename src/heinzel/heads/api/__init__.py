@@ -37,10 +37,11 @@ from starlette.datastructures import Headers
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
 from heinzel.heads._presence import mark_authenticated_presence
-from heinzel.heads._stream import streamed
+from heinzel.heads._stream import error_body, streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
-from heinzel.kernel._errors import NotSupportedError, SubscriptionUsageLimitError
+from heinzel.kernel._errors import NotSupportedError as NotSupportedError
+from heinzel.kernel._errors import SubscriptionUsageLimitError as SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
 
 HEAD = "api"
@@ -58,17 +59,7 @@ WEB_HOST_HELP = (
 
 
 def _error_response(exc: HeinzelError, *, private: bool) -> JSONResponse:
-    if private and isinstance(exc, SubscriptionUsageLimitError):
-        return JSONResponse(
-            status_code=400,
-            content={"error": SubscriptionUsageLimitError.message, "code": "subscription_usage_limit"},
-        )
-    if isinstance(exc, NotSupportedError):
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(exc), "code": "not_supported", "capability": exc.capability, "method": exc.method},
-        )
-    return JSONResponse(status_code=400, content={"error": str(exc)})
+    return JSONResponse(status_code=400, content=error_body(exc, private=private))
 
 
 def build(  # noqa: PLR0913 - the head, where it listens and its credential, all by keyword

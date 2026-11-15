@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Expand combine commits in one release section of CHANGELOG.md into one entry per member pull request.

@@ -7,7 +7,7 @@ authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.c
 license = "MIT"
 # ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
 license-files = ["LICENSE", "ATTRIBUTIONS.md"]
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 keywords = ["cli", "typer", "pluggy", "agents", "product-development", "workflows"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -16,9 +16,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
@@ -49,7 +46,7 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 build = ["hatchling>=1.32.4", "editables>=0.5", "nodejs-wheel-binaries==24.19.0"]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
 test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "markdown>=3.10", "pydantic-ai-slim[anthropic,openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
-# Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
+# Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.14 and older; paused on 3.15.
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
     { include-group = "test" },
@@ -100,6 +97,10 @@ exclude = ["web/node_modules", "web/test-results", "/plugins"]
 required-version = ">=0.13.0"
 
 [tool.ruff]
+# The code runs on 3.15, but lints and formats as 3.13 on purpose: from 3.14 on ruff treats annotations as lazy and wants
+# typing-only imports in TYPE_CHECKING blocks (breaks the pydantic and typer annotations read at runtime) and drops the
+# parentheses around multiple exception types. Adopt the 3.14+ style in one deliberate pass.
+target-version = "py313"
 line-length = 120
 fix = true
 extend-exclude = ["template", "plugins", "scripts/acceptance"] # independent projects; a hash-pinned stdlib harness
@@ -317,7 +318,7 @@ tag_pattern = "^v[0-9].*"
 [tool.pyright]
 include = ["src"]
 typeCheckingMode = "strict"
-pythonVersion = "3.12"
+pythonVersion = "3.15"
 venvPath = "."
 venv = ".venv"
 
@@ -327,7 +328,10 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.default]
-extend-ignore-re = ['\b[0-9a-f]{7,40}\b'] # commit hashes in the changelog
+extend-ignore-re = [
+  '\b[0-9a-f]{7,40}\b', # commit hashes in the changelog
+  '\[!c\]o[n]fig', # the path glob `[!t]*[!c]onfig.ts` in scripts/release_policy.json (not a word)
+]
 
 [tool.typos.files]
 extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins", "docs/impressum.md", "docs/datenschutz.md"] # plugins own their sources and docs; the two German legal pages are not English

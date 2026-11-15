@@ -7,8 +7,8 @@ limit). It never replaces the app: the list keeps every notice, and a failure he
 Each notice is sent once. It is claimed in a small ledger under a lock before the adapter is called, so the web
 app's process and the daemon's tick never both send it; a failed send is logged, not retried, and a claim whose process
 ended mid-send (a tick that finished first) is taken over by the next sender. A Heinzel's notices
-share one thread per Heinzel chat. Only notices that became due within `WINDOW` are sent, so switching it on doesn't
-replay a backlog.
+share one thread per Heinzel chat, forgotten once that chat no longer exists. Only notices that became due within
+`WINDOW` are sent, so switching it on doesn't replay a backlog.
 """
 
 import logging
@@ -44,6 +44,31 @@ KIND_LABEL: dict[NoticeKind, str] = {
 def notice_ledger(directory: Path) -> SelfChatLedger:
     """Which notices went to chat (`sent`), and the thread of each Heinzel chat (`threads`)."""
     return SelfChatLedger(directory, "notices", ("sent", "threads"))
+
+
+CHAT_ROUTE = "/heinzel?chat="
+"""How a Heinzel chat's notices are routed in the web app; the rest of the route is the chat's id."""
+
+
+def forget_chats(ledger: SelfChatLedger, listed: Callable[[], set[str]]) -> int:
+    """Drop the threads of Heinzel chats `listed()` (those that exist) no longer lists; other threads stay.
+
+    Only threads kept before the chats are listed can go, so a chat another process creates meanwhile keeps its own;
+    nothing is written when nothing goes. How many went.
+    """
+    if not ledger.path.exists():
+        return 0
+    with ledger.locked() as state:
+        kept = {k for k in state["threads"] if k.startswith(CHAT_ROUTE)}
+    if not kept:
+        return 0
+    chats = listed()
+    gone = {k for k in kept if k[len(CHAT_ROUTE) :] not in chats}
+    if gone:
+        with ledger.locked() as state:
+            for key in gone:
+                state["threads"].pop(key, None)
+    return len(gone)
 
 
 def chat_text(notice: Notice, url: str | None) -> str:

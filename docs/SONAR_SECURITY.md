@@ -83,7 +83,7 @@ described above. Stdlib-only publication checks select Python explicitly and loa
 Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.
 
 The policy is scoped to these installation paths: core's all-group developer setup still permits the locked
-watchdog source build required by macOS documentation tooling on Python 3.14. It does not have a global source-build
+watchdog source build required by macOS documentation tooling on Python 3.15. It does not have a global source-build
 ban. Recheck the actual main metrics after merging; these changes alone do not resolve unrelated runtime findings.
 
 ### Core findings reviewed individually
@@ -116,7 +116,7 @@ hostile client, and none of it is a full audit of the heads.
 | `scripts/starter-test.py` `S8705` | Its one caller, `template-test.sh`, passes the wheel it built; the value is an option value or a Make variable that the starter Makefile takes literally with `$(value ...)`, and no shell is involved. |
 | `desktop/ci/restore_linux_sandbox.py` `S2612` | Mode 4755 is deliberate: Chromium's setuid sandbox helper requires it. The bytes are SHA-256 pinned before the change, the descriptor is single-link and root-owned, and the mode is re-read afterwards. It is world-executable setuid root, so this is an accepted risk, not a false positive. |
 
-Workflow steps that run stdlib-only scripts use `uv run --no-project --frozen --no-build --python 3.14 python ...`.
+Workflow steps that run stdlib-only scripts use `uv run --no-project --frozen --no-build --python 3.15 python ...`.
 uv warns that `--frozen` has no effect together with `--no-project`: these runs have no project lock, and the flag
 asserts no guarantee. It is there because Sonar's S8544 only accepts a frozen invocation; the isolation comes from
 `--no-project --no-build` and from the scripts having no dependencies.

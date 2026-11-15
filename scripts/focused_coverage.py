@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["coverage==7.17.0"]
 # ///
 """Produce and independently check typed, branch-aware focused coverage evidence."""
@@ -303,10 +303,8 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     )
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
-    if lane == "python315":
+    if kind == "pytest":  # the plan syncs, then builds the reviewed PyYAML (Python 3.15 has no wheel), on this Python
         env["UV_PYTHON"] = LANES[lane][1]
-        commands[0].append("--no-install-package=pyyaml")
-        commands.insert(1, ["bash", "scripts/bootstrap-pyyaml.sh"])
     if lane == "macos-notifier":
         _execute(["make", "notifier"], env)
     for command in commands[:-1]:

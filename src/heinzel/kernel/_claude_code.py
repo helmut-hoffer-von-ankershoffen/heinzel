@@ -18,6 +18,7 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from heinzel.kernel._ai_models import Level
 from heinzel.kernel._bounded_process import ProcessOutcome as Outcome
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 
@@ -126,8 +127,25 @@ _WIRE_SCHEMA = {
     "required": ["kind", "name", "arguments", "text"],
 }
 COMMAND_FLAGS = (*_FLAGS, "--json-schema", json.dumps(_WIRE_SCHEMA, separators=(",", ":")))
-CONTRACT_OPTIONS = tuple(dict.fromkeys(flag for flag in COMMAND_FLAGS if flag.startswith("-")))
+MODEL_FLAG = "--model"
+CONTRACT_OPTIONS = tuple(dict.fromkeys([*(flag for flag in COMMAND_FLAGS if flag.startswith("-")), MODEL_FLAG]))
 """Every option the bridge passes; `claude --help` of the exact executable must list each one."""
+LEVEL_MODELS: dict[Level, str] = {"low": "haiku", "medium": "sonnet", "high": "opus"}
+"""Claude Code's own levels (ADR 0158): the alias it takes for each level's model. A Heinzel's level is the only way
+a chat turn passes a model, and only one of these aliases; a configured model override is still refused."""
+
+
+def command_flags(model: str | None) -> tuple[str, ...]:
+    """The bridge's exact flags, with `--model` for a level's model.
+
+    Raises:
+        SubscriptionDeniedError: If `model` isn't one of Claude Code's level aliases.
+    """
+    if model is None:
+        return COMMAND_FLAGS
+    if model not in LEVEL_MODELS.values():
+        raise SubscriptionDeniedError(Denial.MODEL_OVERRIDE)
+    return (*COMMAND_FLAGS, MODEL_FLAG, model)
 
 
 class Denial(StrEnum):

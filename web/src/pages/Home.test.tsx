@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today";
 import { assertActionStructure } from "@/components/PaneActions";
-import { answered, base, empty, frame, mockWithStream, msg } from "@/test/chat";
+import { base } from "@/test/chat";
 import { doctor } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -15,14 +15,15 @@ afterEach(() => {
 const [doctorCard] = doctorCards(doctor) as [TodayCard];
 
 describe("Home", () => {
-  it("is the chat: Today on top, the composer focused, and no second chat on the right", async () => {
+  it("has Today on top and one chat beside it, with a Heinzel: the first start while there is none", async () => {
     mockApi(base);
     const { container } = renderAt("/");
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Your message")).toHaveFocus();
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await chat.findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
+    // No general chat: no composer without a Heinzel, and no second chat.
+    expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Ask" })).not.toBeInTheDocument();
-    const info = await screen.findByRole("button", { name: "What this chat may cost" });
-    await waitFor(() => expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/));
     await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" });
     await expectAccessible(container);
   });
@@ -45,18 +46,57 @@ describe("Home", () => {
     expect(await screen.findByRole("link", { name: "Open" })).not.toHaveAttribute("data-focus-ring");
   });
 
-  it("leads with Open, asks with an icon in the same row, dismisses from the corner", async () => {
+  it("asks the default Heinzel about a card: Ask <Name> types the question into its composer, never sends it", async () => {
+    const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const { calls } = mockApi({
+      ...base,
+      "/api/heinzel/sessions": {
+        sessions: [
+          { session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" },
+        ],
+      },
+      "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
+      "li",
+    ) as HTMLElement;
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const composer = (await chat.findByLabelText("Message Helmi")) as HTMLTextAreaElement;
+    await user.type(composer, "Earlier words");
+    await user.click(await within(card).findByRole("button", { name: "Ask Helmi" }));
+    // The chat now links the default Heinzel (`?chat=`), so its composer is shown afresh: read it again.
+    const asked = () => chat.getByLabelText("Message Helmi") as HTMLTextAreaElement;
+    await waitFor(() => expect(asked().value).toMatch(/^Earlier words\n\nDoctor: 2 checks need attention/));
+    await waitFor(() => expect(asked()).toHaveFocus());
+    const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${helmi}`) ?? "{}");
+    expect(saved.text).toBe(asked().value);
+    // Typed, not sent: no message goes to the Heinzel.
+    expect(calls.some((request) => request.method === "POST" && /\/heinzel\/(chat|message)/.test(request.url))).toBe(
+      false,
+    );
+    assertActionStructure(card);
+  });
+
+  it("offers no Ask while no Heinzel is named yet", async () => {
     mockApi(base);
     renderAt("/");
     const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
       "li",
     ) as HTMLElement;
-    const ask = within(card).getByRole("button", { name: "Ask about it" });
-    expect(ask).toHaveAttribute("title", "Ask about it");
-    expect(ask).toHaveTextContent("");
+    expect(within(card).queryByRole("button", { name: /^Ask/ })).not.toBeInTheDocument();
+  });
+
+  it("leads with Open and dismisses from the corner; there is no general chat to ask in", async () => {
+    mockApi(base);
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(card).queryByRole("button", { name: "Ask about it" })).not.toBeInTheDocument();
     const open = within(card).getByRole("link", { name: "Open" });
     expect(open).toHaveTextContent("Open");
-    expect(ask.parentElement).toBe(open.parentElement);
     const dismiss = within(card).getByRole("button", { name: /^Dismiss/ });
     expect(dismiss.closest("[data-pane-chrome]")).not.toBeNull();
     expect(dismiss).toHaveTextContent("");
@@ -133,21 +173,6 @@ describe("Home", () => {
     expect(screen.queryByRole("heading", { name: /^Notifications.*unread$/ })).not.toBeInTheDocument();
   });
 
-  it("opens a chat about a card with what it says, and keeps the conversation below", async () => {
-    const about = { ...empty, context: { kind: "route" as const, ref: "/doctor", detail: "" } };
-    const { calls } = mockApi({ ...base, "/api/system/runner/chat/open": about });
-    const user = userEvent.setup();
-    renderAt("/");
-    const card = (await screen.findByRole("heading", { name: doctorCard.title })).closest("li") as HTMLElement;
-    await user.click(within(card).getByRole("button", { name: "Ask about it" }));
-    expect(await screen.findByText("About: route /doctor")).toBeInTheDocument();
-    const open = calls.find((request) => request.url.includes("/chat/open"));
-    const query = new URL(open?.url ?? "").searchParams;
-    expect(query.get("context")).toBe("route:/doctor");
-    expect(query.get("detail")).toBe(`${doctorCard.title}: ${doctorCard.detail}`);
-    expect(screen.getByLabelText("Your message")).toHaveFocus();
-  });
-
   it("dismisses a card until what it says changes", async () => {
     mockApi(base);
     const user = userEvent.setup();
@@ -163,27 +188,6 @@ describe("Home", () => {
     renderAt(`/?card=${encodeURIComponent(doctorCard.id)}`);
     const card = (await screen.findByRole("heading", { name: doctorCard.title })).closest("li") as HTMLElement;
     expect(card).toHaveAttribute("aria-current", "true");
-  });
-
-  it("streams the answer with the tools it calls, then folds them under the answer", async () => {
-    const done = {
-      ...answered,
-      actions: [],
-      messages: [
-        msg({ role: "user", text: "How healthy is hz?" }),
-        msg({ role: "assistant", text: "Two checks are degraded.", tools: { mcp__hz__system_doctor: 1 } }),
-      ],
-    };
-    mockWithStream({ ...base, "/api/system/runner/chat/open": empty }, [
-      frame("tool", { name: "mcp__hz__system_doctor" }),
-      frame("result", { data: done }),
-    ]);
-    const user = userEvent.setup();
-    renderAt("/");
-    await user.type(screen.getByLabelText("Your message"), "How healthy is hz?{Enter}");
-    expect(await screen.findByText("Two checks are degraded.")).toBeInTheDocument();
-    expect(screen.getByText("Used 1 tools")).toBeInTheDocument();
-    expect(screen.getByText("system_doctor")).toBeInTheDocument();
   });
 
   it("is quiet when nothing needs you", async () => {
@@ -209,21 +213,12 @@ describe("Today's notices", () => {
   };
   const list = { notices: [notice], waiting: 0, native: "macOS notifications" };
 
-  it("shows the day's notices as cards, and a chat about one gets its event as context", async () => {
-    const about = { ...empty, context: { kind: "event" as const, ref: notice.id, detail: "" } };
-    const { calls } = mockApi({
-      ...base,
-      "/api/system/notify/list": list,
-      "/api/system/runner/chat/open": about,
-    });
-    const user = userEvent.setup();
+  it("shows the day's notices as cards that open their screen", async () => {
+    mockApi({ ...base, "/api/system/notify/list": list });
     renderAt(`/?card=${encodeURIComponent(`event:${notice.id}`)}`);
     const card = (await screen.findByRole("heading", { name: notice.title })).closest("li") as HTMLElement;
     expect(card).toHaveAttribute("aria-current", "true");
     expect(within(card).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/contracts");
-    await user.click(within(card).getByRole("button", { name: "Ask about it" }));
-    const open = calls.find((request) => request.url.includes("/chat/open"));
-    expect(new URL(open?.url ?? "").searchParams.get("context")).toBe(`event:${notice.id}`);
   });
 
   it("leaves out notices older than a day", () => {

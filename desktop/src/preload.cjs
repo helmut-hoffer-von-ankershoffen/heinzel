@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   workspaceAudio: true,
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
+  player: (request) => ipcRenderer.invoke("hz:player", request),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
   about: () => ipcRenderer.invoke("hz:about"),
   // System loopback is offered only where Electron main reports it; a choice arms exactly one capture.

@@ -9,12 +9,25 @@ const sessions = [
     session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV",
     name: "Morning check",
     state: "awake",
+    activity: "idle",
     last_seq: 4,
     appearance: { age: "old", build: "round", hat: "blue" },
   },
-  { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", name: "Quiet helper", state: "paused", last_seq: 2 },
-  { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAX", name: "Waiting helper", state: "waiting", last_seq: 3 },
-  { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAY", name: "New helper", state: "proposed", last_seq: 0 },
+  {
+    session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+    name: "Quiet helper",
+    state: "paused",
+    activity: "paused",
+    last_seq: 2,
+  },
+  {
+    session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAX",
+    name: "Waiting helper",
+    state: "waiting",
+    activity: "waiting_for_you",
+    last_seq: 3,
+  },
+  { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAY", name: "New helper", state: "proposed", activity: "idle", last_seq: 0 },
 ];
 
 describe("The durable Heinzel footer control", () => {
@@ -33,7 +46,10 @@ describe("The durable Heinzel footer control", () => {
     const rows = within(within(panel).getByRole("list", { name: "Your Heinzels" })).getAllByRole("listitem");
     expect(rows).toHaveLength(4);
     expect(rows[0]).toHaveTextContent("Morning check");
-    expect(rows[0]).toHaveTextContent("Active");
+    // The row word is the computed state, the same in the header, the switcher and the Heinzels page.
+    expect(rows[0]).toHaveTextContent("Idle");
+    expect(rows[1]).toHaveTextContent("Paused");
+    expect(rows[2]).toHaveTextContent("Waiting for you");
     expect(rows[0]?.querySelector('svg[data-view="bust"] [fill="#1E88E5"]')).not.toBeNull();
     expect(rows[3]).toHaveTextContent("New");
     expect(button.querySelectorAll('svg[data-view="bust"]')).toHaveLength(3);
@@ -100,7 +116,9 @@ describe("The durable Heinzel footer control", () => {
     renderAt("/doctor");
     const button = await screen.findByRole("button", { name: "… Heinzelmännchen, off" });
     fireEvent.click(button);
-    expect(await screen.findByText("Loading…")).toHaveAttribute("role", "status");
+    // The chat beside the screen is loading the same list; this placeholder is the footer panel's.
+    const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
+    expect(await within(panel).findByText("Loading…")).toHaveAttribute("role", "status");
     finish(Response.json({ sessions: [] }));
     expect(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
   });

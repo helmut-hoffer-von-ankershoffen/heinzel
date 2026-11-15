@@ -12,6 +12,7 @@ import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
+import { scrollSettled } from "./settle.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -877,20 +878,41 @@ try {
     await page.keyboard.press("Escape");
     const initialChatTab = page.getByRole("tab", { name: "Chat", exact: true });
     if (await initialChatTab.isVisible()) await initialChatTab.click();
-    await page.getByRole("button", { name: /switch chats$/ }).click();
+    // A private fixture suggestion stays inert until the person selects it and saves the profile;
+    // it is served before the Heinzel exists, so its chat reads it from the start.
+    await page.route("**/api/heinzel/latest-profile-proposal?*", async (route) => {
+      const session = new URL(route.request().url()).searchParams.get("session_id");
+      await route.fulfill({
+        json: {
+          session_id: session,
+          request_id: "mobile-look",
+          expected_revision: 1,
+          name: "Mira",
+          appearance: { age: "grown", build: "regular", shirt: "teal", accessories: [] },
+          status: "proposed",
+          preview_sha256: "a".repeat(64),
+        },
+      });
+    });
+    // Every chat is with a Heinzel (ADR 0157): a fresh profile meets its first one in the chat, then talks to it.
+    const meetName = page.getByLabel("What do you call it?");
+    const heinzelComposer = page.getByRole("textbox", { name: /^Message / });
+    await meetName.or(heinzelComposer).first().waitFor({ timeout: 30_000 });
+    if (await meetName.isVisible()) {
+      const start = page.getByRole("button", { name: "Start", exact: true });
+      await assertContained(page, start, `${spec.name}: first start`);
+      await page.screenshot({ path: join(shots, `mobile-${spec.name}-first-start.png`) });
+      await start.click();
+    }
+    await heinzelComposer.waitFor({ timeout: 30_000 });
+    await page.getByRole("button", { name: /\. Switch Heinzel$/ }).click();
     await assertContained(
       page,
-      page.getByRole("dialog", { name: "Your chats", exact: true }),
+      page.getByRole("dialog", { name: "Your Heinzels", exact: true }),
       `${spec.name}: chat switcher`,
     );
     await page.keyboard.press("Escape");
-    await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
-    await assertContained(
-      page,
-      page.getByRole("button", { name: "Create a Heinzel and take this message" }),
-      `${spec.name}: workshop agent handoff`,
-    );
-    await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
+    await heinzelComposer.fill("A draft to keep.");
     await showPage(page);
     await page.getByRole("button", { name: "Open a terminal", exact: true }).click();
     const terminal = page.getByRole("region", { name: "Terminal", exact: true });
@@ -930,7 +952,7 @@ try {
     const chatFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, chatFooter, `${spec.name}: footer in chat`);
     await dismissFooterPane(page);
-    assert.equal(await page.getByRole("textbox", { name: "Your message" }).inputValue(), "A draft to keep.");
+    assert.equal(await heinzelComposer.inputValue(), "A draft to keep.");
     await page
       .getByRole("tablist", { name: "Workspace panels" })
       .getByRole("tab", { name: "Terminal", exact: true })
@@ -955,9 +977,11 @@ try {
     await page.getByRole("button", { name: "Close the chat", exact: true }).first().click();
     await showPage(page);
     await page.getByRole("button", { name: "Chat with your Heinzelmännchen", exact: true }).click();
-    const composer = page.getByRole("textbox", { name: "Your message" });
+    const composer = heinzelComposer;
     await composer.waitFor();
     await composer.fill("");
+    // Opening the chat scrolls the workspace to it, smoothly: measure where the composer comes to rest.
+    await scrollSettled(composer);
     const composerBox = await composer.boundingBox();
     assert.ok(composerBox, `${spec.name}: composer has no box`);
     assert.ok(
@@ -972,13 +996,6 @@ try {
       composerBox.y + composerBox.height <= spec.height + 1,
       `${spec.name}: composer exceeds viewport height: ${JSON.stringify(composerBox)}`,
     );
-    const modelPicker = page.getByRole("button", { name: /^Model and effort:/ });
-    if (await modelPicker.isVisible()) {
-      await modelPicker.click();
-      const modelMenu = page.getByRole("group", { name: /^Models of/ }).locator("..");
-      await assertContained(page, modelMenu, `${spec.name}: model and effort menu`);
-      await page.keyboard.press("Escape");
-    }
     await composer.tap();
     assert.equal(
       await composer.evaluate((element) => element === document.activeElement),
@@ -1093,39 +1110,20 @@ try {
       Object.defineProperty(window, "visualViewport", window.originalVisualViewport);
       visualViewport.dispatchEvent(new Event("resize"));
     });
-    // A private fixture suggestion stays inert until the person selects it and saves the profile.
-    await page.route("**/api/heinzel/latest-profile-proposal?*", async (route) => {
-      const session = new URL(route.request().url()).searchParams.get("session_id");
-      await route.fulfill({
-        json: {
-          session_id: session,
-          request_id: "mobile-look",
-          expected_revision: 1,
-          name: "Mira",
-          appearance: { age: "grown", build: "regular", shirt: "teal", accessories: [] },
-          status: "proposed",
-          preview_sha256: "a".repeat(64),
-        },
-      });
-    });
-    await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
-    await page.getByLabel("Message your Heinzel").waitFor();
+    await heinzelComposer.fill("Keep my notes current.");
     // The composer is one row that fits the phone: the message field and Send side by side.
-    await assertContained(page, page.getByLabel("Message your Heinzel"), `${spec.name}: Heinzel composer`);
+    await assertContained(page, page.getByLabel(/^Message /), `${spec.name}: Heinzel composer`);
     await assertContained(page, page.getByRole("button", { name: "Send" }), `${spec.name}: Heinzel send`);
-    // The suggestion sits with the other reviews behind the Details disclosure.
-    await openDetails(page);
-    await page.getByText(/Customize.*suggested look/).click();
-    const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
+    // The suggestion waits on the Heinzel's page, under Look and name; Use it applies it at once, with Undo.
+    await openDetails(page, { show: "page" });
+    const look = page.getByRole("region", { name: "Look and name" });
+    const useSuggestion = look.getByRole("button", { name: "Use it" });
     await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);
     await useSuggestion.click();
-    await assertContained(
-      page,
-      page.getByRole("radiogroup", { name: "Shirt colour" }),
-      `${spec.name}: shirt colour swatches`,
-    );
-    assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Mira");
+    await look.getByRole("button", { name: "Undo" }).waitFor();
+    await look.getByRole("radio", { name: /^Shirt/ }).click();
+    await assertContained(page, look.getByRole("radiogroup", { name: "Shirt" }), `${spec.name}: shirt colour swatches`);
+    assert.equal(await look.getByLabel("Name", { exact: true }).inputValue(), "Mira");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-suggested-identity.png`) });
     // A real visual viewport zoom exercises fixed panels independently of layout viewport size.
     await page.goto(`${url.split("#")[0]}?settings=hz${new URL(url).hash}`);

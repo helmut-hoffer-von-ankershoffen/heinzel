@@ -9,8 +9,9 @@ Already have the app open? Start here. If not, follow the [installation guide](i
 
 ## Find your way around
 
-**Today** is your starting point. Use the navigation to move between screens, and open the chat to ask a question
-about your work. The account menu at the bottom of the navigation brings together **Settings**, **Profile**,
+**Today** is your starting point. Use the navigation to move between screens. The chat beside every screen is
+always with one of your Heinzels: at first start you name your first one, and its name in the chat's header switches
+to another. The account menu at the bottom of the navigation brings together **Settings**, **Profile**,
 **Set up hz**, **Check this machine** and **Get help**.
 
 ## Make it yours

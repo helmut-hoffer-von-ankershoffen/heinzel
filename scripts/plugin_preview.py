@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Preview a standalone plugin with its installed core artifact and isolated application state."""

@@ -220,7 +220,7 @@ def _check_handover_directory(descriptor: int) -> None:
 
 
 @contextmanager
-def _open_verified_handover_file(path: Path) -> Generator[BinaryIO, None, None]:
+def _open_verified_handover_file(path: Path) -> Generator[BinaryIO]:
     """Open through trusted directories.
 
     Yields:
@@ -585,7 +585,7 @@ def handover_absolute_path(path: Path) -> Path:
 
 
 @contextmanager
-def verified_handover_file(path: Path) -> Generator[BinaryIO, None, None]:
+def verified_handover_file(path: Path) -> Generator[BinaryIO]:
     """Open a file through the existing bounded handover authority boundary.
 
     Yields:
@@ -1129,7 +1129,7 @@ class DaemonService:
         return DaemonHandoverPlan(state.active, self._platform, signature)
 
     @contextmanager
-    def admission_guard(self) -> Generator[None, None, None]:
+    def admission_guard(self) -> Generator[None]:
         """Hold lifecycle authority through a caller's durable schedule admission.
 
         Acquire this before any session writer; lifecycle writers never acquire the session writer.
@@ -1149,7 +1149,7 @@ class DaemonService:
     @contextmanager
     def mutation_guard(
         self, checkpoint: Callable[[], bool], rollback_identity: Callable[[], str]
-    ) -> Generator[DaemonMutationScope, None, None]:
+    ) -> Generator[DaemonMutationScope]:
         """Hold lifecycle authority over one verified installation mutation.
 
         Yields:
@@ -1540,7 +1540,7 @@ class DaemonService:
             return False
 
     @contextmanager
-    def quiescence_guard(self, binary: Path) -> Generator[None, None, None]:
+    def quiescence_guard(self, binary: Path) -> Generator[None]:
         """Hold lifecycle and tick locks through a trusted, quiescent standard installation.
 
         Non-GUI, unsupported or malformed manager evidence denies. This does not fence noncooperating OS actors or
@@ -1917,7 +1917,7 @@ class DaemonService:
         locks: MaintenanceLocks | None = None,
         gate: Path | None = None,
         compatibility_gates: tuple[Path, ...] = (),
-    ) -> Generator[DaemonRemoval, None, None]:
+    ) -> Generator[DaemonRemoval]:
         """Hold daemon lifecycle/tick authority while a durable coordinator stops and removes one tool.
 
         Yields:

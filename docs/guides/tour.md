@@ -1,6 +1,6 @@
 ---
 title: Product tour
-description: Real Heinzelmännchen screens with fictional data, from the workflow graph to the native terminal and contextual chat, each with a zoomed detail.
+description: Real Heinzelmännchen screens with fictional data, from the workflow graph to the native terminal and the chat with a Heinzel, each with a zoomed detail.
 ---
 
 # Product tour
@@ -28,11 +28,13 @@ for Escape, Tab, Ctrl+C, Ctrl+Z, Ctrl+D and the arrow keys.
 
 ## Ask here. Review the action before it runs.
 
-Chat knows which contract you are looking at. When it proposes a change, you see the exact command first. This demo
-uses a scripted local runner: no model is called.
+Every chat is with one of your Heinzels, beside every screen. "Ask" on a card puts the question in its message
+field for you to read and send. When it proposes a change, you see the exact command first. This demo uses a scripted
+local runner: no model is called. The picture is from an earlier release, before every chat was with a Heinzel; the
+proposal and its approval look the same.
 
 <!-- hz:tour-story chat -->
-![Real contextual chat and approval flow, with a scripted local demonstration runner; no model call.](../assets/tour/chat-proposal.png)
+![The chat's approval flow in an earlier release, with a scripted local demo runner; no model call.](../assets/tour/chat-proposal.png)
 <!-- /hz:tour-story -->
 
 Characters speak in an imagined voice; the screens are real. [Install Heinzelmännchen](install.md) to try them with your own

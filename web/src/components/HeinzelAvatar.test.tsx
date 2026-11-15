@@ -45,6 +45,31 @@ function fills(shapes: Shape[]): string[] {
 }
 
 describe("Heinzelmännchen's drawing", () => {
+  it("carries the chosen look as data, also when the face is decoration without a label", () => {
+    const { container } = render(
+      <HeinzelAvatar
+        view="bust"
+        age="old"
+        beard="long"
+        hat="blue"
+        shirt="rose"
+        build="round"
+        accessories={["scarf"]}
+      />,
+    );
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(svg.dataset).toMatchObject({
+      age: "old",
+      beard: "long",
+      hat: "blue",
+      shirt: "rose",
+      build: "round",
+      accessories: "scarf",
+    });
+    expect(svg.querySelector('[fill="#D9567C"]')).not.toBeNull(); // the rose shirt is drawn
+  });
+
   it("is what heinzel.svg and heinzel-swarm.svg hold, so the icons show the avatars' Heinzelmännchen (make icons)", () => {
     expect(readFileSync(resolve(MACOS, "heinzel.svg"), "utf-8")).toBe(heinzelSvg({}, "bust", true));
     expect(readFileSync(resolve(MACOS, "heinzel-swarm.svg"), "utf-8")).toBe(heinzelSwarmSvg());
@@ -68,7 +93,7 @@ describe("Heinzelmännchen's drawing", () => {
             const shapes = heinzelShapes({ age, beard, build, state, hat: "rust", shirt: "rose" });
             expect(fills(shapes)).toContain(SHIRTS.rose);
             expect(fills(shapes).includes(HATS.rust)).toBe(age !== "baby");
-            expect(shapes.some((shape) => shape.part === "badge")).toBe(!["idle", "working"].includes(state));
+            expect(shapes.some((shape) => shape.part === "badge")).toBe(!["idle", "working", "dozing"].includes(state));
           }
   });
 

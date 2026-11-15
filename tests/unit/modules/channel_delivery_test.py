@@ -416,3 +416,37 @@ def test_disabled_consumer_performs_no_owner_or_transport_work(flow):
     with flow.current.using(None):
         assert flow.service.apply_channel_replies() == 0
     assert flow.channel.posted == []
+
+
+def test_a_retired_heinzel_applies_no_channel_reply_until_restored(flow):
+    terms = _propose(flow)
+    assert _post(flow, terms) == "delivered"
+    _reply(flow, terms)
+    flow.crud.retire(terms.session_id, "retire-channel")
+    with flow.current.local("daemon"):
+        assert flow.service.apply_channel_replies() == 0
+    assert flow.provider.writes == 0
+    flow.crud.retire(terms.session_id, "restore-channel", retired=False)
+    with flow.current.local("daemon"):
+        assert flow.service.apply_channel_replies() == 1
+
+
+def test_a_reply_that_meets_a_retire_under_the_claim_lock_claims_nothing(flow, monkeypatch):
+    terms = _propose(flow)
+    assert _post(flow, terms) == "delivered"
+    _reply(flow, terms)
+    flow.crud.retire(terms.session_id, "retire-during-reply")
+    real = _channel_delivery.is_retired
+    calls = []
+
+    def stale_first_look(events):
+        # The poll's first look predates the retire; the check under the claim lock sees it.
+        calls.append(1)
+        return False if len(calls) == 1 else real(events)
+
+    monkeypatch.setattr(_channel_delivery, "is_retired", stale_first_look)
+    with flow.current.local("daemon"):
+        assert flow.service.apply_channel_replies() == 0
+    assert flow.provider.writes == 0
+    events = flow.crud.repository.control_read(terms.session_id).events
+    assert not [event for event in events if event.kind == "channel.claimed"]

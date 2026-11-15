@@ -1,11 +1,19 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { createDraftPath } from "@/lib/chatIntent";
-import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+
+/** One Heinzel, Helmi, so the chat opens on it (ADR 0157). */
+const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+const withHelmi = {
+  "/api/heinzel/sessions": {
+    sessions: [{ session_id: helmi, name: "Helmi", state: "awake", last_seq: 1, updated_at: "2026-11-14T09:00:00Z" }],
+  },
+  "/api/heinzel/session": { session_id: helmi, heinzel_id: helmi, name: "Helmi", messages: [] },
+};
 
 const answers = {
   ...shell,
@@ -79,7 +87,7 @@ describe("Shell", () => {
   });
 
   it("opens the Page tab on a phone when the chat switcher asks for a new Heinzel on the same page", async () => {
-    mockApi({ ...answers });
+    mockApi({ ...answers, ...withHelmi });
     const initialWidth = window.innerWidth;
     try {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
@@ -88,10 +96,34 @@ describe("Shell", () => {
       await user.click(await screen.findByRole("tab", { name: "Chat" }));
       await waitFor(() => expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true"));
       // Only the query changes (`?create=1` on /heinzel): the pathname alone used to decide the tab.
-      await user.click(screen.getByRole("button", { name: /: switch chats$/ }));
-      const switcher = await screen.findByRole("dialog", { name: "Your chats" });
-      await user.click(within(switcher).getByRole("button", { name: "Create a personal Heinzel" }));
+      await user.click(await screen.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ }));
+      const switcher = await screen.findByRole("dialog", { name: "Your Heinzels" });
+      await user.click(within(switcher).getByRole("button", { name: "New Heinzel" }));
       await waitFor(() => expect(screen.getByRole("tab", { name: "Page" })).toHaveAttribute("aria-selected", "true"));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
+    }
+  });
+
+  it("keeps Chat chosen on a phone when it is pressed right after About opens the Heinzel's page", async () => {
+    mockApi({ ...answers, ...withHelmi });
+    const initialWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      renderAt("/doctor");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("tab", { name: "Chat" }));
+      await user.click(await screen.findByRole("button", { name: "More: search, about" }));
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "More" })).getByRole("button", { name: /^About / }),
+      );
+      // The very next press, before anything else settles: the person's choice of Chat wins over the new address.
+      await user.click(screen.getByRole("tab", { name: "Chat" }));
+      await screen.findByRole("heading", { level: 1, name: /, your Heinzel$/ });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
     }
@@ -222,6 +254,7 @@ describe("Shell", () => {
 });
 
 describe("Desktop menu actions", () => {
+  afterEach(() => Reflect.deleteProperty(window, "heinzelDesktop"));
   it("opens Settings from the app menu", async () => {
     mockApi({ ...answers, "/api/system/config/show": config });
     renderAt("/doctor");
@@ -250,36 +283,42 @@ describe("Desktop menu actions", () => {
     expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
   });
 
-  it("starts a new chat and focuses its composer whether the workspace is open or closed", async () => {
-    sessionStorage.setItem("hz.chat", answered.id);
-    mockApi({ ...answers, "/api/system/runner/chat/show": answered });
+  it("opens the chat on the default Heinzel from the menu's New Chat, whether the chat is open or closed", async () => {
+    mockApi({ ...answers, ...withHelmi });
     const user = userEvent.setup();
     renderAt("/doctor");
     const panel = await screen.findByRole("complementary", { name: "Chat" });
-    expect(await within(panel).findByText("Make me the lead")).toBeInTheDocument();
-
+    const composer = await within(panel).findByLabelText("Message Helmi");
+    await waitFor(() => expect(composer).toBeEnabled());
+    expect(composer).not.toHaveFocus();
+    // With the chat open, New Chat puts the cursor in the default Heinzel's composer.
     act(() => requestMenuAction("new-chat"));
-    expect(within(panel).queryByText("Make me the lead")).not.toBeInTheDocument();
-    expect(within(panel).getByLabelText("Your message")).toHaveFocus();
-    expect(sessionStorage.getItem("hz.chat")).toBeNull();
-
-    await user.click(within(panel).getByRole("button", { name: "Close the chat" }));
+    await waitFor(() => expect(within(panel).getByLabelText("Message Helmi")).toHaveFocus());
+    await user.click(await within(panel).findByRole("button", { name: "Close the chat" }));
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
     act(() => requestMenuAction("new-chat"));
-    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+    const reopened = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await reopened.findByRole("button", { name: /^Helmi, .+\. Switch Heinzel$/ })).toBeInTheDocument();
+    // Closed, it opens the chat and focuses the composer once it is ready.
+    await waitFor(() => expect(reopened.getByLabelText("Message Helmi")).toHaveFocus());
+    // There is no general chat to start: New Chat never opens one.
+    expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
   });
 
-  it("leaves a linked personal chat when starting a new chat from the menu", async () => {
+  it("leaves a linked Heinzel's chat for the default one when New Chat is chosen from the menu", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const { calls } = mockApi({
       ...answers,
       "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Personal Heinzel", messages: [] },
     });
     renderAt(`/doctor?chat=${id}`);
-    expect(await screen.findByRole("heading", { name: "Personal Heinzel" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Personal Heinzel, .+\. Switch Heinzel$/ })).toBeInTheDocument();
     act(() => requestMenuAction("new-chat"));
-    expect(screen.queryByRole("heading", { name: "Personal Heinzel" })).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+    // No Heinzel is listed, so the default is the first start.
+    expect(await screen.findByRole("heading", { name: "Meet your first Heinzelmännchen" })).toBeInTheDocument();
+    // The first start takes the cursor in its name field.
+    await waitFor(() => expect(screen.getByLabelText("What do you call it?")).toHaveFocus());
+    expect(screen.queryByRole("button", { name: /^Personal Heinzel, .+\. Switch Heinzel$/ })).not.toBeInTheDocument();
     expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
   });
 
@@ -291,24 +330,11 @@ describe("Desktop menu actions", () => {
     async ({ width, placement, chatButton, terminalButton }) => {
       vi.stubGlobal("innerWidth", width);
       localStorage.setItem("hz.chat.open", "false");
-      mockApi({
-        ...answers,
-        "/api/system/config/show": {
-          ...config,
-          settings: [
-            ...config.settings,
-            {
-              section: "hz",
-              key: "features",
-              value: ["sidebar_browser"],
-              default: [],
-              source: "user",
-              env: "HZ_FEATURES",
-              description: "Preview features",
-            },
-          ],
-        },
+      Object.defineProperty(window, "heinzelDesktop", {
+        value: { browser: vi.fn().mockResolvedValue({ status: "empty" }) },
+        configurable: true,
       });
+      mockApi(answers);
       const user = userEvent.setup();
       renderAt("/doctor");
       await screen.findByRole("button", { name: "Open the browser" });

@@ -82,6 +82,26 @@ function write(key: string, sessionId: string, state: DurableComposerState): voi
   if (sessionStorage.getItem(key) !== encoded) throw new Error("The message could not be preserved in this tab.");
 }
 
+const PREFILLED = "hz:durable-draft-prefilled";
+
+/**
+ * Put `text` in a Heinzel's composer without sending it ("Ask <Name>" on a card): after a draft already typed there,
+ * never over a message on its way. False when the tab can't keep it or the saved draft is unreadable.
+ */
+export function prefillDurableDraft(sessionId: string, text: string): boolean {
+  const key = `${PREFIX}${sessionId}`;
+  const { state, error } = read(key, sessionId);
+  if (error) return false;
+  const joined = state.text.trim() ? `${state.text.trimEnd()}\n\n${text}` : text;
+  try {
+    write(key, sessionId, { ...state, text: joined.slice(0, 4000) });
+  } catch {
+    return false;
+  }
+  window.dispatchEvent(new CustomEvent(PREFILLED, { detail: sessionId }));
+  return true;
+}
+
 /** Keep unsent and idempotently retryable work in this tab, scoped to one durable session. */
 export function useDurableDraft(sessionId: string) {
   const key = `${PREFIX}${sessionId}`;
@@ -124,6 +144,19 @@ export function useDurableDraft(sessionId: string) {
       return false;
     }
   }, [key]);
+
+  // A card's "Ask <Name>" prefilled this composer while it is shown: take the text it saved.
+  useEffect(() => {
+    const prefilled = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== sessionId || recoveryBlocked) return;
+      const { state: saved, error } = read(key, sessionId);
+      if (error) return;
+      stateRef.current = saved;
+      setState(saved);
+    };
+    window.addEventListener(PREFILLED, prefilled);
+    return () => window.removeEventListener(PREFILLED, prefilled);
+  }, [key, recoveryBlocked, sessionId]);
 
   useEffect(
     () =>

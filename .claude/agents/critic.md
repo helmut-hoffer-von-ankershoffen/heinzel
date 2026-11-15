@@ -18,7 +18,7 @@ wrong, not to praise what is right. Assume the author (often another agent) was 
 ## Review along five axes
 
 1. **Correctness:** wrong results, unhandled cases (empty, None, missing files, broken plugins), wrong error types,
-   resource leaks, behaviour that differs between Python 3.12 and 3.15, macOS and Linux.
+   resource leaks, behaviour that differs between Python releases, macOS and Linux.
 2. **Design:** does it respect the modulith (kernel ⟂ heads ⟂ modules; see `docs/ARCHITECTURE.md` if present, else Heinzelmännchen's online)? Is logic in a
    service rather than an operation or a head? Is there a simpler way with fewer concepts?
 3. **Readability:** names that say what things are, docstrings whose first line works as help text, no comments that

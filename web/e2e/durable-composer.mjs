@@ -62,18 +62,24 @@ await page.route("**/api/heinzel/chat", async (route) => {
     json: { session_id: body.session_id, request_id: body.request_id, disposition: "queued", inbox_position: 1 },
   });
 });
-await page.route("**/api/heinzel/answer-chat", async (route) => {
-  const body = route.request().postDataJSON();
-  answerRequested.resolve(body);
-  await finishAnswer.promise;
-  return route.fulfill({
-    json: {
+// The chat streams the answer (`POST /api/stream/heinzel/answer-chat`); its result is the plain call's answer.
+await page.route(
+  (url) => url.pathname === "/api/stream/heinzel/answer-chat",
+  async (route) => {
+    const body = route.request().postDataJSON();
+    answerRequested.resolve(body);
+    await finishAnswer.promise;
+    const answer = {
       session_id: body.session_id,
       request_id: body.request_id,
       message: { id: "fixture-answer", seq: 3, role: "assistant", text: "The draft is ready.", status: "completed" },
-    },
-  });
-});
+    };
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body: `event: result\ndata: ${JSON.stringify({ data: answer })}\n\n`,
+    });
+  },
+);
 // The app streams the update (`POST /api/stream/system/update`) to show its steps; either route counts as an install.
 const isUpdate = (url) => ["/api/system/update", "/api/stream/system/update"].includes(url.pathname);
 await page.route(isUpdate, async (route) => {
@@ -150,7 +156,7 @@ await page.route("**/api/frontend", async (route) => {
 try {
   await page.goto(sessionUrlFor(firstSession));
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-  const composer = page.getByLabel("Message your Heinzel");
+  const composer = page.getByLabel(/^Message /);
   await composer.waitFor();
   await composer.fill("First session draft survives the update");
   const firstKey = `hz.durable.composer.${firstSession}`;
@@ -158,8 +164,8 @@ try {
   assert.match(await page.evaluate((key) => sessionStorage.getItem(key) ?? "", firstKey), /First session draft/);
 
   await page.goto(sessionUrlFor(secondSession));
-  const secondComposer = page.getByLabel("Message your Heinzel");
-  await page.getByRole("heading", { name: "Second helper" }).waitFor();
+  const secondComposer = page.getByLabel(/^Message /);
+  await page.getByRole("button", { name: /^Second helper, .+\. Switch Heinzel$/ }).waitFor();
   await secondComposer.waitFor();
   assert.equal(await secondComposer.inputValue(), "", "another durable session must not inherit the first draft");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);
@@ -179,8 +185,8 @@ try {
     return route.fulfill({ json: { ...autoFacts, held: autoExplanation, development: autoExplanation } });
   });
   await page.goto(sessionUrlFor(firstSession));
-  await page.getByLabel("Message your Heinzel").waitFor();
-  assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
+  await page.getByLabel(/^Message /).waitFor();
+  assert.equal(await page.getByLabel(/^Message /).inputValue(), "First session draft survives the update");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);
   await page.getByRole("button", { name: "Updates available" }).click();
   const updateButton = page.getByRole("button", { name: "Update now" });
@@ -254,7 +260,7 @@ try {
         ),
       };
     });
-    const composer = (await page.getByLabel("Message your Heinzel").count()) > 0;
+    const composer = (await page.getByLabel(/^Message /).count()) > 0;
     console.error(
       `DURABLE_UPDATE_STATE:${JSON.stringify({ ...state, composer, updated, restarted, requests: updateRequests })}`,
     );
@@ -264,28 +270,34 @@ try {
   await page.waitForFunction(() => sessionStorage.getItem("hz.update.receipt") === null, null, { timeout: 15_000 });
   assert.equal(updateRequests.install, 1, "One agreed update must install exactly once");
   assert.equal(updateRequests.restart, 1, "One physical gesture must restart exactly once");
-  assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
+  assert.equal(await page.getByLabel(/^Message /).inputValue(), "First session draft survives the update");
 
   await page.goto(sessionUrlFor(secondSession));
-  await page.getByLabel("Message your Heinzel").waitFor();
-  assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "");
+  await page.getByLabel(/^Message /).waitFor();
+  assert.equal(await page.getByLabel(/^Message /).inputValue(), "");
   await page.goto(sessionUrlFor(firstSession));
-  await page.getByLabel("Message your Heinzel").waitFor();
+  await page.getByLabel(/^Message /).waitFor();
   await page.getByRole("button", { name: "Send" }).click();
-  await page.getByRole("button", { name: "Retry the same message" }).waitFor();
+  // A message that did not go through waits in its bubble with "Try again" under it (ADR 0157, board 7).
+  const tryAgain = page.locator("[data-message-state]").getByRole("button", { name: "Try again" });
+  await tryAgain.waitFor();
   const savedPending = JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), firstKey));
   assert.equal(savedPending.pending.message, "First session draft survives the update");
   const requestId = savedPending.pending.request_id;
   await page.reload();
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-  await page.getByRole("button", { name: "Retry the same message" }).waitFor();
+  await tryAgain.waitFor();
   const savedAfterReload = JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), firstKey));
   assert.equal(savedAfterReload.pending.request_id, requestId);
-  assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
+  await page
+    .locator('[data-message-speaker="you"]')
+    .filter({ hasText: "First session draft survives the update" })
+    .waitFor();
+  assert.equal(await page.getByLabel(/^Message /).inputValue(), "", "the waiting message is in its bubble, not twice");
   const retryResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/heinzel/chat" && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Retry the same message" }).click();
+  await tryAgain.click();
   await retryResponse;
   assert.equal(submissions.length, 2);
   assert.deepEqual(submissions[1], submissions[0], "retry after reload must use the exact same session and request id");
@@ -300,8 +312,8 @@ try {
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), firstKey), null);
 
   await page.goto(sessionUrlFor(secondSession));
-  await page.getByLabel("Message your Heinzel").waitFor();
-  assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "");
+  await page.getByLabel(/^Message /).waitFor();
+  assert.equal(await page.getByLabel(/^Message /).inputValue(), "");
   console.log(
     JSON.stringify({
       updateReload: "verified",

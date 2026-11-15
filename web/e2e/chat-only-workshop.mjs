@@ -19,8 +19,6 @@ try {
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my notes current";
   const message = await createHeinzelWithMessage(page, sentence);
   await page.getByText("Which information and output should I use?").waitFor({ timeout: 30000 });
@@ -41,7 +39,7 @@ try {
   const session = new URL(page.url()).searchParams.get("chat");
   assert.ok(session);
   await page.reload();
-  const composerAfterReload = page.getByLabel("Message your Heinzel");
+  const composerAfterReload = page.getByLabel(/^Message /);
   const chatTabAfterReload = page.getByRole("tab", { name: "Chat", exact: true });
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["packaging==26.3"]
 # ///
 """Deterministic, escaped website views over the public catalog snapshot (no provider imports)."""
@@ -529,7 +529,7 @@ TOUR_STORIES: tuple[Object, ...] = (
     },
     {
         "id": "chat",
-        "label": "contextual chat",
+        "label": "chat with a Heinzel",
         "art": "reviewer",
         "name": "Otto",
         "cue": "You can see exactly what I am asking to do.",
@@ -539,7 +539,7 @@ TOUR_STORIES: tuple[Object, ...] = (
             (
                 "chat-proposal",
                 "Overview",
-                "Real contextual chat and approval flow, with a scripted local demonstration runner; no model call.",
+                "The chat's approval flow in an earlier release, with a scripted local demo runner; no model call.",
             ),
             (
                 "chat-proposal-detail",

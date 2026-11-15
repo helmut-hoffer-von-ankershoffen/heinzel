@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """Install the programs the build needs that are not Python packages, pinned and checksummed, into .tools/bin.

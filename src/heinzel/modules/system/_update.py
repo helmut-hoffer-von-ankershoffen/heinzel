@@ -1398,7 +1398,7 @@ class UpdateService:
     @contextmanager
     def _install_constraints(
         self, core: str, current: str, candidates: list[str], *, enabled: bool, scope: DaemonMutationScope | None
-    ) -> Generator[tuple[Path | None, tuple[str, ...]], None, None]:
+    ) -> Generator[tuple[Path | None, tuple[str, ...]]]:
         """Preserve prior constraints and add an automatic index floor where needed.
 
         Yields:

@@ -48,6 +48,7 @@ from heinzel.kernel._claude_code import (
     Denial,
     SubscriptionDeniedError,
     check_access,
+    command_flags,
     contract_proven,
     executable_digest,
     in_supported_range,
@@ -102,6 +103,8 @@ class SubscriptionAdmission:
     max_output_bytes: int
     dollar_cap: float | None = None
     total_token_cap: int | None = None
+    model: str | None = None
+    """The Claude Code alias of the Heinzel's level (ADR 0158); none for Claude Code's own default."""
 
 
 class SubscriptionVerifier(Protocol):
@@ -298,7 +301,7 @@ class ClaudeSubscriptionModel(Model):
                 raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)  # noqa: TRY301 - typed, redacted at this boundary
             self._digest = digest
             if self._current_policy() != self._policy or not self._verifier.verify(
-                executable, digest, VERSION, COMMAND_FLAGS, self._policy
+                executable, digest, VERSION, command_flags(self._policy.model), self._policy
             ):
                 raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
             environment = subscription_environment()
@@ -308,7 +311,9 @@ class ClaudeSubscriptionModel(Model):
                     raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
                 if executable_digest(executable) != digest:
                     raise SubscriptionDeniedError(Denial.EXECUTABLE_CHANGED)  # noqa: TRY301
-                if not self._verifier.verify(executable, digest, version, COMMAND_FLAGS, self._policy):
+                if not self._verifier.verify(
+                    executable, digest, version, command_flags(self._policy.model), self._policy
+                ):
                     raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
                 self._slots.reserve(
                     self._policy.owner,
@@ -325,7 +330,7 @@ class ClaudeSubscriptionModel(Model):
                     raise SubscriptionDeniedError(Denial.ACCESS_CHANGED)  # noqa: TRY301
                 outcome = await _run_cancelable(
                     self._execute,
-                    [str(executable), *COMMAND_FLAGS],
+                    [str(executable), *command_flags(self._policy.model)],
                     input=payload,
                     cwd=Path(directory),
                     env=environment,

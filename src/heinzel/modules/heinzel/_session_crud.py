@@ -31,6 +31,15 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._activity import (
+    OVERLOAD_QUEUE,
+    ActivityFacts,
+    activity,
+    open_write_drafts,
+    recently,
+    run_counts,
+)
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, LevelChange
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
     ContractVersion,
@@ -59,6 +68,7 @@ from heinzel.modules.heinzel._session_models import (
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
 _VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed", "draft.workflow-message"}
+_LIFECYCLE_KINDS = {"heinzel.retired", "heinzel.restored"}
 _ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
@@ -247,6 +257,11 @@ class PersonalProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     name: str = Field(min_length=1, max_length=100)
     appearance: HeinzelAppearance = Field(default_factory=HeinzelAppearance)
+    intelligence: HeinzelIntelligence = Field(
+        default_factory=HeinzelIntelligence,
+        # Left out at its default, so a profile saved before levels existed reads and hashes unchanged (ADR 0158).
+        exclude_if=lambda value: value == HeinzelIntelligence(),
+    )
 
     @field_validator("name")
     @classmethod
@@ -496,8 +511,27 @@ def _validate_schedule_state(state: _ScheduleState, contracts: list[ContractVers
     return state
 
 
-def _session_state(schedule: WakeScheduleView | None) -> Literal["proposed", "awake", "paused"]:
-    """Project an unapproved schedule as proposed, not as a schedule the person paused."""
+def is_retired(events: list[SessionEvent]) -> bool:
+    """Whether the latest retire or restore in this control journal retired the Heinzel (ADR 0049 §7)."""
+    last = next((event for event in reversed(events) if event.kind in _LIFECYCLE_KINDS), None)
+    return last is not None and last.kind == "heinzel.retired"
+
+
+def retired_after(events: list[SessionEvent], seq: int) -> bool:
+    """Whether the Heinzel was retired after journal position `seq`: what it stopped stays stopped after a restore.
+
+    A retire pauses every recurring authority approved before it (check-ins, agent schedules, draft workflows); a
+    restore brings the Heinzel back with them paused, so only a new approval through its own proof path resumes one.
+    """
+    return any(event.kind == "heinzel.retired" and event.seq > seq for event in events)
+
+
+def _session_state(
+    schedule: WakeScheduleView | None, *, retired: bool = False
+) -> Literal["proposed", "awake", "paused", "retired"]:
+    """Project a retired Heinzel as retired, and an unapproved schedule as proposed, not as one the person paused."""
+    if retired:
+        return "retired"
     if schedule is None or schedule.status == "proposed":
         return "proposed"
     return "awake" if schedule.status == "active" else "paused"
@@ -579,6 +613,15 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return profile, revision
 
+    def intelligence(self, session_id: str) -> tuple[HeinzelIntelligence, int]:
+        """This Heinzel's level, provider and exact model, and the profile revision they were read at (ADR 0158).
+
+        Raises:
+            HeinzelError: If the profile is missing or invalid.
+        """
+        profile, revision = self._profile(session_id, self.repository.control_read(session_id).events)
+        return profile.intelligence, revision
+
     def read_body(self, session_id: str, event: SessionEvent) -> JsonValue:
         """Hydrate a hash-verified immutable body from this owner's private session repository.
 
@@ -599,7 +642,7 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return body[0]
 
-    def profile(
+    def profile(  # noqa: PLR0913 - one replacement of the profile's optional keyword-only fields
         self,
         session_id: str,
         request_id: str,
@@ -607,6 +650,7 @@ class SessionCrud(ApprovalIssuer):
         *,
         name: str | None = None,
         appearance: HeinzelAppearance | None = None,
+        level: LevelChange | None = None,
     ) -> SessionSnapshot:
         """Replace explicit personal fields against the exact version the user saw, including default inheritance.
 
@@ -617,11 +661,14 @@ class SessionCrud(ApprovalIssuer):
         appearance = (
             HeinzelAppearance.model_validate_json(appearance.model_dump_json()) if appearance is not None else None
         )
-        request: JsonValue = {
+        request: dict[str, JsonValue] = {
             "expected_revision": expected_revision,
             "name": name,
             "appearance": appearance.model_dump(mode="json") if appearance is not None else None,
         }
+        if level is not None:  # only then, so an older retry's request hash is unchanged
+            # The change as asked, not the merged result, so an exact retry replays after later changes.
+            request["level"] = level.model_dump(mode="json")
         digest = _digest(request)
         with self.repository.control_writer(session_id) as writer:
             events = self.repository.control_read(session_id).events
@@ -633,11 +680,13 @@ class SessionCrud(ApprovalIssuer):
             else:
                 current, revision = self._profile(session_id, events)
                 if type(expected_revision) is not int or expected_revision != revision:
-                    msg = "This Heinzel's profile changed; reload before saving your appearance"
+                    what = "saving your appearance" if level is None else "setting its level"
+                    msg = f"This Heinzel's profile changed; reload before {what}"
                     raise HeinzelError(msg)
                 profile = PersonalProfile(
                     name=current.name if name is None else name,
                     appearance=current.appearance if appearance is None else appearance,
+                    intelligence=current.intelligence if level is None else level.applied(current.intelligence),
                 )
                 body = immutable_body(writer, "profile", profile.model_dump(mode="json"), control=True)
                 writer.append(
@@ -645,6 +694,33 @@ class SessionCrud(ApprovalIssuer):
                     key=f"profile-{request_id}",
                     data={"revision": revision + 1, "request_hash": digest, **body.model_dump(mode="json")},
                 )
+        return self.snapshot(session_id)
+
+    def retire(self, session_id: str, request_id: str, *, retired: bool = True, origin: str = "cli") -> SessionSnapshot:
+        """Retire (hide, never wake) or restore this Heinzel; its whole history stays, and an exact retry is a no-op.
+
+        A retire pauses every recurring authority it had: after a restore, each check-in, agent schedule and draft
+        workflow waits for a new approval through its own proof path. Retiring a retired Heinzel, or restoring one that
+        is not retired, records nothing. An exact retry returns the current snapshot, so replaying an old retire after a
+        later restore reports the restored Heinzel; it does not retire it again.
+
+        Raises:
+            HeinzelError: If the request already identifies the opposite change or the creation is incomplete.
+        """
+        _REQUEST.validate_python(request_id)
+        kind = "heinzel.retired" if retired else "heinzel.restored"
+        key = f"lifecycle-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((item for item in events if item.key == key), None)
+            if prior is not None:
+                if prior.kind != kind:
+                    msg = "This request already identifies a different retire or restore"
+                    raise HeinzelError(msg)
+            else:
+                self._profile(session_id, events)
+                if is_retired(events) != retired:
+                    writer.append(kind, key=key, data={"owner": self.repository.principal_id, "origin": origin})
         return self.snapshot(session_id)
 
     def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
@@ -684,6 +760,9 @@ class SessionCrud(ApprovalIssuer):
         """
         digest = _digest(request.model_dump(mode="json"))
         events = self.repository.control_read(session_id).events
+        if is_retired(events) and not any(event.key == f"message-{request.request_id}" for event in events):
+            msg = "This Heinzel is retired; restore it to chat with it again"
+            raise HeinzelError(msg)
         created = next((event for event in events if event.kind == "profile.updated" and event.key == "created"), None)
         if created is not None and "initial_request_id" in created.data:
             first_id = created.data["initial_request_id"]
@@ -748,6 +827,9 @@ class SessionCrud(ApprovalIssuer):
                 state = _CheckInRecord.model_validate(self.read_body(session_id, event)).schedule
             else:
                 state = _ScheduleState.model_validate(self.read_body(session_id, event))
+            if state.status == "active" and retired_after(events, event.seq):
+                # A retire paused it; a restore never resumes it: the person resumes it with its approval.
+                state = state.model_copy(update={"status": "paused"})
             return _validate_schedule_state(state, self._contracts(session_id, events))
         except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError, ValidationError):
             msg = "This Heinzel's saved schedule is invalid; restore its private snapshot"
@@ -1673,11 +1755,14 @@ class SessionCrud(ApprovalIssuer):
             events = self.repository.control_read(session_id).events
             state = self._schedule_state(session_id, events)
             revision = self._schedule_revision(events)
+            if is_retired(events):
+                return JobInactive(reason="this Heinzel is retired")
             if state is None or state.status != "active" or state.contract_version != contract_version:
                 return JobInactive(reason="the check-in schedule is no longer active")
             if revision != schedule_revision:
                 return JobInactive(reason="the check-in schedule changed before this slot ran")
             active_since = next(
+                # A restore resumes from now, like a resume: no catch-up for slots missed while retired.
                 (event.ts for event in reversed(events) if event.kind in {"schedule.activated", "schedule.resume"}),
                 None,
             )
@@ -1841,7 +1926,7 @@ class SessionCrud(ApprovalIssuer):
             appearance=profile.appearance,
             profile_revision=revision,
             contract_version=approved,
-            state=_session_state(schedule),
+            state=_session_state(schedule, retired=is_retired(events)),
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
@@ -1880,6 +1965,7 @@ class SessionCrud(ApprovalIssuer):
             HeinzelError: If an authoritative journal is damaged.
         """
         summaries: list[SessionSummary] = []
+        now = self.clock()
         for head in self.repository.heads():
             if head.problem:
                 msg = "A personal Heinzel journal needs repair before listing can be completed"
@@ -1889,15 +1975,33 @@ class SessionCrud(ApprovalIssuer):
             contracts = self._contracts(head.session, events)
             schedule = self._schedule_view(head.session, events)
             approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
+            state = _session_state(schedule, retired=is_retired(events))
+            runs = run_counts(events, now)
+            # Reuses the captured-write host's projection and the schedule view already read: no extra bodies.
+            waiting = len(open_write_drafts(events)) + int(schedule is not None and schedule.status == "proposed")
+            facts = ActivityFacts(
+                paused=state == "paused",
+                stuck=runs.last_run_failed,
+                waiting_for_you=waiting > 0,
+                overloaded=runs.queued_runs >= OVERLOAD_QUEUE,
+                working=runs.running,
+                proud=recently(runs.last_approved_at, now),
+            )
             summaries.append(
                 SessionSummary(
                     session_id=head.session,
                     name=profile.name,
                     appearance=profile.appearance,
-                    state=_session_state(schedule),
+                    state=state,
                     last_seq=events[-1].seq,
                     updated_at=events[-1].ts,
                     contract_version=approved,
+                    waiting_count=waiting,
+                    runs_last_hour=runs.runs_last_hour,
+                    queued_runs=runs.queued_runs,
+                    last_run_failed=runs.last_run_failed,
+                    last_approved_at=runs.last_approved_at,
+                    activity=activity(facts),
                 )
             )
         return SessionList(

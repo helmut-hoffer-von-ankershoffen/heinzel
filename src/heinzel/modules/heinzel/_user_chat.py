@@ -21,6 +21,7 @@ from heinzel.kernel import (
     AiModelsSource,
     CapabilitySettings,
     Effort,
+    Emit,
     ModelOffer,
     RunnerSnapshot,
     RunnerSnapshotProvider,
@@ -35,6 +36,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
+from heinzel.modules.heinzel._levels import HeinzelIntelligence, LevelChoice, TurnLevel, declared_levels, resolve
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -49,9 +51,11 @@ from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 
 if TYPE_CHECKING:
+    from pydantic_ai.capabilities import AbstractCapability
     from pydantic_ai.models import Model
 
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
+    from heinzel.modules.heinzel._engine import TurnDeps
     from heinzel.modules.heinzel._plugin_turn import PluginTurnGuard
     from heinzel.modules.heinzel._self_chat_questions import QuestionRelay
 
@@ -64,6 +68,8 @@ MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
 PLUGIN_TURN_TOKENS = 1_000_000
 """The most tokens one turn on a plugin's model may move, input and output, across its requests (ADR 0159)."""
+NO_CHAT_ACCESS = "The selected AI access is not the supported Claude Code subscription"
+"""Why a turn can't start on an access that is neither Claude Code nor a plugin's models."""
 BUILD_TIMEOUT = 30.0
 """How long a plugin may take to build its model; building must not call it."""
 
@@ -92,16 +98,23 @@ class PluginTurnChoice:
     """`[ai.access] plugin_model` as configured, which the offer was chosen by; none for the first usable one."""
     configured_effort: Effort | None = None
     """`[ai.access] plugin_effort` as configured; `effort` is none for a model that takes no effort."""
+    session: str | None = None
+    """The Heinzel whose level chose the model; none for a turn without one, which `[ai.access]` chooses."""
+    intelligence: HeinzelIntelligence | None = None
+    """That Heinzel's level, provider and exact model as the turn started (ADR 0158)."""
+    level: TurnLevel | None = None
+    """What the turn records about its level."""
 
     def held(self) -> tuple[object, ...]:
         """What hz owns and checks before every request of a turn: never the plugin's list, which may change."""
-        return (
+        held = (
             self.source.name,
             self.source.version,
             self.setting,
             self.configured_effort,
             self.limits.subscription_budget_mode,
         )
+        return held if self.intelligence is None else (*held, self.intelligence)
 
     def terms(self) -> dict[str, object]:
         """What binds an approved schedule or draft to this choice: access, plugin version, model, effort, budget."""
@@ -162,8 +175,8 @@ class _ClaudeVerifier:
     def verify(
         self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: "SubscriptionAdmission"
     ) -> bool:
+        from heinzel.kernel._claude_code import command_flags  # noqa: PLC0415 - model runtime only during an admitted turn
         from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model runtime only during an admitted turn
-            COMMAND_FLAGS,
             VERSION,
             in_supported_range,
         )
@@ -178,7 +191,7 @@ class _ClaudeVerifier:
             self._check()
             and executable == self._path
             and digest == self._digest
-            and flags == COMMAND_FLAGS
+            and flags == command_flags(policy.model)
             and policy == self._policy
         )
 
@@ -199,10 +212,12 @@ class UserChatService:
         execute: Callable[..., Outcome] = run_bounded,
         models: "PluginModels | None" = None,
         usage: Callable[[UsageEntry], None] | None = None,
+        emitter: Callable[[], Emit] | None = None,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._models = models
         self._usage = usage
+        self._emitter = emitter
         self._runner_settings = runner_settings
         self._connected = connected
         self._notifications = notifications
@@ -221,8 +236,10 @@ class UserChatService:
             raise HeinzelError(msg)
         return self._connected()
 
-    def plugin_selected(self) -> PluginTurnChoice | None:
+    def plugin_selected(self, session: str | None = None) -> PluginTurnChoice | None:
         """The plugin model the selected AI access runs on hz's engine, or None for Claude Code (ADR 0159).
+
+        With a `session`, the Heinzel's level and provider choose it (ADR 0158).
 
         Raises:
             HeinzelError: If the plugin's models can't serve a turn now: the dollar caps can't be enforced, or the
@@ -231,7 +248,8 @@ class UserChatService:
         if self._models is None:
             return None
         config = self._load()
-        access = config.settings(CapabilitySettings, "capabilities").ai_access
+        intelligence = self._intelligence(session)
+        access = self._access(config, intelligence)
         if access is None or not self._models.offers(access):
             return None
         limits = config.settings(HeinzelSettings, "heinzel")
@@ -241,32 +259,91 @@ class UserChatService:
         choice = config.settings(PluginModelChoice, "ai.access")
         source = self._models.source(access)
         offers, _note = list_offers(source)
+        level = None
+        if intelligence is not None:
+            picked = resolve(access, intelligence.level, declared_levels(offers), offers, exact=intelligence.model)
+            level = picked.record
+            if picked.model is not None:
+                offer = choose(offers, picked.model, picked.effort)
+                setting = (choice.plugin_model, choice.plugin_effort)
+                return PluginTurnChoice(limits, source, offer, picked.effort, *setting, session, intelligence, level)
+        # No Heinzel, or a plugin that marks no level: its pinned default runs, as Settings set it.
         offer = choose(offers, choice.plugin_model, choice.plugin_effort)
         effort = choice.plugin_effort if offer.thinking is not None else None
-        return PluginTurnChoice(limits, source, offer, effort, choice.plugin_model, choice.plugin_effort)
+        return PluginTurnChoice(
+            limits, source, offer, effort, choice.plugin_model, choice.plugin_effort, session, intelligence, level
+        )
 
-    def _plugin_held(self) -> tuple[object, ...] | None:
-        """What `held` says now, read from the configuration only: no call to the plugin."""
+    def _plugin_held(self, session: str | None = None) -> tuple[object, ...] | None:
+        """What `held` says now, read from the configuration and the profile only: no call to the plugin."""
         if self._models is None:
             return None
         config = self._load()
-        access = config.settings(CapabilitySettings, "capabilities").ai_access
+        intelligence = self._intelligence(session)
+        access = self._access(config, intelligence)
         if access is None or not self._models.offers(access):
             return None
         choice = config.settings(PluginModelChoice, "ai.access")
         limits = config.settings(HeinzelSettings, "heinzel")
         source = self._models.source(access)
-        return (source.name, source.version, choice.plugin_model, choice.plugin_effort, limits.subscription_budget_mode)
+        held = (source.name, source.version, choice.plugin_model, choice.plugin_effort, limits.subscription_budget_mode)
+        return held if intelligence is None else (*held, intelligence)
 
-    def binding_terms(self) -> dict[str, object]:
-        """What an approved schedule or draft is bound to: the selected access as it runs now, never a credential.
+    def _intelligence(self, session: str | None) -> HeinzelIntelligence | None:
+        """The Heinzel's intelligence, which chooses its model (ADR 0158); None without a Heinzel."""
+        if session is None:
+            return None
+        return self._crud.intelligence(session)[0]
+
+    def _access(self, config: Config, intelligence: HeinzelIntelligence | None) -> str | None:
+        """The AI access a turn runs on: the Heinzel's provider when it has one, else the configured one.
+
+        Raises:
+            HeinzelError: If the Heinzel's provider is neither the configured AI access nor a plugin's models.
+        """
+        configured = config.settings(CapabilitySettings, "capabilities").ai_access
+        if intelligence is None or intelligence.provider is None or intelligence.provider == configured:
+            return configured
+        if self._models is None or not self._models.offers(intelligence.provider):
+            msg = (
+                f"Couldn't start this Heinzel's turn: its AI provider {intelligence.provider} is neither the "
+                "configured AI access nor an installed plugin's models; pick another on the Heinzel's page"
+            )
+            raise HeinzelError(msg)
+        return intelligence.provider
+
+    def claude_level(self, session: str) -> LevelChoice | None:
+        """The Claude Code model a turn of the Heinzel runs on, by Claude Code's own levels (ADR 0158).
+
+        None without a Heinzel, or when the access isn't Claude Code.
+
+        Raises:
+            HeinzelError: If the Heinzel has an exact model, which Claude Code's chat can't be held to.
+        """
+        intelligence = self._intelligence(session)
+        if intelligence is None:
+            return None
+        from heinzel.kernel._claude_code import LEVEL_MODELS  # noqa: PLC0415 - Claude Code's levels only on its path
+
+        config = self._load()
+        provider = self._access(config, intelligence)
+        if provider != "claude-code":  # not Claude Code: its levels don't apply, and `selected` refuses the turn
+            return None
+        return resolve(provider, intelligence.level, LEVEL_MODELS, [], exact=intelligence.model)
+
+    def binding_terms(self, session: str | None = None) -> dict[str, object]:
+        """What an approved schedule or draft is bound to: the access and model it runs on now, never a credential.
+
+        With `session`, the Heinzel's level chooses the model as its turns do (ADR 0158), so a level or provider
+        change after approval changes the terms whenever it changes the model.
 
         Raises:
             HeinzelError: If the selected access cannot be observed.
         """
-        plugin = self.plugin_selected()
+        plugin = self.plugin_selected(session)
         if plugin is not None:
             return plugin.terms()
+        level = self.claude_level(session) if session is not None else None
         limits, runner = self.selected()
         path = self.which(runner.claude_executable)
         if path is None:
@@ -279,6 +356,7 @@ class UserChatService:
             "budget_mode": limits.subscription_budget_mode,
             "model": runner.model,
             "runner_revision": runner.revision,
+            **({"level_model": level.model} if level is not None and level.model is not None else {}),
         }
 
     def selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
@@ -287,7 +365,7 @@ class UserChatService:
         runner = self._runner_settings.snapshot(config)
         limits = config.settings(HeinzelSettings, "heinzel")
         if choices.ai_access != "claude-code" or choices.agent_runner != "claude-code":
-            msg = "The selected AI access is not the supported Claude Code subscription"
+            msg = NO_CHAT_ACCESS
             raise HeinzelError(msg)
         if limits.subscription_budget_mode != "plan-unknown":
             msg = "Claude subscription usage has unknown dollar cost and cannot enforce the configured USD caps"
@@ -381,8 +459,9 @@ class UserChatService:
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
 
-        plugin = await asyncio.to_thread(self.plugin_selected)
-        hooks: list[PluginTurnGuard] = []
+        emit = self._emitter() if self._emitter is not None else None  # on the operation's thread, for its stream
+        plugin = await asyncio.to_thread(self.plugin_selected, session)
+        hooks: list[AbstractCapability[TurnDeps]] = []
         limits = TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration)
         if plugin is None:
             model, unchanged, binding = await self._claude_model(session, turn, verify, max_requests, duration)
@@ -391,6 +470,9 @@ class UserChatService:
             model, unchanged, binding, hook = await self._plugin_model(plugin, verify, cause)
             hooks.append(hook)
             limits = limits.model_copy(update={"total_tokens": PLUGIN_TURN_TOKENS})
+        from heinzel.modules.heinzel._reply_stream import reply_streams  # noqa: PLC0415 - model execution only during a turn
+
+        hooks.extend(reply_streams(emit, model))  # innermost: the guard checks and records a streamed request too
         scheduled_notice = None
         if notification_policy is not None:
             if (
@@ -506,6 +588,8 @@ class UserChatService:
         Raises:
             HeinzelError: If the selected executable is unavailable or not signed in.
         """
+        intelligence = await asyncio.to_thread(self._intelligence, session)
+        level = await asyncio.to_thread(self.claude_level, session)
         initial, runner = self.selected()
         found = self.which(runner.claude_executable)
         if found is None:
@@ -518,7 +602,15 @@ class UserChatService:
             SubscriptionAdmission,
         )
 
-        policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
+        policy = SubscriptionAdmission(
+            self.current.principal().id,
+            session,
+            1,
+            max_requests,
+            duration,
+            _MAX_OUTPUT,
+            model=level.model if level is not None else None,
+        )
 
         def unchanged() -> bool:
             verify()
@@ -529,6 +621,7 @@ class UserChatService:
                 and selected == runner
                 and resolved is not None
                 and Path(resolved).resolve() == executable
+                and self._intelligence(session) == intelligence  # a level or provider change ends the turn
             )
 
         verifier = _ClaudeVerifier(unchanged, executable, digest, policy)
@@ -541,7 +634,14 @@ class UserChatService:
             turn_id=turn,
             execute=self._execute,
         )
-        return model, unchanged, BackendBinding(backend="claude-code", mode="cli-model", revision=1)
+        binding = BackendBinding(
+            backend="claude-code",
+            mode="cli-model",
+            revision=1,
+            model=level.model if level is not None else None,
+            level=level.record if level is not None else None,
+        )
+        return model, unchanged, binding
 
     async def _plugin_model(
         self, plugin: "PluginTurnChoice", verify: Callable[[], None], cause: UsageCause
@@ -557,7 +657,7 @@ class UserChatService:
 
         def unchanged() -> bool:
             verify()
-            return self._plugin_held() == held
+            return self._plugin_held(plugin.session) == held
 
         def still() -> None:
             if not unchanged():
@@ -578,7 +678,12 @@ class UserChatService:
             cause=cause,
         )
         binding = BackendBinding(
-            backend=plugin.source.name, mode="api", model=plugin.offer.id, effort=plugin.effort, revision=1
+            backend=plugin.source.name,
+            mode="api",
+            model=plugin.offer.id,
+            effort=plugin.effort,
+            revision=1,
+            level=plugin.level,
         )
         return model, unchanged, binding, hook
 

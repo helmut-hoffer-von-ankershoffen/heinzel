@@ -1,14 +1,17 @@
 // The team graph's nodes: an artifact or a Heinzelmännchen as a card, a group (a tracker and its rows) as a frame.
 // Each card is a link: an artifact opens where it lives, in a new tab; a Heinzelmännchen opens its page, and its
-// chat button opens the chat about it. The state is a word and a line style as well as a colour.
+// chat button asks your default Heinzel about it ("Ask <Name>": typed into its composer, never sent). The state is a word and a line style as well as a colour.
 
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { FileText, LayoutList, type LucideIcon, MessageSquare } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { Link } from "react-router";
+import { useAskHeinzel } from "@/chat/askHeinzel";
 import type { FlowTone } from "@/components/graph/FlowNode";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { isDurableSession } from "@/lib/chatIntent";
 import { cn } from "@/lib/utils";
 import { heinzelId, type PromiseState, type TeamNode } from "./jgf";
 import type { TeamFlowNode } from "./layout";
@@ -43,12 +46,15 @@ export const kindIcon = (node: TeamNode, group = false): LucideIcon =>
 
 const handle = "!size-1.5 !border-0 !bg-border";
 
-/** The card's link: the artifact's own page in a new tab, or the Heinzelmännchen's page. */
+/** The card's link: the artifact's own page in a new tab, the personal Heinzel's page, or a team contract. */
 function NodeLink({ node, className, children }: { node: TeamNode; className: string; children: ReactNode }) {
   const kind = <span className="sr-only">, {t(`teamGraph.kind.${node.kind}`)}</span>;
   if (node.kind === "heinzel") {
+    // A personal Heinzel has its own page; a team Heinzelmännchen is its contract.
+    const id = heinzelId(node.id);
+    const to = isDurableSession(id) ? `/heinzel/${id}` : `/contracts/${encodeURIComponent(id)}`;
     return (
-      <Link to={`/heinzel/${encodeURIComponent(heinzelId(node.id))}`} className={cn("nodrag nopan", className)}>
+      <Link to={to} className={cn("nodrag nopan", className)}>
         {children}
         {kind}
       </Link>
@@ -89,6 +95,7 @@ function StateBadge({ data }: { data: TeamFlowNode["data"] }) {
 function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
   const { node } = data;
   const Icon = kindIcon(node);
+  const ask = useAskHeinzel();
   return (
     <div
       className={cn(
@@ -120,15 +127,18 @@ function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
           </span>
         </span>
       </NodeLink>
-      {node.kind === "heinzel" && (
-        <Link
-          to={`?chat-context=${encodeURIComponent(`heinzel:${heinzelId(node.id)}`)}`}
-          aria-label={t("teamGraph.ask", { label: node.label })}
-          title={t("teamGraph.ask", { label: node.label })}
-          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-icon outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/50"
+      {node.kind === "heinzel" && ask && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => ask.ask(t("teamGraph.askAbout", { label: node.label }))}
+          aria-label={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
+          title={t("teamGraph.askHeinzel", { name: ask.name, label: node.label })}
+          className="nodrag nopan mr-1.5 size-7 shrink-0"
         >
           <MessageSquare aria-hidden className="size-4" />
-        </Link>
+        </Button>
       )}
       <Handle type="source" position={Position.Right} isConnectable={false} className={handle} />
     </div>

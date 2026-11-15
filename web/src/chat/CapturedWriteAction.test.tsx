@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import review from "@/test/capturedWriteReview.json";
 import { proposal } from "@/test/chat";
-import { ActionCard } from "./Conversation";
+import { ActionCard } from "./ActionCard";
 
 describe("captured write confirmation", () => {
   it.each([

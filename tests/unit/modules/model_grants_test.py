@@ -17,6 +17,7 @@ from heinzel import (
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel import _interactive_turn
+from heinzel.modules.heinzel._activity import MAX_TURN_SECONDS
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import CHECKED
@@ -180,3 +181,53 @@ def test_stale_or_forged_grant_never_authorizes(tmp_path):
         with pytest.raises(HeinzelError, match="changed"):
             grants.approve(session, "competing", stale_proof)
         assert grants.approved(session) == one
+
+
+def _grant(**changes):
+    values = {
+        "request_id": "one",
+        "revision": 1,
+        "access": "pydantic-ai",
+        "model": "openai:model",
+        "requests": 1,
+        "total_tokens": 100,
+        "output_tokens": 10,
+        "timeout_seconds": 10,
+        "message_cap_usd": "0.1",
+        "session_cap_usd": "1",
+        "owner_cap_usd": "2",
+    }
+    return ModelGrant(**{**values, **changes})
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"allowed_skill_tools": ("skill.propose_draft", "skill.propose_draft")}, "duplicate skill tool"),
+        ({"allowed_tools": {"Bad Name": "0" * 64}}, "invalid operation or schema fingerprint"),
+        ({"allowed_tools": {"mod.op:read": "not-a-digest"}}, "invalid operation or schema fingerprint"),
+        ({"timeout_seconds": MAX_TURN_SECONDS + 1}, "less than or equal to 7200"),
+    ],
+)
+def test_malformed_grants_and_turns_past_the_cap_are_refused(changes, message):
+    with pytest.raises(ValueError, match=message):
+        _grant(**changes)
+    assert _grant(timeout_seconds=MAX_TURN_SECONDS).timeout_seconds == MAX_TURN_SECONDS
+
+
+def test_a_grant_request_is_exact_and_revisions_must_follow(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("create").session_id
+        grants = ModelGrants(crud)
+        assert grants.propose(session, _grant()) == _grant()
+        assert grants.propose(session, _grant()) == _grant()
+        with pytest.raises(HeinzelError, match="identifies a different proposal"):
+            grants.propose(session, _grant(model="openai:other"))
+        with pytest.raises(HeinzelError, match="reload before proposing a revision"):
+            grants.propose(session, _grant(request_id="two", revision=3))
+        with pytest.raises(HeinzelError, match="No such model-grant proposal"):
+            grants.issue(session, "missing", "test-human-decision")

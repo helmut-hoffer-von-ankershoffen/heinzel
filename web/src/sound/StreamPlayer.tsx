@@ -1,9 +1,10 @@
 import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
+import { useNativeSurface } from "@/lib/nativeSurface";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
@@ -22,6 +23,24 @@ import {
 } from "./stream";
 
 type Level = { gain: number; seconds: number; playing: boolean };
+type GuestState = { status?: string; ready?: boolean; state?: number; error?: boolean };
+type GuestBridge = (request: Record<string, unknown>) => Promise<GuestState>;
+
+/** The desktop's player guest on the website session it shares with the sidebar browser (ADR 0140), if any. */
+function guestBridge(): GuestBridge | undefined {
+  const value = (window as Window & { heinzelDesktop?: { player?: unknown } }).heinzelDesktop?.player;
+  return typeof value === "function" ? (value as GuestBridge) : undefined;
+}
+
+/** The IFrame API command as the guest bridge's narrow request; anything else has no guest equivalent. */
+export function guestRequest(func: string, args: unknown[] = []): Record<string, unknown> | null {
+  if (func === "playVideo") return { action: "play" };
+  if (func === "pauseVideo") return { action: "pause" };
+  if (func === "mute") return { action: "volume", value: 0 };
+  if (func === "setVolume" && typeof args[0] === "number")
+    return { action: "volume", value: Math.max(0, Math.min(100, Math.round(args[0]))) };
+  return null;
+}
 type Props = { soundscape: SchemaSoundscapeView; stream: StreamView; level: Level };
 const STEP_MS = 100;
 const PLAYBACK_WAIT_MS = 15_000;
@@ -70,6 +89,9 @@ function Player({
   retry: () => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  // In the desktop the YouTube player is a guest on the website session, so a sign-in in the browser counts here.
+  const guest = desktop && stream.provider === "youtube" ? guestBridge() : undefined;
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [help, setHelp] = useState(false);
@@ -79,6 +101,45 @@ function Player({
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
   const deviceVolume = isIOS();
+  const send = useCallback(
+    (func: string, args: unknown[] = []) => {
+      if (!guest) {
+        command(frame.current, origin, func, args);
+        return;
+      }
+      const request = guestRequest(func, args);
+      if (request) void guest(request).catch(() => {});
+    },
+    [guest, origin],
+  );
+  const sawReady = useRef(false);
+  const onGuestState = useCallback(
+    (next: GuestState) => {
+      if (next.error) setHelp(true);
+      if (next.state === 1) setHasPlayed(true);
+      if (next.ready && !sawReady.current) {
+        sawReady.current = true;
+        // The guest starts silent, like the frame, so the fade decides what is heard.
+        void guest?.({ action: "volume", value: volume.current }).catch(() => {});
+        setReady(true);
+      }
+    },
+    [guest],
+  );
+  useEffect(() => {
+    if (!guest || !src) return;
+    void guest({ action: "open", video: stream.video })
+      .then(onGuestState)
+      .catch(() => setHelp(true));
+    return () => {
+      void guest({ action: "close" }).catch(() => {});
+    };
+  }, [guest, src, stream.video, onGuestState]);
+  useNativeSurface(surface, true, guest, () => {
+    void guest?.({ action: "state" })
+      .then(onGuestState)
+      .catch(() => {});
+  });
   const copyLink = async () => {
     try {
       if (!copyUrl || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
@@ -128,10 +189,10 @@ function Player({
 
   // Retrying the handshake covers slow network loads where the first listening message arrives too early.
   useEffect(() => {
-    if (ready || blocked) return;
+    if (ready || blocked || guest) return;
     const timer = setInterval(() => listen(frame.current, origin), 500);
     return () => clearInterval(timer);
-  }, [ready, blocked, origin]);
+  }, [ready, blocked, origin, guest]);
 
   useEffect(() => {
     if (!ready) return;
@@ -139,31 +200,38 @@ function Player({
     // iOS owns media volume; mute and pause still work, so meetings and Pause must not depend on a fade.
     if (deviceVolume) {
       volume.current = target;
-      command(frame.current, origin, target === 0 ? "mute" : "unMute");
-      command(frame.current, origin, level.playing ? "playVideo" : "pauseVideo");
+      send(target === 0 ? "mute" : "unMute");
+      send(level.playing ? "playVideo" : "pauseVideo");
       return;
     }
-    if (level.playing) command(frame.current, origin, "playVideo");
+    if (level.playing) send("playVideo");
     const steps = Math.max(1, Math.round((level.seconds * 1000) / STEP_MS));
     const start = volume.current;
     let step = 0;
     const timer = setInterval(() => {
       step += 1;
       volume.current = Math.round(start + ((target - start) * step) / steps);
-      command(frame.current, origin, "setVolume", [volume.current]);
+      send("setVolume", [volume.current]);
       if (step >= steps) {
         clearInterval(timer);
-        if (!level.playing) command(frame.current, origin, "pauseVideo");
+        if (!level.playing) send("pauseVideo");
       }
     }, STEP_MS);
     return () => clearInterval(timer);
-  }, [ready, level.gain, level.seconds, level.playing, origin, deviceVolume]);
+  }, [ready, level.gain, level.seconds, level.playing, send, deviceVolume]);
 
   if (!src) return null;
   return (
     <PlayerCard title={soundscape.title} watchUrl={desktop ? undefined : stream.watch_url} host="YouTube">
       <div className="group/video relative">
-        {blocked ? (
+        {guest ? (
+          <div
+            ref={surface}
+            role="img"
+            aria-label={t("sound.player", { title: soundscape.title })}
+            className="aspect-video min-h-[200px] w-full"
+          />
+        ) : blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
             <p>{t("sound.reloadNeeded")}</p>
             <button type="button" onClick={page.reload} className={button}>
