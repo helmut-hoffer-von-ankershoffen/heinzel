@@ -325,10 +325,12 @@ class HttpClient:
                 raw = cast("IO[bytes]", response)
                 return _event_answer(raw, ident) if kind.startswith("text/event-stream") else _json_answer(raw)
         except urllib.error.HTTPError as exc:
-            if exc.code in {401, 403}:
+            with exc:  # the error is also the open response (a refused redirect too): closed before anything else
+                code = exc.code
+            if code in {401, 403}:
                 msg = f"The MCP server {self.name} is {NOT_USABLE}: it needs a sign-in held by another app"
                 raise McpClientError(msg) from None
-            msg = f"The MCP server {self.name} answered HTTP {exc.code}"
+            msg = f"The MCP server {self.name} answered HTTP {code}"
             raise McpClientError(msg) from None
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             msg = f"The MCP server {self.name} could not be reached ({type(exc).__name__})"
@@ -341,8 +343,12 @@ class HttpClient:
             return
         headers = {**self._launch.headers, "Mcp-Session-Id": session, "MCP-Protocol-Version": PROTOCOL}
         request = urllib.request.Request(self._launch.url, headers=headers, method="DELETE")  # noqa: S310 - http(s) only
-        with contextlib.suppress(urllib.error.URLError, TimeoutError, OSError):
+        try:
             self._opener.open(request, timeout=STOP_TIMEOUT).close()
+        except urllib.error.HTTPError as exc:
+            exc.close()  # the server may refuse to end the session; its answer is closed all the same
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return
 
 
 def _json_answer(response: IO[bytes]) -> dict[str, Any]:
