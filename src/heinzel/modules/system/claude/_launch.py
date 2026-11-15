@@ -59,7 +59,10 @@ def launch(home: Path, server: FoundServer, captured: Captured, environ: Mapping
         raise NotUsableError(msg)
     if server.auth == "keychain":
         raise NotUsableError(_keychain(server))
-    expand = _Expander(server, dict(os.environ if environ is None else environ), captured.path.parent)
+    if not captured.approved:
+        msg = f"{server.name} is {NOT_USABLE}: it is not approved in Claude Code for its project"
+        raise NotUsableError(msg)
+    expand = _Expander(server, outside_environment(os.environ if environ is None else environ), captured.path.parent)
     if server.transport == "stdio":
         return _stdio(home, server, captured, expand)
     if server.transport == "http":
@@ -71,6 +74,15 @@ def launch(home: Path, server: FoundServer, captured: Captured, environ: Mapping
         return Launch(transport="http", url=expand(url), headers=headers, cwd=home)
     msg = f"{server.name} is {NOT_USABLE}: hz speaks stdio and streamable HTTP, not {server.transport}"
     raise NotUsableError(msg)
+
+
+def outside_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """The environment a found server sees and its entry may expand: never hz's own variables or credentials.
+
+    `HZ_CREDENTIAL_*` holds hz's secrets and every other `HZ_*` variable is hz's configuration; a project's
+    `.mcp.json` asking for `${HZ_CREDENTIAL_GITHUB_TOKEN}` gets "not set", as if hz did not run.
+    """
+    return {key: value for key, value in subprocess_environment(environ).items() if not key.startswith("HZ_")}
 
 
 def _keychain(server: FoundServer) -> str:
@@ -97,7 +109,14 @@ class _Expander:
         name, default = match.group(1), match.group(2)
         if name.startswith("user_config."):
             raise NotUsableError(_keychain(self.server))
-        extra = {"CLAUDE_PLUGIN_ROOT": str(self.directory), "__dirname": str(self.directory)}
+        # Only what Claude Code itself sets for this kind of entry: a plugin's root, an extension's directory.
+        extra = (
+            {"CLAUDE_PLUGIN_ROOT": str(self.directory)}
+            if self.server.source == "code-plugin"
+            else {"__dirname": str(self.directory)}
+            if self.server.source == "desktop-extension"
+            else {}
+        )
         value = extra.get(name, self.environment.get(name))
         if value is None and default is None:
             msg = f"{self.server.name} is {NOT_USABLE}: the environment variable {name} is not set"
@@ -120,7 +139,7 @@ def _stdio(home: Path, server: FoundServer, captured: Captured, expand: _Expande
     return Launch(
         transport="stdio",
         command=[expand(command), *arguments],
-        env={**subprocess_environment(expand.environment), **expand.mapping(captured.entry.get("env"))},
+        env={**expand.environment, **expand.mapping(captured.entry.get("env"))},
         cwd=_directory(home, server, captured),
     )
 

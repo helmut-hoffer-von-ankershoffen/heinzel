@@ -10,6 +10,7 @@ and its raw entry is kept in `Scanner.captured`, for that start only, so how to 
 source file and never stored.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -139,6 +140,8 @@ class Captured:
     entry: dict[str, Any]
     path: Path
     origin: str | None
+    approved: bool = True
+    """False for a project's `.mcp.json` server Claude Code has not approved: hz never starts it (ADR 0162)."""
 
 
 @dataclass(slots=True)
@@ -154,6 +157,7 @@ class Scanner:
     """The id of the one server whose raw entry the scan keeps in `captured`, to start it; none for a listing."""
     captured: "Captured | None" = None
     _enabled: set[str] = field(default_factory=set[str])
+    _approvals: dict[Path, dict[str, Any]] = field(default_factory=dict[Path, dict[str, Any]])
     _sensitive: set[str] = field(default_factory=set[str])
 
     def tilde(self, path: Path) -> str:
@@ -221,7 +225,8 @@ class Scanner:
         own = executable in OWN or any(a in OWN for a in arguments)
         identity = ":".join(part for part in (source, origin, name) if part)
         if self.want is not None and identity == self.want and self.captured is None:
-            self.captured = Captured(entry=json.loads(json.dumps(entry)), path=path, origin=origin)
+            approved = source != "code-project" or self._approved(name, path.parent)
+            self.captured = Captured(entry=json.loads(json.dumps(entry)), path=path, origin=origin, approved=approved)
         self.servers.append(
             FoundServer(
                 id=identity,
@@ -242,6 +247,20 @@ class Scanner:
                 fingerprint=_digest(transport, executable, len(arguments), host, env, headers),
             )
         )
+
+    def _approved(self, name: str, folder: Path) -> bool:
+        """Whether Claude Code approved a project's `.mcp.json` server: the project trusted, the server enabled.
+
+        Claude Code asks before it starts such a server, since a cloned repository can bring one; hz starts it only
+        after that yes: trust accepted, and the server listed as enabled (or all enabled) and not as disabled.
+        """
+        project = self._approvals.get(folder.resolve(), {})
+        if project.get("hasTrustDialogAccepted") is not True:
+            return False
+        if name in {_name(n) for n in _strings(project.get("disabledMcpjsonServers"))}:
+            return False
+        enabled = {_name(n) for n in _strings(project.get("enabledMcpjsonServers"))}
+        return project.get("enableAllProjectMcpServers") is True or name in enabled
 
     def _desktop(self) -> None:
         """Claude Desktop's hand-configured servers."""
@@ -305,6 +324,8 @@ class Scanner:
                 continue
             folder = Path(key)
             self._entries(_obj(value), path, "code-local", self.tilde(folder))
+            with contextlib.suppress(OSError):
+                self._approvals[folder.resolve()] = _obj(value)
             if folder.is_dir():
                 projects.append(folder)
         self._plugins()

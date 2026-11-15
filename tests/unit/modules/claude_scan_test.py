@@ -383,3 +383,30 @@ def test_a_refused_link_is_listed_but_does_not_make_doctor_complain(home: Path, 
     service = ClaudeService(home)
     assert service.scan().skipped
     assert service.checks()[0].status.value == "up"
+
+
+@pytest.mark.parametrize(
+    ("project", "approved"),
+    [
+        ({}, False),  # never asked
+        ({"enabledMcpjsonServers": ["tools"]}, False),  # enabled, but the project was never trusted
+        ({"hasTrustDialogAccepted": True}, False),  # trusted, the server never enabled
+        ({"hasTrustDialogAccepted": True, "enabledMcpjsonServers": ["tools"]}, True),
+        ({"hasTrustDialogAccepted": True, "enableAllProjectMcpServers": True}, True),
+        (
+            {"hasTrustDialogAccepted": True, "enableAllProjectMcpServers": True, "disabledMcpjsonServers": ["tools"]},
+            False,
+        ),
+    ],
+)
+def test_a_project_server_is_startable_only_once_claude_code_approved_it(tmp_path: Path, project, approved):
+    from heinzel.modules.system.claude._scan import Scanner
+
+    home = tmp_path / "home"
+    folder = home / "Code" / "cloned"
+    write(folder / ".mcp.json", {"mcpServers": {"tools": {"command": "node", "args": ["server.js"]}}})
+    write(home / ".claude.json", {"projects": {str(folder): project}})
+    scanner = Scanner(home, want="code-project:~/Code/cloned:tools")
+    scanner.scan()
+    assert scanner.captured is not None
+    assert scanner.captured.approved is approved
