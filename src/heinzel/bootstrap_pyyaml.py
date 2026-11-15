@@ -73,7 +73,9 @@ def check_uv_lock(path: Path) -> None:
         SystemExit: The lock selects another PyYAML than the reviewed one.
     """
     lock = tomllib.loads(path.read_text(encoding="utf-8"))
-    package: dict[str, Any] = next((item for item in lock.get("package", []) if item.get("name") == NAME), {})
+    packages: list[dict[str, Any]] = lock.get("package", [])
+    absent: dict[str, Any] = {}
+    package = next((item for item in packages if item.get("name") == NAME), absent)
     source = package.get("sdist", {})
     if (
         package.get("version") != VERSION
@@ -182,7 +184,7 @@ def _checked(arguments: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Run one command; a refusal exits with its reason before any download or backend."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("pins", help="print the reviewed pins as JSON")
     target = commands.add_parser("needed", help="exit 0 when a Python has no upstream PyYAML wheel, else 1")

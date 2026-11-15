@@ -85,7 +85,7 @@ test("device and security-key prompts show the person a chooser; only the picked
       { deviceId: "h1", name: "Security Key", vendorId: 4176, productId: 1031, serialNumber: "KEY1" },
       { deviceId: "h2", name: "Keyboard", vendorId: 1452, productId: 641, serialNumber: "KBD" }], frame: top }],
     "select-usb-device": [{ deviceList: [{ deviceId: "u1", productName: "Token", manufacturerName: "Maker" }], frame: embed }],
-    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "9025", productId: "67", serialNumber: "SER1" }], contents],
+    "select-serial-port": [[{ portId: "s1", displayName: "USB Serial", vendorId: "9025", productId: "67", serialNumber: "SN-1" }], contents],
   };
   for (const [chooser, args] of Object.entries(lists)) {
     let prevented = false, picked = "unset";
@@ -108,8 +108,8 @@ test("device and security-key prompts show the person a chooser; only the picked
   assert.equal(check("hid", "https://keys.example.com", { deviceId: "h1" }), false);
   assert.equal(check("usb", "https://keys.example.com", { deviceId: "u1" }), false);
   assert.equal(check("usb", "https://embed.example.net", { deviceId: "u1" }), true);
-  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 67, serial_number: "SER1", usb_driver: "x" }), true);
-  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 68, serial_number: "SER1" }), false);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 67, serial_number: "SN-1", usb_driver: "x" }), true);
+  assert.equal(check("serial", "https://keys.example.com", { vendor_id: 9025, product_id: 68, serial_number: "SN-1" }), false);
   assert.equal(check("hid", "https://keys.example.com", { vendorId: 4176, productId: 1031 }), false);
   assert.equal(session.device(undefined), false);
   assert.deepEqual(asked[0].devices, [{ id: "h1", label: "Security Key" }, { id: "h2", label: "Keyboard" }]);
