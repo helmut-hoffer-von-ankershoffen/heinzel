@@ -120,7 +120,7 @@ struct WidgetFencedEnrollment {
         }, cleanup: { self.store.keychain.deletePending(attempt) && self.store.purgeCredential() })
         if result.complete, let pinned = ActivityCatalog.activation(url: store.catalogURL),
            pinned.endpoint == reservation.previous.endpoint, pinned.workspaceID == receipt.workspaceID {
-            NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: pinned.id)
+            NotificationCenter.default.post(name: WidgetCredentialStore.receiptRetired, object: pinned)
         }
         return result
     }
@@ -259,7 +259,7 @@ struct WidgetFencedEnrollment {
             }, cleanup: { self.store.keychain.deletePending(attempt) && self.store.purgeCredential() })
             if result.complete, let pinned = ActivityCatalog.activation(url: store.catalogURL),
                pinned.endpoint == reservation.previous.endpoint, pinned.workspaceID == workspaceID {
-                NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: pinned.id)
+                NotificationCenter.default.post(name: WidgetCredentialStore.receiptRetired, object: pinned)
             }
             return .identityMismatch(result)
         }

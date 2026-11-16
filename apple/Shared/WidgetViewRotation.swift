@@ -11,4 +11,10 @@ struct WidgetViewRotation {
         handled = id
         return true
     }
+
+    static func shouldReloadRetirement<T: Equatable>(_ retired: T?, current: T?, endpoint: String?,
+                                                    visibleEndpoint: String?, credentialFree: Bool) -> Bool {
+        guard let retired, retired == current, credentialFree, let endpoint, let visibleEndpoint else { return false }
+        return endpoint == visibleEndpoint
+    }
 }

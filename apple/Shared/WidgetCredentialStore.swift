@@ -173,6 +173,7 @@ enum WidgetIssuanceResult {
 struct WidgetCredentialStore {
     static let activationChanged = Notification.Name("HeinzelWidgetActivationChanged")
     static let preparationRecovered = Notification.Name("HeinzelWidgetPreparationRecovered")
+    static let receiptRetired = Notification.Name("HeinzelWidgetReceiptRetired")
     let catalogURL: URL
     let keychain: any WidgetCredentialKeychain
 

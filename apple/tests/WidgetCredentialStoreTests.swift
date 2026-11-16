@@ -548,6 +548,9 @@ private final class NotificationCapture: @unchecked Sendable {
             installedKeychain.canDeletePending = false
             guard case .installed(let installedActive) = installedEnrollment.complete(fixtureReceipt(installedAttempt),
                 reservation: installedAttempt, now: now, clock: { now }) else { fatalError() }
+            var handledRotation = WidgetViewRotation()
+            precondition(handledRotation.shouldReload(notificationID: installedActive.id, currentID: installedActive.id,
+                currentEndpoint: installedActive.endpoint, visibleEndpoint: installedActive.endpoint))
             precondition(installedKeychain.data != nil && ActivityCatalog.pendingEnrollment(url: installedURL) == installedAttempt)
             precondition(!ActivityCatalog.enrollmentPairingMatches(url: installedURL, expected: installedAttempt,
                                                                   fingerprint: String(repeating: "8", count: 64)))
@@ -560,7 +563,18 @@ private final class NotificationCapture: @unchecked Sendable {
                 clock: { now.addingTimeInterval(3601) })!
             precondition(resumed.complete && installedKeychain.data == nil && ActivityCatalog.pendingEnrollment(url: installedURL) == nil)
             if logoutDuringRetry { precondition(ActivityCatalog.activation(url: installedURL) == nil) }
-            else { precondition(ActivityCatalog.activation(url: installedURL)?.workspaceID == credential.workspaceID) }
+            else {
+                let pin = ActivityCatalog.activation(url: installedURL)!
+                precondition(pin.workspaceID == credential.workspaceID && pin.id == installedActive.id)
+                precondition(!handledRotation.shouldReload(notificationID: pin.id, currentID: pin.id,
+                    currentEndpoint: pin.endpoint, visibleEndpoint: pin.endpoint))
+                precondition(WidgetViewRotation.shouldReloadRetirement(pin, current: pin, endpoint: pin.endpoint,
+                    visibleEndpoint: pin.endpoint, credentialFree: pin.credentialGeneration == nil))
+                precondition(!WidgetViewRotation.shouldReloadRetirement(pin, current: installedActive, endpoint: pin.endpoint,
+                    visibleEndpoint: pin.endpoint, credentialFree: true))
+                precondition(!WidgetViewRotation.shouldReloadRetirement(pin, current: nil, endpoint: pin.endpoint,
+                    visibleEndpoint: pin.endpoint, credentialFree: true))
+            }
         }
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
