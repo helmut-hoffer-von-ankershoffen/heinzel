@@ -148,6 +148,8 @@ def makefile() -> str:
         "desktop-electron-package",
         "test-apple-ci",
         "build-apple-ci",
+        "widget-contract-build",
+        "widget-contract-verify",
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
         "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
@@ -165,7 +167,9 @@ def makefile() -> str:
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(
-        r"\n(?:notifier|test-apple-ci|build-apple-ci|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text
+        r"\n(?:notifier|test-apple-ci|build-apple-ci|widget-contract-build|widget-contract-verify|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+",
+        "\n",
+        text,
     )
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)

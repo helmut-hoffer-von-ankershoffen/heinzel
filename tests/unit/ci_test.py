@@ -1063,7 +1063,14 @@ def test_plugin_template_makefile_excludes_all_electron_only_targets():
     generated = _template_sync_module().makefile()
     checked_in = (REPO / "template" / "Makefile").read_text(encoding="utf-8")
     assert generated == checked_in
-    for target in ("desktop-electron-test", "desktop-electron-sandbox", "desktop-electron-native"):
+    for target in (
+        "desktop-electron-test",
+        "desktop-electron-sandbox",
+        "desktop-electron-native",
+        "widget-contract-build",
+        "widget-contract-verify",
+        "scripts/widget_contract_ci.sh",
+    ):
         assert target not in generated
         assert target not in checked_in
     assert "chrome-sandbox" not in generated
