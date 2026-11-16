@@ -299,7 +299,7 @@ def test_a_new_file_a_tool_loads_by_itself_is_ci_wherever_it_is_added(manifest, 
         assert not ci_paths.is_not_ci(prefix + name, manifest["not_ci"]), prefix + name
 
 
-def test_the_generated_globs_match_every_other_name_of_their_type():
+def test_the_generated_globs_match_every_other_name_of_their_type(release_policy):
     from scripts import ci_paths
 
     rule = {"except": [], "match": list(ci_paths.GLOBS)}
