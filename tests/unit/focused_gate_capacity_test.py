@@ -59,7 +59,13 @@ def test_recovery_inventory_uses_authenticated_attempt_two_api(fg, defect):
 
 @pytest.mark.parametrize(
     "defect",
-    [None, *json.loads((Path(__file__).resolve().parents[1] / "fixtures/pr-capacity/adversarial.json").read_text())],
+    [
+        None,
+        *json.loads((Path(__file__).resolve().parents[1] / "fixtures/pr-capacity/adversarial.json").read_text()),
+        "skipped-carrier-executed",
+        "skipped-carrier-runner",
+        "skipped-carrier-conclusion",
+    ],
 )
 def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect):  # noqa: C901, PLR0912, PLR0915 - adversarial matrix
     head, base, merge, tree = (c * 40 for c in "abcd")
@@ -103,11 +109,13 @@ def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect):  # n
         check_run_url=f"{fg.GITHUB}/repos/{fg.REPOSITORY}/check-runs/1",
     )
     first[1].update(conclusion="failure", steps=[step("Fail if any required job failed", "failure")])
-    first.append(job(5, "Release candidate source", "skipped") | {"steps": []})
+    first.append(job(5, "Release candidate source", "skipped") | {"steps": [], "runner_id": None, "runner_name": None})
     second = deepcopy(first)
     for row in second:
         row["id"] += 100
         row["run_attempt"] = 2
+    second[-1]["started_at"] = "different scheduler timestamp"
+    second[-1]["completed_at"] = "another scheduler timestamp"
     second[0].update(
         conclusion="success", runner_id=9, runner_name="other", steps=[step(x) for x in fg._RECOVERY_STEPS[name]]
     )
@@ -159,6 +167,12 @@ def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect):  # n
         second[0]["steps"][0]["conclusion"] = "skipped"
     if defect == "changed-original-carrier":
         second[2]["runner_id"] = 13
+    if defect == "skipped-carrier-executed":
+        second[-1]["steps"] = [step("work")]
+    if defect == "skipped-carrier-runner":
+        second[-1]["runner_id"] = 9
+    if defect == "skipped-carrier-conclusion":
+        second[-1]["conclusion"] = "success"
     artifacts = {"total_count": 1, "artifacts": [{"name": fg.ARTIFACT, "workflow_run": {"id": 123}}]}
     if defect == "coverage-artifact-mismatch":
         artifacts["artifacts"][0]["workflow_run"]["id"] = 124

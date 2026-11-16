@@ -610,6 +610,22 @@ def _recovery_inventory(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
     return jobs
 
 
+def _unchanged_carrier(old: dict[str, Any], job: dict[str, Any]) -> None:
+    if old.get("conclusion") == "skipped":
+        runner = (old.get("runner_id"), old.get("runner_name"))
+        require(
+            (runner == (None, None) or (type(runner[0]) is int and runner == (0, "")))
+            and (job.get("runner_id"), job.get("runner_name")) == runner
+            and old.get("steps") == job.get("steps") == []
+            and all(
+                job.get(key) == old.get(key) for key in _EXECUTION_FIELDS if key not in {"started_at", "completed_at"}
+            ),
+            "skipped carrier acquired execution",
+        )
+    else:
+        require(all(job.get(key) == old.get(key) for key in _EXECUTION_FIELDS), "original execution changed")
+
+
 def verify_full_pr_capacity(gate: Gate, run_id: int, read: Callable[[str], bytes]) -> dict[str, Any]:  # noqa: C901, PLR0915 - one continuous evidence boundary
     """Verify a separate capacity-recovered full PR proof, never release-candidate evidence."""
     snapshot = pull_identity(gate, gate.head)
@@ -714,7 +730,7 @@ def verify_full_pr_capacity(gate: Gate, run_id: int, read: Callable[[str], bytes
                     "recovered workload checkout differs",
                 )
         else:
-            require(all(job.get(key) == old.get(key) for key in _EXECUTION_FIELDS), "original execution changed")
+            _unchanged_carrier(old, job)
     if "Build" in replacements:
         require(
             all(
