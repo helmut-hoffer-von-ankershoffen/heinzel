@@ -760,6 +760,32 @@ def test_bridge_post_update_facts_are_bounded_and_redacted(tmp_path):
     assert harness.bridge_update_phases(stderr) == {"check": "warning"}
 
 
+def test_bridge_diagnostics_reject_non_ascii_digits(tmp_path):
+    assert harness.safe_version("\uff10.9.43") is None
+    cache = tmp_path / "cache_dir"
+    cache.mkdir()
+    (cache / "python-need.json").write_text(
+        json.dumps({"release": "\uff10.9.49", "python": "3.\uff11\uff15", "held": None})
+    )
+    assert harness.bridge_python_need(SimpleNamespace(root=tmp_path)) == {
+        "release": None,
+        "python": None,
+        "held": False,
+    }
+    managed = tmp_path / "uv-python"
+    managed.mkdir()
+    python = managed / "python\uff13.12"
+    python.touch()
+    prefix = tmp_path / "tool"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/python").symlink_to(python)
+    assert harness.bridge_post_interpreter(SimpleNamespace(root=tmp_path, prefix=prefix)) is None
+    facts = harness.bridge_receipt_facts(
+        '[tool]\nrequirements = [{name = "heinzel", specifier = ">=\uff10.9.43"}]'.encode()
+    )
+    assert facts["requirements"][0]["specifier"] is None
+
+
 @pytest.mark.parametrize(
     ("actual", "version", "error"),
     [
