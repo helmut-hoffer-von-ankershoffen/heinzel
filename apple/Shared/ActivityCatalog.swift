@@ -465,7 +465,13 @@ final class ActivityCatalog {
                                           cleanup: expected.previous, expirationRetirement: expected.id)
                 guard let encoded = try? JSONEncoder().encode(tombstone),
                       writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
-            } else if !(authority.revoked == true && authority.cleanup == expected.previous && authority.expirationRetirement == expected.id) &&
+            } else if authority.activation == installed && authority.enrollment == nil && authority.revoked != true {
+                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true,
+                                          cleanup: installed, expirationRetirement: expected.id)
+                guard let encoded = try? JSONEncoder().encode(tombstone),
+                      writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            } else if !(authority.revoked == true && [expected.previous, installed].contains(where: { $0 == authority.cleanup }) &&
+                         authority.expirationRetirement == expected.id) &&
                         !(authority.activation == pinned && authority.enrollment == nil && authority.revoked != true) {
                 return ClearResult(revoked: false, purged: false, stale: true)
             } else if !writeJournal(data, authorityURL(for: url)) {

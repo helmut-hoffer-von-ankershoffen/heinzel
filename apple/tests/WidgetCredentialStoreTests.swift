@@ -536,6 +536,32 @@ private final class NotificationCapture: @unchecked Sendable {
             precondition(finished.complete && ActivityCatalog.activation(url: boundaryURL) == nil)
             precondition(ActivityCatalog.pendingEnrollment(url: boundaryURL) == nil && observed.ids.count == before)
         }
+        for logoutDuringRetry in [true, false] {
+            let installedURL = directory.appendingPathComponent("expired-installed-\(logoutDuringRetry).sqlite")
+            let installedKeychain = FakeKeychain()
+            let installedStore = WidgetCredentialStore(catalogURL: installedURL, keychain: installedKeychain)
+            let installedEnrollment = WidgetFencedEnrollment(store: installedStore)
+            let installedInitial = ActivityCatalog.activate(url: installedURL, endpoint: pending.endpoint)!
+            let installedPair = String(repeating: "7", count: 64)
+            let installedAttempt = installedEnrollment.prepare(expected: installedInitial, pairingFingerprint: installedPair)!
+            guard case .ready = installedEnrollment.bind(fixtureStatus, reservation: installedAttempt) else { fatalError() }
+            installedKeychain.canDeletePending = false
+            guard case .installed(let installedActive) = installedEnrollment.complete(fixtureReceipt(installedAttempt),
+                reservation: installedAttempt, now: now, clock: { now }) else { fatalError() }
+            precondition(installedKeychain.data != nil && ActivityCatalog.pendingEnrollment(url: installedURL) == installedAttempt)
+            precondition(!ActivityCatalog.enrollmentPairingMatches(url: installedURL, expected: installedAttempt,
+                                                                  fingerprint: String(repeating: "8", count: 64)))
+            let interrupted = WidgetFencedEnrollment(store: installedStore).finishExpiredReceipt(installedAttempt,
+                clock: { now.addingTimeInterval(3601) })!
+            precondition(interrupted.revoked && !interrupted.complete && ActivityCatalog.activation(url: installedURL) == nil)
+            installedKeychain.canDeletePending = true
+            if logoutDuringRetry { precondition(installedStore.invalidate(installedActive).revoked) }
+            let resumed = WidgetFencedEnrollment(store: installedStore).finishExpiredReceipt(installedAttempt,
+                clock: { now.addingTimeInterval(3601) })!
+            precondition(resumed.complete && installedKeychain.data == nil && ActivityCatalog.pendingEnrollment(url: installedURL) == nil)
+            if logoutDuringRetry { precondition(ActivityCatalog.activation(url: installedURL) == nil) }
+            else { precondition(ActivityCatalog.activation(url: installedURL)?.workspaceID == credential.workspaceID) }
+        }
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)
