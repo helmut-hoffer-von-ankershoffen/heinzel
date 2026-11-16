@@ -72,8 +72,9 @@ def test_provider_error_is_preserved_and_diagnostic_relay_failure_is_ignored():
         msg = "provider failed"
         raise ValueError(msg)
 
+    pending = diagnostics.wrap_model_request(None, request_context=request, handler=handler)
     with pytest.raises(ValueError, match="provider failed"):
-        asyncio.run(diagnostics.wrap_model_request(None, request_context=request, handler=handler))
+        asyncio.run(pending)
     assert diagnostics.requests == 1
 
 

@@ -124,41 +124,47 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
                 },
             )
 
-    def capture(self, request_context: ModelRequestContext) -> None:
-        """Capture counts only; a provider is never asked to do additional work."""
-        params = request_context.model_request_parameters
+    def _tool_identity(self, name: str) -> tuple[bool, str, str]:
+        source = self.tool_sources.get(name)
+        if source is not None:
+            return False, source[0], source[1]
+        parts = name.split("__", 2)
+        gateway = name.startswith("mcp__external__")
+        internal = len(parts) != _NAME_PARTS or parts[1] == "hz" or gateway
+        server = "Internal" if internal else parts[1]
+        display = parts[2] if len(parts) == _NAME_PARTS else name
+        if gateway:
+            display = f"external.{display}"
+        return internal, server, display
+
+    def _offered_server(self, identity: tuple[bool, str], tools: list[dict[str, str]], count: int) -> dict[str, Any]:
+        internal, name = identity
+        return {
+            "name": name,
+            "internal": internal,
+            "offered": True,
+            "tools": tools,
+            "tool_count": count,
+            "scope": None if internal else self.status.get(name.lower(), (None, None))[0],
+            "running": None if internal else self.status.get(name.lower(), (None, None))[1],
+            "cached_tool_count": None if internal else self.cached_counts.get(name.lower()),
+        }
+
+    def _capture_tools(self, tools: list[Any]) -> None:
+        """Group only the tool descriptors already offered in the request."""
         grouped: dict[tuple[bool, str], list[dict[str, str]]] = {}
         totals: Counter[tuple[bool, str]] = Counter()
         details_left = _TOTAL_DETAIL_LIMIT
-        for tool in params.function_tools:
-            parts = tool.name.split("__", 2)
-            source = self.tool_sources.get(tool.name)
-            gateway = source is None and tool.name.startswith("mcp__external__")
-            internal = source is None and (len(parts) != _NAME_PARTS or parts[1] == "hz" or gateway)
-            server = source[0] if source else "Internal" if internal else parts[1]
+        for tool in tools:
+            internal, server, name = self._tool_identity(tool.name)
             key = (internal, server)
-            name = source[1] if source else parts[2] if len(parts) == _NAME_PARTS else tool.name
-            if gateway:
-                name = f"external.{name}"
             totals[key] += 1
             entries = grouped.setdefault(key, [])
             if len(entries) < _DETAIL_LIMIT and details_left:
                 entries.append({"name": name, "description": (tool.description or "")[:_DESCRIPTION_LIMIT]})
                 details_left -= 1
-        self.servers = [
-            {
-                "name": name,
-                "internal": internal,
-                "offered": True,
-                "tools": tools,
-                "tool_count": totals[(internal, name)],
-                "scope": None if internal else self.status.get(name.lower(), (None, None))[0],
-                "running": None if internal else self.status.get(name.lower(), (None, None))[1],
-                "cached_tool_count": None if internal else self.cached_counts.get(name.lower()),
-            }
-            for (internal, name), tools in grouped.items()
-        ]
-        offered = {name.lower() for internal, name in grouped if not internal}
+        self.servers = [self._offered_server(key, entries, totals[key]) for key, entries in grouped.items()]
+        offered = {server["name"].lower() for server in self.servers if not server["internal"]}
         self.servers.extend(
             {
                 "name": name,
@@ -173,6 +179,10 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
             for name, (scope, running) in self.status.items()
             if name not in offered
         )
+
+    def capture(self, request_context: ModelRequestContext) -> None:
+        """Capture counts only; a provider is never asked to do additional work."""
+        self._capture_tools(request_context.model_request_parameters.function_tools)
         counts = Counter(
             part.part_kind for message in request_context.messages for part in getattr(message, "parts", ())
         )
@@ -211,7 +221,7 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
         return response
 
 
-async def prepare_toolbox(  # noqa: PLR0913 - explicit authority, stream and timing inputs
+async def prepare_toolbox(  # noqa: PLR0913
     kernel: Kernel | None, session: str, owner: str, *, attended: bool, emit: Emit | None, started: float
 ) -> tuple["TurnToolbox | None", TurnDiagnostics | None]:
     """Prepare the existing toolbox and, for a watching person, observe its timing without starting extra servers."""

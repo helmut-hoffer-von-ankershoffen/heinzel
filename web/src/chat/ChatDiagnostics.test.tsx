@@ -26,6 +26,38 @@ const event = {
   ],
 };
 
+it.each([
+  { name: "x".repeat(129) },
+  { internal: "yes" },
+  { offered: "yes" },
+  { scope: "remote" },
+  { running: "yes" },
+  { cached_tool_count: -1 },
+  { tool_count: 0 },
+  { offered: false },
+  { tools: [{ name: "x", description: 3 }] },
+  { tools: [{ name: "x".repeat(129), description: "" }] },
+  { tools: [{ name: "x", description: "x".repeat(513) }] },
+])("rejects malformed server descriptors after parsing is separated: %j", (change) => {
+  expect(diagnosticsEvent({ ...event, servers: [{ ...event.servers[0], ...change }] })).toBeNull();
+});
+
+it.each([
+  [undefined, "Connection status unavailable"],
+  [false, "Not running when sampled"],
+] as const)("keeps unmeasured context separate from connection state %s", (running, status) => {
+  const snapshot = diagnosticsEvent({
+    ...event,
+    context: {},
+    servers: [{ name: "weather", internal: false, offered: false, tool_count: null, tools: [], running }],
+  });
+  if (!snapshot) throw new Error("Expected diagnostics");
+  render(<ChatDiagnostics turns={[{ id: "one", snapshot }]} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: /weather/ }));
+  expect(screen.getByText("Not measured yet")).toBeInTheDocument();
+  expect(screen.getByText(new RegExp(status))).toBeInTheDocument();
+});
+
 it("shows measured timings, context and the offered tools of each server", () => {
   const snapshot = diagnosticsEvent(event);
   expect(snapshot).not.toBeNull();

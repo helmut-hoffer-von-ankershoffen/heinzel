@@ -60,6 +60,10 @@ class ExternalTools:
         tool = self._find(server, name)
         if tool is None:
             return "Error: no such enabled tool."
+        return self._schema_page(tool, offset)
+
+    @staticmethod
+    def _schema_page(tool: FoundTool, offset: int) -> str:
         # Escape angle brackets before chunking so data cannot close the trust boundary. Do not redact or clean
         # the schema: changing an enum, pattern or required name would silently change the tool's contract.
         schema = (

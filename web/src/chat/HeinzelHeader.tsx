@@ -103,7 +103,7 @@ export function HeinzelHeader({
   locked = false,
   diagnosticsOpen = false,
   onDiagnostics,
-}: Props) {
+}: Readonly<Props>) {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const switchTrigger = useRef<HTMLButtonElement>(null);
