@@ -78,7 +78,7 @@ def check_collection_message(log: Path) -> None:
 
 
 def uv_shim(directory: Path, find_links: str) -> Path:
-    """A `uv` first on PATH that gives only its own process the reviewed PyYAML, and strips what uv records of it.
+    """A fixture uv wrapper that scopes reviewed PyYAML to resolver arguments, never descendant environment.
 
     uv saves an inherited find-links in the tool receipt as resolver policy, and the installer rightly refuses a
     receipt with options. A user's install never has them, so the shim removes them as soon as uv exits.
@@ -95,8 +95,15 @@ def uv_shim(directory: Path, find_links: str) -> Path:
     script.write_text(
         f"#!{sys.executable} -I\n"
         "import glob, os, re, subprocess, sys\n"
-        f"env = {{**os.environ, 'UV_FIND_LINKS': {find_links!r}}}\n"
-        f"code = subprocess.call([{real!r}, *sys.argv[1:]], env=env)\n"
+        "env = {key: value for key, value in os.environ.items() if key != 'UV_FIND_LINKS'}\n"
+        "args = sys.argv[1:]\n"
+        "position = 1 if args[:1] and args[0] in {'run', 'sync', 'lock', 'build', 'export'} else 0\n"
+        "if args[:2] in (['tool', 'run'], ['tool', 'install'], ['pip', 'install'], "
+        "['pip', 'sync'], ['pip', 'compile']):\n"
+        "    position = 2\n"
+        "if position:\n"
+        f"    args[position:position] = ['--find-links', {find_links!r}]\n"
+        f"code = subprocess.call([{real!r}, *args], env=env)\n"
         "for path in glob.glob(os.path.join(os.environ.get('UV_TOOL_DIR', ''), '*', 'uv-receipt.toml')):\n"
         "    text = open(path, encoding='utf-8').read()\n"
         "    new = re.sub(r'\\n\\[tool\\.options\\]\\nfind-links = \\[[^\\]]*\\]\\n', '\\n', text)\n"
@@ -112,7 +119,10 @@ def uv_shim(directory: Path, find_links: str) -> Path:
 def shim_find_links(environment: dict[str, str], directory: Path) -> None:
     """Replace an inherited UV_FIND_LINKS by the shim that scopes it to uv's own process."""
     if find_links := environment.pop("UV_FIND_LINKS", None):
-        environment["PATH"] = f"{uv_shim(directory, find_links)}{os.pathsep}{environment.get('PATH', '')}"
+        wrapper = uv_shim(directory, find_links)
+        environment["PATH"] = f"{wrapper}{os.pathsep}{environment.get('PATH', '')}"
+        # uv run prepends its environment's bin directory; leaf acceptance installs must keep this wrapper.
+        environment["PLUGIN_TEST_UV"] = str(wrapper / "uv")
 
 
 def journey(core: str, toolkit: str | None, template: Path, destination: Path) -> None:

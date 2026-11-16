@@ -26,8 +26,10 @@ def hz(tmp_path_factory):
         env[f"HZ_{name}"] = str(root / name.lower())
     env["HZ_SYSTEM_DAEMON__UNIT_DIR"] = str(root / "units")
     env.pop("VIRTUAL_ENV", None)
-    uv = shutil.which("uv")
+    uv = os.environ.get("PLUGIN_TEST_UV") or shutil.which("uv")
     assert uv, "uv is not on PATH: https://docs.astral.sh/uv/"
+    # A parent uv run may prepend its own environment and shadow the reviewed fixture resolver wrapper.
+    env["PATH"] = str(Path(uv).parent) + os.pathsep + env.get("PATH", "")
     subprocess.run([uv, "tool", "install", HZ_SPEC], check=True, env=env, timeout=240)  # noqa: S603 - resolved uv, explicit candidate artifact
 
     def run(*args: str) -> str:
