@@ -130,6 +130,9 @@ def test_native_fenced_retry_after_lost_core_reply(make_kernel, tmp_path):
 
 def assert_script_revoke(webkit, receipt, root, client):
     issued = json.loads(receipt)
+    widget_token = json.loads((root / "active").read_bytes())["token"]
+    widget = {"Authorization": f"Bearer {widget_token}", "X-Hz-Workspace-Id": issued["workspace_id"]}
+    assert client.get("/api/_web/widget-snapshot", headers=widget).status_code == 200
     revoke = {
         "epoch": issued["epoch"],
         "revision": issued["revision"],
@@ -141,8 +144,6 @@ def assert_script_revoke(webkit, receipt, root, client):
     assert revoked["operation"] == "revoke"
     assert revoked["expires_at"] is None
     assert json.loads(webkit("mutate", json.dumps(revoke))) == revoked
-    widget_token = json.loads((root / "active").read_bytes())["token"]
-    widget = {"Authorization": f"Bearer {widget_token}", "X-Hz-Workspace-Id": issued["workspace_id"]}
     assert client.get("/api/_web/widget-snapshot", headers=widget).status_code == 401
 
 
