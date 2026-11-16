@@ -162,6 +162,84 @@ def test_direct_recipe_cannot_bypass_whole_file_selection(monkeypatch, tmp_path)
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        "with space",
+        "with'quote",
+        'with"quote',
+        "with\\slash",
+        "with\nnewline",
+        "`touch MARKER`",
+        "$(shell touch MARKER)",
+        '"`touch MARKER`"',
+        "$(touch MARKER)",
+    ],
+)
+def test_unsafe_report_paths_fail_before_make_or_shell_substitution(tmp_path, monkeypatch, payload):
+    """A regression can run only the disposable recorder toolchain, never real test bodies."""
+    marker = tmp_path / "substitution-ran"
+    directory = tmp_path / payload.replace("MARKER", str(marker))
+    toolchain = tmp_path / "bin"
+    toolchain.mkdir()
+    uv = toolchain / "uv"
+    uv.write_text("#!/bin/sh\nexit 0\n")
+    uv.chmod(0o700)
+    monkeypatch.setenv("PATH", str(toolchain) + os.pathsep + os.environ["PATH"])
+    calls = []
+    real_run = subprocess.run
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return real_run(command, capture_output=True, text=True, **kwargs)
+
+    monkeypatch.setattr(mixed.subprocess, "run", run)
+    with pytest.raises(ValueError, match="safe for both Make and shell"):
+        mixed.check_fast(
+            [
+                "--unit",
+                "tests/unit/mixed_scope_test.py",
+                "--web",
+                "web/src/audio/AudioVisualizer.test.tsx",
+            ],
+            directory,
+        )
+    assert calls == []
+    assert not marker.exists()
+
+
+def test_actual_tmpdir_with_make_syntax_is_rejected_before_recipe_dispatch(tmp_path, monkeypatch):
+    temporary_root = tmp_path / "unsafe$(shell false)"
+    temporary_root.mkdir()
+    monkeypatch.setenv("TMPDIR", str(temporary_root))
+    monkeypatch.setattr(mixed.tempfile, "tempdir", None)
+    calls = []
+    monkeypatch.setattr(mixed.subprocess, "run", lambda command, **_: calls.append(command))
+    with pytest.raises(ValueError, match="safe for both Make and shell"):
+        mixed.run_recipe(
+            [
+                "check-fast",
+                "--unit",
+                "tests/unit/mixed_scope_test.py",
+                "--web",
+                "web/src/audio/AudioVisualizer.test.tsx",
+            ]
+        )
+    assert calls == []
+    assert list(temporary_root.iterdir()) == []  # the rejected recipe also removes its disposable scratch directory
+
+
+@pytest.mark.parametrize("value", ["relative/unit.xml", "/safe/../unit.xml", "/safe/ユニット.xml"])
+def test_report_operands_require_inert_absolute_paths(value):
+    with pytest.raises(ValueError, match="safe for both Make and shell"):
+        mixed.report_operand(Path(value))
+
+
+def test_report_operands_allow_normal_macos_temporary_paths():
+    value = "/var/folders/ab/Example_123/T/heinzel-mixed-check-abc/unit.xml"
+    assert mixed.report_operand(Path(value)) == value
+
+
+@pytest.mark.parametrize(
     "path",
     ["Makefile", "pyproject.toml", "web/package.json", "apple/New.swift", "tests/conftest.py", "desktop/main.ts"],
 )

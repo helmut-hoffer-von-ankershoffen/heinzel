@@ -8,7 +8,6 @@ one passing body; platform skips are counted and remain unverified, not passed.
 
 import json
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -287,15 +286,28 @@ def check_fast(arguments: list[str], directory: Path) -> None:
         raise ValueError(msg)
     files(ROOT, sorted(set(unit)))
     unit_report, web_report = directory / "unit.xml", directory / "web.json"
+    unit_operand, web_operand = report_operand(unit_report), report_operand(web_report)
     overrides = python_overrides([], unit)
     overrides[0] = (
-        f'WEB_TESTS="{web_test_step(" ".join(web))} --reporter=default --reporter=json '
-        f'--outputFile.json={shlex.quote(str(web_report))}"'
+        f'WEB_TESTS="{web_test_step(" ".join(web))} --reporter=default --reporter=json --outputFile.json={web_operand}"'
     )
-    overrides[-1] += f" --junitxml={shlex.quote(str(unit_report))}"
+    overrides[-1] += f" --junitxml={unit_operand}"
     subprocess.run(["make", "check-fast", *overrides], check=True, timeout=1800)  # noqa: S603, S607
     pytest_result(unit_report, unit, allow_partial_skips=True)
     vitest_result(web_report, web, ROOT)
+
+
+def report_operand(path: Path) -> str:
+    """Permit only inert absolute paths across Make expansion and shell double quotes.
+
+    Raises:
+        ValueError: A temporary report path can change Make or shell syntax.
+    """
+    value = str(path)
+    if not path.is_absolute() or not re.fullmatch(r"/[A-Za-z0-9_./-]+", value) or ".." in path.parts:
+        msg = "mixed reports require absolute paths safe for both Make and shell expansion"
+        raise ValueError(msg)
+    return value
 
 
 def run_recipe(arguments: list[str]) -> None:
