@@ -179,13 +179,13 @@ class _ClaudeVerifier:
         from heinzel.kernel._claude_code import command_flags  # noqa: PLC0415 - model runtime only during an admitted turn
         from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model runtime only during an admitted turn
             VERSION,
-            in_supported_range,
+            valid_version,
         )
 
-        # Before launch the bridge names the reviewed range; after `--version` the observed release, which must lie
-        # inside it and stay the same for the whole turn (the digest is bound too).
+        # Before launch the bridge names the contract; the observed release must stay the same for the whole turn
+        # (the digest is bound too).
         if version != VERSION:
-            if not in_supported_range(version) or self._release not in {None, version}:
+            if not valid_version(version) or self._release not in {None, version}:
                 return False
             self._release = version
         return (

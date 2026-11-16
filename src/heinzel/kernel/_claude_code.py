@@ -1,4 +1,4 @@
-"""Admission of the Claude Code CLI for subscription chat: reviewed releases, the option contract and the closed result.
+"""Admission of the Claude Code CLI for subscription chat: identity, the option contract and the closed result.
 
 Shared by the chat bridge and the Claude Code access test, so an access test that passes means chat can run
 (ADR 0050). A trust check over a selected executable; no credential is read.
@@ -22,11 +22,8 @@ from heinzel.kernel._ai_models import Level
 from heinzel.kernel._bounded_process import ProcessOutcome as Outcome
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 
-SUPPORTED_VERSIONS = ((2, 1, 312), (2, 2, 0))
-"""Reviewed Claude Code releases, lowest included and highest excluded: the 2.1 line from the first release whose
-options and JSON result were proven for this bridge. A release outside it is refused until Heinzel reviews it."""
-VERSION = "2.1.312 to before 2.2.0"
-"""The reviewed range the host verifier binds; the observed release must lie inside it."""
+VERSION = "Claude Code option contract"
+"""The pre-probe contract label bound by the host verifier."""
 _VERSION_LINE = re.compile(r"(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,5}) \(Claude Code\)")
 MAX_HELP = 256 * 1024
 _PROVEN_LIMIT = 16
@@ -165,17 +162,10 @@ class Denial(StrEnum):
     MODEL_OVERRIDE = "model-override"
 
 
-_DENIALS: dict[str, str] = {  # by Denial value; version-older is the older-release wording
+_DENIALS: dict[str, str] = {
     "refused": "The subscription response could not be safely admitted or verified. Send the message again.",
     "unavailable": "The selected Claude Code CLI could not be found or read. Re-check AI access in Settings.",
-    "version-unsupported": (
-        "{release} is newer than Heinzel has checked; it works with 2.1.312 up to 2.2. "
-        "Update Heinzel, then send the message again."
-    ),
-    "version-older": (
-        "{release} is older than Heinzel supports; it works with 2.1.312 up to 2.2. "
-        "Update Claude Code, then send the message again."
-    ),
+    "version-unsupported": "Claude Code did not report a recognizable version. Re-check AI access in Settings.",
     "contract-unproven": (
         "{release} does not list every safety option Heinzel requires. "
         "Update Heinzel, then re-check AI access in Settings."
@@ -208,20 +198,19 @@ _DENIALS: dict[str, str] = {  # by Denial value; version-older is the older-rele
 class SubscriptionDeniedError(HeinzelError):
     """One refusal with a typed reason and plain words; never the CLI's own output."""
 
-    def __init__(self, reason: Denial, version: str | None = None, *, older: bool = False) -> None:
+    def __init__(self, reason: Denial, version: str | None = None) -> None:
         self.reason = Denial(reason)
         self.version = version
-        self.older = older
-        words = _DENIALS["version-older" if older else reason]
+        words = _DENIALS[reason]
         release = f"Claude Code {version}" if version else "This Claude Code release"
         super().__init__(words.format(release=release))
 
 
 def supported_version(outcome: Outcome) -> str:
-    """The release `claude --version` reported, when it lies in the reviewed range.
+    """The release `claude --version` reported in the expected format.
 
     Raises:
-        SubscriptionDeniedError: If the output is not exactly one version line or the release is outside the range.
+        SubscriptionDeniedError: If the output is not exactly one version line.
     """
     if outcome.timed_out:
         raise SubscriptionDeniedError(Denial.TIMEOUT)
@@ -231,11 +220,7 @@ def supported_version(outcome: Outcome) -> str:
     if match is None:
         raise SubscriptionDeniedError(Denial.VERSION_UNSUPPORTED)
     release = (int(match[1]), int(match[2]), int(match[3]))
-    version = ".".join(str(part) for part in release)
-    low, high = SUPPORTED_VERSIONS
-    if not low <= release < high:
-        raise SubscriptionDeniedError(Denial.VERSION_UNSUPPORTED, version, older=release < low)
-    return version
+    return ".".join(str(part) for part in release)
 
 
 _DEFINITION = re.compile(r" {0,8}-")
@@ -243,13 +228,9 @@ _DEFINITION = re.compile(r" {0,8}-")
 _OPTION = re.compile(r"(?<![\w-])(--?[A-Za-z][\w-]*)")
 
 
-def in_supported_range(version: str) -> bool:
-    """Whether `version` is exactly a release inside SUPPORTED_VERSIONS, written as `--version` reports it."""
-    match = _VERSION_LINE.fullmatch(f"{version} (Claude Code)")
-    if match is None:
-        return False
-    low, high = SUPPORTED_VERSIONS
-    return low <= (int(match[1]), int(match[2]), int(match[3])) < high
+def valid_version(version: str) -> bool:
+    """Whether `version` is written as `--version` reports it."""
+    return _VERSION_LINE.fullmatch(f"{version} (Claude Code)") is not None
 
 
 def prove_contract(outcome: Outcome, version: str) -> None:
@@ -378,7 +359,7 @@ def require_subscription_login(executable: Path, execute: Callable[..., Outcome]
 def check_access(executable: Path, execute: Callable[..., Outcome], prompt: str, timeout: float) -> tuple[str, str]:
     """Run the chat's admission and one structured text answer; the release and the answer, or a typed refusal.
 
-    The same release range, help contract, digest continuity, options and closed result as a chat turn; only the
+    The same version format, help contract, digest continuity, options and closed result as a chat turn; only the
     owner's turn verifier and slot ledger are absent, because a check belongs to no conversation.
 
     Raises:

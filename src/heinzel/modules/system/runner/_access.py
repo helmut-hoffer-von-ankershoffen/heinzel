@@ -1,7 +1,7 @@
 """Claude Code as an AI access option: the CLI and its own login, beside the runner of the same name (ADR 0057).
 
 `status` asks `claude auth status`, which spends nothing; `test` asks one line through the chat's own admission (the
-reviewed release range, the help contract, the closed structured result), with no tools and in an empty directory, so
+version format, the help contract, the closed structured result), with no tools and in an empty directory, so
 a passing test means chat can run. The option names the runner `claude-code`, so `hz ai access use
 claude-code` binds it for the chat and coding handoffs too.
 """
@@ -87,7 +87,7 @@ class ClaudeCodeAccess:
     def test(self) -> AccessTest:
         """One short answer through the chat's own admission, so an OK means chat can run.
 
-        No model override, a claude.ai subscription login, the reviewed release, the help contract, the closed result.
+        No model override, a claude.ai subscription login, a recognizable version, the help contract, the closed result.
         """
         from heinzel.kernel._claude_code import (  # noqa: PLC0415 - bridge admission only when testing
             Denial,

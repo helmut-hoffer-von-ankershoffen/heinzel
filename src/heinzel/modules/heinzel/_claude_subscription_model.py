@@ -43,7 +43,6 @@ from heinzel.kernel._claude_code import (
     CONTRACT_OPTIONS,
     MAX_HELP,
     PROTOCOL,
-    SUPPORTED_VERSIONS,
     VERSION,
     Denial,
     SubscriptionDeniedError,
@@ -51,7 +50,6 @@ from heinzel.kernel._claude_code import (
     command_flags,
     contract_proven,
     executable_digest,
-    in_supported_range,
     prove_contract,
     remember_contract,
     require_no_model_override,
@@ -59,6 +57,7 @@ from heinzel.kernel._claude_code import (
     structured_result,
     subscription_environment,
     supported_version,
+    valid_version,
 )
 from heinzel.kernel._logging import log_event
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
@@ -72,7 +71,6 @@ _MAX_SECONDS = 7200
 __all__ = [
     "COMMAND_FLAGS",
     "CONTRACT_OPTIONS",
-    "SUPPORTED_VERSIONS",
     "VERSION",
     "ClaudeSubscriptionModel",
     "Denial",
@@ -82,12 +80,12 @@ __all__ = [
     "SubscriptionVerifier",
     "check_access",
     "executable_digest",
-    "in_supported_range",
     "prove_contract",
     "require_no_model_override",
     "require_subscription_login",
     "subscription_environment",
     "supported_version",
+    "valid_version",
 ]
 
 
@@ -115,7 +113,7 @@ class SubscriptionVerifier(Protocol):
     ) -> bool:
         """Admit exact identity, subscription billing, isolation and current owner authority.
 
-        `version` is the reviewed range label (VERSION) before the executable runs, then the release it reported.
+        `version` is the contract label (VERSION) before the executable runs, then the release it reported.
         """
         ...
 
@@ -135,7 +133,7 @@ async def _run_cancelable(execute: Callable[..., Outcome], command: list[str], *
 async def _admit(
     execute: Callable[..., Outcome], executable: Path, digest: str, cwd: Path, environment: dict[str, str]
 ) -> str:
-    """Admit this exact executable: a reviewed release whose help lists every option, proven once per digest.
+    """Admit this exact executable: its help lists every option, proven once per digest.
 
     Raises:
         SubscriptionDeniedError: If the release, its options or its bytes cannot be admitted.
@@ -372,7 +370,7 @@ class ClaudeSubscriptionModel(Model):
             )
             log_event(logger, "chat.subscription.refused", level=logging.WARNING, reason=reason.value)
             if isinstance(error, SubscriptionDeniedError):
-                raise SubscriptionDeniedError(reason, error.version, older=error.older) from None
+                raise SubscriptionDeniedError(reason, error.version) from None
             raise SubscriptionDeniedError(reason) from None
         finally:
             self._inflight = False

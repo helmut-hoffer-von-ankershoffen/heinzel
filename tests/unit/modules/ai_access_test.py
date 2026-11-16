@@ -293,10 +293,16 @@ def test_a_claude_code_test_fails_whenever_chat_would_refuse_its_access(tmp_path
     assert words in result.detail
 
 
-def test_a_claude_code_test_refuses_a_release_chat_would_refuse(tmp_path):
-    result = claude(tmp_path, "true", version="2.2.0").test()
+@pytest.mark.parametrize("version", ["2.1.311", "2.2.0"])
+def test_a_claude_code_test_admits_a_release_with_the_chat_contract(tmp_path, version):
+    result = claude(tmp_path, "true", version=version).test()
+    assert (result.ok, result.detail) == (True, f"OK (Claude Code {version})")
+
+
+def test_a_claude_code_test_refuses_an_unrecognizable_release(tmp_path):
+    result = claude(tmp_path, "true", version="unknown").test()
     assert not result.ok
-    assert result.detail.startswith("Claude Code 2.2.0 is newer than Heinzel has checked")
+    assert "recognizable version" in result.detail
 
 
 def test_a_project_file_can_set_nothing_that_decides_what_runs():
