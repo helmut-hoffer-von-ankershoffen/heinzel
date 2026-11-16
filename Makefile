@@ -276,6 +276,13 @@ test-apple-ci: ## Run required Apple fixtures and reject skipped tests
 	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
 	uv run --script scripts/check_apple_ci.py reports/apple-ci.xml
 
+.PHONY: widget-contract-build widget-contract-verify
+widget-contract-build: ## Build isolated signed widget contract fixtures for the focused macOS job
+	bash scripts/widget_contract_ci.sh build
+
+widget-contract-verify: ## Require every selected widget contract to pass without skips
+	bash scripts/widget_contract_ci.sh verify
+
 build-apple-ci: ## Compile the unsigned Swift Release app on macOS CI
 	xcodebuild -project apple/Heinzel.xcodeproj -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
 
