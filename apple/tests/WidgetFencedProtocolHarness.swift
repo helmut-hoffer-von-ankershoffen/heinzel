@@ -11,6 +11,7 @@ private struct FixtureKeychain: WidgetCredentialKeychain {
     func write(_ data: Data) -> Bool { (try? data.write(to: path("active"), options: .atomic)) != nil }
     func delete() -> Bool { (try? FileManager.default.removeItem(at: path("active"))) != nil || read() == nil }
     func readPending(_ attempt: String) -> Data? { try? Data(contentsOf: path("pending-" + attempt)) }
+    func readPendingStatus(_ attempt: String) -> WidgetKeychainRead { readPending(attempt).map(WidgetKeychainRead.data) ?? .missing }
     func createPending(_ data: Data, attempt: String) -> Bool {
         guard readPending(attempt) == nil else { return false }
         return (try? data.write(to: path("pending-" + attempt), options: .atomic)) != nil
@@ -46,8 +47,18 @@ private struct FixtureKeychain: WidgetCredentialKeychain {
             let status = try Data(contentsOf: root.appendingPathComponent("status.json"))
             guard case .ready(let request) = enrollment.bind(status, reservation: reservation) else { fatalError("bind") }
             print(request.base64EncodedString())
-        } else if operation == "complete" {
+        } else if operation == "record" {
+            let markerURL = url.appendingPathExtension("enrollment-pending")
+            let journal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self, from: Data(contentsOf: markerURL))
+            let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+            let pending = try JSONSerialization.jsonObject(with: keychain.readPending(attempt)!) as! [String: Any]
             let receipt = try Data(contentsOf: root.appendingPathComponent("receipt.json"))
+            guard ActivityCatalog.recordEnrollmentReceipt(url: url, expected: reservation, workspaceID: journal.workspaceID!,
+                request: journal.request!, receipt: receipt, generation: pending["generation"] as! String) != nil else { fatalError("record") }
+            print("recorded")
+        } else if operation == "complete" || operation == "complete-saved" {
+            let receipt = operation == "complete-saved" ? ActivityCatalog.savedEnrollmentReceipt(url: url, expected: reservation)!
+                : try Data(contentsOf: root.appendingPathComponent("receipt.json"))
             guard case .installed = enrollment.complete(receipt, reservation: reservation) else { fatalError("complete") }
             print("installed")
         } else if operation == "verify" {
