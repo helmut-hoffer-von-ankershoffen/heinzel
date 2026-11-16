@@ -39,8 +39,11 @@ def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:
     )[1]
     handler = handler.split("\n        }", 1)[0]
     assert "receive(on: RunLoop.main)" in handler
-    assert "id != handledWidgetActivation" in handler
-    assert "activation.id == id" in handler
-    assert "activation.endpoint == endpoint.origin.absoluteString" in handler
+    assert "widgetViewRotation.shouldReload" in handler
+    assert "currentID: activation?.id" in handler
+    assert "currentEndpoint: activation?.endpoint" in handler
+    assert "visibleEndpoint: endpoint?.origin.absoluteString" in handler
     assert "retryWorkspace()" in handler
     assert ".id(revision)" in app
+    assert "@State private var promptComposer = NativePromptComposer()" in app
+    assert "promptComposer: promptComposer" in app

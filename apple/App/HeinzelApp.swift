@@ -280,7 +280,7 @@ struct ConnectionView: View {
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
-    @State private var handledWidgetActivation: String?
+    @State private var widgetViewRotation = WidgetViewRotation()
     @State private var connectionIssue: WorkspaceProblem?
     @State private var verifiedConnectionOrigin: URL?
     #if os(iOS)
@@ -719,10 +719,10 @@ struct ConnectionView: View {
         .onChange(of: link) { _, _ in error = nil }
         .onReceive(NotificationCenter.default.publisher(for: ActivityWidgetData.clearFailed)) { _ in widgetClearFailed = true }
         .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.activationChanged).receive(on: RunLoop.main)) { notification in
-            guard let id = notification.object as? String, id != handledWidgetActivation,
-                  let activation = ActivityWidgetData.currentActivation(), activation.id == id,
-                  let endpoint, activation.endpoint == endpoint.origin.absoluteString else { return }
-            handledWidgetActivation = id
+            let activation = ActivityWidgetData.currentActivation()
+            guard widgetViewRotation.shouldReload(notificationID: notification.object as? String,
+                                                  currentID: activation?.id, currentEndpoint: activation?.endpoint,
+                                                  visibleEndpoint: endpoint?.origin.absoluteString) else { return }
             retryWorkspace()
         }
         .alert("Widget information could not be cleared", isPresented: $widgetClearFailed) {
