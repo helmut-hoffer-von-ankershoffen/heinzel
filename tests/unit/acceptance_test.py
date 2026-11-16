@@ -2,12 +2,15 @@
 
 import argparse
 import ast
+import contextlib
 import importlib.util
 import json
 import re
 import shutil
 import subprocess
+import urllib.error
 import zipfile
+from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -659,6 +662,158 @@ def test_update_allows_only_the_published_legacy_bridge(target, versions, python
             harness.run_update(case, "update", previous=previous)
     else:
         assert harness.run_update(case, "update", previous=previous)["after"] == after
+
+
+@pytest.mark.parametrize(
+    ("responses", "delays", "refusal"),
+    [
+        ([(1, 1010)], [], False),
+        ([(0, 1010), (1, 4610)], [11], False),
+        ([(0, 1120)], [], True),
+        ([(0, 998)], [], True),
+        ([(0, 1010), (0, 4610)], [11], True),
+    ],
+)
+def test_bridge_quota_wait_is_bounded(monkeypatch, responses, delays, refusal):
+    elapsed = 0
+    waits = []
+    results = iter(responses)
+
+    def sleep(delay):
+        nonlocal elapsed
+        waits.append(delay)
+        elapsed += delay
+
+    def probe(timeout):
+        assert 0 < timeout <= harness.BRIDGE_PROBE_TIMEOUT
+        return next(results)
+
+    clock = SimpleNamespace(monotonic=lambda: elapsed, time=lambda: 1000 + elapsed, sleep=sleep)
+    monkeypatch.setattr(harness, "time", clock)
+    monkeypatch.setattr(harness, "_bridge_quota", probe)
+    if refusal:
+        with pytest.raises(harness.Refused, match="insufficient anonymous GitHub quota"):
+            harness.verify_legacy_bridge_readiness()
+    else:
+        assert harness.verify_legacy_bridge_readiness() == {"required_requests": 1, "remaining_after_probe": 1}
+    assert waits == delays
+    assert next(results, None) is None
+
+
+@pytest.mark.parametrize(
+    ("status", "remaining", "content_type", "refusal"),
+    [
+        (200, "1", "application/json; charset=utf-8", None),
+        (200, "0", "application/json", None),
+        (200, "1", "application/vnd.github+json", None),
+        (200, "9", "text/html", "unexpected GitHub release response"),
+        (200, "unknown", "application/json", "quota could not be verified"),
+        (403, "0", "application/json", None),
+        (429, "0", "application/json", None),
+        (403, "9", "application/json", "rejected the anonymous probe"),
+        (302, "9", "application/json", "rejected the anonymous probe"),
+        (None, "9", "application/json", "endpoint unavailable"),
+    ],
+)
+def test_bridge_quota_probes_only_the_real_anonymous_release_endpoint(
+    monkeypatch, status, remaining, content_type, refusal
+):
+    headers = Message()
+    headers["Content-Type"] = content_type
+    headers["X-RateLimit-Remaining"] = remaining
+    headers["X-RateLimit-Reset"] = "1010"
+    headers["X-RateLimit-Resource"] = "core"
+
+    def open_probe(request, *, timeout):
+        assert request.full_url == (
+            "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel/releases?per_page=30&page=1"
+        )
+        assert request.get_method() == "GET"
+        assert dict(request.header_items()) == {
+            "Accept": "application/vnd.github+json",
+            "Cache-control": "no-cache",
+            "User-agent": "heinzel/0.9.43",
+        }
+        assert timeout == 5
+        if status is None:
+            message = "private network diagnostic"
+            raise TimeoutError(message)
+        if status != 200:
+            raise urllib.error.HTTPError(request.full_url, status, "private response", headers, None)
+        return contextlib.nullcontext(SimpleNamespace(status=status, headers=headers))
+
+    def build_opener(proxy, redirect):
+        assert proxy.proxies == {}
+        assert redirect.redirect_request(None) is None
+        return SimpleNamespace(open=open_probe)
+
+    monkeypatch.setattr(harness.urllib.request, "build_opener", build_opener)
+    if refusal:
+        with pytest.raises(harness.Refused, match=refusal) as failure:
+            harness._bridge_quota(5)
+        assert "private" not in str(failure.value)
+    else:
+        assert harness._bridge_quota(5) == (int(remaining), 1010)
+
+
+@pytest.mark.parametrize("quota_ready", [False, True])
+def test_bridge_readiness_precedes_literal_update_and_does_not_mask_its_failure(monkeypatch, quota_ready):
+    calls = []
+
+    def step(_name, action):
+        return action()
+
+    def verify_bridge(_case, profile):
+        assert profile == "published profile"
+        calls.append("verified bridge")
+
+    def quota():
+        calls.append("quota")
+        if not quota_ready:
+            message = "infrastructure deadline"
+            raise harness.Refused(message)
+
+    def cli(args, label, _timeout):
+        assert args == ["bin/hz", "system", "update", "--json"]
+        calls.append(label)
+        if label == "hz-system-update":
+            return 0, '{"updated": true, "before": "0.9.8", "after": "0.9.43"}', ""
+        return 0, '{"updated": false, "before": "0.9.43", "after": "0.9.43"}', ""
+
+    case = SimpleNamespace(
+        ctx={
+            "from_app": {"profile": "published profile", "accepted": {}, "version": "0.9.8", "url": "published URL"},
+            "update_target": {"mode": "published", "version": "0.9.50"},
+        },
+        env={},
+        bin=Path("bin"),
+        root=Path("private-case"),
+        notes={},
+        plugins_expected={},
+        provide_uv=lambda: None,
+        step=step,
+        run=cli,
+    )
+    monkeypatch.setattr(harness, "app_cycle", lambda *_args: None)
+    monkeypatch.setattr(harness, "hz", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(harness, "plugin_map", lambda *_args: {})
+    monkeypatch.setattr(harness, "expect_plugins", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(harness, "installed_interpreter", lambda _case: "/managed/bin/python3.12")
+    monkeypatch.setattr(harness, "snapshot_files", lambda _path: {"config": b"preserved"})
+    monkeypatch.setattr(harness, "verify_state", lambda *_args: None)
+    monkeypatch.setattr(harness, "verify_legacy_bridge", verify_bridge)
+    monkeypatch.setattr(harness, "verify_legacy_bridge_readiness", quota)
+    monkeypatch.setattr(harness, "bridge_post_interpreter", lambda _case: "python3.12")
+    monkeypatch.setattr(harness, "bridge_python_need", lambda _case: None)
+
+    if quota_ready:
+        with pytest.raises(harness.StepFailed, match="updated=False"):
+            harness.case_update(case)
+        assert calls == ["hz-system-update", "verified bridge", "quota", "hz-system-update-from-bridge"]
+    else:
+        with pytest.raises(harness.Refused, match="infrastructure deadline"):
+            harness.case_update(case)
+        assert calls == ["hz-system-update", "verified bridge", "quota"]
 
 
 def test_legacy_bridge_rejects_wrong_wheel_before_creating_proof(tmp_path, monkeypatch):
