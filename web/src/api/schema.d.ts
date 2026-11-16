@@ -4807,6 +4807,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspace-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Version */
+        get: operations["workspace_version_workspace_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8200,6 +8217,11 @@ export interface components {
              * @description When the last tick ran.
              */
             last_tick: string | null;
+            /**
+             * Last Tick Interval Minutes
+             * @description Interval recorded by that manager-bound tick; none if it was not recorded.
+             */
+            last_tick_interval_minutes?: number | null;
             /**
              * Loaded
              * @description Whether launchd or systemd has the unit loaded.
@@ -17545,6 +17567,110 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
+        /**
+         * WorkspaceDaemonVersion
+         * @description The daemon's last verified tick, distinct from a currently running process.
+         */
+        WorkspaceDaemonVersion: {
+            /**
+             * Last Observed At
+             * @description When that manager-bound tick started.
+             */
+            last_observed_at?: string | null;
+            /**
+             * Last Observed Version
+             * @description Version reported by the last manager-bound tick.
+             */
+            last_observed_version?: string | null;
+            /**
+             * Loaded
+             * @description True when the manager verified the unit loaded; otherwise unknown.
+             */
+            loaded?: boolean | null;
+            /**
+             * Observation Stale
+             * @description Whether the last tick exceeds three recorded intervals; null when not calculable.
+             */
+            observation_stale?: boolean | null;
+            /**
+             * Owned
+             * @description True when the selected unit's manager identity was verified; otherwise unknown.
+             */
+            owned?: boolean | null;
+            /**
+             * Registered At
+             * @description Time in the unit's install marker, not proof of current registration or a Core update time.
+             */
+            registered_at?: string | null;
+            /**
+             * Running Since
+             * @description Unknown without a verified process start time.
+             */
+            running_since?: string | null;
+            /**
+             * Running Version
+             * @description Unknown without a current process attestation.
+             */
+            running_version?: string | null;
+            /**
+             * Status Observed At
+             * @description When this daemon status was obtained.
+             */
+            status_observed_at?: string | null;
+        };
+        /**
+         * WorkspaceInstalledVersion
+         * @description The separately inspected installation, not a guess from the web server's imported package.
+         */
+        WorkspaceInstalledVersion: {
+            /**
+             * Updated At
+             * @description Unknown unless an installation event is verified.
+             */
+            updated_at?: string | null;
+            /**
+             * Version
+             * @description Verified installed Core version, or null if unavailable.
+             */
+            version?: string | null;
+        };
+        /**
+         * WorkspaceVersion
+         * @description Version facts read on this request, with missing evidence represented as null.
+         */
+        WorkspaceVersion: {
+            daemon: components["schemas"]["WorkspaceDaemonVersion"];
+            installed: components["schemas"]["WorkspaceInstalledVersion"];
+            /**
+             * Observed At
+             * Format: date-time
+             * @description When this response's observations started.
+             */
+            observed_at: string;
+            web: components["schemas"]["WorkspaceWebVersion"];
+        };
+        /**
+         * WorkspaceWebVersion
+         * @description The answering server's own loaded code and when this server instance was created.
+         */
+        WorkspaceWebVersion: {
+            /**
+             * Observed Since
+             * Format: date-time
+             * @description When this server instance was initialized; not process start time.
+             */
+            observed_since: string;
+            /**
+             * Running Since
+             * @description Unknown without a verified process start time.
+             */
+            running_since?: string | null;
+            /**
+             * Version
+             * @description Core version loaded by the answering web server.
+             */
+            version: string;
+        };
         /** ai_access_remove_key_Input */
         ai_access_remove_key_Input: Record<string, never>;
         /** ai_access_set_key_Input */
@@ -18865,6 +18991,10 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaWorkspaceDaemonVersion = components['schemas']['WorkspaceDaemonVersion'];
+export type SchemaWorkspaceInstalledVersion = components['schemas']['WorkspaceInstalledVersion'];
+export type SchemaWorkspaceVersion = components['schemas']['WorkspaceVersion'];
+export type SchemaWorkspaceWebVersion = components['schemas']['WorkspaceWebVersion'];
 export type SchemaAiAccessRemoveKeyInput = components['schemas']['ai_access_remove_key_Input'];
 export type SchemaAiAccessSetKeyInput = components['schemas']['ai_access_set_key_Input'];
 export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_abandon_chat_turn_Input'];
@@ -25993,6 +26123,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamShow"];
+                };
+            };
+        };
+    };
+    workspace_version_workspace_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceVersion"];
                 };
             };
         };

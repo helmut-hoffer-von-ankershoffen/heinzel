@@ -187,6 +187,43 @@ describe("the mini-player docked in the sidebar", () => {
     await waitFor(() => expect(document.querySelector("[data-dock='docked']")).not.toBeNull());
   });
 
+  it("drags from the touch grip, cancels without saving, and clamps the final position", async () => {
+    api();
+    const { user, card } = await play();
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    vi.spyOn(card, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 288, 190));
+    vi.spyOn(dockSlot(), "getBoundingClientRect").mockReturnValue(new DOMRect(0, 500, 256, 0));
+    const handle = within(card).getByRole("button", { name: "Move the player (arrow keys)" });
+    const icon = handle.querySelector("svg") as SVGElement;
+    const header = card.querySelector("header") as HTMLElement;
+    const before = localStorage.getItem("hz.sound.player");
+    fireEvent.pointerDown(icon, { clientX: 110, clientY: 110, pointerId: 2, pointerType: "touch" });
+    fireEvent.pointerMove(header, { clientX: 160, clientY: 150, pointerId: 2, pointerType: "touch" });
+    expect(card.style.top).not.toBe("0px");
+    fireEvent.pointerCancel(header, { pointerId: 2, pointerType: "touch" });
+    expect(localStorage.getItem("hz.sound.player")).toBe(before);
+    fireEvent.pointerMove(header, { clientX: 900, clientY: 900, pointerId: 2, pointerType: "touch" });
+    fireEvent.pointerUp(header, { clientX: 900, clientY: 900, pointerId: 2, pointerType: "touch" });
+    expect(localStorage.getItem("hz.sound.player")).toBe(before);
+    fireEvent.pointerDown(icon, { clientX: 110, clientY: 110, pointerId: 3, pointerType: "touch" });
+    fireEvent.pointerMove(header, { clientX: 5000, clientY: 5000, pointerId: 3, pointerType: "touch" });
+    fireEvent.pointerUp(header, { clientX: 5000, clientY: 5000, pointerId: 3, pointerType: "touch" });
+    const expected = clampToWindow(4990, 4990, { width: 288, height: 190 });
+    expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}")).toMatchObject({
+      docked: false,
+      x: expected.x,
+      y: expected.y,
+    });
+    const saved = localStorage.getItem("hz.sound.player");
+    const dock = within(card).getByRole("button", { name: "Dock the player in the sidebar" });
+    fireEvent.pointerDown(dock, { clientX: 110, clientY: 110, pointerId: 4, pointerType: "touch" });
+    fireEvent.pointerMove(header, { clientX: 250, clientY: 200, pointerId: 4, pointerType: "touch" });
+    fireEvent.pointerUp(header, { clientX: 250, clientY: 200, pointerId: 4, pointerType: "touch" });
+    expect(localStorage.getItem("hz.sound.player")).toBe(saved);
+    await user.click(dock);
+    expect(card).toHaveAttribute("data-dock", "docked");
+  });
+
   it("moves with the arrow keys when floating", async () => {
     api();
     const { user, card } = await play();

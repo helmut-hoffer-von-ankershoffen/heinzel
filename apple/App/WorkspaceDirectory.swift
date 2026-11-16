@@ -1,5 +1,69 @@
+import CoreFoundation
+import CoreGraphics
 import Foundation
 import Security
+
+enum WorkspaceFooterGeometry {
+    static func deliveryIsCurrent(revision: Int, currentRevision: Int,
+                                  requested: (CGFloat, CGFloat, Int), current: (CGFloat, CGFloat, Int)) -> Bool {
+        revision == currentRevision && requested == current
+    }
+
+    /// The page can only reserve the current viewport's bottom-left footer slot.
+    static func slot(_ values: [String: NSNumber], viewport: CGSize, width expectedWidth: CGFloat, bottom: CGFloat) -> CGRect? {
+        let keys = ["x", "y", "width", "height", "viewportWidth", "viewportHeight"]
+        guard keys.allSatisfy({ values[$0].map { CFGetTypeID($0) != CFBooleanGetTypeID() } == true }),
+              let x = values["x"]?.doubleValue, let y = values["y"]?.doubleValue,
+              let width = values["width"]?.doubleValue, let height = values["height"]?.doubleValue,
+              let viewportWidth = values["viewportWidth"]?.doubleValue,
+              let viewportHeight = values["viewportHeight"]?.doubleValue,
+              [x, y, width, height, viewportWidth, viewportHeight, expectedWidth, bottom].allSatisfy(\.isFinite),
+              abs(viewportWidth - Double(viewport.width)) <= 2, abs(viewportHeight - Double(viewport.height)) <= 2,
+              x >= 0, x <= 80, width >= 44, width <= 180, abs(width - Double(expectedWidth)) <= 2,
+              height >= 44, height <= 52, x + width <= viewportWidth,
+              y >= 0, abs(y + height + Double(bottom) - viewportHeight) <= 3 else { return nil }
+        return CGRect(origin: CGPoint(x: x, y: y), size: CGSize(width: width, height: height))
+    }
+}
+
+struct WorkspaceVersionObservation: Codable, Equatable {
+    let version: String
+    let observedAt: Date
+    var installedVersion: String? = nil
+    var installedUpdatedAt: Date? = nil
+    var daemonLastVersion: String? = nil
+    var daemonLastObservedAt: Date? = nil
+    var daemonObservationStale: Bool? = nil
+
+    static func fromPayload(_ data: [String: Any], now: Date) -> Self? {
+        func text(_ value: Any?) -> String? {
+            guard let value = value as? String, !value.isEmpty, value.count <= 64,
+                  value.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+            return value
+        }
+        func date(_ value: Any?) -> Date? {
+            guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+                  value.doubleValue.isFinite, value.doubleValue > 0 else { return nil }
+            let date = Date(timeIntervalSince1970: value.doubleValue / 1000)
+            return date <= now ? date : nil
+        }
+        guard let version = text(data["version"]) else { return nil }
+        var observation = Self(version: version, observedAt: now)
+        observation.installedVersion = text(data["installedVersion"])
+        observation.installedUpdatedAt = observation.installedVersion == nil ? nil : date(data["installedUpdatedAt"])
+        observation.daemonLastVersion = text(data["daemonLastVersion"])
+        observation.daemonLastObservedAt = date(data["daemonLastObservedAt"])
+        observation.daemonObservationStale = data["daemonObservationStale"] as? Bool
+        return observation
+    }
+
+    static func record(_ observation: Self, origin: String, selectedOrigin: String,
+                       requestRevision: Int, currentRevision: Int, into values: inout [String: Self]) -> Bool {
+        guard origin == selectedOrigin, requestRevision == currentRevision else { return false }
+        values[origin] = observation
+        return true
+    }
+}
 
 struct RecentWorkspace: Codable, Identifiable {
     let address: String

@@ -1,6 +1,5 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
-import { X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -11,7 +10,6 @@ import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
-import { PaneAction, PaneTitle } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
 import { useOperationRun } from "@/lib/operationRun";
@@ -33,6 +31,7 @@ import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
 import { NotificationPanel } from "./NotificationCenter";
+import { useNativeFooter } from "./nativeFooter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
 import { Sidebar, VizStageSlot } from "./Sidebar";
@@ -111,6 +110,7 @@ function CloseNavigationOnOperation({ close }: { close: () => void }) {
 }
 
 function Layout() {
+  const nativeFooter = useNativeFooter();
   const config = useConfig();
   const audioVisualizer = config.data?.settings.find(
     (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
@@ -619,7 +619,10 @@ function Layout() {
   return (
     <div
       data-testid="app-shell"
-      className="relative box-border flex h-[min(100dvh,var(--hz-layout-height,100dvh))] overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]"
+      className={cn(
+        "relative box-border flex h-[min(100dvh,var(--hz-layout-height,100dvh))] overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]",
+        !nativeFooter && "pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))]",
+      )}
     >
       <a
         href="#content"
@@ -646,17 +649,6 @@ function Layout() {
           }}
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div className="shrink-0 px-2">
-              <PaneTitle
-                chrome={
-                  <PaneAction ghost icon={X} className="size-11" onClick={closeNavigation}>
-                    {t("op.close")}
-                  </PaneAction>
-                }
-              >
-                <span className="sr-only">{t("nav.label")}</span>
-              </PaneTitle>
-            </div>
             <div className="min-h-0 flex-1">
               {drawerOpen && (
                 <OverlayTarget value={navigationOverlays}>

@@ -443,6 +443,36 @@ describe("Sound", () => {
     expect(soundState().playing).toBe(false);
   });
 
+  it.each([
+    ["Follow my theme", "follow_theme", false],
+    ["Mute during meetings", "mute_in_meetings", true],
+  ] as const)("saves %s and reads it back when the picker is reopened", async (label, field, initial) => {
+    let saved = initial;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/system/sound/list": () => soundList("off", { [field]: saved }),
+      "/api/system/config/set": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        expect(query.get("key")).toBe(`system.sound.${field}`);
+        expect(query.get("scope")).toBe("user");
+        saved = query.get("value") === "true";
+        return {};
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Choose a soundscape$/));
+    let dialog = await screen.findByRole("dialog", { name: "Sound" });
+    await user.click(within(dialog).getByText(label));
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(true));
+    await waitFor(() => expect(within(dialog).getByRole("switch", { name: label })).toBeEnabled());
+    await user.keyboard("{Escape}");
+    await user.click(await speaker(/^Choose a soundscape$/));
+    dialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(within(dialog).getByRole("switch", { name: label })).toHaveAttribute("aria-checked", String(!initial));
+    expect(saved).toBe(!initial);
+  });
+
   it("the visible speaker opens sound choices from the keyboard and restores focus on Escape", async () => {
     soundApi("fixture-radio");
     const user = userEvent.setup();

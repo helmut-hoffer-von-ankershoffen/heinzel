@@ -147,10 +147,10 @@ function Toggle({
   if (field === "duck_while_typing" && isIOS() && effective(list)?.stream) return null;
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
-      <span id={id} className="flex-1 text-ui">
+      <label htmlFor={id} className="flex-1 text-ui">
         {label}
-      </span>
-      <Switch labelledBy={id} on={on} disabled={setting.isPending} onToggle={() => setting.save(field, !on)} />
+      </label>
+      <Switch id={id} on={on} disabled={setting.isPending} onToggle={() => setting.save(field, !on)} />
     </div>
   );
 }
