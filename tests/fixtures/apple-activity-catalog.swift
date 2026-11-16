@@ -73,6 +73,9 @@ import SQLite3
                 waitFor(flag(url, "reserve-release"))
                 let result = ActivityCatalog.reserveEnrollment(url: url, expected: expected)
                 try Data((result == nil ? "lost" : "won").utf8).write(to: flag(url, "reserve-result-" + name))
+            } else if mode == "pending-check" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Enrollment.self, from: Data(contentsOf: flag(url, "expected-attempt")))
+                precondition(ActivityCatalog.pendingEnrollment(url: url) == expected)
             }
             return
         }
@@ -224,7 +227,18 @@ import SQLite3
         for process in reservations { process.waitUntilExit(); precondition(process.terminationStatus == 0) }
         let outcomes = try ["one", "two"].map { try String(contentsOf: flag(url, "reserve-result-" + $0), encoding: .utf8) }
         precondition(outcomes.filter { $0 == "won" }.count == 1)
-        precondition(ActivityCatalog.pendingEnrollment(url: url)?.previous == toReserve)
+        let unresolved = ActivityCatalog.pendingEnrollment(url: url)!
+        precondition(unresolved.previous == toReserve)
+        precondition(ActivityCatalog.clear(url: url).complete)
+        let reset = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        precondition(ActivityCatalog.reserveEnrollment(url: url, expected: reset) == nil)
+        try JSONEncoder().encode(unresolved).write(to: flag(url, "expected-attempt"))
+        let restarted = Process()
+        restarted.executableURL = writer.executableURL
+        restarted.arguments = [url.path, "pending-check"]
+        try restarted.run()
+        restarted.waitUntilExit()
+        precondition(restarted.terminationStatus == 0)
         print("catalog checks passed")
     }
 }

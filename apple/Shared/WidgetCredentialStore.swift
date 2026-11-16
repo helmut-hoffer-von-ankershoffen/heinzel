@@ -183,10 +183,13 @@ struct WidgetCredentialStore {
 
     /// Caller must retry if a concurrent workspace replacement makes this stale.
     func clearCurrent() -> ActivityCatalog.ClearResult {
-        guard let expected = ActivityCatalog.activation(url: catalogURL) ?? ActivityCatalog.pendingCleanup(url: catalogURL) else {
-            return ActivityCatalog.ClearResult(revoked: false, purged: false)
+        if let expected = ActivityCatalog.activation(url: catalogURL) ?? ActivityCatalog.pendingCleanup(url: catalogURL) {
+            return invalidate(expected)
         }
-        return invalidate(expected)
+        if let pending = ActivityCatalog.pendingEnrollment(url: catalogURL) {
+            return ActivityCatalog.clearEnrollment(url: catalogURL, expected: pending) { keychain.delete() }
+        }
+        return ActivityCatalog.ClearResult(revoked: false, purged: false)
     }
 
     /// Used by foreground logout and authentication failure. Revocation is

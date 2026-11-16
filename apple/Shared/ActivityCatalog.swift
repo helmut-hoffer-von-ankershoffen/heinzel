@@ -61,6 +61,7 @@ final class ActivityCatalog {
 
     private static func authorityURL(for url: URL) -> URL { url.appendingPathExtension("authority") }
     private static func secureModeURL(for url: URL) -> URL { url.appendingPathExtension("secure-mode") }
+    private static func enrollmentURL(for url: URL) -> URL { url.appendingPathExtension("enrollment-pending") }
 
     struct ClearResult {
         let revoked: Bool
@@ -165,10 +166,15 @@ final class ActivityCatalog {
 
     static func reserveEnrollment(url: URL, expected: Activation) -> Enrollment? {
         withWriterLock(url: url, failure: nil) {
+            guard !FileManager.default.fileExists(atPath: enrollmentURL(for: url).path) else { return nil }
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
                   current.activation == expected, current.revoked != true, current.enrollment == nil else { return nil }
             let attempt = Enrollment(id: UUID().uuidString, previous: expected)
+            // Persist the unresolved attempt first. A crash between these writes
+            // may block enrollment unnecessarily, but cannot start a second POST.
+            guard let marker = try? JSONEncoder().encode(attempt),
+                  writeAuthority(marker, enrollmentURL(for: url)) else { return nil }
             let pending = Authority(scope: "", generation: UUID().uuidString, activation: expected, enrollment: attempt)
             guard let encoded = try? JSONEncoder().encode(pending),
                   writeAuthority(encoded, authorityURL(for: url)) else { return nil }
@@ -180,33 +186,59 @@ final class ActivityCatalog {
     /// automatic retry, because Core may already have rotated its credential.
     static func pendingEnrollment(url: URL) -> Enrollment? {
         withWriterLock(url: url, failure: nil) {
-            guard let data = try? Data(contentsOf: authorityURL(for: url)),
-                  let current = try? JSONDecoder().decode(Authority.self, from: data) else { return nil }
-            return current.enrollment
+            guard let data = try? Data(contentsOf: enrollmentURL(for: url)) else { return nil }
+            return try? JSONDecoder().decode(Enrollment.self, from: data)
         }
     }
 
     static func completeEnrollment(url: URL, expected: Enrollment, workspaceID: String,
-                                   generation: String, install: () -> Bool) -> Activation? {
+                                   generation: String, install: () -> Bool,
+                                   write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority) -> Activation? {
         guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
               expected.previous.workspaceID == nil || expected.previous.workspaceID == workspaceID,
               UUID(uuidString: generation) != nil, generation != expected.previous.credentialGeneration else { return nil }
         return withWriterLock(url: url, failure: nil) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  let marker = try? Data(contentsOf: enrollmentURL(for: url)),
+                  (try? JSONDecoder().decode(Enrollment.self, from: marker)) == expected,
                   current.enrollment == expected, current.activation == expected.previous,
                   current.revoked != true, install() else { return nil }
             let next = Activation(id: UUID().uuidString, endpoint: expected.previous.endpoint,
                                   workspaceID: workspaceID, credentialGeneration: generation)
             let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
             guard let encoded = try? JSONEncoder().encode(authority),
-                  writeAuthority(encoded, authorityURL(for: url)) else { return nil }
+                  write(encoded, authorityURL(for: url)) else { return nil }
+            _ = removeAuthority(enrollmentURL(for: url))
             return next
         }
     }
 
     static func rejectEnrollmentIdentity(url: URL, expected: Enrollment,
                                          deleteCredential: () -> Bool) -> ClearResult {
+        withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else {
+                return ClearResult(revoked: false, purged: false)
+            }
+            guard current.enrollment == expected, current.activation == expected.previous else {
+                return ClearResult(revoked: false, purged: false, stale: true)
+            }
+            let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
+            guard let encoded = try? JSONEncoder().encode(tombstone),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            // The response was received and checked; this attempt is no longer
+            // an unknown network outcome. Failure to remove only blocks renewal.
+            _ = removeAuthority(enrollmentURL(for: url))
+            let deleted = deleteCredential()
+            let purged = ActivityCatalog(url: url)?.purge() ?? false
+            return ClearResult(revoked: true, purged: deleted && purged)
+        }
+    }
+
+    /// Explicit user clearing may cancel a live reservation locally but must
+    /// retain its independent unknown-outcome marker until safely resolved.
+    static func clearEnrollment(url: URL, expected: Enrollment, deleteCredential: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data) else {

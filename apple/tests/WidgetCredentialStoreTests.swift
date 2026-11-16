@@ -138,6 +138,34 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(ActivityCatalog.clear(url: issuedURL).complete)
         guard case .rejected = issuedStore.completeIssued(issued, expected: pendingAgain, now: now) else { fatalError() }
         precondition(ActivityCatalog.activation(url: issuedURL) == nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: issuedURL) == pendingAgain)
+        let afterReset = ActivityCatalog.activate(url: issuedURL, endpoint: pending.endpoint)!
+        precondition(issuedStore.beginEnrollment(expected: afterReset) == nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: issuedURL) == pendingAgain)
+        let clearURL = directory.appendingPathComponent("pending-clear.sqlite")
+        let clearKeychain = FakeKeychain()
+        let clearStore = WidgetCredentialStore(catalogURL: clearURL, keychain: clearKeychain)
+        let clearActivation = ActivityCatalog.activate(url: clearURL, endpoint: pending.endpoint)!
+        let clearAttempt = clearStore.beginEnrollment(expected: clearActivation)!
+        precondition(clearStore.clearCurrent().complete)
+        precondition(ActivityCatalog.activation(url: clearURL) == nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: clearURL) == clearAttempt)
+        let failedURL = directory.appendingPathComponent("failed-install.sqlite")
+        let failedActivation = ActivityCatalog.activate(url: failedURL, endpoint: pending.endpoint)!
+        let failedAttempt = ActivityCatalog.reserveEnrollment(url: failedURL, expected: failedActivation)!
+        let failedGeneration = UUID().uuidString
+        precondition(ActivityCatalog.completeEnrollment(url: failedURL, expected: failedAttempt,
+                     workspaceID: credential.workspaceID, generation: failedGeneration, install: { false }) == nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: failedURL) == failedAttempt)
+        var wroteKeychain = false
+        let failedInstall = ActivityCatalog.completeEnrollment(url: failedURL, expected: failedAttempt,
+            workspaceID: credential.workspaceID, generation: failedGeneration,
+            install: { wroteKeychain = true; return true }, write: { _, _ in false })
+        precondition(failedInstall == nil && wroteKeychain && ActivityCatalog.activation(url: failedURL) == nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: failedURL) == failedAttempt)
+        precondition(ActivityCatalog.completeEnrollment(url: failedURL, expected: failedAttempt,
+                     workspaceID: credential.workspaceID, generation: failedGeneration, install: { true }) != nil)
+        precondition(ActivityCatalog.pendingEnrollment(url: failedURL) == nil)
         print("PASS: widget credential fencing and retry")
     }
 }
