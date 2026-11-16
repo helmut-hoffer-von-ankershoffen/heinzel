@@ -129,6 +129,38 @@ def test_missing_owner_or_obligation_is_rejected_before_any_command(scope, monke
     assert calls == []
 
 
+@pytest.mark.parametrize("key", ["owning", "hosted_only"])
+@pytest.mark.parametrize("node", ["::test_pass", "::test_parameter[alpha]"])
+def test_mixed_packet_cannot_claim_node_level_proof(scope, monkeypatch, key, node):
+    packet, _, bind = scope
+    packet[key] = ["tests/unit/heads/widget_fence_test.py" + node]
+    bind()
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert calls == []
+
+
+def test_direct_recipe_cannot_bypass_whole_file_selection(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(mixed.subprocess, "run", lambda command, **_: calls.append(command))
+    with pytest.raises(ValueError, match="bounded permitted"):
+        mixed.check_fast(
+            [
+                "--unit",
+                "tests/unit/mixed_scope_test.py::test_pass",
+                "tests/unit/mixed_scope_test.py::test_skip",
+                "--web",
+                "web/src/audio/AudioVisualizer.test.tsx",
+            ],
+            tmp_path,
+        )
+    assert calls == []
+
+
 @pytest.mark.parametrize(
     "path",
     ["Makefile", "pyproject.toml", "web/package.json", "apple/New.swift", "tests/conftest.py", "desktop/main.ts"],
@@ -448,9 +480,10 @@ def test_full_supported_candidate_inventory_preserves_python_and_all_native_obli
         "def test_body():\n    assert True\n",
         "import pytest\n@pytest.mark.skip\ndef test_body():\n    pass\n",
         "# no tests\n",
+        "import pytest\ndef test_body():\n    assert True\n@pytest.mark.skip\ndef test_skipped():\n    pass\n",
     ],
 )
-def test_real_pytest_reports_require_executed_bodies_in_each_file(tmp_path, body):
+def test_real_pytest_reports_require_executed_bodies_in_each_file(tmp_path, capsys, body):
     target = tmp_path / "tests/unit/owned_test.py"
     target.parent.mkdir(parents=True)
     target.write_text(body)
@@ -483,6 +516,17 @@ def test_real_pytest_reports_require_executed_bodies_in_each_file(tmp_path, body
     expected = ["tests/unit/owned_test.py", "tests/unit/other_test.py"]
     if "assert True" in body:
         mixed.pytest_result(report, expected, allow_partial_skips=True)
+        if "test_skipped" in body:
+            assert "1 skipped cases remain unverified" in capsys.readouterr().out
+            with pytest.raises(ValueError, match="whole files only"):
+                mixed.pytest_result(
+                    report,
+                    [
+                        "tests/unit/owned_test.py::test_body",
+                        "tests/unit/owned_test.py::test_skipped",
+                    ],
+                    allow_partial_skips=True,
+                )
     else:
         with pytest.raises(ValueError, match="empty, skipped or unsuccessful"):
             mixed.pytest_result(report, expected, allow_partial_skips=True)

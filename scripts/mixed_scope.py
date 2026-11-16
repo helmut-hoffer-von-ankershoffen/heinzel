@@ -2,6 +2,8 @@
 
 This inventory selects local checks, not release acceptance. Native fixtures that
 need separate harnesses remain named pending obligations, even after local success.
+Mixed scopes select whole test files, never node IDs. A unit file needs at least
+one passing body; platform skips are counted and remain unverified, not passed.
 """
 
 import json
@@ -149,6 +151,9 @@ def validate(packet: dict, changed: list[str], root: Path) -> list[str]:
         ValueError: The mixed scope omits an owner or invents a recipe.
     """
     files(root, changed)
+    if any("::" in item for key in ("owning", "hosted_only") for item in selection(packet, key)):
+        msg = "mixed scope accepts whole test files only, not node selectors"
+        raise ValueError(msg)
     python, web, integration, pending = requirements(changed)
     expected = {"web": web, "integration": integration, "pending": pending}
     if not python or not web:
@@ -191,15 +196,21 @@ def ios_command(derived_data: Path) -> list[str]:
 
 
 def pytest_result(report: Path, expected: list[str], *, allow_partial_skips: bool = False) -> None:
-    """Require passing bodies in every selected file, even when pytest exits zero.
+    """Require passing bodies in every selected whole file, even when pytest exits zero.
+
+    Unit-file proof can retain platform skips, but never verifies those skipped
+    cases. Integration-file proof requires every reported body to have run.
 
     Raises:
         ValueError: No executed cases or a skipped case prevents local proof.
     """
+    if any("::" in path for path in expected):
+        msg = "mixed pytest evidence supports whole files only, not node selectors"
+        raise ValueError(msg)
     root = ET.parse(report).getroot()  # noqa: S314 - report produced by this invocation of pytest
     cases = list(root.iter("testcase"))
     names = {case.get("classname", "") for case in cases if case.find("skipped") is None}
-    modules = {path.split("::", 1)[0].removesuffix(".py").replace("/", ".") for path in expected}
+    modules = {path.removesuffix(".py").replace("/", ".") for path in expected}
     missing = any(not any(name == module or name.startswith(module + ".") for name in names) for module in modules)
     if (
         missing
@@ -209,6 +220,9 @@ def pytest_result(report: Path, expected: list[str], *, allow_partial_skips: boo
     ):
         msg = "required mixed pytest checks were empty, skipped or unsuccessful"
         raise ValueError(msg)
+    skipped = sum(case.find("skipped") is not None for case in cases)
+    if skipped:
+        print(f"File-level unit proof: {skipped} skipped cases remain unverified.", flush=True)
 
 
 def vitest_result(report: Path, expected: list[str], root: Path) -> None:
@@ -267,11 +281,11 @@ def check_fast(arguments: list[str], directory: Path) -> None:
         or len(web) > MAX_SELECTION
         or len(set(unit)) != len(unit)
         or len(set(web)) != len(web)
-        or any(not LOCAL_SELECTOR.fullmatch(item) or item.split("::", 1)[0] in HOSTED_ONLY_TESTS for item in unit)
+        or any("::" in item or not LOCAL_SELECTOR.fullmatch(item) or item in HOSTED_ONLY_TESTS for item in unit)
     ):
         msg = "check-fast requires bounded permitted unit and web selections"
         raise ValueError(msg)
-    files(ROOT, sorted({item.split("::", 1)[0] for item in unit}))
+    files(ROOT, sorted(set(unit)))
     unit_report, web_report = directory / "unit.xml", directory / "web.json"
     overrides = python_overrides([], unit)
     overrides[0] = (

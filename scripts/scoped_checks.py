@@ -30,6 +30,8 @@ prints the same commands the hook executes. Success means local checks only, nev
 Every execution fence rereads the named base and complete diff. Execution requires the normal pre-push wrapper's
 preserved single HEAD branch update; a standalone preview without that input cannot authorize a push. The fixed
 check-fast recipe requires fresh JUnit and Vitest reports with passing bodies in every selected local test file.
+Mixed scopes accept whole test files only. Unit files may contain platform skips; these are explicitly reported as
+unverified cases and never count as passing bodies. Schema-1 Python node selection is unchanged.
 """
 
 import argparse
