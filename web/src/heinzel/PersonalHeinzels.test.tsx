@@ -449,12 +449,17 @@ describe("personal identities", () => {
   it("reloads the server profile after a stale revision without overwriting it", async () => {
     // The server's profile changes when the save is refused; the chat beside the page reads the same Heinzel too.
     let changed = false;
+    let refuseSave!: () => void;
+    const saveResponse = new Promise<void>((resolve) => {
+      refuseSave = resolve;
+    });
     mockApi({
       ...shell,
       "/api/heinzel/sessions": { sessions },
       "/api/heinzel/session": () =>
         changed ? { ...snapshot(first, "Updated elsewhere"), profile_revision: 2 } : snapshot(first, "Alpha"),
-      "/api/heinzel/profile": () => {
+      "/api/heinzel/profile": async () => {
+        await saveResponse;
         changed = true;
         return { status: 400, body: { error: "This Heinzel's profile changed" } };
       },
@@ -463,7 +468,11 @@ describe("personal identities", () => {
     const section = await openAlpha();
     fireEvent.change(await section.findByLabelText("Name"), { target: { value: "My draft" } });
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
-    fireEvent.click(await section.findByRole("button", { name: "Check saved profile" }));
+    const check = await section.findByRole("button", { name: "Check saved profile" });
+    expect(check).toBeDisabled();
+    refuseSave();
+    await waitFor(() => expect(check).toBeEnabled());
+    fireEvent.click(check);
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
     await expectAccessible(container);
   });
