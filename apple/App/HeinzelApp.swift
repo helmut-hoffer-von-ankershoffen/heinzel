@@ -2243,7 +2243,7 @@ private struct ConnectionHelp: View {
             #if os(macOS)
             return Result(.optional, "Check access to audio from other apps")
             #else
-            return Result(.optional, "Choose an app or window in the system picker")
+            return Result(.optional, "Choose what to share in the system picker")
             #endif
         }
         #if os(macOS)
