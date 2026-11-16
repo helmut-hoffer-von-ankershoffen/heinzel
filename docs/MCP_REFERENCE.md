@@ -3319,7 +3319,7 @@ Module `system.daemon`. Changes state. Result: `Restarted {restarted: boolean, v
 
 Check-ins need a resumed daemon with 5m ticks and a matching service version.
 
-Module `system.daemon`. Read-only. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
+Module `system.daemon`. Read-only. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, last_tick_interval_minutes: integer \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
 
 ```json
 {

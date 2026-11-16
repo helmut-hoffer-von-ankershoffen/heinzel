@@ -29,18 +29,22 @@ export function Switch({ id, labelledBy, on, disabled, onToggle }: SwitchProps) 
       aria-labelledby={labelledBy}
       disabled={disabled}
       onClick={onToggle}
-      className={cn(
-        "relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50",
-        on ? "bg-switch" : "bg-accent",
-      )}
+      className="relative flex h-6 w-10 shrink-0 items-center justify-center disabled:opacity-50"
     >
       <span
         aria-hidden
         className={cn(
-          "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform",
-          on && "translate-x-4",
+          "relative block h-6 w-10 shrink-0 rounded-full transition-colors",
+          on ? "bg-switch" : "bg-accent",
         )}
-      />
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform",
+            on && "translate-x-4",
+          )}
+        />
+      </span>
     </button>
   );
 }

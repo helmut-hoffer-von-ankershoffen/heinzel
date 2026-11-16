@@ -1,6 +1,9 @@
 import AVFoundation
 import SwiftUI
 import UserNotifications
+#if os(iOS)
+import UIKit
+#endif
 
 private let workspaceSwitchTitle = "Switch Workspace"
 private let workspaceSwitchSymbol = "arrow.left.arrow.right"
@@ -235,6 +238,7 @@ struct ConnectionView: View {
     @AppStorage("serverOrigin") private var serverOrigin = ""
     @AppStorage("workspaceHistory") private var workspaceHistory = Data()
     @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
+    @AppStorage("workspaceBackendVersions") private var workspaceBackendVersions = Data()
     @State private var syncedWorkspaces: [RecentWorkspace] = []
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
@@ -253,6 +257,13 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var nativeFooterWidth: CGFloat = 88
+    @State private var nativeFooterBottom: CGFloat = 0
+    @State private var nativeFooterGeneration = 0
+    @State private var nativeFooterSlot: CGRect?
+    #endif
     @State private var connectionSheetContentHeight: CGFloat = 350
     @State private var connectionSheetFooterHeight: CGFloat = 40
     private var connectionSheetHeight: CGFloat {
@@ -396,6 +407,9 @@ struct ConnectionView: View {
     }
 
     private func forgetWorkspace(_ item: RecentWorkspace) {
+        var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+        versions.removeValue(forKey: item.address)
+        if let encoded = try? JSONEncoder().encode(versions) { workspaceBackendVersions = encoded }
         var local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
         local.removeAll { $0.address == item.address }
         if let encoded = try? JSONEncoder().encode(local) { workspaceHistory = encoded }
@@ -841,7 +855,12 @@ struct ConnectionView: View {
     @ViewBuilder
     private var content: some View {
         if let endpoint, loadFailure == .signIn {
-            if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
+            Group {
+                if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
+            }
+            #if os(iOS)
+            .overlay { workspaceFooterControl(for: endpoint, fallback: true) }
+            #endif
         } else if let endpoint {
             let revision = loadRevision
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
@@ -862,7 +881,15 @@ struct ConnectionView: View {
                     #else
                     self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
                     #endif
-                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision, ready: {
+                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision,
+                footerWidth: nativeFooterWidthValue, footerBottom: nativeFooterBottomValue,
+                footerGeneration: nativeFooterGenerationValue,
+                reportFooterSlot: { slot in
+                    #if os(iOS)
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
+                    nativeFooterSlot = slot
+                    #endif
+                }, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
                     loadFailure = nil
@@ -870,6 +897,16 @@ struct ConnectionView: View {
                     guard self.endpoint == endpoint, serverOrigin == endpoint.origin.absoluteString,
                           loadRevision == revision else { return }
                     rememberWorkspace(endpoint, hostName: name)
+                }, reportBackendVersion: { observation in
+                    guard self.endpoint == endpoint else { return }
+                    var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+                    guard WorkspaceVersionObservation.record(observation, origin: endpoint.origin.absoluteString,
+                        selectedOrigin: serverOrigin, requestRevision: revision, currentRevision: loadRevision,
+                        into: &versions) else { return }
+                    let newest = versions.sorted { $0.value.observedAt > $1.value.observedAt }.prefix(12)
+                    if let encoded = try? JSONEncoder().encode(Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })) {
+                        workspaceBackendVersions = encoded
+                    }
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
@@ -925,6 +962,9 @@ struct ConnectionView: View {
                     workspaceBackground = color
                 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                #if os(iOS)
+                .ignoresSafeArea(.container, edges: nativeFooterSlot == nil ? [] : .bottom)
+                #endif
                 .id(endpoint.url)
                 .id(revision)
                 .opacity(obscured ? 0 : 1)
@@ -973,14 +1013,29 @@ struct ConnectionView: View {
                 #if os(macOS)
                 .ignoresSafeArea(edges: .top)
                 #endif
+                #if os(iOS)
+                if !obscured && nativeFooterSlot == nil {
+                    HStack(spacing: 0) {
+                        workspaceFooterButton(for: endpoint, width: nativeFooterWidth)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 48)
+                    .background(workspaceBackground.ignoresSafeArea(.container, edges: .bottom))
+                }
+                #endif
             }
             #if os(iOS)
             .overlay {
-                if !obscured { workspaceSafeAreaControl }
+                workspaceFooterControl(for: endpoint, fallback: obscured)
             }
             #endif
         } else if connecting || showingColdStart {
             startup
+            #if os(iOS)
+            .overlay {
+                if let saved = Endpoint(serverOrigin) { workspaceFooterControl(for: saved, fallback: true) }
+            }
+            #endif
         } else if let target = sharedWorkspace {
             launchCard(compactBrand: true) {
                 Text("Open workspace?")
@@ -1001,41 +1056,77 @@ struct ConnectionView: View {
         }
     }
 
+    private var nativeFooterWidthValue: CGFloat {
+        #if os(iOS)
+        nativeFooterWidth
+        #else
+        88
+        #endif
+    }
+
+    private var nativeFooterBottomValue: CGFloat {
+        #if os(iOS)
+        nativeFooterBottom
+        #else
+        0
+        #endif
+    }
+
+    private var nativeFooterGenerationValue: Int {
+        #if os(iOS)
+        nativeFooterGeneration
+        #else
+        0
+        #endif
+    }
+
     #if os(iOS)
-    private var workspaceSafeAreaControl: some View {
+    private func workspaceFooterControl(for endpoint: Endpoint, fallback: Bool) -> some View {
         GeometryReader { geometry in
             let bottom = geometry.safeAreaInsets.bottom
-            if bottom >= 18 {
-                // Center the 44-point touch target under the workspace sidebar's 56-point rail.
-                workspaceCircle(size: min(26, bottom - 2), hitHeight: bottom, alignment: .top,
-                                visualOffset: CGSize(width: -0.5, height: -4.5))
-                    .padding(.leading, (56 - 44) / 2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .ignoresSafeArea(.container, edges: .bottom)
-            } else {
-                workspaceCircle(size: 32, hitHeight: 44)
-                    .padding(4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            let name = workspaceName(endpoint.origin)
+            let textWidth = (name as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .footnote)]).width
+            let width = max(44, min(180, geometry.size.width * 0.45, max(76, textWidth + 52)))
+            let slot = fallback ? nil : nativeFooterSlot
+            ZStack(alignment: .bottomLeading) {
+                if fallback {
+                    workspaceBackground
+                        .frame(height: 48)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                        .allowsHitTesting(false)
+                }
+                if fallback || slot != nil {
+                    workspaceFooterButton(for: endpoint, width: width)
+                        .position(x: slot?.midX ?? width / 2, y: slot?.midY ?? geometry.size.height - 24)
+                }
             }
+            .onAppear { nativeFooterWidth = width; nativeFooterBottom = bottom }
+            .onChange(of: width) { _, value in nativeFooterSlot = nil; nativeFooterWidth = value }
+            .onChange(of: bottom) { _, value in nativeFooterSlot = nil; nativeFooterBottom = value }
+            .onChange(of: geometry.size) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
+            .onChange(of: dynamicTypeSize) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
+            .onChange(of: nativeFooterSlot == nil) { _, _ in nativeFooterGeneration &+= 1 }
         }
     }
 
-    private func workspaceCircle(size: CGFloat, hitHeight: CGFloat, alignment: Alignment = .center,
-                                 visualOffset: CGSize = .zero) -> some View {
-        Button {
-            showConnection = true
+    private func workspaceFooterButton(for endpoint: Endpoint, width: CGFloat) -> some View {
+        let name = workspaceName(endpoint.origin)
+        return Button {
+            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
         } label: {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: size * 0.52, weight: .semibold))
-                .frame(width: size, height: size)
-                .background(.regularMaterial, in: Circle())
-                .offset(visualOffset)
-                .frame(width: 44, height: hitHeight, alignment: alignment)
-                .contentShape(Rectangle())
+            HStack(spacing: 5) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
+                if width >= 76 { Text(name).lineLimit(1).truncationMode(.tail) }
+                Image(systemName: "chevron.down").accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.medium))
+            .frame(width: width, height: 48)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Workspace")
-        .accessibilityHint("Shows the address, connection status, and workspace actions")
+        .accessibilityLabel("Workspace \(name)")
+        .accessibilityHint("Shows saved workspaces and connection actions")
     }
     #endif
 
@@ -1082,6 +1173,38 @@ struct ConnectionView: View {
                         .textSelection(.enabled)
                 }
                 .connectionPanel()
+                #if os(iOS)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("App \(heinzelAppVersion)")
+                    Text("App last updated: Unknown")
+                    if let seen = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions))?[endpoint.origin.absoluteString] {
+                        Text("Workspace hz \(seen.version)")
+                        Text("Last seen \(seen.observedAt.formatted(date: .abbreviated, time: .shortened))")
+                        if let installed = seen.installedVersion { Text("Installed hz \(installed)") }
+                        if let updated = seen.installedUpdatedAt {
+                            Text("Workspace last updated \(updated.formatted(date: .abbreviated, time: .shortened))")
+                        } else {
+                            Text("Workspace last updated: Unknown")
+                        }
+                        if let daemon = seen.daemonLastVersion, let observed = seen.daemonLastObservedAt {
+                            Text("Daemon last verified run: \(daemon) · \(observed.formatted(date: .abbreviated, time: .shortened))\(seen.daemonObservationStale == true ? " · Stale when checked" : seen.daemonObservationStale == false ? " · Fresh when checked" : "")")
+                        } else {
+                            Text("Daemon last verified run: Unknown")
+                        }
+                        if seen.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
+                           let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v\(seen.version)") {
+                            Link("Release details", destination: release)
+                        }
+                    } else {
+                        Text("Workspace hz version: Unknown")
+                        Text("Workspace last updated: Unknown")
+                        Text("Daemon last verified run: Unknown")
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(ConnectionPalette.muted)
+                .connectionPanel()
+                #endif
                 if let error {
                     Label(error, systemImage: "exclamationmark.circle")
                         .font(.callout)

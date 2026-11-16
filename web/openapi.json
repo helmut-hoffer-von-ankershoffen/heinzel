@@ -5932,6 +5932,18 @@
             "description": "When the last tick ran.",
             "title": "Last Tick"
           },
+          "last_tick_interval_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Interval recorded by that manager-bound tick; none if it was not recorded.",
+            "title": "Last Tick Interval Minutes"
+          },
           "loaded": {
             "description": "Whether launchd or systemd has the unit loaded.",
             "title": "Loaded",
@@ -22023,6 +22035,220 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "WorkspaceDaemonVersion": {
+        "description": "The daemon's last verified tick, distinct from a currently running process.",
+        "properties": {
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When that manager-bound tick started.",
+            "title": "Last Observed At"
+          },
+          "last_observed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version reported by the last manager-bound tick.",
+            "title": "Last Observed Version"
+          },
+          "loaded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True when the manager verified the unit loaded; otherwise unknown.",
+            "title": "Loaded"
+          },
+          "observation_stale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the last tick exceeds three recorded intervals; null when not calculable.",
+            "title": "Observation Stale"
+          },
+          "owned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True when the selected unit's manager identity was verified; otherwise unknown.",
+            "title": "Owned"
+          },
+          "registered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time in the unit's install marker, not proof of current registration or a Core update time.",
+            "title": "Registered At"
+          },
+          "running_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unknown without a verified process start time.",
+            "title": "Running Since"
+          },
+          "running_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unknown without a current process attestation.",
+            "title": "Running Version"
+          },
+          "status_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When this daemon status was obtained.",
+            "title": "Status Observed At"
+          }
+        },
+        "title": "WorkspaceDaemonVersion",
+        "type": "object"
+      },
+      "WorkspaceInstalledVersion": {
+        "description": "The separately inspected installation, not a guess from the web server's imported package.",
+        "properties": {
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unknown unless an installation event is verified.",
+            "title": "Updated At"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verified installed Core version, or null if unavailable.",
+            "title": "Version"
+          }
+        },
+        "title": "WorkspaceInstalledVersion",
+        "type": "object"
+      },
+      "WorkspaceVersion": {
+        "description": "Version facts read on this request, with missing evidence represented as null.",
+        "properties": {
+          "daemon": {
+            "$ref": "#/components/schemas/WorkspaceDaemonVersion"
+          },
+          "installed": {
+            "$ref": "#/components/schemas/WorkspaceInstalledVersion"
+          },
+          "observed_at": {
+            "description": "When this response's observations started.",
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "web": {
+            "$ref": "#/components/schemas/WorkspaceWebVersion"
+          }
+        },
+        "required": [
+          "observed_at",
+          "web",
+          "installed",
+          "daemon"
+        ],
+        "title": "WorkspaceVersion",
+        "type": "object"
+      },
+      "WorkspaceWebVersion": {
+        "description": "The answering server's own loaded code and when this server instance was created.",
+        "properties": {
+          "observed_since": {
+            "description": "When this server instance was initialized; not process start time.",
+            "format": "date-time",
+            "title": "Observed Since",
+            "type": "string"
+          },
+          "running_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unknown without a verified process start time.",
+            "title": "Running Since"
+          },
+          "version": {
+            "description": "Core version loaded by the answering web server.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "observed_since"
+        ],
+        "title": "WorkspaceWebVersion",
+        "type": "object"
+      },
       "ai_access_remove_key_Input": {
         "additionalProperties": false,
         "properties": {},
@@ -34806,6 +35032,27 @@
         "summary": "Show your team: its repository, checkout and members, and what is wrong with them.",
         "tags": [
           "team"
+        ]
+      }
+    },
+    "/workspace-version": {
+      "get": {
+        "operationId": "workspace_version_workspace_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Workspace Version",
+        "tags": [
+          "web"
         ]
       }
     }

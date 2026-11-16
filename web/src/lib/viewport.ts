@@ -11,6 +11,11 @@ function visibleBounds() {
   };
 }
 
+/** The visible viewport before safe insets, for native geometry that validates insets separately. */
+export function viewportFrame() {
+  return visibleBounds();
+}
+
 /** The visible area inside device safe insets, for floating controls. */
 export function viewportBounds() {
   const bounds = visibleBounds();
