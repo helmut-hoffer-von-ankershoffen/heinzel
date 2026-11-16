@@ -49,6 +49,8 @@ private final class WidgetRejectRedirect: NSObject, URLSessionTaskDelegate, @unc
 
 struct WidgetSnapshotClient {
     let store: WidgetCredentialStore
+    // Tests may inject an in-process protocol; production uses the system transport.
+    var protocolClasses: [AnyClass]? = nil
 
     /// Network and decoding failures keep the existing honestly aged snapshot.
     /// The returned capture must be passed unchanged to the fenced publisher.
@@ -59,6 +61,7 @@ struct WidgetSnapshotClient {
               parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
               let origin = parts.url else { return nil }
         let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = protocolClasses
         configuration.urlCache = nil
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 5

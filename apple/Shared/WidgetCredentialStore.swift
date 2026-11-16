@@ -18,6 +18,25 @@ struct WidgetCredential: Codable, Equatable {
     }
 }
 
+private struct IssuedWidgetCredential: Decodable {
+    let token: String
+    let workspaceID: String
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case token, workspaceID = "workspace_id", expiresAt = "expires_at"
+    }
+
+    var expiry: Date? {
+        guard expiresAt.hasSuffix("Z") || expiresAt.hasSuffix("+00:00") else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: expiresAt) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: expiresAt)
+    }
+}
+
 protocol WidgetCredentialKeychain {
     func read() -> Data?
     func write(_ data: Data) -> Bool
@@ -89,6 +108,17 @@ struct WidgetCredentialCapture {
 struct WidgetCredentialStore {
     let catalogURL: URL
     let keychain: any WidgetCredentialKeychain
+
+    /// Accept only the limited issuance response after the caller has bounded
+    /// the transport. Paired-device and WebKit session credentials stay in WebKit.
+    func installIssued(_ data: Data, expected: ActivityCatalog.Activation,
+                       now: Date = .now) -> ActivityCatalog.Activation? {
+        guard data.count <= 4096, let issued = try? JSONDecoder().decode(IssuedWidgetCredential.self, from: data),
+              let expiry = issued.expiry else { return nil }
+        let credential = WidgetCredential(endpoint: expected.endpoint, workspaceID: issued.workspaceID,
+            generation: UUID().uuidString, token: issued.token, expiresAt: expiry)
+        return install(credential, expected: expected, now: now)
+    }
 
     func install(_ credential: WidgetCredential, expected: ActivityCatalog.Activation,
                  now: Date = .now) -> ActivityCatalog.Activation? {

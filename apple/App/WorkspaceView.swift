@@ -523,6 +523,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private let endpoint: Endpoint
+    // This context is fixed for the lifetime of the WKWebView. Never replace it
+    // in response to a later callback from the same view.
+    private let widgetActivation: ActivityCatalog.Activation?
     private let ready: () -> Void
     private let reportHostName: (String) -> Void
     private var lookedUpHostName = false
@@ -536,7 +539,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func sendPrompt(_ request: NativePromptRequest) async -> NativePromptOutcome {
         guard request.isValid, let workspace,
-              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(), widgetContextCurrent,
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true else { return .unavailable }
         let revision = documentRevision
@@ -567,7 +570,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 return result.session_id === sessionID && result.request_id === requestID &&
                     result.message?.role === 'assistant' ? 'accepted' : 'unconfirmed';
                 """) as? String
-            guard revision == documentRevision, isWidgetWorkspaceCurrent(),
+            guard revision == documentRevision, isWidgetWorkspaceCurrent(), widgetContextCurrent,
                   workspace.url.map(endpoint.owns) == true else { return .unconfirmed }
             if result == "accepted" { return .accepted }
             if result == "sign-in" || result == "" { return .signIn }
@@ -580,7 +583,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func openChat(_ request: HeinzelChatRequest) {
         guard lastChatRequest != request, NativeRoute.isSessionID(request.id), let workspace,
-              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(), widgetContextCurrent,
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true,
               var url = URLComponents(url: endpoint.origin, resolvingAgainstBaseURL: false) else { return }
@@ -609,11 +612,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func refreshWidgetActivity() async {
-        guard isWidgetWorkspaceCurrent(), let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        guard isWidgetWorkspaceCurrent(), widgetContextCurrent, let workspace, workspace.url.map(endpoint.owns) == true else { return }
         let revision = documentRevision
         let invalidation = ActivityWidgetData.invalidation
-        guard let refreshToken = ActivityWidgetData.refreshToken() else { return }
-        let refreshActivation = ActivityWidgetData.currentActivation()
+        guard let refreshToken = widgetActivation == nil ? ActivityWidgetData.legacyRefreshToken() : ActivityWidgetData.refreshToken() else { return }
+        guard widgetContextCurrent else { return }
+        let refreshActivation = widgetActivation
         // The session and device tokens stay inside WebKit.
         guard let scope = ActivityWidgetData.currentScope(for: endpoint.origin) else { return }
         let details = ActivityWidgetData.requestedDetails(scope: scope)
@@ -679,7 +683,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             });
             """) as? String
         guard !Task.isCancelled, revision == documentRevision, invalidation == ActivityWidgetData.invalidation, self.workspace === workspace,
-              let result, isWidgetWorkspaceCurrent() else { return }
+              let result, isWidgetWorkspaceCurrent(), widgetContextCurrent else { return }
         let changed: Bool
         if result.isEmpty {
             if let refreshActivation {
@@ -728,6 +732,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var provisionalLoad = ProvisionalLoad.idle
     private var hasCommittedWorkspace = false
     private var documentRevision = 0
+    private var currentNavigation: WKNavigation?
     #if os(macOS)
     private weak var observedWindow: NSWindow?
     private var mouseMonitor: Any?
@@ -744,6 +749,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
          reportError: @escaping (WorkspaceProblem) -> Void, isWidgetWorkspaceCurrent: @escaping () -> Bool,
          isMenuWorkspaceCurrent: @escaping () -> Bool) {
         self.endpoint = endpoint
+        let activation = ActivityWidgetData.currentActivation()
+        self.widgetActivation = activation?.endpoint == endpoint.origin.absoluteString ? activation : nil
         self.ready = ready
         self.reportHostName = reportHostName
         self.reportError = reportError
@@ -761,6 +768,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             self, selector: #selector(menuAction), name: WorkspaceMenuAction.notification, object: nil
         )
         #endif
+    }
+
+    private var widgetContextCurrent: Bool {
+        ActivityWidgetData.currentActivation() == widgetActivation
     }
 
     func webView(
@@ -782,10 +793,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        guard let url = response.response.url,
+        guard webView === workspace, let url = response.response.url,
               endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) else { return .cancel }
         if response.isForMainFrame, let http = response.response as? HTTPURLResponse,
            let problem = WorkspaceProblem(response: http.statusCode) {
+            if (http.statusCode == 401 || http.statusCode == 403), let widgetActivation {
+                _ = WidgetCredentialStore.invalidateShared(widgetActivation)
+                ActivityWidgetData.reload()
+            }
             reportError(problem)
             return .cancel
         }
@@ -1133,6 +1148,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === workspace, let navigation else { return }
+        currentNavigation = navigation
         documentRevision &+= 1
         #if os(iOS)
         noticeAlert?.dismiss(animated: false)
@@ -1148,11 +1165,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
         hasCommittedWorkspace = true
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
         if endpoint.origin.scheme == "https", endpoint.token == nil {
             let revision = documentRevision
@@ -1164,9 +1183,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     !sessionStorage.getItem('hz.token') && !localStorage.getItem('hz.device') &&
                     !new URLSearchParams(location.hash.slice(1)).has('token')
                     """) as? Bool
-                guard workspace === webView, revision == documentRevision else { return }
-                if needsSignIn == true { reportError(.signIn) }
-                else {
+                guard workspace === webView, revision == documentRevision, currentNavigation === navigation else { return }
+                if needsSignIn == true {
+                    if let widgetActivation { _ = WidgetCredentialStore.invalidateShared(widgetActivation); ActivityWidgetData.reload() }
+                    reportError(.signIn)
+                } else if needsSignIn == false {
                     ready()
                     await resolveWorkspaceName(in: webView)
                 }
@@ -1230,6 +1251,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
         pageFailed(error)
         nativeNoticeOpened()
@@ -1240,11 +1262,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         pageFailed(error)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         documentRevision &+= 1
+        currentNavigation = nil
         provisionalLoad = .idle
         hasCommittedWorkspace = false
         externalLinks.clearActivation()

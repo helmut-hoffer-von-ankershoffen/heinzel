@@ -72,6 +72,21 @@ private final class FakeKeychain: WidgetCredentialKeychain {
         sqlite3_close(db)
         precondition(lockedCatalog.snapshot() == nil && ActivityCatalog.pendingCleanup(url: lockedURL) == lockedBound)
         precondition(lockedStore.invalidate(lockedBound).complete)
+        let issuedURL = directory.appendingPathComponent("issued.sqlite")
+        let issuedKeychain = FakeKeychain()
+        let issuedStore = WidgetCredentialStore(catalogURL: issuedURL, keychain: issuedKeychain)
+        let issuedPending = ActivityCatalog.activate(url: issuedURL, endpoint: pending.endpoint)!
+        let expiry = ISO8601DateFormatter().string(from: now.addingTimeInterval(3600))
+        let issued = Data("""
+        {"token":"\(credential.token)","workspace_id":"\(credential.workspaceID)","expires_at":"\(expiry)"}
+        """.utf8)
+        precondition(issuedStore.installIssued(Data(repeating: 65, count: 4097), expected: issuedPending, now: now) == nil)
+        let installed = issuedStore.installIssued(issued, expected: issuedPending, now: now)!
+        precondition(issuedStore.capture(now: now)?.activation == installed)
+        let wrongIdentity = Data(String(decoding: issued, as: UTF8.self)
+            .replacingOccurrences(of: credential.workspaceID, with: String(repeating: "b", count: 64)).utf8)
+        precondition(issuedStore.installIssued(wrongIdentity, expected: installed, now: now) == nil)
+        precondition(issuedStore.capture(now: now)?.activation == installed)
         print("PASS: widget credential fencing and retry")
     }
 }
