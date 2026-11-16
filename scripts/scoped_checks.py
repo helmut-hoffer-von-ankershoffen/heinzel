@@ -22,6 +22,23 @@ and hosted_only selectors. The latter must be precisely the prohibited desktop f
 proof. The caller obtains independent scope review before supplying the digest; the digest binds bytes, not reviewer
 identity. --show-python-push-plan validates that same packet and prints the unchanged guards and resulting Make argv.
 No packet means the existing import-graph selection. This input never authorizes a hosted or coverage acceptance.
+
+For mixed Python/web/Apple changes, HZ_LOCAL_MIXED_SCOPE and HZ_LOCAL_MIXED_SCOPE_SHA256 bind a schema=2 packet.
+It retains schema=1 identity and Python fields, adding web, integration and pending lists. The closed inventory in
+mixed_scope.py requires the owning local recipes and every outstanding native/hosted obligation. --show-mixed-push-plan
+prints the same commands the hook executes. Success means local checks only, never completion of pending obligations.
+Every execution fence rereads the named base and complete diff. Execution requires the normal pre-push wrapper's
+preserved single HEAD branch update; a standalone preview without that input cannot authorize a push. The fixed
+check-fast recipe requires fresh JUnit and Vitest reports with passing bodies in every selected local test file.
+Mixed scopes accept whole test files only. Unit files may contain platform skips; these are explicitly reported as
+unverified cases and never count as passing bodies. Schema-1 Python node selection is unchanged.
+The original partition guard collects full E2E inventory with -m integration; it does not execute E2E bodies.
+Mixed local plans instead run the bounded selector/partition assertions without directory collection. Complete
+real-inventory partition proof and full E2E/integration execution remain explicit hosted obligations. Nested Make
+guards require the same reviewed scope, pushed refs and guard-plan binding; nonmixed guards are unchanged.
+The fixed partition runner verifies all six expected parametrized bodies exactly once, without missing or skipped cases.
+Mixed child checks drop inherited Git environment variables so disposable test repositories cannot target the hook's
+index. Parent source/ref validation retains the original hook environment; nested checks rediscover this worktree.
 """
 
 import argparse
@@ -32,9 +49,14 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+TESTS_PREFIX = "tests/"
+MIXED_SCOPE_SCRIPT = "scripts/mixed_scope.py"
+E2E_DIRECTORY = "tests/e2e"
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
     "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
@@ -186,7 +208,7 @@ def docs_steps(tooling: list[str]) -> list[str]:
     files = " ".join(tooling)
     own = sorted(
         {
-            *[path for path in tooling if path.startswith("tests/")],
+            *[path for path in tooling if path.startswith(TESTS_PREFIX)],
             *(str(path.relative_to(ROOT)) for path in ROOT.glob("tests/unit/site_*_test.py")),
         }
     )
@@ -245,6 +267,8 @@ def python_overrides(changed: list[str], selected: list[str] | None = None) -> l
 
 
 LOCAL_SCOPE_MAX = 32 * 1024
+MIXED_SCOPE_SCHEMA = 2
+PUSH_REF_FIELDS = 4
 LOCAL_SCOPE_SELECTORS = 64
 LOCAL_SELECTOR = re.compile(r"tests/unit/[A-Za-z0-9_/-]+_test\.py(?:::[A-Za-z0-9_]+(?:\[[A-Za-z0-9_.,=+-]+\])?)*")
 HOSTED_ONLY_TESTS = frozenset({"tests/unit/heads/desktop_installation_test.py"})
@@ -283,7 +307,7 @@ def local_python_scope(changed: list[str], base: str) -> tuple[list[str], list[s
     return _local_scope_selection(packet, changed)
 
 
-def _local_scope_packet(name: str, digest: str, base: str) -> dict:
+def _local_scope_packet(name: str, digest: str, base: str, *, schema: int = 1) -> dict:
     """Read bounded reviewed bytes and require the exact unchanged checkout.
 
     Raises:
@@ -295,12 +319,15 @@ def _local_scope_packet(name: str, digest: str, base: str) -> dict:
         msg = "local scope size or reviewed digest mismatch"
         raise ValueError(msg)
     packet = json.loads(data, object_pairs_hook=_scope_object)
-    if not isinstance(packet, dict) or set(packet) != {"schema", "base", "head", "tree", "owning", "hosted_only"}:
+    fields = {"schema", "base", "head", "tree", "owning", "hosted_only"}
+    if schema == MIXED_SCOPE_SCHEMA:
+        fields.update({"web", "integration", "pending"})
+    if not isinstance(packet, dict) or set(packet) != fields:
         msg = "invalid local scope fields"
         raise ValueError(msg)
     if (
         type(packet["schema"]) is not int
-        or packet["schema"] != 1
+        or packet["schema"] != schema
         or packet["base"] != base
         or packet["head"] != resolve_base("HEAD")
         or packet["tree"] != resolve_tree()
@@ -312,6 +339,238 @@ def _local_scope_packet(name: str, digest: str, base: str) -> dict:
         msg = "local scope requires unchanged tracked source"
         raise ValueError(msg)
     return packet
+
+
+def mixed_push_plan(changed: list[str], base: str) -> dict | None:
+    """Validate an explicit mixed scope before any guard, preparation or check runs.
+
+    Raises:
+        ValueError: The packet is ambiguous, stale, dirty or lacks an owning recipe.
+    """
+    name, digest = os.environ.get("HZ_LOCAL_MIXED_SCOPE"), os.environ.get("HZ_LOCAL_MIXED_SCOPE_SHA256")
+    if name is None and digest is None:
+        return None
+    if any(key in os.environ for key in ("HZ_LOCAL_TEST_SCOPE", "HZ_LOCAL_TEST_SCOPE_SHA256")):
+        msg = "mixed scope cannot be combined with a schema-1 scope"
+        raise ValueError(msg)
+    if not name or not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        msg = "mixed scope requires both a packet path and its reviewed SHA256"
+        raise ValueError(msg)
+    packet = _local_scope_packet(name, digest, base, schema=MIXED_SCOPE_SCHEMA)
+    if changed_paths("fast", base):
+        msg = "mixed scope requires no uncommitted or untracked source"
+        raise ValueError(msg)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from mixed_scope import APPLE_SOURCES, NATIVE_FIXTURES, validate  # noqa: PLC0415 - opt-in local policy
+
+    python = validate(packet, changed, ROOT)
+    selected, hosted = _local_scope_selection(packet, python)
+    recipe = [sys.executable, MIXED_SCOPE_SCRIPT]
+    checks = [[*recipe, "check-fast", "--unit", *selected, "--web", *packet["web"]]]
+    if packet["integration"]:
+        checks.append([*recipe, "integration", *sorted(packet["integration"])])
+    if set(changed) & (APPLE_SOURCES | NATIVE_FIXTURES):
+        checks.append([*recipe, "ios"])
+    return {
+        "identity": {key: packet[key] for key in ("base", "head", "tree")},
+        "scope_sha256": digest,
+        "early_guards": mixed_early_guard_commands(changed),
+        "checks": checks,
+        "pending": sorted([*packet["pending"], *hosted]),
+        "acceptance": "local checks only; pending obligations require separate exact-head proof",
+    }
+
+
+def mixed_early_guard_commands(changed: list[str]) -> list[list[str]]:
+    """Keep bounded local partition assertions; full inventory collection stays hosted.
+
+    Raises:
+        ValueError: The existing inventory recipe changed beyond the reviewed replacement.
+    """
+    from mixed_scope import PARTITION_TEST  # noqa: PLC0415
+
+    result = []
+    for command in early_guard_commands(changed):
+        if E2E_DIRECTORY not in command:
+            result.append(command)
+            continue
+        if command[:5] != ["uv", "run", "pytest", PARTITION_TEST, E2E_DIRECTORY] or command[5:7] != [
+            "-m",
+            "integration",
+        ]:
+            msg = "mixed partition guard no longer matches the reviewed bounded replacement"
+            raise ValueError(msg)
+        result.append([sys.executable, MIXED_SCOPE_SCRIPT, "partition"])
+    if any(
+        (argument == "tests" or argument.startswith(TESTS_PREFIX)) and not argument.partition("::")[0].endswith(".py")
+        for command in result
+        for argument in command
+    ):
+        msg = "mixed early guards cannot invoke test directories"
+        raise ValueError(msg)
+    return result
+
+
+def push_binding(*, required: bool) -> dict | None:
+    """Bind the complete stdin preserved by the normal pre-push wrapper to this HEAD.
+
+    Raises:
+        ValueError: The actual push is unavailable, multi-ref, or not the checked HEAD branch update.
+    """
+    name = os.environ.get("HZ_DEV_PUSH_REFS_FILE")
+    if name is None and not required:
+        return None
+    if not name or os.environ.get("PRE_COMMIT") != "1" or os.environ.get("PREK_HOOK_STAGE") != "pre-push":
+        msg = "mixed execution requires actual pre-push input preserved by the normal hook"
+        raise ValueError(msg)
+    with Path(name).open("rb") as stream:
+        data = stream.read(LOCAL_SCOPE_MAX + 1)
+    lines = data.decode("ascii").splitlines()
+    if len(data) > LOCAL_SCOPE_MAX or len(lines) != 1 or len(lines[0].split()) != PUSH_REF_FIELDS:
+        msg = "mixed execution requires exactly one complete pushed ref"
+        raise ValueError(msg)
+    local_ref, local_oid, remote_ref, remote_oid = lines[0].split()
+    branch = subprocess.check_output(
+        ["git", "symbolic-ref", "--quiet", "HEAD"],  # noqa: S607 - repository Git
+        cwd=ROOT,
+        text=True,
+        timeout=30,
+    ).strip()
+    head = resolve_base("HEAD")
+    if (
+        local_ref not in {"HEAD", branch}
+        or local_oid != head
+        or not remote_ref.startswith("refs/heads/")
+        or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", remote_oid)
+    ):
+        msg = "mixed execution only permits pushing the checked HEAD branch"
+        raise ValueError(msg)
+    return {
+        "local_ref": local_ref,
+        "local_oid": local_oid,
+        "remote_ref": remote_ref,
+        "remote_oid": remote_oid,
+        "stdin_sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def current_mixed_plan(base_ref: str, *, require_push: bool) -> dict | None:
+    """Read current refs and the complete diff again, never reuse a previously captured path list."""
+    base = resolve_base(base_ref)
+    changed = sorted({*changed_paths("push", base), *changed_paths("fast", base)})
+    plan = mixed_push_plan(changed, base)
+    if plan is not None:
+        plan.update({"base_ref": base_ref, "changed": changed, "push": push_binding(required=require_push)})
+    return plan
+
+
+def configured_mixed_plan(parser: argparse.ArgumentParser, base_ref: str, *, show: bool) -> bool:
+    """Execute precisely the previewed local plan, keeping remaining proof visibly pending."""
+    if not show and all(key not in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")):
+        return False
+    try:
+        plan = current_mixed_plan(base_ref, require_push=not show)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    if show and plan is None:
+        parser.error("--show-mixed-push-plan requires an explicit reviewed mixed scope")
+    if plan is None:
+        return False
+    print(json.dumps(plan, sort_keys=True), flush=True)
+    if show:
+        return True
+    with mixed_guard_context(plan):
+        for command in plan["early_guards"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=180)
+        for command in plan["checks"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=1800)
+    # A hook can take minutes: do not report proof for a checkout or packet changed during its checks.
+    unchanged_mixed_plan(parser, plan)
+    print("Local mixed checks passed. PENDING: " + ", ".join(plan["pending"]), flush=True)
+    return True
+
+
+def mixed_guard_binding(plan: dict) -> str:
+    """Bind the policy identity and exact guard plan across Python tool environments."""
+    keys = ("identity", "scope_sha256", "base_ref", "changed", "push", "early_guards", "pending")
+    binding = {key: plan[key] for key in keys}
+    # uv may use a different Python environment for the nested script. Bind the
+    # fixed runner and operands, while each process uses its own interpreter.
+    binding["early_guards"] = [
+        command[1:] if command[1:] == [MIXED_SCOPE_SCRIPT, "partition"] else command for command in plan["early_guards"]
+    ]
+    data = json.dumps(binding, sort_keys=True).encode()
+    return hashlib.sha256(data).hexdigest()
+
+
+def mixed_guard_environment(plan: dict) -> dict[str, str]:
+    """Pass the validated parent context directly, never through Make or shell interpolation."""
+    return {
+        "HZ_LOCAL_MIXED_BASE_REF": plan["base_ref"],
+        "HZ_LOCAL_MIXED_GUARD_BINDING": mixed_guard_binding(plan),
+    }
+
+
+@contextmanager
+def mixed_guard_context(plan: dict) -> Iterator[None]:
+    """Inherit only the bound context for these synchronous checks, restoring it afterwards."""
+    values = mixed_guard_environment(plan)
+    previous = {key: os.environ.get(key) for key in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def inherited_mixed_plan() -> dict:
+    """Require the exact parent identity and guard plan for nested Make checks.
+
+    Raises:
+        ValueError: The bound parent context is missing or differs from current source.
+    """
+    base_ref = os.environ.get("HZ_LOCAL_MIXED_BASE_REF")
+    expected = os.environ.get("HZ_LOCAL_MIXED_GUARD_BINDING")
+    if not base_ref or not expected:
+        msg = "mixed early guards require the reviewed parent context"
+        raise ValueError(msg)
+    plan = current_mixed_plan(base_ref, require_push=True)
+    if plan is None or mixed_guard_binding(plan) != expected:
+        msg = "mixed early guards differ from the reviewed parent context"
+        raise ValueError(msg)
+    return plan
+
+
+def configured_mixed_early_guards(parser: argparse.ArgumentParser) -> bool:
+    """Fence nested Make guards to the same exact scope and bounded parent guard plan."""
+    if all(key not in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")):
+        return False
+    try:
+        plan = inherited_mixed_plan()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    with mixed_guard_context(plan):
+        for command in plan["early_guards"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=180)
+    unchanged_mixed_plan(parser, plan)
+    return True
+
+
+def unchanged_mixed_plan(parser: argparse.ArgumentParser, plan: dict) -> None:
+    """Fence every dispatch and the final result to the initially reviewed source and bytes."""
+    try:
+        current = current_mixed_plan(plan["base_ref"], require_push=True)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    if current != plan:
+        parser.error("mixed scope changed during local checks")
 
 
 def _local_scope_selection(packet: dict, changed: list[str]) -> tuple[list[str], list[str]]:
@@ -369,7 +628,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
     if changed and all(path.startswith("plugins/") for path in changed):
         return []
     fixture = any(
-        path.startswith(("tests/", "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
+        path.startswith((TESTS_PREFIX, "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
     )
     guides = any(
         (path.startswith("docs/guides/") and path.endswith(".md"))
@@ -390,6 +649,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
             "tests/_e2e_schedule.py",
             "tests/conftest.py",
             "scripts/scoped_checks.py",
+            MIXED_SCOPE_SCRIPT,
         }
         or path.startswith((".github/workflows/", ".github/actions/", "tests/e2e/"))
         or path
@@ -418,7 +678,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
                 "run",
                 "pytest",
                 "tests/integration/e2e_lane_partition_test.py",
-                "tests/e2e",
+                E2E_DIRECTORY,
                 "-m",
                 "integration",
                 "-n",
@@ -435,16 +695,43 @@ MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
 GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check's runtime limit
 
 
+def mixed_child_environment() -> dict[str, str] | None:
+    """Clean only explicitly bound mixed child checks, leaving parent Git and default checks untouched."""
+    if not all(
+        os.environ.get(key)
+        for key in (
+            "HZ_LOCAL_MIXED_SCOPE",
+            "HZ_LOCAL_MIXED_SCOPE_SHA256",
+            "HZ_LOCAL_MIXED_GUARD_BINDING",
+        )
+    ):
+        return None
+    from mixed_scope import local_check_environment  # noqa: PLC0415 - only the mixed child path needs this policy
+
+    return local_check_environment()
+
+
 def run_check(
-    command: list[str], *, timeout: int, light: bool = False, check: bool = True, capture_output: bool = False
+    command: list[str],
+    *,
+    timeout: int,
+    light: bool = False,
+    check: bool = True,
+    capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run the selected check through the optional host queue, with its own runtime limit."""
     gate = shutil.which("hz-gate")
+    child_environment = mixed_child_environment()
     if gate is None or not Path(gate).is_absolute():
         return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
-            command, check=check, timeout=timeout, capture_output=capture_output, text=True
+            command,
+            check=check,
+            timeout=timeout,
+            capture_output=capture_output,
+            text=True,
+            **({"env": child_environment} if child_environment is not None else {}),
         )
-    env = os.environ.copy()
+    env = child_environment if child_environment is not None else os.environ.copy()
     try:
         requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
     except ValueError:
@@ -511,8 +798,8 @@ def configured_python_selection(
     return local_scope[0] if local_scope else None
 
 
-def main() -> None:
-    """Preserve core checks and common policies while selecting independent owning plugin work."""
+def arguments() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
+    """Parse mutually exclusive previews before any scope can execute checks."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=MODES)
     parser.add_argument("--base", default="origin/main")
@@ -521,9 +808,21 @@ def main() -> None:
         action="store_true",
         help="validate explicit local scope and print the normal commands without running them",
     )
+    parser.add_argument("--show-mixed-push-plan", action="store_true", help="preview a reviewed mixed local plan")
     args = parser.parse_args()
     if args.show_python_push_plan and args.mode != "push":
         parser.error("--show-python-push-plan requires push")
+    if args.show_mixed_push_plan and (args.mode != "push" or args.show_python_push_plan):
+        parser.error("--show-mixed-push-plan requires push and cannot be combined with the Python preview")
+    if args.show_python_push_plan and any(
+        key in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")
+    ):
+        parser.error("use --show-mixed-push-plan for a mixed scope")
+    return parser, args
+
+
+def check_inputs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[str, list[str], bool]:
+    """Resolve the ordinary command's base and changes without altering default selection."""
     early = args.mode.startswith("early-")
     if early:
         args.mode = args.mode.removeprefix("early-")
@@ -532,6 +831,15 @@ def main() -> None:
     except (ValueError, subprocess.CalledProcessError):
         parser.error("Use a valid commit revision for --base")
     changed = changed_paths("preflight" if early else args.mode, base)
+    return base, changed, early
+
+
+def main() -> None:
+    """Preserve core checks and common policies while selecting independent owning plugin work."""
+    parser, args = arguments()
+    if args.mode.startswith("early-") and configured_mixed_early_guards(parser):
+        return
+    base, changed, early = check_inputs(parser, args)
     if early:
         changed = sorted({*changed, *changed_paths("fast", base)})
         run_early_guards(changed)
@@ -539,6 +847,8 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
+        if configured_mixed_plan(parser, args.base, show=args.show_mixed_push_plan):
+            return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):

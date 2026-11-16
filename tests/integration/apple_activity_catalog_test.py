@@ -71,3 +71,23 @@ assert.deepEqual([catalog.at(-1).activity, catalog.at(-1).asks, catalog.at(-1).l
 """
     )
     subprocess.run([node, "-e", script], check=True, timeout=10)
+
+
+def test_foreground_waiting_count_matches_pending_nonretired_sessions() -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required to exercise the workspace bridge")
+    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    expression = source.split("                waiting: ", 1)[1].split(",\n", 1)[0]
+    script = """
+const assert = require('node:assert/strict');
+let sessions = [
+  {state:'awake', waiting_count:1}, {state:'waiting', waiting_count:0},
+  {state:'retired', waiting_count:2}, {state:'asleep', waiting_count:3}
+];
+const count = () => EXPR;
+assert.equal(count(), 2);
+sessions = Array.from({length: 10001}, () => ({state:'awake', waiting_count:1}));
+assert.equal(count(), 9999);
+""".replace("EXPR", expression)
+    subprocess.run([node, "-e", script], check=True, timeout=10)

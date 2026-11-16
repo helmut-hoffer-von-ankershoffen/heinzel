@@ -202,7 +202,7 @@ private struct ActivityEntry: TimelineEntry {
     var loading = false
 }
 
-private struct ActivityProvider: TimelineProvider {
+private struct ActivityProvider: TimelineProvider, Sendable {
     func placeholder(in _: Context) -> ActivityEntry {
         ActivityEntry(date: .now, activity: nil, fresh: false, loading: true)
     }
@@ -212,18 +212,37 @@ private struct ActivityProvider: TimelineProvider {
         if context.isPreview {
             let example = ActivityWidgetData(awake: 2, waiting: 1, updatedAt: date, heinzels: previewHeinzels(at: date))
             completion(ActivityEntry(date: date, activity: example))
+        } else if Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true {
+            completion(ActivityEntry(date: date, activity: nil, fresh: false))
         } else {
             completion(current(at: date))
         }
     }
 
-    func getTimeline(in _: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
-        let entry = current(at: .now)
+    func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<ActivityEntry>) -> Void) {
+        let isPreview = context.isPreview
+        Task { @MainActor in
+            let access: WidgetTimelineAccess = isPreview ? .hidden : await WidgetTimelineRefresh.shared.refreshIfConfigured()
+            completion(timeline(access: access))
+        }
+    }
+
+    @MainActor private func timeline(access: WidgetTimelineAccess) -> Timeline<ActivityEntry> {
+        let observed = WidgetTimelineRefresh.shared.snapshot(access: access)
+        let date = Date.now
+        let snapshot = access.mayDisplay(at: date) ? observed : nil
+        let entry = ActivityEntry(date: date, activity: snapshot, fresh: snapshot.map { $0.expiresAt > date } == true)
         var entries = [entry]
         if let activity = entry.activity, activity.expiresAt > entry.date {
-            entries.append(ActivityEntry(date: activity.expiresAt, activity: activity, fresh: false))
+            let expired = access.permitExpiry == nil ? activity : nil
+            entries.append(ActivityEntry(date: activity.expiresAt, activity: expired, fresh: false))
         }
-        completion(Timeline(entries: entries, policy: .never))
+        if let expiry = access.permitExpiry, expiry > date, !entries.contains(where: { $0.date == expiry }) {
+            entries.append(ActivityEntry(date: expiry, activity: nil, fresh: false))
+            entries.sort { $0.date < $1.date }
+        }
+        let policy: TimelineReloadPolicy = access.refreshEnabled ? .after(date.addingTimeInterval(WidgetTimelineRefresh.retryInterval)) : .never
+        return Timeline(entries: entries, policy: policy)
     }
 
     private func current(at date: Date) -> ActivityEntry {
@@ -323,7 +342,7 @@ private struct SelectHeinzelIntent: WidgetConfigurationIntent {
     var heinzel: HeinzelChoice?
 }
 
-private struct PinnedHeinzelEntry: TimelineEntry {
+private struct PinnedHeinzelEntry: TimelineEntry, Sendable {
     let date: Date
     let heinzel: WidgetHeinzel?
     let fresh: Bool
@@ -344,7 +363,12 @@ private struct PinnedHeinzelEntry: TimelineEntry {
     }
 }
 
-private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
+private struct PinnedTimelinePlan: Sendable {
+    let entries: [PinnedHeinzelEntry]
+    let refreshAt: Date?
+}
+
+private struct PinnedHeinzelProvider: AppIntentTimelineProvider, Sendable {
     func placeholder(in _: Context) -> PinnedHeinzelEntry {
         PinnedHeinzelEntry(date: .now, heinzel: nil, fresh: false, workspaceScope: nil,
                            updatedAt: nil, configured: false, loading: true)
@@ -352,42 +376,67 @@ private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: SelectHeinzelIntent, in context: Context) async -> PinnedHeinzelEntry {
         let date = Date.now
-        let current = entry(for: configuration, from: ActivityWidgetData.read(), at: date)
-        guard context.isPreview, !current.configured else { return current }
-        return PinnedHeinzelEntry(date: date, heinzel: previewHeinzels(at: date).first, fresh: true,
-                                  workspaceScope: nil, updatedAt: date, configured: true)
+        if context.isPreview {
+            return PinnedHeinzelEntry(date: date, heinzel: previewHeinzels(at: date).first, fresh: true,
+                                      workspaceScope: nil, updatedAt: date, configured: true)
+        }
+        let snapshot = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true ? nil : ActivityWidgetData.read()
+        return entry(for: configuration, from: snapshot, at: date)
     }
 
-    func timeline(for configuration: SelectHeinzelIntent, in _: Context) async -> Timeline<PinnedHeinzelEntry> {
-        let snapshot = ActivityWidgetData.read()
+    func timeline(for configuration: SelectHeinzelIntent, in context: Context) async -> Timeline<PinnedHeinzelEntry> {
+        let access: WidgetTimelineAccess = context.isPreview ? .hidden : await WidgetTimelineRefresh.shared.refreshIfConfigured()
+        let identifier = configuration.heinzel?.id
+        let configured = configuration.heinzel != nil
+        let plan = await MainActor.run { timelinePlan(identifier: identifier, configured: configured, access: access) }
+        let policy: TimelineReloadPolicy = plan.refreshAt.map { .after($0) } ?? .never
+        return Timeline(entries: plan.entries, policy: policy)
+    }
+
+    @MainActor private func timelinePlan(identifier: String?, configured: Bool,
+                                         access: WidgetTimelineAccess) -> PinnedTimelinePlan {
+        let observed = WidgetTimelineRefresh.shared.snapshot(access: access)
         let date = Date.now
-        let current = entry(for: configuration, from: snapshot, at: date)
-        if let scope = snapshot?.workspaceScope, let identifier = configuration.heinzel?.id,
+        let snapshot = access.mayDisplay(at: date) ? observed : nil
+        let current = entry(identifier: identifier, configured: configured, from: snapshot, at: date)
+        if let scope = snapshot?.workspaceScope, let identifier,
            identifier.hasPrefix(scope + "/") {
             ActivityWidgetData.requestDetails(for: String(identifier.dropFirst(scope.count + 1)), scope: scope)
         }
         var entries = [current]
-        if let expiry = snapshot?.expiresAt, expiry > date, current.heinzel != nil {
-            if let wake = current.nextWake, wake < expiry {
-                entries.append(entry(for: configuration, from: snapshot, at: wake))
+        if let expiry = current.updatedAt?.addingTimeInterval(ActivityWidgetData.freshness), expiry > date, current.heinzel != nil {
+            if let wake = current.nextWake, wake < expiry, access.mayDisplay(at: wake) {
+                entries.append(entry(identifier: identifier, configured: configured, from: snapshot, at: wake))
             }
-            entries.append(entry(for: configuration, from: snapshot, at: expiry))
+            entries.append(entry(identifier: identifier, configured: configured, from: access.permitExpiry == nil ? snapshot : nil, at: expiry))
         }
-        return Timeline(entries: entries, policy: .never)
+        if let expiry = access.permitExpiry, expiry > date, !entries.contains(where: { $0.date == expiry }) {
+            entries.append(entry(identifier: identifier, configured: configured, from: nil, at: expiry))
+            entries.sort { $0.date < $1.date }
+        }
+        return PinnedTimelinePlan(entries: entries,
+                                  refreshAt: access.refreshEnabled ? date.addingTimeInterval(WidgetTimelineRefresh.retryInterval) : nil)
     }
 
     private func entry(for configuration: SelectHeinzelIntent, from snapshot: ActivityWidgetData?, at date: Date) -> PinnedHeinzelEntry {
+        entry(identifier: configuration.heinzel?.id, configured: configuration.heinzel != nil, from: snapshot, at: date)
+    }
+
+    private func entry(identifier: String?, configured: Bool, from snapshot: ActivityWidgetData?, at date: Date) -> PinnedHeinzelEntry {
         let scope = snapshot?.workspaceScope
+        var selectedID: String?
         let item = scope.flatMap { scope -> WidgetHeinzel? in
-            guard let identifier = configuration.heinzel?.id, identifier.hasPrefix(scope + "/") else { return nil }
+            guard let identifier, identifier.hasPrefix(scope + "/") else { return nil }
             let id = String(identifier.dropFirst(scope.count + 1))
+            selectedID = id
             if let rich = snapshot?.roster.first(where: { $0.id == id }) { return rich }
             guard let generation = snapshot?.generation, let entry = ActivityWidgetData.find(scope: scope, generation: generation, id: id) else { return nil }
             return entry.widgetHeinzel
         }
-        return PinnedHeinzelEntry(date: date, heinzel: item, fresh: snapshot.map { $0.expiresAt > date } == true,
-                                  workspaceScope: scope, updatedAt: snapshot?.updatedAt,
-                                  configured: configuration.heinzel != nil)
+        let updatedAt = selectedID.flatMap { id in snapshot?.observationTime(for: id) }
+        return PinnedHeinzelEntry(date: date, heinzel: item, fresh: updatedAt.map { $0.addingTimeInterval(ActivityWidgetData.freshness) > date } == true,
+                                  workspaceScope: scope, updatedAt: updatedAt,
+                                  configured: configured)
     }
 }
 
