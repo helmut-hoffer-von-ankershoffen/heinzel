@@ -54,6 +54,41 @@ final class ActivityCatalog {
         let id: String
         let previous: Activation
     }
+
+    /// Independent, non-secret fence. Legacy markers remain conservatively unknown.
+    struct EnrollmentJournal: Codable, Equatable {
+        enum Phase: String, Codable { case preparing, armed, legacyUnknown }
+        let version: Int
+        let reservation: Enrollment
+        let revision: String
+        let phase: Phase
+        let workspaceID: String?
+        let request: Data?
+    }
+
+    private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
+        if let journal = try? JSONDecoder().decode(EnrollmentJournal.self, from: data) {
+            guard journal.version == 1, UUID(uuidString: journal.revision) != nil else { return nil }
+            return journal
+        }
+        guard let reservation = try? JSONDecoder().decode(Enrollment.self, from: data) else { return nil }
+        return EnrollmentJournal(version: 1, reservation: reservation, revision: reservation.id,
+                                 phase: .legacyUnknown, workspaceID: nil, request: nil)
+    }
+
+    /// Synchronize the journal and directory before permitting a network request.
+    private static func writeJournal(_ data: Data, _ url: URL) -> Bool {
+        guard writeAuthority(data, url) else { return false }
+        let file = open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard file >= 0 else { return false }
+        let synced = fsync(file) == 0
+        close(file)
+        guard synced else { return false }
+        let directory = open(url.deletingLastPathComponent().path, O_RDONLY | O_CLOEXEC)
+        guard directory >= 0 else { return false }
+        defer { close(directory) }
+        return fsync(directory) == 0
+    }
     private struct WriterToken: Codable, Equatable {
         let authority: Data
         let epoch: String
@@ -173,8 +208,10 @@ final class ActivityCatalog {
             let attempt = Enrollment(id: UUID().uuidString, previous: expected)
             // Persist the unresolved attempt first. A crash between these writes
             // may block enrollment unnecessarily, but cannot start a second POST.
-            guard let marker = try? JSONEncoder().encode(attempt),
-                  writeAuthority(marker, enrollmentURL(for: url)) else { return nil }
+            let journal = EnrollmentJournal(version: 1, reservation: attempt, revision: UUID().uuidString,
+                                             phase: .preparing, workspaceID: nil, request: nil)
+            guard let marker = try? JSONEncoder().encode(journal),
+                  writeJournal(marker, enrollmentURL(for: url)) else { return nil }
             let pending = Authority(scope: "", generation: UUID().uuidString, activation: expected, enrollment: attempt)
             guard let encoded = try? JSONEncoder().encode(pending),
                   writeAuthority(encoded, authorityURL(for: url)) else { return nil }
@@ -187,7 +224,7 @@ final class ActivityCatalog {
     static func pendingEnrollment(url: URL) -> Enrollment? {
         withWriterLock(url: url, failure: nil) {
             guard let data = try? Data(contentsOf: enrollmentURL(for: url)) else { return nil }
-            return try? JSONDecoder().decode(Enrollment.self, from: data)
+            return enrollmentJournal(data)?.reservation
         }
     }
 
@@ -198,10 +235,30 @@ final class ActivityCatalog {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
                   let marker = try? Data(contentsOf: enrollmentURL(for: url)),
-                  (try? JSONDecoder().decode(Enrollment.self, from: marker)) == expected,
+                  enrollmentJournal(marker)?.reservation == expected,
                   current.enrollment == expected, current.activation == expected.previous,
                   current.revoked != true else { return nil }
             return action()
+        }
+    }
+
+    /// The exact, non-secret mutation must be durable before WebKit sends it.
+    static func armEnrollment(url: URL, expected: Enrollment, workspaceID: String, request: Data) -> Bool {
+        guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil, !request.isEmpty, request.count <= 4096 else { return false }
+        return withWriterLock(url: url, failure: false) {
+            guard let authorityData = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
+                  authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
+                  let data = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let current = enrollmentJournal(data), current.reservation == expected else { return false }
+            if current.phase == .armed {
+                return current.workspaceID == workspaceID && current.request == request && writeJournal(data, enrollmentURL(for: url))
+            }
+            guard current.phase == .preparing || current.phase == .legacyUnknown else { return false }
+            let next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
+                                         phase: .armed, workspaceID: workspaceID, request: request)
+            guard let encoded = try? JSONEncoder().encode(next) else { return false }
+            return writeJournal(encoded, enrollmentURL(for: url))
         }
     }
 
@@ -215,7 +272,7 @@ final class ActivityCatalog {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
                   let marker = try? Data(contentsOf: enrollmentURL(for: url)),
-                  (try? JSONDecoder().decode(Enrollment.self, from: marker)) == expected,
+                  enrollmentJournal(marker)?.reservation == expected,
                   current.enrollment == expected, current.activation == expected.previous,
                   current.revoked != true, install() else { return nil }
             let next = Activation(id: UUID().uuidString, endpoint: expected.previous.endpoint,

@@ -112,7 +112,7 @@ struct WidgetFencedEnrollment {
             return .identityMismatch(result)
         }
         let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
-        return ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
+        let binding: WidgetFenceBinding = ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
             guard let raw = store.keychain.readPending(attempt),
                   var pending = try? JSONDecoder().decode(PendingFence.self, from: raw),
                   pending.valid, pending.reservation == reservation else { return .unavailable }
@@ -132,6 +132,11 @@ struct WidgetFencedEnrollment {
                   store.keychain.readPending(attempt) == encoded else { return .unavailable }
             return .ready(requestData)
         } ?? .unavailable
+        if case .ready(let request) = binding {
+            guard ActivityCatalog.armEnrollment(url: store.catalogURL, expected: reservation,
+                                                workspaceID: status.workspaceID, request: request) else { return .unavailable }
+        }
+        return binding
     }
 
     private func cleanPreviousPending(except attempt: String) -> Bool {

@@ -111,8 +111,17 @@ private final class NotificationCapture: @unchecked Sendable {
             return Data("{\"epoch\":\"\(fixtureEpoch)\",\"revision\":\"\(String(repeating: "3", count: 32))\",\"workspace_id\":\"\(credential.workspaceID)\",\"attempt\":\"\(wire)\",\"operation\":\"issue\",\"expires_at\":\"\(expiry)\"}".utf8)
         }
         let firstAttempt = issuedEnrollment.prepare(expected: issuedPending)!
+        let journalURL = issuedURL.appendingPathExtension("enrollment-pending")
+        let preparedJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self, from: Data(contentsOf: journalURL))
+        precondition(preparedJournal.phase == .preparing && preparedJournal.reservation == firstAttempt && preparedJournal.request == nil)
         guard case .unavailable = issuedEnrollment.bind(Data(repeating: 65, count: 4097), reservation: firstAttempt) else { fatalError() }
-        guard case .ready = issuedEnrollment.bind(fixtureStatus, reservation: firstAttempt) else { fatalError() }
+        guard case .ready(let armedRequest) = issuedEnrollment.bind(fixtureStatus, reservation: firstAttempt) else { fatalError() }
+        let armedData = try Data(contentsOf: journalURL)
+        let armedJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self, from: armedData)
+        precondition(armedJournal.phase == .armed && armedJournal.request == armedRequest && armedJournal.workspaceID == credential.workspaceID)
+        precondition(!String(decoding: armedData, as: UTF8.self).contains("hzw_"))
+        precondition(!ActivityCatalog.armEnrollment(url: issuedURL, expected: firstAttempt, workspaceID: credential.workspaceID,
+                                                    request: Data("different".utf8)))
         guard case .installed(let installed) = issuedEnrollment.complete(fixtureReceipt(firstAttempt), reservation: firstAttempt, now: now, clock: { now }) else { fatalError() }
         precondition(observed.ids == [installed.id] && !observed.ids.contains(credential.token))
         precondition(issuedStore.capture(now: now)?.activation == installed)
