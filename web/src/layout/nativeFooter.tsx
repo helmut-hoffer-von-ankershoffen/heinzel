@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { viewportFrame, watchViewport } from "@/lib/viewport";
 
 type Slot = { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number };
 type Bridge = { metrics: () => { width: number; bottom: number }; reportSlot: (slot: Slot) => Promise<unknown> };
@@ -45,7 +46,8 @@ export function NativeFooterSlot({ metrics }: { metrics: Metrics }) {
     const report = () => {
       if (!active || !element.isConnected) return;
       const { x, y, width, height } = element.getBoundingClientRect();
-      const value = { x, y, width, height, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
+      const viewport = viewportFrame();
+      const value = { x, y, width, height, viewportWidth: viewport.width, viewportHeight: viewport.height };
       if (!Object.values(value).every(Number.isFinite)) return;
       const next = JSON.stringify(value);
       if (next !== last) {
@@ -95,7 +97,7 @@ export function NativeFooterSlot({ metrics }: { metrics: Metrics }) {
     };
     const observer = new ResizeObserver(report);
     observer.observe(element);
-    window.addEventListener("resize", report);
+    const unwatch = watchViewport(report);
     window.addEventListener("scroll", report, true);
     window.addEventListener("hz:footer-relocated", refresh);
     window.addEventListener("heinzel-native-footer-metrics", refresh);
@@ -105,7 +107,7 @@ export function NativeFooterSlot({ metrics }: { metrics: Metrics }) {
       if (retry !== undefined) window.clearTimeout(retry);
       if (deadline !== undefined) window.clearTimeout(deadline);
       observer.disconnect();
-      window.removeEventListener("resize", report);
+      unwatch();
       window.removeEventListener("scroll", report, true);
       window.removeEventListener("hz:footer-relocated", refresh);
       window.removeEventListener("heinzel-native-footer-metrics", refresh);

@@ -5,6 +5,7 @@ import { NativeFooterSlot, nativeFooter } from "./nativeFooter";
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  document.documentElement.style.removeProperty("--hz-viewport-safe-bottom");
 });
 
 it("requires the new bridge and clamps finite native metrics", () => {
@@ -39,6 +40,34 @@ it("reports the actual slot and re-reports it when the native document handshake
   expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ x: 0, y: 500, width: 100, height: 48 }));
   act(() => window.dispatchEvent(new Event("heinzel-native-footer-metrics")));
   await waitFor(() => expect(reportSlot).toHaveBeenCalledTimes(2));
+});
+
+it("reports the full visual viewport, with native insets handled separately", async () => {
+  const reportSlot = vi.fn().mockResolvedValue(true);
+  const bridge = { metrics: () => ({ width: 100, bottom: 34 }), reportSlot };
+  vi.stubGlobal("heinzelDesktop", { nativeFooter: bridge });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const visual = Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 390, height: 844 });
+  vi.stubGlobal("visualViewport", visual);
+  document.documentElement.style.setProperty("--hz-viewport-safe-bottom", "34px");
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 762, 100, 48));
+  const metrics = nativeFooter();
+  if (!metrics) throw new Error("missing fixture bridge");
+  render(<NativeFooterSlot metrics={metrics} />);
+  await waitFor(() =>
+    expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ viewportWidth: 390, viewportHeight: 844 })),
+  );
+  visual.height = 600;
+  act(() => visual.dispatchEvent(new Event("resize")));
+  await waitFor(() =>
+    expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ viewportWidth: 390, viewportHeight: 600 })),
+  );
 });
 
 it.each([false, "reject", "timeout"])("retries an unacknowledged native slot (%s)", async (failure) => {

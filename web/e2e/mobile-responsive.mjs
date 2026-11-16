@@ -443,7 +443,10 @@ try {
     await drawer.waitFor({ state: "hidden" });
     assert.equal(new URL(page.url()).pathname, "/team");
     await page.getByRole("button", { name: "More workspace actions" }).click();
-    await page.getByRole("menuitem", { name: "Open calendar" }).click();
+    await page
+      .getByRole("region", { name: "More workspace actions" })
+      .getByRole("button", { name: "Open calendar" })
+      .click();
     await page.getByRole("tab", { name: "Calendar", exact: true }).waitFor();
     await page.setViewportSize({ width: 1366, height: 1024 });
     await trigger.waitFor({ state: "hidden" });
