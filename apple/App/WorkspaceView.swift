@@ -1286,6 +1286,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         // WebKit reports a cancelled policy decision as a frame load interruption. The previous
         // workspace remains visible when a cross-origin redirect or external handoff is denied.
         if failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
+        if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorUserAuthenticationRequired,
+           let widgetActivation {
+            _ = WidgetCredentialStore.invalidateShared(widgetActivation)
+            ActivityWidgetData.reload()
+        }
         reportError(WorkspaceProblem(navigationError: error))
     }
 }

@@ -27,3 +27,6 @@ def test_webview_auth_context_is_immutable_and_main_frame_scoped() -> None:
     assert "revision == documentRevision" in finished
     assert "if needsSignIn == true" in finished
     assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in finished
+    failed = navigation.split("private func pageFailed", 1)[1]
+    assert "failure.code == NSURLErrorUserAuthenticationRequired" in failed
+    assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in failed

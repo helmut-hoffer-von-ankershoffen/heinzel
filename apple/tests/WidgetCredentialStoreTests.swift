@@ -80,13 +80,24 @@ private final class FakeKeychain: WidgetCredentialKeychain {
         let issued = Data("""
         {"token":"\(credential.token)","workspace_id":"\(credential.workspaceID)","expires_at":"\(expiry)"}
         """.utf8)
-        precondition(issuedStore.installIssued(Data(repeating: 65, count: 4097), expected: issuedPending, now: now) == nil)
-        let installed = issuedStore.installIssued(issued, expected: issuedPending, now: now)!
+        guard case .rejected = issuedStore.installIssued(Data(repeating: 65, count: 4097), expected: issuedPending, now: now) else { fatalError() }
+        guard case .installed(let installed) = issuedStore.installIssued(issued, expected: issuedPending, now: now) else { fatalError() }
         precondition(issuedStore.capture(now: now)?.activation == installed)
         let wrongIdentity = Data(String(decoding: issued, as: UTF8.self)
             .replacingOccurrences(of: credential.workspaceID, with: String(repeating: "b", count: 64)).utf8)
-        precondition(issuedStore.installIssued(wrongIdentity, expected: installed, now: now) == nil)
-        precondition(issuedStore.capture(now: now)?.activation == installed)
+        var issuedLock: OpaquePointer?
+        precondition(sqlite3_open(issuedURL.path, &issuedLock) == SQLITE_OK)
+        precondition(sqlite3_exec(issuedLock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        guard case .identityMismatch(let mismatchResult) = issuedStore.installIssued(wrongIdentity, expected: installed, now: now) else { fatalError() }
+        precondition(mismatchResult.revoked && !mismatchResult.complete && issuedKeychain.data == nil)
+        precondition(sqlite3_exec(issuedLock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(issuedLock)
+        precondition(ActivityCatalog.pendingCleanup(url: issuedURL) == installed)
+        precondition(issuedStore.invalidate(installed).complete)
+        let again = ActivityCatalog.activate(url: issuedURL, endpoint: pending.endpoint)!
+        guard case .installed(let replacement) = issuedStore.installIssued(issued, expected: again, now: now) else { fatalError() }
+        guard case .identityMismatch(let staleMismatch) = issuedStore.installIssued(wrongIdentity, expected: installed, now: now) else { fatalError() }
+        precondition(staleMismatch.stale && issuedStore.capture(now: now)?.activation == replacement)
         print("PASS: widget credential fencing and retry")
     }
 }

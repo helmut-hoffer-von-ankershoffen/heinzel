@@ -105,6 +105,12 @@ struct WidgetCredentialCapture {
     let writerToken: Data
 }
 
+enum WidgetIssuanceResult {
+    case installed(ActivityCatalog.Activation)
+    case rejected
+    case identityMismatch(ActivityCatalog.ClearResult)
+}
+
 struct WidgetCredentialStore {
     let catalogURL: URL
     let keychain: any WidgetCredentialKeychain
@@ -112,12 +118,17 @@ struct WidgetCredentialStore {
     /// Accept only the limited issuance response after the caller has bounded
     /// the transport. Paired-device and WebKit session credentials stay in WebKit.
     func installIssued(_ data: Data, expected: ActivityCatalog.Activation,
-                       now: Date = .now) -> ActivityCatalog.Activation? {
+                       now: Date = .now) -> WidgetIssuanceResult {
         guard data.count <= 4096, let issued = try? JSONDecoder().decode(IssuedWidgetCredential.self, from: data),
-              let expiry = issued.expiry else { return nil }
+              let expiry = issued.expiry else { return .rejected }
         let credential = WidgetCredential(endpoint: expected.endpoint, workspaceID: issued.workspaceID,
             generation: UUID().uuidString, token: issued.token, expiresAt: expiry)
-        return install(credential, expected: expected, now: now)
+        guard credential.valid(at: now) else { return .rejected }
+        if let established = expected.workspaceID, established != issued.workspaceID {
+            return .identityMismatch(invalidate(expected))
+        }
+        guard let installed = install(credential, expected: expected, now: now) else { return .rejected }
+        return .installed(installed)
     }
 
     func install(_ credential: WidgetCredential, expected: ActivityCatalog.Activation,
