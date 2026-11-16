@@ -128,6 +128,24 @@ def test_native_fenced_retry_after_lost_core_reply(make_kernel, tmp_path):
     assert client.get("/api/_web/widget-snapshot", headers=widget_headers).status_code == 200
 
 
+def assert_script_revoke(webkit, receipt, root, client):
+    issued = json.loads(receipt)
+    revoke = {
+        "epoch": issued["epoch"],
+        "revision": issued["revision"],
+        "attempt": "f" * 32,
+        "operation": "revoke",
+        "commitment": None,
+    }
+    revoked = json.loads(webkit("mutate", json.dumps(revoke)))
+    assert revoked["operation"] == "revoke"
+    assert revoked["expires_at"] is None
+    assert json.loads(webkit("mutate", json.dumps(revoke))) == revoked
+    widget_token = json.loads((root / "active").read_bytes())["token"]
+    widget = {"Authorization": f"Bearer {widget_token}", "X-Hz-Workspace-Id": issued["workspace_id"]}
+    assert client.get("/api/_web/widget-snapshot", headers=widget).status_code == 401
+
+
 def test_native_script_and_core_recover_lost_reply(make_kernel, tmp_path):
     harness = os.environ.get("HZ_WIDGET_FENCED_HARNESS")
     source = os.environ.get("HZ_WIDGET_ENROLLMENT_SOURCE")
@@ -222,6 +240,7 @@ new AsyncFunction('origin','operation','payload','expectedFingerprint',script)('
         (root / "receipt.json").write_text(receipt)
         assert native("complete") == "installed"
         assert native("verify", json.loads(first)["commitment"]) == "verified"
+        assert_script_revoke(webkit, receipt, root, client)
     finally:
         bridge.shutdown()
         thread.join(timeout=5)
