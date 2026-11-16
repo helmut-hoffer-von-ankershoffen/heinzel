@@ -31,6 +31,8 @@ def scope(monkeypatch, tmp_path):
         "HZ_LOCAL_TEST_SCOPE_SHA256",
         "HZ_LOCAL_MIXED_SCOPE",
         "HZ_LOCAL_MIXED_SCOPE_SHA256",
+        "HZ_LOCAL_MIXED_BASE_REF",
+        "HZ_LOCAL_MIXED_GUARD_BINDING",
     ):
         monkeypatch.delenv(key, raising=False)
     changed = [
@@ -96,7 +98,7 @@ def test_preview_and_dispatch_match_and_leave_native_proof_pending(scope, monkey
     scoped.main()
     plan = json.loads(capsys.readouterr().out)
     assert calls == []
-    assert plan["early_guards"] == scoped.early_guard_commands(sorted(changed))
+    assert plan["early_guards"] == scoped.mixed_early_guard_commands(sorted(changed))
     assert plan["checks"][0] == [
         sys.executable,
         "scripts/mixed_scope.py",
@@ -549,6 +551,8 @@ def test_full_supported_candidate_inventory_preserves_python_and_all_native_obli
     assert pending == mixed.NATIVE_FIXTURES | mixed.HARNESS_INTEGRATION | {
         "full-hosted-validation",
         "managed-backend-check",
+        mixed.HOSTED_E2E,
+        mixed.HOSTED_PARTITION_TEST,
     }
 
 
@@ -747,3 +751,218 @@ def test_preserved_push_input_is_bound_to_real_git_head_and_branch(tmp_path, mon
     git("commit", "--allow-empty", "-m", "test(ci): move synthetic head")
     with pytest.raises(ValueError, match="checked HEAD branch"):
         scoped.push_binding(required=True)
+
+
+@pytest.fixture
+def candidate_scope(scope, monkeypatch):
+    """The consuming widget/audio candidate also changes both selector files and their tests."""
+    packet, changed, bind = scope
+    changed[:] = sorted(
+        mixed.APPLE_SOURCES
+        | mixed.NATIVE_FIXTURES
+        | mixed.WIDGET_CORE
+        | mixed.CORE_INTEGRATION
+        | mixed.APPLE_INTEGRATION
+        | mixed.HARNESS_INTEGRATION
+        | mixed.WEB_OWNERS.keys()
+        | mixed.SELECTOR_SOURCES
+        | {
+            "apple/README.md",
+            "tests/unit/heads/widget_fence_test.py",
+            "tests/unit/mixed_scope_test.py",
+            "tests/unit/scoped_checks_test.py",
+        }
+    )
+    assert len(changed) == 43  # exact consuming candidate path inventory, including its selector repairs
+    for name in changed:
+        path = scoped.ROOT / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    packet["owning"] = [name for name in changed if name.startswith("tests/unit/")]
+    monkeypatch.setattr(related_tests, "related_tests", lambda _: packet["owning"])
+    bind()
+    return scope
+
+
+def test_consuming_candidate_preview_has_no_local_test_directories(candidate_scope, monkeypatch, capsys):
+    _, changed, _ = candidate_scope
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push", "--show-mixed-push-plan"])
+    scoped.main()
+    plan = json.loads(capsys.readouterr().out)
+    assert calls == []
+    assert plan["changed"] == changed
+    for command in [*plan["early_guards"], *plan["checks"]]:
+        for argument in command:
+            if argument.startswith("tests/"):
+                assert argument.partition("::")[0].endswith(".py")
+    partition = plan["early_guards"][-1]
+    assert partition[3:5] == list(mixed.LOCAL_PARTITION_TESTS)
+    assert partition[5:7] == ["-m", "integration"]
+    assert {mixed.HOSTED_E2E, mixed.HOSTED_PARTITION_TEST} <= set(plan["pending"])
+    assert "tests/e2e" in scoped.early_guard_commands(changed)[-1]  # unchanged default guard
+
+
+def test_nested_make_guards_use_identical_bound_plan(candidate_scope, monkeypatch):
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    context = scoped.mixed_guard_environment(plan)
+    for key in ("HZ_LOCAL_MIXED_BASE_REF", "HZ_LOCAL_MIXED_GUARD_BINDING"):
+        monkeypatch.setenv(key, context[key])
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append((command, {"env": dict(os.environ)})))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "early-fast"])
+    scoped.main()
+    assert [command for command, _ in calls] == plan["early_guards"]
+    assert all("tests/e2e" not in command for command, _ in calls)
+    assert all(
+        kwargs["env"]["HZ_LOCAL_MIXED_GUARD_BINDING"] == context["HZ_LOCAL_MIXED_GUARD_BINDING"] for _, kwargs in calls
+    )
+
+
+@pytest.mark.parametrize("problem", ["missing", "tampered", "head", "base", "diff", "push"])
+def test_nested_make_refuses_unbound_or_stale_context(candidate_scope, monkeypatch, problem):
+    _, changed, _ = candidate_scope
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    context = scoped.mixed_guard_environment(plan)
+    for key in ("HZ_LOCAL_MIXED_BASE_REF", "HZ_LOCAL_MIXED_GUARD_BINDING"):
+        monkeypatch.setenv(key, context[key])
+    if problem == "missing":
+        monkeypatch.delenv("HZ_LOCAL_MIXED_GUARD_BINDING")
+    elif problem == "tampered":
+        monkeypatch.setenv("HZ_LOCAL_MIXED_GUARD_BINDING", "0" * 64)
+    elif problem == "head":
+        monkeypatch.setattr(scoped, "resolve_tree", lambda: "f" * 40)
+    elif problem == "base":
+        monkeypatch.setattr(scoped, "resolve_base", lambda value: "b" * 40 if value == "HEAD" else "f" * 40)
+    elif problem == "diff":
+        monkeypatch.setattr(scoped, "changed_paths", lambda mode, _: [] if mode == "fast" else [*changed, "new.py"])
+    else:
+        monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE")
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "early-fast"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert calls == []
+
+
+def test_outer_recipe_transmits_its_exact_guard_context(candidate_scope, monkeypatch):
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append((command, {"env": dict(os.environ)})))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    scoped.main()
+    assert [command for command, _ in calls] == [*plan["early_guards"], *plan["checks"]]
+    assert all(kwargs["env"]["HZ_LOCAL_MIXED_BASE_REF"] == "origin/main" for _, kwargs in calls)
+    assert all(kwargs["env"]["HZ_LOCAL_MIXED_GUARD_BINDING"] == scoped.mixed_guard_binding(plan) for _, kwargs in calls)
+    assert "HZ_LOCAL_MIXED_GUARD_BINDING" not in os.environ
+
+
+def test_future_directory_guard_cannot_enter_mixed_plan(monkeypatch):
+    monkeypatch.setattr(scoped, "early_guard_commands", lambda _: [["uv", "run", "pytest", "tests/integration"]])
+    with pytest.raises(ValueError, match="cannot invoke test directories"):
+        scoped.mixed_early_guard_commands(["scripts/scoped_checks.py"])
+
+
+@pytest.mark.timeout(30)
+def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(tmp_path, candidate_scope):
+    """Only Git, Make and the selector execute; the disposable uv records all owning test commands."""
+    _, changed, _ = candidate_scope
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git(*arguments):
+        return subprocess.run(
+            ["git", "-c", "user.name=Example", "-c", "user.email=fixture@example.test", *arguments],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+
+    git("init", "--initial-branch=topic")
+    for name in ("Makefile", ".gitignore", "scripts/related_tests.py"):
+        path = repository / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((REPO / name).read_bytes())
+    git("add", ".")
+    git("commit", "-m", "test(ci): create synthetic base")
+    base = git("rev-parse", "HEAD")
+    git("branch", "reviewed-base")
+    for name in changed:
+        path = repository / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((REPO / name).read_bytes() if name in mixed.SELECTOR_SOURCES else b"# fixture\n")
+    git("add", ".")
+    git("commit", "-m", "test(ci): create synthetic mixed candidate")
+    head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    packet = dict(candidate_scope[0], base=base, head=head, tree=tree)
+    packet_path = tmp_path / "packet.json"
+    packet_bytes = json.dumps(packet).encode()
+    packet_path.write_bytes(packet_bytes)
+    pushed = tmp_path / "pushed.txt"
+    pushed.write_text(f"refs/heads/topic {head} refs/heads/topic {'0' * 40}\n")
+    record, plan_path = tmp_path / "commands.jsonl", tmp_path / "plan.json"
+    toolchain = tmp_path / "bin"
+    toolchain.mkdir()
+    uv = toolchain / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, subprocess, sys\n"
+        "with open(os.environ['MIXED_NESTED_RECORD'], 'a') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if 'scripts/scoped_checks.py' in sys.argv:\n"
+        "    sys.exit(subprocess.run([sys.executable, 'scripts/scoped_checks.py', 'early-fast']).returncode)\n"
+    )
+    uv.chmod(0o700)
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import json, os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, str(Path.cwd() / 'scripts'))\n"
+        "import scoped_checks as scoped\n"
+        "plan = scoped.current_mixed_plan('reviewed-base', require_push=True)\n"
+        "Path(os.environ['MIXED_NESTED_PLAN']).write_text(json.dumps(plan))\n"
+        "with scoped.mixed_guard_context(plan):\n"
+        "    subprocess.run(['make', 'check-fast', 'UNIT_TARGETS=tests/unit/scoped_checks_test.py',\n"
+        "                    'WEB_TESTS='], check=True)\n"
+    )
+    inherited_scope_keys = {
+        "HZ_LOCAL_TEST_SCOPE",
+        "HZ_LOCAL_TEST_SCOPE_SHA256",
+        "HZ_LOCAL_MIXED_SCOPE",
+        "HZ_LOCAL_MIXED_SCOPE_SHA256",
+        "HZ_LOCAL_MIXED_BASE_REF",
+        "HZ_LOCAL_MIXED_GUARD_BINDING",
+    }
+    environment = {key: value for key, value in os.environ.items() if key not in inherited_scope_keys}
+    environment.update(
+        {
+            "PATH": str(toolchain) + ":/usr/bin:/bin:/usr/sbin:/sbin",
+            "HZ_LOCAL_MIXED_SCOPE": str(packet_path),
+            "HZ_LOCAL_MIXED_SCOPE_SHA256": hashlib.sha256(packet_bytes).hexdigest(),
+            "HZ_DEV_PUSH_REFS_FILE": str(pushed),
+            "PRE_COMMIT": "1",
+            "PREK_HOOK_STAGE": "pre-push",
+            "MIXED_NESTED_RECORD": str(record),
+            "MIXED_NESTED_PLAN": str(plan_path),
+        }
+    )
+    subprocess.run(
+        [sys.executable, str(driver)],
+        cwd=repository,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    plan = json.loads(plan_path.read_text())
+    commands = [json.loads(line) for line in record.read_text().splitlines()]
+    actual_guards = [["uv", *command] for command in commands if command[:2] == ["run", "pytest"]]
+    assert actual_guards == plan["early_guards"]
+    assert all("tests/e2e" not in command for command in commands)
+    assert plan["base_ref"] == "reviewed-base"

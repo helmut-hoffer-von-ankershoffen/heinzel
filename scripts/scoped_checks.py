@@ -32,6 +32,10 @@ preserved single HEAD branch update; a standalone preview without that input can
 check-fast recipe requires fresh JUnit and Vitest reports with passing bodies in every selected local test file.
 Mixed scopes accept whole test files only. Unit files may contain platform skips; these are explicitly reported as
 unverified cases and never count as passing bodies. Schema-1 Python node selection is unchanged.
+The original partition guard collects full E2E inventory with -m integration; it does not execute E2E bodies.
+Mixed local plans instead run the bounded selector/partition assertions without directory collection. Complete
+real-inventory partition proof and full E2E/integration execution remain explicit hosted obligations. Nested Make
+guards require the same reviewed scope, pushed refs and guard-plan binding; nonmixed guards are unchanged.
 """
 
 import argparse
@@ -42,6 +46,8 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -362,11 +368,38 @@ def mixed_push_plan(changed: list[str], base: str) -> dict | None:
     return {
         "identity": {key: packet[key] for key in ("base", "head", "tree")},
         "scope_sha256": digest,
-        "early_guards": early_guard_commands(changed),
+        "early_guards": mixed_early_guard_commands(changed),
         "checks": checks,
         "pending": sorted([*packet["pending"], *hosted]),
         "acceptance": "local checks only; pending obligations require separate exact-head proof",
     }
+
+
+def mixed_early_guard_commands(changed: list[str]) -> list[list[str]]:
+    """Keep bounded local partition assertions; full inventory collection stays hosted.
+
+    Raises:
+        ValueError: The existing inventory recipe changed beyond the reviewed replacement.
+    """
+    from mixed_scope import LOCAL_PARTITION_TESTS, PARTITION_TEST  # noqa: PLC0415
+
+    result = []
+    for command in early_guard_commands(changed):
+        if "tests/e2e" not in command:
+            result.append(command)
+            continue
+        if command[:5] != ["uv", "run", "pytest", PARTITION_TEST, "tests/e2e"] or command[5:7] != ["-m", "integration"]:
+            msg = "mixed partition guard no longer matches the reviewed bounded replacement"
+            raise ValueError(msg)
+        result.append([*command[:3], *LOCAL_PARTITION_TESTS, *command[5:]])
+    if any(
+        (argument == "tests" or argument.startswith("tests/")) and not argument.partition("::")[0].endswith(".py")
+        for command in result
+        for argument in command
+    ):
+        msg = "mixed early guards cannot invoke test directories"
+        raise ValueError(msg)
+    return result
 
 
 def push_binding(*, required: bool) -> dict | None:
@@ -437,15 +470,81 @@ def configured_mixed_plan(parser: argparse.ArgumentParser, base_ref: str, *, sho
     print(json.dumps(plan, sort_keys=True), flush=True)
     if show:
         return True
-    for command in plan["early_guards"]:
-        unchanged_mixed_plan(parser, plan)
-        run_check(command, timeout=180)
-    for command in plan["checks"]:
-        unchanged_mixed_plan(parser, plan)
-        run_check(command, timeout=1800)
+    with mixed_guard_context(plan):
+        for command in plan["early_guards"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=180)
+        for command in plan["checks"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=1800)
     # A hook can take minutes: do not report proof for a checkout or packet changed during its checks.
     unchanged_mixed_plan(parser, plan)
     print("Local mixed checks passed. PENDING: " + ", ".join(plan["pending"]), flush=True)
+    return True
+
+
+def mixed_guard_binding(plan: dict) -> str:
+    """Bind the policy identity and exact guard plan across Python tool environments."""
+    keys = ("identity", "scope_sha256", "base_ref", "changed", "push", "early_guards", "pending")
+    data = json.dumps({key: plan[key] for key in keys}, sort_keys=True).encode()
+    return hashlib.sha256(data).hexdigest()
+
+
+def mixed_guard_environment(plan: dict) -> dict[str, str]:
+    """Pass the validated parent context directly, never through Make or shell interpolation."""
+    return {
+        "HZ_LOCAL_MIXED_BASE_REF": plan["base_ref"],
+        "HZ_LOCAL_MIXED_GUARD_BINDING": mixed_guard_binding(plan),
+    }
+
+
+@contextmanager
+def mixed_guard_context(plan: dict) -> Iterator[None]:
+    """Inherit only the bound context for these synchronous checks, restoring it afterwards."""
+    values = mixed_guard_environment(plan)
+    previous = {key: os.environ.get(key) for key in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def inherited_mixed_plan() -> dict:
+    """Require the exact parent identity and guard plan for nested Make checks.
+
+    Raises:
+        ValueError: The bound parent context is missing or differs from current source.
+    """
+    base_ref = os.environ.get("HZ_LOCAL_MIXED_BASE_REF")
+    expected = os.environ.get("HZ_LOCAL_MIXED_GUARD_BINDING")
+    if not base_ref or not expected:
+        msg = "mixed early guards require the reviewed parent context"
+        raise ValueError(msg)
+    plan = current_mixed_plan(base_ref, require_push=True)
+    if plan is None or mixed_guard_binding(plan) != expected:
+        msg = "mixed early guards differ from the reviewed parent context"
+        raise ValueError(msg)
+    return plan
+
+
+def configured_mixed_early_guards(parser: argparse.ArgumentParser) -> bool:
+    """Fence nested Make guards to the same exact scope and bounded parent guard plan."""
+    if all(key not in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")):
+        return False
+    try:
+        plan = inherited_mixed_plan()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    with mixed_guard_context(plan):
+        for command in plan["early_guards"]:
+            unchanged_mixed_plan(parser, plan)
+            run_check(command, timeout=180)
+    unchanged_mixed_plan(parser, plan)
     return True
 
 
@@ -582,13 +681,22 @@ GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check
 
 
 def run_check(
-    command: list[str], *, timeout: int, light: bool = False, check: bool = True, capture_output: bool = False
+    command: list[str],
+    *,
+    timeout: int,
+    light: bool = False,
+    check: bool = True,
+    capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run the selected check through the optional host queue, with its own runtime limit."""
     gate = shutil.which("hz-gate")
     if gate is None or not Path(gate).is_absolute():
         return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
-            command, check=check, timeout=timeout, capture_output=capture_output, text=True
+            command,
+            check=check,
+            timeout=timeout,
+            capture_output=capture_output,
+            text=True,
         )
     env = os.environ.copy()
     try:
@@ -680,9 +788,8 @@ def arguments() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
     return parser, args
 
 
-def main() -> None:
-    """Preserve core checks and common policies while selecting independent owning plugin work."""
-    parser, args = arguments()
+def check_inputs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[str, list[str], bool]:
+    """Resolve the ordinary command's base and changes without altering default selection."""
     early = args.mode.startswith("early-")
     if early:
         args.mode = args.mode.removeprefix("early-")
@@ -691,6 +798,15 @@ def main() -> None:
     except (ValueError, subprocess.CalledProcessError):
         parser.error("Use a valid commit revision for --base")
     changed = changed_paths("preflight" if early else args.mode, base)
+    return base, changed, early
+
+
+def main() -> None:
+    """Preserve core checks and common policies while selecting independent owning plugin work."""
+    parser, args = arguments()
+    if args.mode.startswith("early-") and configured_mixed_early_guards(parser):
+        return
+    base, changed, early = check_inputs(parser, args)
     if early:
         changed = sorted({*changed, *changed_paths("fast", base)})
         run_early_guards(changed)

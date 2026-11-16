@@ -71,6 +71,15 @@ WEB_OWNERS = {
 SELECTOR_SOURCES = frozenset({"scripts/scoped_checks.py", "scripts/mixed_scope.py"})
 SAFE_PATH = re.compile(r"[A-Za-z0-9_./-]+")
 MAX_SELECTION = 64
+PARTITION_TEST = "tests/integration/e2e_lane_partition_test.py"
+LOCAL_PARTITION_TESTS = (
+    f"{PARTITION_TEST}::test_partition_rejects_unmodeled_or_duplicate_collection",
+    f"{PARTITION_TEST}::test_partition_matches_pytest_deselection_prefix_semantics",
+)
+HOSTED_PARTITION_TEST = (
+    f"{PARTITION_TEST}::test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations"
+)
+HOSTED_E2E = "full-hosted-e2e-and-integration"
 
 
 def files(root: Path, paths: list[str]) -> None:
@@ -115,7 +124,17 @@ def requirements(changed: list[str]) -> tuple[list[str], set[str], set[str], set
     Raises:
         ValueError: A path has no reviewed mixed-lane owner.
     """
-    python, web, integration, pending = [], set(), set(), {"full-hosted-validation", "managed-backend-check"}
+    python, web, integration, pending = (
+        [],
+        set(),
+        set(),
+        {
+            "full-hosted-validation",
+            "managed-backend-check",
+            HOSTED_E2E,
+            HOSTED_PARTITION_TEST,
+        },
+    )
     for path in changed:
         if path in APPLE_SOURCES | NATIVE_FIXTURES:
             integration.update(APPLE_INTEGRATION)
