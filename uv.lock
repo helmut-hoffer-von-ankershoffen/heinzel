@@ -712,7 +712,7 @@ wheels = [
 
 [[package]]
 name = "heinzel"
-version = "0.9.48"
+version = "0.9.49"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
