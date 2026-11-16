@@ -18,6 +18,13 @@ def fg(monkeypatch):
     return focused_gate
 
 
+@pytest.mark.parametrize("suite", ["cli", "supervised", "web-1", "web-2", "web-3"])
+def test_recovered_mac_e2e_lane_requires_its_own_workload(fg, suite):
+    steps = fg._RECOVERY_STEPS[f"End-to-end {suite} (macos-latest)"]
+    assert f"Run make test-e2e SUITE={suite}" in steps
+    assert ("Install browser runtimes and host dependencies" in steps) == (suite != "cli")
+
+
 @pytest.mark.parametrize("defect", [None, "truncated", "duplicate-id", "wrong-attempt", "wrong-run", "wrong-head"])
 def test_recovery_inventory_uses_authenticated_attempt_two_api(fg, defect):
     head = "a" * 40
@@ -57,6 +64,7 @@ def test_recovery_inventory_uses_authenticated_attempt_two_api(fg, defect):
         assert fg._recovery_inventory(SimpleNamespace(github=github), source) == rows
 
 
+@pytest.mark.parametrize("name", ["make setup (macos-latest)", "End-to-end supervised (macos-latest)"])
 @pytest.mark.parametrize(
     "defect",
     [
@@ -67,7 +75,7 @@ def test_recovery_inventory_uses_authenticated_attempt_two_api(fg, defect):
         "skipped-carrier-conclusion",
     ],
 )
-def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect):  # noqa: C901, PLR0912, PLR0915 - adversarial matrix
+def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect, name):  # noqa: C901, PLR0912, PLR0915 - adversarial matrix
     head, base, merge, tree = (c * 40 for c in "abcd")
     run = {
         "id": 123,
@@ -77,7 +85,6 @@ def test_capacity_proof_refuses_unproven_recovery(fg, monkeypatch, defect):  # n
     }
     snapshot = ({"number": 1}, merge, base)
     source = SimpleNamespace(run=run, source=SimpleNamespace(head=head), commit=merge)
-    name = "make setup (macos-latest)"
     inventory = {name: "success", "CI OK": "success", "Changed paths": "success", "Coverage": "success"}
 
     def step(name, conclusion="success"):

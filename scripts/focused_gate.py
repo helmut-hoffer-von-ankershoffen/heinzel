@@ -535,7 +535,11 @@ _RECOVERY_STEPS = {
         "Pack the app, keeping its executable bit and signature",
         CANDIDATE_UPLOAD_NAME,
     },
-    "End-to-end web-3 (macos-latest)": {"Run make test-e2e SUITE=web-3"},
+    **{
+        f"End-to-end {suite} (macos-latest)": {f"Run make test-e2e SUITE={suite}"}
+        | ({"Install browser runtimes and host dependencies"} if suite != "cli" else set())
+        for suite in ("cli", "supervised", "web-1", "web-2", "web-3")
+    },
     "CI OK": {"Fail if any required job failed", "Require the complete direct CI workload"},
     "Build": _NOTIFIER_BUILD_STEPS | {"Run make build", CANDIDATE_UPLOAD_NAME},
 }
