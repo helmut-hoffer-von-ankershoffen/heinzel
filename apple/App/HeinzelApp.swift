@@ -725,6 +725,12 @@ struct ConnectionView: View {
                                                   visibleEndpoint: endpoint?.origin.absoluteString) else { return }
             retryWorkspace()
         }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.preparationRecovered).receive(on: RunLoop.main)) { notification in
+            guard let activation = ActivityWidgetData.currentActivation(),
+                  notification.object as? String == activation.id,
+                  activation.endpoint == endpoint?.origin.absoluteString else { return }
+            retryWorkspace()
+        }
         .alert("Widget information could not be cleared", isPresented: $widgetClearFailed) {
             Button("Retry") { Task { await Task.yield(); clearWidgetActivity() } }
             Button("Close", role: .cancel) { }

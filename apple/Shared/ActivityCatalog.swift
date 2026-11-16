@@ -298,7 +298,7 @@ final class ActivityCatalog {
                 let restored = Authority(scope: "", generation: UUID().uuidString, activation: expected.previous)
                 guard let encoded = try? JSONEncoder().encode(restored),
                       writeAuthority(encoded, authorityURL(for: url)) else { return false }
-            } else if current.activation != expected.previous &&
+            } else if !(current.activation == expected.previous && current.enrollment == nil && current.revoked != true) &&
                         !(current.revoked == true && current.cleanup == expected.previous) {
                 return false
             }

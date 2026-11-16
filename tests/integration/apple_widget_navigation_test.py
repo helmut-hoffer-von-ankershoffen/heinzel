@@ -57,6 +57,10 @@ def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None
     assert "self.isEnrollmentViewCurrent()" in enrollment
     assert "WidgetEnrollmentTransport.hasPairedDevice" in enrollment
     assert "enrollment.canResume(pending)" in enrollment
+    recovery = enrollment.split("guard enrollment.canResume(pending) else", 1)[1].split("return", 1)[0]
+    assert recovery.index("pending.previous.endpoint == endpoint.origin.absoluteString") < recovery.index(
+        "enrollment.abandonInterruptedPreparation(pending)"
+    )
     assert "isWidgetWorkspaceCurrent()" not in enrollment
     info = (ROOT / "apple/App/Info.plist").read_text(encoding="utf-8")
     assert "HeinzelWidgetEnrollmentEnabled" not in info
