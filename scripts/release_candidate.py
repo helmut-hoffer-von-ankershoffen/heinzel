@@ -37,7 +37,20 @@ DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_JOBS = 1000
 PR_PAGE_SIZE = 100
 MAX_PROOF = 64 * 1024
-CONSUMERS = ("atlassian", "clock", "example", "github", "google", "resource", "tailscale", "theme", "weather", "zoom")
+CONSUMERS = (
+    "atlassian",
+    "clock",
+    "example",
+    "github",
+    "google",
+    "issues",
+    "resource",
+    "slack",
+    "tailscale",
+    "theme",
+    "weather",
+    "zoom",
+)
 
 
 class CandidateError(ValueError):
