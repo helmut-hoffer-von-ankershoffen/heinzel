@@ -27,6 +27,9 @@ For mixed Python/web/Apple changes, HZ_LOCAL_MIXED_SCOPE and HZ_LOCAL_MIXED_SCOP
 It retains schema=1 identity and Python fields, adding web, integration and pending lists. The closed inventory in
 mixed_scope.py requires the owning local recipes and every outstanding native/hosted obligation. --show-mixed-push-plan
 prints the same commands the hook executes. Success means local checks only, never completion of pending obligations.
+Every execution fence rereads the named base and complete diff. Execution requires the normal pre-push wrapper's
+preserved single HEAD branch update; a standalone preview without that input cannot authorize a push. The fixed
+check-fast recipe requires fresh JUnit and Vitest reports with passing bodies in every selected local test file.
 """
 
 import argparse
@@ -251,6 +254,7 @@ def python_overrides(changed: list[str], selected: list[str] | None = None) -> l
 
 LOCAL_SCOPE_MAX = 32 * 1024
 MIXED_SCOPE_SCHEMA = 2
+PUSH_REF_FIELDS = 4
 LOCAL_SCOPE_SELECTORS = 64
 LOCAL_SELECTOR = re.compile(r"tests/unit/[A-Za-z0-9_/-]+_test\.py(?:::[A-Za-z0-9_]+(?:\[[A-Za-z0-9_.,=+-]+\])?)*")
 HOSTED_ONLY_TESTS = frozenset({"tests/unit/heads/desktop_installation_test.py"})
@@ -347,10 +351,8 @@ def mixed_push_plan(changed: list[str], base: str) -> dict | None:
 
     python = validate(packet, changed, ROOT)
     selected, hosted = _local_scope_selection(packet, python)
-    overrides = python_overrides(python, selected)
-    overrides[0] = f'WEB_TESTS="{web_test_step(" ".join(packet["web"]))}"'
-    checks = [["make", "check-fast", *overrides]]
     recipe = [sys.executable, "scripts/mixed_scope.py"]
+    checks = [[*recipe, "check-fast", "--unit", *selected, "--web", *packet["web"]]]
     if packet["integration"]:
         checks.append([*recipe, "integration", *sorted(packet["integration"])])
     if set(changed) & (APPLE_SOURCES | NATIVE_FIXTURES):
@@ -365,10 +367,65 @@ def mixed_push_plan(changed: list[str], base: str) -> dict | None:
     }
 
 
-def configured_mixed_plan(parser: argparse.ArgumentParser, changed: list[str], base: str, *, show: bool) -> bool:
+def push_binding(*, required: bool) -> dict | None:
+    """Bind the complete stdin preserved by the normal pre-push wrapper to this HEAD.
+
+    Raises:
+        ValueError: The actual push is unavailable, multi-ref, or not the checked HEAD branch update.
+    """
+    name = os.environ.get("HZ_DEV_PUSH_REFS_FILE")
+    if name is None and not required:
+        return None
+    if not name or os.environ.get("PRE_COMMIT") != "1" or os.environ.get("PREK_HOOK_STAGE") != "pre-push":
+        msg = "mixed execution requires actual pre-push input preserved by the normal hook"
+        raise ValueError(msg)
+    with Path(name).open("rb") as stream:
+        data = stream.read(LOCAL_SCOPE_MAX + 1)
+    lines = data.decode("ascii").splitlines()
+    if len(data) > LOCAL_SCOPE_MAX or len(lines) != 1 or len(lines[0].split()) != PUSH_REF_FIELDS:
+        msg = "mixed execution requires exactly one complete pushed ref"
+        raise ValueError(msg)
+    local_ref, local_oid, remote_ref, remote_oid = lines[0].split()
+    branch = subprocess.check_output(
+        ["git", "symbolic-ref", "--quiet", "HEAD"],  # noqa: S607 - repository Git
+        cwd=ROOT,
+        text=True,
+        timeout=30,
+    ).strip()
+    head = resolve_base("HEAD")
+    if (
+        local_ref not in {"HEAD", branch}
+        or local_oid != head
+        or not remote_ref.startswith("refs/heads/")
+        or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", remote_oid)
+    ):
+        msg = "mixed execution only permits pushing the checked HEAD branch"
+        raise ValueError(msg)
+    return {
+        "local_ref": local_ref,
+        "local_oid": local_oid,
+        "remote_ref": remote_ref,
+        "remote_oid": remote_oid,
+        "stdin_sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def current_mixed_plan(base_ref: str, *, require_push: bool) -> dict | None:
+    """Read current refs and the complete diff again, never reuse a previously captured path list."""
+    base = resolve_base(base_ref)
+    changed = sorted({*changed_paths("push", base), *changed_paths("fast", base)})
+    plan = mixed_push_plan(changed, base)
+    if plan is not None:
+        plan.update({"base_ref": base_ref, "changed": changed, "push": push_binding(required=require_push)})
+    return plan
+
+
+def configured_mixed_plan(parser: argparse.ArgumentParser, base_ref: str, *, show: bool) -> bool:
     """Execute precisely the previewed local plan, keeping remaining proof visibly pending."""
+    if not show and all(key not in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")):
+        return False
     try:
-        plan = mixed_push_plan(changed, base)
+        plan = current_mixed_plan(base_ref, require_push=not show)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
     if show and plan is None:
@@ -379,21 +436,21 @@ def configured_mixed_plan(parser: argparse.ArgumentParser, changed: list[str], b
     if show:
         return True
     for command in plan["early_guards"]:
-        unchanged_mixed_plan(parser, plan, changed, base)
+        unchanged_mixed_plan(parser, plan)
         run_check(command, timeout=180)
     for command in plan["checks"]:
-        unchanged_mixed_plan(parser, plan, changed, base)
+        unchanged_mixed_plan(parser, plan)
         run_check(command, timeout=1800)
     # A hook can take minutes: do not report proof for a checkout or packet changed during its checks.
-    unchanged_mixed_plan(parser, plan, changed, base)
+    unchanged_mixed_plan(parser, plan)
     print("Local mixed checks passed. PENDING: " + ", ".join(plan["pending"]), flush=True)
     return True
 
 
-def unchanged_mixed_plan(parser: argparse.ArgumentParser, plan: dict, changed: list[str], base: str) -> None:
+def unchanged_mixed_plan(parser: argparse.ArgumentParser, plan: dict) -> None:
     """Fence every dispatch and the final result to the initially reviewed source and bytes."""
     try:
-        current = mixed_push_plan(changed, base)
+        current = current_mixed_plan(plan["base_ref"], require_push=True)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
     if current != plan:
@@ -639,7 +696,7 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        if configured_mixed_plan(parser, changed, base, show=args.show_mixed_push_plan):
+        if configured_mixed_plan(parser, args.base, show=args.show_mixed_push_plan):
             return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)

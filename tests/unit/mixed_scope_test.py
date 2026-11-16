@@ -58,7 +58,9 @@ def scope(monkeypatch, tmp_path):
     monkeypatch.setattr(scoped, "ROOT", tmp_path)
     monkeypatch.setattr(scoped, "resolve_base", lambda value: "b" * 40 if value == "HEAD" else "a" * 40)
     monkeypatch.setattr(scoped, "resolve_tree", lambda: "c" * 40)
-    monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: "")
+    monkeypatch.setattr(
+        scoped.subprocess, "check_output", lambda argv, **__: "refs/heads/topic" if "symbolic-ref" in argv else ""
+    )
     monkeypatch.setattr(scoped, "changed_paths", lambda mode, _: [] if mode == "fast" else changed)
 
     def related(paths):
@@ -75,6 +77,11 @@ def scope(monkeypatch, tmp_path):
         monkeypatch.setenv("HZ_LOCAL_MIXED_SCOPE_SHA256", hashlib.sha256(data).hexdigest())
 
     bind()
+    pushed = tmp_path.parent / f"{tmp_path.name}-pushed.txt"
+    pushed.write_text(f"refs/heads/topic {'b' * 40} refs/heads/topic {'e' * 40}\n")
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(pushed))
+    monkeypatch.setenv("PRE_COMMIT", "1")
+    monkeypatch.setenv("PREK_HOOK_STAGE", "pre-push")
     return packet, changed, bind
 
 
@@ -90,13 +97,15 @@ def test_preview_and_dispatch_match_and_leave_native_proof_pending(scope, monkey
     plan = json.loads(capsys.readouterr().out)
     assert calls == []
     assert plan["early_guards"] == scoped.early_guard_commands(sorted(changed))
-    assert plan["checks"][0][:2] == ["make", "check-fast"]
-    web_step = (
-        'WEB_TESTS="&web-tests=uv run --quiet --script scripts/web_build.py exec vitest run '
-        '--maxWorkers=2 ./src/audio/AudioVisualizer.test.tsx"'
-    )
-    assert web_step in plan["checks"][0]
-    assert "UNIT_TARGETS=tests/unit/heads/widget_fence_test.py" in plan["checks"][0]
+    assert plan["checks"][0] == [
+        sys.executable,
+        "scripts/mixed_scope.py",
+        "check-fast",
+        "--unit",
+        "tests/unit/heads/widget_fence_test.py",
+        "--web",
+        "web/src/audio/AudioVisualizer.test.tsx",
+    ]
     assert plan["checks"][1][2:] == ["integration", *packet["integration"]]
     assert plan["checks"][2][2:] == ["ios"]
     monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
@@ -199,7 +208,7 @@ def test_skipped_empty_or_wrong_file_integration_proof_is_rejected(tmp_path, cas
     report = tmp_path / "report.xml"
     report.write_text(f"<testsuites><testsuite>{cases}</testsuite></testsuites>")
     with pytest.raises(ValueError, match="empty, skipped or unsuccessful"):
-        mixed.integration_result(report, ["tests/integration/web_widget_test.py"])
+        mixed.pytest_result(report, ["tests/integration/web_widget_test.py"])
 
 
 def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report(monkeypatch):
@@ -244,8 +253,9 @@ def test_recipe_entrypoint_rejects_arbitrary_commands(args):
 
 def test_actual_make_recipe_preserves_checks_and_receives_only_selected_test_arguments(scope, monkeypatch, tmp_path):
     """Run Make with a recorder toolchain, never a test body or build preparation."""
-    _, changed, _ = scope
-    plan = scoped.mixed_push_plan(changed, "a" * 40)
+    import scoped_checks as recipe_scoped
+
+    monkeypatch.setattr(recipe_scoped, "ROOT", tmp_path)
     record = tmp_path / "commands.jsonl"
     executable = tmp_path / "uv"
     executable.write_text(
@@ -258,17 +268,44 @@ def test_actual_make_recipe_preserves_checks_and_receives_only_selected_test_arg
     monkeypatch.setenv("MIXED_COMMANDS_FILE", str(record))
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("WEB_TESTS", "wrong")
-    subprocess.run(plan["checks"][0], cwd=REPO, check=True, capture_output=True, text=True, timeout=10)
+    real_run = subprocess.run
+
+    def run(command, **kwargs):
+        result = real_run(command, cwd=REPO, **kwargs)
+        (tmp_path / "unit.xml").write_text(
+            '<testsuites><testcase classname="tests.unit.heads.widget_fence_test"/></testsuites>'
+        )
+        (tmp_path / "web.json").write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "testResults": [
+                        {
+                            "name": str(tmp_path / "web/src/audio/AudioVisualizer.test.tsx"),
+                            "assertionResults": [{"status": "passed"}],
+                        }
+                    ],
+                }
+            )
+        )
+        return result
+
+    monkeypatch.setattr(mixed.subprocess, "run", run)
+    mixed.check_fast(
+        ["--unit", "tests/unit/heads/widget_fence_test.py", "--web", "web/src/audio/AudioVisualizer.test.tsx"], tmp_path
+    )
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     assert "early-fast" in calls[0]
     steps = next(call for call in calls if "scripts/steps.py" in call)
     assert (
         "unit=uv run pytest tests/unit/heads/widget_fence_test.py "
+        f"--junitxml={tmp_path / 'unit.xml'} "
         "-m 'unit and not perf' -n auto -x -q --session-timeout=120" in steps
     )
     assert (
         "web-tests=uv run --quiet --script scripts/web_build.py exec vitest run "
-        "--maxWorkers=2 ./src/audio/AudioVisualizer.test.tsx" in steps
+        "--maxWorkers=2 ./src/audio/AudioVisualizer.test.tsx --reporter=default --reporter=json "
+        f"--outputFile.json={tmp_path / 'web.json'}" in steps
     )
     for name in (
         "format",
@@ -403,3 +440,188 @@ def test_full_supported_candidate_inventory_preserves_python_and_all_native_obli
         "full-hosted-validation",
         "managed-backend-check",
     }
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def test_body():\n    assert True\n",
+        "import pytest\n@pytest.mark.skip\ndef test_body():\n    pass\n",
+        "# no tests\n",
+    ],
+)
+def test_real_pytest_reports_require_executed_bodies_in_each_file(tmp_path, body):
+    target = tmp_path / "tests/unit/owned_test.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(body)
+    (target.parent / "other_test.py").write_text("def test_other():\n    assert True\n")
+    report = tmp_path / "report.xml"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-c",
+            "/dev/null",
+            "--rootdir",
+            str(tmp_path),
+            "--confcutdir",
+            str(tmp_path),
+            "tests/unit/owned_test.py",
+            "tests/unit/other_test.py",
+            "-q",
+            f"--junitxml={report}",
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": ""},
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0  # A passing sibling makes the empty/skipped owning file invisible to exit status.
+    expected = ["tests/unit/owned_test.py", "tests/unit/other_test.py"]
+    if "assert True" in body:
+        mixed.pytest_result(report, expected, allow_partial_skips=True)
+    else:
+        with pytest.raises(ValueError, match="empty, skipped or unsuccessful"):
+            mixed.pytest_result(report, expected, allow_partial_skips=True)
+
+
+@pytest.mark.parametrize(
+    "problem", [None, "all-skipped", "one-file-skipped", "empty", "failure", "wrong-file", "duplicate", "malformed"]
+)
+def test_vitest_requires_passing_bodies_for_each_exact_selected_file(tmp_path, problem):
+    paths = ["web/src/first.test.ts", "web/src/second.test.ts"]
+    data = {
+        "success": True,
+        "testResults": [{"name": str(tmp_path / path), "assertionResults": [{"status": "passed"}]} for path in paths],
+    }
+    if problem == "all-skipped":
+        for result in data["testResults"]:
+            result["assertionResults"] = [{"status": "pending"}]
+    elif problem == "one-file-skipped":
+        data["testResults"][1]["assertionResults"] = [{"status": "pending"}]
+    elif problem == "empty":
+        data["testResults"] = []
+    elif problem == "failure":
+        data["testResults"][0]["assertionResults"].append({"status": "failed"})
+    elif problem == "wrong-file":
+        data["testResults"][0]["name"] += ".other"
+    elif problem == "duplicate":
+        data["testResults"].append(data["testResults"][0])
+    elif problem == "malformed":
+        data = []
+    report = tmp_path / "vitest.json"
+    report.write_text(json.dumps(data))
+    if problem is None:
+        mixed.vitest_result(report, paths, tmp_path)
+    else:
+        with pytest.raises(ValueError, match="mixed Vitest"):
+            mixed.vitest_result(report, paths, tmp_path)
+
+
+@pytest.mark.parametrize("drift", ["base-ref", "changed-paths", "push-capture"])
+@pytest.mark.parametrize("after_final", [False, True])
+def test_fences_re_read_refs_diff_and_actual_push_input(scope, monkeypatch, capsys, drift, after_final):
+    _, changed, _ = scope
+    total = len(scoped.early_guard_commands(changed)) + 3
+    calls = []
+
+    def run(command, **_):
+        calls.append(command)
+        if len(calls) != (total if after_final else 1):
+            return
+        if drift == "base-ref":
+            monkeypatch.setattr(scoped, "resolve_base", lambda value: "b" * 40 if value == "HEAD" else "f" * 40)
+        elif drift == "changed-paths":
+            monkeypatch.setattr(scoped, "changed_paths", lambda mode, _: [] if mode == "fast" else [*changed, "new.py"])
+        else:
+            Path(os.environ["HZ_DEV_PUSH_REFS_FILE"]).write_text(
+                f"refs/heads/topic {'b' * 40} refs/heads/other {'e' * 40}\n"
+            )
+
+    monkeypatch.setattr(scoped, "run_check", run)
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert len(calls) == (total if after_final else 1)
+    assert "Local mixed checks passed" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "problem", ["missing", "outside-hook", "multi-ref", "non-head", "other-branch", "deletion", "tag"]
+)
+def test_mixed_execution_refuses_unbound_or_different_pushes(scope, monkeypatch, problem):
+    captured = Path(os.environ["HZ_DEV_PUSH_REFS_FILE"])
+    line = captured.read_text()
+    if problem == "missing":
+        monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE")
+    elif problem == "outside-hook":
+        monkeypatch.delenv("PREK_HOOK_STAGE")
+    elif problem == "multi-ref":
+        captured.write_text(line + line)
+    elif problem == "non-head":
+        captured.write_text(line.replace("b" * 40, "c" * 40))
+    elif problem == "other-branch":
+        captured.write_text(line.replace("refs/heads/topic", "refs/heads/other", 1))
+    elif problem == "deletion":
+        captured.write_text(f"(delete) {'0' * 40} refs/heads/topic {'e' * 40}\n")
+    else:
+        captured.write_text(line.replace("refs/heads/topic", "refs/tags/v1"))
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert calls == []
+
+
+def test_standalone_preview_cannot_authorize_an_actual_push(scope, monkeypatch, capsys):
+    monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE")
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push", "--show-mixed-push-plan"])
+    scoped.main()
+    assert json.loads(capsys.readouterr().out)["push"] is None
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+
+
+def test_preserved_push_input_is_bound_to_real_git_head_and_branch(tmp_path, monkeypatch):
+    """Use a disposable Git repository; no remote, actual hook or product state is touched."""
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=Example", "-c", "user.email=fixture@example.test", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+
+    git("init", "--initial-branch=topic")
+    (tmp_path / "source.txt").write_text("fixture\n")
+    git("add", "source.txt")
+    git("commit", "-m", "test(ci): create synthetic ref fixture")
+    head = git("rev-parse", "HEAD")
+    git("branch", "other")
+    captured = tmp_path / "captured.txt"
+    line = f"refs/heads/topic {head} refs/heads/topic {'0' * len(head)}\n"
+    captured.write_text(line)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(captured))
+    monkeypatch.setenv("PRE_COMMIT", "1")
+    monkeypatch.setenv("PREK_HOOK_STAGE", "pre-push")
+    assert scoped.push_binding(required=True)["local_oid"] == head
+    captured.write_text(line.replace("refs/heads/topic", "refs/heads/other", 1))
+    with pytest.raises(ValueError, match="checked HEAD branch"):
+        scoped.push_binding(required=True)
+    captured.write_text(line)
+    git("commit", "--allow-empty", "-m", "test(ci): move synthetic head")
+    with pytest.raises(ValueError, match="checked HEAD branch"):
+        scoped.push_binding(required=True)

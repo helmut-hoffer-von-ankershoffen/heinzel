@@ -28,6 +28,7 @@ def _without_host_gate(monkeypatch):
     monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
     monkeypatch.delenv("HZ_LOCAL_MIXED_SCOPE", raising=False)
     monkeypatch.delenv("HZ_LOCAL_MIXED_SCOPE_SHA256", raising=False)
+    monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE", raising=False)
 
 
 def test_mocked_dispatch_isolates_an_inherited_source_bound_packet(monkeypatch, tmp_path):

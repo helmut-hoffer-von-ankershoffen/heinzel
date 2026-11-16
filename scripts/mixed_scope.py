@@ -4,7 +4,9 @@ This inventory selects local checks, not release acceptance. Native fixtures tha
 need separate harnesses remain named pending obligations, even after local success.
 """
 
+import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -188,24 +190,98 @@ def ios_command(derived_data: Path) -> list[str]:
     ]
 
 
-def integration_result(report: Path, expected: list[str]) -> None:
-    """Reject empty or skipped required integration checks, even when pytest exits zero.
+def pytest_result(report: Path, expected: list[str], *, allow_partial_skips: bool = False) -> None:
+    """Require passing bodies in every selected file, even when pytest exits zero.
 
     Raises:
         ValueError: No executed cases or a skipped case prevents local proof.
     """
     root = ET.parse(report).getroot()  # noqa: S314 - report produced by this invocation of pytest
     cases = list(root.iter("testcase"))
-    names = {case.get("classname", "") for case in cases}
-    modules = {path.removesuffix(".py").replace("/", ".") for path in expected}
+    names = {case.get("classname", "") for case in cases if case.find("skipped") is None}
+    modules = {path.split("::", 1)[0].removesuffix(".py").replace("/", ".") for path in expected}
     missing = any(not any(name == module or name.startswith(module + ".") for name in names) for module in modules)
     if (
         missing
         or not cases
-        or any(case.find(tag) is not None for case in cases for tag in ("skipped", "failure", "error"))
+        or any(case.find(tag) is not None for case in cases for tag in ("failure", "error"))
+        or (not allow_partial_skips and any(case.find("skipped") is not None for case in cases))
     ):
-        msg = "required mixed integration checks were empty, skipped or unsuccessful"
+        msg = "required mixed pytest checks were empty, skipped or unsuccessful"
         raise ValueError(msg)
+
+
+def vitest_result(report: Path, expected: list[str], root: Path) -> None:
+    """Require a real passing test body from each selected Vitest file.
+
+    Raises:
+        ValueError: The report is empty, mismatched, failed, or contains only skipped bodies for a file.
+        TypeError: A file result does not have the expected report structure.
+    """
+    data = json.loads(report.read_text(encoding="utf-8"))
+    results = data.get("testResults") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or data.get("success") is not True or not isinstance(results, list) or not results:
+        msg = "required mixed Vitest results were empty or unsuccessful"
+        raise ValueError(msg)
+    actual = []
+    for result in results:
+        if not isinstance(result, dict) or not isinstance(result.get("assertionResults"), list):
+            msg = "invalid mixed Vitest file result"
+            raise TypeError(msg)
+        assertions = result.get("assertionResults", [])
+        if any(not isinstance(item, dict) or not isinstance(item.get("status"), str) for item in assertions):
+            msg = "invalid mixed Vitest assertion result"
+            raise ValueError(msg)
+        statuses = [item.get("status") for item in assertions]
+        name = result.get("name")
+        if (
+            not isinstance(name, str)
+            or "passed" not in statuses
+            or not set(statuses) <= {"passed", "pending", "todo", "skipped"}
+        ):
+            msg = "required mixed Vitest file has no passing bodies or contains a failure"
+            raise ValueError(msg)
+        actual.append(Path(name).resolve())
+    if len(actual) != len(set(actual)) or set(actual) != {root / path for path in expected}:
+        msg = "required mixed Vitest file inventory does not match the selection"
+        raise ValueError(msg)
+
+
+def check_fast(arguments: list[str], directory: Path) -> None:
+    """Keep the real Make guards and require fresh unit and Vitest result evidence.
+
+    Raises:
+        ValueError: The selected operands are not safe bounded unit/web test files.
+    """
+    from scoped_checks import HOSTED_ONLY_TESTS, LOCAL_SELECTOR, ROOT, python_overrides, web_test_step  # noqa: PLC0415
+
+    if not arguments or arguments[0] != "--unit" or arguments.count("--web") != 1:
+        msg = "check-fast requires unit and web selections"
+        raise ValueError(msg)
+    split = arguments.index("--web")
+    unit, web = arguments[1:split], arguments[split + 1 :]
+    if (
+        not unit
+        or not web
+        or len(unit) > MAX_SELECTION
+        or len(web) > MAX_SELECTION
+        or len(set(unit)) != len(unit)
+        or len(set(web)) != len(web)
+        or any(not LOCAL_SELECTOR.fullmatch(item) or item.split("::", 1)[0] in HOSTED_ONLY_TESTS for item in unit)
+    ):
+        msg = "check-fast requires bounded permitted unit and web selections"
+        raise ValueError(msg)
+    files(ROOT, sorted({item.split("::", 1)[0] for item in unit}))
+    unit_report, web_report = directory / "unit.xml", directory / "web.json"
+    overrides = python_overrides([], unit)
+    overrides[0] = (
+        f'WEB_TESTS="{web_test_step(" ".join(web))} --reporter=default --reporter=json '
+        f'--outputFile.json={shlex.quote(str(web_report))}"'
+    )
+    overrides[-1] += f" --junitxml={shlex.quote(str(unit_report))}"
+    subprocess.run(["make", "check-fast", *overrides], check=True, timeout=1800)  # noqa: S603, S607
+    pytest_result(unit_report, unit, allow_partial_skips=True)
+    vitest_result(web_report, web, ROOT)
 
 
 def run_recipe(arguments: list[str]) -> None:
@@ -214,6 +290,10 @@ def run_recipe(arguments: list[str]) -> None:
     Raises:
         ValueError: The requested recipe or its test operands are not supported.
     """
+    if arguments[:1] == ["check-fast"]:
+        with tempfile.TemporaryDirectory(prefix="heinzel-mixed-check-") as scratch:
+            check_fast(arguments[1:], Path(scratch))
+        return
     if arguments != ["ios"] and (
         not arguments[1:]
         or arguments[0] != "integration"
@@ -244,7 +324,7 @@ def run_recipe(arguments: list[str]) -> None:
                 check=True,
                 timeout=210,
             )
-            integration_result(report, arguments[1:])
+            pytest_result(report, arguments[1:])
 
 
 if __name__ == "__main__":
