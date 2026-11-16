@@ -1606,7 +1606,24 @@ def run_update(case, label, *, previous=None):
     args = ["system", "update", "--json"] + (
         ["--source", str(target["wheel"])] if target["mode"] == "candidate" else []
     )
-    _, out, err = case.run([str(case.bin / "hz"), *args], label, PHASE_DEADLINE * 2)
+    command = [str(case.bin / "hz"), *args]
+    trace = previous == LEGACY_BRIDGE_VERSION and case.ctx.get("legacy_discovery_trace")
+    if trace:
+        check(target["mode"] == "published", "Legacy trace requires the published update")
+        check(case.notes.get("legacy_bridge_verified") is True, "Legacy trace requires the verified bridge")
+        command = [
+            str(case.prefix / "bin/python"), "-I", "-S", "-B", "-X",
+            f"pycache_prefix={case.root / 'trace-pycache'}",
+            str(HERE / "legacy_discovery_trace.py"), str(case.root),
+        ]
+    try:
+        _, out, err = case.run(command, label, PHASE_DEADLINE * 2)
+    finally:
+        if trace:
+            try:
+                case.notes["legacy_discovery_trace"] = trace["read_sidecar"](case.root)
+            except (OSError, ValueError, KeyError, TypeError):
+                case.notes["legacy_discovery_trace"] = {"kind": "instrumented-non-acceptance", "unavailable": True}
     result = json.loads(out)
     if previous == LEGACY_BRIDGE_VERSION:
         # Retain bounded, non-secret facts even when the following acceptance check fails.
@@ -1770,6 +1787,15 @@ def verify_legacy_bridge(case, receipt_profile):
     case.expect_version = LEGACY_BRIDGE_VERSION
     state = verify_state(case, "bridge")
     record_legacy_bridge_diagnostics(case)
+    if case.ctx.get("legacy_discovery_trace"):
+        entry_points = f"heinzel-{LEGACY_BRIDGE_VERSION}.dist-info/entry_points.txt"
+        entry = site_packages(case.prefix) / entry_points
+        with zipfile.ZipFile(accepted / LEGACY_BRIDGE_FILENAME) as wheel:
+            check(
+                not entry.is_symlink() and entry.read_bytes() == wheel.read(entry_points),
+                "Bridge console entry-point metadata differs from the published wheel",
+            )
+        case.notes["legacy_bridge_verified"] = True
     return {
         "version": LEGACY_BRIDGE_VERSION,
         "wheel_sha256": LEGACY_BRIDGE_SHA256,
@@ -2598,7 +2624,12 @@ def verdict(args, cases):
         if len(states) != len(CASES):
             return CANDIDATE_VERDICTS["PARTIAL"]
         return CANDIDATE_VERDICTS["EXCEPT" if any(s in OLD_STATUSES for s in states) else "OK"]
-    if args.diagnostic_explicit_profile or args.bootstrap != "literal" or args.candidate_wheel:
+    if (
+        getattr(args, "diagnostic_legacy_discovery", False)
+        or args.diagnostic_explicit_profile
+        or args.bootstrap != "literal"
+        or args.candidate_wheel
+    ):
         return "NOT_ACCEPTANCE_DIAGNOSTIC"
     if "FAIL" in states:
         return "REJECTED"
@@ -2875,7 +2906,18 @@ def parse_args(argv=None):
         help="NOT ACCEPTANCE: set HZ_APP_PROFILE to the published profile so a release whose discovery fails can "
         "still exercise later checks. Forces the verdict NOT_ACCEPTANCE_DIAGNOSTIC.",
     )
+    parser.add_argument(
+        "--diagnostic-legacy-discovery",
+        action="store_true",
+        help="Trace the verified published case 6 bridge update on a disposable hosted macOS runner. Never acceptance.",
+    )
     args = parser.parse_args(argv)
+    if args.diagnostic_legacy_discovery and (
+        args.case != ["6"] or args.shard or args.candidate_wheel or args.candidate_wheel_url
+        or args.bootstrap != "literal" or args.diagnostic_explicit_profile
+        or args.from_app_version != LEGACY_BRIDGE_START
+    ):
+        parser.error("legacy discovery tracing is only for published case 6 from the public bridge start")
     given = [bool(args.candidate_wheel_url), bool(args.candidate_wheel_sha256), bool(args.candidate_profile_url)]
     if any(given) and not all(given):
         parser.error("--candidate-wheel-url, --candidate-wheel-sha256 and --candidate-profile-url go together")
@@ -2929,6 +2971,10 @@ def check_release_ui(arguments):
 def main():
     args = parse_args()
     require_isolated_python()
+    legacy_trace = None
+    if args.diagnostic_legacy_discovery:
+        legacy_trace = runpy.run_path(str(HERE / "legacy_discovery_trace.py"))
+        legacy_trace["require_hosted"](os.environ, sys.platform)
     if sys.platform not in ("darwin", "linux"):
         sys.exit("This harness targets macOS and Linux.")
     os.umask(0o077)
@@ -2945,6 +2991,8 @@ def main():
 
     if release_run:
         mode = "candidate_release"
+    elif legacy_trace:
+        mode = "diagnostic_legacy_discovery"
     elif args.diagnostic_explicit_profile:
         mode = "diagnostic_explicit_profile"
     else:
@@ -3043,6 +3091,7 @@ def main():
         "candidate_dir": candidate["dir"] if candidate else None,
         "from_app": from_app,
         "update_target": target,
+        "legacy_discovery_trace": legacy_trace,
         "bootstrap": bootstrap_spec,
         "public": public,
         "Guarded": guardian["Guarded"],
