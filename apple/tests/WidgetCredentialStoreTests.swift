@@ -324,6 +324,39 @@ private final class NotificationCapture: @unchecked Sendable {
         let pairCancelJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
             from: Data(contentsOf: pairCancelURL.appendingPathExtension("enrollment-pending")))
         precondition(pairCancelJournal.cancelled == true && pairCancelJournal.pairingFingerprint == boundFingerprint)
+        precondition(ActivityCatalog.planCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: String(repeating: "8", count: 64), observedStatus: fixtureStatus) == nil)
+        guard case .revoke(let recoveryRequest) = ActivityCatalog.planCancelledRecovery(url: pairCancelURL,
+            expected: pairCancelAttempt, fingerprint: boundFingerprint, observedStatus: fixtureStatus) else { fatalError() }
+        let recoveryObject = try JSONSerialization.jsonObject(with: recoveryRequest) as! [String: Any]
+        precondition(recoveryObject["operation"] as? String == "revoke" && recoveryObject["commitment"] is NSNull)
+        precondition(recoveryObject["revision"] as? String == fixtureRevision)
+        guard case .revoke(let recoveryReplay) = ActivityCatalog.planCancelledRecovery(url: pairCancelURL,
+            expected: pairCancelAttempt, fingerprint: boundFingerprint, observedStatus: fixtureStatus) else { fatalError() }
+        precondition(recoveryReplay == recoveryRequest)
+        for issueWasLast in [true, false] {
+            let recoveryURL = directory.appendingPathComponent("recovery-status-\(issueWasLast).sqlite")
+            let recoveryKeychain = FakeKeychain()
+            let recoveryStore = WidgetCredentialStore(catalogURL: recoveryURL, keychain: recoveryKeychain)
+            let recoveryEnrollment = WidgetFencedEnrollment(store: recoveryStore)
+            let recoveryInitial = ActivityCatalog.activate(url: recoveryURL, endpoint: pending.endpoint)!
+            let recoveryAttempt = recoveryEnrollment.prepare(expected: recoveryInitial, pairingFingerprint: boundFingerprint)!
+            let recoveryWire = recoveryAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+            guard case .ready = recoveryEnrollment.bind(fixtureStatus, reservation: recoveryAttempt) else { fatalError() }
+            precondition(recoveryEnrollment.cancel(recoveryAttempt).complete)
+            let advanced = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch,
+                "revision": String(repeating: "4", count: 32), "workspace_id": credential.workspaceID,
+                "last_attempt": issueWasLast ? recoveryWire : String(repeating: "5", count: 32)])
+            let decision = ActivityCatalog.planCancelledRecovery(url: recoveryURL, expected: recoveryAttempt,
+                fingerprint: boundFingerprint, observedStatus: advanced)
+            if issueWasLast {
+                guard case .revoke(let request) = decision else { fatalError() }
+                let object = try JSONSerialization.jsonObject(with: request) as! [String: Any]
+                precondition(object["revision"] as? String == String(repeating: "4", count: 32))
+            } else {
+                guard case .superseded = decision else { fatalError() }
+            }
+        }
         let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
         let lockedCancelKeychain = FakeKeychain()
         let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)

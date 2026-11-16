@@ -70,6 +70,8 @@ final class ActivityCatalog {
         var activationID: String? = nil
         var pairingFingerprint: String? = nil
         var cancelled: Bool? = nil
+        var recoveryStatus: Data? = nil
+        var recoveryRequest: Data? = nil
     }
 
     private struct JournalRequest: Decodable {
@@ -87,6 +89,21 @@ final class ActivityCatalog {
         let operation: String
         let revision: String
         let expires_at: String
+    }
+
+    private struct JournalStatus: Decodable {
+        let epoch: String
+        let workspace_id: String
+        let revision: String
+        let last_attempt: String?
+    }
+
+    private struct JournalRevoke: Decodable {
+        let epoch: String
+        let revision: String
+        let attempt: String
+        let operation: String
+        let commitment: String?
     }
 
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
@@ -121,6 +138,23 @@ final class ActivityCatalog {
                 }
             case .legacyUnknown: return nil
             }
+            if let statusData = journal.recoveryStatus {
+                guard journal.cancelled == true, journal.phase == .armed, journal.pairingFingerprint != nil,
+                      statusData.count <= 4096, let status = try? JSONDecoder().decode(JournalStatus.self, from: statusData),
+                      let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
+                      status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                      status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                      status.last_attempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true else { return nil }
+                if let revokeData = journal.recoveryRequest {
+                    guard revokeData.count <= 4096, let revoke = try? JSONDecoder().decode(JournalRevoke.self, from: revokeData),
+                          revoke.epoch == issue.epoch, revoke.revision == status.revision,
+                          revoke.attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil, revoke.attempt != issue.attempt,
+                          revoke.operation == "revoke", revoke.commitment == nil,
+                          status.revision == issue.revision || status.last_attempt == issue.attempt else { return nil }
+                } else {
+                    guard status.revision != issue.revision, let last = status.last_attempt, last != issue.attempt else { return nil }
+                }
+            } else if journal.recoveryRequest != nil { return nil }
             return journal
         }
         guard let reservation = try? JSONDecoder().decode(Enrollment.self, from: data) else { return nil }
@@ -388,6 +422,54 @@ final class ActivityCatalog {
             if journal.phase == .receipted, let receipt = journal.receipt { return .receipt(receipt) }
             guard journal.phase == .armed else { return nil }
             return .issue(request)
+        }
+    }
+
+    enum EnrollmentRecoveryPlan {
+        case revoke(Data)
+        case superseded
+    }
+
+    /// Only a cancelled, pairing-bound reservation may plan remote cleanup.
+    /// The observed status and exact conditional revoke are synced before use.
+    static func planCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String,
+                                      observedStatus: Data) -> EnrollmentRecoveryPlan? {
+        guard observedStatus.count <= 4096,
+              let status = try? JSONDecoder().decode(JournalStatus.self, from: observedStatus) else { return nil }
+        return withWriterLock(url: url, failure: nil) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), var journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.cancelled == true, journal.phase == .armed,
+                  journal.pairingFingerprint == fingerprint, fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil,
+                  let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
+                  status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                  status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                  status.last_attempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: data),
+                  authority.revoked == true, authority.cleanup == expected.previous else { return nil }
+            if let existing = journal.recoveryRequest {
+                guard writeJournal(marker, markerURL) else { return nil }
+                return .revoke(existing)
+            }
+            if journal.recoveryStatus != nil {
+                guard writeJournal(marker, markerURL) else { return nil }
+                return .superseded
+            }
+            let isSuperseded = status.revision != issue.revision && status.last_attempt != nil && status.last_attempt != issue.attempt
+            guard isSuperseded || status.revision == issue.revision || status.last_attempt == issue.attempt else { return nil }
+            journal.recoveryStatus = observedStatus
+            if !isSuperseded {
+                let attempt = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+                let payload: [String: Any] = ["epoch": issue.epoch, "revision": status.revision,
+                    "attempt": attempt, "operation": "revoke", "commitment": NSNull()]
+                guard let request = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
+                journal.recoveryRequest = request
+            }
+            journal.revision = UUID().uuidString
+            guard let encoded = try? JSONEncoder().encode(journal), enrollmentJournal(encoded) == journal,
+                  writeJournal(encoded, markerURL) else { return nil }
+            return journal.recoveryRequest.map(EnrollmentRecoveryPlan.revoke) ?? .superseded
         }
     }
 

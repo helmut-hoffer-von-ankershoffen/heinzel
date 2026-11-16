@@ -70,6 +70,15 @@ globalThis.fetch = async (url, opts) => {
   assert.deepEqual(await run(origin, 'mutate', revokePayload), {state:'ok', body:JSON.stringify(revokeReceipt)});
   chunks = [Buffer.from(JSON.stringify(receipt))];
   assert.equal((await run(origin, 'mutate', revokePayload)).state, 'unavailable');
+  chunks = [Buffer.from(JSON.stringify({...revokeReceipt, expires_at:'2026-11-16T04:00:00Z'}))];
+  assert.equal((await run(origin, 'mutate', revokePayload)).state, 'unavailable');
+  const missingExpiry = {...revokeReceipt}; delete missingExpiry.expires_at;
+  chunks = [Buffer.from(JSON.stringify(missingExpiry))];
+  assert.equal((await run(origin, 'mutate', revokePayload)).state, 'unavailable');
+  chunks = [Buffer.from(JSON.stringify(revokeReceipt))];
+  assert.equal((await run(origin, 'mutate', payload)).state, 'unavailable');
+  chunks = [Buffer.from(JSON.stringify({...negotiated, last_attempt:'not-hex'}))];
+  assert.equal((await run(origin, 'negotiate', '')).state, 'unavailable');
   chunks = [Buffer.alloc(2048, 65), Buffer.alloc(2049, 65)];
   result = await run(origin, 'mutate', payload);
   assert.equal(result.state, 'unavailable'); assert(cancelled);
