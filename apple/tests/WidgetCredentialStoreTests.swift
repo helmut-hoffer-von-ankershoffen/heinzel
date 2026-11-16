@@ -297,18 +297,28 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(refusedDelete.revoked && !refusedDelete.complete && lockedCancelKeychain.pending[lockedCancelWire] != nil)
         var deletionCalled = false
         let failedSync = ActivityCatalog.invalidate(url: lockedCancelURL, expected: lockedCancelInitial,
-            recovery: lockedCancelAttempt, journalSync: { _, _ in false }) {
+            recovery: lockedCancelAttempt, journalSync: { _, _ in false }, recoveryCheck: { _ in true }) {
                 deletionCalled = true
                 return lockedCancelKeychain.deletePending(lockedCancelWire)
             }
         precondition(failedSync.revoked && !failedSync.complete && !deletionCalled)
         precondition(lockedCancelKeychain.pending[lockedCancelWire] != nil)
+        let syncedControl = ActivityCatalog.invalidate(url: lockedCancelURL, expected: lockedCancelInitial,
+            recovery: lockedCancelAttempt, journalSync: { _, _ in true }, recoveryCheck: { _ in true }) {
+                deletionCalled = true
+                return false
+            }
+        precondition(syncedControl.revoked && !syncedControl.complete && deletionCalled)
         lockedCancelKeychain.canDeletePending = true
+        let interruptedActive = WidgetCredential(endpoint: credential.endpoint, workspaceID: credential.workspaceID,
+            generation: UUID().uuidString, token: credential.token, expiresAt: credential.expiresAt,
+            pendingAttempt: lockedCancelWire)
+        lockedCancelKeychain.data = try JSONEncoder().encode(interruptedActive)
         let lockedMarkerURL = lockedCancelURL.appendingPathExtension("enrollment-pending")
         let savedMarker = try Data(contentsOf: lockedMarkerURL)
         try Data("damaged".utf8).write(to: lockedMarkerURL)
         precondition(!lockedCancelStore.invalidate(lockedCancelInitial).complete)
-        precondition(lockedCancelKeychain.pending[lockedCancelWire] != nil)
+        precondition(lockedCancelKeychain.pending[lockedCancelWire] != nil && lockedCancelKeychain.data != nil)
         let realJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self, from: savedMarker)
         var changedRequest = try JSONSerialization.jsonObject(with: lockedCancelRequest) as! [String: Any]
         changedRequest["commitment"] = String(repeating: "0", count: 64)
