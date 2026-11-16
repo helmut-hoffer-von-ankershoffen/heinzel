@@ -464,6 +464,60 @@ private final class NotificationCapture: @unchecked Sendable {
         let expiredPin = ActivityCatalog.activation(url: expiredURL)!
         precondition(ActivityCatalog.pendingEnrollment(url: expiredURL) == nil && expiredPin.workspaceID == credential.workspaceID &&
                      expiredPin.credentialGeneration == nil && expiredStore.capture(now: now) == nil)
+        for logoutBeforeExpiry in [true, false] {
+            let logoutURL = directory.appendingPathComponent("expired-logout-\(logoutBeforeExpiry).sqlite")
+            let logoutKeychain = FakeKeychain()
+            let logoutStore = WidgetCredentialStore(catalogURL: logoutURL, keychain: logoutKeychain)
+            let logoutEnrollment = WidgetFencedEnrollment(store: logoutStore)
+            let logoutInitial = ActivityCatalog.activate(url: logoutURL, endpoint: pending.endpoint)!
+            let logoutAttempt = logoutEnrollment.prepare(expected: logoutInitial)!
+            let logoutWire = logoutAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+            guard case .ready(let logoutRequest) = logoutEnrollment.bind(fixtureStatus, reservation: logoutAttempt) else { fatalError() }
+            let logoutPending = try JSONSerialization.jsonObject(with: logoutKeychain.pending[logoutWire]!) as! [String: Any]
+            let logoutReceipt = fixtureReceipt(logoutAttempt)
+            _ = ActivityCatalog.recordEnrollmentReceipt(url: logoutURL, expected: logoutAttempt, workspaceID: credential.workspaceID,
+                request: logoutRequest, receipt: logoutReceipt, generation: logoutPending["generation"] as! String)!
+            if !logoutBeforeExpiry {
+                logoutKeychain.canDeletePending = false
+                let interrupted = logoutEnrollment.finishExpiredReceipt(logoutAttempt, clock: { now.addingTimeInterval(3601) })!
+                precondition(interrupted.revoked && !interrupted.complete)
+                logoutKeychain.canDeletePending = true
+            }
+            precondition(logoutStore.clearCurrent().revoked)
+            let notificationsBeforeRetry = observed.ids.count
+            let staleExpiry = logoutEnrollment.finishExpiredReceipt(logoutAttempt, clock: { now.addingTimeInterval(3601) })!
+            precondition(staleExpiry.complete && ActivityCatalog.activation(url: logoutURL) == nil)
+            precondition(ActivityCatalog.pendingEnrollment(url: logoutURL) == nil)
+            precondition(observed.ids.count == notificationsBeforeRetry)
+        }
+        for publishInstalled in [true, false] {
+            let boundaryURL = directory.appendingPathComponent("expired-boundary-\(publishInstalled).sqlite")
+            let boundaryKeychain = FakeKeychain()
+            let boundaryStore = WidgetCredentialStore(catalogURL: boundaryURL, keychain: boundaryKeychain)
+            let boundaryEnrollment = WidgetFencedEnrollment(store: boundaryStore)
+            let boundaryInitial = ActivityCatalog.activate(url: boundaryURL, endpoint: pending.endpoint)!
+            let boundaryAttempt = boundaryEnrollment.prepare(expected: boundaryInitial)!
+            let boundaryWire = boundaryAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+            guard case .ready(let boundaryRequest) = boundaryEnrollment.bind(fixtureStatus, reservation: boundaryAttempt) else { fatalError() }
+            let boundaryPending = try JSONSerialization.jsonObject(with: boundaryKeychain.pending[boundaryWire]!) as! [String: Any]
+            let boundaryReceipt = fixtureReceipt(boundaryAttempt)
+            let boundaryPlan = ActivityCatalog.recordEnrollmentReceipt(url: boundaryURL, expected: boundaryAttempt,
+                workspaceID: credential.workspaceID, request: boundaryRequest, receipt: boundaryReceipt,
+                generation: boundaryPending["generation"] as! String)!
+            if publishInstalled {
+                precondition(ActivityCatalog.installReceipted(url: boundaryURL, expected: boundaryAttempt, receipt: boundaryPlan,
+                    install: { true }, authorize: { true }, cleanup: { false }) != nil)
+            } else {
+                let interrupted = ActivityCatalog.retireExpiredReceipt(url: boundaryURL, expected: boundaryAttempt,
+                    verify: { _ in true }, retireMarker: { _ in false }, cleanup: { true })
+                precondition(interrupted.revoked && !interrupted.complete)
+            }
+            precondition(boundaryStore.clearCurrent().revoked)
+            let before = observed.ids.count
+            let finished = boundaryEnrollment.finishExpiredReceipt(boundaryAttempt, clock: { now.addingTimeInterval(3601) })!
+            precondition(finished.complete && ActivityCatalog.activation(url: boundaryURL) == nil)
+            precondition(ActivityCatalog.pendingEnrollment(url: boundaryURL) == nil && observed.ids.count == before)
+        }
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)

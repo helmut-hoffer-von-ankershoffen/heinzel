@@ -32,6 +32,7 @@ final class ActivityCatalog {
         var revoked: Bool? = nil
         var cleanup: Activation? = nil
         var enrollment: Enrollment? = nil
+        var expirationRetirement: String? = nil
     }
 
     /// Non-secret authority shared by the app and extension. Secrets stay in Keychain.
@@ -420,6 +421,7 @@ final class ActivityCatalog {
     /// only the matching reservation after durable revocation and owned cleanup.
     static func retireExpiredReceipt(url: URL, expected: Enrollment,
                                      verify: (EnrollmentJournal) -> Bool,
+                                     retireMarker: (URL) -> Bool = ActivityCatalog.removeJournal,
                                      cleanup: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             let markerURL = enrollmentURL(for: url)
@@ -431,11 +433,22 @@ final class ActivityCatalog {
                 return ClearResult(revoked: false, purged: false)
             }
             let pinned = Activation(id: id, endpoint: expected.previous.endpoint, workspaceID: workspace, credentialGeneration: nil)
+            let installed = Activation(id: id, endpoint: expected.previous.endpoint, workspaceID: workspace,
+                                       credentialGeneration: journal.credentialGeneration)
+            if authority.revoked == true && authority.expirationRetirement != expected.id &&
+                [expected.previous, pinned, installed].contains(where: { $0 == authority.cleanup }) {
+                // Explicit logout may finish owned cleanup but can never restore authorization.
+                guard writeJournal(data, authorityURL(for: url)), writeJournal(marker, markerURL),
+                      verify(journal), cleanup(), ActivityCatalog(url: url)?.purge() == true,
+                      retireMarker(markerURL) else { return ClearResult(revoked: true, purged: false) }
+                return ClearResult(revoked: true, purged: true)
+            }
             if authority.enrollment == expected && authority.activation == expected.previous && authority.revoked != true {
-                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
+                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true,
+                                          cleanup: expected.previous, expirationRetirement: expected.id)
                 guard let encoded = try? JSONEncoder().encode(tombstone),
                       writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
-            } else if !(authority.revoked == true && authority.cleanup == expected.previous) &&
+            } else if !(authority.revoked == true && authority.cleanup == expected.previous && authority.expirationRetirement == expected.id) &&
                         !(authority.activation == pinned && authority.enrollment == nil && authority.revoked != true) {
                 return ClearResult(revoked: false, purged: false, stale: true)
             } else if !writeJournal(data, authorityURL(for: url)) {
@@ -447,7 +460,7 @@ final class ActivityCatalog {
             }
             let pinnedAuthority = Authority(scope: "", generation: UUID().uuidString, activation: pinned)
             guard let pinnedData = try? JSONEncoder().encode(pinnedAuthority),
-                  writeJournal(pinnedData, authorityURL(for: url)), removeJournal(markerURL) else {
+                  writeJournal(pinnedData, authorityURL(for: url)), retireMarker(markerURL) else {
                 return ClearResult(revoked: true, purged: false)
             }
             return ClearResult(revoked: true, purged: true)
@@ -589,6 +602,11 @@ final class ActivityCatalog {
                       writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
             } else if current.revoked != true || current.cleanup != expected {
                 return ClearResult(revoked: false, purged: false, stale: true)
+            } else if current.expirationRetirement != nil {
+                // A new clear request supersedes any automatic expiry recovery.
+                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected)
+                guard let encoded = try? JSONEncoder().encode(tombstone),
+                      writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: true, purged: false) }
             }
             let markerURL = enrollmentURL(for: url)
             var markerInfo = stat()
