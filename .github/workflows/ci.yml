@@ -869,7 +869,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 0b1557f64293f025bf71962381c4291f0cf6eb3b # heinzel-plugins main through #116 (mobile chat fixture)
+          ref: 79c8e7bb1898cf4a603268fa3c0ae64363a8d7cf # heinzel-plugins main through #117 (Resource browser fixture)
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -906,7 +906,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 0b1557f64293f025bf71962381c4291f0cf6eb3b # heinzel-plugins main through #116 (mobile chat fixture)
+          ref: 79c8e7bb1898cf4a603268fa3c0ae64363a8d7cf # heinzel-plugins main through #117 (Resource browser fixture)
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
