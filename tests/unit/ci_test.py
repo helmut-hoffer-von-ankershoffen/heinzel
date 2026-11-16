@@ -2077,6 +2077,7 @@ def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
         capture_output=True,
         text=True,
         check=False,
+        timeout=10,
     )
     assert (result.returncode == 0) == (job is None)
     if job is not None:
