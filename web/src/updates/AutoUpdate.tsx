@@ -8,6 +8,7 @@ import { t } from "@/i18n";
 import { useAutoUpdateSetting } from "./AutoUpdateToggle";
 import { type AutoUpdateStatus, call, KEY, useAutoUpdateStatus } from "./autoUpdateApi";
 import { updateTransport } from "./controller";
+import { claimFrontendReload, frontendSkew } from "./frontendSkew";
 import { reloadHeld } from "./work";
 
 export type { AutoUpdateStatus } from "./autoUpdateApi";
@@ -39,9 +40,14 @@ export function AutoUpdate() {
     void client.invalidateQueries({ queryKey: KEY, exact: true });
   }, [client, on]);
   const status = query.data;
+  const statusVersion = status?.version;
+  const statusPhase = status?.phase;
+  const latestStatus = useRef({ version: statusVersion, phase: statusPhase });
+  latestStatus.current = { version: statusVersion, phase: statusPhase };
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const loaded = useRef<string | null>(null);
+  const [skewBuild, setSkewBuild] = useState<{ version: string; identity: string } | null>(null);
   // A new version is running, but unsent text or a running turn holds the reload until the composer is idle.
   const [reloadWaiting, setReloadWaiting] = useState(false);
   useEffect(() => {
@@ -59,21 +65,68 @@ export function AutoUpdate() {
     }
   }, [status]);
   useEffect(() => {
-    if (!reloadWaiting) return;
+    setSkewBuild(null);
+    if (!statusVersion || statusPhase === "applying") return;
+    const controller = new AbortController();
+    let retry: number | undefined;
+    const check = () => {
+      void frontendSkew(statusVersion, controller.signal)
+        .then((identity) => {
+          if (
+            identity &&
+            !controller.signal.aborted &&
+            latestStatus.current.version === statusVersion &&
+            latestStatus.current.phase === statusPhase
+          )
+            setSkewBuild({ version: statusVersion, identity });
+        })
+        .catch(() => {
+          // Older or temporarily unavailable servers never trigger reload; retry without overlapping probes.
+          if (!controller.signal.aborted) retry = window.setTimeout(check, 30_000);
+        });
+    };
+    check();
+    return () => {
+      controller.abort();
+      window.clearTimeout(retry);
+    };
+  }, [statusVersion, statusPhase]);
+  useEffect(() => {
+    const skew = skewBuild?.version === statusVersion ? skewBuild : null;
+    if (!reloadWaiting && (!skew || statusPhase === "applying")) return;
+    let cancelled = false,
+      inFlight = false,
+      finished = false;
     const reload = () => {
-      if (reloadHeld()) return false;
+      if (cancelled || inFlight || finished || reloadHeld()) return;
+      inFlight = true;
       void updateTransport
         .clean()
         .catch(() => undefined)
-        .finally(() => updateTransport.reload());
-      return true;
+        .then(() => {
+          inFlight = false;
+          if (cancelled || reloadHeld()) return;
+          if (
+            !reloadWaiting &&
+            skew &&
+            (latestStatus.current.version !== skew.version || latestStatus.current.phase === "applying")
+          )
+            return;
+          if (!reloadWaiting && skew && !claimFrontendReload(skew.identity)) {
+            setSkewBuild(null);
+            return;
+          }
+          finished = true;
+          updateTransport.reload();
+        });
     };
-    if (reload()) return;
-    const wait = window.setInterval(() => {
-      if (reload()) window.clearInterval(wait);
-    }, 1000);
-    return () => window.clearInterval(wait);
-  }, [reloadWaiting]);
+    reload();
+    const wait = window.setInterval(reload, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(wait);
+    };
+  }, [reloadWaiting, skewBuild, statusVersion, statusPhase]);
   const act = async (path: "/postpone" | "/dismiss") => {
     setBusy(true);
     try {
@@ -85,7 +138,7 @@ export function AutoUpdate() {
     }
   };
   if (!status) return null;
-  if (reloadWaiting && reloadHeld())
+  if ((reloadWaiting || skewBuild?.version === statusVersion) && reloadHeld())
     return (
       <output className="pointer-events-auto fixed right-4 bottom-[76px] z-[calc(var(--layer-modal,60)_+_10)] block w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] rounded-xl border border-foreground/20 bg-background p-4 text-sm text-foreground shadow-lg">
         <p>{t("autoUpdate.reloadLater")}</p>
