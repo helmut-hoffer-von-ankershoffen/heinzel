@@ -88,9 +88,11 @@ try {
     .first()
     .waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(shots, "plugin-models-6-reply.png") });
-  const streamed = await page.evaluate(() => window.__pluginModelStreamSamples.some((early, index, samples) =>
-    samples.slice(index + 1).some((later) => later.length > early.length && later.startsWith(early)),
-  ));
+  const streamed = await page.evaluate(() =>
+    window.__pluginModelStreamSamples.some((early, index, samples) =>
+      samples.slice(index + 1).some((later) => later.length > early.length && later.startsWith(early)),
+    ),
+  );
   console.log(
     JSON.stringify({ picked: true, unavailableMarked: true, answered: answer.startsWith("Answered: "), streamed }),
   );
