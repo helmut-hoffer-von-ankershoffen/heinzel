@@ -11,7 +11,7 @@ import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneTitle } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
 import { useOperationRun } from "@/lib/operationRun";
@@ -646,16 +646,16 @@ function Layout() {
           }}
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div className="flex shrink-0 justify-end px-2">
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label={t("op.close")}
-                className="size-11"
-                onClick={closeNavigation}
+            <div className="shrink-0 px-2">
+              <PaneTitle
+                chrome={
+                  <PaneAction ghost icon={X} className="size-11" onClick={closeNavigation}>
+                    {t("op.close")}
+                  </PaneAction>
+                }
               >
-                <X aria-hidden />
-              </Button>
+                <span className="sr-only">{t("nav.label")}</span>
+              </PaneTitle>
             </div>
             <div className="min-h-0 flex-1">
               {drawerOpen && (

@@ -82,8 +82,10 @@ def test_only_owner_only_rows_may_stay_open(script):
 
 def test_the_fake_clis_go_first_on_path_and_sign_in_into_the_throwaway_home(script, tmp_path):
     import subprocess
+    import sys
 
-    env = script.with_fakes(script.isolated_env(tmp_path, {"PATH": "/usr/bin:/bin"}))
+    # Resolve fake CLIs with the test interpreter instead of the macOS system Python launcher.
+    env = script.with_fakes(script.isolated_env(tmp_path, {"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin"}))
     assert env["PATH"].startswith(str(script.FAKE_CLIS))
     for command in script.FAKE_SIGN_INS:
         subprocess.run(
