@@ -54,6 +54,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+TESTS_PREFIX = "tests/"
+MIXED_SCOPE_SCRIPT = "scripts/mixed_scope.py"
+E2E_DIRECTORY = "tests/e2e"
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
     "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
@@ -205,7 +208,7 @@ def docs_steps(tooling: list[str]) -> list[str]:
     files = " ".join(tooling)
     own = sorted(
         {
-            *[path for path in tooling if path.startswith("tests/")],
+            *[path for path in tooling if path.startswith(TESTS_PREFIX)],
             *(str(path.relative_to(ROOT)) for path in ROOT.glob("tests/unit/site_*_test.py")),
         }
     )
@@ -362,7 +365,7 @@ def mixed_push_plan(changed: list[str], base: str) -> dict | None:
 
     python = validate(packet, changed, ROOT)
     selected, hosted = _local_scope_selection(packet, python)
-    recipe = [sys.executable, "scripts/mixed_scope.py"]
+    recipe = [sys.executable, MIXED_SCOPE_SCRIPT]
     checks = [[*recipe, "check-fast", "--unit", *selected, "--web", *packet["web"]]]
     if packet["integration"]:
         checks.append([*recipe, "integration", *sorted(packet["integration"])])
@@ -388,15 +391,18 @@ def mixed_early_guard_commands(changed: list[str]) -> list[list[str]]:
 
     result = []
     for command in early_guard_commands(changed):
-        if "tests/e2e" not in command:
+        if E2E_DIRECTORY not in command:
             result.append(command)
             continue
-        if command[:5] != ["uv", "run", "pytest", PARTITION_TEST, "tests/e2e"] or command[5:7] != ["-m", "integration"]:
+        if command[:5] != ["uv", "run", "pytest", PARTITION_TEST, E2E_DIRECTORY] or command[5:7] != [
+            "-m",
+            "integration",
+        ]:
             msg = "mixed partition guard no longer matches the reviewed bounded replacement"
             raise ValueError(msg)
-        result.append([sys.executable, "scripts/mixed_scope.py", "partition"])
+        result.append([sys.executable, MIXED_SCOPE_SCRIPT, "partition"])
     if any(
-        (argument == "tests" or argument.startswith("tests/")) and not argument.partition("::")[0].endswith(".py")
+        (argument == "tests" or argument.startswith(TESTS_PREFIX)) and not argument.partition("::")[0].endswith(".py")
         for command in result
         for argument in command
     ):
@@ -493,8 +499,7 @@ def mixed_guard_binding(plan: dict) -> str:
     # uv may use a different Python environment for the nested script. Bind the
     # fixed runner and operands, while each process uses its own interpreter.
     binding["early_guards"] = [
-        command[1:] if command[1:] == ["scripts/mixed_scope.py", "partition"] else command
-        for command in plan["early_guards"]
+        command[1:] if command[1:] == [MIXED_SCOPE_SCRIPT, "partition"] else command for command in plan["early_guards"]
     ]
     data = json.dumps(binding, sort_keys=True).encode()
     return hashlib.sha256(data).hexdigest()
@@ -623,7 +628,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
     if changed and all(path.startswith("plugins/") for path in changed):
         return []
     fixture = any(
-        path.startswith(("tests/", "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
+        path.startswith((TESTS_PREFIX, "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
     )
     guides = any(
         (path.startswith("docs/guides/") and path.endswith(".md"))
@@ -644,7 +649,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
             "tests/_e2e_schedule.py",
             "tests/conftest.py",
             "scripts/scoped_checks.py",
-            "scripts/mixed_scope.py",
+            MIXED_SCOPE_SCRIPT,
         }
         or path.startswith((".github/workflows/", ".github/actions/", "tests/e2e/"))
         or path
@@ -673,7 +678,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
                 "run",
                 "pytest",
                 "tests/integration/e2e_lane_partition_test.py",
-                "tests/e2e",
+                E2E_DIRECTORY,
                 "-m",
                 "integration",
                 "-n",

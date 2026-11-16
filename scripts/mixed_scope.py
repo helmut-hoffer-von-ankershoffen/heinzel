@@ -70,9 +70,10 @@ HARNESS_INTEGRATION = frozenset(
         "tests/integration/web_widget_webkit_contract_test.py",
     }
 )
+AUDIO_VISUALIZER_TEST = "web/src/audio/AudioVisualizer.test.tsx"
 WEB_OWNERS = {
-    "web/src/audio/AudioVisualizer.tsx": "web/src/audio/AudioVisualizer.test.tsx",
-    "web/src/audio/AudioVisualizer.test.tsx": "web/src/audio/AudioVisualizer.test.tsx",
+    "web/src/audio/AudioVisualizer.tsx": AUDIO_VISUALIZER_TEST,
+    AUDIO_VISUALIZER_TEST: AUDIO_VISUALIZER_TEST,
 }
 SELECTOR_SOURCES = frozenset({"scripts/scoped_checks.py", "scripts/mixed_scope.py"})
 SAFE_PATH = re.compile(r"[A-Za-z0-9_./-]+")
@@ -380,7 +381,8 @@ def run_partition() -> None:
     """Run only the two fixed assertions and verify their complete six-case result."""
     with tempfile.TemporaryDirectory(prefix="heinzel-partition-check-") as scratch:
         report = Path(scratch) / "partition.xml"
-        subprocess.run(  # noqa: S603 - fixed node inventory, no caller-supplied selection
+        # Fixed node inventory, no caller-supplied selection.
+        subprocess.run(  # noqa: S603
             [  # noqa: S607 - uv from the configured toolchain
                 "uv",
                 "run",

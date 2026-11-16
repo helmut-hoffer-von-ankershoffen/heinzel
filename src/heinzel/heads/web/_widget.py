@@ -23,6 +23,18 @@ from heinzel.kernel._identity import LOCAL_READ_PERMISSIONS
 NO_STORE = {"Cache-Control": "no-store"}
 
 
+def _snapshot_operation(kernel: Kernel) -> OperationLet | None:
+    """Select only the built-in, read-only session operation for the widget identity."""
+    return next(
+        (
+            op
+            for record, op in kernel.lets(OperationLet)
+            if record.qualname == "heinzel" and record.origin.builtin and op.name == "sessions" and op.read_only
+        ),
+        None,
+    )
+
+
 def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kernel) -> None:
     """Install device-only issuance and a separately authenticated snapshot route."""
     add_pairing(endpoints, devices)
@@ -59,17 +71,7 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
                 return JSONResponse({"error": "Invalid widget credential."}, status_code=401, headers=NO_STORE)
             identity = CallIdentity(owner, "web-device", device, "hz-widget", LOCAL_READ_PERMISSIONS)
             with user.using(identity):
-                operation = next(
-                    (
-                        op
-                        for record, op in kernel.lets(OperationLet)
-                        if record.qualname == "heinzel"
-                        and record.origin.builtin
-                        and op.name == "sessions"
-                        and op.read_only
-                    ),
-                    None,
-                )
+                operation = _snapshot_operation(kernel)
                 if operation is None:
                     return JSONResponse({"error": "Widget snapshot unavailable."}, status_code=503, headers=NO_STORE)
                 sessions = kernel.invoke(operation).sessions

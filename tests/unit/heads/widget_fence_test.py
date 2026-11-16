@@ -22,8 +22,9 @@ def test_retry_is_identical_and_does_not_extend_expiry() -> None:
     expired_replay, expired_receipt = transition(issued, request, now + timedelta(hours=25))
     assert expired_replay == issued
     assert expired_receipt.expires == receipt.expires
+    changed_commitment = replace(request, commitment="2" * 64)
     with pytest.raises(FenceConflictError):
-        transition(issued, replace(request, commitment="2" * 64), now)
+        transition(issued, changed_commitment, now)
 
 
 def test_reordered_mutations_cannot_overwrite_newer_state() -> None:
@@ -35,22 +36,27 @@ def test_reordered_mutations_cannot_overwrite_newer_state() -> None:
     revoked, receipt = transition(first, revoke, now)
     assert revoked.child_hash is None
     assert receipt.revision != issued.revision
+    stale_issue = replace(issue, attempt="c" * 32, commitment="2" * 64)
     with pytest.raises(FenceConflictError):
-        transition(revoked, replace(issue, attempt="c" * 32, commitment="2" * 64), now)
+        transition(revoked, stale_issue, now)
     replacement, _ = transition(revoked, Request(revoked.epoch, revoked.revision, "d" * 32, "issue", "3" * 64), now)
     with pytest.raises(FenceConflictError):
         transition(replacement, revoke, now)
+    wrong_epoch = Request(FenceState.new().epoch, replacement.revision, "e" * 32, "revoke", None)
     with pytest.raises(FenceConflictError):
-        transition(replacement, Request(FenceState.new().epoch, replacement.revision, "e" * 32, "revoke", None), now)
+        transition(replacement, wrong_epoch, now)
 
 
 def test_rejects_bad_commitments_and_naive_clock() -> None:
     state = FenceState.new()
     now = datetime(2026, 11, 16, tzinfo=UTC)
+    bad_commitment = Request(state.epoch, state.revision, "a" * 32, "issue", "hzw_not_a_hash")
     with pytest.raises(FenceConflictError):
-        transition(state, Request(state.epoch, state.revision, "a" * 32, "issue", "hzw_not_a_hash"), now)
+        transition(state, bad_commitment, now)
+    revoke = Request(state.epoch, state.revision, "a" * 32, "revoke", None)
+    naive_now = now.replace(tzinfo=None)
     with pytest.raises(FenceConflictError):
-        transition(state, Request(state.epoch, state.revision, "a" * 32, "revoke", None), now.replace(tzinfo=None))
+        transition(state, revoke, naive_now)
 
 
 def test_revoke_empty_is_fenced_and_replay_is_idempotent() -> None:
@@ -61,12 +67,15 @@ def test_revoke_empty_is_fenced_and_replay_is_idempotent() -> None:
     assert revoked.child_hash is None
     assert revoked.revision != initial.revision
     assert transition(revoked, request, now + timedelta(days=1)) == (revoked, receipt)
+    changed_operation = replace(request, operation="issue", commitment="1" * 64)
     with pytest.raises(FenceConflictError):
-        transition(revoked, replace(request, operation="issue", commitment="1" * 64), now)
+        transition(revoked, changed_operation, now)
+    changed_revision = replace(request, revision=revoked.revision)
     with pytest.raises(FenceConflictError):
-        transition(revoked, replace(request, revision=revoked.revision), now)
+        transition(revoked, changed_revision, now)
+    changed_epoch = replace(request, epoch=FenceState.new().epoch)
     with pytest.raises(FenceConflictError):
-        transition(revoked, replace(request, epoch=FenceState.new().epoch), now)
+        transition(revoked, changed_epoch, now)
 
 
 def test_old_exact_issue_replay_is_rejected_after_supersession() -> None:

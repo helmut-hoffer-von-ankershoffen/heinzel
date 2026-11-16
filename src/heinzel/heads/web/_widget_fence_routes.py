@@ -13,6 +13,7 @@ from heinzel.kernel import CurrentUser, HeinzelError
 
 NO_STORE = {"Cache-Control": "no-store"}
 MAX_BODY = 4096
+FENCE_ID_PATTERN = r"^[0-9a-f]{32}$"
 
 
 class RequestTooLargeError(ValueError):
@@ -23,9 +24,9 @@ class FencedWidgetRequest(BaseModel):
     """Strict metadata; the raw widget bearer is never sent here."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    epoch: str = Field(pattern=r"^[0-9a-f]{32}$")
-    revision: str = Field(pattern=r"^[0-9a-f]{32}$")
-    attempt: str = Field(pattern=r"^[0-9a-f]{32}$")
+    epoch: str = Field(pattern=FENCE_ID_PATTERN)
+    revision: str = Field(pattern=FENCE_ID_PATTERN)
+    attempt: str = Field(pattern=FENCE_ID_PATTERN)
     operation: Literal["issue", "revoke"]
     commitment: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -100,7 +101,7 @@ async def _mutate(request: Request, devices: Devices, user: CurrentUser) -> JSON
             },
             headers=NO_STORE,
         )
-    except (RequestTooLargeError, ValidationError, FenceConflictError, HeinzelError, OSError, ValueError) as error:
+    except (FenceConflictError, HeinzelError, OSError, ValueError) as error:
         return _failure(error)
 
 
