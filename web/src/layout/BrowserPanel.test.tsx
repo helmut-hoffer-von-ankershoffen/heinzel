@@ -236,7 +236,7 @@ it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the sele
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
-  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue(""));
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "w", ctrlKey: true });
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000003" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
