@@ -303,7 +303,7 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(cancelled.revoked && !cancelled.complete && cancelledKeychain.pending[cancelledWire] == nil)
         let cancelledJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
             from: Data(contentsOf: cancelledURL.appendingPathExtension("enrollment-pending")))
-        precondition(cancelledJournal.phase == .armed && cancelledJournal.request == cancelledRequest)
+        precondition(cancelledJournal.phase == .armed && cancelledJournal.request == cancelledRequest && cancelledJournal.cancelled == true)
         precondition(sqlite3_exec(cancelledLock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
         sqlite3_close(cancelledLock)
         precondition(cancelledStore.invalidate(cancelledInitial).complete)
@@ -311,6 +311,19 @@ private final class NotificationCapture: @unchecked Sendable {
         let replacementAfterCancel = ActivityCatalog.activate(url: cancelledURL, endpoint: pending.endpoint)!
         precondition(cancelledEnrollment.cancel(cancelledAttempt).stale)
         precondition(ActivityCatalog.activation(url: cancelledURL) == replacementAfterCancel)
+        let pairCancelURL = directory.appendingPathComponent("pair-cancel.sqlite")
+        let pairCancelKeychain = FakeKeychain()
+        let pairCancelStore = WidgetCredentialStore(catalogURL: pairCancelURL, keychain: pairCancelKeychain)
+        let pairCancelEnrollment = WidgetFencedEnrollment(store: pairCancelStore)
+        let pairCancelInitial = ActivityCatalog.activate(url: pairCancelURL, endpoint: pending.endpoint)!
+        let boundFingerprint = String(repeating: "9", count: 64)
+        let pairCancelAttempt = pairCancelEnrollment.prepare(expected: pairCancelInitial, pairingFingerprint: boundFingerprint)!
+        guard case .ready = pairCancelEnrollment.bind(fixtureStatus, reservation: pairCancelAttempt) else { fatalError() }
+        precondition(pairCancelEnrollment.cancel(pairCancelAttempt).complete)
+        precondition(!ActivityCatalog.enrollmentPairingMatches(url: pairCancelURL, expected: pairCancelAttempt, fingerprint: boundFingerprint))
+        let pairCancelJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
+            from: Data(contentsOf: pairCancelURL.appendingPathExtension("enrollment-pending")))
+        precondition(pairCancelJournal.cancelled == true && pairCancelJournal.pairingFingerprint == boundFingerprint)
         let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
         let lockedCancelKeychain = FakeKeychain()
         let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)

@@ -791,14 +791,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 return !Task.isCancelled && self.workspace === view && self.documentRevision == revision &&
                     self.isEnrollmentViewCurrent() && view.url.map(self.endpoint.owns) == true
             }
-            guard current(), let fingerprint = await WidgetEnrollmentTransport.pairedDeviceFingerprint(in: view, endpoint: endpoint.origin, isCurrent: current), current() else { return }
+            guard current() else { return }
+            let fingerprint = await WidgetEnrollmentTransport.pairedDeviceFingerprint(in: view, endpoint: endpoint.origin, isCurrent: current)
+            guard current() else { return }
             let enrollment = WidgetFencedEnrollment(store: store)
             let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
             let result: WidgetEnrollmentOutcome
             if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
-                guard enrollment.canResume(pending) else {
+                let matchesPairing = fingerprint.map { ActivityCatalog.enrollmentPairingMatches(url: store.catalogURL, expected: pending, fingerprint: $0) } ?? false
+                guard matchesPairing && enrollment.canResume(pending) else {
                     if pending.previous.endpoint == endpoint.origin.absoluteString, current() {
-                        if let installed = enrollment.finishInterruptedInstallation(pending), current(),
+                        if matchesPairing, let installed = enrollment.finishInterruptedInstallation(pending), current(),
                            ActivityCatalog.activation(url: store.catalogURL) == installed {
                             NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
                         } else if let expired = enrollment.finishExpiredReceipt(pending), expired.revoked {
@@ -811,8 +814,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     }
                     return
                 }
+                guard let fingerprint else { return }
                 result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
             } else {
+                guard let fingerprint else { return }
                 let active = ActivityCatalog.activation(url: store.catalogURL)
                 if let active, active.endpoint != endpoint.origin.absoluteString { return }
                 if let active, active.credentialGeneration != nil {

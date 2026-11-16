@@ -61,7 +61,7 @@ final class ActivityCatalog {
         enum Phase: String, Codable { case preparing, armed, receipted, legacyUnknown }
         let version: Int
         let reservation: Enrollment
-        let revision: String
+        var revision: String
         let phase: Phase
         let workspaceID: String?
         let request: Data?
@@ -69,6 +69,7 @@ final class ActivityCatalog {
         var credentialGeneration: String? = nil
         var activationID: String? = nil
         var pairingFingerprint: String? = nil
+        var cancelled: Bool? = nil
     }
 
     private struct JournalRequest: Decodable {
@@ -92,6 +93,7 @@ final class ActivityCatalog {
         if let journal = try? JSONDecoder().decode(EnrollmentJournal.self, from: data) {
             guard journal.version == 1, UUID(uuidString: journal.revision) != nil,
                   UUID(uuidString: journal.reservation.id) != nil,
+                  journal.cancelled != false,
                   journal.pairingFingerprint.map({ $0.wholeMatch(of: /[a-f0-9]{64}/) != nil }) ?? true else { return nil }
             switch journal.phase {
             case .preparing:
@@ -307,7 +309,7 @@ final class ActivityCatalog {
         return withWriterLock(url: url, failure: false) {
             guard let data = try? Data(contentsOf: enrollmentURL(for: url)),
                   let journal = enrollmentJournal(data), journal.reservation == expected else { return false }
-            return journal.pairingFingerprint == fingerprint
+            return journal.cancelled != true && journal.pairingFingerprint == fingerprint
         }
     }
 
@@ -319,7 +321,7 @@ final class ActivityCatalog {
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
                   authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
                   let data = try? Data(contentsOf: enrollmentURL(for: url)),
-                  let current = enrollmentJournal(data), current.reservation == expected else { return false }
+                  let current = enrollmentJournal(data), current.reservation == expected, current.cancelled != true else { return false }
             if current.phase == .armed || current.phase == .receipted {
                 return current.workspaceID == workspaceID && current.request == request && writeJournal(data, enrollmentURL(for: url))
             }
@@ -341,7 +343,7 @@ final class ActivityCatalog {
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
                   authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
                   let marker = try? Data(contentsOf: enrollmentURL(for: url)),
-                  let journal = enrollmentJournal(marker), journal.reservation == expected,
+                  let journal = enrollmentJournal(marker), journal.reservation == expected, journal.cancelled != true,
                   journal.workspaceID == workspaceID, journal.request == request else { return nil }
             if journal.phase == .receipted {
                 guard journal.receipt == receipt, journal.credentialGeneration == generation,
@@ -381,7 +383,7 @@ final class ActivityCatalog {
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
                   authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
                   let marker = try? Data(contentsOf: enrollmentURL(for: url)),
-                  let journal = enrollmentJournal(marker), journal.reservation == expected,
+                  let journal = enrollmentJournal(marker), journal.reservation == expected, journal.cancelled != true,
                   journal.request == request, writeJournal(marker, enrollmentURL(for: url)) else { return nil }
             if journal.phase == .receipted, let receipt = journal.receipt { return .receipt(receipt) }
             guard journal.phase == .armed else { return nil }
@@ -547,11 +549,15 @@ final class ActivityCatalog {
             }
             let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
             guard let encoded = try? JSONEncoder().encode(tombstone),
-                  writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+                  writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
             let markerURL = enrollmentURL(for: url)
             guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
                   journal.reservation == expected, journal.phase != .legacyUnknown,
-                  writeJournal(marker, markerURL), journalCheck(journal) else { return ClearResult(revoked: true, purged: false) }
+                  writeJournal(marker, markerURL) else { return ClearResult(revoked: true, purged: false) }
+            var cancelled = journal
+            cancelled.cancelled = true; cancelled.revision = UUID().uuidString
+            guard let cancellation = try? JSONEncoder().encode(cancelled),
+                  writeJournal(cancellation, markerURL), journalCheck(cancelled) else { return ClearResult(revoked: true, purged: false) }
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false
             return ClearResult(revoked: true, purged: deleted && purged)
@@ -614,7 +620,7 @@ final class ActivityCatalog {
             if current.activation == expected && current.enrollment == nil {
                 let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected)
                 guard let encoded = try? JSONEncoder().encode(tombstone),
-                      writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+                      writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
             } else if current.revoked != true || current.cleanup != expected {
                 return ClearResult(revoked: false, purged: false, stale: true)
             } else if current.expirationRetirement != nil {
@@ -634,9 +640,13 @@ final class ActivityCatalog {
                       (recovery.previous == expected || (journal.phase == .receipted &&
                        journal.activationID == expected.id && journal.workspaceID == expected.workspaceID &&
                        journal.credentialGeneration == expected.credentialGeneration && recovery.previous.endpoint == expected.endpoint)),
-                      journal.phase != .legacyUnknown, journalSync(marker, markerURL), recoveryCheck(journal) else {
+                      journal.phase != .legacyUnknown, journalSync(marker, markerURL) else {
                     return ClearResult(revoked: true, purged: false)
                 }
+                var cancelled = journal
+                cancelled.cancelled = true; cancelled.revision = UUID().uuidString
+                guard let cancellation = try? JSONEncoder().encode(cancelled), writeJournal(cancellation, markerURL),
+                      recoveryCheck(cancelled) else { return ClearResult(revoked: true, purged: false) }
             } else if recovery != nil {
                 return ClearResult(revoked: true, purged: false)
             }

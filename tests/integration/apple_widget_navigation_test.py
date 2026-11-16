@@ -56,8 +56,13 @@ def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None
     assert "self.documentRevision == revision" in enrollment
     assert "self.isEnrollmentViewCurrent()" in enrollment
     assert "WidgetEnrollmentTransport.pairedDeviceFingerprint" in enrollment
+    assert "ActivityCatalog.enrollmentPairingMatches" in enrollment
+    assert "guard matchesPairing && enrollment.canResume(pending)" in enrollment
+    assert "else if let expired = enrollment.finishExpiredReceipt(pending)" in enrollment
     assert "enrollment.canResume(pending)" in enrollment
-    recovery = enrollment.split("guard enrollment.canResume(pending) else", 1)[1].split("return", 1)[0]
+    recovery = enrollment.split("guard matchesPairing && enrollment.canResume(pending) else", 1)[1].split("return", 1)[
+        0
+    ]
     assert recovery.index("pending.previous.endpoint == endpoint.origin.absoluteString") < recovery.index(
         "enrollment.abandonInterruptedPreparation(pending)"
     )
