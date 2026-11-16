@@ -425,6 +425,26 @@ private final class NotificationCapture: @unchecked Sendable {
             "workspace_id": credential.workspaceID, "revision": String(repeating: "3", count: 32), "last_attempt": cancelledReceiptWire])
         guard case .revoke = ActivityCatalog.planCancelledRecovery(url: cancelledReceiptURL, expected: cancelledReceiptAttempt,
             fingerprint: boundFingerprint, observedStatus: issuedStatus) else { fatalError() }
+        let heldExpiry = cancelledReceiptEnrollment.finishExpiredReceipt(cancelledReceiptAttempt, clock: { now.addingTimeInterval(3601) })!
+        precondition(!heldExpiry.complete && ActivityCatalog.pendingEnrollment(url: cancelledReceiptURL) == cancelledReceiptAttempt)
+        let installedCancelURL = directory.appendingPathComponent("installed-cancel-revoke.sqlite")
+        let installedCancelKeychain = FakeKeychain()
+        let installedCancelStore = WidgetCredentialStore(catalogURL: installedCancelURL, keychain: installedCancelKeychain)
+        let installedCancelEnrollment = WidgetFencedEnrollment(store: installedCancelStore)
+        let installedCancelInitial = ActivityCatalog.activate(url: installedCancelURL, endpoint: pending.endpoint)!
+        let installedCancelAttempt = installedCancelEnrollment.prepare(expected: installedCancelInitial, pairingFingerprint: boundFingerprint)!
+        let installedCancelWire = installedCancelAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready = installedCancelEnrollment.bind(fixtureStatus, reservation: installedCancelAttempt) else { fatalError() }
+        installedCancelKeychain.canDeletePending = false
+        guard case .installed(let installedCancelActive) = installedCancelEnrollment.complete(fixtureReceipt(installedCancelAttempt),
+            reservation: installedCancelAttempt, now: now, clock: { now }) else { fatalError() }
+        installedCancelKeychain.canDeletePending = true
+        precondition(installedCancelStore.invalidate(installedCancelActive).complete)
+        precondition(ActivityCatalog.cancelledRecoveryMatches(url: installedCancelURL, expected: installedCancelAttempt, fingerprint: boundFingerprint))
+        let installedStatus = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch,
+            "workspace_id": credential.workspaceID, "revision": String(repeating: "3", count: 32), "last_attempt": installedCancelWire])
+        guard case .revoke = ActivityCatalog.planCancelledRecovery(url: installedCancelURL, expected: installedCancelAttempt,
+            fingerprint: boundFingerprint, observedStatus: installedStatus) else { fatalError() }
         let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
         let lockedCancelKeychain = FakeKeychain()
         let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)

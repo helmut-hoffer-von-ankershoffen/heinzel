@@ -472,6 +472,15 @@ final class ActivityCatalog {
         case superseded
     }
 
+    private static func ownsRecoveryTombstone(_ authority: Authority, journal: EnrollmentJournal, expected: Enrollment) -> Bool {
+        guard authority.revoked == true, let cleanup = authority.cleanup else { return false }
+        if cleanup == expected.previous { return true }
+        guard journal.phase == .receipted, let id = journal.activationID, let workspace = journal.workspaceID,
+              let generation = journal.credentialGeneration, cleanup.id == id,
+              cleanup.endpoint == expected.previous.endpoint, cleanup.workspaceID == workspace else { return false }
+        return cleanup.credentialGeneration == generation || cleanup.credentialGeneration == nil
+    }
+
     static func cancelledRecoveryMatches(url: URL, expected: Enrollment, fingerprint: String) -> Bool {
         guard fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return false }
         return withWriterLock(url: url, failure: false) {
@@ -480,7 +489,7 @@ final class ActivityCatalog {
                   journal.pairingFingerprint == fingerprint,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data) else { return false }
-            return authority.revoked == true && authority.cleanup == expected.previous
+            return ownsRecoveryTombstone(authority, journal: journal, expected: expected)
         }
     }
 
@@ -501,7 +510,7 @@ final class ActivityCatalog {
                   status.last_attempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data),
-                  authority.revoked == true, authority.cleanup == expected.previous else { return nil }
+                  ownsRecoveryTombstone(authority, journal: journal, expected: expected) else { return nil }
             if journal.recoveryReceipt != nil {
                 guard writeJournal(marker, markerURL) else { return nil }
                 return .superseded
@@ -540,7 +549,7 @@ final class ActivityCatalog {
                   journal.recoveryRequest == request,
                   let authorityData = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
-                  authority.revoked == true, authority.cleanup == expected.previous else { return false }
+                  ownsRecoveryTombstone(authority, journal: journal, expected: expected) else { return false }
             if let existing = journal.recoveryReceipt {
                 return existing == receipt && writeJournal(marker, markerURL)
             }
@@ -568,7 +577,7 @@ final class ActivityCatalog {
                   let last = status.last_attempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil, last != revoke.attempt,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data),
-                  authority.revoked == true, authority.cleanup == expected.previous else { return nil }
+                  ownsRecoveryTombstone(authority, journal: journal, expected: expected) else { return nil }
             var history = journal.recoveryConflicts ?? []
             guard history.count < 8 else { return nil }
             history.append(RecoveryConflict(request: failedRequest, status: observedStatus))
@@ -599,7 +608,7 @@ final class ActivityCatalog {
                   journal.recoveryStatus != nil, journal.recoveryRequest == nil || journal.recoveryReceipt != nil,
                   let authorityData = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
-                  authority.revoked == true, authority.cleanup == expected.previous else {
+                  ownsRecoveryTombstone(authority, journal: journal, expected: expected) else {
                 return ClearResult(revoked: false, purged: false, stale: true)
             }
             guard writeJournal(authorityData, authorityURL(for: url)), journalSync(marker, markerURL),
@@ -662,6 +671,7 @@ final class ActivityCatalog {
             let markerURL = enrollmentURL(for: url)
             guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
                   journal.reservation == expected, journal.phase == .receipted,
+                  journal.recoveryStatus == nil, journal.recoveryRequest == nil, journal.recoveryReceipt == nil,
                   let id = journal.activationID, let workspace = journal.workspaceID,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data) else {
