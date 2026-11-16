@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version=${1:?Pass the matching stable Heinzel version}
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+https_links=${HEINZEL_HTTPS_LINKS:-NO}
+case "$https_links" in
+    YES|NO) ;;
+    *) printf '%s\n' 'HEINZEL_HTTPS_LINKS must be YES or NO.' >&2; exit 2 ;;
+esac
+if [[ "$https_links" == YES ]]; then
+    printf '%s\n' 'HTTPS links require a signed Mac Associated Domains capability; Mac packaging does not support it yet.' >&2
+    exit 2
+fi
+signing=()
+if [[ -n "${HEINZEL_MAC_SIGNING_TEAM:-}" ]]; then
+    [[ "$HEINZEL_MAC_SIGNING_TEAM" =~ ^[A-Z0-9]{10}$ ]]
+    signing+=("DEVELOPMENT_TEAM=$HEINZEL_MAC_SIGNING_TEAM"
+        "HEINZEL_MAC_ENTITLEMENTS=App/MacWidgetApp.entitlements"
+        "HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetGroup.entitlements")
+fi
+out="$PWD/.build/package"
+stage="$(mktemp -d)"
+trap 'rm -rf -- "$stage"' EXIT
+xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
+    -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES \
+    HEINZEL_HTTPS_LINKS="$https_links" ${signing[@]+"${signing[@]}"} build -quiet
+app="$stage/Heinzelmaennchen.app"
+/usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
+/usr/bin/codesign --verify --strict --deep "$app"
+COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" \
+    -C "$stage" Heinzelmaennchen.app
+mkdir "$stage/verified"
+/usr/bin/tar -xzf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" -C "$stage/verified"
+/usr/bin/codesign --verify --strict --deep "$stage/verified/Heinzelmaennchen.app"
+archived_links=$(/usr/bin/plutil -extract HeinzelHTTPSLinks raw -o - \
+    "$stage/verified/Heinzelmaennchen.app/Contents/Info.plist")
+if [[ "$archived_links" != "$https_links" ]]; then
+    printf '%s\n' 'The archived app does not match HEINZEL_HTTPS_LINKS.' >&2
+    exit 1
+fi
+printf '%s\n' "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"

@@ -16,6 +16,7 @@ from rich.console import Console
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_log import step
+from heinzel.heads._desktop_release import DesktopFlavor
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
@@ -189,6 +190,7 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
     replace: bool = False,
     yes: bool = False,
     details: bool = False,
+    flavor: DesktopFlavor | None = None,
 ) -> None:
     """Install or refresh the app, asking once in a terminal before forgetting an install whose app is gone.
 
@@ -213,6 +215,7 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
             replace=replace,
             forget=forget,
             notes=notes,
+            flavor=flavor,
         )
 
     try:
@@ -373,6 +376,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
     """Build the app command group without loading installer code during CLI discovery."""
     app = typer.Typer(help="Manage the native Heinzel desktop app.", no_args_is_help=True)
 
+    @app.command("update")
     @app.command("install")
     def install(
         keep_quarantine: Annotated[
@@ -396,6 +400,12 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             typer.Option("--yes", "-y", help="Forget an earlier install whose app is gone, without asking."),
         ] = False,
         details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False,
+        flavor: Annotated[
+            DesktopFlavor | None,
+            typer.Option(
+                "--flavor", help="Desktop app flavor. Defaults to the installed flavor, or Electron for a new install."
+            ),
+        ] = None,
     ) -> None:
         """Install the desktop app for this version of Heinzel.
 
@@ -407,7 +417,16 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         Raises:
             typer.Exit: If the app cannot be installed now.
         """  # noqa: D301 - Typer ends the help at a real form feed
-        _install_app(kernel, output, error, keep_quarantine=keep_quarantine, replace=replace, yes=yes, details=details)
+        _install_app(
+            kernel,
+            output,
+            error,
+            keep_quarantine=keep_quarantine,
+            replace=replace,
+            yes=yes,
+            details=details,
+            flavor=flavor,
+        )
 
     @app.command("open")
     def open_app(

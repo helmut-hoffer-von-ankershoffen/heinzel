@@ -719,7 +719,7 @@ MOBILE_VIEWPORTS = (
     "wide-landscape",
     "short-landscape",
 )
-MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit", "updates-actions")
+MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit", "updates-actions", "native-layout")
 # The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
 # (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
 # its expected time, and a hung one fails in two minutes instead of five.
@@ -751,6 +751,8 @@ def check_mobile_result(section, result):
         assert result["dockedPlayer"]["popOutUsable"] is True
         assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
         assert result["topbar"] == {"titleWhole": True, "countClearOfMascot": True}
+    elif section == "native-layout":
+        assert result["nativeLayout"] == {"compact": True, "widePad": True, "navigation": True, "calendar": True}
     elif section == "updates-actions":
         assert result["cases"] == []
         assert [profile["name"] for profile in result["updateActions"]] == [

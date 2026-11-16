@@ -108,11 +108,6 @@ function systemBroken(error: unknown) {
   return !(error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"));
 }
 
-/**
- * Whether this browser can share a tab's audio: feature detection, never the user agent. Every iPhone and iPad browser
- * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
- * remembered for the session, so the choice is not offered again.
- */
 /** Whether this device can listen with a microphone: getUserMedia exists, and only in a secure context (https or
  * localhost), where browsers offer it at all. */
 export function canListen(): boolean {
@@ -124,7 +119,12 @@ export function canDraw(): boolean {
   return typeof HTMLCanvasElement !== "undefined" && typeof HTMLCanvasElement.prototype.getContext === "function";
 }
 
+const workspaceAudioCapability = () =>
+  (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio;
+
+/** Offer only sources supported by the native shell or browser, accounting for earlier rejection by a browser. */
 export function canShareAudio(): boolean {
+  if (workspaceAudioCapability() === false) return false;
   if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
   try {
     return sessionStorage.getItem(UNSHARED_KEY) !== "1";
@@ -175,7 +175,13 @@ function captureProblem(error: unknown) {
  * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
  * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
-export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
+export function AudioVisualizer({
+  enabled = true,
+  compact = false,
+}: {
+  readonly enabled?: boolean;
+  readonly compact?: boolean;
+}) {
   const own = useOwnAudio();
   const settings = useVizSettings();
   const [remembered, setRemembered] = useState<Remembered>(readSource);
@@ -613,8 +619,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     };
   }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement, canvasGeneration, software]);
   if (!enabled) return null;
-  const workspaceAudio =
-    (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
+  const workspaceAudio = workspaceAudioCapability() === true;
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
   const looped = session?.label === "System audio";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
@@ -640,7 +645,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       requesting === "mic" ? "microphone" : requesting === "system" ? "system audio" : sharedWord.toLowerCase();
     status = session
       ? `Listening to ${listeningTo}; waiting for ${requested}.`
-      : `Waiting for the browser to allow ${requested}.`;
+      : requesting === "system"
+        ? "Waiting for permission to use system audio."
+        : `Waiting for the browser to allow ${requested}.`;
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {
@@ -663,7 +670,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    const picks = [listenable && "Microphone", sharing && "Shared audio"].filter(Boolean).join(" or ");
+    const picks = [listenable && "Microphone", sharing && sharedWord, systemOffered && "System audio"]
+      .filter(Boolean)
+      .join(" or ");
     status = picks
       ? `Off. Music in a player frame shows once you pick ${picks}.`
       : "Music in a player frame cannot be seen in this browser; Heinzel's own sound still shows.";
@@ -700,10 +709,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         content={
           <>
             <AudioLines aria-hidden className="size-5" />
-            <span className="text-[10px]">{controlWord}</span>
+            {!compact && <span className="text-[10px]">{controlWord}</span>}
           </>
         }
-        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${
+        className={`${compact ? "size-11 rounded-full" : "h-12 min-w-11 flex-col gap-0.5 px-1"} ${
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
@@ -785,7 +794,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
           <p className="text-xs text-muted-foreground">
             {t(
-              onSystem
+              onSystem || (systemOffered && !listenable && !sharing)
                 ? "audio.visualizerHelpSystem"
                 : sharing && listenable
                   ? "audio.visualizerHelp"
@@ -813,7 +822,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           ref={railCanvas}
           role="img"
           aria-label="Shared audio spectrum"
-          className="pointer-events-none min-h-0 w-full flex-1 px-0.5 pb-1"
+          className={cn(
+            "pointer-events-none min-h-0 w-full",
+            compact ? "absolute inset-x-1 bottom-0 h-1.5 w-[calc(100%-0.5rem)]" : "flex-1 px-0.5 pb-1",
+          )}
         />
       ) : (
         <div className="min-h-0 flex-1" aria-hidden />

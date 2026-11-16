@@ -122,6 +122,7 @@ export function BrowserPanel({
   const [address, setAddress] = useState("https://heinzel.team");
   const [state, setState] = useState<BrowserState>({ status: "empty" });
   const [refused, setRefused] = useState(false);
+  const [externalFailed, setExternalFailed] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -146,6 +147,16 @@ export function BrowserPanel({
       setState((previous) => ({ ...previous, notice: "clear-failed" }));
     }
   };
+  useEffect(() => {
+    const started = () => setExternalFailed(false);
+    const failed = () => setExternalFailed(true);
+    window.addEventListener("heinzel-guest-external-started", started);
+    window.addEventListener("heinzel-guest-external-failed", failed);
+    return () => {
+      window.removeEventListener("heinzel-guest-external-started", started);
+      window.removeEventListener("heinzel-guest-external-failed", failed);
+    };
+  }, []);
   // Tabs live in the desktop, not in this panel: closing the panel only hides them, and reopening shows them again.
   useEffect(() => {
     void native
@@ -248,7 +259,7 @@ export function BrowserPanel({
           ? t("browser.empty")
           : t("browser.unavailable");
   return (
-    <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-80 flex-col bg-background">
+    <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-0 flex-col bg-background">
       <form
         className="flex h-10 shrink-0 items-center gap-1 px-2"
         onSubmit={(event) => {
@@ -315,6 +326,7 @@ export function BrowserPanel({
             type="button"
             variant="ghost"
             size="icon"
+            data-heinzel-browser-external=""
             aria-label={t("browser.openInBrowser")}
             title={t("browser.openInBrowser")}
             disabled={!state.url}
@@ -453,6 +465,11 @@ export function BrowserPanel({
           {state.notice && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t(NOTICES[state.notice])}
+            </p>
+          )}
+          {externalFailed && (
+            <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
+              {t("browser.externalFailedNote")}
             </p>
           )}
           {agentTab?.agent && (

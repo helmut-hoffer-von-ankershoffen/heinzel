@@ -214,7 +214,7 @@ describe("AudioVisualizer", () => {
       });
       fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
       const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
-      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow system audio");
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for permission to use system audio");
       fireEvent.click(pane().getByRole("button", { name: "Stop system audio" }));
       expect(signal?.aborted).toBe(true);
       expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
@@ -384,7 +384,10 @@ describe("AudioVisualizer", () => {
       lost = false;
       const third = screen.getByTestId("audio-aurora");
       expect(third.dataset.vizRender).toBe("memory");
-      expect(getContext).toHaveBeenLastCalledWith("2d", { willReadFrequently: true });
+      await waitFor(() => {
+        const calls = getContext.mock.calls.filter((_, index) => getContext.mock.contexts[index] === third);
+        expect(calls).toContainEqual(["2d", { willReadFrequently: true }]);
+      });
       // The new canvases are drawn: the loop runs again on them.
       await waitFor(() => expect(frames.length).toBeGreaterThan(0));
       const filled = draw.fill.mock.calls.length;
@@ -473,6 +476,37 @@ describe("AudioVisualizer", () => {
       expect(screen.getByText(/Nothing is recorded or uploaded/)).toBeVisible();
       expect(screen.queryByText(/Share tab audio/)).not.toBeInTheDocument();
       expect(captureAudio).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uses native capture availability when the shell does not support workspace audio", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: false, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    try {
+      render(<AudioVisualizer />);
+      open();
+      const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+      expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Microphone"]);
+      expect(await pane().findByRole("button", { name: "Use system audio" })).toBeVisible();
+      expect(captureAudio).not.toHaveBeenCalled();
+      expect(captureMicrophone).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("describes system audio when it is the only source for an embedded player", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: false, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
+    try {
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      expect(await pane().findByText("Off. Music in a player frame shows once you pick System audio.")).toBeVisible();
+      expect(pane().getByText(/Heinzel listens to system audio/)).toBeVisible();
     } finally {
       vi.unstubAllGlobals();
     }

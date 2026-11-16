@@ -88,6 +88,10 @@ jobs:
         run: make desktop-electron-package
       - name: Archive the verified app and bind its release manifest
         run: node desktop/ci/release-macos.mjs "$TAG" "$GITHUB_SHA" desktop-release
+      - name: Build the Swift desktop bundle and bind its release manifest
+        env:
+          APPLE_APPLICATION_IDENTIFIER_PREFIX: ${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}
+        run: make desktop-swift-package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-macos-arm64
@@ -182,16 +186,7 @@ jobs:
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: |
-          archive="heinzel-desktop-${TAG#v}-darwin-arm64.tar.gz"
-          manifest="desktop-release/desktop-artifact-manifest.json"
-          digest="$(sha256sum "desktop-release/$archive" | cut -d' ' -f1)"
-          size="$(stat -c %s "desktop-release/$archive")"
-          jq -e --arg version "${TAG#v}" --arg commit "$SOURCE_COMMIT" --arg archive "$archive" \
-            --arg digest "$digest" --argjson size "$size" \
-            '. == {schema: 1, version: $version, commit: $commit, platform: "darwin", arch: "arm64",
-                    archive: {name: $archive, sha256: $digest, size: $size}}' "$manifest"
-          mv -- "$manifest" "desktop-release/$archive" dist/
+        run: make desktop-bind-release-assets
       - id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

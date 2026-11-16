@@ -5,7 +5,7 @@ from rich.text import Text
 
 from heinzel import __version__
 
-TAGLINE = "Heinzels accelerating product teams"
+TAGLINE = "Durable agents accelerating product teams, like the little elves from Cologne."
 ATTRIBUTION = "🐻 built with AI in Berlin"
 MIN_GAP = 2
 

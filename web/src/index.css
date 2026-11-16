@@ -567,3 +567,18 @@ html[data-sidebar-resizing] {
 html[data-sidebar-resizing] :is(iframe, canvas, .xterm) {
   pointer-events: none;
 }
+
+/* The native phone and narrow iPad keep the whole workspace visible until navigation is requested. */
+.mobile-navigation {
+  position: fixed;
+  inset: var(--hz-viewport-top, 0px) auto auto var(--hz-viewport-left, 0px);
+  width: min(20rem, calc(var(--hz-viewport-width, 100vw) - 3rem));
+  height: min(var(--hz-layout-height, 100dvh), 100dvh);
+  padding-top: var(--hz-viewport-safe-top);
+  padding-bottom: var(--hz-viewport-safe-bottom);
+  padding-left: var(--hz-viewport-safe-left);
+}
+.mobile-navigation :is(a, button) {
+  min-width: 44px;
+  min-height: 44px;
+}

@@ -32,7 +32,7 @@ const LISTENS = [
   },
   {
     what: "System audio",
-    when: "Desktop app only, and only when you press Use system audio; it asks every time.",
+    when: "In supported Heinzel apps, choose Use system audio in the Audio pane and allow it each time.",
   },
 ] as const;
 
@@ -45,8 +45,8 @@ export function VisualizationSettings() {
         Audio visualisation
       </h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        Heinzel shows how its music sounds. Nothing is recorded or uploaded; music in a frame, such as YouTube, is seen
-        only after you share the tab or use the microphone.
+        Choose an audio source in the Audio pane to visualize music from an embedded player. Nothing is recorded or
+        uploaded.
       </p>
       {/* What is listened to and who said yes: the consent in one place, beside the switches it governs. */}
       <dl className="mb-2 grid gap-x-3 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">

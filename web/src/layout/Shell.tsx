@@ -1,5 +1,6 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
+import { X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -10,8 +11,11 @@ import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
+import { useOperationRun } from "@/lib/operationRun";
+import { OverlayTarget } from "@/lib/overlayTarget";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -21,6 +25,7 @@ import { anchorWorkspace } from "@/lib/workspaceAnchor";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
+import { registerSlot } from "@/sound/dock";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { useBrowserAgents, useCommitAttention } from "./browserAgents";
@@ -30,13 +35,13 @@ import { InfoDialog, type Panel } from "./InfoDialog";
 import { NotificationPanel } from "./NotificationCenter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, VizStageSlot } from "./Sidebar";
 import { SidebarResizer } from "./SidebarResizer";
 import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
-import { applyTitlebar, useTitlebar } from "./titlebar";
+import { applyTitlebar, nativeMobileWorkspace, useTitlebar } from "./titlebar";
 import { WorkspacePanels } from "./WorkspacePanels";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -97,12 +102,21 @@ export function Shell() {
   );
 }
 
+function CloseNavigationOnOperation({ close }: { close: () => void }) {
+  const { stage } = useOperationRun();
+  useLayoutEffect(() => {
+    if (stage !== "idle") close();
+  }, [stage, close]);
+  return null;
+}
+
 function Layout() {
   const config = useConfig();
   const audioVisualizer = config.data?.settings.find(
     (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
   );
   const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
+  const [mobile] = useState(nativeMobileWorkspace);
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
   // The desktop app's integrated title bar (macOS): its insets become CSS variables; a browser gets 0.
@@ -130,13 +144,13 @@ function Layout() {
       const narrower = window.innerWidth < width;
       width = window.innerWidth;
       if (narrower && width < 1024) {
-        setNavOpen(false);
+        if (!mobile) setNavOpen(false);
         if (document.activeElement?.closest("footer")) setActivePanel("page");
       }
     };
     window.addEventListener("resize", fold);
     return () => window.removeEventListener("resize", fold);
-  }, [setNavOpen]);
+  }, [mobile, setNavOpen]);
   const [searchOpen, setSearchOpen] = useState(false);
   useNoticeStream();
   // Home is where the chat is (ADR 0045): going there opens it, beside Today or below it.
@@ -181,9 +195,46 @@ function Layout() {
   }, []);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const areaWidth = useWidth(area);
-  const beside = fitsBeside(areaWidth, rem);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const windowWidth = useWidth(WINDOW);
+  // Window width covers phone rotation and iPad multitasking without reacting to the keyboard.
+  const compact = mobile && windowWidth < 960;
+  const beside = !compact && fitsBeside(areaWidth, rem);
+  const navDrawer = useRef<HTMLDialogElement>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const openNavigation = () => {
+    navDrawer.current?.showModal();
+    setDrawerOpen(true);
+  };
+  const closeNavigation = useCallback(() => {
+    navDrawer.current?.close();
+    setDrawerOpen(false);
+  }, []);
+  const navigationOverlays = useCallback(() => navDrawer.current ?? document.body, []);
+  useEffect(() => {
+    if (!compact) closeNavigation();
+  }, [compact, closeNavigation]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dismiss on each router navigation
+  useEffect(() => {
+    closeNavigation();
+  }, [location.key, closeNavigation]);
+  const audioCompactSlot = useRef<HTMLDivElement>(null);
+  const audioRailSlot = useRef<HTMLElement>(null);
+  const [audioHost] = useState(() => document.createElement("div"));
+  const audioSlot = useCallback(
+    (element: HTMLDivElement | null) => {
+      audioCompactSlot.current = element;
+      if (element && audioHost.parentElement !== element) element.appendChild(audioHost);
+    },
+    [audioHost],
+  );
+  useLayoutEffect(() => {
+    if (!showAudioVisualizer) return;
+    const slot = compact ? audioCompactSlot.current : audioRailSlot.current;
+    if (slot && audioHost.parentElement !== slot) slot.appendChild(audioHost);
+    audioHost.className = "h-full";
+  }, [compact, showAudioVisualizer, audioHost]);
+  useLayoutEffect(() => () => audioHost.remove(), [audioHost]);
   const sidebarLimit = sidebarMax(windowWidth, areaWidth);
   const sidebarShown = clampSidebar(sidebarWidth, windowWidth, areaWidth);
   const besideHeader = useRef<HTMLDivElement>(null);
@@ -544,6 +595,27 @@ function Layout() {
       ),
     [navigate, setNavOpen, setParams],
   );
+  const sidebar = (
+    <Sidebar
+      collapsed={!compact && !navOpen}
+      drawer={compact}
+      titlebar={titlebar.bar !== null}
+      onToggle={compact ? closeNavigation : () => setNavOpen((open) => !open)}
+      onSearch={() => {
+        closeNavigation();
+        setSearchOpen(true);
+      }}
+      onNotifications={() => {
+        closeNavigation();
+        setParams((current) => {
+          const next = new URLSearchParams(current);
+          if (next.get("panel") === "notifications") next.delete("panel");
+          else next.set("panel", "notifications");
+          return next;
+        });
+      }}
+    />
+  );
   return (
     <div
       data-testid="app-shell"
@@ -555,28 +627,57 @@ function Layout() {
       >
         {t("app.skip")}
       </a>
-      <aside
-        aria-label={t("nav.label")}
-        className={cn(
-          "shrink-0 border-r border-border bg-sidebar transition-[width] duration-200",
-          navOpen ? "w-64" : "w-14",
-        )}
-      >
-        <Sidebar
-          collapsed={!navOpen}
-          titlebar={titlebar.bar !== null}
-          onToggle={() => setNavOpen((open) => !open)}
-          onSearch={() => setSearchOpen(true)}
-          onNotifications={() =>
-            setParams((current) => {
-              const next = new URLSearchParams(current);
-              if (next.get("panel") === "notifications") next.delete("panel");
-              else next.set("panel", "notifications");
-              return next;
-            })
-          }
-        />
-      </aside>
+      {compact ? (
+        <dialog
+          ref={navDrawer}
+          onClose={() => setDrawerOpen(false)}
+          aria-label={t("nav.label")}
+          className="mobile-navigation m-0 max-h-none max-w-none border-r border-border bg-sidebar p-0 text-foreground backdrop:bg-black/35"
+          onPointerDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            const box = event.currentTarget.getBoundingClientRect();
+            if (
+              event.clientX < box.left ||
+              event.clientX >= box.right ||
+              event.clientY < box.top ||
+              event.clientY >= box.bottom
+            )
+              closeNavigation();
+          }}
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex shrink-0 justify-end px-2">
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={t("op.close")}
+                className="size-11"
+                onClick={closeNavigation}
+              >
+                <X aria-hidden />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {drawerOpen && (
+                <OverlayTarget value={navigationOverlays}>
+                  <CloseNavigationOnOperation close={closeNavigation} />
+                  {sidebar}
+                </OverlayTarget>
+              )}
+            </div>
+          </div>
+        </dialog>
+      ) : (
+        <aside
+          aria-label={t("nav.label")}
+          className={cn(
+            "shrink-0 border-r border-border bg-sidebar transition-[width] duration-200",
+            navOpen ? "w-64" : "w-14",
+          )}
+        >
+          {sidebar}
+        </aside>
+      )}
       <div ref={area} className="workspace-area relative flex min-w-0 flex-1 flex-col">
         <div ref={belowHeader} hidden={beside || full} className="shrink-0" />
         <div
@@ -624,6 +725,7 @@ function Layout() {
               className={cn(
                 "workspace-panel flex flex-col bg-background",
                 flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
+                flowingWorkspace && selectedPanel === "browser" && "h-full",
                 full
                   ? "absolute inset-0"
                   : beside
@@ -740,9 +842,12 @@ function Layout() {
           hidden={beside || (selectedPanel !== "page" && !flowingWorkspace)}
           className="shrink-0"
         />
+        {compact && <VizStageSlot narrow />}
         {createPortal(
           <TopBar
             navigationMode={!beside}
+            onOpenNavigation={compact ? openNavigation : undefined}
+            audioSlot={compact && showAudioVisualizer ? audioSlot : undefined}
             calendarOpen={calendarOpen && selectedPanel === "calendar"}
             onOpenCalendar={() => {
               setCalendarOpen(true);
@@ -769,14 +874,17 @@ function Layout() {
           footerHost,
         )}
       </div>
-      {showAudioVisualizer && (
-        <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
-          <AudioVisualizer />
-        </section>
+      {showAudioVisualizer && !compact && (
+        <section
+          ref={audioRailSlot}
+          aria-label="Audio visualizer"
+          className="min-h-0 w-11 shrink-0 self-stretch border-l border-border"
+        />
       )}
+      {showAudioVisualizer && createPortal(<AudioVisualizer compact={compact} />, audioHost)}
       {params.get("panel") === "notifications" && (
         <NotificationPanel
-          navOpen={navOpen}
+          navOpen={!compact && navOpen}
           onClose={() =>
             setParams((current) => {
               const next = new URLSearchParams(current);
@@ -786,6 +894,8 @@ function Layout() {
           }
         />
       )}
+      {/* Keep the current stream mounted when the drawer closes. A docked player lives in its controls. */}
+      {compact && <div ref={registerSlot} hidden data-sound-compact="true" />}
       <ThemeTokens />
       <ViewSlot slot="background" />
       <SoundEngine />

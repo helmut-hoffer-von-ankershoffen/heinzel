@@ -100,6 +100,7 @@ def test_core_project_has_no_plugin_install_or_delivery_dependencies():
 
 
 UNTRACKED = {
+    ".build",  # Xcode products and intermediate files from the Apple packaging script.
     ".git",
     ".venv",
     "worktrees",

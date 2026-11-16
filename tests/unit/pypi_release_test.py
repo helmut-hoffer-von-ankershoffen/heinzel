@@ -4,8 +4,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -544,6 +547,9 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][3]["with"] == {"node-version": "24.19.0", "package-manager-cache": False}
     assert desktop["steps"][4]["with"] == {"version": "12.15.0", "run_install": False}
     assert desktop["steps"][5]["run"] == "make desktop-electron-package"
+    swift = desktop["steps"][-2]
+    assert swift["env"] == {"APPLE_APPLICATION_IDENTIFIER_PREFIX": "${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}"}
+    assert swift["run"] == "make desktop-swift-package"
     assert "desktop" in publish["needs"]
     assert "needs.desktop.result == 'success'" in publish["if"]
     steps = publish["steps"]
@@ -552,8 +558,49 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][-1]["with"]["name"] == download["with"]["name"]
     assert bind["if"] == desktop["if"]
     assert bind["env"]["SOURCE_COMMIT"] == "${{ steps.source.outputs.commit }}"
-    assert 'mv -- "$manifest" "desktop-release/$archive" dist/' in bind["run"]
+    assert bind["run"] == "make desktop-bind-release-assets"
+    recipe = (ROOT / "Makefile").read_text().split("\ndesktop-bind-release-assets:", 1)[1].split("\n\n", 1)[0]
+    assert 'for suffix in "" "-swift"' in recipe
+    assert recipe.index("jq -e") < recipe.index('mv -- "$$manifest" "desktop-release/$$archive" dist/')
     assert attest["with"]["subject-path"] == "dist/*"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="the release asset binding recipe runs on Linux")
+@pytest.mark.parametrize("corrupt", [None, "version", "commit", "name", "digest", "size"])
+@pytest.mark.parametrize("makelevel", ["0", "1"])
+def test_bind_release_assets_checks_swift_manifest_before_attestation(tmp_path, corrupt, makelevel):
+    for command in ("make", "sha256sum", "jq"):
+        assert shutil.which(command), f"release binding requires {command}"
+    staging = tmp_path / "desktop-release"
+    staging.mkdir()
+    (tmp_path / "dist").mkdir()
+    for suffix in ("", "-swift"):
+        name = f"heinzel-desktop{suffix}-{VERSION}-darwin-arm64.tar.gz"
+        body = f"fictional {suffix} archive".encode()
+        (staging / name).write_bytes(body)
+        manifest = {
+            "schema": 1,
+            "version": VERSION,
+            "commit": COMMIT,
+            "platform": "darwin",
+            "arch": "arm64",
+            "archive": {"name": name, "sha256": hashlib.sha256(body).hexdigest(), "size": len(body)},
+        }
+        if suffix and corrupt:
+            field = manifest if corrupt in {"version", "commit"} else manifest["archive"]
+            field[corrupt if corrupt != "digest" else "sha256"] = 99 if corrupt == "size" else "wrong"
+        (staging / f"desktop{suffix}-artifact-manifest.json").write_text(json.dumps(manifest))
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(ROOT / "Makefile"), "desktop-bind-release-assets"],
+        cwd=tmp_path,
+        env={**os.environ, "TAG": f"v{VERSION}", "SOURCE_COMMIT": COMMIT, "MAKELEVEL": makelevel},
+        capture_output=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == (corrupt is None), result.stderr.decode()
+    assert result.stdout.splitlines() == ([b"true", b"true"] if corrupt is None else [b"true", b"false"])
+    swift = tmp_path / "dist" / f"heinzel-desktop-swift-{VERSION}-darwin-arm64.tar.gz"
+    assert swift.exists() == (corrupt is None)
 
 
 def test_core_publication_checks_the_tagged_ui_contract_before_building():

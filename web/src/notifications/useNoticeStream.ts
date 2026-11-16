@@ -1,14 +1,13 @@
 // While the app is open: follow the notice stream, tell the app's notification center, and pop up due notices when
 // allowed (ADR 0043). Every notice that arrives is dispatched as a window event `hz:notice` (its JSON as `detail`), and
 // a change of the list as `hz:notices`, so any screen can refresh without its own stream.
-// Notifications go through the service worker (`showNotification`), so they work in the installed app and a click
-// focuses or opens the app at the notice; a notice this tab popped up is acknowledged, so the daemon never shows it
-// again. A tab that may not pop up claims nothing, so the daemon's native notification still reaches the person.
+// The Apple shell posts a system notification. The browser uses its service worker or Notification API. Clicking
+// opens the associated route, and acknowledging a notice that was posted prevents duplicate daemon delivery.
 import { useEffect } from "react";
 import { type NavigateFunction, useNavigate } from "react-router";
 import { api, type SchemaNotice } from "@/api/client";
 import { workerRegistration } from "@/pwa/register";
-import { appRoute, useDesktopState } from "./desktop";
+import { appRoute, nativeNotices, useDesktopState } from "./desktop";
 import { dingForStreamEvent, notificationSoundEnabled, primeNotificationSound } from "./sound";
 import { follow } from "./stream";
 
@@ -33,6 +32,15 @@ export async function popUp(
     data: { path },
   };
   try {
+    const native = nativeNotices();
+    if (native) {
+      const expires = notice.expires ? Date.parse(notice.expires) : null;
+      if (expires !== null && !(Date.now() < expires)) return false;
+      return (
+        (await native({ action: "show", id: notice.id, title: notice.title, body: notice.body, path, expires })) ===
+        true
+      );
+    }
     const worker = await registration();
     // A suspended tab or delayed service worker must not present a meeting after its boundary.
     if (notice.expires && !(Date.now() < Date.parse(notice.expires))) return false;
@@ -56,6 +64,25 @@ export function useNoticeStream() {
   const navigate = useNavigate();
   const desktop = useDesktopState();
   useEffect(() => {
+    const native = nativeNotices();
+    if (native) {
+      let active = true;
+      const opened = () => {
+        void native({ action: "take" })
+          .then((path) => {
+            if (active && typeof path === "string") navigate(appRoute(path));
+          })
+          .catch(() => undefined);
+      };
+      window.addEventListener("hz:native-notice", opened);
+      queueMicrotask(() => {
+        if (active) opened();
+      });
+      return () => {
+        active = false;
+        window.removeEventListener("hz:native-notice", opened);
+      };
+    }
     // A click on a notification the worker showed, while this window is open: go to the notice here.
     const worker = navigator.serviceWorker;
     const onMessage = (event: MessageEvent) => {

@@ -19,7 +19,7 @@ it("says what is listened to and that every captured source waits for the person
   expect(own).toMatch(/never leaves it/);
   expect(chosen).toMatch(/Only after you choose it .* your browser asks you/);
   expect(chosen).toMatch(/Choose Off there to stop/);
-  expect(system).toMatch(/only when you press Use system audio; it asks every time/);
+  expect(system).toMatch(/choose Use system audio in the Audio pane and allow it each time/);
   // The consent stays readable with the visualisation switched off.
   act(() => setMaster(false));
   expect(screen.getAllByRole("term")).toHaveLength(3);

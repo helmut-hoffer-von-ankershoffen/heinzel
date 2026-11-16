@@ -1,6 +1,6 @@
 // The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle opens the soundscape picker; the
 // picker also has Play/Pause and stays open while a soundscape is picked (it plays at once), and Settings → General exposes the same choices.
-import { Check, Pause, Play, Settings2, Volume, Volume2, VolumeX } from "lucide-react";
+import { Check, PanelLeftOpen, Pause, Play, Settings2, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
@@ -10,9 +10,11 @@ import { useSettingsTarget } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { isIOS } from "@/lib/browser";
+import { useOverlayTarget } from "@/lib/overlayTarget";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
+import { setDocked, useDockPref } from "./dock";
 import { effective, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
 import { play, toggle, useSound } from "./store";
 
@@ -166,6 +168,7 @@ function Popover({
   children: ReactNode;
 }) {
   const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const overlayTarget = useOverlayTarget();
   useLayoutEffect(() => {
     const place = () => {
       const target = anchor.current?.getBoundingClientRect();
@@ -191,12 +194,13 @@ function Popover({
     >
       {children}
     </div>,
-    document.body,
+    overlayTarget(),
   );
 }
 
 /** The speaker button and its popover, beside the light/dark toggle; `compact` in the collapsed rail. */
-export function SoundButton({ compact = false }: { compact?: boolean }) {
+export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; onPopOut?: () => void }) {
+  const { docked } = useDockPref();
   const list = useSoundscapes();
   const sound = useSound();
   // After a pick that reloaded the page the picker is open again, with the pick playing.
@@ -254,6 +258,18 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
                   : t("sound.play", { title: current.title })
                 : t("sound.choose")}
             </PaneAction>
+            {onPopOut && docked && current?.stream && sound.started && (
+              <PaneAction
+                key="pop-out"
+                icon={PanelLeftOpen}
+                onClick={() => {
+                  setDocked(false);
+                  onPopOut();
+                }}
+              >
+                {t("sound.popOut")}
+              </PaneAction>
+            )}
             <PaneAction key="more" icon={Settings2} to={settingsTarget} onClick={() => setOpen(false)}>
               {t("sound.more")}
             </PaneAction>

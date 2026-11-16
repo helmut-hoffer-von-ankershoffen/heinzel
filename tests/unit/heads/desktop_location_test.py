@@ -3,6 +3,7 @@
 Every case uses a fake home and a fake system Applications folder; bundles are inert files and nothing is launched.
 """
 
+import json
 import os
 import plistlib
 import shutil
@@ -11,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from heinzel.heads import _desktop_installation as desktop
 
@@ -83,6 +85,116 @@ def _bundles(home: Path, system: Path) -> list[Path]:
         for folder in (system, home / "Applications")
         if (folder / desktop.BUNDLE_NAME).exists()
     ]
+
+
+def test_swift_install_and_update_preserve_flavor(mac, monkeypatch):
+    home, _system, executable = mac
+    flavors = []
+
+    def fetch(version, directory, reporter, *, flavor):
+        flavors.append(flavor)
+        return _fetch(version, directory, reporter)
+
+    def extract(archive, staging):
+        bundle = _extract(archive, staging)
+        info = bundle / "Contents" / "Info.plist"
+        data = plistlib.loads(info.read_bytes())
+        data.update(CFBundleIdentifier="team.heinzel.apple", CFBundleExecutable="Heinzel")
+        info.write_bytes(plistlib.dumps(data))
+        (bundle / "Contents" / "MacOS" / "Heinzelmaennchen").rename(bundle / "Contents" / "MacOS" / "Heinzel")
+        return bundle
+
+    monkeypatch.setattr(desktop, "fetch_archive", fetch)
+    monkeypatch.setattr(desktop, "extract_bundle", extract)
+    assert desktop.install_desktop("1.0.0", executable, home=home, flavor=desktop.DesktopFlavor.SWIFT) == "installed"
+    assert desktop.install_desktop("1.0.1", executable, home=home, update_only=True) == "updated"
+    assert flavors == [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.SWIFT]
+    assert desktop._locate(home, home / ".config" / "heinzel")[1].flavor == "swift"
+
+
+class LegacyReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: int
+    release: str
+    device: int
+    inode: int
+    birth_time: int | None
+    executable: str
+
+
+@pytest.mark.parametrize("original", [desktop.DesktopFlavor.ELECTRON, desktop.DesktopFlavor.SWIFT])
+@pytest.mark.parametrize("after_move", [1, 2, 3])
+def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa: PLR0915 - whole interrupted transaction
+    mac, monkeypatch, original, after_move
+):
+    home, system, executable = mac
+    selected = desktop.DesktopFlavor.ELECTRON
+
+    def fetch(version, directory, reporter, *, flavor=desktop.DesktopFlavor.ELECTRON):
+        nonlocal selected
+        selected = flavor
+        return _fetch(version, directory, reporter)
+
+    def extract(archive, staging):
+        bundle = _extract(archive, staging)
+        if selected == desktop.DesktopFlavor.SWIFT:
+            info = bundle / "Contents" / "Info.plist"
+            data = plistlib.loads(info.read_bytes())
+            data.update(CFBundleIdentifier="team.heinzel.apple", CFBundleExecutable="Heinzel")
+            info.write_bytes(plistlib.dumps(data))
+            (bundle / "Contents" / "MacOS" / "Heinzelmaennchen").rename(bundle / "Contents" / "MacOS" / "Heinzel")
+        return bundle
+
+    monkeypatch.setattr(desktop, "fetch_archive", fetch)
+    monkeypatch.setattr(desktop, "extract_bundle", extract)
+    assert desktop.install_desktop("1.0.0", executable, home=home, flavor=original) == "installed"
+    config = home / ".config" / "heinzel"
+    bundle = system / desktop.BUNDLE_NAME
+    receipt = config / desktop._RECEIPT
+    before_receipt, before_inode = receipt.read_bytes(), bundle.stat().st_ino
+    if original == desktop.DesktopFlavor.SWIFT:
+        with pytest.raises(ValidationError):
+            LegacyReceipt.model_validate_json(before_receipt)
+    else:
+        LegacyReceipt.model_validate_json(before_receipt)
+        assert "flavor" not in json.loads(before_receipt)
+
+    target = (
+        desktop.DesktopFlavor.SWIFT if original == desktop.DesktopFlavor.ELECTRON else desktop.DesktopFlavor.ELECTRON
+    )
+    apply, recover = desktop._Move.apply, desktop._recover_transaction
+    count = 0
+
+    def interrupt(move, *, reverse=False):
+        nonlocal count
+        apply(move, reverse=reverse)
+        if not reverse:
+            count += 1
+            if count == after_move:
+                raise KeyboardInterrupt
+
+    monkeypatch.setattr(desktop._Move, "apply", interrupt)
+    monkeypatch.setattr(desktop, "_recover_transaction", lambda *_args: None)
+    with pytest.raises(KeyboardInterrupt):
+        desktop.install_desktop("1.0.0", executable, home=home, flavor=target)
+    assert (config / desktop._JOURNAL).exists()
+    monkeypatch.setattr(desktop, "_recover_transaction", recover)
+    assert desktop._recover_before_use(home, config)
+    assert not (config / desktop._JOURNAL).exists()
+    assert receipt.read_bytes() == before_receipt
+    assert bundle.stat().st_ino == before_inode
+    assert desktop._locate(home, config)[1].flavor == original
+    desktop._confirm_installed(bundle, config, desktop.SILENT)
+    monkeypatch.setattr(desktop._Move, "apply", apply)
+    assert desktop.install_desktop("1.0.0", executable, home=home, flavor=target) == "updated"
+    switched_receipt = receipt.read_bytes()
+    if target == desktop.DesktopFlavor.ELECTRON:
+        LegacyReceipt.model_validate_json(switched_receipt)
+        assert "flavor" not in json.loads(switched_receipt)
+    else:
+        with pytest.raises(ValidationError):
+            LegacyReceipt.model_validate_json(switched_receipt)
 
 
 @pytest.mark.parametrize("writable", [True, False], ids=["admin", "standard-user"])

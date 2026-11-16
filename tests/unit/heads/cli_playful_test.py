@@ -113,9 +113,9 @@ def test_real_banner_uses_the_exact_two_line_tagline(make_kernel, monkeypatch: p
     monkeypatch.delenv("NO_COLOR", raising=False)
     _banner(make_kernel())
     lines = console.export_text().splitlines()
-    first = next(index for index, line in enumerate(lines) if "Heinzels accelerating" in line)
-    assert lines[first].endswith("Heinzels accelerating product teams,")
-    assert lines[first + 1].endswith("like the little elves from Cologne")
+    first = next(index for index, line in enumerate(lines) if "Durable agents accelerating" in line)
+    assert lines[first].endswith("Durable agents accelerating product teams,")
+    assert lines[first + 1].endswith("like the little elves from Cologne.")
 
 
 def test_art_is_off_when_the_default_output_is_json():

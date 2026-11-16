@@ -1,6 +1,6 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
-import { Calendar, Check, ChevronDown, Globe, Link2, RefreshCw, SquareTerminal } from "lucide-react";
+import { Calendar, Check, ChevronDown, Ellipsis, Globe, Link2, Menu, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
@@ -52,6 +52,8 @@ type Props = {
   /** An agent has a tab in the browser, or waits there for the person's answer; shown as a mark on the button. */
   browserAgents?: BrowserAgents;
   navigationMode?: boolean;
+  onOpenNavigation?: () => void;
+  audioSlot?: (element: HTMLDivElement | null) => void;
 };
 
 export function TopBar({
@@ -65,6 +67,8 @@ export function TopBar({
   onToggleBrowser,
   browserAgents = "none",
   navigationMode = false,
+  onOpenNavigation,
+  audioSlot,
 }: Props) {
   const { title, command } = useScreen();
   const browserBase = browserOpen ? t("browser.close") : t("browser.open");
@@ -108,52 +112,78 @@ export function TopBar({
       queries.cancelQueries({ queryKey: ["org", "agenda"], exact: true }),
     ]).then(() => queries.invalidateQueries());
   };
+  const compact = Boolean(onOpenNavigation);
+  const screenActions = (
+    <>
+      <MenuItem
+        onSelect={() => copy("command")}
+        icon={copied === "command" ? <Check aria-hidden /> : <SquareTerminal aria-hidden />}
+      >
+        {t("top.copyCommand")}
+        <code className="ml-auto truncate font-mono text-xs text-muted-foreground">{command}</code>
+      </MenuItem>
+      <MenuItem onSelect={() => copy("link")} icon={<Link2 aria-hidden />}>
+        {t("top.copyLink")}
+      </MenuItem>
+      <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
+        {t("top.refresh")}
+      </MenuItem>
+    </>
+  );
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
     // On a phone the five actions leave the title little room: tighter spacing and no chevron keep "Today" whole.
     <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3 max-sm:px-2">
-      <div ref={menuRef} className="relative min-w-0">
-        <button
-          type="button"
-          onClick={() => setMenu((open) => !open)}
-          aria-haspopup="menu"
-          aria-expanded={menu}
-          className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70 max-sm:px-1"
-        >
-          <span className="truncate">{title}</span>
-          <ChevronDown aria-hidden className="size-4 shrink-0 text-icon max-sm:hidden" />
-        </button>
-        {menu && (
-          <AnchoredPopover anchor={menuRef} role="menu" className="w-64">
-            <MenuItem
-              onSelect={() => copy("command")}
-              icon={copied === "command" ? <Check aria-hidden /> : <SquareTerminal aria-hidden />}
-            >
-              {t("top.copyCommand")}
-              <code className="ml-auto truncate font-mono text-xs text-muted-foreground">{command}</code>
-            </MenuItem>
-            <MenuItem onSelect={() => copy("link")} icon={<Link2 aria-hidden />}>
-              {t("top.copyLink")}
-            </MenuItem>
-            <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
-              {t("top.refresh")}
-            </MenuItem>
-          </AnchoredPopover>
-        )}
-      </div>
-      <div className="ml-auto flex items-center gap-0.5 text-icon max-sm:gap-0">
-        <HeaderActions />
+      {compact && (
         <Button
           variant="ghost"
           size="icon"
-          onClick={onToggleTerminal}
-          aria-pressed={terminalOpen}
-          aria-label={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
-          title={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
-          className={cn(terminalOpen && "bg-accent text-accent-foreground")}
+          aria-label={t("nav.openMenu")}
+          aria-haspopup="dialog"
+          className="size-11 shrink-0 rounded-full"
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            onOpenNavigation?.();
+          }}
         >
-          <SquareTerminal aria-hidden />
+          <Menu aria-hidden />
         </Button>
+      )}
+      {compact && <span className="min-w-0 truncate px-1 text-ui font-semibold">{title}</span>}
+      {!compact && (
+        <div ref={menuRef} className="relative min-w-0">
+          <button
+            type="button"
+            onClick={() => setMenu((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70 max-sm:px-1"
+          >
+            <span className="truncate">{title}</span>
+            <ChevronDown aria-hidden className="size-4 shrink-0 text-icon max-sm:hidden" />
+          </button>
+          {menu && (
+            <AnchoredPopover anchor={menuRef} role="menu" className="w-64">
+              {screenActions}
+            </AnchoredPopover>
+          )}
+        </div>
+      )}
+      <div className="ml-auto flex items-center gap-0.5 text-icon max-sm:gap-0">
+        {!compact && <HeaderActions />}
+        {!compact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleTerminal}
+            aria-pressed={terminalOpen}
+            aria-label={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
+            title={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
+            className={cn(terminalOpen && "bg-accent text-accent-foreground")}
+          >
+            <SquareTerminal aria-hidden />
+          </Button>
+        )}
         {onToggleBrowser && (
           <Button
             variant="ghost"
@@ -162,7 +192,7 @@ export function TopBar({
             aria-pressed={browserOpen}
             aria-label={browserLabel}
             title={browserLabel}
-            className={cn("relative", browserOpen && "bg-accent text-accent-foreground")}
+            className={cn("relative", compact && "size-11 rounded-full", browserOpen && "bg-accent text-accent-foreground")}
           >
             <Globe aria-hidden />
             {browserAgents !== "none" && (
@@ -177,28 +207,32 @@ export function TopBar({
             )}
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onOpenCalendar}
-          aria-label="Open calendar"
-          title="Open calendar"
-          aria-pressed={calendarOpen}
-        >
-          <Calendar aria-hidden />
-        </Button>
-        {/* Reload stays the last action before the mascot. It spins while any refetch runs, also one in the background,
+        {!compact && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenCalendar}
+              aria-label="Open calendar"
+              title="Open calendar"
+              aria-pressed={calendarOpen}
+            >
+              <Calendar aria-hidden />
+            </Button>
+            {/* Reload stays the last action before the mascot. It spins while any refetch runs, also one in the background,
             and its tooltip then says what the spinning means. */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={refresh}
-          aria-label={t("top.refresh")}
-          title={t(fetching ? "top.refreshing" : "top.refresh")}
-          aria-busy={fetching}
-        >
-          <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />
-        </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={refresh}
+              aria-label={t("top.refresh")}
+              title={t(fetching ? "top.refreshing" : "top.refresh")}
+              aria-busy={fetching}
+            >
+              <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />
+            </Button>
+          </>
+        )}
         {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button
           variant="ghost"
@@ -208,7 +242,7 @@ export function TopBar({
           aria-pressed={chatOpen}
           aria-label={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
           title={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
-          className="relative hover:bg-transparent hover:opacity-70"
+          className={cn("relative hover:bg-transparent hover:opacity-70", compact && "size-11 rounded-full")}
         >
           <HeinzelAvatar view="head" age="young" shirt="teal" alive={playful} className="size-[1.4em] text-lg" />
           <span
@@ -220,6 +254,51 @@ export function TopBar({
             )}
           />
         </Button>
+        {compact && (
+          <>
+            {audioSlot && <div ref={audioSlot} className="relative size-11 shrink-0" />}
+            <div ref={menuRef}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t("top.more")}
+                aria-expanded={menu}
+                className="size-11 rounded-full"
+                onClick={() => setMenu((open) => !open)}
+              >
+                <Ellipsis aria-hidden />
+              </Button>
+              {menu && (
+                <AnchoredPopover anchor={menuRef} role="region" aria-label={t("top.more")} className="w-64">
+                  <div role="menu" aria-label={t("top.more")}>
+                    <MenuItem
+                      icon={<SquareTerminal aria-hidden />}
+                      onSelect={() => {
+                        setMenu(false);
+                        onToggleTerminal();
+                      }}
+                    >
+                      {t(terminalOpen ? "terminal.show" : "terminal.open")}
+                    </MenuItem>
+                    <MenuItem
+                      icon={<Calendar aria-hidden />}
+                      onSelect={() => {
+                        setMenu(false);
+                        onOpenCalendar();
+                      }}
+                    >
+                      Open calendar
+                    </MenuItem>
+                    {screenActions}
+                  </div>
+                  <div className="flex flex-wrap gap-1 empty:hidden">
+                    <HeaderActions />
+                  </div>
+                </AnchoredPopover>
+              )}
+            </div>
+          </>
+        )}
       </div>
       <span className="sr-only" aria-live="polite">
         {copied && t("command.copied")}
@@ -242,7 +321,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-icon"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm min-h-11 transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-icon"
     >
       {icon}
       {children}

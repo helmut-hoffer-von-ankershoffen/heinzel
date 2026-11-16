@@ -103,6 +103,7 @@ it("Open in browser and Clear browsing data send their own commands, and only on
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
   const open = screen.getByRole("button", { name: "Open in browser" });
+  expect(open).toHaveAttribute("data-heinzel-browser-external");
   expect(open).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "clear" }));
@@ -143,6 +144,19 @@ it("a failed Clear browsing data is shown, not hidden", async () => {
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(/Browsing data could not be cleared/);
+});
+
+it("shows a refused native handoff until a new attempt, without exposing details", async () => {
+  const browser = vi.fn(async () => ({ status: "ready", url: "https://example.com/" }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  fireEvent(window, new Event("heinzel-guest-external-failed"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("This page could not be opened in your browser.");
+  fireEvent.click(screen.getByRole("button", { name: "Reload the website" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "reload" }));
+  expect(screen.getByRole("alert")).not.toHaveTextContent("example.com");
+  fireEvent(window, new Event("heinzel-guest-external-started"));
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it.each([

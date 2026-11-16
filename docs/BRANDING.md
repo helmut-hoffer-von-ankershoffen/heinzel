@@ -15,7 +15,7 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 ## Three sentences, each with a place
 
 - **Tagline:** "Less busywork. More good work." It is the hero on the Pages home and the opening of `PYPI.md`.
-- **Descriptor:** "Heinzels accelerating product teams". It is line 2 of the CLI banner and the web manifest description (ADR 0071).
+- **Descriptor:** "Durable agents accelerating product teams, like the little elves from Cologne." It appears in the CLI banner, app about view, Pages home and web manifest. The CLI and app about view may break the sentence after the comma.
 - **Description:** "Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine."
 - The description is the one-liner for `README.md`, `PYPI.md`, the home page description, the plugin marketplace and the MCP server.
 - Where the field already names the project (`pyproject.toml`, `site_description`), drop the leading "Heinzelmännchen is".

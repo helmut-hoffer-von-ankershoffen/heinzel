@@ -96,7 +96,7 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
           className={cn(
             // Clip, not scroll: a page or contributed panel wider than the column stays put instead of panning sideways.
             "min-w-0 overflow-x-clip",
-            flowing
+            flowing && panel.id !== "browser"
               ? panel.scrollable || panel.id === "page"
                 ? "shrink-0"
                 : "h-[min(36rem,75dvh)] shrink-0 overflow-hidden"

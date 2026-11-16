@@ -26,7 +26,7 @@ from heinzel import HeinzelError
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_log import step
-from heinzel.heads._desktop_release import VERSION, fetch_archive
+from heinzel.heads._desktop_release import VERSION, DesktopFlavor, fetch_archive
 from heinzel.heads._desktop_report import SILENT, Reporter
 from heinzel.heads._desktop_seal import (
     SealReport,
@@ -96,6 +96,7 @@ class _Receipt(BaseModel):
 
     schema_version: Literal[1] = 1
     release: str
+    flavor: Literal["electron", "swift"] = "electron"
     device: int
     inode: int
     birth_time: int | None
@@ -282,7 +283,7 @@ def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
         if record is None:
             msg = f"The desktop app is not at {bundle} after installation."
             raise DesktopInstallationError(msg, say.lost())
-        _verify_bundle(bundle, record.release)
+        _verify_bundle(bundle, record.release, DesktopFlavor(record.flavor))
 
 
 @contextmanager
@@ -442,10 +443,13 @@ def _in_use(bundle: Path) -> bool:
     )
 
 
-def _verify_bundle(bundle: Path, version: str) -> None:
+def _verify_bundle(bundle: Path, version: str, flavor: DesktopFlavor = DesktopFlavor.ELECTRON) -> None:
+    bundle_id, executable_name = (
+        ("team.heinzel.apple", "Heinzel") if flavor == DesktopFlavor.SWIFT else (_BUNDLE_ID, _BUNDLE_EXECUTABLE)
+    )
     contents = bundle / "Contents"
     metadata = contents / "Info.plist"
-    executable = contents / "MacOS" / _BUNDLE_EXECUTABLE
+    executable = contents / "MacOS" / executable_name
     problem = "The verified archive does not contain the expected Apple silicon desktop bundle."
     try:
         info = metadata.lstat()
@@ -459,7 +463,7 @@ def _verify_bundle(bundle: Path, version: str) -> None:
             values.get("CFBundleIdentifier"),
             values.get("CFBundleExecutable"),
             values.get("CFBundleShortVersionString"),
-        ) != (_BUNDLE_ID, _BUNDLE_EXECUTABLE, version):
+        ) != (bundle_id, executable_name, version):
             raise DesktopInstallationError(problem, say.bad_archive())
         mode = executable.lstat().st_mode
         if not stat.S_ISREG(mode) or not mode & stat.S_IXUSR:
@@ -737,6 +741,7 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     replace: bool = False,
     forget: bool = False,
     notes: list[str] | None = None,
+    flavor: DesktopFlavor | None = None,
 ) -> DesktopInstallStatus:
     """Install or refresh a verified desktop release, or defer if the bundle is in use.
 
@@ -760,6 +765,7 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
             replace=replace,
             forget=forget,
             keep_quarantine=keep_quarantine,
+            flavor=flavor,
         )
         result["outcome"] = state
         return state
@@ -777,6 +783,7 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
     replace: bool,
     forget: bool,
     keep_quarantine: bool,
+    flavor: DesktopFlavor | None,
 ) -> DesktopInstallStatus:
     if os.path.lexists(home / "Applications"):
         _owned_directory(home / "Applications")
@@ -807,10 +814,11 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
         with step("install", "migrate", path=str(bundle)) as result:
             bundle = _migrate(bundle, config)
             result["path"] = str(bundle)
+    selected = flavor or (DesktopFlavor(existing.flavor) if existing else DesktopFlavor.ELECTRON)
     _applications_directory(bundle.parent, home)
     with step("install", "release", path=str(bundle), version=version) as result:
         state = _install_release(
-            version, executable, bundle, config, existing, reporter, keep_quarantine=keep_quarantine
+            version, executable, bundle, config, existing, reporter, keep_quarantine=keep_quarantine, flavor=selected
         )
         result["outcome"] = state
     if state != "deferred":
@@ -837,6 +845,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
     reporter: Reporter = SILENT,
     *,
     keep_quarantine: bool,
+    flavor: DesktopFlavor,
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -846,18 +855,27 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
     ):
         msg = "Desktop installation requires a stable release and an absolute, executable hz path."
         raise DesktopInstallationError(msg, say.needs_stable_hz())
-    if existing and existing.release == version and existing.executable == str(executable):
+    if (
+        existing
+        and existing.flavor == flavor
+        and existing.release == version
+        and existing.executable == str(executable)
+    ):
         return "current"
     if existing and _in_use(bundle):
         return "deferred"
     with _staging(bundle.parent, config) as (staging, files):
-        archive = fetch_archive(version, staging, reporter)
+        archive = (
+            fetch_archive(version, staging, reporter, flavor=flavor)
+            if flavor == DesktopFlavor.SWIFT
+            else fetch_archive(version, staging, reporter)
+        )
         expanded = staging / "expanded"
         expanded.mkdir(mode=0o700)
         with reporter.phase(say.EXTRACT):
             candidate = extract_bundle(archive, expanded)
         with reporter.phase(say.CHECK_BUNDLE):
-            _verify_bundle(candidate, version)
+            _verify_bundle(candidate, version, flavor)
         with reporter.phase(say.CHECK_SEAL):
             _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
         candidate.rename(staging / BUNDLE_NAME)
@@ -865,12 +883,13 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
             info = (staging / BUNDLE_NAME).lstat()
             record = _Receipt(
                 release=version,
+                flavor=flavor.value,
                 device=info.st_dev,
                 inode=info.st_ino,
                 birth_time=getattr(info, "st_birthtime_ns", None),
                 executable=str(executable),
             )
-            metadata = record.model_dump_json().encode()
+            metadata = record.model_dump_json(exclude={"flavor"} if record.flavor == "electron" else None).encode()
             binding = record.binding()
             if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
                 msg = "The desktop installation metadata exceeds the allowed size."

@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+source_file=${1:-$root/web/src/components/heinzel.ts}
+output_file=${2:?pass the generated artwork output path}
+node --disable-warning=ExperimentalWarning --input-type=module - "$source_file" "$output_file" <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+const source = readFileSync(process.argv[2], 'utf8');
+const javascript = stripTypeScriptTypes(source).replace(/^export /gm, '').replace(/[ \t]+$/gm, '');
+writeFileSync(process.argv[3], '// Generated from web/src/components/heinzel.ts by apple/scripts/update-widget-artwork.\n' + javascript);
+JS

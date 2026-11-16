@@ -1,6 +1,8 @@
 """The product site lives on heinzel.team; the owner's personal domain must not creep back into the repository."""
 
+import json
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -15,6 +17,7 @@ SITE = "https://heinzel.team/"
 OLD_DOMAIN = "hoffer-von-ankershoffen" + ".me"
 # The imprint links the provider's own website on the owner's request; it is not a link to the product site.
 PERSONAL_LINK_ALLOWED = {"docs/imprint.md"}
+ASSOCIATION_SCRIPT = REPO / "apple/scripts/association-file"
 
 
 def _tracked_text_files() -> list[Path]:
@@ -58,6 +61,40 @@ def test_robots_txt_points_at_the_sitemap_on_the_product_domain() -> None:
     robots = (REPO / "docs/robots.txt").read_text(encoding="utf-8")
     assert f"Sitemap: {SITE}sitemap.xml" in robots
     assert "Disallow: /\n" not in robots
+
+
+def test_site_stages_the_apple_association_for_the_signed_app(tmp_path: Path) -> None:
+    (tmp_path / "open").mkdir()
+    (tmp_path / "open/index.html").write_text("<!doctype html>", encoding="utf-8")
+    subprocess.run(
+        [sys.executable, str(ASSOCIATION_SCRIPT), "ABCD123456", "--site-dir", str(tmp_path)],
+        check=True,
+        timeout=10,
+    )
+    association = tmp_path / ".well-known/apple-app-site-association"
+    assert json.loads(association.read_text(encoding="utf-8")) == {
+        "applinks": {"details": [{"appIDs": ["ABCD123456.team.heinzel.apple"], "components": [{"/": "/open/"}]}]},
+    }
+
+
+@pytest.mark.parametrize("unexpected", ["hidden", "symlink"])
+def test_apple_association_staging_refuses_assets_hidden_by_default(tmp_path: Path, unexpected: str) -> None:
+    (tmp_path / "open").mkdir()
+    (tmp_path / "open/index.html").write_text("<!doctype html>", encoding="utf-8")
+    if unexpected == "symlink":
+        (tmp_path / "alias").symlink_to(tmp_path.parent, target_is_directory=True)
+    else:
+        (tmp_path / "open/.private").touch()
+    result = subprocess.run(
+        [sys.executable, str(ASSOCIATION_SCRIPT), "ABCD123456", "--site-dir", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 2
+    assert "unexpected hidden paths" in result.stderr
+    assert not (tmp_path / ".well-known").exists()
 
 
 def test_link_previews_use_an_existing_image_and_the_landing_pages_describe_themselves() -> None:

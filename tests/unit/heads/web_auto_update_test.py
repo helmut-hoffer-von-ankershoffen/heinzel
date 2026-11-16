@@ -178,6 +178,11 @@ class Receipt(Installation):
         return self.pin
 
 
+@pytest.fixture(autouse=True)
+def _isolate_desktop_installation(monkeypatch, tmp_path):
+    monkeypatch.setattr(auto.Path, "home", classmethod(lambda _cls: tmp_path))
+
+
 class Clock:
     def __init__(self):
         self.now = START

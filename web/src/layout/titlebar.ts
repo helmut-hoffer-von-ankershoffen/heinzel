@@ -5,11 +5,16 @@ export type Titlebar = { height: number; left: number; right: number };
 
 type Bridge = {
   titlebar?: Titlebar | null;
+  mobileWorkspace?: boolean;
   onFullscreen?: (callback: (full: boolean) => void) => (() => void) | undefined;
 };
 
 function bridge(): Bridge | undefined {
   return (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
+}
+
+export function nativeMobileWorkspace(): boolean {
+  return bridge()?.mobileWorkspace === true;
 }
 
 /** The desktop bridge's title bar, or null in a browser or PWA, whose layout stays as it is. */
