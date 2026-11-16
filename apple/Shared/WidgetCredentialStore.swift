@@ -33,9 +33,14 @@ protocol WidgetCredentialKeychain {
     func write(_ data: Data) -> Bool
     func delete() -> Bool
     func readPending(_ attempt: String) -> Data?
+    func readPendingStatus(_ attempt: String) -> WidgetKeychainRead
     func createPending(_ data: Data, attempt: String) -> Bool
     func updatePending(_ data: Data, attempt: String) -> Bool
     func deletePending(_ attempt: String) -> Bool
+}
+
+extension WidgetCredentialKeychain {
+    func readPendingStatus(_ attempt: String) -> WidgetKeychainRead { .unavailable }
 }
 
 /// The access group must be explicitly provisioned for both signed targets.
@@ -116,13 +121,19 @@ struct SharedWidgetKeychain: WidgetCredentialKeychain {
     }
 
     func readPending(_ attempt: String) -> Data? {
-        guard var request = pendingQuery(attempt) else { return nil }
+        if case .data(let data) = readPendingStatus(attempt) { return data }
+        return nil
+    }
+
+    func readPendingStatus(_ attempt: String) -> WidgetKeychainRead {
+        guard var request = pendingQuery(attempt) else { return .unavailable }
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data, data.count <= 4096 else { return nil }
-        return data
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        if status == errSecItemNotFound { return .missing }
+        guard status == errSecSuccess, let data = result as? Data, data.count <= 4096 else { return .unavailable }
+        return .data(data)
     }
 
     func createPending(_ data: Data, attempt: String) -> Bool {
@@ -205,11 +216,11 @@ struct WidgetCredentialStore {
     /// Stale failures may revoke only the captured credential, including on retry.
     func invalidate(_ expected: ActivityCatalog.Activation) -> ActivityCatalog.ClearResult {
         let pending = ActivityCatalog.pendingEnrollment(url: catalogURL)
-        let recorded = pending.map { ActivityCatalog.enrollmentHasRecordedPhase(url: catalogURL, expected: $0) } ?? false
-        return ActivityCatalog.invalidate(url: catalogURL, expected: expected) {
+        let recovery = pending.flatMap { $0.previous == expected ? $0 : nil }
+        return ActivityCatalog.invalidate(url: catalogURL, expected: expected, recovery: recovery,
+                                          recoveryCheck: { WidgetFencedEnrollment(store: self).recoveryEvidenceMatches($0) }) {
             var pendingDeleted = true
-            if let pending, pending.previous == expected {
-                guard recorded else { return false }
+            if let pending = recovery {
                 pendingDeleted = keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased())
             }
             let activeDeleted = purgeCredential()

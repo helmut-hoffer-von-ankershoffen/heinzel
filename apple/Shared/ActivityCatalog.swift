@@ -66,6 +66,14 @@ final class ActivityCatalog {
         let request: Data?
     }
 
+    private struct JournalRequest: Decodable {
+        let epoch: String
+        let revision: String
+        let attempt: String
+        let operation: String
+        let commitment: String
+    }
+
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
         if let journal = try? JSONDecoder().decode(EnrollmentJournal.self, from: data) {
             guard journal.version == 1, UUID(uuidString: journal.revision) != nil,
@@ -75,7 +83,12 @@ final class ActivityCatalog {
                 guard journal.workspaceID == nil, journal.request == nil else { return nil }
             case .armed:
                 guard let workspace = journal.workspaceID, workspace.wholeMatch(of: /[a-f0-9]{64}/) != nil,
-                      let request = journal.request, !request.isEmpty, request.count <= 4096 else { return nil }
+                      let request = journal.request, !request.isEmpty, request.count <= 4096,
+                      let value = try? JSONDecoder().decode(JournalRequest.self, from: request),
+                      value.epoch.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                      value.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                      value.attempt == journal.reservation.id.replacingOccurrences(of: "-", with: "").lowercased(),
+                      value.operation == "issue", value.commitment.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return nil }
             case .legacyUnknown: return nil
             }
             return journal
@@ -237,23 +250,6 @@ final class ActivityCatalog {
         }
     }
 
-    /// Legacy or damaged markers do not prove it is safe to delete recovery material.
-    static func enrollmentHasRecordedPhase(url: URL, expected: Enrollment) -> Bool {
-        withWriterLock(url: url, failure: false) {
-            guard let data = try? Data(contentsOf: enrollmentURL(for: url)),
-                  let journal = enrollmentJournal(data), journal.reservation == expected else { return false }
-            return journal.phase != .legacyUnknown
-        }
-    }
-
-    static func enrollmentNeverSent(url: URL, expected: Enrollment) -> Bool {
-        withWriterLock(url: url, failure: false) {
-            guard let data = try? Data(contentsOf: enrollmentURL(for: url)),
-                  let journal = enrollmentJournal(data), journal.reservation == expected else { return false }
-            return journal.phase == .preparing
-        }
-    }
-
     /// Runs a noninteractive local operation only while both reservation files
     /// still agree. Never use this closure for network or user interaction.
     static func withEnrollment<T>(url: URL, expected: Enrollment, _ action: () -> T?) -> T? {
@@ -283,7 +279,7 @@ final class ActivityCatalog {
             guard current.phase == .preparing || current.phase == .legacyUnknown else { return false }
             let next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
                                          phase: .armed, workspaceID: workspaceID, request: request)
-            guard let encoded = try? JSONEncoder().encode(next) else { return false }
+            guard let encoded = try? JSONEncoder().encode(next), enrollmentJournal(encoded) == next else { return false }
             return writeJournal(encoded, enrollmentURL(for: url))
         }
     }
@@ -313,7 +309,8 @@ final class ActivityCatalog {
 
     /// Explicit user clearing may cancel a live reservation locally but must
     /// retain its independent unknown-outcome marker until safely resolved.
-    static func clearEnrollment(url: URL, expected: Enrollment, deleteCredential: () -> Bool) -> ClearResult {
+    static func clearEnrollment(url: URL, expected: Enrollment, journalCheck: (EnrollmentJournal) -> Bool,
+                                deleteCredential: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data) else {
@@ -325,6 +322,10 @@ final class ActivityCatalog {
             let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
             guard let encoded = try? JSONEncoder().encode(tombstone),
                   writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.phase != .legacyUnknown,
+                  writeJournal(marker, markerURL), journalCheck(journal) else { return ClearResult(revoked: true, purged: false) }
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false
             return ClearResult(revoked: true, purged: deleted && purged)
@@ -375,7 +376,10 @@ final class ActivityCatalog {
 
     /// Revoke before attempting noninteractive Keychain deletion; a stale failure
     /// cannot invalidate a later activation or replacement credential.
-    static func invalidate(url: URL, expected: Activation, deleteCredential: () -> Bool) -> ClearResult {
+    static func invalidate(url: URL, expected: Activation, recovery: Enrollment? = nil,
+                           journalSync: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
+                           recoveryCheck: (EnrollmentJournal) -> Bool = { _ in false },
+                           deleteCredential: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data) else {
@@ -387,6 +391,21 @@ final class ActivityCatalog {
                       writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
             } else if current.revoked != true || current.cleanup != expected {
                 return ClearResult(revoked: false, purged: false, stale: true)
+            }
+            let markerURL = enrollmentURL(for: url)
+            var markerInfo = stat()
+            let markerStatus = lstat(markerURL.path, &markerInfo)
+            if markerStatus != 0 && errno != ENOENT { return ClearResult(revoked: true, purged: false) }
+            if markerStatus == 0 {
+                guard let recovery else { return ClearResult(revoked: true, purged: false) }
+                guard recovery.previous == expected,
+                      let marker = try? Data(contentsOf: markerURL),
+                      let journal = enrollmentJournal(marker), journal.reservation == recovery,
+                      journal.phase != .legacyUnknown, journalSync(marker, markerURL), recoveryCheck(journal) else {
+                    return ClearResult(revoked: true, purged: false)
+                }
+            } else if recovery != nil {
+                return ClearResult(revoked: true, purged: false)
             }
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false

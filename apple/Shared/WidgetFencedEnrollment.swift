@@ -111,15 +111,32 @@ struct WidgetFencedEnrollment {
                   value.valid, value.reservation == reservation else { return nil }
             return value
         }
-        var canDeletePending = pending != nil || ActivityCatalog.enrollmentNeverSent(url: store.catalogURL, expected: reservation)
         if let pending, let request = pending.requestData, let workspace = pending.workspaceID {
-            canDeletePending = ActivityCatalog.armEnrollment(url: store.catalogURL, expected: reservation,
-                                                              workspaceID: workspace, request: request)
+            _ = ActivityCatalog.armEnrollment(url: store.catalogURL, expected: reservation,
+                                              workspaceID: workspace, request: request)
         }
-        return ActivityCatalog.clearEnrollment(url: store.catalogURL, expected: reservation) {
-            let deleted = canDeletePending && store.keychain.deletePending(attempt)
-            let activeDeleted = canDeletePending && store.purgeCredential()
+        return ActivityCatalog.clearEnrollment(url: store.catalogURL, expected: reservation,
+                                               journalCheck: { recoveryEvidenceMatches($0) }) {
+            let deleted = store.keychain.deletePending(attempt)
+            let activeDeleted = store.purgeCredential()
             return deleted && activeDeleted
+        }
+    }
+
+    /// Called only while the authority lock protects the checked journal.
+    func recoveryEvidenceMatches(_ journal: ActivityCatalog.EnrollmentJournal) -> Bool {
+        let attempt = journal.reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        switch store.keychain.readPendingStatus(attempt) {
+        case .unavailable: return false
+        case .missing: return true
+        case .data(let data):
+            guard let pending = try? JSONDecoder().decode(PendingFence.self, from: data),
+                  pending.valid, pending.reservation == journal.reservation else { return false }
+            switch journal.phase {
+            case .preparing: return pending.request == nil && pending.workspaceID == nil
+            case .armed: return pending.requestData == journal.request && pending.workspaceID == journal.workspaceID
+            case .legacyUnknown: return false
+            }
         }
     }
 
