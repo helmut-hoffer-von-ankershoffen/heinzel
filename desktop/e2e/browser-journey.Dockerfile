@@ -15,17 +15,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \
       libxkbcommon0 libxrandr2 libxshmfence1 libxss1 libxtst6 \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir uv==0.13.5 \
+    && pip install --no-cache-dir --only-binary=:all: uv==0.13.5 \
     && useradd --create-home journey
 
-COPY --chown=journey:journey . /work
+COPY --chown=journey:journey pyproject.toml uv.lock .python-version hatch_build.py CHANGELOG.md PYPI.md LICENSE ATTRIBUTIONS.md /work/
+COPY --chown=journey:journey src/ /work/src/
+COPY --chown=journey:journey agent-skills/skills/ /work/agent-skills/skills/
+COPY --chown=journey:journey scripts/bootstrap-pyyaml.sh scripts/web_build.py scripts/tools.py scripts/tools.toml /work/scripts/
+COPY --chown=journey:journey web/package.json web/pnpm-lock.yaml web/index.html web/vite.config.ts web/tsconfig.json /work/web/
+COPY --chown=journey:journey web/src/ /work/web/src/
+COPY --chown=journey:journey web/public/ /work/web/public/
+COPY --chown=journey:journey desktop/package.json desktop/pnpm-lock.yaml /work/desktop/
+COPY --chown=journey:journey desktop/src/ /work/desktop/src/
+COPY --chown=journey:journey desktop/assets/ /work/desktop/assets/
+COPY --chown=journey:journey desktop/e2e/ /work/desktop/e2e/
 WORKDIR /work
 USER journey
 ENV UV_LINK_MODE=copy
-RUN uv sync --frozen \
-    && uv run --script scripts/web_build.py build \
-    && uv run --script scripts/web_build.py pnpm --dir ../desktop install --frozen-lockfile \
-    && uv run --script scripts/web_build.py pnpm --dir ../desktop exec node node_modules/electron/install.js
+# The editable wheel is built from this checkout with the backend already installed from uv.lock.
+RUN uv sync --frozen --no-build --no-dev --group build --no-install-project --no-install-package pyyaml \
+    && bash scripts/bootstrap-pyyaml.sh \
+    && wheel_dir="$(mktemp -d)" \
+    && .venv/bin/python -c 'from hatchling.build import build_editable; import sys; build_editable(sys.argv[1])' "$wheel_dir" \
+    && uv pip install --offline --no-build --no-deps "$wheel_dir"/heinzel-*.whl \
+    && rm -r "$wheel_dir" \
+    && .venv/bin/python scripts/web_build.py build \
+    && .venv/bin/python scripts/web_build.py pnpm --dir ../desktop install --frozen-lockfile \
+    && .venv/bin/python scripts/web_build.py pnpm --dir ../desktop exec node node_modules/electron/install.js
 
 # Chromium's sandbox helper must be root-owned and setuid, as desktop/ci/restore_linux_sandbox.py sets it in CI.
 USER root
@@ -40,5 +56,5 @@ ENV HZ_JOURNEY_VISIBLE=1 HZ_JOURNEY_PYTHON=/work/.venv/bin/python DISPLAY=:99 UV
 CMD Xvfb :99 -screen 0 1440x900x24 -nolisten tcp & \
     for turn in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.5; done; \
     [ -S /tmp/.X11-unix/X99 ] || { echo "The virtual display did not start."; exit 1; }; \
-    uv run --script scripts/web_build.py pnpm --dir ../desktop test:browser-journey; status=$?; \
+    .venv/bin/python scripts/web_build.py pnpm --dir ../desktop test:browser-journey; status=$?; \
     echo "Browser journey container: exit $status"; exit $status
