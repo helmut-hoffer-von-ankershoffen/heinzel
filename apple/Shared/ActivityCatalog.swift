@@ -73,6 +73,12 @@ final class ActivityCatalog {
         var recoveryStatus: Data? = nil
         var recoveryRequest: Data? = nil
         var recoveryReceipt: Data? = nil
+        var recoveryConflicts: [RecoveryConflict]? = nil
+    }
+
+    struct RecoveryConflict: Codable, Equatable {
+        let request: Data
+        let status: Data
     }
 
     private struct JournalRequest: Decodable {
@@ -175,6 +181,22 @@ final class ActivityCatalog {
                           let last = status.last_attempt, last != issue.attempt else { return nil }
                 }
             } else if journal.recoveryRequest != nil || journal.recoveryReceipt != nil { return nil }
+            if let conflicts = journal.recoveryConflicts {
+                guard journal.cancelled == true, conflicts.count <= 8,
+                      let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData) else { return nil }
+                for conflict in conflicts {
+                    guard conflict.request.count <= 4096, conflict.status.count <= 4096,
+                          let revoke = try? JSONDecoder().decode(JournalRevoke.self, from: conflict.request),
+                          let status = try? JSONDecoder().decode(JournalStatus.self, from: conflict.status),
+                          revoke.epoch == issue.epoch, revoke.operation == "revoke", revoke.commitment == nil,
+                          revoke.attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                          revoke.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                          status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                          status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, status.revision != revoke.revision,
+                          let last = status.last_attempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                          last != revoke.attempt else { return nil }
+                }
+            }
             return journal
         }
         guard let reservation = try? JSONDecoder().decode(Enrollment.self, from: data) else { return nil }
@@ -512,8 +534,46 @@ final class ActivityCatalog {
         }
     }
 
+    /// After an authenticated 409, a freshly fetched advanced revision proves
+    /// that the old conditional request cannot commit. Preserve both as evidence.
+    static func resolveRecoveryConflict(url: URL, expected: Enrollment, fingerprint: String,
+                                        failedRequest: Data, observedStatus: Data) -> EnrollmentRecoveryPlan? {
+        guard observedStatus.count <= 4096, let status = try? JSONDecoder().decode(JournalStatus.self, from: observedStatus) else { return nil }
+        return withWriterLock(url: url, failure: nil) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), var journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.cancelled == true, journal.pairingFingerprint == fingerprint,
+                  journal.recoveryRequest == failedRequest, journal.recoveryReceipt == nil,
+                  let revoke = try? JSONDecoder().decode(JournalRevoke.self, from: failedRequest),
+                  let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
+                  status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                  status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, status.revision != revoke.revision,
+                  status.revision != issue.revision,
+                  let last = status.last_attempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil, last != revoke.attempt,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: data),
+                  authority.revoked == true, authority.cleanup == expected.previous else { return nil }
+            var history = journal.recoveryConflicts ?? []
+            guard history.count < 8 else { return nil }
+            history.append(RecoveryConflict(request: failedRequest, status: observedStatus))
+            journal.recoveryConflicts = history; journal.recoveryStatus = observedStatus; journal.recoveryRequest = nil
+            if last == issue.attempt {
+                let attempt = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+                let payload: [String: Any] = ["epoch": issue.epoch, "revision": status.revision,
+                    "attempt": attempt, "operation": "revoke", "commitment": NSNull()]
+                guard let request = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
+                journal.recoveryRequest = request
+            }
+            journal.revision = UUID().uuidString
+            guard let encoded = try? JSONEncoder().encode(journal), enrollmentJournal(encoded) == journal,
+                  writeJournal(encoded, markerURL) else { return nil }
+            return journal.recoveryRequest.map(EnrollmentRecoveryPlan.revoke) ?? .superseded
+        }
+    }
+
     /// Terminal evidence is durable before owned cleanup; the logout tombstone remains.
     static func finishCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String,
+                                        journalSync: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
                                         verify: (EnrollmentJournal) -> Bool, cleanup: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             let markerURL = enrollmentURL(for: url)
@@ -525,7 +585,7 @@ final class ActivityCatalog {
                   authority.revoked == true, authority.cleanup == expected.previous else {
                 return ClearResult(revoked: false, purged: false, stale: true)
             }
-            guard writeJournal(authorityData, authorityURL(for: url)), writeJournal(marker, markerURL),
+            guard writeJournal(authorityData, authorityURL(for: url)), journalSync(marker, markerURL),
                   verify(journal), cleanup(), ActivityCatalog(url: url)?.purge() == true,
                   removeJournal(markerURL) else { return ClearResult(revoked: true, purged: false) }
             return ClearResult(revoked: true, purged: true)

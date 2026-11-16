@@ -343,6 +343,15 @@ private final class NotificationCapture: @unchecked Sendable {
             fingerprint: boundFingerprint, request: recoveryRequest, receipt: badRevokeReceipt))
         precondition(ActivityCatalog.recordRecoveryReceipt(url: pairCancelURL, expected: pairCancelAttempt,
             fingerprint: boundFingerprint, request: recoveryRequest, receipt: revokeReceipt))
+        var recoveryCleanupCalled = false
+        let recoverySyncFailure = ActivityCatalog.finishCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: boundFingerprint, journalSync: { _, _ in false }, verify: { _ in true },
+            cleanup: { recoveryCleanupCalled = true; return true })
+        precondition(recoverySyncFailure.revoked && !recoverySyncFailure.complete && !recoveryCleanupCalled)
+        let recoveryCleanupFailure = ActivityCatalog.finishCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: boundFingerprint, verify: { _ in true }, cleanup: { false })
+        precondition(recoveryCleanupFailure.revoked && !recoveryCleanupFailure.complete)
+        precondition(ActivityCatalog.pendingEnrollment(url: pairCancelURL) == pairCancelAttempt)
         let recoveryFinished = ActivityCatalog.finishCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
             fingerprint: boundFingerprint, verify: { pairCancelEnrollment.recoveryEvidenceMatches($0) },
             cleanup: { pairCancelKeychain.deletePending(pairCancelAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()) && pairCancelStore.purgeCredential() })
@@ -369,8 +378,37 @@ private final class NotificationCapture: @unchecked Sendable {
                 precondition(object["revision"] as? String == String(repeating: "4", count: 32))
             } else {
                 guard case .superseded = decision else { fatalError() }
+                let replacement = ActivityCatalog.activate(url: recoveryURL, endpoint: pending.endpoint)!
+                var called = false
+                let stale = ActivityCatalog.finishCancelledRecovery(url: recoveryURL, expected: recoveryAttempt,
+                    fingerprint: boundFingerprint, verify: { _ in called = true; return true },
+                    cleanup: { called = true; return true })
+                precondition(stale.stale && !called && ActivityCatalog.activation(url: recoveryURL) == replacement)
             }
         }
+        let conflictURL = directory.appendingPathComponent("recovery-conflict.sqlite")
+        let conflictKeychain = FakeKeychain()
+        let conflictStore = WidgetCredentialStore(catalogURL: conflictURL, keychain: conflictKeychain)
+        let conflictEnrollment = WidgetFencedEnrollment(store: conflictStore)
+        let conflictInitial = ActivityCatalog.activate(url: conflictURL, endpoint: pending.endpoint)!
+        let conflictAttempt = conflictEnrollment.prepare(expected: conflictInitial, pairingFingerprint: boundFingerprint)!
+        let conflictWire = conflictAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready = conflictEnrollment.bind(fixtureStatus, reservation: conflictAttempt) else { fatalError() }
+        precondition(conflictEnrollment.cancel(conflictAttempt).complete)
+        guard case .revoke(let oldRevoke) = ActivityCatalog.planCancelledRecovery(url: conflictURL, expected: conflictAttempt,
+            fingerprint: boundFingerprint, observedStatus: fixtureStatus) else { fatalError() }
+        let issueWon = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch, "workspace_id": credential.workspaceID,
+            "revision": String(repeating: "8", count: 32), "last_attempt": conflictWire])
+        guard case .revoke(let newRevoke) = ActivityCatalog.resolveRecoveryConflict(url: conflictURL, expected: conflictAttempt,
+            fingerprint: boundFingerprint, failedRequest: oldRevoke, observedStatus: issueWon) else { fatalError() }
+        precondition(newRevoke != oldRevoke)
+        let newRevokeObject = try JSONSerialization.jsonObject(with: newRevoke) as! [String: Any]
+        precondition(newRevokeObject["revision"] as? String == String(repeating: "8", count: 32))
+        guard case .revoke(let conflictReplay) = ActivityCatalog.planCancelledRecovery(url: conflictURL, expected: conflictAttempt,
+            fingerprint: boundFingerprint, observedStatus: issueWon) else { fatalError() }
+        precondition(conflictReplay == newRevoke)
+        precondition(ActivityCatalog.resolveRecoveryConflict(url: conflictURL, expected: conflictAttempt,
+            fingerprint: boundFingerprint, failedRequest: oldRevoke, observedStatus: issueWon) == nil)
         let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
         let lockedCancelKeychain = FakeKeychain()
         let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)
