@@ -42,7 +42,12 @@ def test_wrapper_does_not_export_resolver_policy_to_descendants(starter, tmp_pat
     real.chmod(0o700)
     monkeypatch.setattr(starter.shutil, "which", lambda _name: str(real))
     wrapper = starter.uv_shim(tmp_path / "wrapper", str(tmp_path / "reviewed-wheels")) / "uv"
-    subprocess.run([str(wrapper), *arguments], env={**os.environ, "UV_FIND_LINKS": "must-not-propagate"}, check=True)
+    subprocess.run(
+        [str(wrapper), *arguments],
+        env={**os.environ, "UV_FIND_LINKS": "must-not-propagate"},
+        check=True,
+        timeout=15,
+    )
     actual, inherited = json.loads(observed.read_text())
     assert inherited is None
     expected = arguments.copy()
@@ -63,7 +68,7 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
         "assert 'UV_FIND_LINKS' not in os.environ; "
         "uv = os.environ['PLUGIN_TEST_UV']; "
         "env = dict(os.environ, PATH=str(pathlib.Path(uv).parent)+os.pathsep+os.environ['PATH']); "
-        "subprocess.run([uv, '--version'], env=env, check=True)"
+        "subprocess.run([uv, '--version'], env=env, check=True, timeout=5)"
     )
     subprocess.run(
         [wrapper, "run", "--offline", "--no-project", "--python", sys.executable, "python", "-c", probe],
