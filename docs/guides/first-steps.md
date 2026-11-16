@@ -25,7 +25,9 @@ to another. The account menu at the bottom of the navigation brings together **S
 
 To measure local chat latency without an AI service, select **Dummy (always answers 42)** in AI access, or run
 `hz ai access use dummy`. It answers every message with `42` and does not use tools. Select your usual AI access again
-when you finish testing. Open **Chat diagnostics** in the chat header to inspect preparation, provider requests,
+when you finish testing.
+
+Open **Chat diagnostics** in the chat header to inspect preparation, provider requests,
 internal tool calls, MCP discovery, and MCP tool calls. Tool timings include failed calls and may overlap when
 calls run concurrently. Configured servers are separate from tools offered to the model; cached descriptor counts
 are a passive snapshot, not evidence that a tool was offered or called. Diagnostics do not connect to servers.
