@@ -57,6 +57,8 @@ WIDGET_CORE = frozenset(
     for name in ("__init__", "_devices", "_widget", "_widget_fence", "_widget_fence_routes")
 )
 CORE_INTEGRATION = frozenset({"tests/integration/web_widget_test.py", "tests/integration/web_widget_fence_test.py"})
+PAIRING_SOURCES = frozenset({"src/heinzel/heads/web/_auto_update.py", "src/heinzel/heads/web/_state_directory.py"})
+PAIRING_INTEGRATION = frozenset({"tests/integration/web_state_directory_test.py"})
 APPLE_INTEGRATION = frozenset(
     {
         "tests/integration/apple_activity_catalog_test.py",
@@ -166,12 +168,13 @@ def requirements(changed: list[str]) -> tuple[list[str], set[str], set[str], set
             pending.update(NATIVE_FIXTURES | HARNESS_INTEGRATION)
         elif path in WEB_OWNERS:
             web.add(WEB_OWNERS[path])
-        elif path in CORE_INTEGRATION | APPLE_INTEGRATION:
+        elif path in CORE_INTEGRATION | APPLE_INTEGRATION | PAIRING_INTEGRATION:
             integration.add(path)
         elif path in HARNESS_INTEGRATION:
             pending.add(path)
         elif (
             path in WIDGET_CORE
+            or path in PAIRING_SOURCES
             or path in SELECTOR_SOURCES
             or re.fullmatch(r"tests/unit/[A-Za-z0-9_/-]+_test\.py", path)
         ):
@@ -184,6 +187,9 @@ def requirements(changed: list[str]) -> tuple[list[str], set[str], set[str], set
         else:
             msg = f"mixed scope has no owning recipe for {path}"
             raise ValueError(msg)
+    if set(changed) & (PAIRING_SOURCES | PAIRING_INTEGRATION):
+        integration.update(PAIRING_INTEGRATION | CORE_INTEGRATION)
+        pending.update(HARNESS_INTEGRATION)
     return python, web, integration, pending
 
 
@@ -421,7 +427,7 @@ def run_recipe(arguments: list[str]) -> None:
         not arguments[1:]
         or arguments[0] != "integration"
         or len(arguments[1:]) != len(set(arguments[1:]))
-        or not set(arguments[1:]) <= CORE_INTEGRATION | APPLE_INTEGRATION
+        or not set(arguments[1:]) <= CORE_INTEGRATION | APPLE_INTEGRATION | PAIRING_INTEGRATION
     ):
         msg = "unsupported mixed local recipe"
         raise ValueError(msg)

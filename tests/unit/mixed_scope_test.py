@@ -376,7 +376,10 @@ def test_skipped_empty_or_wrong_file_integration_proof_is_rejected(tmp_path, cas
         mixed.pytest_result(report, ["tests/integration/web_widget_test.py"])
 
 
-def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report(monkeypatch):
+@pytest.mark.parametrize(
+    "owner", ["tests/integration/web_widget_test.py", "tests/integration/web_state_directory_test.py"]
+)
+def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report(monkeypatch, owner):
     monkeypatch.setenv("GIT_DIR", "/synthetic/invoking.git")
     monkeypatch.setenv("GIT_INDEX_FILE", "/synthetic/invoking.index")
     calls = []
@@ -386,15 +389,15 @@ def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report
         for arg in command:
             if arg.startswith("--junitxml="):
                 Path(arg.split("=", 1)[1]).write_text(
-                    '<testsuites><testsuite><testcase classname="tests.integration.web_widget_test"/>'
+                    f'<testsuites><testsuite><testcase classname="{owner.removesuffix(".py").replace("/", ".")}"/>'
                     "</testsuite></testsuites>"
                 )
 
     monkeypatch.setattr(mixed.subprocess, "run", run)
-    mixed.run_recipe(["integration", "tests/integration/web_widget_test.py"])
+    mixed.run_recipe(["integration", owner])
     mixed.run_recipe(["ios"])
     integration, native = calls
-    assert integration[0][0:4] == ["uv", "run", "pytest", "tests/integration/web_widget_test.py"]
+    assert integration[0][0:4] == ["uv", "run", "pytest", owner]
     assert native[0] == mixed.ios_command(Path(native[0][native[0].index("-derivedDataPath") + 1]))
     assert "CODE_SIGNING_ALLOWED=NO" in native[0]
     assert "generic/platform=iOS Simulator" in native[0]
@@ -858,6 +861,103 @@ def test_consuming_candidate_preview_has_no_local_test_directories(candidate_sco
     assert partition == [sys.executable, "scripts/mixed_scope.py", "partition"]
     assert {mixed.HOSTED_E2E, mixed.HOSTED_PARTITION_TEST} <= set(plan["pending"])
     assert "tests/e2e" in scoped.early_guard_commands(changed)[-1]  # unchanged default guard
+
+
+@pytest.fixture
+def pairing_scope(candidate_scope):
+    packet, changed, bind = candidate_scope
+    previous_pending = packet["pending"][:]
+    changed.extend(
+        [
+            "src/heinzel/heads/web/_auto_update.py",
+            "src/heinzel/heads/web/_state_directory.py",
+            "tests/integration/web_state_directory_test.py",
+        ]
+    )
+    changed.sort()
+    for name in changed:
+        path = scoped.ROOT / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    packet["integration"] = sorted([*packet["integration"], "tests/integration/web_state_directory_test.py"])
+    assert sorted(mixed.requirements(changed)[3]) == previous_pending
+    bind()
+    return candidate_scope
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "src/heinzel/heads/web/_auto_update.py",
+        "src/heinzel/heads/web/_state_directory.py",
+        "tests/integration/web_state_directory_test.py",
+    ],
+)
+def test_each_pairing_path_requires_real_state_directory_and_widget_owners(changed):
+    python, web, integration, pending = mixed.requirements([changed])
+    assert python == ([changed] if changed.startswith("src/") else [])
+    assert web == set()
+    assert integration == {
+        "tests/integration/web_state_directory_test.py",
+        "tests/integration/web_widget_test.py",
+        "tests/integration/web_widget_fence_test.py",
+    }
+    assert pending == mixed.requirements(["src/heinzel/heads/web/_widget.py"])[3]
+
+
+def test_pairing_plan_preserves_binding_guards_and_pending(pairing_scope):
+    packet, changed, _ = pairing_scope
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    assert plan["checks"][1][2:] == ["integration", *packet["integration"]]
+    assert plan["early_guards"] == scoped.mixed_early_guard_commands(changed)
+    assert plan["pending"] == packet["pending"]
+    assert plan["identity"] == {key: packet[key] for key in ("base", "head", "tree")}
+    assert plan["scope_sha256"] == os.environ["HZ_LOCAL_MIXED_SCOPE_SHA256"]
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        "tests/integration/web_state_directory_test.py",
+        "tests/integration/web_widget_test.py",
+        "tests/integration/web_widget_fence_test.py",
+    ],
+)
+def test_pairing_owner_omission_refuses_before_dispatch(pairing_scope, monkeypatch, owner):
+    packet, _, bind = pairing_scope
+    packet["integration"].remove(owner)
+    bind()
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "unknown",
+    ["src/heinzel/heads/web/_state_directory_extra.py", "tests/integration/web_state_directory_extra_test.py"],
+)
+def test_pairing_inventory_does_not_admit_neighbor_paths(pairing_scope, monkeypatch, unknown):
+    _, changed, _ = pairing_scope
+    changed.append(unknown)
+    path = scoped.ROOT / unknown
+    path.touch()
+    calls = []
+    monkeypatch.setattr(scoped, "run_check", lambda command, **_: calls.append(command))
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as error:
+        scoped.main()
+    assert error.value.code == 2
+    assert calls == []
+
+
+def test_pairing_owner_must_exist_on_disk(pairing_scope):
+    (scoped.ROOT / "tests/integration/web_state_directory_test.py").unlink()
+    with pytest.raises(ValueError, match="existing canonical"):
+        scoped.current_mixed_plan("origin/main", require_push=True)
 
 
 def test_nested_make_guards_use_identical_bound_plan(candidate_scope, monkeypatch):
