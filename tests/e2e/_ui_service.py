@@ -312,9 +312,12 @@ class RunningService:
         self.control_failure_count = 0
         changed = threading.Event()
         while time.monotonic() < deadline:
-            status = self.service.status()
-            if status.ready and status.instance != previous:
-                return status
+            # The control channel cannot authenticate before the child publishes its runtime record.
+            # Avoid repeated ownership and control probes competing with the child during cold imports.
+            if self.service.runtime.exists():
+                status = self.service.status()
+                if status.ready and status.instance != previous:
+                    return status
             returncode = self.processes[-1].poll()
             if returncode is not None:
                 output, errors = self.processes[-1].communicate(timeout=1)
@@ -329,6 +332,8 @@ class RunningService:
                     )
                 )
             changed.wait(0.02)
+        if status is None:
+            status = self.service.status()  # Diagnostic only, after the existing deadline.
         pytest.fail(
             "The owned web server did not become ready with a new lifecycle instance; "
             f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
