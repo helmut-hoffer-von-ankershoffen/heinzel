@@ -228,6 +228,7 @@ struct WorkspaceView: WebRepresentable {
     var reportsWidgetActivity = false
     var isWidgetWorkspaceCurrent: () -> Bool = { false }
     var isMenuWorkspaceCurrent: () -> Bool = { false }
+    var isEnrollmentViewCurrent: () -> Bool = { false }
     var chatRequest: HeinzelChatRequest?
     var promptComposer: NativePromptComposer?
     var widgetRefreshRevision = 0
@@ -242,7 +243,8 @@ struct WorkspaceView: WebRepresentable {
 
     func makeCoordinator() -> Navigation {
         Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportError: reportError,
-                   isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent, isMenuWorkspaceCurrent: isMenuWorkspaceCurrent)
+                   isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent, isMenuWorkspaceCurrent: isMenuWorkspaceCurrent,
+                   isEnrollmentViewCurrent: isEnrollmentViewCurrent)
     }
 
     private func makeWebView(_ context: Context) -> WKWebView {
@@ -534,6 +536,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var backgroundObservation: NSKeyValueObservation?
     #endif
     private var widgetActivity: Task<Void, Never>?
+    private var enrollmentTask: Task<Void, Never>?
+    private var attemptedEnrollment = false
     private var widgetRefreshRevision = 0
     private var lastChatRequest: HeinzelChatRequest?
 
@@ -744,10 +748,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private let reportError: (WorkspaceProblem) -> Void
     private let isWidgetWorkspaceCurrent: () -> Bool
     private let isMenuWorkspaceCurrent: () -> Bool
+    private let isEnrollmentViewCurrent: () -> Bool
 
     init(endpoint: Endpoint, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
          reportError: @escaping (WorkspaceProblem) -> Void, isWidgetWorkspaceCurrent: @escaping () -> Bool,
-         isMenuWorkspaceCurrent: @escaping () -> Bool) {
+         isMenuWorkspaceCurrent: @escaping () -> Bool, isEnrollmentViewCurrent: @escaping () -> Bool) {
         self.endpoint = endpoint
         let activation = ActivityWidgetData.currentActivation()
         self.widgetActivation = activation?.endpoint == endpoint.origin.absoluteString ? activation : nil
@@ -756,6 +761,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         self.reportError = reportError
         self.isWidgetWorkspaceCurrent = isWidgetWorkspaceCurrent
         self.isMenuWorkspaceCurrent = isMenuWorkspaceCurrent
+        self.isEnrollmentViewCurrent = isEnrollmentViewCurrent
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
@@ -772,6 +778,42 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     private var widgetContextCurrent: Bool {
         ActivityWidgetData.currentActivation() == widgetActivation
+    }
+
+    private func scheduleWidgetEnrollment(in view: WKWebView, revision: Int) {
+        guard !attemptedEnrollment, endpoint.origin.scheme == "https",
+              let store = WidgetCredentialStore.configured() else { return }
+        attemptedEnrollment = true
+        enrollmentTask = Task { [weak self, weak view] in
+            guard let self, let view else { return }
+            let current = { [weak self, weak view] in
+                guard let self, let view else { return false }
+                return !Task.isCancelled && self.workspace === view && self.documentRevision == revision &&
+                    self.isEnrollmentViewCurrent() && view.url.map(self.endpoint.owns) == true
+            }
+            guard current(), await WidgetEnrollmentTransport.hasPairedDevice(in: view, endpoint: endpoint.origin, isCurrent: current), current() else { return }
+            let enrollment = WidgetFencedEnrollment(store: store)
+            let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
+            let result: WidgetEnrollmentOutcome
+            if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
+                guard enrollment.canResume(pending) else { return }
+                result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, isCurrent: current)
+            } else {
+                let active = ActivityCatalog.activation(url: store.catalogURL)
+                if let active, active.endpoint != endpoint.origin.absoluteString { return }
+                if let active, active.credentialGeneration != nil {
+                    guard let existing = store.capture() else { return }
+                    if existing.credential.expiresAt.timeIntervalSinceNow > 3600 { return }
+                }
+                guard store.keychain.preflight(), current() else { return }
+                guard let expected = active ?? ActivityCatalog.activate(url: store.catalogURL, endpoint: endpoint.origin.absoluteString) else { return }
+                result = await coordinator.begin(expected: expected, in: view, endpoint: endpoint.origin, isCurrent: current)
+            }
+            if case .identityMismatch(let clear) = result {
+                if clear.revoked { ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload() }
+                if !clear.stale && !clear.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
+            }
+        }
     }
 
     func webView(
@@ -1123,6 +1165,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func close(_ view: WKWebView) {
         if workspace === view { workspace = nil }
         documentRevision &+= 1
+        enrollmentTask?.cancel()
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.changed, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
@@ -1189,11 +1232,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     reportError(.signIn)
                 } else if needsSignIn == false {
                     ready()
+                    scheduleWidgetEnrollment(in: webView, revision: revision)
                     await resolveWorkspaceName(in: webView)
                 }
             }
         } else {
             ready()
+            scheduleWidgetEnrollment(in: webView, revision: documentRevision)
             Task { await resolveWorkspaceName(in: webView) }
         }
         #if DEBUG

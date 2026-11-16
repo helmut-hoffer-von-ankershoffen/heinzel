@@ -1,0 +1,174 @@
+import CryptoKit
+import Foundation
+import Security
+
+private struct FenceStatus: Decodable {
+    let epoch: String
+    let revision: String
+    let workspaceID: String
+    enum CodingKeys: String, CodingKey { case epoch, revision, workspaceID = "workspace_id" }
+    var valid: Bool {
+        epoch.wholeMatch(of: /[a-f0-9]{32}/) != nil && revision.wholeMatch(of: /[a-f0-9]{32}/) != nil &&
+        workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil
+    }
+}
+
+private struct FenceReceipt: Decodable {
+    let epoch: String
+    let workspaceID: String
+    let attempt: String
+    let operation: String
+    let revision: String
+    let expiresAt: String
+    enum CodingKeys: String, CodingKey { case epoch, workspaceID = "workspace_id", attempt, operation, revision, expiresAt = "expires_at" }
+    var expiry: Date? {
+        guard expiresAt.hasSuffix("Z") || expiresAt.hasSuffix("+00:00") else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let result = formatter.date(from: expiresAt) { return result }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: expiresAt)
+    }
+}
+
+private struct FenceMutation: Codable, Equatable {
+    let epoch: String
+    let revision: String
+    let attempt: String
+    let operation: String
+    let commitment: String
+}
+
+private struct PendingFence: Codable {
+    let version: Int
+    let reservation: ActivityCatalog.Enrollment
+    let attempt: String
+    let generation: String
+    let secret: String
+    var workspaceID: String? = nil
+    var request: FenceMutation? = nil
+    var requestData: Data? = nil
+
+    var valid: Bool {
+        guard version == 1, attempt == reservation.id.replacingOccurrences(of: "-", with: "").lowercased(),
+              attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil, UUID(uuidString: generation) != nil,
+              secret.wholeMatch(of: /hzw_[A-Za-z0-9_-]{43}/) != nil else { return false }
+        guard let request else { return requestData == nil && workspaceID == nil }
+        let hash = SHA256.hash(data: Data(secret.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard let requestData, let workspaceID,
+              workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
+              request.epoch.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+              request.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+              request.attempt == attempt, request.operation == "issue", request.commitment == hash else { return false }
+        return (try? JSONDecoder().decode(FenceMutation.self, from: requestData)) == request
+    }
+}
+
+enum WidgetFenceBinding {
+    case ready(Data)
+    case identityMismatch(ActivityCatalog.ClearResult)
+    case conflict
+    case unavailable
+}
+
+/// Local half of Core's fenced issuance. No raw bearer is sent through WebKit.
+struct WidgetFencedEnrollment {
+    let store: WidgetCredentialStore
+
+    func canResume(_ reservation: ActivityCatalog.Enrollment) -> Bool {
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        return ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
+            guard let data = store.keychain.readPending(attempt),
+                  let pending = try? JSONDecoder().decode(PendingFence.self, from: data),
+                  pending.valid, pending.reservation == reservation else { return nil }
+            return true
+        } == true
+    }
+
+    func prepare(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
+        guard let reservation = store.beginEnrollment(expected: expected) else { return nil }
+        var random = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { return nil }
+        let secret = "hzw_" + Data(random).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        let pending = PendingFence(version: 1, reservation: reservation, attempt: attempt,
+                                   generation: UUID().uuidString, secret: secret)
+        guard pending.valid, let data = try? JSONEncoder().encode(pending),
+              ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation, {
+                  store.keychain.createPending(data, attempt: attempt) && store.keychain.readPending(attempt) == data ? true : nil
+              }) == true else { return nil }
+        return reservation
+    }
+
+    /// The exact committed request is persisted before it can be sent or retried.
+    func bind(_ data: Data, reservation: ActivityCatalog.Enrollment) -> WidgetFenceBinding {
+        guard data.count <= 4096, let status = try? JSONDecoder().decode(FenceStatus.self, from: data), status.valid else { return .unavailable }
+        if let identity = reservation.previous.workspaceID, identity != status.workspaceID {
+            let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+            let result = ActivityCatalog.rejectEnrollmentIdentity(url: store.catalogURL, expected: reservation) {
+                store.keychain.deletePending(attempt) && store.purgeCredential()
+            }
+            return .identityMismatch(result)
+        }
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        return ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
+            guard let raw = store.keychain.readPending(attempt),
+                  var pending = try? JSONDecoder().decode(PendingFence.self, from: raw),
+                  pending.valid, pending.reservation == reservation else { return .unavailable }
+            if let request = pending.request, let saved = pending.requestData {
+                guard request.epoch == status.epoch, status.workspaceID == pending.workspaceID,
+                      (try? JSONDecoder().decode(FenceMutation.self, from: saved)) == request else { return .conflict }
+                return .ready(saved)
+            }
+            guard pending.request == nil, pending.requestData == nil, pending.workspaceID == nil else { return .unavailable }
+            let commitment = SHA256.hash(data: Data(pending.secret.utf8)).map { String(format: "%02x", $0) }.joined()
+            let request = FenceMutation(epoch: status.epoch, revision: status.revision, attempt: attempt,
+                                        operation: "issue", commitment: commitment)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            guard let requestData = try? encoder.encode(request) else { return .unavailable }
+            pending.request = request; pending.requestData = requestData; pending.workspaceID = status.workspaceID
+            guard let encoded = try? JSONEncoder().encode(pending), store.keychain.updatePending(encoded, attempt: attempt),
+                  store.keychain.readPending(attempt) == encoded else { return .unavailable }
+            return .ready(requestData)
+        } ?? .unavailable
+    }
+
+    func complete(_ data: Data, reservation: ActivityCatalog.Enrollment, now: Date = .now,
+                  clock: () -> Date = { .now }) -> WidgetIssuanceResult {
+        guard data.count <= 4096, let receipt = try? JSONDecoder().decode(FenceReceipt.self, from: data),
+              receipt.epoch.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+              receipt.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+              receipt.workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
+              let expiry = receipt.expiry else { return .rejected }
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        let material: (PendingFence, Data)? = ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
+            guard let data = store.keychain.readPending(attempt),
+                  let value = try? JSONDecoder().decode(PendingFence.self, from: data),
+                  value.valid, value.reservation == reservation else { return nil }
+            return (value, data)
+        }
+        guard let (pending, pendingData) = material, let request = pending.request, let workspaceID = pending.workspaceID,
+              receipt.epoch == request.epoch, receipt.attempt == request.attempt, receipt.operation == "issue",
+              receipt.revision != request.revision else { return .rejected }
+        if receipt.workspaceID != workspaceID {
+            let result = ActivityCatalog.rejectEnrollmentIdentity(url: store.catalogURL, expected: reservation) {
+                store.keychain.deletePending(attempt) && store.purgeCredential()
+            }
+            return .identityMismatch(result)
+        }
+        let credential = WidgetCredential(endpoint: reservation.previous.endpoint, workspaceID: workspaceID,
+                                          generation: pending.generation, token: pending.secret, expiresAt: expiry,
+                                          pendingAttempt: attempt)
+        guard credential.valid(at: now), let encoded = try? JSONEncoder().encode(credential),
+              let installed = ActivityCatalog.completeEnrollment(url: store.catalogURL, expected: reservation,
+                  workspaceID: workspaceID, generation: credential.generation, install: {
+                      credential.valid(at: clock()) && store.keychain.readPending(attempt) == pendingData && store.keychain.write(encoded)
+                  }) else { return .rejected }
+        if !store.keychain.deletePending(attempt) {
+            NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil)
+        }
+        NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
+        return .installed(installed)
+    }
+}

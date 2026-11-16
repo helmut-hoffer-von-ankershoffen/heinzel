@@ -191,6 +191,20 @@ final class ActivityCatalog {
         }
     }
 
+    /// Runs a noninteractive local operation only while both reservation files
+    /// still agree. Never use this closure for network or user interaction.
+    static func withEnrollment<T>(url: URL, expected: Enrollment, _ action: () -> T?) -> T? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  let marker = try? Data(contentsOf: enrollmentURL(for: url)),
+                  (try? JSONDecoder().decode(Enrollment.self, from: marker)) == expected,
+                  current.enrollment == expected, current.activation == expected.previous,
+                  current.revoked != true else { return nil }
+            return action()
+        }
+    }
+
     static func completeEnrollment(url: URL, expected: Enrollment, workspaceID: String,
                                    generation: String, install: () -> Bool,
                                    write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority) -> Activation? {
@@ -227,11 +241,11 @@ final class ActivityCatalog {
             let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
             guard let encoded = try? JSONEncoder().encode(tombstone),
                   writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
-            // The response was received and checked; this attempt is no longer
-            // an unknown network outcome. Failure to remove only blocks renewal.
-            _ = removeAuthority(enrollmentURL(for: url))
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false
+            // Keep the marker if credential cleanup fails so its pending
+            // Keychain item can still be found; SQLite purge may be retried separately.
+            if deleted { _ = removeAuthority(enrollmentURL(for: url)) }
             return ClearResult(revoked: true, purged: deleted && purged)
         }
     }

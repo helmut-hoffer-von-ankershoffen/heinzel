@@ -2,10 +2,16 @@ import Foundation
 
 private final class TransportKeychain: WidgetCredentialKeychain, @unchecked Sendable {
     var data: Data?
+    var pending: [String: Data] = [:]
     func preflight() -> Bool { true }
     func read() -> Data? { data }
+    func readStatus() -> WidgetKeychainRead { data.map(WidgetKeychainRead.data) ?? .missing }
     func write(_ data: Data) -> Bool { self.data = data; return true }
     func delete() -> Bool { data = nil; return true }
+    func readPending(_ attempt: String) -> Data? { pending[attempt] }
+    func createPending(_ data: Data, attempt: String) -> Bool { guard pending[attempt] == nil else { return false }; pending[attempt] = data; return true }
+    func updatePending(_ data: Data, attempt: String) -> Bool { guard pending[attempt] != nil else { return false }; pending[attempt] = data; return true }
+    func deletePending(_ attempt: String) -> Bool { pending.removeValue(forKey: attempt); return true }
 }
 
 private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {

@@ -47,3 +47,16 @@ def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:
     assert ".id(revision)" in app
     assert "@State private var promptComposer = NativePromptComposer()" in app
     assert "promptComposer: promptComposer" in app
+
+
+def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None:
+    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    enrollment = source.split("private func scheduleWidgetEnrollment", 1)[1].split("\n    func webView(", 1)[0]
+    assert "WidgetCredentialStore.configured()" in enrollment
+    assert "self.documentRevision == revision" in enrollment
+    assert "self.isEnrollmentViewCurrent()" in enrollment
+    assert "WidgetEnrollmentTransport.hasPairedDevice" in enrollment
+    assert "enrollment.canResume(pending)" in enrollment
+    assert "isWidgetWorkspaceCurrent()" not in enrollment
+    info = (ROOT / "apple/App/Info.plist").read_text(encoding="utf-8")
+    assert "HeinzelWidgetEnrollmentEnabled" not in info

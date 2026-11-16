@@ -843,6 +843,12 @@ struct ConnectionView: View {
                     #else
                     false
                     #endif
+                }, isEnrollmentViewCurrent: {
+                    #if os(iOS)
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart && scenePhase == .active
+                    #else
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
+                    #endif
                 }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false

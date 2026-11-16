@@ -9,39 +9,33 @@ struct WidgetCredential: Codable, Equatable {
     let generation: String
     let token: String
     let expiresAt: Date
+    var pendingAttempt: String? = nil
 
     func valid(at now: Date) -> Bool {
         token.wholeMatch(of: /hzw_[A-Za-z0-9_-]{32,128}/) != nil &&
         workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil &&
         UUID(uuidString: generation) != nil && expiresAt > now &&
-        expiresAt.timeIntervalSince(now) <= 25 * 60 * 60
+        expiresAt.timeIntervalSince(now) <= 25 * 60 * 60 &&
+        (pendingAttempt.map { $0.wholeMatch(of: /[a-f0-9]{32}/) != nil } ?? true)
     }
 }
 
-private struct IssuedWidgetCredential: Decodable {
-    let token: String
-    let workspaceID: String
-    let expiresAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case token, workspaceID = "workspace_id", expiresAt = "expires_at"
-    }
-
-    var expiry: Date? {
-        guard expiresAt.hasSuffix("Z") || expiresAt.hasSuffix("+00:00") else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: expiresAt) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: expiresAt)
-    }
+enum WidgetKeychainRead {
+    case data(Data)
+    case missing
+    case unavailable
 }
 
 protocol WidgetCredentialKeychain {
     func preflight() -> Bool
     func read() -> Data?
+    func readStatus() -> WidgetKeychainRead
     func write(_ data: Data) -> Bool
     func delete() -> Bool
+    func readPending(_ attempt: String) -> Data?
+    func createPending(_ data: Data, attempt: String) -> Bool
+    func updatePending(_ data: Data, attempt: String) -> Bool
+    func deletePending(_ attempt: String) -> Bool
 }
 
 /// The access group must be explicitly provisioned for both signed targets.
@@ -54,13 +48,13 @@ struct SharedWidgetKeychain: WidgetCredentialKeychain {
         self.accessGroup = accessGroup
     }
 
-    private var query: [String: Any] {
+    private func query(account: String) -> [String: Any] {
         let context = LAContext()
         context.interactionNotAllowed = true
         var result: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "team.heinzel.widget.credential",
-            kSecAttrAccount as String: "active-workspace",
+            kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: accessGroup,
             kSecAttrSynchronizable as String: false,
             kSecUseAuthenticationContext as String: context,
@@ -71,14 +65,27 @@ struct SharedWidgetKeychain: WidgetCredentialKeychain {
         return result
     }
 
+    private var query: [String: Any] { query(account: "active-workspace") }
+
+    private func pendingQuery(_ attempt: String) -> [String: Any]? {
+        guard attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil else { return nil }
+        return query(account: "pending-" + attempt)
+    }
+
     func read() -> Data? {
+        if case .data(let data) = readStatus() { return data }
+        return nil
+    }
+
+    func readStatus() -> WidgetKeychainRead {
         var request = query
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data, data.count <= 4096 else { return nil }
-        return data
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        if status == errSecItemNotFound { return .missing }
+        guard status == errSecSuccess, let data = result as? Data, data.count <= 4096 else { return .unavailable }
+        return .data(data)
     }
 
     func preflight() -> Bool {
@@ -107,6 +114,36 @@ struct SharedWidgetKeychain: WidgetCredentialKeychain {
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
+
+    func readPending(_ attempt: String) -> Data? {
+        guard var request = pendingQuery(attempt) else { return nil }
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data, data.count <= 4096 else { return nil }
+        return data
+    }
+
+    func createPending(_ data: Data, attempt: String) -> Bool {
+        guard data.count <= 4096, var request = pendingQuery(attempt) else { return false }
+        request[kSecValueData as String] = data
+        request[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(request as CFDictionary, nil) == errSecSuccess
+    }
+
+    func updatePending(_ data: Data, attempt: String) -> Bool {
+        guard data.count <= 4096, let request = pendingQuery(attempt) else { return false }
+        let attributes: [String: Any] = [kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        return SecItemUpdate(request as CFDictionary, attributes as CFDictionary) == errSecSuccess
+    }
+
+    func deletePending(_ attempt: String) -> Bool {
+        guard let request = pendingQuery(attempt) else { return false }
+        let status = SecItemDelete(request as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 }
 
 /// Captured before network access; publication must use the unchanged writer token.
@@ -127,28 +164,20 @@ struct WidgetCredentialStore {
     let catalogURL: URL
     let keychain: any WidgetCredentialKeychain
 
+    /// Enrollment stays disabled unless the signed app explicitly provisions it.
+    static func configured() -> WidgetCredentialStore? {
+        guard Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true,
+              let url = ActivityWidgetData.sharedCatalogURL(),
+              let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String,
+              let keychain = SharedWidgetKeychain(accessGroup: group) else { return nil }
+        return WidgetCredentialStore(catalogURL: url, keychain: keychain)
+    }
+
     /// Reserve before any network call. Pending attempts are never retried
     /// automatically because a lost response may already have rotated Core.
     func beginEnrollment(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
         guard keychain.preflight() else { return nil }
         return ActivityCatalog.reserveEnrollment(url: catalogURL, expected: expected)
-    }
-
-    func completeIssued(_ data: Data, expected: ActivityCatalog.Enrollment,
-                        now: Date = .now) -> WidgetIssuanceResult {
-        guard data.count <= 4096, let issued = try? JSONDecoder().decode(IssuedWidgetCredential.self, from: data),
-              let expiry = issued.expiry else { return .rejected }
-        let credential = WidgetCredential(endpoint: expected.previous.endpoint, workspaceID: issued.workspaceID,
-            generation: UUID().uuidString, token: issued.token, expiresAt: expiry)
-        guard credential.valid(at: now) else { return .rejected }
-        if let established = expected.previous.workspaceID, established != issued.workspaceID {
-            return .identityMismatch(ActivityCatalog.rejectEnrollmentIdentity(url: catalogURL, expected: expected) { keychain.delete() })
-        }
-        guard let encoded = try? JSONEncoder().encode(credential),
-              let installed = ActivityCatalog.completeEnrollment(url: catalogURL, expected: expected,
-                workspaceID: credential.workspaceID, generation: credential.generation, install: { keychain.write(encoded) }) else { return .rejected }
-        NotificationCenter.default.post(name: Self.activationChanged, object: installed.id)
-        return .installed(installed)
     }
 
     func capture(now: Date = .now) -> WidgetCredentialCapture? {
@@ -164,7 +193,24 @@ struct WidgetCredentialStore {
 
     /// Stale failures may revoke only the captured credential, including on retry.
     func invalidate(_ expected: ActivityCatalog.Activation) -> ActivityCatalog.ClearResult {
-        ActivityCatalog.invalidate(url: catalogURL, expected: expected) { keychain.delete() }
+        let pending = ActivityCatalog.pendingEnrollment(url: catalogURL)
+        return ActivityCatalog.invalidate(url: catalogURL, expected: expected) {
+            if let pending, pending.previous == expected,
+               !keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased()) { return false }
+            return purgeCredential()
+        }
+    }
+
+    /// Keep the active item as a retry pointer if deleting its pending copy fails.
+    func purgeCredential() -> Bool {
+        switch keychain.readStatus() {
+        case .unavailable: return false
+        case .missing: return keychain.delete()
+        case .data(let data):
+            guard let value = try? JSONDecoder().decode(WidgetCredential.self, from: data) else { return false }
+            if let attempt = value.pendingAttempt, !keychain.deletePending(attempt) { return false }
+            return keychain.delete()
+        }
     }
 
     /// Response-scoped invalidation does not consult SQLite before revocation.
@@ -175,7 +221,8 @@ struct WidgetCredentialStore {
         }
         let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String
         let keychain = group.flatMap(SharedWidgetKeychain.init(accessGroup:))
-        let result = ActivityCatalog.invalidate(url: url, expected: expected) { keychain?.delete() ?? false }
+        let result = keychain.map { WidgetCredentialStore(catalogURL: url, keychain: $0).invalidate(expected) }
+            ?? ActivityCatalog.invalidate(url: url, expected: expected) { false }
         if result.revoked { ActivityWidgetData.didInvalidate() }
         if !result.stale && !result.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
         return result.complete
@@ -187,7 +234,9 @@ struct WidgetCredentialStore {
             return invalidate(expected)
         }
         if let pending = ActivityCatalog.pendingEnrollment(url: catalogURL) {
-            return ActivityCatalog.clearEnrollment(url: catalogURL, expected: pending) { keychain.delete() }
+            return ActivityCatalog.clearEnrollment(url: catalogURL, expected: pending) {
+                keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased()) && purgeCredential()
+            }
         }
         return ActivityCatalog.ClearResult(revoked: false, purged: false)
     }
