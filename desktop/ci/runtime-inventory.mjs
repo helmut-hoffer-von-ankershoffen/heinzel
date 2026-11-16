@@ -10,7 +10,9 @@ export const RUNTIME_FILES = Object.freeze([
   "lifecycle-ipc.js", "main.js", "media-player.js", "mini-browser-network.js", "mini-browser-policy.js",
   "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "settings-store.js",
   "shutdown.js", "signal-quit.js", "ui-navigation.js", "window-options.js",
-  "workspace-audio.js",
+  "workspace-audio.js", "workspace-brand.svg",
+  "workspace-controller.js", "workspace-directory.js", "workspace-picker-preload.cjs", "workspace-picker.css",
+  "workspace-picker.html", "workspace-picker.js", "workspace-remote-preload.cjs",
 ]);
 const MAX_FILE = 2 * 1024 * 1024;
 // UTF-16 code-unit order, the order of a bare .sort() spelled out so it never depends on the locale.

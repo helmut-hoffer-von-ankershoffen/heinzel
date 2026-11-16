@@ -49,6 +49,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
         { type: "separator" },
         { label: "Settings\u2026", accelerator: "Command+,", click: () => send("settings") },
         { label: "Check for Updates\u2026", click: () => send("updates") },
+        { label: "Connection\u2026", accelerator: "CommandOrControl+Shift+,", click: () => send("connection") },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -137,6 +138,7 @@ export const ACTIONS = [
   "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
   "search", "sidebar", "terminal", "browser", "chat", "new-chat", "new-tab", "close-tab", "notifications", "help",
   "go:today", "go:heinzel", "go:team", "go:plugins",
+  "connection",
 ];
 
 /**

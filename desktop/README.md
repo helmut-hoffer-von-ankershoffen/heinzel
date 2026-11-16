@@ -114,3 +114,16 @@ Quit or on SIGTERM, SIGINT or SIGHUP (the owned service gets SIGINT first and SI
 shutdown exits non-zero when the child exits uncleanly or does not stop; it never waits for a GUI error dialog.
 This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.
+
+## Workspace connections
+
+Choose **Connection…** in the application menu (Shift-Command-comma on Mac) to switch between **This Mac** and a
+private HTTPS workspace. Paste the host's private sign-in link. Recent hosts appear in the same paper-style picker
+as the Swift app, with a sign-in prompt when their saved access is unavailable. **Try Again** retries a failed
+connection; **Back to Workspace** returns to the current workspace without switching.
+
+Remote sign-ins use OS-encrypted storage when available; otherwise the picker reports that access is remembered
+only for this session. Forget removes the saved sign-in. Each opened workspace has a separate temporary browser
+session. Remote pages cannot access local native tools, the local service token or another workspace's sign-in.
+The local service stays running during workspace switches and stops when the app quits. iCloud sign-in sync is
+available in the Swift shell only. See [ADR 0165](../docs/adr/0165-electron-workspace-switching-and-remote-isolation.md).
