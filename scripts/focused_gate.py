@@ -514,6 +514,7 @@ _EXECUTION_FIELDS = (
     "conclusion",
     "runner_id",
     "runner_name",
+    "labels",
     "started_at",
     "completed_at",
     "steps",

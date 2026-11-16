@@ -18,6 +18,45 @@ def fg(monkeypatch):
     return focused_gate
 
 
+@pytest.mark.parametrize("defect", [None, "truncated", "duplicate-id", "wrong-attempt", "wrong-run", "wrong-head"])
+def test_recovery_inventory_uses_authenticated_attempt_two_api(fg, defect):
+    head = "a" * 40
+    rows = [
+        {
+            "id": n,
+            "name": f"job {n}",
+            "run_id": 123,
+            "run_attempt": 2,
+            "head_sha": head,
+            "status": "completed",
+            "runner_id": 4,
+            "steps": [{"name": "work"}],
+        }
+        for n in (1, 2)
+    ]
+    if defect == "duplicate-id":
+        rows[1]["id"] = rows[0]["id"]
+    if defect == "wrong-attempt":
+        rows[0]["run_attempt"] = 1
+    if defect == "wrong-run":
+        rows[0]["run_id"] = 124
+    if defect == "wrong-head":
+        rows[0]["head_sha"] = "b" * 40
+    calls = []
+
+    def github(path):
+        calls.append(path)
+        assert path == f"actions/runs/123/attempts/2/jobs?per_page=100&page={len(calls)}"
+        return {"total_count": 3 if defect == "truncated" else 2, "jobs": rows if len(calls) == 1 else []}
+
+    source = SimpleNamespace(run={"id": 123}, source=SimpleNamespace(head=head))
+    if defect:
+        with pytest.raises(fg.CandidateError):
+            fg._recovery_inventory(SimpleNamespace(github=github), source)
+    else:
+        assert fg._recovery_inventory(SimpleNamespace(github=github), source) == rows
+
+
 @pytest.mark.parametrize(
     "defect",
     [None, *json.loads((Path(__file__).resolve().parents[1] / "fixtures/pr-capacity/adversarial.json").read_text())],
