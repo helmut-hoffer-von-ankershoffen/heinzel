@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Bot, CornerDownLeft, ExternalLink, Plus, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, CornerDownLeft, ExternalLink, Plus, RefreshCw, Settings, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
@@ -113,10 +113,12 @@ export function externalBrowserUrl(value: string): string | null {
 export function BrowserPanel({
   active,
   onClose,
+  onSettings,
   bookmarks = false,
 }: Readonly<{
   active: boolean;
   onClose: () => void /** Show the bookmark star; needs the app's providers. */;
+  onSettings?: () => void;
   bookmarks?: boolean;
 }>) {
   const [address, setAddress] = useState("https://heinzel.team");
@@ -136,15 +138,6 @@ export function BrowserPanel({
       if (result) setState(result);
     } catch {
       setState((previous) => ({ ...previous, status: "unavailable" }));
-    }
-  };
-  // A failed wipe must stay visible, also when no page is open yet.
-  const clearData = async () => {
-    try {
-      const result = await native?.browser({ action: "clear" });
-      if (result) setState(result);
-    } catch {
-      setState((previous) => ({ ...previous, notice: "clear-failed" }));
     }
   };
   useEffect(() => {
@@ -320,21 +313,6 @@ export function BrowserPanel({
           }}
           className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
         />
-        {native && bookmarks && <span ref={setStarSlot} className="contents" />}
-        {native && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            data-heinzel-browser-external=""
-            aria-label={t("browser.openInBrowser")}
-            title={t("browser.openInBrowser")}
-            disabled={!state.url}
-            onClick={() => void request({ action: "external" })}
-          >
-            <ExternalLink aria-hidden />
-          </Button>
-        )}
         {native ? (
           <Button
             type="submit"
@@ -352,6 +330,33 @@ export function BrowserPanel({
               {t("browser.openExternal")}
             </PaneAction>
           )
+        )}
+        {native && bookmarks && <span ref={setStarSlot} className="contents" />}
+        {native && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            data-heinzel-browser-external=""
+            aria-label={t("browser.openInBrowser")}
+            title={t("browser.openInBrowser")}
+            disabled={!state.url}
+            onClick={() => void request({ action: "external" })}
+          >
+            <ExternalLink aria-hidden />
+          </Button>
+        )}
+        {native && onSettings && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("browser.settings")}
+            title={t("browser.settings")}
+            onClick={onSettings}
+          >
+            <Settings aria-hidden />
+          </Button>
         )}
         <Button
           type="button"
@@ -524,20 +529,6 @@ export function BrowserPanel({
             </section>
           )}
           <div ref={surface} className="min-h-48 flex-1 border-t-[0.5px] border-foreground/20" />
-          <div className="flex shrink-0 items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
-            <p className="min-w-0 flex-1">
-              {t("browser.private")} {t("browser.automationNote")}
-            </p>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title={t("browser.clearDataHint")}
-              onClick={() => void clearData()}
-            >
-              {t("browser.clearData")}
-            </Button>
-          </div>
         </>
       ) : (
         <p className="p-4 text-sm text-muted-foreground">{t("browser.webOnly")}</p>

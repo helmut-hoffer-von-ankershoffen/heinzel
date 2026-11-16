@@ -363,6 +363,22 @@ describe("Desktop menu actions", () => {
     },
   );
 
+  it("opens regular Browser settings from the browser toolbar", async () => {
+    Object.defineProperty(window, "heinzelDesktop", {
+      value: { browser: vi.fn().mockResolvedValue({ status: "empty" }) },
+      configurable: true,
+    });
+    mockApi({ ...answers, "/api/system/config/show": config });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await screen.findByRole("button", { name: "Open the browser" });
+    act(() => requestMenuAction("browser"));
+    await user.click(screen.getByRole("button", { name: "Browser settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByRole("heading", { name: "Browser" })).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Clear browsing data" })).toBeVisible();
+  });
+
   it("answers the View, Go and Help menu actions", async () => {
     mockApi({ ...answers, "/api/system/config/show": config });
     renderAt("/doctor");

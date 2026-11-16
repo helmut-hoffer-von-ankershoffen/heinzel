@@ -27,7 +27,7 @@ function fixture(configure = async () => {}, extra = {}) {
       const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
         close: (options) => { dead = true; calls.push(["close", options]); }, getURL: () => url,
         loadURL: async (target) => { url = target; calls.push(["load", target]); }, reload: () => calls.push(["reload"]),
-        navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+        navigationHistory: { canGoBack: () => false, canGoForward: () => false, clear: () => calls.push(["history-clear"]) },
         setWebRTCIPHandlingPolicy: (policy) => calls.push(["webrtc", policy]),
         setWindowOpenHandler: (handler) => { contents.popup = handler; } });
       const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), setVisible: (visible) => calls.push(["visible", visible]) };
@@ -235,6 +235,7 @@ test("sign-ins persist across close and reopen; Clear browsing data empties the 
   session.clearAuthCache = async () => cleared.push("auth");
   await f.invoke({ action: "clear" });
   assert.deepEqual(cleared.sort(), ["auth", "cache"]);
+  assert.equal(f.calls.filter(([name]) => name === "history-clear").length, 1);
   // The page leaves its site before the wipe, so no running script writes data back; then it loads again.
   const order = f.calls.map(([name, target]) => (name === "load" ? target : name)).filter((name) => name !== "webrtc");
   const blank = order.lastIndexOf("about:blank"), wiped = order.lastIndexOf("clear");
@@ -249,12 +250,36 @@ test("sign-ins persist across close and reopen; Clear browsing data empties the 
   session.clearStorageData = async () => {};
   await f.invoke({ action: "clear" });
   assert.equal((await f.invoke({ action: "state" })).notice, null);
+  f.views[1].webContents.navigationHistory.clear = () => { throw new Error("history"); };
+  await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
   // Clearing before any guest in this run still opens and empties the persisted partition.
   const cold = fixture();
   await cold.invoke({ action: "clear" });
   assert.equal(cold.sessions[0].partition, "persist:hz-browser");
   assert.ok(cold.calls.some(([name]) => name === "clear"));
   assert.equal(cold.views.length, 0);
+});
+
+test("a guest that cannot leave its page makes clearing fail", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  const contents = f.views[0].webContents;
+  const load = contents.loadURL;
+  contents.loadURL = async (url) => { if (url === "about:blank") throw new Error("blank failed"); return load(url); };
+  await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
+  assert.equal((await f.invoke({ action: "state" })).notice, "clear-failed");
+  assert.ok(f.calls.some(([name]) => name === "clear"));
+});
+
+test("a leased page that cannot leave its site makes clearing fail", async () => {
+  const f = fixture();
+  const lease = await f.controller.lease({ blank: () => { throw new Error("blank failed"); }, restore: () => {} });
+  try {
+    await assert.rejects(f.invoke({ action: "clear" }), /Browsing data could not be cleared/);
+    assert.ok(f.calls.some(([name]) => name === "clear"));
+  } finally {
+    lease.release();
+  }
 });
 
 test("one CONNECT broker serves the shared partition and ends with the last guest", async () => {
@@ -476,6 +501,7 @@ test("tabs: Clear browsing data and closing the window cover every tab", async (
   await f.invoke({ action: "clear" });
   const loads = f.calls.filter((c) => c[0] === "load").map((c) => c[1]);
   assert.deepEqual(loads.filter((u) => u === "about:blank").length, 2);
+  assert.equal(f.calls.filter(([name]) => name === "history-clear").length, 2);
   assert.equal(loads.filter((u) => u === "https://two.example.com/").length, 2);
   f.owner.emit("closed");
   assert(f.views.every((view) => view.webContents.isDestroyed()));

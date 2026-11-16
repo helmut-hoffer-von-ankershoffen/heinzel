@@ -377,11 +377,13 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     icons.clear();
     const pages = everyGuest().map(([, guest]) => guest).map((guest) => [guest, guest.view.webContents.getURL()]);
     const others = [...leasedPages];
-    await Promise.allSettled([...pages.map(([guest]) => guest.view.webContents.loadURL("about:blank")),
-      ...others.map((page) => page.blank())]);
+    const blanked = await Promise.allSettled([...pages.map(async ([guest]) => guest.view.webContents.loadURL("about:blank")),
+      ...others.map(async (page) => page.blank())]);
     const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
-      partition.clearAuthCache?.()]);
-    const failed = results.some((result) => result.status === "rejected");
+      partition.clearAuthCache?.(), ...pages.map(async ([guest]) => {
+        if (!guest.view.webContents.isDestroyed()) guest.view.webContents.navigationHistory.clear();
+      })]);
+    const failed = [...blanked, ...results].some((result) => result.status === "rejected");
     for (const [guest, url] of pages) {
       // Kept apart from page notices, so restoring the page cannot reset it; the next good clear does.
       guest.clearFailed = failed;
