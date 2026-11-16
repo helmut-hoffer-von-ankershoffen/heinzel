@@ -105,7 +105,7 @@ def test_invalid_wheel_never_exports_a_path_or_executes_node(selector, monkeypat
     assert not marker.exists()
 
 
-def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
+def test_python_cells_and_apple_build_select_locked_node():
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     coverage = jobs["coverage"]
     steps = coverage["steps"]
@@ -133,8 +133,16 @@ def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
     )
     assert selected["if"] == "matrix.levels != 'integration'"
     assert "if" not in next(step for step in test["steps"] if "bootstrap-pyyaml.sh" in step.get("run", ""))
+    apple_steps = jobs["macos-specific"]["steps"]
+    apple_sync = next(i for i, step in enumerate(apple_steps) if step.get("run", "").startswith("uv sync"))
+    apple_node = next(i for i, step in enumerate(apple_steps) if "scripts/ci_node.py" in step.get("run", ""))
+    apple_build = next(i for i, step in enumerate(apple_steps) if step.get("run") == "make build-apple-ci")
+    assert "--group build" in apple_steps[apple_sync]["run"]
+    assert apple_steps[apple_node]["run"] == "uv run --frozen --no-sync --no-build python scripts/ci_node.py"
+    assert "if" not in apple_steps[apple_node]
+    assert apple_sync < apple_node < apple_build
     for name, job in jobs.items():
-        if name not in {"test", "coverage"}:
+        if name not in {"test", "coverage", "macos-specific"}:
             assert not any("scripts/ci_node.py" in step.get("run", "") for step in job.get("steps", [])), name
 
 
