@@ -2,6 +2,10 @@ import CryptoKit
 import Foundation
 import SQLite3
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+private let otherFixtureEndpoint = "https://other.test"
+
 private final class FakeKeychain: WidgetCredentialKeychain {
     var data: Data?
     var canDelete = true
@@ -38,12 +42,14 @@ private final class NotificationCapture: @unchecked Sendable {
         let keychain = FakeKeychain()
         let store = WidgetCredentialStore(catalogURL: url, keychain: keychain)
         func seed(_ credential: WidgetCredential, expected: ActivityCatalog.Activation, at path: URL, in keychain: FakeKeychain) -> ActivityCatalog.Activation {
-            let data = try! JSONEncoder().encode(credential)
+            guard let data = try? JSONEncoder().encode(credential) else {
+                preconditionFailure("Could not encode fixture credential")
+            }
             return ActivityCatalog.installCredential(url: path, expected: expected, workspaceID: credential.workspaceID,
                                                        generation: credential.generation, install: { keychain.write(data) })!
         }
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         precondition(ActivityCatalog.workspaceScope(url: url, endpoint: pending.endpoint, legacy: "legacy") == nil)
         let credential = WidgetCredential(endpoint: pending.endpoint, workspaceID: String(repeating: "a", count: 64),
             generation: UUID().uuidString, token: "hzw_" + String(repeating: "x", count: 40), expiresAt: now.addingTimeInterval(3600))
@@ -54,7 +60,7 @@ private final class NotificationCapture: @unchecked Sendable {
         defer { NotificationCenter.default.removeObserver(observer) }
         let bound = seed(credential, expected: pending, at: url, in: keychain)
         precondition(ActivityCatalog.workspaceScope(url: url, endpoint: pending.endpoint, legacy: "legacy") == bound.scope)
-        precondition(ActivityCatalog.workspaceScope(url: url, endpoint: "https://other.test", legacy: "legacy") == nil)
+        precondition(ActivityCatalog.workspaceScope(url: url, endpoint: otherFixtureEndpoint, legacy: "legacy") == nil)
         let capture = store.capture(now: now)!
         precondition(capture.activation == bound && capture.credential == credential)
         precondition(store.capture(now: now.addingTimeInterval(3601)) == nil)
@@ -62,7 +68,7 @@ private final class NotificationCapture: @unchecked Sendable {
         let snapshot = Data("fictional".utf8)
         precondition(catalog.publish(scope: bound.scope!, generation: UUID().uuidString, snapshot: snapshot,
                                      entries: [], expectedToken: capture.writerToken))
-        keychain.afterRead = { _ = ActivityCatalog.activate(url: url, endpoint: "https://other.test") }
+        keychain.afterRead = { _ = ActivityCatalog.activate(url: url, endpoint: otherFixtureEndpoint) }
         precondition(store.capture(now: now) == nil)
         keychain.afterRead = nil
         precondition(!store.invalidate(bound).revoked && keychain.data != nil)
@@ -107,7 +113,8 @@ private final class NotificationCapture: @unchecked Sendable {
         let issuedEnrollment = WidgetFencedEnrollment(store: issuedStore)
         let issuedPending = ActivityCatalog.activate(url: issuedURL, endpoint: pending.endpoint)!
         let expiry = ISO8601DateFormatter().string(from: now.addingTimeInterval(3600))
-        let fixtureEpoch = String(repeating: "1", count: 32), fixtureRevision = String(repeating: "2", count: 32)
+        let fixtureEpoch = String(repeating: "1", count: 32)
+        let fixtureRevision = String(repeating: "2", count: 32)
         let fixtureStatus = Data("{\"epoch\":\"\(fixtureEpoch)\",\"revision\":\"\(fixtureRevision)\",\"workspace_id\":\"\(credential.workspaceID)\"}".utf8)
         func fixtureReceipt(_ attempt: ActivityCatalog.Enrollment) -> Data {
             let wire = attempt.id.replacingOccurrences(of: "-", with: "").lowercased()
@@ -223,7 +230,8 @@ private final class NotificationCapture: @unchecked Sendable {
         let secretData = fencedKeychain.pending[wireAttempt]!
         let secretRecord = try JSONSerialization.jsonObject(with: secretData) as! [String: Any]
         let secret = secretRecord["secret"] as! String
-        let epoch = String(repeating: "a", count: 32), revision = String(repeating: "b", count: 32)
+        let epoch = String(repeating: "a", count: 32)
+        let revision = String(repeating: "b", count: 32)
         let status = Data("{\"epoch\":\"\(epoch)\",\"revision\":\"\(revision)\",\"workspace_id\":\"\(credential.workspaceID)\"}".utf8)
         guard case .ready(let firstRequest) = fenced.bind(status, reservation: fencedAttempt) else { fatalError() }
         let request = try JSONSerialization.jsonObject(with: firstRequest) as! [String: String]

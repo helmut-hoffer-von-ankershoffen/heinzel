@@ -1,5 +1,9 @@
 import Foundation
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+private let fixtureRedirectEndpoint = "https://redirect.invalid/widget"
+
 private final class TransportKeychain: WidgetCredentialKeychain, @unchecked Sendable {
     var data: Data?
     var pending: [String: Data] = [:]
@@ -16,7 +20,7 @@ private final class TransportKeychain: WidgetCredentialKeychain, @unchecked Send
 
 private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handle: ((URLRequest) -> (Int, String, Data))!
-    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canInit(with _: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let (status, mime, body) = Self.handle(request)
@@ -25,7 +29,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         if status == 302 {
-            let target = URL(string: "https://redirect.invalid/widget")!
+            let target = URL(string: fixtureRedirectEndpoint)!
             let response = HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: nil,
                                            headerFields: ["Location": target.absoluteString])!
             client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: target), redirectResponse: response)
@@ -37,7 +41,9 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
+    override func stopLoading() {
+        // Responses are delivered synchronously in startLoading; no work remains to cancel.
+    }
 }
 
 @main struct WidgetTransportTests {
@@ -50,9 +56,11 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         let keychain = TransportKeychain()
         let store = WidgetCredentialStore(catalogURL: url, keychain: keychain)
         let workspace = String(repeating: "a", count: 64)
-        let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         func seed(_ credential: WidgetCredential, expected: ActivityCatalog.Activation) -> ActivityCatalog.Activation? {
-            let data = try! JSONEncoder().encode(credential)
+            guard let data = try? JSONEncoder().encode(credential) else {
+                preconditionFailure("Could not encode fixture credential")
+            }
             return ActivityCatalog.installCredential(url: url, expected: expected, workspaceID: credential.workspaceID,
                                                      generation: credential.generation, install: { keychain.write(data) })
         }

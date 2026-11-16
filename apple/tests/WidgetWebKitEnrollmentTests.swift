@@ -37,8 +37,37 @@ private struct FixtureInput: Decodable {
     var loaded: CheckedContinuation<Void, Error>?
     private func diagnostic(_ message: String) { FileHandle.standardError.write(Data((message + "\n").utf8)) }
     init(certificateSHA256: String, port: Int) { self.certificateSHA256 = certificateSHA256; self.port = port }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded?.resume(); loaded = nil }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    static func permits(_ url: URL?, port: Int) -> Bool {
+        guard let url else { return false }
+        return url.scheme == "https" && url.host == "127.0.0.1" && url.port == port &&
+            url.user == nil && url.password == nil
+    }
+    private func rejectNavigation() {
+        loaded?.resume(throwing: WidgetWebKitEnrollmentTests.FixtureError.navigation)
+        loaded = nil
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        // Only the certificate-pinned loopback fixture may receive navigation or its paired device data.
+        guard webView === view, Self.permits(navigationAction.request.url, port: port) else {
+            rejectNavigation()
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        // Recheck the final response origin, including server-directed redirects.
+        guard webView === view, Self.permits(navigationResponse.response.url, port: port) else {
+            rejectNavigation()
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+    func webView(_: WKWebView, didFinish _: WKNavigation!) { loaded?.resume(); loaded = nil }
+    func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError error: Error) {
         let value = error as NSError
         let underlying = value.userInfo[NSUnderlyingErrorKey] as? NSError
         diagnostic("navigation-error domain=\(value.domain) code=\(value.code) underlying=\(underlying?.domain ?? "none")/\(underlying?.code ?? 0)")
@@ -68,9 +97,41 @@ private struct FixtureInput: Decodable {
 @main struct WidgetWebKitEnrollmentTests {
     enum FixtureError: String, Error { case origin, port, navigation, fingerprint, catalog, first, cancel, recover }
     @MainActor static func main() async {
+        if CommandLine.arguments.dropFirst() == ["--check-navigation-policy"] {
+            checkNavigationPolicy()
+            return
+        }
         do { try await run() }
         catch let error as FixtureError { FileHandle.standardError.write(Data("fixture failed: \(error.rawValue)\n".utf8)); exit(1) }
         catch { FileHandle.standardError.write(Data("fixture failed: other\n".utf8)); exit(1) }
+    }
+
+    @MainActor static func checkNavigationPolicy() {
+        let delegate = Navigation(certificateSHA256: "fictional", port: 38421)
+        // Optional ObjC protocol methods must actually be implemented, not merely look alike in Swift.
+        precondition(delegate.responds(to: NSSelectorFromString("webView:decidePolicyForNavigationAction:decisionHandler:")))
+        precondition(delegate.responds(to: NSSelectorFromString("webView:decidePolicyForNavigationResponse:decisionHandler:")))
+        var url = URLComponents()
+        url.scheme = "https"
+        url.host = "127.0.0.1"
+        url.port = 38421
+        precondition(Navigation.permits(url.url, port: 38421))
+        url.path = "/another-path"
+        precondition(Navigation.permits(url.url, port: 38421))
+        precondition(!Navigation.permits(nil, port: 38421))
+        precondition(!Navigation.permits(url.url, port: 38422))
+        url.scheme = "http"
+        precondition(!Navigation.permits(url.url, port: 38421))
+        url.scheme = "https"
+        url.host = "example.test"
+        precondition(!Navigation.permits(url.url, port: 38421))
+        url.host = "127.0.0.1"
+        url.user = "fixture"
+        precondition(!Navigation.permits(url.url, port: 38421))
+        url.user = nil
+        url.password = "fixture"
+        precondition(!Navigation.permits(url.url, port: 38421))
+        print("PASS: fixture navigation policy rejects other origins and URL credentials")
     }
 
     @MainActor static func run() async throws {

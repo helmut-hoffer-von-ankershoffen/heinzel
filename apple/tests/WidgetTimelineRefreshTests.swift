@@ -1,5 +1,8 @@
 import Foundation
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+
 private final class TimelineKeychain: WidgetCredentialKeychain {
     var data: Data?
     var deletes = 0
@@ -25,16 +28,16 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
         let keychain = TimelineKeychain()
         let store = WidgetCredentialStore(catalogURL: url, keychain: keychain)
         let workspace = String(repeating: "a", count: 64)
-        func activate() -> ActivityCatalog.Activation {
-            let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        func activate() throws -> ActivityCatalog.Activation {
+            let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
             let credential = WidgetCredential(endpoint: pending.endpoint, workspaceID: workspace,
                 generation: UUID().uuidString, token: "hzw_" + String(repeating: "x", count: 40),
                 expiresAt: .now.addingTimeInterval(3600))
-            let data = try! JSONEncoder().encode(credential)
+            let data = try JSONEncoder().encode(credential)
             return ActivityCatalog.installCredential(url: url, expected: pending, workspaceID: workspace,
                                                       generation: credential.generation, install: { keychain.write(data) })!
         }
-        let first = activate()
+        let first = try activate()
         let generated = ISO8601DateFormatter().string(from: .now)
         let body = Data("""
         {"version":1,"workspace_id":"\(workspace)","generated_at":"\(generated)","fresh_for_seconds":300,"awake":0,"waiting":0,"roster":[]}
@@ -94,7 +97,7 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
             return await withCheckedContinuation { oldPending = $0 }
         }, publish: publish) }
         while oldPending == nil { await Task.yield() }
-        let replacement = activate()
+        let replacement = try activate()
         let newAccess = await rotationScheduler.refresh(store: store, fetch: { .received(snapshot, $0) }, publish: publish)
         guard case .permitted(let newActivation, _) = newAccess, newActivation == replacement else {
             preconditionFailure("replacement was not independently authorized")
@@ -127,7 +130,7 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
         _ = ActivityCatalog(url: secondURL)!
         let secondKeychain = TimelineKeychain()
         let secondStore = WidgetCredentialStore(catalogURL: secondURL, keychain: secondKeychain)
-        let secondPending = ActivityCatalog.activate(url: secondURL, endpoint: "https://example.test")!
+        let secondPending = ActivityCatalog.activate(url: secondURL, endpoint: fixtureEndpoint)!
         let secondCredential = WidgetCredential(endpoint: secondPending.endpoint, workspaceID: workspace,
             generation: UUID().uuidString, token: "hzw_" + String(repeating: "y", count: 40),
             expiresAt: .now.addingTimeInterval(3600))

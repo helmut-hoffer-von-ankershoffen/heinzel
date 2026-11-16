@@ -1,5 +1,8 @@
 import Foundation
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+
 @main struct WidgetSnapshotTests {
     static func main() throws {
         let workspace = String(repeating: "a", count: 64)
@@ -31,7 +34,7 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("catalog.sqlite")
         let catalog = ActivityCatalog(url: url)!
-        let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         let credential = WidgetCredential(endpoint: pending.endpoint, workspaceID: workspace, generation: UUID().uuidString,
             token: "hzw_" + String(repeating: "x", count: 40), expiresAt: now.addingTimeInterval(3600))
         let active = ActivityCatalog.installCredential(url: url, expected: pending, workspaceID: workspace,

@@ -1,8 +1,16 @@
 import Foundation
 import SQLite3
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+
 @main struct CatalogTest {
     static func flag(_ url: URL, _ name: String) -> URL { url.appendingPathExtension(name) }
+
+    static func signal(_ url: URL) {
+        do { try Data().write(to: url) }
+        catch { preconditionFailure("Could not write fixture synchronization flag: \(error)") }
+    }
 
     static func waitFor(_ url: URL) {
         for _ in 0..<500 {
@@ -19,7 +27,7 @@ import SQLite3
             if mode == "writer" {
                 guard let store = ActivityCatalog(url: url), let token = ActivityCatalog.refreshToken(url: url) else { fatalError("writer") }
                 let ok = store.publish(scope: "one", generation: "racing", snapshot: Data("racing".utf8), entries: [], expectedToken: token) { data, marker in
-                    try! Data().write(to: flag(url, "ready"))
+                    signal(flag(url, "ready"))
                     waitFor(flag(url, "release"))
                     do { try data.write(to: marker, options: .atomic); return true } catch { return false }
                 }
@@ -27,7 +35,7 @@ import SQLite3
             } else if mode == "crash" {
                 guard let store = ActivityCatalog(url: url), let token = ActivityCatalog.refreshToken(url: url) else { fatalError("crash") }
                 _ = store.publish(scope: "one", generation: "interrupted", snapshot: Data("interrupted".utf8), entries: [], expectedToken: token) { _, _ in
-                    try! Data().write(to: flag(url, "crash-ready"))
+                    signal(flag(url, "crash-ready"))
                     waitFor(flag(url, "never"))
                     return false
                 }
@@ -45,7 +53,7 @@ import SQLite3
                 let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
                 let installed = ActivityCatalog.installCredential(url: url, expected: expected,
                     workspaceID: String(repeating: "a", count: 64), generation: UUID().uuidString) {
-                    try! Data().write(to: flag(url, "install-ready"))
+                    signal(flag(url, "install-ready"))
                     waitFor(flag(url, "install-release"))
                     return true
                 }
@@ -54,14 +62,14 @@ import SQLite3
                 let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
                 try Data().write(to: flag(url, "invalidate-started"))
                 let result = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
-                    try! Data().write(to: flag(url, "unexpected-delete")); return true
+                    signal(flag(url, "unexpected-delete")); return true
                 })
                 precondition(!result.revoked)
                 try Data().write(to: flag(url, "invalidate-done"))
             } else if mode == "secure-crash-invalidate" {
                 let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
                 _ = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
-                    try! Data().write(to: flag(url, "tombstone-ready"))
+                    signal(flag(url, "tombstone-ready"))
                     waitFor(flag(url, "never"))
                     return false
                 })
@@ -179,7 +187,7 @@ import SQLite3
         try Data().write(to: flag(url, "stale-release"))
         stale.waitUntilExit()
         precondition(stale.terminationStatus == 0 && afterFailure.snapshot() == nil)
-        let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         try JSONEncoder().encode(pending).write(to: flag(url, "activation"))
         let pendingToken = ActivityCatalog.refreshToken(url: url)!
         let installer = Process()
@@ -213,7 +221,7 @@ import SQLite3
         let afterCrash = ActivityCatalog.refreshToken(url: url)!
         precondition(!store.publish(scope: active.scope!, generation: "after-crash", snapshot: Data("old".utf8), entries: [], expectedToken: afterCrash))
         precondition(ActivityCatalog.invalidate(url: url, expected: active, deleteCredential: { true }).complete)
-        let toReserve = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let toReserve = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         try JSONEncoder().encode(toReserve).write(to: flag(url, "activation"))
         let reservations = ["one", "two"].map { name -> Process in
             let process = Process()
@@ -230,7 +238,7 @@ import SQLite3
         let unresolved = ActivityCatalog.pendingEnrollment(url: url)!
         precondition(unresolved.previous == toReserve)
         precondition(ActivityCatalog.clear(url: url).complete)
-        let reset = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let reset = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         precondition(ActivityCatalog.reserveEnrollment(url: url, expected: reset) == nil)
         try JSONEncoder().encode(unresolved).write(to: flag(url, "expected-attempt"))
         let restarted = Process()

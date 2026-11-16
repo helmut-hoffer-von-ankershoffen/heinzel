@@ -1,5 +1,10 @@
 import Foundation
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+private let otherFixtureEndpoint = "https://other.test"
+private let insecureFixtureEndpoint = "http://example.test"
+
 // Standalone, isolated model probe; does not read or write shared widget defaults.
 @main
 struct WidgetStatusTests {
@@ -45,15 +50,16 @@ struct WidgetStatusTests {
         let unsafeCatalog = ActivityCatalog(url: unsafeURL)!
         let lockURL = unsafeURL.appendingPathExtension("lock")
         let target = directory.appendingPathComponent("target")
-        try! Data("untouched".utf8).write(to: target)
-        try! FileManager.default.createSymbolicLink(at: lockURL, withDestinationURL: target)
+        try Data("untouched".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: lockURL, withDestinationURL: target)
         let token = ActivityCatalog.refreshToken(url: unsafeURL)!
         precondition(!ActivityWidgetData.save(awake: 0, waiting: 0, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: token, catalogOverride: unsafeCatalog))
-        precondition(try! Data(contentsOf: target) == Data("untouched".utf8))
+        let targetContents = try Data(contentsOf: target)
+        precondition(targetContents == Data("untouched".utf8))
         precondition(!ActivityCatalog.clear(url: unsafeURL).complete)
         let oldToken = ActivityCatalog.refreshToken(url: url)!
-        let activation = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        let activation = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
         precondition(catalog.snapshot() == nil)
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: oldToken, catalogOverride: catalog))
@@ -90,7 +96,7 @@ struct WidgetStatusTests {
         let revokedToken = ActivityCatalog.refreshToken(url: url)!
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: bound.scope!, expectedToken: revokedToken, catalogOverride: catalog))
-        let replacement = ActivityCatalog.activate(url: url, endpoint: "https://other.test")!
+        let replacement = ActivityCatalog.activate(url: url, endpoint: otherFixtureEndpoint)!
         var staleDeleteCalled = false
         let stale = ActivityCatalog.invalidate(url: url, expected: bound, deleteCredential: { staleDeleteCalled = true; return true })
         precondition(!stale.revoked && !staleDeleteCalled && ActivityCatalog.activation(url: url) == replacement)
@@ -98,7 +104,7 @@ struct WidgetStatusTests {
         precondition(ActivityCatalog.installCredential(url: url, expected: activation, workspaceID: workspace,
                     generation: UUID().uuidString, install: { staleInstallCalled = true; return true }) == nil)
         precondition(!staleInstallCalled)
-        precondition(ActivityCatalog.activate(url: url, endpoint: "http://example.test") == nil)
+        precondition(ActivityCatalog.activate(url: url, endpoint: insecureFixtureEndpoint) == nil)
         var removed = false
         let failedClear = ActivityCatalog.clear(url: url, write: { _, _ in false }, remove: { _ in removed = true; return true })
         precondition(!failedClear.revoked && !removed)
@@ -107,13 +113,14 @@ struct WidgetStatusTests {
         let afterClear = ActivityCatalog.refreshToken(url: url)!
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: afterClear, catalogOverride: catalog))
-        try! FileManager.default.removeItem(at: url.appendingPathExtension("authority"))
+        try FileManager.default.removeItem(at: url.appendingPathExtension("authority"))
         let missingAuthority = ActivityCatalog.refreshToken(url: url)!
         precondition(!ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: [], entries: [],
                                               workspaceScope: scope, expectedToken: missingAuthority, catalogOverride: catalog))
         let rotationURL = directory.appendingPathComponent("rotation.sqlite")
-        let initial = ActivityCatalog.activate(url: rotationURL, endpoint: "https://example.test")!
-        let g1 = UUID().uuidString, g2 = UUID().uuidString
+        let initial = ActivityCatalog.activate(url: rotationURL, endpoint: fixtureEndpoint)!
+        let g1 = UUID().uuidString
+        let g2 = UUID().uuidString
         let first = ActivityCatalog.installCredential(url: rotationURL, expected: initial, workspaceID: workspace,
                                                       generation: g1, install: { true })!
         let second = ActivityCatalog.installCredential(url: rotationURL, expected: first, workspaceID: workspace,

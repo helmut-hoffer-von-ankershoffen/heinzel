@@ -2,26 +2,39 @@ import AppKit
 import SwiftUI
 import WebKit
 
-@MainActor final class FixtureState: ObservableObject {
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+private let otherFixtureEndpoint = "https://other.test"
+
+@MainActor final class FixtureState: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var currentID = "first"
-    @Published var currentEndpoint = "https://example.test"
-    @Published var visibleEndpoint = "https://example.test"
+    @Published var currentEndpoint = fixtureEndpoint
+    @Published var visibleEndpoint = fixtureEndpoint
     let store = WKWebsiteDataStore.nonPersistent()
     var made: [WKWebView] = []
     var dismantled = 0
+
+    func webView(_: WKWebView, decidePolicyFor _: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        // This fixture observes view identity and data-store reuse; it never loads content.
+        decisionHandler(.cancel)
+    }
 }
 
 struct FixtureWebView: NSViewRepresentable {
     let fixture: FixtureState
     func makeCoordinator() -> FixtureState { fixture }
-    func makeNSView(context: Context) -> WKWebView {
+    func makeNSView(context _: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = fixture.store
         let view = WKWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = fixture
         fixture.made.append(view)
         return view
     }
-    func updateNSView(_ view: WKWebView, context: Context) {}
+    func updateNSView(_: WKWebView, context _: Context) {
+        // Identity changes rebuild the view via .id(revision); there is no content to update.
+    }
     static func dismantleNSView(_ view: WKWebView, coordinator: FixtureState) {
         view.stopLoading()
         coordinator.dismantled += 1
@@ -72,11 +85,11 @@ extension Notification.Name { static let fixtureRotation = Notification.Name("Fi
         settle()
         precondition(fixture.made.count == 2)
         fixture.currentID = "second"
-        fixture.visibleEndpoint = "https://other.test"
+        fixture.visibleEndpoint = otherFixtureEndpoint
         NotificationCenter.default.post(name: .fixtureRotation, object: "second")
         settle()
         precondition(fixture.made.count == 2)
-        fixture.visibleEndpoint = "https://example.test"
+        fixture.visibleEndpoint = fixtureEndpoint
         NotificationCenter.default.post(name: .fixtureRotation, object: "second")
         settle()
         precondition(fixture.made.count == 3 && fixture.dismantled == 2)

@@ -1,6 +1,9 @@
 import CryptoKit
 import Foundation
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+
 /// Fictional test-only keychain persisted across harness processes.
 private struct FixtureKeychain: WidgetCredentialKeychain {
     let directory: URL
@@ -36,7 +39,7 @@ private struct FixtureKeychain: WidgetCredentialKeychain {
         let reservationURL = root.appendingPathComponent("reservation.json")
         if operation == "prepare" || operation == "prepare-paired" {
             _ = ActivityCatalog(url: url)!
-            let activation = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+            let activation = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
             let fingerprint = operation == "prepare-paired" ? CommandLine.arguments[3] : nil
             let reservation = enrollment.prepare(expected: activation, pairingFingerprint: fingerprint)!
             try JSONEncoder().encode(reservation).write(to: reservationURL, options: .atomic)
