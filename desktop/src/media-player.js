@@ -1,4 +1,4 @@
-import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
+import { browserBounds, browserOwner, browserUrl, hasExactKeys, nativeSurfaceDiagnostics } from "./mini-browser-policy.js";
 import { classifyUiLink, createExternalOpener, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
 
 /**
@@ -46,7 +46,7 @@ export function playerState(value) {
 }
 
 const FIELDS = { open: ["action", "video"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"] };
+  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"], diagnostics: ["action"] };
 
 export function createMediaPlayer({ windows, fromWebContents, connection, lease, createView, openExternal,
   now = Date.now, platform = process.platform }) {
@@ -171,6 +171,19 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     catch { return null; }
     finally { clearTimeout(timer); }
   };
+  const layout = (window, event, player, requested) => {
+    try {
+      const zoom = event.sender.getZoomFactor();
+      const size = window.getContentSize();
+      const css = browserBounds(requested, size.map((dimension) => dimension / zoom));
+      const bounds = Object.fromEntries(Object.entries(css).map(([key, value]) => [key, Math.round(value * zoom)]));
+      player.view.setBounds(browserBounds(bounds, size));
+    } catch (error) {
+      player.view.setVisible(false);
+      throw error;
+    }
+    player.view.setVisible(window.isFocused() && player.status !== "unavailable");
+  };
   return {
     async handle(event, request) {
       if (stopped) throw new Error("Player surface is closed.");
@@ -179,6 +192,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
           !hasExactKeys(request, FIELDS[request.action])) throw new Error("Invalid player command.");
       if (request.action === "close") { close(window); return { status: "closed" }; }
       let player = players.get(window);
+      if (request.action === "diagnostics") return nativeSurfaceDiagnostics(window, player);
       if (request.action === "volume") playerScript("volume", request.value);
       if (request.action === "open") {
         playerUrl(request.video);
@@ -188,19 +202,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
         }
       }
       if (!player) return { status: "empty", ready: false, state: -1, error: false };
-      if (request.action === "layout") {
-        try {
-          const zoom = event.sender.getZoomFactor();
-          const size = window.getContentSize();
-          const css = browserBounds(request.bounds, size.map((dimension) => dimension / zoom));
-          const bounds = Object.fromEntries(Object.entries(css).map(([key, value]) => [key, Math.round(value * zoom)]));
-          player.view.setBounds(browserBounds(bounds, size));
-        } catch (error) {
-          player.view.setVisible(false);
-          throw error;
-        }
-        player.view.setVisible(window.isFocused() && player.status !== "unavailable");
-      }
+      if (request.action === "layout") layout(window, event, player, request.bounds);
       if (request.action === "hide") player.view.setVisible(false);
       if (["play", "pause", "volume"].includes(request.action)) await run(player, request.action, request.value);
       const state = playerState(await run(player, "state"));

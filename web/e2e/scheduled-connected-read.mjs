@@ -252,17 +252,77 @@ try {
   if (latePage && !lateActivity) {
     await latePage.ready;
     await revoke.hover();
+    // A prior disclosure can finish scrolling after hover. Reacquire the real target before pressing.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await revoke.hover();
+    const target = await revoke.elementHandle();
+    assert.ok(target);
+    await target.evaluate(async (node) => {
+      const deadline = performance.now() + 3000;
+      const geometry = () => {
+        const rect = node.getBoundingClientRect();
+        return [rect.left, rect.top, rect.width, rect.height];
+      };
+      let before = geometry();
+      while (performance.now() < deadline) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const after = geometry();
+        if (after.every((value, index) => Math.abs(value - before[index]) < 0.5)) return;
+        before = after;
+      }
+      throw new Error("Revoke geometry did not settle before the press.");
+    });
+    const pointer = await target.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const left = Math.max(0, rect.left),
+        right = Math.min(innerWidth, rect.right);
+      const top = Math.max(0, rect.top),
+        bottom = Math.min(innerHeight, rect.bottom);
+      return right > left && bottom > top ? { x: (left + right) / 2, y: (top + bottom) / 2 } : null;
+    });
+    assert.ok(pointer);
+    await page.mouse.move(pointer.x, pointer.y);
+    assert.equal(
+      await target.evaluate((node, { x, y }) => node.contains(document.elementFromPoint(x, y)), pointer),
+      true,
+      "revoke is under the pointer before the press",
+    );
+    await target.evaluate((node) => {
+      window.__hzRevokePress = false;
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          window.__hzRevokePress = event.isTrusted && node.contains(event.target);
+        },
+        { capture: true, once: true },
+      );
+    });
     const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
     // Deliver the real pending page report between the same physical press and release as a normal click.
-    await page.mouse.down();
-    latePage.release();
-    await latePage.inserted;
-    await page.waitForFunction(
-      (height) => document.getElementById("content").getBoundingClientRect().height > height,
-      priorHeight,
-    );
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    await page.mouse.up();
+    let pressed = false;
+    try {
+      await page.mouse.down();
+      pressed = true;
+      assert.equal(await page.evaluate(() => window.__hzRevokePress), true, "the trusted press reached revoke");
+      latePage.release();
+      await latePage.inserted;
+      await page.waitForFunction(
+        (height) => document.getElementById("content").getBoundingClientRect().height > height,
+        priorHeight,
+      );
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(
+        await target.evaluate(
+          (node, { x, y }) => node.isConnected && node.contains(document.elementFromPoint(x, y)),
+          pointer,
+        ),
+        true,
+        "late page loading keeps revoke under the pressed pointer",
+      );
+    } finally {
+      latePage.release();
+      if (pressed) await page.mouse.up();
+    }
   } else await revoke.click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
   assert.deepEqual(revocations, [{ kind: "request" }, { kind: "response", status: 200 }]);

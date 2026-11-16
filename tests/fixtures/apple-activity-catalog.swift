@@ -1,8 +1,16 @@
 import Foundation
 import SQLite3
 
+// Fixed fictional identities for this isolated fixture; never production configuration.
+private let fixtureEndpoint = "https://example.test"
+
 @main struct CatalogTest {
     static func flag(_ url: URL, _ name: String) -> URL { url.appendingPathExtension(name) }
+
+    static func signal(_ url: URL) {
+        do { try Data().write(to: url) }
+        catch { preconditionFailure("Could not write fixture synchronization flag: \(error)") }
+    }
 
     static func waitFor(_ url: URL) {
         for _ in 0..<500 {
@@ -19,7 +27,7 @@ import SQLite3
             if mode == "writer" {
                 guard let store = ActivityCatalog(url: url), let token = ActivityCatalog.refreshToken(url: url) else { fatalError("writer") }
                 let ok = store.publish(scope: "one", generation: "racing", snapshot: Data("racing".utf8), entries: [], expectedToken: token) { data, marker in
-                    try! Data().write(to: flag(url, "ready"))
+                    signal(flag(url, "ready"))
                     waitFor(flag(url, "release"))
                     do { try data.write(to: marker, options: .atomic); return true } catch { return false }
                 }
@@ -27,7 +35,7 @@ import SQLite3
             } else if mode == "crash" {
                 guard let store = ActivityCatalog(url: url), let token = ActivityCatalog.refreshToken(url: url) else { fatalError("crash") }
                 _ = store.publish(scope: "one", generation: "interrupted", snapshot: Data("interrupted".utf8), entries: [], expectedToken: token) { _, _ in
-                    try! Data().write(to: flag(url, "crash-ready"))
+                    signal(flag(url, "crash-ready"))
                     waitFor(flag(url, "never"))
                     return false
                 }
@@ -41,6 +49,41 @@ import SQLite3
                 try Data().write(to: flag(url, "started"))
                 precondition(ActivityCatalog.clear(url: url).complete)
                 try Data().write(to: flag(url, "done"))
+            } else if mode == "secure-install" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                let installed = ActivityCatalog.installCredential(url: url, expected: expected,
+                    workspaceID: String(repeating: "a", count: 64), generation: UUID().uuidString) {
+                    signal(flag(url, "install-ready"))
+                    waitFor(flag(url, "install-release"))
+                    return true
+                }
+                precondition(installed != nil)
+            } else if mode == "secure-invalidate" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                try Data().write(to: flag(url, "invalidate-started"))
+                let result = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
+                    signal(flag(url, "unexpected-delete")); return true
+                })
+                precondition(!result.revoked)
+                try Data().write(to: flag(url, "invalidate-done"))
+            } else if mode == "secure-crash-invalidate" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                _ = ActivityCatalog.invalidate(url: url, expected: expected, deleteCredential: {
+                    signal(flag(url, "tombstone-ready"))
+                    waitFor(flag(url, "never"))
+                    return false
+                })
+                fatalError("interrupted invalidation unexpectedly returned")
+            } else if mode == "reserve" {
+                let name = CommandLine.arguments[3]
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                try Data().write(to: flag(url, "reserve-ready-" + name))
+                waitFor(flag(url, "reserve-release"))
+                let result = ActivityCatalog.reserveEnrollment(url: url, expected: expected)
+                try Data((result == nil ? "lost" : "won").utf8).write(to: flag(url, "reserve-result-" + name))
+            } else if mode == "pending-check" {
+                let expected = try JSONDecoder().decode(ActivityCatalog.Enrollment.self, from: Data(contentsOf: flag(url, "expected-attempt")))
+                precondition(ActivityCatalog.pendingEnrollment(url: url) == expected)
             }
             return
         }
@@ -144,6 +187,66 @@ import SQLite3
         try Data().write(to: flag(url, "stale-release"))
         stale.waitUntilExit()
         precondition(stale.terminationStatus == 0 && afterFailure.snapshot() == nil)
+        let pending = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
+        try JSONEncoder().encode(pending).write(to: flag(url, "activation"))
+        let pendingToken = ActivityCatalog.refreshToken(url: url)!
+        let installer = Process()
+        installer.executableURL = writer.executableURL
+        installer.arguments = [url.path, "secure-install"]
+        try installer.run()
+        waitFor(flag(url, "install-ready"))
+        let invalidator = Process()
+        invalidator.executableURL = writer.executableURL
+        invalidator.arguments = [url.path, "secure-invalidate"]
+        try invalidator.run()
+        waitFor(flag(url, "invalidate-started"))
+        Thread.sleep(forTimeInterval: 0.2)
+        precondition(!FileManager.default.fileExists(atPath: flag(url, "invalidate-done").path))
+        try Data().write(to: flag(url, "install-release"))
+        installer.waitUntilExit(); invalidator.waitUntilExit()
+        precondition(installer.terminationStatus == 0 && invalidator.terminationStatus == 0)
+        precondition(!FileManager.default.fileExists(atPath: flag(url, "unexpected-delete").path))
+        let active = ActivityCatalog.activation(url: url)!
+        precondition(active.credentialGeneration != nil)
+        precondition(!store.publish(scope: active.scope!, generation: "old", snapshot: Data("old".utf8), entries: [], expectedToken: pendingToken))
+        try JSONEncoder().encode(active).write(to: flag(url, "activation"))
+        let interruptedInvalidation = Process()
+        interruptedInvalidation.executableURL = writer.executableURL
+        interruptedInvalidation.arguments = [url.path, "secure-crash-invalidate"]
+        try interruptedInvalidation.run()
+        waitFor(flag(url, "tombstone-ready"))
+        interruptedInvalidation.terminate()
+        interruptedInvalidation.waitUntilExit()
+        precondition(ActivityCatalog.activation(url: url) == nil)
+        let afterCrash = ActivityCatalog.refreshToken(url: url)!
+        precondition(!store.publish(scope: active.scope!, generation: "after-crash", snapshot: Data("old".utf8), entries: [], expectedToken: afterCrash))
+        precondition(ActivityCatalog.invalidate(url: url, expected: active, deleteCredential: { true }).complete)
+        let toReserve = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
+        try JSONEncoder().encode(toReserve).write(to: flag(url, "activation"))
+        let reservations = ["one", "two"].map { name -> Process in
+            let process = Process()
+            process.executableURL = writer.executableURL
+            process.arguments = [url.path, "reserve", name]
+            return process
+        }
+        for process in reservations { try process.run() }
+        waitFor(flag(url, "reserve-ready-one")); waitFor(flag(url, "reserve-ready-two"))
+        try Data().write(to: flag(url, "reserve-release"))
+        for process in reservations { process.waitUntilExit(); precondition(process.terminationStatus == 0) }
+        let outcomes = try ["one", "two"].map { try String(contentsOf: flag(url, "reserve-result-" + $0), encoding: .utf8) }
+        precondition(outcomes.filter { $0 == "won" }.count == 1)
+        let unresolved = ActivityCatalog.pendingEnrollment(url: url)!
+        precondition(unresolved.previous == toReserve)
+        precondition(ActivityCatalog.clear(url: url).complete)
+        let reset = ActivityCatalog.activate(url: url, endpoint: fixtureEndpoint)!
+        precondition(ActivityCatalog.reserveEnrollment(url: url, expected: reset) == nil)
+        try JSONEncoder().encode(unresolved).write(to: flag(url, "expected-attempt"))
+        let restarted = Process()
+        restarted.executableURL = writer.executableURL
+        restarted.arguments = [url.path, "pending-check"]
+        try restarted.run()
+        restarted.waitUntilExit()
+        precondition(restarted.terminationStatus == 0)
         print("catalog checks passed")
     }
 }

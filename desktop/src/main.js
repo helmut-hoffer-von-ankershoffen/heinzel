@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, session, shell, WebContentsView, webContents } from "electron";
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createBrowserAgent } from "./browser-agent.js";
@@ -21,9 +22,12 @@ import { hideWindows, quitLogLine, refreshAfterQuit, shouldRefresh, showWindows,
 import { installSignalQuit } from "./signal-quit.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 import { windowOptions } from "./window-options.js";
+import { createWorkspaceDirectory } from "./workspace-directory.js";
+import { createWorkspaceController, isPickerFrame } from "./workspace-controller.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
+const productWindows = new WeakSet();
 const activations = new WeakMap();
 let quitting = false;
 let stopping = false;
@@ -31,6 +35,44 @@ let permissions;
 let desktopGate;
 let gateReleasing = false;
 let workspaceAudio;
+let switching = false;
+let startingProductWindow = false;
+let picker;
+let pickerLoading = false;
+let workspaceController;
+let localConnection;
+const pickerURL = new URL("./workspace-picker.html", import.meta.url).href;
+
+function keepDesktopGate(gate) {
+  desktopGate = gate;
+  gate.once("close", () => { if (!quitting && !gateReleasing) app.quit(); });
+  gate.once("error", () => { if (!quitting && !gateReleasing) app.quit(); });
+}
+
+function showConnection() {
+  if (stopping || quitting) return;
+  if (picker && !picker.isDestroyed()) {
+    picker.show(); picker.focus();
+    try { void workspaceController?.inspect(instance.currentConnection()); } catch { /* No workspace yet. */ }
+    return;
+  }
+  pickerLoading = true;
+  picker = new BrowserWindow({ width: 510, height: 780, minWidth: 360, title: "Connection · Heinzelmännchen",
+    backgroundColor: "#faf8f3", show: false,
+    webPreferences: { preload: fileURLToPath(new URL("./workspace-picker-preload.cjs", import.meta.url)),
+      contextIsolation: true, nodeIntegration: false, sandbox: true, partition: `picker-${randomUUID()}` },
+  });
+  picker.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  picker.webContents.on("will-navigate", (event) => event.preventDefault());
+  picker.webContents.session.setPermissionCheckHandler(() => false);
+  picker.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  picker.on("closed", () => { pickerLoading = false; picker = null; if (!BrowserWindow.getAllWindows().length && !switching) app.quit(); });
+  void picker.loadURL(pickerURL).then(() => {
+    pickerLoading = false;
+    if (picker && !picker.isDestroyed()) picker.show();
+    try { void workspaceController?.inspect(instance.currentConnection()); } catch { /* No workspace yet. */ }
+  });
+}
 const signalQuit = installSignalQuit({
   proc: process,
   quit: () => app.quit(),
@@ -47,17 +89,44 @@ const instance = createInstanceLifecycle({
     connection,
     lifecycle,
     cancelled: () => stopping || quitting,
-    createWindow: () => new BrowserWindow({
+    createWindow: async () => {
+      const workspaceSession = session.fromPartition(`workspace-${randomUUID()}`);
+      if (!connection.remote) await workspaceSession.setProxy({ mode: "direct" });
+      return new BrowserWindow({
       ...windowOptions(process.platform),
       webPreferences: {
-        preload: fileURLToPath(new URL("./preload.cjs", import.meta.url)),
+        preload: fileURLToPath(new URL(connection.remote ? "./workspace-remote-preload.cjs" : "./preload.cjs", import.meta.url)),
+        session: workspaceSession,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
         webviewTag: false,
       },
-    }),
+      });
+    },
     prepareWindow: (window) => {
+      productWindows.add(window);
+      const workspaceSession = window.webContents.session;
+      window.on("closed", () => {
+        void workspaceSession.clearStorageData().catch(() => {});
+        void workspaceSession.clearCache().catch(() => {});
+        if (!switching && !startingProductWindow && !pickerLoading && !quitting && !picker?.isVisible()) app.quit();
+      });
+      const recover = () => {
+        if (switching || stopping || quitting) return;
+        workspaceController?.failed(connection, new Error("Workspace unavailable"));
+        showConnection();
+      };
+      window.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
+        if (mainFrame && code !== -3) recover();
+      });
+      window.webContents.on("render-process-gone", recover);
+      if (connection.remote) {
+        workspaceSession.setPermissionCheckHandler(() => false);
+        workspaceSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+        guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
+        return;
+      }
       windows.add(window);
       const windowPermissions = createNativePermissions({
         windows,
@@ -98,7 +167,7 @@ const instance = createInstanceLifecycle({
           if (!window.isDestroyed()) void window.webContents.executeJavaScript(menuScript("browser-show")).catch(() => {});
         },
       }));
-      window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
+      window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); });
     },
   }),
 });
@@ -150,7 +219,7 @@ const browserBridge = createBrowserBridge({
   listen: miniBrowser.agents.listen,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
-const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken } });
+let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
@@ -209,16 +278,18 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   ipcMain.handle("hz:audio-source", (event, source) => workspaceAudio?.choose(event, source) === true);
   let serviceStarted = false;
   let unexpectedExitReported = false;
-  void ownedCli.exited().then(() => {
+  function watchLocalService() { void ownedCli.exited().then(() => {
     if (serviceStarted && !stopping && !quitting) {
       unexpectedExitReported = true;
-      dialog.showErrorBox(
-        "Heinzelmännchen stopped unexpectedly",
-        "The local service stopped unexpectedly. Check any work that was in progress, then reopen the app.",
-      );
-      app.quit();
+      localConnection = null;
+      browserBridge.stop();
+      if (!instance.currentConnection().remote) {
+        workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
+        showConnection();
+      }
     }
-  });
+  }); }
+  watchLocalService();
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -263,11 +334,60 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
+    const directory = createWorkspaceDirectory({ file: path.join(app.getPath("userData"), "workspaces.json"), safeStorage });
+    const publishState = (state) => {
+      if (picker && !picker.isDestroyed()) picker.webContents.send("hz:workspace-state", { ...state, version: app.getVersion() });
+    };
+    workspaceController = createWorkspaceController({
+      directory,
+      current: () => {
+        try { return BrowserWindow.getAllWindows().some((window) => productWindows.has(window)) ? instance.currentConnection().origin : null; }
+        catch { return null; }
+      },
+      changed: publishState,
+      verify: lifecycle,
+      local: async () => {
+        if (stopping || quitting) throw new Error("Desktop is stopping.");
+        if (localConnection && ownedCli.isRunning()) return localConnection;
+        await stopWithReport(ownedCli, () => {});
+        if (stopping || quitting) throw new Error("Desktop is stopping.");
+        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken } });
+        watchLocalService();
+        if (managedMac && !desktopGate) keepDesktopGate(await acquireDesktopGate());
+        if (stopping || quitting) throw new Error("Desktop is stopping.");
+        localConnection = await ownedCli.start();
+        serviceStarted = true;
+        return localConnection;
+      },
+      replace: async (connection) => {
+        if (stopping || quitting) throw new Error("Desktop is stopping.");
+        switching = true;
+        browserBridge.stop();
+        try {
+          instance.setReady();
+          await instance.replaceConnection(connection);
+          if (!connection.remote) browserBridge.start();
+        } catch (error) {
+          try { if (!instance.currentConnection().remote && ownedCli.isRunning()) browserBridge.start(); } catch { /* No previous workspace. */ }
+          throw error;
+        } finally { switching = false; }
+      },
+    });
+    ipcMain.handle("hz:workspace", async (event, request) => {
+      if (!isPickerFrame(event, picker, pickerURL)) throw new Error("Unknown window or frame.");
+      if (!request || typeof request !== "object") throw new Error("Unknown workspace request.");
+      if (request.kind === "back") { if (workspaceController.state().current) picker.close(); }
+      else if (request.kind === "forget") workspaceController.forget(request.origin);
+      else if (request.kind === "retry") await workspaceController.retry();
+      else if (["local", "link", "recent"].includes(request.kind)) await workspaceController.connect(request);
+      if (workspaceController.state().message === "Connected" && picker && !picker.isDestroyed()) picker.hide();
+      return { ...workspaceController.state(), version: app.getVersion() };
+    });
     // The native About panel is never the target (the menu opens the web dialog), but if macOS shows it anyway it
     // names the app properly and shows one version, not "Version X (X)".
     app.setAboutPanelOptions({ applicationName: app.name, applicationVersion: app.getVersion(), version: "" });
     // The page owns what About, Settings and Updates show; the menu only asks it to open them.
-    if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
+    Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
       name: app.name,
       devTools: !app.isPackaged,
       open: (url) => {
@@ -276,10 +396,11 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (allowed) void shell.openExternal(url);
       },
       send: (action) => {
+        if (action === "connection") { showConnection(); return; }
         // Close Tab acts on the focused window only: with none focused it must never close a background window.
         const window = action === "close-tab" ? BrowserWindow.getFocusedWindow()
           : BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-        const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
+        const ready = Boolean(window && productWindows.has(window) && !window.isDestroyed());
         console.info(menuLogLine(action, ready ? "sent" : "no_window"));
         if (!ready) return;
         const sent = window.webContents.executeJavaScript(menuScript(action));
@@ -293,27 +414,32 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
       if (gate) {
-        desktopGate = gate;
-        gate.once("close", () => { if (!quitting && !gateReleasing) app.quit(); });
-        gate.once("error", () => { if (!quitting && !gateReleasing) app.quit(); });
+        keepDesktopGate(gate);
       }
       if (stopping) return null;
       return ownedCli.start();
     }).then((connection) => {
       if (stopping || !connection) return;
       if (!ownedCli.isRunning()) throw new Error("The local service stopped during startup.");
+      localConnection = connection;
+      serviceStarted = true;
+      // A workspace selected while the local service was starting takes precedence.
+      try { instance.currentConnection(); return; } catch { /* No workspace selected yet. */ }
       instance.setConnection(connection);
       instance.setReady();
-      serviceStarted = true;
       browserBridge.start();
-      return instance.open();
+      startingProductWindow = true;
+      return instance.open().finally(() => { startingProductWindow = false; });
     });
   }).catch((error) => {
     if (stopping) return;
+    try { if (instance.currentConnection().remote) return; } catch { /* No selected workspace. */ }
     const message = error instanceof Error && error.message.includes("too long")
       ? "The local service did not become ready within 30 seconds. Check that the installed hz command works, then try again."
       : "The local service could not start. Check that Heinzelmännchen is installed and try again.";
-    dialog.showErrorBox("Heinzelmännchen could not open", message);
-    app.quit();
+    let failedConnection = null;
+    try { failedConnection = instance.currentConnection(); } catch { /* Service did not start. */ }
+    workspaceController?.failed(failedConnection, new Error(message));
+    showConnection();
   });
 }

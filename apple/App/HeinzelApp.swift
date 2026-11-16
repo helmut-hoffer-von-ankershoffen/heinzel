@@ -280,6 +280,7 @@ struct ConnectionView: View {
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
+    @State private var widgetViewRotation = WidgetViewRotation()
     @State private var connectionIssue: WorkspaceProblem?
     @State private var verifiedConnectionOrigin: URL?
     #if os(iOS)
@@ -402,7 +403,10 @@ struct ConnectionView: View {
         let latestSync = syncedWorkspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
         forgotten[item.address] = max(.now, latestSync)
         if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
-        if serverOrigin == item.address { serverOrigin = "" }
+        if serverOrigin == item.address {
+            clearWidgetActivity()
+            serverOrigin = ""
+        }
     }
 
     private var diagnosticOrigin: URL? {
@@ -493,7 +497,7 @@ struct ConnectionView: View {
         #else
         guard endpoint.origin.absoluteString == serverOrigin else { return nil }
         #endif
-        return ActivityWidgetData.scope(for: endpoint.origin)
+        return ActivityWidgetData.currentScope(for: endpoint.origin)
     }
 
     private var currentWidgetSnapshot: ActivityWidgetData? {
@@ -714,6 +718,26 @@ struct ConnectionView: View {
         }
         .onChange(of: link) { _, _ in error = nil }
         .onReceive(NotificationCenter.default.publisher(for: ActivityWidgetData.clearFailed)) { _ in widgetClearFailed = true }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.activationChanged).receive(on: RunLoop.main)) { notification in
+            let activation = ActivityWidgetData.currentActivation()
+            guard widgetViewRotation.shouldReload(notificationID: notification.object as? String,
+                                                  currentID: activation?.id, currentEndpoint: activation?.endpoint,
+                                                  visibleEndpoint: endpoint?.origin.absoluteString) else { return }
+            retryWorkspace()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.preparationRecovered).receive(on: RunLoop.main)) { notification in
+            guard let activation = ActivityWidgetData.currentActivation(),
+                  notification.object as? String == activation.id,
+                  activation.endpoint == endpoint?.origin.absoluteString else { return }
+            retryWorkspace()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.receiptRetired).receive(on: RunLoop.main)) { notification in
+            let retired = notification.object as? ActivityCatalog.Activation
+            guard WidgetViewRotation.shouldReloadRetirement(retired, current: ActivityWidgetData.currentActivation(),
+                endpoint: retired?.endpoint, visibleEndpoint: endpoint?.origin.absoluteString,
+                credentialFree: retired?.credentialGeneration == nil) else { return }
+            retryWorkspace()
+        }
         .alert("Widget information could not be cleared", isPresented: $widgetClearFailed) {
             Button("Retry") { Task { await Task.yield(); clearWidgetActivity() } }
             Button("Close", role: .cancel) { }
@@ -832,6 +856,12 @@ struct ConnectionView: View {
                     #else
                     false
                     #endif
+                }, isEnrollmentViewCurrent: {
+                    #if os(iOS)
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart && scenePhase == .active
+                    #else
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
+                    #endif
                 }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
@@ -843,6 +873,9 @@ struct ConnectionView: View {
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
+                        // The navigation error has no captured secure activation.
+                        // Do not let it revoke a newer credential at this origin.
+                        let signInWidgetToken = ActivityWidgetData.legacyRefreshToken()
                         #if os(iOS)
                         guard scenePhase == .active else {
                             loadFailure = .signIn
@@ -863,7 +896,10 @@ struct ConnectionView: View {
                                 guard connectionProbe?.revision == result.revision else { continue }
                                 connectionIssue = result.issue
                                 loadFailure = result.issue ?? .signIn
-                                if result.issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                                if result.issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                    _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                    ActivityWidgetData.reload()
+                                }
                                 loadingWorkspace = false
                                 finishConnectionProbe(result.revision)
                                 return
@@ -873,7 +909,10 @@ struct ConnectionView: View {
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
-                            if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                            if issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                ActivityWidgetData.reload()
+                            }
                             loadingWorkspace = false
                             #endif
                         }
@@ -1797,7 +1836,7 @@ struct ConnectionView: View {
     }
 
     private func clearWidgetActivity() {
-        _ = ActivityWidgetData.clear()
+        _ = WidgetCredentialStore.clearShared()
         ActivityWidgetData.reload()
     }
 
@@ -2604,11 +2643,22 @@ private struct ConnectionHelp: View {
                 results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
             }
             #else
+            if started {
+                for _ in 0..<20 {
+                    if capture.read() == nil || capture.hasReceivedSamples || Task.isCancelled { break }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            let received = capture.hasReceivedSamples
             capture.stop()
             guard !Task.isCancelled else { return }
-            results[.systemAudio] = started
-                ? Result(.passed, "Sharing started and stopped")
-                : Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            if !started {
+                results[.systemAudio] = Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            } else if received {
+                results[.systemAudio] = Result(.passed, "Audio samples received")
+            } else {
+                results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
+            }
             #endif
         }
         #endif

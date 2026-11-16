@@ -134,6 +134,7 @@ class NotifyService(Notifications):
         self.platform = sys.platform
         self.calendar_valid: Callable[[datetime], set[str]] | None = None
         self._refresh_settings: Callable[[], NotifySettings] = lambda: self.settings
+        self._refresh_chat_settings: Callable[[], NotifySettings] | None = None
         self.installed: Callable[[], str] = _resolve.installed_version
         """The hz installed on this machine, read from disk each time; tests replace it."""
         self.capability: _resolve.CapabilityProbe | None = None
@@ -168,6 +169,7 @@ class NotifyService(Notifications):
             return current.settings(NotifySettings, MODULE_SECTION)
 
         service._refresh_settings = refresh_settings
+        service._refresh_chat_settings = lambda: Config.load(Path.home()).settings(NotifySettings, MODULE_SECTION)
         service.daemon = lambda: daemon_state(kernel)
         service.capability = _resolve.kernel_probe(kernel)
         service.problems = lambda: doctor_problems(kernel)
@@ -634,8 +636,8 @@ class NotifyService(Notifications):
         Reads the switch afresh, so switching it on or off needs no restart.
         """
         try:
-            self.settings = self._refresh_settings()
-            if not self.settings.chat_notifications:
+            settings = (self._refresh_chat_settings or self._refresh_settings)()
+            if not settings.chat_notifications:
                 return None
             channel = self.self_chat()
         except Exception as exc:  # noqa: BLE001 - isolation boundary: chat never costs a notice

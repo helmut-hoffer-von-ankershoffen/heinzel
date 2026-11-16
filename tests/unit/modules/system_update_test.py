@@ -128,7 +128,8 @@ def _bind_target(target):
 def installation(tmp_path, core: str, uv: FakeUv) -> Installation:
     prefix = tmp_path / "tools" / "heinzel"
     prefix.mkdir(parents=True)
-    lines = [f'{{ name = "heinzel", {core} }}', f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}']
+    core_entry = f'{{ name = "heinzel", {core} }}' if core else '{ name = "heinzel" }'
+    lines = [core_entry, f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}']
     (prefix / "uv-receipt.toml").write_text(
         "[tool]\nrequirements = [\n" + ",\n".join(lines) + "\n]\n", encoding="utf-8"
     )
@@ -295,7 +296,11 @@ def test_a_default_branch_or_index_install_is_reinstalled_asking_again_with_its_
     uv = FakeUv("0.2.0")
     result = UpdateService(installation(tmp_path, core, uv), FakeReleases()).update(current="0.2.0")
     assert uv.commands == [install_command(requirement, PLUGIN)]
-    assert result.message.splitlines()[0] == "hz 0.2.0 is up to date."
+    assert result.message.splitlines()[0] == (
+        "hz 0.2.0 is up to date."
+        if core.startswith("git")
+        else "hz 0.2.0 stays installed. The newest stable release is 0.4.0. uv kept the existing selection."
+    )
 
 
 def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
@@ -1268,6 +1273,81 @@ def test_exact_index_pin_keeps_its_requirement_without_added_floor(tmp_path):
     UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
     assert "heinzel==0.9.9" in uv.commands[0]
     assert not uv.constraint_contents
+
+
+class PreferredReleaseUv(FakeUv):
+    """A resolver that keeps the current version unless given a minimum it can satisfy."""
+
+    def __init__(self, version: str, *, accept: bool) -> None:
+        super().__init__(version)
+        self.accept = accept
+
+    def __call__(
+        self, command: list[str], environment: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        if "--upgrade-package" in command and self.accept:
+            self.next_version = command[command.index("--upgrade-package") + 1].split(">=", 1)[1]
+        return super().__call__(command, environment)
+
+
+def test_unpinned_index_update_prefers_verified_latest_without_replacing_the_requirement(tmp_path):
+    uv = PreferredReleaseUv("0.9.48", accept=True)
+    target = installation(tmp_path, "", uv)
+    service = UpdateService(target, FakeReleases("0.9.49"))
+    plan = service.plan(current="0.9.48")
+    result = service.update(current="0.9.48", agreed=plan)
+    assert (plan.latest, result.latest, result.after, result.updated, result.pinned_to) == (
+        "0.9.49",
+        "0.9.49",
+        "0.9.49",
+        True,
+        None,
+    )
+    assert uv.commands == [[*install_command("heinzel", PLUGIN), "--upgrade-package", "heinzel>=0.9.49"]]
+    assert uv.constraint_contents == ["heinzel>=0.9.48\n"]
+
+
+def test_preferred_release_conflict_does_not_force_plugin_changes(tmp_path):
+    uv = PreferredReleaseUv("0.9.48", accept=False)
+    uv.failures = [BLOCKED]
+    service = UpdateService(installation(tmp_path, "", uv), FakeReleases("0.9.49"))
+    result = service.update(current="0.9.48")
+    assert uv.commands == [
+        [*install_command("heinzel", PLUGIN), "--upgrade-package", "heinzel>=0.9.49"],
+        install_command("heinzel", PLUGIN),
+    ]
+    assert result.latest == "0.9.49"
+    assert result.after == "0.9.48"
+    assert not result.updated
+    assert "up to date" not in result.message
+    assert "newest stable release is 0.9.49" in result.message
+
+
+def test_bare_index_requirement_retains_existing_core_cap(tmp_path):
+    uv = PreferredReleaseUv("0.9.48", accept=True)
+    target = installation(tmp_path, "", uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "heinzel", specifier = "<0.9.49" }]\n')
+    result = UpdateService(target, FakeReleases("0.9.49")).update(current="0.9.48")
+    assert uv.commands == [install_command("heinzel", PLUGIN)]
+    assert uv.constraint_contents == ["heinzel<0.9.49\nheinzel>=0.9.48\n"]
+    assert result.after == "0.9.48"
+    assert not result.updated
+
+
+def test_uv_success_below_preferred_minimum_refuses_before_runtime(tmp_path):
+    uv = PreferredReleaseUv("0.9.48", accept=False)
+    target = installation(tmp_path, "", uv)
+    original_hz = target.hz
+
+    def runtime(*args):
+        assert not uv.commands, "the newly installed runtime must not start"
+        return original_hz(*args)
+
+    target.hz = runtime  # type: ignore[method-assign]
+    service = UpdateService(target, FakeReleases("0.9.49"))
+    with pytest.raises(HeinzelError, match=r"below the requested release 0\.9\.49"):
+        service.update(current="0.9.48")
 
 
 def test_unsupported_prior_index_constraint_fails_before_uv_and_clears_unchanged_token(tmp_path):

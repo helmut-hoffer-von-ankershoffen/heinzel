@@ -1,8 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "../src/mini-browser-policy.js";
+import { browserBounds, browserOwner, browserUrl, hasExactKeys, nativeSurfaceDiagnostics } from "../src/mini-browser-policy.js";
 
 const origin = "http://127.0.0.1:8737";
+test("native diagnostic reasons preserve focus, availability and surface distinctions", () => {
+  const window = { isFocused: () => true };
+  const view = { webContents: { isDestroyed: () => false }, getVisible: () => true };
+  const guest = { view, status: "ready", blank: false };
+  assert.equal(nativeSurfaceDiagnostics(window, null).reason, "no guest");
+  assert.equal(nativeSurfaceDiagnostics({ isFocused: () => false }, guest).reason, "unfocused");
+  assert.equal(nativeSurfaceDiagnostics(window, { ...guest, status: "unavailable" }).reason, "unavailable");
+  assert.equal(nativeSurfaceDiagnostics(window, { ...guest, blank: true }, { browser: true }).reason, "blank");
+  assert.equal(nativeSurfaceDiagnostics(window, guest, { browser: true }).reason, "hidden by frontend");
+  assert.equal(nativeSurfaceDiagnostics(window, guest, { browser: true, shown: true }).reason, "draw-enabled");
+  assert.equal(nativeSurfaceDiagnostics(window, { ...guest, view: { ...view, getVisible: () => false } }).reason, "hidden");
+  assert.equal(nativeSurfaceDiagnostics(window, { ...guest, view: { ...view, webContents: { isDestroyed: () => true } } }).reason, "unknown");
+});
 test("public HTTPS URL preserves site-specific path and rejects local or credential routes", () => {
   assert.equal(browserUrl("https://example.com/path?q=hello#section", origin), "https://example.com/path?q=hello#section");
   for (const url of ["http://example.com", "file:///etc/passwd", "javascript:alert(1)", "data:text/html,a",
