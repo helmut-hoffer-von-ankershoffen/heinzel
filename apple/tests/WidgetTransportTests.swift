@@ -41,7 +41,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
 }
 
 @main struct WidgetTransportTests {
-    static func main() async throws {
+    @MainActor static func main() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("widget-transport-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

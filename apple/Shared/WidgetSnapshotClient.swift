@@ -47,7 +47,13 @@ private final class WidgetRejectRedirect: NSObject, URLSessionTaskDelegate, @unc
                     completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-struct WidgetSnapshotClient {
+enum WidgetSnapshotOutcome {
+    case unavailable
+    case received(WidgetSnapshotEnvelope, WidgetCredentialCapture)
+    case rejected(WidgetCredentialCapture, ActivityCatalog.ClearResult)
+}
+
+@MainActor struct WidgetSnapshotClient {
     let store: WidgetCredentialStore
     // Tests may inject an in-process protocol; production uses the system transport.
     var protocolClasses: [AnyClass]? = nil
@@ -55,11 +61,20 @@ struct WidgetSnapshotClient {
     /// Network and decoding failures keep the existing honestly aged snapshot.
     /// The returned capture must be passed unchanged to the fenced publisher.
     func fetch(now: Date = .now) async -> (WidgetSnapshotEnvelope, WidgetCredentialCapture)? {
-        guard let capture = store.capture(now: now),
-              let parts = URLComponents(string: capture.credential.endpoint), parts.scheme == "https",
+        guard let capture = store.capture(now: now) else { return nil }
+        if case .received(let snapshot, let original) = await fetch(captured: capture) {
+            return (snapshot, original)
+        }
+        return nil
+    }
+
+    /// Authentication rejection is distinct from an offline or malformed response.
+    /// The caller must suppress the captured activation even if cleanup fails.
+    func fetch(captured capture: WidgetCredentialCapture) async -> WidgetSnapshotOutcome {
+        guard let parts = URLComponents(string: capture.credential.endpoint), parts.scheme == "https",
               parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
               parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
-              let origin = parts.url else { return nil }
+              let origin = parts.url else { return .unavailable }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = protocolClasses
         configuration.urlCache = nil
@@ -75,25 +90,23 @@ struct WidgetSnapshotClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse else { return nil }
+            guard let response = response as? HTTPURLResponse else { return .unavailable }
             if response.statusCode == 401 || response.statusCode == 403 {
-                _ = store.invalidate(capture.activation)
-                return nil
+                return .rejected(capture, store.invalidate(capture.activation))
             }
-            guard response.statusCode == 200, response.mimeType == "application/json" else { return nil }
+            guard response.statusCode == 200, response.mimeType == "application/json" else { return .unavailable }
             var data = Data()
             for try await byte in bytes {
-                guard data.count < 131_072 else { return nil }
+                guard data.count < 131_072 else { return .unavailable }
                 data.append(byte)
             }
-            guard let snapshot = try? JSONDecoder().decode(WidgetSnapshotEnvelope.self, from: data) else { return nil }
+            guard let snapshot = try? JSONDecoder().decode(WidgetSnapshotEnvelope.self, from: data) else { return .unavailable }
             guard snapshot.workspaceID == capture.credential.workspaceID else {
-                _ = store.invalidate(capture.activation)
-                return nil
+                return .rejected(capture, store.invalidate(capture.activation))
             }
-            guard snapshot.valid(now: .now) else { return nil }
-            return (snapshot, capture)
-        } catch { return nil }
+            guard snapshot.valid(now: .now) else { return .unavailable }
+            return .received(snapshot, capture)
+        } catch { return .unavailable }
     }
 }
 
@@ -119,5 +132,118 @@ extension ActivityWidgetData {
             let checkedAt = clock()
             return previous == previousData && capture.credential.valid(at: checkedAt) && source.valid(now: checkedAt)
         }
+    }
+}
+
+enum WidgetTimelineAccess: Sendable {
+    case localOnly, hidden, permitted(ActivityCatalog.Activation, Date)
+
+    func mayDisplay(at date: Date) -> Bool {
+        switch self {
+        case .localOnly: return true
+        case .hidden: return false
+        case .permitted(_, let expiry): return date < expiry
+        }
+    }
+
+    var permitExpiry: Date? {
+        if case .permitted(_, let expiry) = self { return expiry }
+        return nil
+    }
+
+    var refreshEnabled: Bool {
+        if case .localOnly = self { return false }
+        return true
+    }
+}
+
+extension ActivityWidgetData {
+    /// Do not let a permit issued for one activation reveal a replacement's data.
+    static func timelineSnapshot(access: WidgetTimelineAccess) -> Self? {
+        switch access {
+        case .localOnly: return read()
+        case .hidden: return nil
+        case .permitted(let activation, let expiry):
+            guard expiry > .now, let url = sharedCatalogURL(),
+                  ActivityCatalog.activation(url: url) == activation,
+                  let snapshot = read(), snapshot.workspaceScope == activation.scope,
+                  ActivityCatalog.activation(url: url) == activation else { return nil }
+            return snapshot
+        }
+    }
+}
+
+/// WidgetKit can request several timelines together. Share an in-process refresh
+/// while keeping every publish bound to the captured workspace and writer token.
+@MainActor
+final class WidgetTimelineRefresh {
+    static let shared = WidgetTimelineRefresh()
+    nonisolated static let retryInterval: TimeInterval = 15 * 60
+    private enum Result { case observed(Date), unavailable, rejected }
+    private struct Flight { let id: UUID; let task: Task<Result, Never> }
+    private var flights: [String: Flight] = [:]
+    private var permits: [String: Date] = [:]
+    private var rejected: [String: ActivityCatalog.Activation] = [:]
+
+    /// Permits are deliberately process-local: after a restart, offline or
+    /// inaccessible storage cannot reveal a snapshot whose revocation failed.
+    func refreshIfConfigured() async -> WidgetTimelineAccess {
+        guard Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true else { return .localOnly }
+        guard let store = WidgetCredentialStore.configured() else { return .hidden }
+        return await refresh(store: store, fetch: { capture in
+            await WidgetSnapshotClient(store: store).fetch(captured: capture)
+        }, publish: { snapshot, capture in
+            ActivityWidgetData.savePartial(snapshot, capture: capture)
+        })
+    }
+
+    /// Injected operations allow the same scheduling and fencing path to be tested
+    /// without a signed shared Keychain or a real workspace.
+    func refresh(store: WidgetCredentialStore,
+                 fetch: @escaping @MainActor (WidgetCredentialCapture) async -> WidgetSnapshotOutcome,
+                 publish: @escaping @MainActor (WidgetSnapshotEnvelope, WidgetCredentialCapture) -> Bool) async -> WidgetTimelineAccess {
+        guard let capture = store.capture() else { return .hidden }
+        let key = capture.activation.id + "/" + (capture.activation.credentialGeneration ?? "")
+        if let rejectedActivation = rejected[key] {
+            _ = store.invalidate(rejectedActivation)
+            return .hidden
+        }
+        let flight: Flight
+        if let existing = flights[key] {
+            flight = existing
+        } else {
+            let task = Task { @MainActor in
+                switch await fetch(capture) {
+                case .received(let snapshot, let original):
+                    guard original.activation == capture.activation,
+                          original.credential == capture.credential, original.writerToken == capture.writerToken,
+                          publish(snapshot, original),
+                          let timestamp = snapshot.timestamp else { return Result.unavailable }
+                    return .observed(min(timestamp.addingTimeInterval(300), original.credential.expiresAt))
+                case .unavailable: return .unavailable
+                case .rejected: return .rejected
+                }
+            }
+            flight = Flight(id: UUID(), task: task)
+            flights[key] = flight
+        }
+        let result = await flight.task.value
+        // A replaced workspace never inherits an old request's permit or revocation.
+        let isCurrent = ActivityCatalog.activation(url: store.catalogURL) == capture.activation
+        if flights[key]?.id == flight.id {
+            flights[key] = nil
+            if isCurrent {
+                switch result {
+                case .observed(let expiry): permits[key] = expiry
+                case .rejected:
+                    permits[key] = nil
+                    rejected[key] = capture.activation
+                case .unavailable: break
+                }
+            }
+        }
+        guard isCurrent, rejected[key] == nil else { return .hidden }
+        guard let expiry = permits[key], expiry > .now else { permits[key] = nil; return .hidden }
+        return .permitted(capture.activation, expiry)
     }
 }

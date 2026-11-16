@@ -36,7 +36,7 @@ final class ActivityCatalog {
     }
 
     /// Non-secret authority shared by the app and extension. Secrets stay in Keychain.
-    struct Activation: Codable, Equatable {
+    struct Activation: Codable, Equatable, Sendable {
         let id: String
         let endpoint: String
         let workspaceID: String?
