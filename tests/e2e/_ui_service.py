@@ -213,12 +213,19 @@ def startup_diagnostics(prefix, directory):
     descriptor = destination.open("xb")
     descriptor.close()
     destination.chmod(0o600)
+    phases = directory / "startup-phases.txt"
+    phases.touch(mode=0o600, exist_ok=False)
     source = (
         "import faulthandler, os, sys\n"
-        # The stable shim execs isolated Python before importing hz; observe that app, not its short-lived shim.
+        # Observe both the initial shebang interpreter and the isolated exec. -I ignores environment flags.
+        "faulthandler.enable()\n"
+        f"_hz_phases = os.open({str(phases)!r}, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)\n"
+        "try:\n"
+        "    _hz_phase = 'isolated' if sys.flags.isolated else 'initial'\n"
+        "    os.write(_hz_phases, f'{os.getpid()} {_hz_phase}\\n'.encode('ascii'))\n"
+        "finally:\n"
+        "    os.close(_hz_phases)\n"
         "if sys.flags.isolated:\n"
-        # -I implies -E, so PYTHONFAULTHANDLER is ignored after the shim exec.
-        "    faulthandler.enable()\n"
         f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
         "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
     )
@@ -315,7 +322,11 @@ class RunningService:
                     "The owned web server exited before readiness; "
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
                     f"publication failure={self.publication_failure(output + errors)}"
-                    + (f", crash trace={self.crash_trace(errors)}." if returncode < 0 else ".")
+                    + (
+                        f", last observed Python phase={self.startup_phase()}, crash trace={self.crash_trace(errors)}."
+                        if returncode < 0
+                        else "."
+                    )
                 )
             changed.wait(0.02)
         pytest.fail(
@@ -325,6 +336,19 @@ class RunningService:
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
             f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
+
+    def startup_phase(self):
+        """Report only a fixed phase recorded by this owned process, never a prior launch's or raw file data."""
+        pid = getattr(self.processes[-1], "pid", None)
+        if type(pid) is not int or pid <= 0:
+            return "unobserved"
+        try:
+            with (self.service.directory / "startup-phases.txt").open("rb") as handle:
+                lines = handle.read(4096).splitlines()
+        except OSError:
+            return "unobserved"
+        phases = {f"{pid} {name}".encode(): name for name in ("initial", "isolated")}
+        return next((phases[line] for line in reversed(lines) if line in phases), "unobserved")
 
     @staticmethod
     def crash_trace(errors):

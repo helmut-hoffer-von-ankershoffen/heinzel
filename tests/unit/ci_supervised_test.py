@@ -17,7 +17,7 @@ SUPERVISED = {
 README = "tests/e2e/docs_test.py::test_readme_instructions"
 
 
-@pytest.mark.parametrize("suite", ["", "cli", "supervised", "web-1", "web-2"])
+@pytest.mark.parametrize("suite", ["", "cli", "supervised", "web-1", "web-2", "web-3"])
 def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suite):
     commands = lane_commands(suite)
     assert len(commands) == (2 if suite in {"", "cli"} else 1)
@@ -42,7 +42,7 @@ def test_supervised_stays_required_in_the_full_ci_matrix():
     jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
     e2e = jobs["e2e"]
     assert set(e2e["strategy"]["matrix"]) == {"os", "suite"}
-    assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2"]
+    assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert e2e["strategy"]["matrix"]["os"] == (
         "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' "
         '&& \'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}'

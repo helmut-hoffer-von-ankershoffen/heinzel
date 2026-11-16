@@ -53,6 +53,7 @@ JOBS_FULL = [
     "e2e-supervised",
     "e2e-web-1",
     "e2e-web-2",
+    "e2e-web-3",
     "macos-smoke",
     "macos-e2e",
     "electron",
@@ -204,9 +205,11 @@ class Repo:
         web = [f for f in web_candidates if f not in supervised_files]
         web_1_files = (make_variable(text, "E2E_WEB_1_FILES") or "").split()
         web_1 = [f for f in web if f in web_1_files]
-        web_2 = [f for f in web if f not in web_1]
+        web_3_files = (make_variable(text, "E2E_WEB_3_FILES") or "").split()
+        web_3 = [f for f in web if f in web_3_files]
+        web_2 = [f for f in web if f not in web_1 and f not in web_3]
         cli = [f for f in all_e2e if f not in web and f not in supervised_files]
-        return {"cli": cli, "supervised": supervised_files, "web-1": web_1, "web-2": web_2}
+        return {"cli": cli, "supervised": supervised_files, "web-1": web_1, "web-2": web_2, "web-3": web_3}
 
     @functools.cached_property
     def script_owners(self) -> dict[str, list[str]]:
@@ -280,7 +283,7 @@ class Repo:
 
 
 CLIP = 12  # paths shown per list in the text summary
-ALL_LANES = ["cli", "supervised", "web-1", "web-2"]
+ALL_LANES = ["cli", "supervised", "web-1", "web-2", "web-3"]
 
 
 class Selection:
@@ -323,7 +326,7 @@ def _select_python_source(repo: Repo, sel: Selection, py_src: list[str]) -> None
         f"{len(py_src)} python source file(s): {len(related)} unit/integration test file(s) import or match them"
     )
     # The API serves the browser: any module or head change can change what the web E2E lanes see.
-    sel.lanes.update({"web-1", "web-2"})
+    sel.lanes.update({"web-1", "web-2", "web-3"})
     if any(CLI_LANE_PY.search(p) for p in py_src):
         sel.lanes.add("cli")
     if any(re.search(r"heads/(?:web|cli)/|modules/ui/", p) for p in py_src):
@@ -340,6 +343,8 @@ def _select_python_tests(repo: Repo, sel: Selection, py_tests: list[str], py_sup
             sel.pytest.add(test)
         elif lane := repo.lane_of(test):
             sel.lanes.add(lane)
+            if test == "tests/e2e/web_ui_test.py":
+                sel.lanes.add("web-3")
         else:
             sel.lanes.update(ALL_LANES)
             sel.reasons.append(f"{test}: not in a known E2E lane, all lanes")
@@ -372,7 +377,7 @@ def _select_web_source(repo: Repo, sel: Selection, web_src: list[str]) -> None:
     else:
         sel.vitest = (sel.vitest or set()) | set(selected)
         sel.reasons.append(f"{len(web_src)} web source file(s): {len(selected)} Vitest file(s) import them")
-    sel.lanes.update({"web-1", "web-2"})
+    sel.lanes.update({"web-1", "web-2", "web-3"})
     if any(re.search(r"web/src/(?:updates|lifecycle|pwa)/", p) for p in web_src):
         sel.jobs.add("macos-smoke")  # the auto-update and lifecycle paths are native-sensitive
     if any(re.search(r"web/src/plugins/", p) for p in web_src):
@@ -384,10 +389,12 @@ def _select_web_e2e(repo: Repo, sel: Selection, web_e2e: list[str]) -> None:
         owners = repo.script_owners.get(path, [])
         if owners:
             sel.lanes.update(repo.lane_of(owner) or "web-2" for owner in owners)
+            if "tests/e2e/web_ui_test.py" in owners:
+                sel.lanes.add("web-3")
         elif path.endswith(".test.mjs"):
             sel.vitest = None if sel.vitest is None else sel.vitest | {path}
         else:
-            sel.lanes.update({"supervised", "web-1", "web-2"})
+            sel.lanes.update({"supervised", "web-1", "web-2", "web-3"})
             sel.reasons.append(f"{path}: no tests/e2e owner found, all browser lanes")
 
 
@@ -407,8 +414,8 @@ def _select_web(repo: Repo, sel: Selection, changed: list[str]) -> None:
             repo.python_tests_for(["src/heinzel/heads/api/__init__.py"])
             or ["tests/integration/api_input_schema_test.py"]
         )
-        sel.lanes.update({"web-1", "web-2"})
-        sel.reasons.append("web/openapi.json: the API's tests and both browser lanes")
+        sel.lanes.update({"web-1", "web-2", "web-3"})
+        sel.reasons.append("web/openapi.json: the API's tests and all browser lanes")
 
 
 def _select_other(sel: Selection, changed: list[str]) -> None:

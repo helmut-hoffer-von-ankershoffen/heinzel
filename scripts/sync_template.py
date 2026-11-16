@@ -223,6 +223,12 @@ def _without_release_candidate(text: str) -> str:
     text = text.replace(
         " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
     )
+    text = text.replace(
+        "    # Integration runs two sequential sessions, each still capped at 420 seconds; "
+        "allow setup and cleanup too.\n"
+        "    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}",
+        "    timeout-minutes: 10",
+    )
     text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
@@ -337,7 +343,9 @@ def ci_workflow() -> str:
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
     # Core supervised/browser partitions do not exist in plugins: keep one complete E2E job per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
-    text = re.sub(r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2\]\n", "", text)
+    text = re.sub(
+        r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2, web-3\]\n", "", text
+    )
     text = text.replace("        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')\n", "")
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")

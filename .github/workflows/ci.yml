@@ -360,7 +360,8 @@ jobs:
     if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
+    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # a red cell is enough to know on a pull request
       matrix:
@@ -503,8 +504,8 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
-        # Core E2E lanes: supervised cold starts, tool-install/CLI, and two browser halves; every lane blocks CI OK.
-        suite: [cli, supervised, web-1, web-2]
+        # Core E2E lanes: supervised cold starts, tool-install/CLI, and three browser shards; every lane blocks CI OK.
+        suite: [cli, supervised, web-1, web-2, web-3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -868,7 +869,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 3e1788ee89cd5f047909e3abd4614c4807a8dde0 # heinzel-plugins main (#112 relock, #113, #114, #115)
+          ref: 0b1557f64293f025bf71962381c4291f0cf6eb3b # heinzel-plugins main through #116 (mobile chat fixture)
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -905,7 +906,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 3e1788ee89cd5f047909e3abd4614c4807a8dde0 # heinzel-plugins main (#112 relock, #113, #114, #115)
+          ref: 0b1557f64293f025bf71962381c4291f0cf6eb3b # heinzel-plugins main through #116 (mobile chat fixture)
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

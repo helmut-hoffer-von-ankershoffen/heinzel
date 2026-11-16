@@ -1239,3 +1239,33 @@ def test_receipt_retags_only_the_core_at_the_verified_commit(tmp_path):
     projected = installation.name_core_by_tag(expected=expected, commit="1234abcd", tag="v0.1.0")
     assert tomllib.loads(receipt.read_text()) == tomllib.loads(installed.replace(rev, b"rev=v0.1.0").decode())
     assert projected == installation.startup_fingerprint() != expected
+
+
+@pytest.mark.parametrize(
+    ("entries", "reason"),
+    [
+        (None, "post-mutation constraints missing"),
+        ([], "constraint count: expected 2, observed 0"),
+        (
+            [{"name": "private-package", "specifier": "==9"}, {"name": "heinzel", "specifier": "==1"}],
+            "captured constraint entries changed or reordered",
+        ),
+        (
+            [{"name": "private-package", "specifier": "==2"}, {"name": "heinzel", "specifier": "==9"}],
+            "temporary constraint entries changed or reordered",
+        ),
+    ],
+)
+def test_constraint_refusal_diagnoses_stage_without_disclosing_policy(entries, reason):
+    import tomlkit
+
+    original = _installation._constraint_policy(
+        {"tool": {"constraints": [{"name": "private-package", "specifier": "==2"}]}}
+    )
+    tool = {} if entries is None else {"constraints": entries}
+    raw = tomlkit.dumps({"tool": tool}).encode()
+    with pytest.raises(HeinzelError, match="constraints changed unexpectedly") as raised:
+        _installation._remove_transient_constraint(raw, original, ("heinzel==1",))
+    assert reason in str(raised.value)
+    assert "private-package" not in str(raised.value)
+    assert "==" not in str(raised.value)

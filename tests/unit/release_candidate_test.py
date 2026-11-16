@@ -101,6 +101,16 @@ def validate(value):
     return candidate.validate(value, candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), PINS)
 
 
+@pytest.mark.parametrize("consumer", ["issues", "slack"])
+def test_candidate_requires_new_public_consumers(consumer):
+    value = evidence()
+    name = f"Consumer (heinzel-{consumer})"
+    assert candidate.expected_jobs("pull_request")[name] == "success"
+    value["jobs"] = [job for job in value["jobs"] if job["name"] != name]
+    with pytest.raises(candidate.CandidateError):
+        validate(value)
+
+
 @pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
 def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(event):
     value = evidence(event)
@@ -112,10 +122,10 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 57
+    assert len(value["jobs"]) == 61
     assert next(job for job in value["jobs"] if job["name"].startswith("Focused tests ("))["conclusion"] == "skipped"
     assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 4
-    assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 8
+    assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 10
 
 
 @pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
@@ -315,7 +325,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 57
+    assert result["job_count"] == 61
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 

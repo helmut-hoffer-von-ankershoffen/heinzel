@@ -14,6 +14,29 @@ import zipfile
 
 from tests.integration.draft_workflow_test import SOURCE
 
+TICK_CLOCK = """
+import os
+
+if value := os.environ.get("FIXTURE_DRAFT_TICK_AT"):
+    from datetime import datetime
+    from heinzel.modules.heinzel._session_crud import SessionCrud
+    from heinzel.modules.system.daemon._service import DaemonService
+
+    instant = datetime.fromisoformat(value)
+    original_tick = DaemonService.tick
+
+    def tick_at_fixture_time(self, **kwargs):
+        crud = self._kernel.resolve(SessionCrud)
+        saved = self._clock, crud.clock, crud.repository.clock
+        self._clock = crud.clock = crud.repository.clock = lambda: instant
+        try:
+            return original_tick(self, **kwargs)
+        finally:
+            self._clock, crud.clock, crud.repository.clock = saved
+
+    DaemonService.tick = tick_at_fixture_time
+"""
+
 
 def provider_wheel(directory, state_path):
     package = "fixture_draft_workflow"
@@ -40,6 +63,7 @@ def provider_wheel(directory, state_path):
     source = source.replace('_STATE["revision"] += 1', '_STATE["revision"] += 1\n                _persist()')
     source = source.replace('_STATE["notices"].append(notice)', '_STATE["notices"].append(notice)\n        _persist()')
     source = source.replace('_STATE["shares"].append(notice)', '_STATE["shares"].append(notice)\n        _persist()')
+    source += TICK_CLOCK
     contents = {
         f"{package}/__init__.py": source.encode(),
         f"{info}/METADATA": b"Metadata-Version: 2.1\nName: fixture-draft-workflow\nVersion: 1.0.0\n",

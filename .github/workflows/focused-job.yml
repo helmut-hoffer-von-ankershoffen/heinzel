@@ -21,7 +21,7 @@ on:
         type: choice
         options: [e2e, pytest, vitest]
       selector:
-        description: "e2e: a lane (cli, supervised, web-1, web-2) or test ids under tests/e2e/; pytest: ids under tests/; vitest: files under web/"
+        description: "e2e: a lane (cli, supervised, web-1, web-2, web-3) or test ids under tests/e2e/; pytest: ids under tests/; vitest: files under web/"
         required: true
         type: string
       repeat:

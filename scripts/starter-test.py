@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 TOOLKIT = (
@@ -78,7 +79,7 @@ def check_collection_message(log: Path) -> None:
 
 
 def uv_shim(directory: Path, find_links: str) -> Path:
-    """A `uv` first on PATH that gives only its own process the reviewed PyYAML, and strips what uv records of it.
+    """A fixture uv wrapper that scopes reviewed PyYAML to resolver arguments, never descendant environment.
 
     uv saves an inherited find-links in the tool receipt as resolver policy, and the installer rightly refuses a
     receipt with options. A user's install never has them, so the shim removes them as soon as uv exits.
@@ -95,8 +96,15 @@ def uv_shim(directory: Path, find_links: str) -> Path:
     script.write_text(
         f"#!{sys.executable} -I\n"
         "import glob, os, re, subprocess, sys\n"
-        f"env = {{**os.environ, 'UV_FIND_LINKS': {find_links!r}}}\n"
-        f"code = subprocess.call([{real!r}, *sys.argv[1:]], env=env)\n"
+        "env = {key: value for key, value in os.environ.items() if key != 'UV_FIND_LINKS'}\n"
+        "args = sys.argv[1:]\n"
+        "position = 1 if args[:1] and args[0] in {'run', 'sync', 'lock', 'build', 'export'} else 0\n"
+        "if args[:2] in (['tool', 'run'], ['tool', 'install'], ['pip', 'install'], "
+        "['pip', 'sync'], ['pip', 'compile']):\n"
+        "    position = 2\n"
+        "if position:\n"
+        f"    args[position:position] = ['--find-links', {find_links!r}]\n"
+        f"code = subprocess.call([{real!r}, *args], env=env)\n"
         "for path in glob.glob(os.path.join(os.environ.get('UV_TOOL_DIR', ''), '*', 'uv-receipt.toml')):\n"
         "    text = open(path, encoding='utf-8').read()\n"
         "    new = re.sub(r'\\n\\[tool\\.options\\]\\nfind-links = \\[[^\\]]*\\]\\n', '\\n', text)\n"
@@ -112,7 +120,10 @@ def uv_shim(directory: Path, find_links: str) -> Path:
 def shim_find_links(environment: dict[str, str], directory: Path) -> None:
     """Replace an inherited UV_FIND_LINKS by the shim that scopes it to uv's own process."""
     if find_links := environment.pop("UV_FIND_LINKS", None):
-        environment["PATH"] = f"{uv_shim(directory, find_links)}{os.pathsep}{environment.get('PATH', '')}"
+        wrapper = uv_shim(directory, find_links)
+        environment["PATH"] = f"{wrapper}{os.pathsep}{environment.get('PATH', '')}"
+        # uv run prepends its environment's bin directory; leaf acceptance installs must keep this wrapper.
+        environment["PLUGIN_TEST_UV"] = str(wrapper / "uv")
 
 
 def journey(core: str, toolkit: str | None, template: Path, destination: Path) -> None:
@@ -123,6 +134,8 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
     """
     environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     environment.pop("VIRTUAL_ENV", None)
+    # Tool installs hardlink cache files; a caller cache may retain unsafe modes from unrelated builds.
+    environment["UV_CACHE_DIR"] = str(destination / "uv-cache")
     shim_find_links(environment, destination / "uv-shim")
     environment["HZ_PLUGINS_ENABLED"] = "false"
     for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
@@ -179,6 +192,20 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
             run([*make, target], directory, f"{preset}-{target}")
         check_layout(directory, collection=False)
 
+    collection_journey(core, toolkit, template, destination, run)
+
+
+def collection_journey(
+    core: str, toolkit: str | None, template: Path, destination: Path, run: Callable[[list[str], Path, str], None]
+) -> None:
+    """Exercise collection presets and real private captures of stock and authored source.
+
+    Raises:
+        AssertionError: If scaffolding changes files outside its owning project directories.
+    """
+    import plugin_tooling  # noqa: PLC0415 - only the script entrypoint needs the sibling toolkit loader
+
+    make = ["make", f"CORE={core}", *([f"TOOLING={toolkit}"] if toolkit else [])]
     collection = destination / "collection"
     collection.mkdir()
     marker = collection / "README.md"
@@ -190,21 +217,75 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
         toolkit or TOOLKIT,
         "hz-plugin",
     ]
+    screenshot_env = destination / "screenshot-toolkit"
+    run(["uv", "venv", "--python", "3.15", str(screenshot_env)], destination, "screenshot-toolkit-venv")
+    if toolkit and toolkit != TOOLKIT:
+        selection = [str(plugin_tooling.candidate_wheel(toolkit, screenshot_env))]
+    else:
+        selection = [
+            "--require-hashes",
+            "--requirements",
+            str(plugin_tooling.local_requirements(plugin_tooling.REQUIREMENTS, screenshot_env)),
+        ]
+    screenshot_python = str(screenshot_env / "bin/python")
+    run(
+        ["uv", "pip", "install", "--no-build", "--python", screenshot_python, *selection],
+        destination,
+        "screenshot-toolkit-install",
+    )
+    screenshots = [
+        screenshot_python,
+        str(Path(__file__).resolve().parents[1] / "tests/fixtures/starter_screenshots.py"),
+    ]
     for preset in ("minimal", "contributions"):
         name = f"collection-{preset}"
         run(
-            [*cli, "new", name, "--core", core, "--template", str(template), "--ref", "HEAD", "--preset", preset],
+            [
+                *cli,
+                "new",
+                name,
+                "--core",
+                core,
+                "--template",
+                str(template),
+                "--ref",
+                "HEAD",
+                "--preset",
+                preset,
+                "--no-screenshots",
+            ],
             collection,
             f"{name}-scaffold",
         )
         check_collection_message(destination / f"{name}-scaffold.log")
         owning = collection / "plugins" / f"heinzel-{name}"
         check_layout(owning, collection=True)
+        stock = destination / f"{name}-stock-draft"
+        run(
+            [*screenshots, str(owning), str(stock), "--core", core, "--preset", preset],
+            collection,
+            f"{name}-stock-screenshots",
+        )
         add_first_operation(owning)
         run([*make, "setup"], owning, f"{name}-setup")
         run([*make, "fix"], owning, f"{name}-first-change")
         for command in ("check-fast", "check", "build", "acceptance", "release"):
             run([*make, command], owning, f"{name}-{command}")
+        run(
+            [
+                *screenshots,
+                str(owning),
+                str(destination / f"{name}-authored-draft"),
+                "--core",
+                core,
+                "--preset",
+                preset,
+                "--previous",
+                str(stock),
+            ],
+            collection,
+            f"{name}-authored-screenshots",
+        )
     if marker.read_text() != "Existing collection; no registration edits.\n" or set(collection.iterdir()) != {
         marker,
         collection / "plugins",

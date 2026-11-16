@@ -36,16 +36,23 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
             f"--deselect={node}" for node in deselected
         }
         # The existing Make recipes use whole files and one exact README node, with no expression matching.
-        assert targets <= files | nodes.keys()
+        assert all(
+            target in files or any(node == target or node.startswith(f"{target}[") for node in nodes)
+            for target in targets
+        )
         assert ignored <= files
         assert not (targets and ignored)  # mixed explicit/ignored paths have additional pytest collection semantics
         assert not {target.partition("::")[0] for target in targets if "::" in target}.intersection(targets)
-        assert deselected <= nodes.keys()
+        assert all(any(node == target or node.startswith(f"{target}[") for node in nodes) for target in deselected)
         result.update(
             {
                 node: count
                 for node, count in nodes.items()
-                if (not targets or node in targets or node.partition("::")[0] in targets)
+                if (
+                    not targets
+                    or node.partition("::")[0] in targets
+                    or any(node == target or node.startswith(f"{target}[") for target in targets)
+                )
                 and node.partition("::")[0] not in ignored
                 and not node.startswith(tuple(deselected))
             }
@@ -54,7 +61,7 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
 
 
 def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations(collected_e2e_nodes):
-    groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2")}
+    groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2", "web-3")}
     # Before the split, CLI ignored only browser files. Reconstruct that exact original selection.
     groups["original-cli"] = [
         [
