@@ -18,6 +18,17 @@ def _owned_read_only_to_others(info: os.stat_result, *, directory: bool) -> bool
     return kind and info.st_uid == os.getuid() and not mode & ~0o755 and (directory or info.st_nlink == 1)
 
 
+def _verify_updater_entry(info: os.stat_result) -> None:
+    """Reject updater entries that could redirect reads or writes outside owned state.
+
+    Raises:
+        HeinzelError: The entry is not owned, regular, unlinked and non-writable by others.
+    """
+    if not _owned_read_only_to_others(info, directory=False):
+        msg = "The updater state must be owned, regular, unlinked and not writable by others"
+        raise HeinzelError(msg)
+
+
 def _migrate_updater_only(folder: int) -> None:
     """Tighten only an owned, non-writable legacy updater directory without credential state.
 
@@ -32,9 +43,7 @@ def _migrate_updater_only(folder: int) -> None:
     for name in names:
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
         try:
-            if not _owned_read_only_to_others(os.fstat(descriptor), directory=False):
-                msg = "The legacy updater state is not an owned, unlinked regular file"
-                raise HeinzelError(msg)
+            _verify_updater_entry(os.fstat(descriptor))
         finally:
             os.close(descriptor)
     os.fchmod(folder, PRIVATE_DIRECTORY)
@@ -55,14 +64,14 @@ def private_directory(directory: Path, *, migrate_updater: bool = False) -> Gene
     directory.parent.mkdir(parents=True, exist_ok=True)
     parent = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if not _owned_read_only_to_others(os.fstat(parent), directory=True):
+            msg = "The web state parent is not trusted"
+            raise HeinzelError(msg)
         with suppress(FileExistsError):
             os.mkdir(directory.name, mode=PRIVATE_DIRECTORY, dir_fd=parent)
         folder = os.open(directory.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
         try:
             if migrate_updater and stat.S_IMODE(os.fstat(folder).st_mode) != PRIVATE_DIRECTORY:
-                if not _owned_read_only_to_others(os.fstat(parent), directory=True):
-                    msg = "The web state parent cannot be trusted for migration"
-                    raise HeinzelError(msg)
                 _migrate_updater_only(folder)
             CurrentUser.verify_private(os.fstat(folder), directory=True)
             yield folder
@@ -70,3 +79,26 @@ def private_directory(directory: Path, *, migrate_updater: bool = False) -> Gene
             os.close(folder)
     finally:
         os.close(parent)
+
+
+def open_updater_file(folder: int, name: str, flags: int) -> int:
+    """Open updater state relative to a verified directory, retaining safe legacy file modes.
+
+    Raises:
+        HeinzelError: An updater entry is not owned, regular, unlinked and non-writable by others.
+        OSError: The entry cannot be opened without following links.
+    """
+    protected = flags | os.O_NOFOLLOW | os.O_NONBLOCK
+    if flags & os.O_CREAT and not flags & os.O_EXCL:
+        try:
+            descriptor = os.open(name, protected | os.O_EXCL, 0o600, dir_fd=folder)
+        except FileExistsError:
+            descriptor = os.open(name, protected & ~os.O_CREAT, dir_fd=folder)
+    else:
+        descriptor = os.open(name, protected, 0o600, dir_fd=folder)
+    try:
+        _verify_updater_entry(os.fstat(descriptor))
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
