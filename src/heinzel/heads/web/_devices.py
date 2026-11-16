@@ -157,7 +157,6 @@ class Devices:
         token = PREFIX + secrets.token_urlsafe(32)
         now = self._clock()
         label = re.sub(r"\s+", " ", clean_text(name)).strip()[:NAME_LIMIT] or "a browser"
-        device = Device(id=secrets.token_hex(4), name=label, created=now, last_used=now, sha256=digest(token))
         with self._locked() as folder:
             devices = self._read(folder)
             if len(devices) >= MAX_DEVICES:
@@ -166,6 +165,14 @@ class Devices:
                     "(`hz ui serve --devices`)"
                 )
                 raise HeinzelError(msg)
+            for _ in range(MAX_DEVICES + 1):
+                identifier = secrets.token_hex(4)
+                if all(existing.id != identifier for existing in devices):
+                    break
+            else:
+                msg = "Could not allocate a unique device identifier"
+                raise HeinzelError(msg)
+            device = Device(id=identifier, name=label, created=now, last_used=now, sha256=digest(token))
             self._write(folder, [*devices, device])
         return device, token
 
@@ -200,7 +207,13 @@ class Devices:
             expires = self._clock() + timedelta(hours=24)
             credential = WidgetCredential(sha256=digest(token), owner=owner, workspace=workspace, expires=expires)
             self._write(
-                folder, [d.model_copy(update={"widget": credential}) if d.id == device_id else d for d in devices]
+                folder,
+                [
+                    d.model_copy(update={"widget": credential})
+                    if d.id == device.id and d.sha256 == device.sha256
+                    else d
+                    for d in devices
+                ],
             )
             return token, workspace, expires
 
@@ -217,10 +230,6 @@ class Devices:
                 return None
             now = self._clock()
             for device in self._read(folder):
-                marked = self._fence_marker(folder, device)
-                if marked != (device.widget_fence is not None):
-                    msg = "The widget fence is damaged"
-                    raise HeinzelError(msg)
                 widget = device.widget
                 if (
                     widget
@@ -230,6 +239,10 @@ class Devices:
                     and now - device.last_used <= UNUSED_FOR
                     and hmac.compare_digest(widget.sha256, digest(token))
                 ):
+                    marked = self._fence_marker(folder, device)
+                    if marked != (device.widget_fence is not None):
+                        msg = "The widget fence is damaged"
+                        raise HeinzelError(msg)
                     return device.id
         return None
 
@@ -246,7 +259,11 @@ class Devices:
                 return False
             if device:
                 self._write(
-                    folder, [d.model_copy(update={"widget": None}) if d.id == device_id else d for d in devices]
+                    folder,
+                    [
+                        d.model_copy(update={"widget": None}) if d.id == device.id and d.sha256 == device.sha256 else d
+                        for d in devices
+                    ],
                 )
             return True
 
@@ -303,6 +320,7 @@ class Devices:
                 if not marked or device.widget_fence.owner != owner or device.widget_fence.workspace != workspace:
                     msg = "The widget fence is damaged"
                     raise HeinzelError(msg)
+                os.fsync(folder)
                 return device.widget_fence
             if marked:
                 msg = "The widget fence is incomplete"
@@ -319,7 +337,9 @@ class Devices:
             self._write(
                 folder,
                 [
-                    d.model_copy(update={"widget": None, "widget_fence": fence}) if d.id == device.id else d
+                    d.model_copy(update={"widget": None, "widget_fence": fence})
+                    if d.id == device.id and d.sha256 == device.sha256
+                    else d
                     for d in devices
                 ],
             )
@@ -355,6 +375,7 @@ class Devices:
             )
             result, saved = transition(state, request, self._clock())
             if result == state:
+                os.fsync(folder)
                 return fence, saved
             updated_fence = WidgetFence(
                 epoch=result.epoch,
@@ -374,7 +395,9 @@ class Devices:
             self._write(
                 folder,
                 [
-                    d.model_copy(update={"widget": widget, "widget_fence": updated_fence}) if d.id == device.id else d
+                    d.model_copy(update={"widget": widget, "widget_fence": updated_fence})
+                    if d.id == device.id and d.sha256 == device.sha256
+                    else d
                     for d in devices
                 ],
             )
@@ -433,10 +456,16 @@ class Devices:
             msg = "The paired device store is damaged"
             raise HeinzelError(msg)
         try:
-            return _DEVICES.validate_json(data)
+            devices = _DEVICES.validate_json(data, strict=True)
         except ValidationError:
             msg = "The paired device store is damaged"
             raise HeinzelError(msg) from None
+        if len({device.id for device in devices}) != len(devices) or len({device.sha256 for device in devices}) != len(
+            devices
+        ):
+            msg = "The paired device store has ambiguous identities"
+            raise HeinzelError(msg)
+        return devices
 
     def _write(self, folder: int, devices: list[Device]) -> None:
         partial = f".devices-{secrets.token_hex(12)}"

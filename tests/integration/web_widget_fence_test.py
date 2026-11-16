@@ -1,6 +1,10 @@
 """Fenced issuance is idempotent, pairing-bound and never stores raw widget tokens."""
 
 import json
+import os
+import stat
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -142,3 +146,119 @@ def test_missing_fence_marker_cannot_authorize_a_snapshot(tmp_path):
     with pytest.raises(HeinzelError):
         devices.widget_check(secret, "owner", fence.workspace)
     assert devices.widget_issue(device.id, "owner") is None
+
+
+def test_retry_does_not_acknowledge_until_directory_sync_succeeds(tmp_path, monkeypatch):
+    devices = Devices(tmp_path / "devices")
+    device, token = devices.pair("phone")
+    fence = devices.widget_fence_negotiate(device.id, token, "owner")
+    assert fence is not None
+    request = Request(fence.epoch, fence.revision, "a" * 32, "issue", "b" * 64)
+    real_fsync = os.fsync
+
+    def fail_directory(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            msg = "directory sync failed"
+            raise OSError(msg)
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_directory)
+    with pytest.raises(OSError, match="directory sync failed"):
+        devices.widget_fence_mutate(device.id, token, "owner", request)
+    with pytest.raises(OSError, match="directory sync failed"):
+        devices.widget_fence_mutate(device.id, token, "owner", request)
+    with pytest.raises(OSError, match="directory sync failed"):
+        devices.widget_fence_negotiate(device.id, token, "owner")
+    monkeypatch.setattr(os, "fsync", real_fsync)
+    committed = devices.widget_fence_mutate(device.id, token, "owner", request)
+    assert committed is not None
+    assert Devices(devices.directory).widget_fence_mutate(device.id, token, "owner", request) == committed
+
+
+def test_pairing_ids_are_unique_and_duplicate_storage_is_rejected(tmp_path, monkeypatch):
+    devices = Devices(tmp_path / "devices")
+    first, _ = devices.pair("first")
+    real_token_hex = __import__("secrets").token_hex
+    unique = "01234567" if first.id != "01234567" else "89abcdef"
+    candidates = iter([first.id, unique])
+
+    def collision_then_unique(size):
+        return next(candidates) if size == 4 else real_token_hex(size)
+
+    monkeypatch.setattr("heinzel.heads.web._devices.secrets.token_hex", collision_then_unique)
+    second, _ = devices.pair("second")
+    assert second.id == unique
+    assert second.id != first.id
+    with devices._locked() as folder:
+        devices._write(folder, [first, second.model_copy(update={"id": first.id})])
+    with pytest.raises(HeinzelError, match="ambiguous"):
+        devices.widget_issue(first.id, "owner")
+
+
+@pytest.mark.parametrize("partial_first", [True, False])
+def test_partial_fence_does_not_block_another_device(tmp_path, partial_first):
+    devices = Devices(tmp_path / "devices")
+    first, _ = devices.pair("first")
+    second, _ = devices.pair("second")
+    partial, healthy = (first, second) if partial_first else (second, first)
+    a, workspace, _ = devices.widget_issue(partial.id, "owner")
+    b, _, _ = devices.widget_issue(healthy.id, "owner")
+    with devices._locked() as folder:
+        assert devices._fence_marker(folder, partial, create=True)
+    with pytest.raises(HeinzelError, match="fence is damaged"):
+        devices.widget_check(a, "owner", workspace)
+    assert devices.widget_check(b, "owner", workspace) == healthy.id
+
+
+@pytest.mark.parametrize("damage", ["numeric_expiry", "wrong_revision", "missing_receipt"])
+def test_damaged_persisted_fence_does_not_become_a_fresh_pairing(tmp_path, damage):
+    devices = Devices(tmp_path / "devices")
+    device, paired_token = devices.pair("phone")
+    fence = devices.widget_fence_negotiate(device.id, paired_token, "owner")
+    assert fence is not None
+    request = Request(fence.epoch, fence.revision, "a" * 32, "issue", "b" * 64)
+    assert devices.widget_fence_mutate(device.id, paired_token, "owner", request) is not None
+    data = json.loads(devices.path.read_text())
+    persisted = data[0]["widget_fence"]
+    if damage == "numeric_expiry":
+        persisted["receipt"]["expires"] = 1800000000
+    elif damage == "wrong_revision":
+        persisted["revision"] = "f" * 32
+    else:
+        persisted["receipt"] = None
+    devices.path.write_text(json.dumps(data))
+    with pytest.raises(HeinzelError, match="damaged"):
+        devices.widget_fence_negotiate(device.id, paired_token, "owner")
+
+
+def test_separate_processes_cannot_both_rotate_same_revision(tmp_path):
+    devices = Devices(tmp_path / "devices")
+    device, paired_token = devices.pair("phone")
+    fence = devices.widget_fence_negotiate(device.id, paired_token, "owner")
+    assert fence is not None
+    script = (
+        "import sys; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
+        "from heinzel.heads.web._widget_fence import Request, FenceConflictError; "
+        "d=Devices(Path(sys.argv[1])); r=Request(sys.argv[4],sys.argv[5],sys.argv[6]*32,'issue',sys.argv[6]*64); "
+        "exec(\"try:\\n d.widget_fence_mutate(sys.argv[2],sys.argv[3],'owner',r); print('won')\\n"
+        "except FenceConflictError:\\n print('lost')\")"
+    )
+    args = [sys.executable, "-c", script, str(devices.directory), device.id, paired_token, fence.epoch, fence.revision]
+    processes = [subprocess.Popen([*args, value], stdout=subprocess.PIPE, text=True) for value in ("a", "b")]
+    outcomes = [process.communicate(timeout=10)[0].strip() for process in processes]
+    assert all(process.returncode == 0 for process in processes)
+    assert sorted(outcomes) == ["lost", "won"]
+
+
+def test_legacy_rotation_racing_fence_negotiation_cannot_survive_it(tmp_path):
+    devices = Devices(tmp_path / "devices")
+    device, token = devices.pair("phone")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        issue = pool.submit(devices.widget_issue, device.id, "owner", token)
+        negotiate = pool.submit(devices.widget_fence_negotiate, device.id, token, "owner")
+        legacy = issue.result()
+        fence = negotiate.result()
+    assert fence is not None
+    if legacy:
+        assert devices.widget_check(legacy[0], "owner", legacy[1]) is None
+    assert devices.widget_issue(device.id, "owner", token) is None
