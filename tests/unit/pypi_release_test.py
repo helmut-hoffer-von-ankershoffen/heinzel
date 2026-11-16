@@ -593,6 +593,7 @@ def test_bind_release_assets_checks_swift_manifest_before_attestation(tmp_path, 
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(ROOT / "Makefile"), "desktop-bind-release-assets"],
         cwd=tmp_path,
+        timeout=30,
         env={**os.environ, "TAG": f"v{VERSION}", "SOURCE_COMMIT": COMMIT, "MAKELEVEL": makelevel},
         capture_output=True,
         check=False,

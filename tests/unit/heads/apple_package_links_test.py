@@ -23,13 +23,13 @@ def test_site_prefix_does_not_enable_mac_https(tmp_path, prefix):
         "APPLE_APPLICATION_IDENTIFIER_PREFIX": prefix,
         "HEINZEL_HTTPS_LINKS": "",
     }
-    result = subprocess.run([str(SCRIPT), "1.2.3"], env=env, capture_output=True, check=False)
+    result = subprocess.run([str(SCRIPT), "1.2.3"], env=env, capture_output=True, check=False, timeout=30)
     assert result.returncode == 42
     assert "HEINZEL_HTTPS_LINKS=NO" in args.read_text().splitlines()
 
 
 def test_explicit_https_refused_before_build():
     env = {**os.environ, "HEINZEL_HTTPS_LINKS": "YES", "HEINZEL_MAC_SIGNING_TEAM": "ABCDEFGHIJ"}
-    result = subprocess.run([str(SCRIPT), "1.2.3"], env=env, capture_output=True, text=True, check=False)
+    result = subprocess.run([str(SCRIPT), "1.2.3"], env=env, capture_output=True, text=True, check=False, timeout=30)
     assert result.returncode == 2
     assert "Associated Domains" in result.stderr

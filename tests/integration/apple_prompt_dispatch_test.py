@@ -71,7 +71,7 @@ run(sessionID, requestID, 'Hello', {headers: {}}, fetch)
     def run(request_id, lose_reply=""):
         args = [body, f"http://127.0.0.1:{server.server_port}", session, request_id, lose_reply]
         return subprocess.run(
-            ["node", "-e", script, json.dumps(args)], check=True, capture_output=True, text=True
+            ["node", "-e", script, json.dumps(args)], check=True, capture_output=True, text=True, timeout=30
         ).stdout.strip()
 
     try:
