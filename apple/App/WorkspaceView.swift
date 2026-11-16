@@ -798,24 +798,32 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
             let result: WidgetEnrollmentOutcome
             if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
-                let matchesPairing = fingerprint.map { ActivityCatalog.enrollmentPairingMatches(url: store.catalogURL, expected: pending, fingerprint: $0) } ?? false
-                guard matchesPairing && enrollment.canResume(pending) else {
-                    if pending.previous.endpoint == endpoint.origin.absoluteString, current() {
-                        if matchesPairing, let installed = enrollment.finishInterruptedInstallation(pending), current(),
-                           ActivityCatalog.activation(url: store.catalogURL) == installed {
-                            NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
-                        } else if let expired = enrollment.finishExpiredReceipt(pending), expired.revoked {
-                            ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload()
-                            if !expired.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
-                        } else if enrollment.abandonInterruptedPreparation(pending), current(),
-                                  ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
-                            NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)
+                let recorded = pending.previous.endpoint == endpoint.origin.absoluteString && current()
+                    ? enrollment.finishRecordedRemoteRecovery(pending) : ActivityCatalog.ClearResult(revoked: false, purged: false, stale: true)
+                if recorded.revoked {
+                    result = .identityMismatch(recorded)
+                } else if let fingerprint, ActivityCatalog.cancelledRecoveryMatches(url: store.catalogURL, expected: pending, fingerprint: fingerprint) {
+                    result = await coordinator.recover(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
+                } else {
+                    let matchesPairing = fingerprint.map { ActivityCatalog.enrollmentPairingMatches(url: store.catalogURL, expected: pending, fingerprint: $0) } ?? false
+                    guard matchesPairing && enrollment.canResume(pending) else {
+                        if pending.previous.endpoint == endpoint.origin.absoluteString, current() {
+                            if matchesPairing, let installed = enrollment.finishInterruptedInstallation(pending), current(),
+                               ActivityCatalog.activation(url: store.catalogURL) == installed {
+                                NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
+                            } else if let expired = enrollment.finishExpiredReceipt(pending), expired.revoked {
+                                ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload()
+                                if !expired.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
+                            } else if enrollment.abandonInterruptedPreparation(pending), current(),
+                                      ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
+                                NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)
+                            }
                         }
+                        return
                     }
-                    return
+                    guard let fingerprint else { return }
+                    result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
                 }
-                guard let fingerprint else { return }
-                result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
             } else {
                 guard let fingerprint else { return }
                 let active = ActivityCatalog.activation(url: store.catalogURL)

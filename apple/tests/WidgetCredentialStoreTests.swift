@@ -352,9 +352,7 @@ private final class NotificationCapture: @unchecked Sendable {
             fingerprint: boundFingerprint, verify: { _ in true }, cleanup: { false })
         precondition(recoveryCleanupFailure.revoked && !recoveryCleanupFailure.complete)
         precondition(ActivityCatalog.pendingEnrollment(url: pairCancelURL) == pairCancelAttempt)
-        let recoveryFinished = ActivityCatalog.finishCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
-            fingerprint: boundFingerprint, verify: { pairCancelEnrollment.recoveryEvidenceMatches($0) },
-            cleanup: { pairCancelKeychain.deletePending(pairCancelAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()) && pairCancelStore.purgeCredential() })
+        let recoveryFinished = pairCancelEnrollment.finishRecordedRemoteRecovery(pairCancelAttempt)
         precondition(recoveryFinished.complete && ActivityCatalog.pendingEnrollment(url: pairCancelURL) == nil)
         precondition(ActivityCatalog.activation(url: pairCancelURL) == nil)
         for issueWasLast in [true, false] {

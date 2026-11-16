@@ -127,6 +127,54 @@ enum WidgetEnrollmentOutcome {
 @MainActor struct WidgetEnrollmentCoordinator {
     let enrollment: WidgetFencedEnrollment
 
+    /// Resolve only a cancelled reservation bound to the same paired bearer.
+    /// Each 409 is followed by a fresh authenticated status before replanning.
+    func recover(_ reservation: ActivityCatalog.Enrollment, in view: WKWebView, endpoint: URL, fingerprint: String,
+                 isCurrent: @escaping () -> Bool) async -> WidgetEnrollmentOutcome {
+        let current = {
+            isCurrent() && reservation.previous.endpoint == endpoint.absoluteString &&
+            ActivityCatalog.cancelledRecoveryMatches(url: enrollment.store.catalogURL, expected: reservation, fingerprint: fingerprint)
+        }
+        guard current() else { return .pending }
+        let status = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint,
+                                                              fingerprint: fingerprint, isCurrent: current)
+        guard current(), case .ok(let data) = status,
+              var plan = ActivityCatalog.planCancelledRecovery(url: enrollment.store.catalogURL, expected: reservation,
+                                                               fingerprint: fingerprint, observedStatus: data) else { return .pending }
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        func finish() -> WidgetEnrollmentOutcome {
+            let result = ActivityCatalog.finishCancelledRecovery(url: enrollment.store.catalogURL, expected: reservation,
+                fingerprint: fingerprint, verify: { enrollment.recoveryEvidenceMatches($0) },
+                cleanup: { enrollment.store.keychain.deletePending(attempt) && enrollment.store.purgeCredential() })
+            return .identityMismatch(result)
+        }
+        for _ in 0..<3 {
+            switch plan {
+            case .superseded: return finish()
+            case .revoke(let request):
+                guard current() else { return .pending }
+                let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: request, in: view, endpoint: endpoint,
+                                                                        fingerprint: fingerprint, isCurrent: current)
+                guard current() else { return .pending }
+                switch response {
+                case .ok(let receipt):
+                    guard ActivityCatalog.recordRecoveryReceipt(url: enrollment.store.catalogURL, expected: reservation,
+                        fingerprint: fingerprint, request: request, receipt: receipt) else { return .pending }
+                    return finish()
+                case .conflict:
+                    let refreshed = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint,
+                                                                             fingerprint: fingerprint, isCurrent: current)
+                    guard current(), case .ok(let freshStatus) = refreshed,
+                          let next = ActivityCatalog.resolveRecoveryConflict(url: enrollment.store.catalogURL, expected: reservation,
+                              fingerprint: fingerprint, failedRequest: request, observedStatus: freshStatus) else { return .pending }
+                    plan = next
+                case .unauthorized, .unavailable: return .pending
+                }
+            }
+        }
+        return .pending
+    }
+
     func begin(expected: ActivityCatalog.Activation, in view: WKWebView, endpoint: URL, fingerprint: String,
                isCurrent: @escaping () -> Bool) async -> WidgetEnrollmentOutcome {
         guard isCurrent(), expected.endpoint == endpoint.absoluteString,

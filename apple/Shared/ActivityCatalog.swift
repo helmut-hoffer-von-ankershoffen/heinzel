@@ -472,6 +472,18 @@ final class ActivityCatalog {
         case superseded
     }
 
+    static func cancelledRecoveryMatches(url: URL, expected: Enrollment, fingerprint: String) -> Bool {
+        guard fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return false }
+        return withWriterLock(url: url, failure: false) {
+            guard let marker = try? Data(contentsOf: enrollmentURL(for: url)), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.cancelled == true, journal.phase == .armed,
+                  journal.pairingFingerprint == fingerprint,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: data) else { return false }
+            return authority.revoked == true && authority.cleanup == expected.previous
+        }
+    }
+
     /// Only a cancelled, pairing-bound reservation may plan remote cleanup.
     /// The observed status and exact conditional revoke are synced before use.
     static func planCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String,
@@ -572,13 +584,14 @@ final class ActivityCatalog {
     }
 
     /// Terminal evidence is durable before owned cleanup; the logout tombstone remains.
-    static func finishCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String,
+    static func finishCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String?,
                                         journalSync: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
                                         verify: (EnrollmentJournal) -> Bool, cleanup: () -> Bool) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
             let markerURL = enrollmentURL(for: url)
             guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
-                  journal.reservation == expected, journal.cancelled == true, journal.pairingFingerprint == fingerprint,
+                  journal.reservation == expected, journal.cancelled == true, journal.pairingFingerprint != nil,
+                  fingerprint.map({ journal.pairingFingerprint == $0 }) ?? true,
                   journal.recoveryStatus != nil, journal.recoveryRequest == nil || journal.recoveryReceipt != nil,
                   let authorityData = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),

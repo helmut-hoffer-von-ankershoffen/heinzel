@@ -127,6 +127,14 @@ struct WidgetFencedEnrollment {
         return result
     }
 
+    /// Once terminal remote evidence is persisted, owned cleanup needs no bearer.
+    func finishRecordedRemoteRecovery(_ reservation: ActivityCatalog.Enrollment) -> ActivityCatalog.ClearResult {
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        return ActivityCatalog.finishCancelledRecovery(url: store.catalogURL, expected: reservation, fingerprint: nil,
+            verify: { self.recoveryEvidenceMatches($0) },
+            cleanup: { self.store.keychain.deletePending(attempt) && self.store.purgeCredential() })
+    }
+
     func prepare(expected: ActivityCatalog.Activation, pairingFingerprint: String? = nil) -> ActivityCatalog.Enrollment? {
         guard let reservation = store.beginEnrollment(expected: expected, pairingFingerprint: pairingFingerprint) else { return nil }
         var random = [UInt8](repeating: 0, count: 32)
