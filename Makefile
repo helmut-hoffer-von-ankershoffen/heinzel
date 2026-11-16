@@ -274,7 +274,7 @@ test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's
 
 test-apple-ci: ## Run required Apple fixtures and reject skipped tests
 	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
-	python3 scripts/check_apple_ci.py reports/apple-ci.xml
+	uv run --script scripts/check_apple_ci.py reports/apple-ci.xml
 
 build-apple-ci: ## Compile the unsigned Swift Release app on macOS CI
 	xcodebuild -project apple/Heinzel.xcodeproj -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
