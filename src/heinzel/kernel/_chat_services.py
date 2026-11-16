@@ -105,6 +105,18 @@ class FoundMcpTool:
     """Whether the server marks the tool read-only (`readOnlyHint`); any other or unknown tool is proposed."""
 
 
+@dataclass(frozen=True)
+class FoundMcpDiagnostic:
+    """Passive, owner-private metadata; an unknown tool count is not zero."""
+
+    namespace: str
+    scope: str
+    running: bool
+    known_tool_count: int | None
+    enabled: bool
+    available: bool | None
+
+
 class FoundMcpServers:
     """hz as the MCP client of every found MCP server that is switched on; a module provides it (ADR 0162).
 
@@ -114,6 +126,18 @@ class FoundMcpServers:
     def tools(self) -> list[FoundMcpTool]:
         """The tools of every usable switched-on server; a server is started the first time its tools are needed."""
         raise NotImplementedError
+
+    def names(self) -> list[str]:
+        """Enabled server namespaces; implementations may list them without opening connections."""
+        return sorted({tool.namespace for tool in self.tools()})
+
+    def diagnostics(self) -> list[FoundMcpDiagnostic] | None:
+        """Passive server metadata, or None when the provider cannot inspect it without connecting."""
+        return None
+
+    def tools_for(self, namespace: str) -> list[FoundMcpTool]:
+        """The tools of one enabled server; implementations may avoid opening the others."""
+        return [tool for tool in self.tools() if tool.namespace == namespace]
 
     def call(self, server: str, tool: str, arguments: dict[str, Any]) -> str:
         """Call `tool` of the server `server` and return its text, which is untrusted data.

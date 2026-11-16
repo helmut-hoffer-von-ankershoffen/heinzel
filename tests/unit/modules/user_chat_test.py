@@ -79,6 +79,27 @@ def setup_chat(current):
     return current, crud, session
 
 
+def test_chat_refuses_unavailable_connections_and_unknown_provider(tmp_path):
+    from types import SimpleNamespace
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        _, crud, _session = setup_chat(current)
+        config = FixtureConfig(tmp_path / "missing")
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: config)
+        with pytest.raises(HeinzelError, match="Connected reads are unavailable"):
+            service.connected_grants()
+        assert service._plugin_held() is None
+        with pytest.raises(HeinzelError, match="neither the configured AI access"):
+            service._access(config, SimpleNamespace(provider="missing"))
+        service._models = SimpleNamespace(offers=lambda name: name == "installed")
+        assert service._access(config, SimpleNamespace(provider="installed")) == "installed"
+        assert service._plugin_held() is None
+        service.which = lambda _name: None
+        with pytest.raises(HeinzelError, match="executable is unavailable"):
+            service.binding_terms()
+
+
 def test_fake_cli_reply_tool_denial_unknown_usage_and_restart(tmp_path):
     assert HeinzelSettings().subscription_budget_mode == "plan-unknown"
     current = CurrentUser(tmp_path / "identity")

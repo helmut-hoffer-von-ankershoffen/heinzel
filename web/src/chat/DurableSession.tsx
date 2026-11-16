@@ -18,6 +18,7 @@ import { useConfig } from "@/api/queries";
 import { type StreamEvent, stream } from "@/api/stream";
 import { authorityEpoch, subscribeAuthority } from "@/api/token";
 import { ActionCard } from "@/chat/ActionCard";
+import { ChatDiagnostics, type Diagnostics, diagnosticsEvent } from "@/chat/ChatDiagnostics";
 import { ChatSearch } from "@/chat/ChatSearch";
 import { setConversationBusy } from "@/chat/conversationBusy";
 import { rememberHeinzel } from "@/chat/defaultHeinzel";
@@ -195,6 +196,8 @@ function DurableSessionView({
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
   const capturedWrites = Array.isArray(features) && features.includes("captured_writes");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<{ id: string; snapshot: Diagnostics }[]>([]);
   const pendingSearchJump = conversationJump(routeState, sessionId);
   const {
     state: composer,
@@ -672,11 +675,21 @@ function DurableSessionView({
       const answered = await stream<SchemaUserChatAnswer>(
         "/heinzel/answer-chat",
         {},
-        (event) =>
+        (event) => {
+          if (!authorityCurrent()) return;
+          if (event.event === "diagnostics") {
+            const snapshot = diagnosticsEvent(event.data);
+            if (snapshot)
+              setDiagnostics((turns) => {
+                const others = turns.filter((turn) => turn.id !== request.request_id);
+                return [...others, { id: request.request_id, snapshot }].slice(-20);
+              });
+          }
           setPartial((previous) => {
             const text = grownReply(previous?.requestId === request.request_id ? previous.text : "", event);
             return text ? { requestId: request.request_id, text } : previous;
-          }),
+          });
+        },
         undefined,
         { session_id: sessionId, request_id: request.request_id },
       );
@@ -921,7 +934,7 @@ function DurableSessionView({
   useComposerFocus(composerInput, !composerDisabled);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <HeinzelHeader
         sessionId={sessionId}
         name={heinzelName}
@@ -930,8 +943,11 @@ function DurableSessionView({
         locked={busy}
         searchOpen={searchOpen}
         onSearch={() => setSearchOpen((open) => !open)}
+        diagnosticsOpen={diagnosticsOpen}
+        onDiagnostics={() => setDiagnosticsOpen((open) => !open)}
         onClose={onClose}
       />
+      {diagnosticsOpen && <ChatDiagnostics turns={diagnostics} onClose={() => setDiagnosticsOpen(false)} />}
       <div ref={list} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}

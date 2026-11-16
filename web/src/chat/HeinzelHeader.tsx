@@ -2,7 +2,7 @@
 // name with ▾ that opens your Heinzels and New Heinzel, More (search, About opening the Heinzel's page) and Close.
 // There is no "Back to chat": switching Heinzels is the only way between chats. Both popovers keep the keyboard path of
 // the session switcher: Escape closes and focus returns to the button that opened them; Tab out closes too.
-import { ChevronDown, Ellipsis, Info, PanelRightClose, Plus, Search } from "lucide-react";
+import { ChartNoAxesCombined, ChevronDown, Ellipsis, Info, PanelRightClose, Plus, Search } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useHeinzelSessions } from "@/api/queries";
@@ -26,6 +26,8 @@ type Props = {
   busy: boolean;
   searchOpen: boolean;
   onSearch: () => void;
+  diagnosticsOpen?: boolean;
+  onDiagnostics?: () => void;
   onClose: () => void;
   /** Switching is held while a profile save is in flight, as the old "Back to chat" was. */
   locked?: boolean;
@@ -90,7 +92,18 @@ function Menu({
 const rowClass =
   "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:text-icon";
 
-export function HeinzelHeader({ sessionId, name, look, busy, searchOpen, onSearch, onClose, locked = false }: Props) {
+export function HeinzelHeader({
+  sessionId,
+  name,
+  look,
+  busy,
+  searchOpen,
+  onSearch,
+  onClose,
+  locked = false,
+  diagnosticsOpen = false,
+  onDiagnostics,
+}: Props) {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const switchTrigger = useRef<HTMLButtonElement>(null);
@@ -214,6 +227,20 @@ export function HeinzelHeader({ sessionId, name, look, busy, searchOpen, onSearc
         </button>
       </Menu>
       <span className="flex-1" />
+      {onDiagnostics && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          data-pane-action
+          onClick={onDiagnostics}
+          aria-label="Chat diagnostics"
+          aria-pressed={diagnosticsOpen}
+          title="Chat diagnostics"
+        >
+          <ChartNoAxesCombined aria-hidden />
+        </Button>
+      )}
       <Menu
         open={moreOpen}
         setOpen={setMoreOpen}

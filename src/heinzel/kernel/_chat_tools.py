@@ -495,7 +495,9 @@ class FoundTool:
         )
 
 
-def found_tools(kernel: Kernel, session: str, *, attended: bool = False) -> list[FoundTool]:
+def found_tools(
+    kernel: Kernel, session: str, *, attended: bool = False, namespace: str | None = None
+) -> list[FoundTool]:
     """The tools of every found MCP server that is switched on, for one chat session's agent; none without a client.
 
     The session must exist, as for `chat_tools`. A server that can't be used is left out, never the turn.
@@ -511,7 +513,7 @@ def found_tools(kernel: Kernel, session: str, *, attended: bool = False) -> list
     if not kernel.provides(FoundMcpServers) or not kernel.provides(ActionGate):
         return []
     servers, gate = kernel.resolve(FoundMcpServers), kernel.resolve(ActionGate)
-    listed = servers.tools()
+    listed = servers.tools() if namespace is None else servers.tools_for(namespace)
     seen: dict[str, int] = {}
     for found in listed:
         seen[found.title.lower()] = seen.get(found.title.lower(), 0) + 1

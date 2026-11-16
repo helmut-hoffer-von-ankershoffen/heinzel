@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-15
 implementation: built
+amended-by: 0164
 decision-makers: maintainer (need), architect (shape)
 amends: 0140, 0045, 0142, 0146
 amends-0140: the sidebar browser has tabs, and an agent may open and drive its own tabs through the desktop
