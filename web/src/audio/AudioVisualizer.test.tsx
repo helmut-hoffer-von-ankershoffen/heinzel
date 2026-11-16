@@ -53,6 +53,13 @@ const pane = () => within(screen.getByRole("region", { name: "Audio visualizer c
 const source = (name: string) =>
   within(screen.getByRole("radiogroup", { name: "Listen to" })).getByRole("radio", { name });
 
+/** A pending source is already checked, but rejects source changes until capture has settled. */
+const waitForSource = (name: string) =>
+  waitFor(() => {
+    expect(source(name)).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radiogroup", { name: "Listen to" })).not.toHaveAttribute("aria-busy", "true");
+  });
+
 /**
  * Capture answers a test queued (mockResolvedValueOnce and the like) and never used, and resets every capture mock.
  * vi.clearAllMocks keeps both queued answers and default implementations, so one test's leftover answers the next
@@ -75,6 +82,8 @@ function unusedCaptureAnswers() {
 }
 
 afterEach(() => {
+  // Unmount before restoring stores and checking mock queues, even if that check fails.
+  cleanup();
   const unused = unusedCaptureAnswers();
   if (realSecure) Object.defineProperty(globalThis, "isSecureContext", realSecure);
   else delete (globalThis as { isSecureContext?: boolean }).isSecureContext;
@@ -137,7 +146,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source(choice));
-    await waitFor(() => expect(source(choice)).toHaveAttribute("aria-checked", "true"));
+    await waitForSource(choice);
     act(() => {
       for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
     });
@@ -235,7 +244,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     act(() => {
       for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
     });
@@ -461,7 +470,7 @@ describe("AudioVisualizer", () => {
     expect(source("Off")).toHaveAttribute("aria-checked", "true");
     expect(captureAudio).not.toHaveBeenCalled();
     fireEvent.click(source("Shared audio"));
-    await waitFor(() => expect(source("Shared audio")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Shared audio");
     expect(captureAudio).toHaveBeenCalledOnce();
     view.unmount();
     expect(stop).toHaveBeenCalledOnce();
@@ -569,7 +578,7 @@ describe("AudioVisualizer", () => {
       expect(captureAudio).not.toHaveBeenCalled();
       // The default: workspace audio, exactly as without loopback.
       fireEvent.click(source("Workspace audio"));
-      await waitFor(() => expect(source("Workspace audio")).toHaveAttribute("aria-checked", "true"));
+      await waitForSource("Workspace audio");
       expect(captureAudio).toHaveBeenLastCalledWith(expect.any(AbortSignal), false);
       expect(localStorage.getItem("hz.audio.source")).toBe("tab");
       // The opt-in: one explicit press, its own capture.
@@ -796,7 +805,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     const microphoneSignal = vi.mocked(captureMicrophone).mock.calls.at(-1)?.[0];
     expect(source("Shared audio")).not.toHaveAttribute("aria-disabled");
     fireEvent.click(source("Shared audio"));
@@ -809,7 +818,7 @@ describe("AudioVisualizer", () => {
     // And back: the microphone is asked for, then sharing stops.
     vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     expect(stop).toHaveBeenCalledOnce();
   });
 
@@ -826,7 +835,7 @@ describe("AudioVisualizer", () => {
     // Not a dead end: the choice is still there and asks again, once.
     vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     expect(captureMicrophone).toHaveBeenCalledTimes(2);
   });
 
@@ -836,7 +845,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     fireEvent.click(source("Shared audio"));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("cancelled or blocked"));
     expect(micStop).not.toHaveBeenCalled();
@@ -849,7 +858,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     fireEvent.click(source("Shared audio"));
     const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
     expect(source("Off")).not.toHaveAttribute("aria-disabled");
@@ -872,7 +881,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     const staleEnded = addListener.mock.calls.find(([event]) => event === "ended")?.[1] as EventListener;
     fireEvent.click(source("Shared audio"));
     const replacementSignal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
@@ -887,17 +896,26 @@ describe("AudioVisualizer", () => {
   it("does not restart an ended microphone when replacement sharing is unsupported", async () => {
     const track = new EventTarget();
     Object.assign(track, { readyState: "live" });
-    vi.mocked(captureMicrophone).mockResolvedValueOnce({
-      ...listening,
-      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
-    } as unknown as typeof listening);
+    let grantMicrophone: (value: typeof listening) => void = () => undefined;
+    vi.mocked(captureMicrophone).mockImplementationOnce(() => new Promise((resolve) => (grantMicrophone = resolve)));
     let reject: (error: Error) => void = () => undefined;
     vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((_, fail) => (reject = fail)));
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Microphone"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    // Checked alone describes the pending request too: it is not evidence the microphone is listening yet.
+    expect(source("Microphone")).toHaveAttribute("aria-checked", "true");
+    expect(source("Shared audio")).toHaveAttribute("aria-disabled", "true");
+    expect(captureAudio).not.toHaveBeenCalled();
+    await act(async () =>
+      grantMicrophone({
+        ...listening,
+        stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+      } as unknown as typeof listening),
+    );
+    await waitForSource("Microphone");
     fireEvent.click(source("Shared audio"));
+    expect(captureAudio).toHaveBeenCalledOnce();
     act(() => track.dispatchEvent(new Event("ended")));
     await act(async () => reject(new DOMException("Not supported", "NotSupportedError")));
     expect(captureMicrophone).toHaveBeenCalledOnce();
@@ -919,7 +937,7 @@ describe("AudioVisualizer", () => {
       // A microphone the person allowed and chose before resumes once, without a question.
       await waitFor(() => expect(captureMicrophone).toHaveBeenCalledOnce());
       open();
-      await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+      await waitForSource("Microphone");
       fireEvent.click(source("Off"));
       expect(micStop).toHaveBeenCalledOnce();
       expect(source("Off")).toHaveAttribute("aria-checked", "true");
@@ -973,7 +991,7 @@ describe("AudioVisualizer", () => {
       act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
       open();
       fireEvent.click(source("Microphone"));
-      await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+      await waitForSource("Microphone");
       act(() => track.dispatchEvent(new Event("ended")));
       await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
       expect(captureMicrophone).toHaveBeenCalledOnce();
@@ -1013,7 +1031,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Shared audio"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     expect(captureMicrophone).toHaveBeenCalledOnce();
     expect(
       screen.getByText("Shared audio is not offered by this browser, so Heinzel listens with the microphone."),
@@ -1041,7 +1059,7 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Shared audio"));
-    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    await waitForSource("Microphone");
     expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });
