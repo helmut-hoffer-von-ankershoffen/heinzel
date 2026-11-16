@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { recordSurface } from "@/lib/surfaceDiagnostics";
 import { AboutDialog, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
@@ -98,6 +99,31 @@ describe("About dialog", () => {
     expect(text).toContain("daemon running 1.2.3");
     expect(text).toContain("desktop 0.9.29 /Applications/H.app");
     expect(text).toContain("plugin heinzel-b 0.4.0 git");
+  });
+
+  it("includes the loaded entrypoint and safe surface snapshot separately from backend version", () => {
+    const text = detailsText(
+      info as never,
+      { version: "0.9.29", path: "/Applications/H.app" },
+      "/assets/index-old.js",
+      ["browser surface: overlay; bridge: ok; native last sample: unavailable"],
+    );
+    expect(text).toContain("hz 1.2.3");
+    expect(text).toContain("desktop 0.9.29");
+    expect(text).toContain("loaded frontend entrypoint /assets/index-old.js");
+    expect(text).toContain("browser surface: overlay");
+  });
+
+  it("copies the latest surface sample after About has opened", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    recordSurface("browser", "layout requested", "ok", { focused: true, visible: true, status: "ready" });
+    show();
+    act(() => requestMenuAction("about"));
+    recordSurface("browser", "overlay", "ok", { focused: true, visible: false, status: "ready" });
+    await userEvent.click(screen.getByRole("button", { name: /copy details/i }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("before overlay: layout requested"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("view-visible=false"));
   });
 
   it("opens on the about menu action, shows the plugin table and copies the details", async () => {

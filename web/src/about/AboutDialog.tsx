@@ -1,15 +1,17 @@
 // About Heinzelmännchen: what is installed, in one dialog, opened from the footer version or the desktop app menu.
 import { useQuery } from "@tanstack/react-query";
 import { Copy, ExternalLink, FileText, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { format, t } from "@/i18n";
+import { loadedFrontend, surfaceDetails } from "@/lib/surfaceDiagnostics";
 import { onMenuAction } from "./menu";
 
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
+const loadedAsset = loadedFrontend(document);
 
 type Desktop = { version: string; path: string };
 type Bridge = { about?: () => Promise<Desktop> };
@@ -25,7 +27,12 @@ const isFirstParty = (repository: string | null) =>
 export const pluginsOf = (info: Info) => info.plugins ?? [];
 
 /** The same lines as `hz --version`, plus the daemon and the desktop app. */
-export function detailsText(info: Info, desktop: Desktop | null): string {
+export function detailsText(
+  info: Info,
+  desktop: Desktop | null,
+  frontend: string | null = null,
+  surfaces: string[] = [],
+): string {
   const lines = [`hz ${info.version}`];
   if (info.repository) lines.push(`repository ${info.repository}`);
   lines.push(
@@ -35,6 +42,9 @@ export function detailsText(info: Info, desktop: Desktop | null): string {
     `daemon running ${info.version}`,
   );
   if (desktop) lines.push(`desktop ${desktop.version} ${desktop.path}`);
+  if (frontend) lines.push(`loaded frontend entrypoint ${frontend}`);
+  else if (desktop) lines.push("loaded frontend entrypoint unavailable");
+  lines.push(...surfaces);
   for (const plugin of pluginsOf(info))
     lines.push(
       `plugin ${plugin.name} ${plugin.version} ${plugin.source}${plugin.installed ? ` installed ${plugin.installed}` : ""}${plugin.repository ? ` ${plugin.repository}` : ""}`,
@@ -71,7 +81,11 @@ export function AboutDialog() {
   const desktop = useDesktop(true);
   const [copied, setCopied] = useState(false);
   const titleId = useId();
-  const details = info.data ? detailsText(info.data, desktop.data ?? null) : null;
+  const details = info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null;
+  const currentDetails = useCallback(
+    () => (info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null),
+    [info.data, desktop.data],
+  );
   useEffect(
     () =>
       onMenuAction(["about", "copy"], (action) => {
@@ -80,9 +94,12 @@ export function AboutDialog() {
             returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             setOpen(true);
           }
-        } else if (details) void navigator.clipboard.writeText(details);
+        } else {
+          const current = currentDetails();
+          if (current) void navigator.clipboard.writeText(current);
+        }
       }),
-    [details],
+    [currentDetails],
   );
   useLayoutEffect(() => {
     const element = dialog.current;
@@ -97,8 +114,9 @@ export function AboutDialog() {
   if (!open) return null;
   const close = () => setOpen(false);
   const copy = async () => {
-    if (!details) return;
-    await navigator.clipboard.writeText(details);
+    const current = currentDetails();
+    if (!current) return;
+    await navigator.clipboard.writeText(current);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };

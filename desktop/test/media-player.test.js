@@ -34,7 +34,9 @@ function fixture({ answer = () => ({ ready: true, state: 1, error: false }), pla
         clear: () => calls.push(["history-clear"]) },
       setWebRTCIPHandlingPolicy: () => {}, setWindowOpenHandler: (handler) => { contents.popup = handler; },
       executeJavaScript: async (code, gesture) => { calls.push(["script", code, gesture]); return code.includes("getPlayerState") ? answer() : true; } });
-    const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), setVisible: (visible) => calls.push(["visible", visible]) };
+    let visible = false;
+    const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), getVisible: () => visible,
+      setVisible: (value) => { visible = value; calls.push(["visible", value]); } };
     views.push(view);
     return view;
   };
@@ -48,6 +50,17 @@ function fixture({ answer = () => ({ ready: true, state: 1, error: false }), pla
   const as = (controller) => (request) => controller.handle({ sender, senderFrame: frame }, request);
   return { owner, sender, calls, views, sessions, opened, browser, player, play: as(player), browse: as(browser) };
 }
+
+test("player diagnostics report native visibility without video identity", async () => {
+  const f = fixture();
+  await f.play({ action: "open", video: VIDEO });
+  await f.play({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
+  assert.deepEqual(await f.play({ action: "diagnostics" }), { focused: true, visible: true, status: "loading", reason: "draw-enabled" });
+  await f.play({ action: "hide" });
+  assert.equal((await f.play({ action: "diagnostics" })).visible, false);
+  f.views[0].webContents.close();
+  assert.deepEqual(await f.play({ action: "diagnostics" }), { focused: true, visible: null, status: "loading", reason: "unknown" });
+});
 
 test("the player guest is the YouTube embed on the shared website partition, never the product session", async () => {
   const f = fixture();

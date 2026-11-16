@@ -95,6 +95,30 @@ describe("automatic updates", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("does not detect old loaded assets when the first status already names the new backend", async () => {
+    const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+    const script = document.createElement("script");
+    script.type = "module";
+    script.src = "/assets/old-renderer.js";
+    document.body.append(script);
+    try {
+      const client = queryClient();
+      sessionStorage.setItem("hz.token", "test-token");
+      mockApi({ "/api/auto-update": { ...base, version: "1.1.0", phase: "off", seconds_left: null } });
+      render(
+        <Providers client={client}>
+          <AutoUpdate />
+        </Providers>,
+      );
+      await waitFor(() => expect(client.getQueryData<AutoUpdateStatus>(["web", "auto-update"])?.version).toBe("1.1.0"));
+      await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
+      expect(reload).not.toHaveBeenCalled();
+      expect(script.getAttribute("src")).toBe("/assets/old-renderer.js");
+    } finally {
+      script.remove();
+    }
+  });
+
   it("reloads once the server restarted on another version", async () => {
     const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
     vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);

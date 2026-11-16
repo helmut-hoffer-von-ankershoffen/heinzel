@@ -30,12 +30,26 @@ function fixture(configure = async () => {}, extra = {}) {
         navigationHistory: { canGoBack: () => false, canGoForward: () => false, clear: () => calls.push(["history-clear"]) },
         setWebRTCIPHandlingPolicy: (policy) => calls.push(["webrtc", policy]),
         setWindowOpenHandler: (handler) => { contents.popup = handler; } });
-      const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), setVisible: (visible) => calls.push(["visible", visible]) };
+      let visible = false;
+      const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), getVisible: () => visible,
+        setVisible: (value) => { visible = value; calls.push(["visible", value]); } };
       views.push(view); return view;
     }, ...extra });
   return { controller, owner, sender, frame, views, sessions, options, calls,
     invoke: (request) => controller.handle({ sender, senderFrame: frame }, request) };
 }
+
+test("diagnostics report actual native visibility without page details", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: true, visible: true, status: "empty", reason: "draw-enabled" });
+  await f.invoke({ action: "hide" });
+  assert.equal((await f.invoke({ action: "diagnostics" })).visible, false);
+  f.owner.isFocused = () => false;
+  await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: false, visible: false, status: "empty", reason: "unfocused" });
+});
 
 test("native guest never borrows the product session/preload", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });

@@ -46,7 +46,7 @@ export function playerState(value) {
 }
 
 const FIELDS = { open: ["action", "video"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"] };
+  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"], diagnostics: ["action"] };
 
 export function createMediaPlayer({ windows, fromWebContents, connection, lease, createView, openExternal,
   now = Date.now, platform = process.platform }) {
@@ -179,6 +179,13 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
           !hasExactKeys(request, FIELDS[request.action])) throw new Error("Invalid player command.");
       if (request.action === "close") { close(window); return { status: "closed" }; }
       let player = players.get(window);
+      if (request.action === "diagnostics") {
+        const focused = window.isFocused();
+        const visible = player && !player.view.webContents.isDestroyed() ? player.view.getVisible() : null;
+        const reason = !player ? "no guest" : !focused ? "unfocused" : player.status === "unavailable" ? "unavailable"
+          : visible === null ? "unknown" : visible ? "draw-enabled" : "hidden";
+        return { focused, visible, status: player?.status ?? "empty", reason };
+      }
       if (request.action === "volume") playerScript("volume", request.value);
       if (request.action === "open") {
         playerUrl(request.video);

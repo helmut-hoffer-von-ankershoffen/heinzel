@@ -31,7 +31,7 @@ const INPUT_CHANNELS = ["before-input-event", "input-event", "before-mouse-event
 export const AGENT_INPUT_MS = 1000;
 // The shape of each command; a command may also carry one optional key (a tab id, or a first address).
 const FIELDS = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-  state: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
+  state: ["action"], diagnostics: ["action"], back: ["action"], forward: ["action"], reload: ["action"], external: ["action"], clear: ["action"],
   tabs: ["action"], "new-tab": ["action"], "select-tab": ["action", "tab"], "close-tab": ["action", "tab"],
   "link-external": ["action"], "link-dismiss": ["action"],
   "take-over": ["action", "tab"], "hand-back": ["action", "tab"], "stop-agent": ["action", "tab"],
@@ -711,6 +711,14 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "close") { close(window); return { status: "closed" }; }
       if (action === "clear") await clear();
       let surface = surfaces.get(window);
+      if (action === "diagnostics") {
+        const selected = surface?.tabs.get(surface.selected);
+        const focused = window.isFocused();
+        const visible = selected && !selected.view.webContents.isDestroyed() ? selected.view.getVisible() : null;
+        const reason = !selected ? "no guest" : !focused ? "unfocused" : selected.status === "unavailable" ? "unavailable"
+          : selected.blank ? "blank" : !surface.shown ? "hidden by frontend" : visible ? "draw-enabled" : "unknown";
+        return { focused, visible, status: selected?.status ?? "empty", reason };
+      }
       if (action === "link-dismiss") { if (surface) surface.link = null; return state(window); }
       if (action === "link-external") {
         const link = surface?.link;
