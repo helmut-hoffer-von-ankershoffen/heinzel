@@ -175,6 +175,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/focused_coverage.py.lock": "pins the Core scoped coverage producer environment",
     "scripts/focused_gate.py": "verifies exact Core focused workflow results from a protected checkout",
     "scripts/focused_gate.py.lock": "pins the Core scoped coverage judge environment",
+    "scripts/template_coverage.yml.tmpl": "Core-only input to the template workflow generator",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",

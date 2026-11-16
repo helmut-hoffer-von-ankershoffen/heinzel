@@ -62,6 +62,15 @@ try {
   await createHeinzelWith(page, "Hello, demo models");
   const chat = page.getByRole("complementary", { name: "Chat" });
   assert.equal(await chat.getByRole("button", { name: /^Model and effort: / }).count(), 0);
+  // Observe from before Send: screenshots and a loaded runner can otherwise consume the whole stream between polls.
+  await chat.evaluate((root) => {
+    window.__pluginModelStreamSamples = [];
+    new MutationObserver(() => {
+      const partial = root.querySelector('[data-streaming][data-message-speaker="heinzel"] > div > div');
+      const text = partial?.textContent ?? "";
+      if (text.startsWith("Hello")) window.__pluginModelStreamSamples.push(text);
+    }).observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
   await chat.getByRole("button", { name: "Send" }).click();
   // The reply shows in a streaming Heinzel bubble while the model writes it, before the final message replaces it.
   const partial = chat.locator('[data-streaming][data-message-speaker="heinzel"]');
@@ -69,9 +78,7 @@ try {
   assert.match((await partial.textContent()) ?? "", /Hello/);
   const reply = page.getByText(/Hello from the demo models/);
   await reply.first().waitFor({ timeout: 30_000 });
-  const lengths = new Set();
   for (let step = 0; step < 40; step += 1) {
-    lengths.add(((await reply.first().textContent()) ?? "").length);
     if (step === 1) await page.screenshot({ path: join(shots, "plugin-models-5-streaming.png") });
     if ((await reply.first().textContent())?.includes("word by word")) break;
     await page.waitForTimeout(100);
@@ -81,7 +88,11 @@ try {
     .first()
     .waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(shots, "plugin-models-6-reply.png") });
-  const streamed = lengths.size > 1;
+  const streamed = await page.evaluate(() =>
+    window.__pluginModelStreamSamples.some((early, index, samples) =>
+      samples.slice(index + 1).some((later) => later.length > early.length && later.startsWith(early)),
+    ),
+  );
   console.log(
     JSON.stringify({ picked: true, unavailableMarked: true, answered: answer.startsWith("Answered: "), streamed }),
   );
