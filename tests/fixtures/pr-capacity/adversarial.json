@@ -1,0 +1,21 @@
+[
+  "original-workload-failure",
+  "assigned-runner",
+  "executed-step",
+  "missing-annotation",
+  "unknown-annotation",
+  "wrong-check-suite",
+  "wrong-head",
+  "wrong-base",
+  "wrong-tree",
+  "duplicate-job",
+  "missing-job",
+  "changed-checkout",
+  "coverage-failure",
+  "coverage-artifact-mismatch",
+  "candidate",
+  "extra-run",
+  "attempt-three",
+  "recovered-step-skipped",
+  "changed-original-carrier"
+]

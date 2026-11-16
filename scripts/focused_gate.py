@@ -462,8 +462,8 @@ def full_checkout(log: bytes) -> str:
     return matches[0].decode()
 
 
-def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str], bytes]) -> list[dict[str, Any]]:
-    """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
+def _full_pr_source(source: GateSource, base: str) -> None:
+    """Bind the full PR workload to protected execution inputs and the exact test merge."""
     require(source.run["event"] == "pull_request", "full PR evidence requires the PR event")
     associated = source.run["pull_requests"]
     require(len(associated) == 1 and associated[0]["base"]["sha"] == base, "full PR evidence has a stale tested base")
@@ -482,6 +482,11 @@ def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str]
         == [source.commit, base, source.source.head],
         "full CI merge parents differ from the exact base and head",
     )
+
+
+def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str], bytes]) -> list[dict[str, Any]]:
+    """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
+    _full_pr_source(source, base)
     jobs = quarantine_lane(jobs_for(gate, source), source.run["id"], source.source.head)
     inventory = expected_jobs("pull_request")
     inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
@@ -496,6 +501,259 @@ def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str]
     log = read(f"actions/jobs/{changed['id']}/logs")
     require(full_checkout(log) == source.commit, "full CI tested another merge commit")
     return jobs
+
+
+CAPACITY_NOT_ACQUIRED = "The job was not acquired by Runner of type hosted even after multiple attempts"
+CAPACITY_NOTICE = "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times."
+CAPACITY_ATTEMPT = 2
+_EXECUTION_FIELDS = (
+    "name",
+    "run_id",
+    "head_sha",
+    "status",
+    "conclusion",
+    "runner_id",
+    "runner_name",
+    "started_at",
+    "completed_at",
+    "steps",
+)
+_NOTIFIER_BUILD_STEPS = {
+    "Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+    "Unpack Heinzel Notifier into the package",
+    "Check the wheel ships Heinzel Notifier",
+}
+_RECOVERY_STEPS = {
+    "Test (macos-latest, Python 3.15, unit)": {
+        "Unit and integration tests (unit first, 4 workers, stop at the first failure)"
+    },
+    "make setup (macos-latest)": {"Run make setup", "Run make doctor"},
+    "Heinzel Notifier (macOS app)": {
+        "Run make notifier",
+        "Real launches leave no process behind (ADR 0043)",
+        "Pack the app, keeping its executable bit and signature",
+        CANDIDATE_UPLOAD_NAME,
+    },
+    "End-to-end web-3 (macos-latest)": {"Run make test-e2e SUITE=web-3"},
+    "CI OK": {"Fail if any required job failed", "Require the complete direct CI workload"},
+    "Build": _NOTIFIER_BUILD_STEPS | {"Run make build", CANDIDATE_UPLOAD_NAME},
+}
+
+
+def _capacity_annotations(gate: Gate, source: GateSource, job: dict[str, Any]) -> None:
+    require(
+        job.get("check_run_url") == f"{GITHUB}/repos/{REPOSITORY}/check-runs/{job['id']}",
+        "capacity annotation job identity differs",
+    )
+    check = gate.github(f"check-runs/{job['id']}")
+    require(
+        check.get("id") == job["id"]
+        and check.get("name") == job["name"]
+        and check.get("head_sha") == source.source.head
+        and check.get("status") == "completed"
+        and check.get("conclusion") == "cancelled"
+        and check.get("app", {}).get("id") == ACTIONS_APP_ID
+        and check.get("check_suite", {}).get("id") == source.run["check_suite_id"],
+        "capacity cancellation check is not authentic",
+    )
+    rows = gate.github(f"check-runs/{job['id']}/annotations?per_page=100&page=1")
+    require(isinstance(rows, list) and 0 < len(rows) < MAX_ARTIFACTS, "missing or unbounded capacity annotations")
+    allowed = {("failure", CAPACITY_NOT_ACQUIRED), ("notice", CAPACITY_NOTICE)}
+    require(
+        all(
+            isinstance(a, dict)
+            and a.get("path") == ".github"
+            and a.get("blob_href") == f"https://github.com/{REPOSITORY}/blob/{source.source.head}/.github"
+            and (a.get("annotation_level"), a.get("message")) in allowed
+            for a in rows
+        )
+        and {(a.get("annotation_level"), a.get("message")) for a in rows} == allowed,
+        "capacity annotations are incomplete or unexpected",
+    )
+
+
+def _successful_steps(job: dict[str, Any]) -> None:
+    require(
+        _positive(job.get("runner_id"))
+        and isinstance(job.get("runner_name"), str)
+        and job["runner_name"]
+        and isinstance(job.get("steps"), list)
+        and job["steps"]
+        and all(
+            isinstance(step, dict)
+            and step.get("status") == "completed"
+            and step.get("conclusion") in {"success", "skipped"}
+            for step in job["steps"]
+        ),
+        "successful workload has missing or failed steps",
+    )
+
+
+def _recovery_inventory(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
+    def second(path: str) -> Any:  # noqa: ANN401 - mirrors the existing GitHub transport
+        return gate.github(path.replace("/attempts/1/jobs?", "/attempts/2/jobs?"))
+
+    raw = job_inventory(second, source.run["id"])
+    jobs = [job for job in raw if not _is_published_check(gate, source, job)]
+    require(
+        all(
+            _positive(j.get("id"))
+            and j.get("run_id") == source.run["id"]
+            and j.get("head_sha") == source.source.head
+            and j.get("run_attempt") == CAPACITY_ATTEMPT
+            and j.get("status") == "completed"
+            for j in jobs
+        ),
+        "recovered job identity differs",
+    )
+    return jobs
+
+
+def verify_full_pr_capacity(gate: Gate, run_id: int, read: Callable[[str], bytes]) -> dict[str, Any]:  # noqa: C901, PLR0915 - one continuous evidence boundary
+    """Verify a separate capacity-recovered full PR proof, never release-candidate evidence."""
+    snapshot = pull_identity(gate, gate.head)
+    require(
+        not release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}),
+        "release candidates cannot use PR capacity proof",
+    )
+    run = _authenticated_run(gate, run_id, candidate_composite=True)
+    require(run["run_attempt"] == CAPACITY_ATTEMPT and run["event"] == "pull_request", "requires the second PR attempt")
+    runs = gate.github(f"actions/workflows/{CI_WORKFLOW_ID}/runs?head_sha={gate.head}&event=pull_request&per_page=2")
+    require(
+        runs.get("total_count") == 1
+        and len(runs.get("workflow_runs", [])) == 1
+        and runs["workflow_runs"][0]["id"] == run_id,
+        "ambiguous PR workflow runs",
+    )
+    source = _pr_source(gate, run, snapshot, candidate=False)
+    _full_pr_source(source, snapshot[2])
+    original_all = jobs_for(gate, source)
+    original = quarantine_lane(original_all, run_id, gate.head)
+    inventory = expected_jobs("pull_request")
+    inventory["Release candidate source"] = "skipped"
+    first = {j["name"]: j for j in original}
+    require(
+        len(first) == len(original) == len(inventory) and set(first) == set(inventory),
+        "original PR inventory is incomplete or duplicated",
+    )
+    recovered_all = _recovery_inventory(gate, source)
+    before = {j["name"]: j for j in original_all}
+    after = {j["name"]: j for j in recovered_all}
+    require(
+        len(before) == len(original_all) == len(after) == len(recovered_all) and set(before) == set(after),
+        "recovered PR inventory is incomplete or duplicated",
+    )
+    missing = set()
+    for name, job in first.items():
+        if inventory[name] == "skipped":
+            require(job.get("conclusion") == "skipped" and job.get("steps") == [], "skipped job executed")
+        elif job.get("conclusion") == "success":
+            _check(gate, source, job)
+            _successful_steps(job)
+        elif name == "CI OK":
+            check = gate.github(f"check-runs/{job['id']}")
+            require(
+                check.get("id") == job["id"]
+                and check.get("name") == name
+                and check.get("head_sha") == gate.head
+                and check.get("app", {}).get("id") == ACTIONS_APP_ID
+                and check.get("check_suite", {}).get("id") == run["check_suite_id"]
+                and check.get("status") == "completed"
+                and check.get("conclusion") == job.get("conclusion") == "failure"
+                and _positive(job.get("runner_id"))
+                and isinstance(job.get("steps"), list)
+                and all(
+                    s.get("status") == "completed" and s.get("conclusion") in {"success", "skipped", "failure"}
+                    for s in job["steps"]
+                )
+                and {s.get("name") for s in job["steps"] if s.get("conclusion") == "failure"}
+                == {"Fail if any required job failed"},
+                "unexpected original aggregate failure",
+            )
+        else:
+            require(
+                name in _RECOVERY_STEPS
+                and job.get("conclusion") == "cancelled"
+                and type(job.get("runner_id")) is int
+                and job["runner_id"] == 0
+                and job.get("runner_name") == ""
+                and job.get("steps") == []
+                and job.get("labels") == ["macos-latest"],
+                "job was not an unacquired macOS runner",
+            )
+            _capacity_annotations(gate, source, job)
+            missing.add(name)
+    require(missing and first["CI OK"]["conclusion"] == "failure", "no capacity recovery to prove")
+    replacements = missing | {"CI OK"}
+    if "Heinzel Notifier (macOS app)" in missing:
+        replacements.add("Build")
+        require(
+            {s["name"] for s in first["Build"]["steps"] if s.get("conclusion") == "skipped"} == _NOTIFIER_BUILD_STEPS,
+            "original Build closure differs",
+        )
+    for name, job in after.items():
+        old = before[name]
+        if name in replacements:
+            require(
+                job["id"] not in {entry["id"] for entry in original_all} and job.get("conclusion") == "success",
+                "missing successful replacement",
+            )
+            _check(gate, source, job)
+            _successful_steps(job)
+            require(
+                all(
+                    sum(s.get("name") == step and s.get("conclusion") == "success" for s in job["steps"]) == 1
+                    for step in _RECOVERY_STEPS[name]
+                ),
+                "recovered workload did not run its required steps",
+            )
+            if name != "CI OK":
+                require(
+                    full_checkout(read(f"actions/jobs/{job['id']}/logs")) == source.commit,
+                    "recovered workload checkout differs",
+                )
+        else:
+            require(all(job.get(key) == old.get(key) for key in _EXECUTION_FIELDS), "original execution changed")
+    if "Build" in replacements:
+        require(
+            all(
+                sum(s.get("name") == name and s.get("conclusion") == "success" for s in after["Build"]["steps"]) == 1
+                for name in _NOTIFIER_BUILD_STEPS
+            ),
+            "recovered Build lacks notifier checks",
+        )
+    changed = first["Changed paths"]
+    require(full_checkout(read(f"actions/jobs/{changed['id']}/logs")) == source.commit, "full CI checkout differs")
+    coverage = first["Coverage"]
+    artifacts = gate.github(f"actions/runs/{run_id}/artifacts?name={ARTIFACT}")
+    require(
+        artifacts["total_count"] == len(artifacts["artifacts"]) == 1
+        and artifacts["artifacts"][0]["name"] == ARTIFACT
+        and artifacts["artifacts"][0]["workflow_run"]["id"] == run_id,
+        "original coverage artifact missing",
+    )
+    total = whole_total(_verified_archive(read, coverage, artifacts["artifacts"][0], ARTIFACT, CANDIDATE_UPLOAD_NAME))
+    require(total >= red_below(Path(WORKFLOW).read_text()), "original coverage below floor")
+    tree = git("rev-parse", f"{gate.head}^{{tree}}").decode().strip()
+    require(valid_sha(tree), "invalid PR tree")
+    require(
+        pull_identity(gate, gate.head) == snapshot
+        and _authenticated_run(gate, run_id, candidate_composite=True) == run
+        and jobs_for(gate, source) == original_all
+        and _recovery_inventory(gate, source) == recovered_all,
+        "PR or run changed during recovery verification",
+    )
+    for name in missing:
+        _capacity_annotations(gate, source, first[name])
+    return {
+        "type": "full-pr-capacity/v1",
+        "head": gate.head,
+        "base": snapshot[2],
+        "tree": tree,
+        "run": run_id,
+        "attempt": 2,
+        "original_attempt": 1,
+    }
 
 
 def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes], *, slots: tuple[str, ...] = ()) -> str:
