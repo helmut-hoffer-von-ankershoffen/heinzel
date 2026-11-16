@@ -134,6 +134,17 @@ struct WidgetFencedEnrollment {
         } ?? .unavailable
     }
 
+    private func cleanPreviousPending(except attempt: String) -> Bool {
+        switch store.keychain.readStatus() {
+        case .unavailable: return false
+        case .missing: return true
+        case .data(let data):
+            guard let previous = try? JSONDecoder().decode(WidgetCredential.self, from: data) else { return false }
+            guard let old = previous.pendingAttempt, old != attempt else { return true }
+            return store.keychain.deletePending(old)
+        }
+    }
+
     func complete(_ data: Data, reservation: ActivityCatalog.Enrollment, now: Date = .now,
                   clock: () -> Date = { .now }) -> WidgetIssuanceResult {
         guard data.count <= 4096, let receipt = try? JSONDecoder().decode(FenceReceipt.self, from: data),
@@ -163,7 +174,8 @@ struct WidgetFencedEnrollment {
         guard credential.valid(at: now), let encoded = try? JSONEncoder().encode(credential),
               let installed = ActivityCatalog.completeEnrollment(url: store.catalogURL, expected: reservation,
                   workspaceID: workspaceID, generation: credential.generation, install: {
-                      credential.valid(at: clock()) && store.keychain.readPending(attempt) == pendingData && store.keychain.write(encoded)
+                      credential.valid(at: clock()) && store.keychain.readPending(attempt) == pendingData &&
+                      cleanPreviousPending(except: attempt) && store.keychain.write(encoded)
                   }) else { return .rejected }
         if !store.keychain.deletePending(attempt) {
             NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil)

@@ -191,6 +191,17 @@ struct WidgetCredentialStore {
         return WidgetCredentialCapture(activation: activation, credential: credential, writerToken: writerToken)
     }
 
+    /// Metadata for renewal only; never authorizes a widget request.
+    func renewalCredential(expected: ActivityCatalog.Activation, now: Date = .now) -> WidgetCredential? {
+        guard case .data(let data) = keychain.readStatus(),
+              let credential = try? JSONDecoder().decode(WidgetCredential.self, from: data),
+              credential.valid(at: credential.expiresAt <= now ? credential.expiresAt.addingTimeInterval(-1) : now),
+              credential.endpoint == expected.endpoint, credential.workspaceID == expected.workspaceID,
+              credential.generation == expected.credentialGeneration,
+              ActivityCatalog.activation(url: catalogURL) == expected else { return nil }
+        return credential
+    }
+
     /// Stale failures may revoke only the captured credential, including on retry.
     func invalidate(_ expected: ActivityCatalog.Activation) -> ActivityCatalog.ClearResult {
         let pending = ActivityCatalog.pendingEnrollment(url: catalogURL)

@@ -55,6 +55,7 @@ private final class NotificationCapture: @unchecked Sendable {
         let capture = store.capture(now: now)!
         precondition(capture.activation == bound && capture.credential == credential)
         precondition(store.capture(now: now.addingTimeInterval(3601)) == nil)
+        precondition(store.renewalCredential(expected: bound, now: now.addingTimeInterval(3601)) == credential)
         let snapshot = Data("fictional".utf8)
         precondition(catalog.publish(scope: bound.scope!, generation: UUID().uuidString, snapshot: snapshot,
                                      entries: [], expectedToken: capture.writerToken))
@@ -232,15 +233,36 @@ private final class NotificationCapture: @unchecked Sendable {
         guard case .installed(let cleanupActive) = cleanupEnrollment.complete(cleanupReceipt, reservation: cleanupAttempt,
                                                                               now: now, clock: { now }) else { fatalError() }
         precondition(cleanupKeychain.pending[cleanupWire] != nil)
+        let replacementPending = cleanupEnrollment.prepare(expected: cleanupActive)!
+        let replacementWire = replacementPending.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready = cleanupEnrollment.bind(status, reservation: replacementPending) else { fatalError() }
+        let replacementReceipt = Data(String(decoding: receipt, as: UTF8.self).replacingOccurrences(of: wireAttempt, with: replacementWire).utf8)
+        guard case .rejected = cleanupEnrollment.complete(replacementReceipt, reservation: replacementPending,
+                                                        now: now, clock: { now }) else { fatalError() }
+        precondition(cleanupKeychain.pending[cleanupWire] != nil)
+        cleanupKeychain.canDeletePending = true
+        guard case .installed(let replacementActive) = cleanupEnrollment.complete(replacementReceipt, reservation: replacementPending,
+                                                                                   now: now, clock: { now }) else { fatalError() }
+        precondition(cleanupKeychain.pending[cleanupWire] == nil)
+        precondition(cleanupStore.invalidate(replacementActive).complete)
+        // Exercise a fresh failed cleanup and its retry below.
+        let cleanupAgain = ActivityCatalog.activate(url: cleanupURL, endpoint: pending.endpoint)!
+        let retryAttempt = cleanupEnrollment.prepare(expected: cleanupAgain)!
+        let retryWire = retryAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready = cleanupEnrollment.bind(status, reservation: retryAttempt) else { fatalError() }
+        let retryReceipt = Data(String(decoding: receipt, as: UTF8.self).replacingOccurrences(of: wireAttempt, with: retryWire).utf8)
+        cleanupKeychain.canDeletePending = false
+        guard case .installed(let retryActive) = cleanupEnrollment.complete(retryReceipt, reservation: retryAttempt,
+                                                                            now: now, clock: { now }) else { fatalError() }
         cleanupKeychain.canRead = false
-        let lockedCleanup = cleanupStore.invalidate(cleanupActive)
+        let lockedCleanup = cleanupStore.invalidate(retryActive)
         precondition(lockedCleanup.revoked && !lockedCleanup.complete && cleanupKeychain.data != nil)
         cleanupKeychain.canRead = true
-        let blockedCleanup = cleanupStore.invalidate(cleanupActive)
+        let blockedCleanup = cleanupStore.invalidate(retryActive)
         precondition(blockedCleanup.revoked && !blockedCleanup.complete && cleanupKeychain.data != nil)
         cleanupKeychain.canDeletePending = true
-        precondition(cleanupStore.invalidate(cleanupActive).complete)
-        precondition(cleanupKeychain.pending[cleanupWire] == nil && cleanupKeychain.data == nil)
+        precondition(cleanupStore.invalidate(retryActive).complete)
+        precondition(cleanupKeychain.pending[retryWire] == nil && cleanupKeychain.data == nil)
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)

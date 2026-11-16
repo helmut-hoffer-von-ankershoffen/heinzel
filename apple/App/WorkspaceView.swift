@@ -802,8 +802,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 let active = ActivityCatalog.activation(url: store.catalogURL)
                 if let active, active.endpoint != endpoint.origin.absoluteString { return }
                 if let active, active.credentialGeneration != nil {
-                    guard let existing = store.capture() else { return }
-                    if existing.credential.expiresAt.timeIntervalSinceNow > 3600 { return }
+                    guard let existing = store.renewalCredential(expected: active) else { return }
+                    if existing.expiresAt.timeIntervalSinceNow > 3600 { return }
                 }
                 guard store.keychain.preflight(), current() else { return }
                 guard let expected = active ?? ActivityCatalog.activate(url: store.catalogURL, endpoint: endpoint.origin.absoluteString) else { return }
