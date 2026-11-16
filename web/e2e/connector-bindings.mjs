@@ -34,12 +34,13 @@ async function openConnectors() {
   await page.getByText("Loading choices…").first().waitFor({ state: "detached", timeout: 15000 });
 }
 
-/** The documents connectors switched on, in the order the switches show. */
+/** Read the checked switches and their labels from the same render, in display order. */
 async function documentsOn() {
-  const on = [];
-  for (const box of await documents().getByRole("checkbox").all())
-    if (await box.isChecked()) on.push(((await box.locator("xpath=..").textContent()) ?? "").split(" · ")[0].trim());
-  return on;
+  return documents().evaluate((row) =>
+    Array.from(row.querySelectorAll('input[type="checkbox"]:checked'), (box) =>
+      (box.labels?.[0]?.textContent ?? "").split(" · ")[0].trim(),
+    ),
+  );
 }
 
 async function bind(capability, adapter) {
