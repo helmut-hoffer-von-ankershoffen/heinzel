@@ -5,6 +5,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -222,6 +223,7 @@ def test_damaged_persisted_fence_does_not_become_a_fresh_pairing(tmp_path, damag
     persisted = data[0]["widget_fence"]
     if damage == "numeric_expiry":
         persisted["receipt"]["expires"] = 1800000000
+        data[0]["widget"]["expires"] = 1800000000
     elif damage == "wrong_revision":
         persisted["revision"] = "f" * 32
     else:
@@ -237,15 +239,25 @@ def test_separate_processes_cannot_both_rotate_same_revision(tmp_path):
     fence = devices.widget_fence_negotiate(device.id, paired_token, "owner")
     assert fence is not None
     script = (
-        "import sys; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
+        "import sys,time; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
         "from heinzel.heads.web._widget_fence import Request, FenceConflictError; "
         "d=Devices(Path(sys.argv[1])); r=Request(sys.argv[4],sys.argv[5],sys.argv[6]*32,'issue',sys.argv[6]*64); "
+        "Path(sys.argv[7],sys.argv[6]).touch(); "
+        "exec(\"while not Path(sys.argv[7],'release').exists():\\n time.sleep(0.01)\"); "
         "exec(\"try:\\n d.widget_fence_mutate(sys.argv[2],sys.argv[3],'owner',r); print('won')\\n"
         "except FenceConflictError:\\n print('lost')\")"
     )
     args = [sys.executable, "-c", script, str(devices.directory), device.id, paired_token, fence.epoch, fence.revision]
-    processes = [subprocess.Popen([*args, value], stdout=subprocess.PIPE, text=True) for value in ("a", "b")]
+    processes = [
+        subprocess.Popen([*args, value, str(tmp_path)], stdout=subprocess.PIPE, text=True) for value in ("a", "b")
+    ]
+    deadline = time.monotonic() + 5
+    while not all((tmp_path / value).exists() for value in ("a", "b")) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    ready = all((tmp_path / value).exists() for value in ("a", "b"))
+    (tmp_path / "release").touch()
     outcomes = [process.communicate(timeout=10)[0].strip() for process in processes]
+    assert ready
     assert all(process.returncode == 0 for process in processes)
     assert sorted(outcomes) == ["lost", "won"]
 
@@ -261,4 +273,15 @@ def test_legacy_rotation_racing_fence_negotiation_cannot_survive_it(tmp_path):
     assert fence is not None
     if legacy:
         assert devices.widget_check(legacy[0], "owner", legacy[1]) is None
+    assert devices.widget_issue(device.id, "owner", token) is None
+
+
+@pytest.mark.parametrize("legacy_first", [True, False])
+def test_legacy_rotation_and_negotiation_in_both_orders(tmp_path, legacy_first):
+    devices = Devices(tmp_path / "devices")
+    device, token = devices.pair("phone")
+    before = devices.widget_issue(device.id, "owner", token) if legacy_first else None
+    assert devices.widget_fence_negotiate(device.id, token, "owner") is not None
+    if before:
+        assert devices.widget_check(before[0], "owner", before[1]) is None
     assert devices.widget_issue(device.id, "owner", token) is None
