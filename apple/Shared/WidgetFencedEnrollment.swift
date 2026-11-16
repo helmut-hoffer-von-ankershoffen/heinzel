@@ -101,15 +101,33 @@ struct WidgetFencedEnrollment {
         return reservation
     }
 
+    /// Clear only this reservation. Preserve any issued request outside Keychain
+    /// before deleting its secret; the independent fence remains unresolved.
+    func cancel(_ reservation: ActivityCatalog.Enrollment) -> ActivityCatalog.ClearResult {
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        let pending: PendingFence? = ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
+            guard let data = store.keychain.readPending(attempt),
+                  let value = try? JSONDecoder().decode(PendingFence.self, from: data),
+                  value.valid, value.reservation == reservation else { return nil }
+            return value
+        }
+        var canDeletePending = pending != nil || ActivityCatalog.enrollmentNeverSent(url: store.catalogURL, expected: reservation)
+        if let pending, let request = pending.requestData, let workspace = pending.workspaceID {
+            canDeletePending = ActivityCatalog.armEnrollment(url: store.catalogURL, expected: reservation,
+                                                              workspaceID: workspace, request: request)
+        }
+        return ActivityCatalog.clearEnrollment(url: store.catalogURL, expected: reservation) {
+            let deleted = canDeletePending && store.keychain.deletePending(attempt)
+            let activeDeleted = canDeletePending && store.purgeCredential()
+            return deleted && activeDeleted
+        }
+    }
+
     /// The exact committed request is persisted before it can be sent or retried.
     func bind(_ data: Data, reservation: ActivityCatalog.Enrollment) -> WidgetFenceBinding {
         guard data.count <= 4096, let status = try? JSONDecoder().decode(FenceStatus.self, from: data), status.valid else { return .unavailable }
         if let identity = reservation.previous.workspaceID, identity != status.workspaceID {
-            let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
-            let result = ActivityCatalog.rejectEnrollmentIdentity(url: store.catalogURL, expected: reservation) {
-                store.keychain.deletePending(attempt) && store.purgeCredential()
-            }
-            return .identityMismatch(result)
+            return .identityMismatch(cancel(reservation))
         }
         let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
         let binding: WidgetFenceBinding = ActivityCatalog.withEnrollment(url: store.catalogURL, expected: reservation) {
@@ -168,10 +186,7 @@ struct WidgetFencedEnrollment {
               receipt.epoch == request.epoch, receipt.attempt == request.attempt, receipt.operation == "issue",
               receipt.revision != request.revision else { return .rejected }
         if receipt.workspaceID != workspaceID {
-            let result = ActivityCatalog.rejectEnrollmentIdentity(url: store.catalogURL, expected: reservation) {
-                store.keychain.deletePending(attempt) && store.purgeCredential()
-            }
-            return .identityMismatch(result)
+            return .identityMismatch(cancel(reservation))
         }
         let credential = WidgetCredential(endpoint: reservation.previous.endpoint, workspaceID: workspaceID,
                                           generation: pending.generation, token: pending.secret, expiresAt: expiry,

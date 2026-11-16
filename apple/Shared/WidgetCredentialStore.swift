@@ -205,10 +205,15 @@ struct WidgetCredentialStore {
     /// Stale failures may revoke only the captured credential, including on retry.
     func invalidate(_ expected: ActivityCatalog.Activation) -> ActivityCatalog.ClearResult {
         let pending = ActivityCatalog.pendingEnrollment(url: catalogURL)
+        let recorded = pending.map { ActivityCatalog.enrollmentHasRecordedPhase(url: catalogURL, expected: $0) } ?? false
         return ActivityCatalog.invalidate(url: catalogURL, expected: expected) {
-            if let pending, pending.previous == expected,
-               !keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased()) { return false }
-            return purgeCredential()
+            var pendingDeleted = true
+            if let pending, pending.previous == expected {
+                guard recorded else { return false }
+                pendingDeleted = keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased())
+            }
+            let activeDeleted = purgeCredential()
+            return pendingDeleted && activeDeleted
         }
     }
 
@@ -245,9 +250,7 @@ struct WidgetCredentialStore {
             return invalidate(expected)
         }
         if let pending = ActivityCatalog.pendingEnrollment(url: catalogURL) {
-            return ActivityCatalog.clearEnrollment(url: catalogURL, expected: pending) {
-                keychain.deletePending(pending.id.replacingOccurrences(of: "-", with: "").lowercased()) && purgeCredential()
-            }
+            return WidgetFencedEnrollment(store: self).cancel(pending)
         }
         return ActivityCatalog.ClearResult(revoked: false, purged: false)
     }

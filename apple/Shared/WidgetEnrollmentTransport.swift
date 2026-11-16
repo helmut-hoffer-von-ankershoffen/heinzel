@@ -132,7 +132,7 @@ enum WidgetEnrollmentOutcome {
         let status = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint, isCurrent: current)
         guard current() else { return .pending }
         switch status {
-        case .unauthorized: return .unauthorized
+        case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
         case .conflict: return .conflict
         case .unavailable: return .pending
         case .ok(let data):
@@ -144,7 +144,7 @@ enum WidgetEnrollmentOutcome {
                 let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: request, in: view, endpoint: endpoint, isCurrent: current)
                 guard current() else { return .pending }
                 switch response {
-                case .unauthorized: return .unauthorized
+                case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
                 case .conflict: return .conflict
                 case .unavailable: return .pending
                 case .ok(let receipt):

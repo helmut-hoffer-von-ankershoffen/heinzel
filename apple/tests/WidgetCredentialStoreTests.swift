@@ -119,30 +119,16 @@ private final class NotificationCapture: @unchecked Sendable {
         let armedData = try Data(contentsOf: journalURL)
         let armedJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self, from: armedData)
         precondition(armedJournal.phase == .armed && armedJournal.request == armedRequest && armedJournal.workspaceID == credential.workspaceID)
-        precondition(!String(decoding: armedData, as: UTF8.self).contains("hzw_"))
+        let firstWire = firstAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        let pendingObject = try JSONSerialization.jsonObject(with: issuedKeychain.pending[firstWire]!) as! [String: Any]
+        let pendingSecret = pendingObject["secret"] as! String
+        precondition(!String(decoding: armedRequest, as: UTF8.self).contains(pendingSecret))
         precondition(!ActivityCatalog.armEnrollment(url: issuedURL, expected: firstAttempt, workspaceID: credential.workspaceID,
                                                     request: Data("different".utf8)))
         guard case .installed(let installed) = issuedEnrollment.complete(fixtureReceipt(firstAttempt), reservation: firstAttempt, now: now, clock: { now }) else { fatalError() }
         precondition(observed.ids == [installed.id] && !observed.ids.contains(credential.token))
         precondition(issuedStore.capture(now: now)?.activation == installed)
-        let wrongIdentity = Data(String(decoding: fixtureStatus, as: UTF8.self)
-            .replacingOccurrences(of: credential.workspaceID, with: String(repeating: "b", count: 64)).utf8)
-        let mismatchAttempt = issuedEnrollment.prepare(expected: installed)!
-        var issuedLock: OpaquePointer?
-        precondition(sqlite3_open(issuedURL.path, &issuedLock) == SQLITE_OK)
-        precondition(sqlite3_exec(issuedLock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
-        guard case .identityMismatch(let mismatchResult) = issuedEnrollment.bind(wrongIdentity, reservation: mismatchAttempt) else { fatalError() }
-        precondition(mismatchResult.revoked && !mismatchResult.complete && issuedKeychain.data == nil)
-        precondition(sqlite3_exec(issuedLock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
-        sqlite3_close(issuedLock)
-        precondition(ActivityCatalog.pendingCleanup(url: issuedURL) == installed)
-        precondition(issuedStore.invalidate(installed).complete)
-        let again = ActivityCatalog.activate(url: issuedURL, endpoint: pending.endpoint)!
-        let replacementAttempt = issuedEnrollment.prepare(expected: again)!
-        guard case .ready = issuedEnrollment.bind(fixtureStatus, reservation: replacementAttempt) else { fatalError() }
-        guard case .installed(let replacement) = issuedEnrollment.complete(fixtureReceipt(replacementAttempt), reservation: replacementAttempt, now: now, clock: { now }) else { fatalError() }
-        guard case .identityMismatch(let staleMismatch) = issuedEnrollment.bind(wrongIdentity, reservation: mismatchAttempt) else { fatalError() }
-        precondition(staleMismatch.stale && issuedStore.capture(now: now)?.activation == replacement)
+        let replacement = installed
         issuedKeychain.canPreflight = false
         precondition(issuedStore.beginEnrollment(expected: replacement) == nil)
         precondition(issuedStore.capture(now: now)?.activation == replacement)
@@ -272,6 +258,80 @@ private final class NotificationCapture: @unchecked Sendable {
         cleanupKeychain.canDeletePending = true
         precondition(cleanupStore.invalidate(retryActive).complete)
         precondition(cleanupKeychain.pending[retryWire] == nil && cleanupKeychain.data == nil)
+        let cancelledURL = directory.appendingPathComponent("cancelled.sqlite")
+        let cancelledKeychain = FakeKeychain()
+        let cancelledStore = WidgetCredentialStore(catalogURL: cancelledURL, keychain: cancelledKeychain)
+        let cancelledEnrollment = WidgetFencedEnrollment(store: cancelledStore)
+        let cancelledInitial = ActivityCatalog.activate(url: cancelledURL, endpoint: pending.endpoint)!
+        let cancelledAttempt = cancelledEnrollment.prepare(expected: cancelledInitial)!
+        let cancelledWire = cancelledAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready(let cancelledRequest) = cancelledEnrollment.bind(fixtureStatus, reservation: cancelledAttempt) else { fatalError() }
+        var cancelledLock: OpaquePointer?
+        precondition(sqlite3_open(cancelledURL.path, &cancelledLock) == SQLITE_OK)
+        precondition(sqlite3_exec(cancelledLock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        let cancelled = cancelledEnrollment.cancel(cancelledAttempt)
+        precondition(cancelled.revoked && !cancelled.complete && cancelledKeychain.pending[cancelledWire] == nil)
+        let cancelledJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
+            from: Data(contentsOf: cancelledURL.appendingPathExtension("enrollment-pending")))
+        precondition(cancelledJournal.phase == .armed && cancelledJournal.request == cancelledRequest)
+        precondition(sqlite3_exec(cancelledLock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(cancelledLock)
+        precondition(cancelledStore.invalidate(cancelledInitial).complete)
+        precondition(ActivityCatalog.pendingEnrollment(url: cancelledURL) == cancelledAttempt)
+        let replacementAfterCancel = ActivityCatalog.activate(url: cancelledURL, endpoint: pending.endpoint)!
+        precondition(cancelledEnrollment.cancel(cancelledAttempt).stale)
+        precondition(ActivityCatalog.activation(url: cancelledURL) == replacementAfterCancel)
+        let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
+        let lockedCancelKeychain = FakeKeychain()
+        let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)
+        let lockedCancelEnrollment = WidgetFencedEnrollment(store: lockedCancelStore)
+        let lockedCancelInitial = ActivityCatalog.activate(url: lockedCancelURL, endpoint: pending.endpoint)!
+        let lockedCancelAttempt = lockedCancelEnrollment.prepare(expected: lockedCancelInitial)!
+        let lockedCancelWire = lockedCancelAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready(let lockedCancelRequest) = lockedCancelEnrollment.bind(fixtureStatus, reservation: lockedCancelAttempt) else { fatalError() }
+        lockedCancelKeychain.canDeletePending = false
+        let refusedDelete = lockedCancelEnrollment.cancel(lockedCancelAttempt)
+        precondition(refusedDelete.revoked && !refusedDelete.complete && lockedCancelKeychain.pending[lockedCancelWire] != nil)
+        lockedCancelKeychain.canDeletePending = true
+        precondition(lockedCancelStore.invalidate(lockedCancelInitial).complete)
+        precondition(lockedCancelKeychain.pending[lockedCancelWire] == nil)
+        let retainedJournal = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
+            from: Data(contentsOf: lockedCancelURL.appendingPathExtension("enrollment-pending")))
+        precondition(retainedJournal.request == lockedCancelRequest && retainedJournal.phase == .armed)
+        let legacyURL = directory.appendingPathComponent("legacy-cancel.sqlite")
+        let legacyKeychain = FakeKeychain()
+        let legacyStore = WidgetCredentialStore(catalogURL: legacyURL, keychain: legacyKeychain)
+        let legacyEnrollment = WidgetFencedEnrollment(store: legacyStore)
+        let legacyInitial = ActivityCatalog.activate(url: legacyURL, endpoint: pending.endpoint)!
+        let legacyAttempt = legacyEnrollment.prepare(expected: legacyInitial)!
+        guard case .ready(let legacyRequest) = legacyEnrollment.bind(fixtureStatus, reservation: legacyAttempt) else { fatalError() }
+        try JSONEncoder().encode(legacyAttempt).write(to: legacyURL.appendingPathExtension("enrollment-pending"))
+        precondition(legacyEnrollment.cancel(legacyAttempt).complete)
+        let migrated = try JSONDecoder().decode(ActivityCatalog.EnrollmentJournal.self,
+            from: Data(contentsOf: legacyURL.appendingPathExtension("enrollment-pending")))
+        precondition(migrated.phase == .armed && migrated.request == legacyRequest)
+        let mismatchURL = directory.appendingPathComponent("mismatch.sqlite")
+        let mismatchKeychain = FakeKeychain()
+        let mismatchStore = WidgetCredentialStore(catalogURL: mismatchURL, keychain: mismatchKeychain)
+        let mismatchEnrollment = WidgetFencedEnrollment(store: mismatchStore)
+        let mismatchInitial = ActivityCatalog.activate(url: mismatchURL, endpoint: pending.endpoint)!
+        let mismatchActive = seed(credential, expected: mismatchInitial, at: mismatchURL, in: mismatchKeychain)
+        let mismatchAttempt = mismatchEnrollment.prepare(expected: mismatchActive)!
+        let wrongIdentity = Data(String(decoding: fixtureStatus, as: UTF8.self)
+            .replacingOccurrences(of: credential.workspaceID, with: String(repeating: "b", count: 64)).utf8)
+        var mismatchLock: OpaquePointer?
+        precondition(sqlite3_open(mismatchURL.path, &mismatchLock) == SQLITE_OK)
+        precondition(sqlite3_exec(mismatchLock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        guard case .identityMismatch(let mismatchResult) = mismatchEnrollment.bind(wrongIdentity, reservation: mismatchAttempt) else { fatalError() }
+        precondition(mismatchResult.revoked && !mismatchResult.complete && mismatchKeychain.data == nil)
+        precondition(sqlite3_exec(mismatchLock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(mismatchLock)
+        precondition(mismatchStore.invalidate(mismatchActive).complete)
+        precondition(ActivityCatalog.pendingEnrollment(url: mismatchURL) == mismatchAttempt)
+        let mismatchReplacement = ActivityCatalog.activate(url: mismatchURL, endpoint: pending.endpoint)!
+        let replacementBound = seed(credential, expected: mismatchReplacement, at: mismatchURL, in: mismatchKeychain)
+        guard case .identityMismatch(let staleMismatch) = mismatchEnrollment.bind(wrongIdentity, reservation: mismatchAttempt) else { fatalError() }
+        precondition(staleMismatch.stale && mismatchStore.capture(now: now)?.activation == replacementBound)
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)
