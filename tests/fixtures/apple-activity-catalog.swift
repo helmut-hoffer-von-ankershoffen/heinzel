@@ -66,6 +66,13 @@ import SQLite3
                     return false
                 })
                 fatalError("interrupted invalidation unexpectedly returned")
+            } else if mode == "reserve" {
+                let name = CommandLine.arguments[3]
+                let expected = try JSONDecoder().decode(ActivityCatalog.Activation.self, from: Data(contentsOf: flag(url, "activation")))
+                try Data().write(to: flag(url, "reserve-ready-" + name))
+                waitFor(flag(url, "reserve-release"))
+                let result = ActivityCatalog.reserveEnrollment(url: url, expected: expected)
+                try Data((result == nil ? "lost" : "won").utf8).write(to: flag(url, "reserve-result-" + name))
             }
             return
         }
@@ -203,6 +210,21 @@ import SQLite3
         let afterCrash = ActivityCatalog.refreshToken(url: url)!
         precondition(!store.publish(scope: active.scope!, generation: "after-crash", snapshot: Data("old".utf8), entries: [], expectedToken: afterCrash))
         precondition(ActivityCatalog.invalidate(url: url, expected: active, deleteCredential: { true }).complete)
+        let toReserve = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        try JSONEncoder().encode(toReserve).write(to: flag(url, "activation"))
+        let reservations = ["one", "two"].map { name -> Process in
+            let process = Process()
+            process.executableURL = writer.executableURL
+            process.arguments = [url.path, "reserve", name]
+            return process
+        }
+        for process in reservations { try process.run() }
+        waitFor(flag(url, "reserve-ready-one")); waitFor(flag(url, "reserve-ready-two"))
+        try Data().write(to: flag(url, "reserve-release"))
+        for process in reservations { process.waitUntilExit(); precondition(process.terminationStatus == 0) }
+        let outcomes = try ["one", "two"].map { try String(contentsOf: flag(url, "reserve-result-" + $0), encoding: .utf8) }
+        precondition(outcomes.filter { $0 == "won" }.count == 1)
+        precondition(ActivityCatalog.pendingEnrollment(url: url)?.previous == toReserve)
         print("catalog checks passed")
     }
 }

@@ -38,6 +38,7 @@ private struct IssuedWidgetCredential: Decodable {
 }
 
 protocol WidgetCredentialKeychain {
+    func preflight() -> Bool
     func read() -> Data?
     func write(_ data: Data) -> Bool
     func delete() -> Bool
@@ -80,6 +81,16 @@ struct SharedWidgetKeychain: WidgetCredentialKeychain {
         return data
     }
 
+    func preflight() -> Bool {
+        var probe = query
+        probe[kSecAttrAccount as String] = "probe-" + UUID().uuidString
+        var attributes = probe
+        attributes[kSecValueData as String] = Data([0])
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else { return false }
+        return SecItemDelete(probe as CFDictionary) == errSecSuccess
+    }
+
     func write(_ data: Data) -> Bool {
         guard data.count <= 4096 else { return false }
         let attributes: [String: Any] = [kSecValueData as String: data,
@@ -112,31 +123,32 @@ enum WidgetIssuanceResult {
 }
 
 struct WidgetCredentialStore {
+    static let activationChanged = Notification.Name("HeinzelWidgetActivationChanged")
     let catalogURL: URL
     let keychain: any WidgetCredentialKeychain
 
-    /// Accept only the limited issuance response after the caller has bounded
-    /// the transport. Paired-device and WebKit session credentials stay in WebKit.
-    func installIssued(_ data: Data, expected: ActivityCatalog.Activation,
-                       now: Date = .now) -> WidgetIssuanceResult {
-        guard data.count <= 4096, let issued = try? JSONDecoder().decode(IssuedWidgetCredential.self, from: data),
-              let expiry = issued.expiry else { return .rejected }
-        let credential = WidgetCredential(endpoint: expected.endpoint, workspaceID: issued.workspaceID,
-            generation: UUID().uuidString, token: issued.token, expiresAt: expiry)
-        guard credential.valid(at: now) else { return .rejected }
-        if let established = expected.workspaceID, established != issued.workspaceID {
-            return .identityMismatch(invalidate(expected))
-        }
-        guard let installed = install(credential, expected: expected, now: now) else { return .rejected }
-        return .installed(installed)
+    /// Reserve before any network call. Pending attempts are never retried
+    /// automatically because a lost response may already have rotated Core.
+    func beginEnrollment(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
+        guard keychain.preflight() else { return nil }
+        return ActivityCatalog.reserveEnrollment(url: catalogURL, expected: expected)
     }
 
-    func install(_ credential: WidgetCredential, expected: ActivityCatalog.Activation,
-                 now: Date = .now) -> ActivityCatalog.Activation? {
-        guard credential.valid(at: now), credential.endpoint == expected.endpoint,
-              let data = try? JSONEncoder().encode(credential) else { return nil }
-        return ActivityCatalog.installCredential(url: catalogURL, expected: expected,
-            workspaceID: credential.workspaceID, generation: credential.generation) { keychain.write(data) }
+    func completeIssued(_ data: Data, expected: ActivityCatalog.Enrollment,
+                        now: Date = .now) -> WidgetIssuanceResult {
+        guard data.count <= 4096, let issued = try? JSONDecoder().decode(IssuedWidgetCredential.self, from: data),
+              let expiry = issued.expiry else { return .rejected }
+        let credential = WidgetCredential(endpoint: expected.previous.endpoint, workspaceID: issued.workspaceID,
+            generation: UUID().uuidString, token: issued.token, expiresAt: expiry)
+        guard credential.valid(at: now) else { return .rejected }
+        if let established = expected.previous.workspaceID, established != issued.workspaceID {
+            return .identityMismatch(ActivityCatalog.rejectEnrollmentIdentity(url: catalogURL, expected: expected) { keychain.delete() })
+        }
+        guard let encoded = try? JSONEncoder().encode(credential),
+              let installed = ActivityCatalog.completeEnrollment(url: catalogURL, expected: expected,
+                workspaceID: credential.workspaceID, generation: credential.generation, install: { keychain.write(encoded) }) else { return .rejected }
+        NotificationCenter.default.post(name: Self.activationChanged, object: installed.id)
+        return .installed(installed)
     }
 
     func capture(now: Date = .now) -> WidgetCredentialCapture? {

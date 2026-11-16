@@ -31,6 +31,7 @@ final class ActivityCatalog {
         var activation: Activation? = nil
         var revoked: Bool? = nil
         var cleanup: Activation? = nil
+        var enrollment: Enrollment? = nil
     }
 
     /// Non-secret authority shared by the app and extension. Secrets stay in Keychain.
@@ -45,6 +46,13 @@ final class ActivityCatalog {
             let input = Data((endpoint + "\n" + workspaceID).utf8)
             return SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
         }
+    }
+
+    /// A reserved attempt blocks old captures while a destructive Core rotation
+    /// is in flight. It remains pending after a crash or unknown network outcome.
+    struct Enrollment: Codable, Equatable {
+        let id: String
+        let previous: Activation
     }
     private struct WriterToken: Codable, Equatable {
         let authority: Data
@@ -128,7 +136,8 @@ final class ActivityCatalog {
     static func activation(url: URL) -> Activation? {
         withWriterLock(url: url, failure: nil) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
-                  let current = try? JSONDecoder().decode(Authority.self, from: data) else { return nil }
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.enrollment == nil else { return nil }
             return current.activation
         }
     }
@@ -148,9 +157,70 @@ final class ActivityCatalog {
             guard FileManager.default.fileExists(atPath: secureModeURL(for: url).path) else { return legacy }
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
-                  current.revoked != true, let activation = current.activation,
+                  current.revoked != true, current.enrollment == nil, let activation = current.activation,
                   activation.endpoint == endpoint else { return nil }
             return activation.scope
+        }
+    }
+
+    static func reserveEnrollment(url: URL, expected: Activation) -> Enrollment? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.activation == expected, current.revoked != true, current.enrollment == nil else { return nil }
+            let attempt = Enrollment(id: UUID().uuidString, previous: expected)
+            let pending = Authority(scope: "", generation: UUID().uuidString, activation: expected, enrollment: attempt)
+            guard let encoded = try? JSONEncoder().encode(pending),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return nil }
+            return attempt
+        }
+    }
+
+    /// This handle is non-authorizing. A pending attempt must not cause an
+    /// automatic retry, because Core may already have rotated its credential.
+    static func pendingEnrollment(url: URL) -> Enrollment? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else { return nil }
+            return current.enrollment
+        }
+    }
+
+    static func completeEnrollment(url: URL, expected: Enrollment, workspaceID: String,
+                                   generation: String, install: () -> Bool) -> Activation? {
+        guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
+              expected.previous.workspaceID == nil || expected.previous.workspaceID == workspaceID,
+              UUID(uuidString: generation) != nil, generation != expected.previous.credentialGeneration else { return nil }
+        return withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.enrollment == expected, current.activation == expected.previous,
+                  current.revoked != true, install() else { return nil }
+            let next = Activation(id: UUID().uuidString, endpoint: expected.previous.endpoint,
+                                  workspaceID: workspaceID, credentialGeneration: generation)
+            let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
+            guard let encoded = try? JSONEncoder().encode(authority),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return nil }
+            return next
+        }
+    }
+
+    static func rejectEnrollmentIdentity(url: URL, expected: Enrollment,
+                                         deleteCredential: () -> Bool) -> ClearResult {
+        withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            guard let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else {
+                return ClearResult(revoked: false, purged: false)
+            }
+            guard current.enrollment == expected, current.activation == expected.previous else {
+                return ClearResult(revoked: false, purged: false, stale: true)
+            }
+            let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
+            guard let encoded = try? JSONEncoder().encode(tombstone),
+                  writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            let deleted = deleteCredential()
+            let purged = ActivityCatalog(url: url)?.purge() ?? false
+            return ClearResult(revoked: true, purged: deleted && purged)
         }
     }
 
@@ -184,7 +254,7 @@ final class ActivityCatalog {
         return withWriterLock(url: url, failure: nil) {
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
-                  current.activation == expected, install() else { return nil }
+                  current.activation == expected, current.enrollment == nil, install() else { return nil }
             // Every successful installation creates a distinct CAS identity,
             // even if a caller later reuses an older credential generation.
             let next = Activation(id: UUID().uuidString, endpoint: expected.endpoint,
@@ -204,7 +274,7 @@ final class ActivityCatalog {
                   let current = try? JSONDecoder().decode(Authority.self, from: data) else {
                 return ClearResult(revoked: false, purged: false)
             }
-            if current.activation == expected {
+            if current.activation == expected && current.enrollment == nil {
                 let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected)
                 guard let encoded = try? JSONEncoder().encode(tombstone),
                       writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
@@ -277,6 +347,7 @@ final class ActivityCatalog {
         guard let token = try? JSONDecoder().decode(WriterToken.self, from: expectedToken) else { return false }
         let previous = try? JSONDecoder().decode(Authority.self, from: token.authority)
         guard token.authority.isEmpty || previous != nil else { return false }
+        guard previous?.enrollment == nil else { return false }
         if FileManager.default.fileExists(atPath: Self.secureModeURL(for: databaseURL).path),
            previous?.activation == nil { return false }
         guard previous?.revoked != true else { return false }

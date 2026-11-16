@@ -30,3 +30,17 @@ def test_webview_auth_context_is_immutable_and_main_frame_scoped() -> None:
     failed = navigation.split("private func pageFailed", 1)[1]
     assert "failure.code == NSURLErrorUserAuthenticationRequired" in failed
     assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in failed
+
+
+def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
+    handler = app.split(
+        ".onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.activationChanged)", 1
+    )[1]
+    handler = handler.split("\n        }", 1)[0]
+    assert "receive(on: RunLoop.main)" in handler
+    assert "id != handledWidgetActivation" in handler
+    assert "activation.id == id" in handler
+    assert "activation.endpoint == endpoint.origin.absoluteString" in handler
+    assert "retryWorkspace()" in handler
+    assert ".id(revision)" in app

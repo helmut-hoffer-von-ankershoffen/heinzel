@@ -2,6 +2,7 @@ import Foundation
 
 private final class TransportKeychain: WidgetCredentialKeychain, @unchecked Sendable {
     var data: Data?
+    func preflight() -> Bool { true }
     func read() -> Data? { data }
     func write(_ data: Data) -> Bool { self.data = data; return true }
     func delete() -> Bool { data = nil; return true }
@@ -44,10 +45,15 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         let store = WidgetCredentialStore(catalogURL: url, keychain: keychain)
         let workspace = String(repeating: "a", count: 64)
         let pending = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
+        func seed(_ credential: WidgetCredential, expected: ActivityCatalog.Activation) -> ActivityCatalog.Activation? {
+            let data = try! JSONEncoder().encode(credential)
+            return ActivityCatalog.installCredential(url: url, expected: expected, workspaceID: credential.workspaceID,
+                                                     generation: credential.generation, install: { keychain.write(data) })
+        }
         let credential = WidgetCredential(endpoint: pending.endpoint, workspaceID: workspace,
             generation: UUID().uuidString, token: "hzw_" + String(repeating: "x", count: 40),
             expiresAt: .now.addingTimeInterval(3600))
-        let bound = store.install(credential, expected: pending)!
+        let bound = seed(credential, expected: pending)!
         let client = WidgetSnapshotClient(store: store, protocolClasses: [WidgetStubProtocol.self])
         let generated = ISO8601DateFormatter().string(from: .now)
         let payload = Data("""
@@ -82,7 +88,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         WidgetStubProtocol.handle = { _ in
             let replacement = WidgetCredential(endpoint: credential.endpoint, workspaceID: workspace,
                 generation: UUID().uuidString, token: credential.token, expiresAt: credential.expiresAt)
-            precondition(store.install(replacement, expected: bound) != nil)
+            precondition(seed(replacement, expected: bound) != nil)
             return (401, "application/json", Data())
         }
         let stale401 = await client.fetch()
@@ -94,7 +100,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         let newPending = ActivityCatalog.activate(url: url, endpoint: pending.endpoint)!
         let mismatchCredential = WidgetCredential(endpoint: pending.endpoint, workspaceID: workspace,
             generation: UUID().uuidString, token: credential.token, expiresAt: credential.expiresAt)
-        precondition(store.install(mismatchCredential, expected: newPending) != nil)
+        precondition(seed(mismatchCredential, expected: newPending) != nil)
         let mismatch = Data(String(decoding: payload, as: UTF8.self)
             .replacingOccurrences(of: workspace, with: String(repeating: "b", count: 64)).utf8)
         WidgetStubProtocol.handle = { _ in (200, "application/json", mismatch) }
