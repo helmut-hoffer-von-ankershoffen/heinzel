@@ -253,7 +253,11 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
-    @State private var connectionSheetHeight: CGFloat = 390
+    @State private var connectionSheetContentHeight: CGFloat = 350
+    @State private var connectionSheetFooterHeight: CGFloat = 40
+    private var connectionSheetHeight: CGFloat {
+        min(520, max(300, (connectionSheetContentHeight + connectionSheetFooterHeight).rounded(.up)))
+    }
     @State private var showDisconnectConfirmation = false
     @State private var choosingWorkspace = false
     @State private var showConnectionHelp = false
@@ -565,11 +569,13 @@ struct ConnectionView: View {
                     }
                     .connectionPanel()
                 }
-                ConnectionFooter()
             }
             .frame(maxWidth: 420, alignment: .leading)
             .padding(24)
             .frame(maxWidth: .infinity)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ConnectionFooter().background(Color("StartupBackground"))
         }
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
@@ -1022,15 +1028,21 @@ struct ConnectionView: View {
                     .connectionPanel()
                 }
                 #endif
-                ConnectionFooter()
             }
             .frame(maxWidth: 420, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                connectionSheetHeight = min(520, max(300, height.rounded(.up)))
+                connectionSheetContentHeight = height
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ConnectionFooter()
+                .background(Color("StartupBackground"))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    connectionSheetFooterHeight = height
+                }
         }
         #if os(macOS)
         .frame(width: 460, height: connectionSheetHeight)
