@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
-import { openDetails } from "./chat-ready.mjs";
+import { appTakesInput, openAppWithSetupClosed, openDetails } from "./chat-ready.mjs";
 
 const url = new URL(process.argv[2]);
 const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
@@ -10,11 +10,7 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
 try {
-  await page.goto(url.href);
-  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  const setup = page.getByRole("dialog");
-  await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
+  await openAppWithSetupClosed(page, url);
   const message = page.getByLabel(/^Message /);
   // The face in the chat's header sits in the switcher button, which carries the name (ADR 0157).
   const header = page
@@ -59,6 +55,7 @@ try {
   await editor.getByRole("button", { name: "Undo" }).waitFor();
   assert.equal(await hat(), "Blue");
   await page.reload();
+  await appTakesInput(page);
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
   await openDetails(page);
@@ -69,6 +66,7 @@ try {
   // Phone width: the header avatar stays visible next to the name.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.reload();
+  await appTakesInput(page);
   await message.or(chatTab).first().waitFor({ timeout: 30000 });
   if (!(await message.isVisible())) await chatTab.click();
   await checkHeader(true);
@@ -78,8 +76,7 @@ try {
   // the draft on the Page tab.
   const plain = new URL(url.href);
   plain.searchParams.delete("chat");
-  await page.goto(plain.href);
-  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
+  await openAppWithSetupClosed(page, plain);
   await chatTab.click();
   await page
     .getByRole("complementary", { name: "Chat" })
