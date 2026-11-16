@@ -407,6 +407,24 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(conflictReplay == newRevoke)
         precondition(ActivityCatalog.resolveRecoveryConflict(url: conflictURL, expected: conflictAttempt,
             fingerprint: boundFingerprint, failedRequest: oldRevoke, observedStatus: issueWon) == nil)
+        let cancelledReceiptURL = directory.appendingPathComponent("cancelled-receipt-revoke.sqlite")
+        let cancelledReceiptKeychain = FakeKeychain()
+        let cancelledReceiptStore = WidgetCredentialStore(catalogURL: cancelledReceiptURL, keychain: cancelledReceiptKeychain)
+        let cancelledReceiptEnrollment = WidgetFencedEnrollment(store: cancelledReceiptStore)
+        let cancelledReceiptInitial = ActivityCatalog.activate(url: cancelledReceiptURL, endpoint: pending.endpoint)!
+        let cancelledReceiptAttempt = cancelledReceiptEnrollment.prepare(expected: cancelledReceiptInitial, pairingFingerprint: boundFingerprint)!
+        let cancelledReceiptWire = cancelledReceiptAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready(let issuedRequest) = cancelledReceiptEnrollment.bind(fixtureStatus, reservation: cancelledReceiptAttempt) else { fatalError() }
+        let cancelledReceiptPending = try JSONSerialization.jsonObject(with: cancelledReceiptKeychain.pending[cancelledReceiptWire]!) as! [String: Any]
+        _ = ActivityCatalog.recordEnrollmentReceipt(url: cancelledReceiptURL, expected: cancelledReceiptAttempt,
+            workspaceID: credential.workspaceID, request: issuedRequest, receipt: fixtureReceipt(cancelledReceiptAttempt),
+            generation: cancelledReceiptPending["generation"] as! String)!
+        precondition(cancelledReceiptEnrollment.cancel(cancelledReceiptAttempt).complete)
+        precondition(ActivityCatalog.cancelledRecoveryMatches(url: cancelledReceiptURL, expected: cancelledReceiptAttempt, fingerprint: boundFingerprint))
+        let issuedStatus = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch,
+            "workspace_id": credential.workspaceID, "revision": String(repeating: "3", count: 32), "last_attempt": cancelledReceiptWire])
+        guard case .revoke = ActivityCatalog.planCancelledRecovery(url: cancelledReceiptURL, expected: cancelledReceiptAttempt,
+            fingerprint: boundFingerprint, observedStatus: issuedStatus) else { fatalError() }
         let lockedCancelURL = directory.appendingPathComponent("locked-cancel.sqlite")
         let lockedCancelKeychain = FakeKeychain()
         let lockedCancelStore = WidgetCredentialStore(catalogURL: lockedCancelURL, keychain: lockedCancelKeychain)

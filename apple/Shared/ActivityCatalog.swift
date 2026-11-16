@@ -155,7 +155,7 @@ final class ActivityCatalog {
             case .legacyUnknown: return nil
             }
             if let statusData = journal.recoveryStatus {
-                guard journal.cancelled == true, journal.phase == .armed, journal.pairingFingerprint != nil,
+                guard journal.cancelled == true, (journal.phase == .armed || journal.phase == .receipted), journal.pairingFingerprint != nil,
                       statusData.count <= 4096, let status = try? JSONDecoder().decode(JournalStatus.self, from: statusData),
                       let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
                       status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
@@ -476,7 +476,7 @@ final class ActivityCatalog {
         guard fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return false }
         return withWriterLock(url: url, failure: false) {
             guard let marker = try? Data(contentsOf: enrollmentURL(for: url)), let journal = enrollmentJournal(marker),
-                  journal.reservation == expected, journal.cancelled == true, journal.phase == .armed,
+                  journal.reservation == expected, journal.cancelled == true, (journal.phase == .armed || journal.phase == .receipted),
                   journal.pairingFingerprint == fingerprint,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data) else { return false }
@@ -493,7 +493,7 @@ final class ActivityCatalog {
         return withWriterLock(url: url, failure: nil) {
             let markerURL = enrollmentURL(for: url)
             guard let marker = try? Data(contentsOf: markerURL), var journal = enrollmentJournal(marker),
-                  journal.reservation == expected, journal.cancelled == true, journal.phase == .armed,
+                  journal.reservation == expected, journal.cancelled == true, (journal.phase == .armed || journal.phase == .receipted),
                   journal.pairingFingerprint == fingerprint, fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil,
                   let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
                   status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
@@ -502,6 +502,10 @@ final class ActivityCatalog {
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data),
                   authority.revoked == true, authority.cleanup == expected.previous else { return nil }
+            if journal.recoveryReceipt != nil {
+                guard writeJournal(marker, markerURL) else { return nil }
+                return .superseded
+            }
             if let existing = journal.recoveryRequest {
                 guard writeJournal(marker, markerURL) else { return nil }
                 return .revoke(existing)
