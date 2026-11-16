@@ -1,5 +1,6 @@
 """Read-only trace of the published bridge updater inside one disposable hosted case."""
 
+import contextlib
 import http.client
 import json
 import os
@@ -138,9 +139,10 @@ class Trace:
 
 def sidecar(root, events):
     path = root / FILENAME
+    payload = json.dumps({"kind": "instrumented-non-acceptance", "events": events})
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "w", encoding="ascii") as stream:
-        json.dump({"kind": "instrumented-non-acceptance", "events": events}, stream)
+        stream.write(payload)
 
 
 def read_sidecar(root):
@@ -219,6 +221,10 @@ def run(root):
     sys.argv = [str(launch), "system", "update", "--json"]
     sys.prefix = sys.exec_prefix = str(prefix)
     sys.path.insert(0, str(site))
+    trace_update(root, site)
+
+
+def trace_update(root, site):
     trace = Trace(site)
     # The verified console launcher would exec this module with -I and these arguments.
     sys.settrace(trace)
@@ -226,7 +232,9 @@ def run(root):
         runpy.run_module("heinzel", run_name="__main__", alter_sys=True)
     finally:
         sys.settrace(None)
-        sidecar(root, trace.events)
+        # The diagnostic reader handles missing or incomplete trace output.
+        with contextlib.suppress(OSError, ValueError, TypeError, RecursionError):
+            sidecar(root, trace.events)
 
 
 if __name__ == "__main__":

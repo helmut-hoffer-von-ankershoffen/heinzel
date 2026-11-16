@@ -1,5 +1,6 @@
 """Keep the instrumented bridge trace bounded and separate from acceptance."""
 
+import errno
 import json
 import stat
 import sys
@@ -78,6 +79,33 @@ def test_sidecar_refuses_unbounded_or_unexpected_fields(tmp_path):
     trace.sidecar(tmp_path, [row])
     with pytest.raises(ValueError, match="unsafe trace version"):
         trace.read_sidecar(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "writer_error",
+    [FileExistsError(), PermissionError(), OSError(errno.ENOSPC, "disk full"), TypeError(), ValueError()],
+)
+@pytest.mark.parametrize("updater_error", [None, SystemExit(17), RuntimeError("updater failure")])
+def test_sidecar_failure_preserves_updater_outcome(monkeypatch, tmp_path, writer_error, updater_error):
+    def update(*_args, **_kwargs):
+        if updater_error is not None:
+            raise updater_error
+
+    def write(*_args):
+        raise writer_error
+
+    monkeypatch.setattr(trace.runpy, "run_module", update)
+    monkeypatch.setattr(trace, "sidecar", write)
+    previous = sys.gettrace()
+    try:
+        if updater_error is None:
+            trace.trace_update(tmp_path, tmp_path)
+        else:
+            with pytest.raises(type(updater_error)) as caught:
+                trace.trace_update(tmp_path, tmp_path)
+            assert caught.value is updater_error
+    finally:
+        sys.settrace(previous)
 
 
 @pytest.mark.parametrize("diagnostic", [False, True])
