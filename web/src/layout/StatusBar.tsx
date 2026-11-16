@@ -21,6 +21,7 @@ import { CalendarSummary, calendarActions } from "./CalendarSummary";
 import { type AgendaData, glyphModel } from "./calendarModel";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
+import { NativeFooterSlot, useNativeFooter } from "./nativeFooter";
 import { PluginsPending } from "./PluginsPending";
 import { UpdateStatus } from "./UpdateStatus";
 
@@ -209,24 +210,34 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
 export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () => void }) {
   const info = useInfo();
   const now = useNow();
+  const native = useNativeFooter();
   return (
     <>
       <AutoUpdate />
-      <FooterLayout className="h-12 shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-        <FooterPart id="@version" priority={950} className="mr-auto">
-          {info.data && (
-            <FooterItem
-              label={`v${info.data.version}`}
-              state="off"
-              text={`v${info.data.version}`}
-              align="left"
-              freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
-              popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
-            >
-              <ReleaseNotes version={info.data.version} />
-            </FooterItem>
-          )}
-        </FooterPart>
+      <FooterLayout
+        className="h-12 shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground"
+        style={
+          native ? { height: 48 + native.bottom, paddingBottom: native.bottom, paddingLeft: native.width } : undefined
+        }
+      >
+        {native && <NativeFooterSlot metrics={native} />}
+        {!native && (
+          <FooterPart id="@version" priority={950} className="mr-auto">
+            {info.data && (
+              <FooterItem
+                label={`v${info.data.version}`}
+                state="off"
+                text={`v${info.data.version}`}
+                align="left"
+                freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
+                popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
+              >
+                <ReleaseNotes version={info.data.version} />
+              </FooterItem>
+            )}
+          </FooterPart>
+        )}
+        {native && <div className="mr-auto" />}
         <FooterPart id="@plugins-pending" priority={110} label={t("pluginsPending.title")}>
           <PluginsPending />
         </FooterPart>

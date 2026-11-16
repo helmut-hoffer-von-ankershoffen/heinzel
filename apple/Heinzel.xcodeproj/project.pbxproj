@@ -60,6 +60,7 @@
         MACOSX_DEPLOYMENT_TARGET = 15.0; ENABLE_HARDENED_RUNTIME = YES;
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_ENTITLEMENTS)";
         "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
+        "INFOPLIST_FILE[sdk=iphone*]" = Widgets/iOS-Info.plist;
         SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
     };};
 000000000000000000000075 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
@@ -73,6 +74,7 @@
         MACOSX_DEPLOYMENT_TARGET = 15.0; ENABLE_HARDENED_RUNTIME = YES;
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_ENTITLEMENTS)";
         "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
+        "INFOPLIST_FILE[sdk=iphone*]" = Widgets/iOS-Info.plist;
         SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-O";
     };};
 00000000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceNotifications.swift; sourceTree = "<group>";};
@@ -114,6 +116,7 @@
         "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         HEINZEL_IOS_ENTITLEMENTS = Shared/WidgetActivity.entitlements;
+        "INFOPLIST_FILE[sdk=iphone*]" = App/iOS-Info.plist;
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
     };};
 00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {HEINZEL_MAC_WIDGET_GROUP = "$(DEVELOPMENT_TEAM).team.heinzel.apple.activity"; HEINZEL_MAC_WIDGET_ENTITLEMENTS = Widgets/MacWidget.entitlements;};};
@@ -131,6 +134,7 @@
         "HEINZEL_WIDGET_GROUP[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_GROUP)";
         "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "$(HEINZEL_IOS_ENTITLEMENTS)";
         HEINZEL_IOS_ENTITLEMENTS = Shared/WidgetActivity.entitlements;
+        "INFOPLIST_FILE[sdk=iphone*]" = App/iOS-Info.plist;
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
     };};
 00000000000000000000000A = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000C,00000000000000000000000D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
