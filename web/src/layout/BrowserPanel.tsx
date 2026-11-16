@@ -161,12 +161,18 @@ export function BrowserPanel({
       })
       .catch(() => {});
   }, [native]);
-  useNativeSurface(surface, active, native?.browser, () => {
-    void native
-      ?.browser({ action: "state" })
-      .then(setState)
-      .catch(() => {});
-  });
+  const surfaceFailed = useNativeSurface(
+    surface,
+    active,
+    native?.browser,
+    () => {
+      void native
+        ?.browser({ action: "state" })
+        .then(setState)
+        .catch(() => {});
+    },
+    "browser",
+  );
   const selectedId = state.selected ?? null;
   const [shownTab, setShownTab] = useState<string | null>(null);
   // Showing another tab shows its own address; typing in the bar is never overwritten by the poll.
@@ -442,6 +448,11 @@ export function BrowserPanel({
           {refused && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t("browser.refusedNote")}
+            </p>
+          )}
+          {surfaceFailed && active && (
+            <p role="alert" className="shrink-0 px-3 py-1.5 text-xs">
+              {t("browser.surfaceFailed")}
             </p>
           )}
           {state.link && (

@@ -42,8 +42,12 @@ output process. Each view played a different test tone. Core Audio reported the 
 alone and with both playing, whichever started first. A process tap would include both views.
 See [Apple’s Core Audio tap documentation](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps).
 
-On iPhone and iPad, the ScreenCaptureKit picker filters audio at app scope, so selecting the workspace cannot exclude
-the Browser panel. See [Apple’s capture-filter guidance](https://developer.apple.com/videos/play/wwdc2022/10155/).
+On iPhone and iPad, the iOS system picker controls what is shared; it does not grant unconditional access to every app.
+The device user chooses what to share. Test on a physical device by starting another app's audio, choosing the
+intended content in the picker, checking that the visualizer reacts, and then stopping sharing. Apple's
+[iOS capture sample](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios)
+requires the `screen-capture` background mode to continue a full-display stream when its app is backgrounded; this
+app does not currently declare that mode, so uninterrupted background capture is not promised.
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `HEINZEL_IOS_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.

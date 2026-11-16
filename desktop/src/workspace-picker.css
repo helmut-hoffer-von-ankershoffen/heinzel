@@ -1,0 +1,34 @@
+:root { color-scheme: light; font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #263b32; background: #faf8f3; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at center, #ffffffb3 30px, #ceb8923b 620px); }
+main { width: min(100%, 468px); margin: auto; padding: 34px 24px 16px; }
+header { text-align: center; margin: 8px 0 28px; }
+header img { object-fit: contain; }
+h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; }
+h1 { font-size: 30px; margin: 0 0 8px; }
+h2 { font-size: 23px; margin: 0; }
+h3 { font-size: 14px; margin: 0 0 10px; }
+p { color: #4d5c52; line-height: 1.5; margin: 6px 0 12px; }
+.heading { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 12px; }
+.panel { padding: 16px; background: #ffffffa1; border: 1px solid #263b3224; border-radius: 16px; margin: 12px 0; }
+button, input { font: inherit; }
+button { min-height: 44px; padding: 9px 14px; border: 1px solid #263b3233; border-radius: 8px; background: transparent; color: #30483a; cursor: pointer; }
+button:hover { background: #263b320c; }
+button:focus-visible, input:focus-visible { outline: 2px solid #30483a; outline-offset: 3px; }
+button:disabled { opacity: .55; cursor: wait; }
+.primary { background: #30483a; color: white; }
+.primary:hover { background: #263b32; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 0; width: 100%; text-align: left; padding: 4px 0; }
+small { display: block; color: #4d5c52; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
+.recent { display: flex; align-items: center; gap: 8px; border-top: 1px solid #263b3224; padding: 7px 0; }
+.forget { border: none; min-width: 44px; color: #80402b; }
+label { display: block; margin: 14px 0 7px; font-size: 12px; color: #4d5c52; }
+input { width: 100%; min-height: 44px; border: 1px solid #263b3233; border-radius: 8px; padding: 10px; color: #263b32; background: #fff9; }
+.actions { border-top: 1px solid #263b3224; padding-top: 14px; margin-top: 16px; display: flex; justify-content: flex-end; }
+#status { display: block; color: #30483a; line-height: 1.5; margin: 6px 0 12px; overflow-wrap: anywhere; }
+#status.problem { color: #80402b; }
+#current { font-size: 12px; overflow-wrap: anywhere; margin: 0; }
+progress { width: 100%; accent-color: #30483a; }
+footer { text-align: center; margin-top: 24px; }
+footer p { font-size: 12px; }
+[hidden][hidden] { display: none; }

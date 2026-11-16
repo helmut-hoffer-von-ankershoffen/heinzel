@@ -7,6 +7,20 @@ import {
 
 const connection = Object.freeze({ origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" });
 
+test("quit during asynchronous session setup destroys the window before navigation", async () => {
+  let stopping = false, destroyed = false, prepared = false;
+  await assert.rejects(openProductUi({
+    connection, lifecycle: async () => {}, cancelled: () => stopping,
+    createWindow: async () => {
+      stopping = true;
+      return { isDestroyed: () => destroyed, destroy: () => { destroyed = true; } };
+    },
+    prepareWindow: () => { prepared = true; },
+  }), /cancelled/);
+  assert.equal(destroyed, true);
+  assert.equal(prepared, false);
+});
+
 test("the product UI receives only the owned loopback fragment authentication", () => {
   const url = new URL(authenticatedUiUrl(connection));
   assert.equal(url.origin, connection.origin);
@@ -361,6 +375,29 @@ test("failed UI load destroys its hidden native window", async () => {
   await assert.rejects(openProductUi({ connection, lifecycle: async () => {}, createWindow: () => window,
     prepareWindow: () => {}, cancelled: () => false }), /Load failed/);
   assert.equal(destroyed, true);
+});
+
+test("a stalled UI load times out, destroys its window and cannot show on late settlement", async () => {
+  await Promise.all([false, true].map(async (rejects) => {
+    let expire, settle, destroyed = false, shown = 0, cleared = false;
+    const window = {
+      isDestroyed: () => destroyed, destroy: () => { destroyed = true; }, show: () => { shown++; },
+      loadURL: () => new Promise((resolve, reject) => { settle = rejects ? reject : resolve; }),
+    };
+    const opened = openProductUi({ connection, lifecycle: async () => {}, createWindow: () => window,
+      prepareWindow: () => {}, cancelled: () => false,
+      schedule: (callback, delay) => { assert.equal(delay, 15000); expire = callback; return 42; },
+      unschedule: (timer) => { assert.equal(timer, 42); cleared = true; },
+    });
+    await new Promise(setImmediate);
+    expire();
+    await assert.rejects(opened, { name: "TimeoutError" });
+    assert.equal(destroyed, true);
+    assert.equal(cleared, true);
+    settle(new Error("late"));
+    await new Promise(setImmediate);
+    assert.equal(shown, 0);
+  }));
 });
 
 test("the window's own open (sidebar Open in browser) needs the person's gesture and shares the rate limit", async () => {

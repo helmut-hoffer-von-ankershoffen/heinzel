@@ -1,4 +1,5 @@
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
+import { recordSurface } from "@/lib/surfaceDiagnostics";
 import { viewportBounds } from "@/lib/viewport";
 
 /** One desktop bridge for a native surface: the sidebar browser's or the media player's. */
@@ -16,16 +17,56 @@ export function useNativeSurface(
   active: boolean,
   send: SurfaceBridge | undefined,
   poll?: () => void,
-): void {
+  name?: "browser" | "player",
+): boolean {
+  const [bridgeFailed, setBridgeFailed] = useState(false);
   const refresh = useRef(poll);
   refresh.current = poll;
   useEffect(() => {
-    if (!send) return;
-    const hide = () => void send({ action: "hide" }).catch(() => {});
+    if (!send) {
+      setBridgeFailed(false);
+      if (name) recordSurface(name, "bridge unavailable", "unavailable", null);
+      return;
+    }
+    let generation = 0;
+    let applied = 0;
+    let diagnosticRequest = 0;
+    let diagnosticApplied = 0;
+    let disposed = false;
+    let bridge = "pending";
+    let decision = "inactive";
+    const record = () => {
+      if (name) recordSurface(name, decision, bridge);
+    };
+    const dispatch = (action: Record<string, unknown>, why: string) => {
+      decision = why;
+      record();
+      const request = ++generation;
+      void send(action).then(
+        () => {
+          if (disposed || request < applied) return;
+          applied = request;
+          bridge = "ok";
+          setBridgeFailed(false);
+          record();
+        },
+        () => {
+          if (disposed || request < applied) return;
+          applied = request;
+          bridge = "failed";
+          setBridgeFailed(true);
+          record();
+        },
+      );
+    };
+    const hide = (why: string) => dispatch({ action: "hide" }, why);
     const update = () => {
       const element = surface.current;
       if (!active || !element || element.closest("[hidden], [inert]") || document.hidden) {
-        hide();
+        let reason = "hidden";
+        if (!active) reason = "inactive";
+        else if (document.hidden) reason = "background";
+        hide(reason);
         return;
       }
       const box = element.getBoundingClientRect();
@@ -40,7 +81,7 @@ export function useNativeSurface(
         );
       });
       if (overlay) {
-        hide();
+        hide("overlay");
         return;
       }
       // The native surface must stay inside the visible viewport; anything else hides it rather than overflowing.
@@ -53,18 +94,21 @@ export function useNativeSurface(
         box.right > view.left + view.width ||
         box.bottom > view.top + view.height
       ) {
-        hide();
+        hide("outside viewport");
         return;
       }
-      void send({
-        action: "layout",
-        bounds: {
-          x: Math.round(box.x),
-          y: Math.round(box.y),
-          width: Math.floor(box.width),
-          height: Math.floor(box.height),
+      dispatch(
+        {
+          action: "layout",
+          bounds: {
+            x: Math.round(box.x),
+            y: Math.round(box.y),
+            width: Math.floor(box.width),
+            height: Math.floor(box.height),
+          },
         },
-      }).catch(() => {});
+        "layout requested",
+      );
     };
     const observer = new ResizeObserver(update);
     if (surface.current) observer.observe(surface.current);
@@ -82,6 +126,40 @@ export function useNativeSurface(
     const timer = window.setInterval(() => {
       refresh.current?.();
       update();
+      if (name) {
+        const sample = ++diagnosticRequest;
+        void send({ action: "diagnostics" })
+          .then((answer) => {
+            if (disposed || sample < diagnosticApplied || !answer || typeof answer !== "object") return;
+            const value = answer as { focused?: unknown; visible?: unknown; status?: unknown; reason?: unknown };
+            const statuses = ["empty", "loading", "ready", "unavailable", "unsupported"];
+            const reasons = [
+              "no guest",
+              "unfocused",
+              "unavailable",
+              "blank",
+              "hidden by frontend",
+              "draw-enabled",
+              "hidden",
+              "unknown",
+            ];
+            if (
+              typeof value.focused !== "boolean" ||
+              (typeof value.visible !== "boolean" && value.visible !== null) ||
+              typeof value.status !== "string" ||
+              !statuses.includes(value.status)
+            )
+              return;
+            diagnosticApplied = sample;
+            recordSurface(name, decision, bridge, {
+              focused: value.focused,
+              visible: value.visible,
+              status: value.status,
+              reason: typeof value.reason === "string" && reasons.includes(value.reason) ? value.reason : "unknown",
+            });
+          })
+          .catch(() => {});
+      }
     }, 500);
     update();
     return () => {
@@ -92,7 +170,10 @@ export function useNativeSurface(
       window.removeEventListener("scroll", update, true);
       document.removeEventListener("visibilitychange", update);
       document.removeEventListener("toggle", update, true);
-      hide();
+      hide("inactive");
+      disposed = true;
+      if (name) recordSurface(name, "inactive", bridge, null);
     };
-  }, [active, send, surface]);
+  }, [active, send, surface, name]);
+  return bridgeFailed;
 }

@@ -105,6 +105,10 @@ function markNoSystem() {
 
 /** A system audio failure that asking again cannot fix: not a decline or a cancel. */
 function systemBroken(error: unknown) {
+  // The iOS sharing picker and its audio session can fail transiently. Keep the
+  // explicit retry available; only a definite unsupported result rules it out.
+  if ((window as Window & { heinzelDesktop?: { mobileWorkspace?: boolean } }).heinzelDesktop?.mobileWorkspace)
+    return error instanceof DOMException && error.name === "NotSupportedError";
   return !(error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"));
 }
 

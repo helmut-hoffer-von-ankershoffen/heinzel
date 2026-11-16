@@ -149,6 +149,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0161](0161-several-adapters-serve-documents-at-once.md) Several adapters serve documents at once | proposed · 14 Nov<br>built |  |
 | [0162](0162-agents-control-the-built-in-browser.md) Agents control the built-in browser | proposed · 15 Nov<br>built |  |
 | [0164](0164-discover-external-chat-tools-on-demand.md) Discover external chat tools on demand | proposed · 15 Nov<br>built |  |
+| [0165](0165-electron-workspace-switching-and-remote-isolation.md) Electron workspace switching and remote isolation | accepted · 15 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->

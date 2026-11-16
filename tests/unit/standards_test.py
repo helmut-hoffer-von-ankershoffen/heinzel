@@ -153,6 +153,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/ship.py": "the golden path for small changes in Heinzelmännchen's own worktrees (docs/SHIP_SMALL.md)",
     ".claude/skills/ship-small/SKILL.md": "drives scripts/ship.py, which plugins don't get",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
+    "scripts/mixed_scope.py": "supports Core-root mixed push checks; plugins run their own checks",
     "scripts/related_tests.py": "maps the core pre-push diff to its related unit tests; plugins run their own",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",

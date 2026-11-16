@@ -24,6 +24,7 @@ const token = randomBytes(24).toString("base64url");
 let targetRequests = 0;
 let initialRedirect = false;
 let initialRedirectHits = 0;
+let initialRedirectLifecycleHits = 0;
 let subsequentRedirectHits = 0;
 let lifecycleHits = 0;
 const target = createServer((_request, response) => { targetRequests++; response.writeHead(200); response.end("unexpected"); });
@@ -33,7 +34,7 @@ const source = createServer((request, response) => {
     response.writeHead(request.headers.authorization === `Bearer ${token}` ? 200 : 403, { "content-type": "application/json" });
     response.end(JSON.stringify({ instance: "isolated", version: "0.0.0" }));
   } else if ((request.url === "/" && initialRedirect) || request.url === "/redirect") {
-    if (initialRedirect && request.url === "/") initialRedirectHits++;
+    if (initialRedirect && request.url === "/") { initialRedirectHits++; initialRedirectLifecycleHits = lifecycleHits; }
     if (request.url === "/redirect") subsequentRedirectHits++;
     response.writeHead(302, { location: `http://127.0.0.1:${target.address().port}/target` });
     response.end();
@@ -58,8 +59,9 @@ try {
   await run(true);
   assert.equal(targetRequests, 0, "Cross-origin target received a request.");
   assert.equal(initialRedirectHits, 1, "The initial redirect was not exercised.");
+  assert.equal(initialRedirectLifecycleHits, 2, "The initial redirect must follow authenticated lifecycle verification.");
   assert.equal(subsequentRedirectHits, 1, "The page redirect was not exercised.");
-  assert.equal(lifecycleHits, 2, "Both launches must verify lifecycle first.");
+  assert.equal(lifecycleHits, 3, "Both launches and the recovery picker must verify lifecycle.");
   console.log("Electron handed off trusted public media, refused scripted/unsafe opening, and blocked page navigation, redirects and popups before the target request.");
 } finally {
   await Promise.all([close(source), close(target)]);
@@ -94,10 +96,23 @@ async function run(redirectOnStart) {
     await writeFile(join(root, "controller-ready"), "ready", { flag: "wx", mode: 0o600 });
     console.log(`Electron navigation phase: ${redirectOnStart ? "initial-redirect" : "page-navigation"} attached`);
     if (redirectOnStart) {
-      const exited = processHandle.exitCode !== null || processHandle.signalCode !== null
-        ? Promise.resolve({ code: processHandle.exitCode, signal: processHandle.signalCode })
-        : new Promise((done) => processHandle.once("exit", (code, signal) => done({ code, signal })));
-      const result = await withTimeout(exited, 15_000, "Electron did not stop after the rejected initial redirect.");
+      const pickerUrl = new URL("../src/workspace-picker.html", import.meta.url).href;
+      let picker;
+      const deadline = performance.now() + 15_000;
+      while (!picker && performance.now() < deadline) {
+        picker = app.windows().find((candidate) => candidate.url() === pickerUrl);
+        if (!picker) await new Promise((done) => setTimeout(done, 50));
+      }
+      assert.ok(picker, "Electron did not open the recovery picker after the rejected initial redirect.");
+      await picker.locator("#retry").waitFor({ state: "visible", timeout: 15_000 });
+      await picker.locator("#status").filter({ hasText: "Connection restored. Try again to reopen the workspace." })
+        .waitFor({ state: "visible", timeout: 15_000 });
+      assert.equal(targetRequests, 0, "The rejected redirect reached its target.");
+      assert.deepEqual(app.windows().map((page) => page.url()), [pickerUrl], "The failed product window remained open.");
+      assert.equal(await picker.evaluate(() => typeof window.heinzelDesktop), "undefined");
+      const exited = new Promise((done) => processHandle.once("exit", (code, signal) => done({ code, signal })));
+      await picker.close();
+      const result = await withTimeout(exited, 15_000, "Electron did not exit after closing the recovery picker.");
       stopped = true;
       assert.equal(result.code, 0);
       assert.equal(result.signal, null);

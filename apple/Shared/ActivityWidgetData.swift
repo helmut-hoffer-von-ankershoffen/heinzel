@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-struct WidgetHeinzel: Codable, Identifiable, Equatable {
+struct WidgetHeinzel: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let state: String
@@ -81,7 +81,11 @@ struct ActivityWidgetData: Codable, Equatable {
         return directory.appendingPathComponent("activity-catalog.sqlite")
     }
     private static var catalog: ActivityCatalog? { catalogURL.flatMap(ActivityCatalog.init(url:)) }
+    static func sharedCatalogURL() -> URL? { catalogURL }
+    static func backgroundCatalog() -> ActivityCatalog? { catalog }
     static func refreshToken() -> Data? { catalogURL.flatMap(ActivityCatalog.refreshToken(url:)) }
+    static func legacyRefreshToken() -> Data? { catalogURL.flatMap(ActivityCatalog.legacyRefreshToken(url:)) }
+    static func currentActivation() -> ActivityCatalog.Activation? { catalogURL.flatMap(ActivityCatalog.activation(url:)) }
     private static let detailsKey = "activityDetailRequests"
 
     let awake: Int
@@ -90,10 +94,15 @@ struct ActivityWidgetData: Codable, Equatable {
     var heinzels: [WidgetHeinzel]?
     var workspaceScope: String?
     var generation: String?
+    var catalogUpdatedAt: Date? = nil
 
     var expiresAt: Date { updatedAt.addingTimeInterval(Self.freshness) }
 
     var roster: [WidgetHeinzel] { heinzels ?? [] }
+
+    func observationTime(for id: String) -> Date {
+        roster.contains(where: { $0.id == id }) ? updatedAt : (catalogUpdatedAt ?? updatedAt)
+    }
 
     static func scope(for origin: URL) -> String {
         #if os(macOS)
@@ -105,6 +114,11 @@ struct ActivityWidgetData: Codable, Equatable {
 
     static func scope(for address: String) -> String {
         SHA256.hash(data: Data(address.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func currentScope(for origin: URL) -> String? {
+        guard let catalogURL else { return nil }
+        return ActivityCatalog.workspaceScope(url: catalogURL, endpoint: origin.absoluteString, legacy: scope(for: origin))
     }
 
     static func read() -> Self? {
@@ -147,7 +161,7 @@ struct ActivityWidgetData: Codable, Equatable {
     static func save(awake: Int, waiting: Int, heinzels: [WidgetHeinzel], entries: [CatalogHeinzel], workspaceScope: String, expectedToken: Data, now: Date = .now, catalogOverride: ActivityCatalog? = nil) -> Bool {
         guard awake >= 0, waiting >= 0, let catalog = catalogOverride ?? catalog else { return false }
         let generation = UUID().uuidString
-        let snapshot = Self(awake: awake, waiting: waiting, updatedAt: now, heinzels: heinzels, workspaceScope: workspaceScope, generation: generation)
+        let snapshot = Self(awake: awake, waiting: waiting, updatedAt: now, heinzels: heinzels, workspaceScope: workspaceScope, generation: generation, catalogUpdatedAt: now)
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
         guard catalog.publish(scope: workspaceScope, generation: generation, snapshot: data, entries: entries, expectedToken: expectedToken) else { return false }
         if catalogOverride == nil { defaults?.removeObject(forKey: "activitySnapshot") }
@@ -155,20 +169,25 @@ struct ActivityWidgetData: Codable, Equatable {
     }
 
     @discardableResult
-    @MainActor static func clear() -> Bool {
-        invalidation &+= 1
-        defaults?.removeObject(forKey: detailsKey)
-        defaults?.removeObject(forKey: "activitySnapshot")
+    @MainActor static func clear(expectedToken: Data? = nil) -> Bool {
         guard let catalogURL else {
             NSLog("Heinzel widget catalog could not be invalidated: shared container unavailable")
             NotificationCenter.default.post(name: clearFailed, object: nil)
             return false
         }
-        let result = ActivityCatalog.clear(url: catalogURL)
+        let result = ActivityCatalog.clear(url: catalogURL, expectedToken: expectedToken)
+        if result.stale { return false }
+        didInvalidate()
         if !result.complete {
             NSLog("Heinzel widget catalog cleanup incomplete; revoked=%d purged=%d", result.revoked ? 1 : 0, result.purged ? 1 : 0)
             NotificationCenter.default.post(name: clearFailed, object: nil)
         }
         return result.complete
+    }
+
+    @MainActor static func didInvalidate() {
+        invalidation &+= 1
+        defaults?.removeObject(forKey: detailsKey)
+        defaults?.removeObject(forKey: "activitySnapshot")
     }
 }

@@ -43,3 +43,19 @@ export function browserBounds(value, size) {
     throw new Error("Browser panel geometry is unavailable.");
   return { x: value.x, y: value.y, width: value.width, height: value.height };
 }
+
+/** A bounded view snapshot; it never includes a page address or contents. */
+export function nativeSurfaceDiagnostics(window, guest, { browser = false, shown = false } = {}) {
+  const focused = window.isFocused();
+  if (!guest) return { focused, visible: null, status: "empty", reason: "no guest" };
+  let visible = null;
+  if (!guest.view.webContents.isDestroyed()) visible = guest.view.getVisible();
+  let reason = "unknown";
+  if (!focused) reason = "unfocused";
+  else if (guest.status === "unavailable") reason = "unavailable";
+  else if (browser && guest.blank) reason = "blank";
+  else if (browser && !shown) reason = "hidden by frontend";
+  else if (visible === true) reason = "draw-enabled";
+  else if (!browser && visible === false) reason = "hidden";
+  return { focused, visible, status: guest.status ?? "empty", reason };
+}

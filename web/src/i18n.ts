@@ -661,6 +661,7 @@ const en = {
     "Use the same browser profile where you signed in to YouTube, then retry. Embedded sign-in may still be restricted.",
   "sound.desktopHelp":
     "Heinzel desktop has its own browser session. Copy this video link and open it in the Chrome profile where you signed in to YouTube.",
+  "sound.desktopUnavailable": "The desktop player could not open this video.",
   "sound.copyYouTubeLink": "Copy YouTube link",
   "sound.videoLink": "YouTube video link",
   "sound.linkCopied": "Link copied. Paste it into your signed-in Chrome profile.",
@@ -1398,6 +1399,7 @@ const en = {
   "browser.ready": "Separate browsing session",
   "browser.empty": "Enter a website to begin",
   "browser.unavailable": "This site could not open here",
+  "browser.surfaceFailed": "The desktop view could not be displayed. Try reopening the pane or restarting the app.",
   "browser.private":
     "Websites get their own session, separate from your Heinzel. Sign-ins stay until you clear browsing data. Downloads and popups are unavailable.",
   "browser.automationNote":

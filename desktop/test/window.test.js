@@ -25,11 +25,11 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
 });
 
-test("Electron readiness starts the CLI and reports startup errors", () => {
+test("Electron readiness starts the CLI and retains the picker after startup errors", () => {
   assert.doesNotMatch(main, /await\s+app\.whenReady\(\)/);
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
   assert.ok(main.indexOf("acquireDesktopGate()") < main.indexOf("return ownedCli.start()"));
-  assert.match(main, /showErrorBox\("Heinzelmännchen could not open", message\)/);
+  assert.match(main, /workspaceController\?\.failed\(failedConnection, new Error\(message\)\);\n    showConnection\(\)/);
 });
 
 test("Quit stops the owned CLI without adding background integration", () => {
@@ -71,7 +71,7 @@ function quitHarness(result, rejects = false) {
     },
   };
   runInNewContext(main.replace(/^import .*;\n/gm, "").replaceAll("import.meta.url", "moduleUrl"), {
-    moduleUrl: new URL("../src/main.js", import.meta.url).href,
+    moduleUrl: new URL("../src/main.js", import.meta.url).href, URL,
     process: proc, app,
     console: { ...console, warn: (line) => warnings.push(line) },
     BrowserWindow: { getAllWindows: () => [window] },

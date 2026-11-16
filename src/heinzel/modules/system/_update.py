@@ -407,18 +407,20 @@ class UpdateService:
             heads=heads,
         )
 
-    def _target_release(self, pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
-        """The release an install moves to, whose Python requirement decides the interpreter; None if unknown.
-
-        An installation that follows the package index resolves the newest release uv finds for the interpreter it
-        names, so the highest release is asked for there: a release for a newer Python is reached only that way.
-        """
-        if latest is not None and target in {f"v{latest}", None}:
+    @staticmethod
+    def _target_release(pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
+        """The release an install moves to, whose Python requirement decides the interpreter."""
+        if target is not None:
+            return _release_version(target)
+        if (
+            pin.kind in {"default", "index"}
+            and pin.git is None
+            and latest is not None
+            and Version(latest) > _version(current)
+            and Requirement(pin.requirement).specifier.contains(latest)
+        ):
             return latest
-        if target is None and pin.kind in ("default", "index") and pin.git is None:
-            highest = self._asked_latest(current)
-            return highest if highest is not None and Version(highest) > _version(current) else None
-        return _release_version(target)
+        return None
 
     def _fingerprints(self) -> "_Before":
         """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
@@ -906,8 +908,9 @@ class UpdateService:
         if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
             return self._switch_to_releases(pin, plugins, current, generation)
         if pin.kind in ("default", "index"):
+            latest = self._asked_latest(current) if pin.git is None else None
             return self._install(
-                pin.requirement, pin, plugins, current=current, latest=None, target=None, generation=generation
+                pin.requirement, pin, plugins, current=current, latest=latest, target=None, generation=generation
             )
         return self._with_plugins(self._pinned(pin, current), pin, plugins, generation)
 
@@ -1203,8 +1206,16 @@ class UpdateService:
         with self._install_constraints(
             core, current, self._constraint_candidates(core, plugins, before), enabled=not explicit_source, scope=scope
         ) as (constraints, captured_constraints):
-            modes, reasons, failure = self._converge(
-                core, plugins, before, activity, environment=environment, may_drop=True, constraints=constraints
+            preferred = _index_preferred_release(pin, current, latest, captured_constraints) if target is None else None
+            modes, reasons, failure, minimum = self._converge(
+                core,
+                plugins,
+                before,
+                activity,
+                environment=environment,
+                may_drop=True,
+                constraints=constraints,
+                preferred=preferred,
             )
         if modes is None:
             constraint_hint = (
@@ -1236,12 +1247,7 @@ class UpdateService:
             forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
             constraints=captured_constraints,
         )
-        if not explicit_source and Version(metadata["heinzel"]) < Version(current):
-            msg = (
-                "The resolved automatic update is older than the installed core; "
-                "no changed code was started and explicit recovery is required."
-            )
-            raise HeinzelError(msg)
+        _verify_core_selection(metadata["heinzel"], current, minimum, explicit_source=explicit_source)
         try:
             after = self._version()
         except HeinzelError as exc:
@@ -1257,14 +1263,15 @@ class UpdateService:
             msg = "The running hz version does not match its inspected metadata."
             raise HeinzelError(msg)
         now = self._installation.core_pin()
-        if target is None and after == current:  # nothing newer where the installation follows
-            message = f"hz {current} is up to date{f' ({channel})' if channel else ''}."
-        elif after == current:
-            message = f"Reinstalled hz {current} from {target}"
-        elif explicit_source:
-            message = f"Installed hz {after} from {target}; this process is running hz {current}."
-        else:
-            message = f"Updated hz {current} → {after}."
+        message = _install_message(
+            current,
+            after,
+            latest,
+            target=target,
+            channel=channel,
+            explicit_source=explicit_source,
+            index_lookup_failed=pin.kind == "index" and channel is None and not explicit_source and latest is None,
+        )
         after_plugins = self._plugin_versions(strict=True)
         self._verify_plugin_versions(metadata, after_plugins)
         updates = self._plugin_updates(plugins, modes, reasons, before, after_plugins, core)
@@ -1321,7 +1328,7 @@ class UpdateService:
                 constraints,
                 captured_constraints,
             ):
-                modes, reasons, failure = self._converge(
+                modes, reasons, failure, _ = self._converge(
                     pin.requirement,
                     plugins,
                     before,
@@ -1487,37 +1494,40 @@ class UpdateService:
         environment: Mapping[str, str],
         may_drop: bool,
         constraints: Path | None = None,
-    ) -> tuple[dict[str, Mode] | None, dict[str, str], str]:
+        preferred: str | None = None,
+    ) -> tuple[dict[str, Mode] | None, dict[str, str], str, str | None]:
         """Install `core` and every plugin; each plugin that blocks it is stepped down until the install works.
 
         A plugin goes in from its spec asked again (`new`); one uv names in a failed install is tried at the version it
         has (`keep`), and with `may_drop` left out (`drop`) if that doesn't resolve either. If uv names no one, every
         plugin is tried as it is. Returns the mode of each plugin, why those stepped down did, and the last failure
-        (the modes are None if nothing worked).
+        (the modes are None if nothing worked), and the preferred minimum if the resolver used it.
         """
         names = [canonicalize_name(p.name) for p in plugins]
         modes: dict[str, Mode] = dict.fromkeys(names, "new")
         reasons: dict[str, str] = {}
         output = ""
         graph = self._requirers()
-        for _ in range(2 * len(plugins) + 2):
+        for _ in range(2 * len(plugins) + 2 + int(preferred is not None)):
             specs = [
                 self._spec(p, modes[n], core, before.get(n))
                 for p, n in zip(plugins, names, strict=True)
                 if modes[n] != "drop"
             ]
-            command = self._installation.tool_install_command(core, specs, refresh=True)
-            if constraints is not None:
-                command.extend(["--constraints", str(constraints)])
+            command = self._converge_command(core, specs, constraints, preferred)
             try:
                 result = self._installation.attempt(command, activity, environment)
             except HeinzelError as exc:
-                return None, reasons, str(exc)
+                return None, reasons, str(exc), None
             if result.returncode == 0:
-                return modes, reasons, ""
+                return modes, reasons, "", preferred
             output = result.stderr.strip() or result.stdout.strip()
             if not _is_conflict(output):  # a network, credential or timeout failure is not the plugins' fault
-                return None, reasons, output
+                return None, reasons, output, None
+            if preferred is not None:
+                # A preference for the newest release must not force plugin removal.
+                preferred = None
+                continue
             blocking = [n for n in blocking_plugins(specs, output) if n in modes and modes[n] != "drop"]
             suspects = (
                 blocking
@@ -1528,11 +1538,21 @@ class UpdateService:
                 break
             for name in suspects:
                 if modes[name] == "keep" and not may_drop:
-                    return None, reasons, output
+                    return None, reasons, output, None
                 modes[name] = "keep" if modes[name] == "new" else "drop"
                 reasons[name] = _reason(output)
             _drop_dependents(modes, reasons, graph)
-        return None, reasons, output
+        return None, reasons, output, None
+
+    def _converge_command(
+        self, core: str, specs: list[str], constraints: Path | None, preferred: str | None
+    ) -> list[str]:
+        command = self._installation.tool_install_command(core, specs, refresh=True)
+        if preferred is not None:
+            command.extend(["--upgrade-package", f"heinzel>={preferred}"])
+        if constraints is not None:
+            command.extend(["--constraints", str(constraints)])
+        return command
 
     def _requirers(self) -> dict[str, set[str]]:
         """Which installed distributions require each one, read from the tool folder's metadata; never run."""
@@ -1952,6 +1972,62 @@ class _Agreed:
 
 _AGREED: ContextVar[_Agreed] = ContextVar("heinzel_update_agreed", default=_Agreed())  # noqa: B039 - frozen, never changed
 """The agreement of the `update` call running in this thread or task; never shared between requests."""
+
+
+def _verify_core_selection(selected: str, current: str, minimum: str | None, *, explicit_source: bool) -> None:
+    """Check the resolved version before any changed Core code is started.
+
+    Raises:
+        HeinzelError: If uv selected an older version than the update allows.
+    """
+    if minimum is not None and Version(selected) < Version(minimum):
+        msg = f"uv selected hz {selected} below the requested release {minimum}. No changed code was started."
+        raise HeinzelError(msg)
+    if not explicit_source and Version(selected) < Version(current):
+        msg = (
+            "The resolved automatic update is older than the installed core; "
+            "no changed code was started and explicit recovery is required."
+        )
+        raise HeinzelError(msg)
+
+
+def _install_message(  # noqa: PLR0913 - report the resolved version and how the source was chosen
+    current: str,
+    after: str,
+    latest: str | None,
+    *,
+    target: str | None,
+    channel: str | None,
+    explicit_source: bool,
+    index_lookup_failed: bool,
+) -> str:
+    if after == current:
+        if target is not None:
+            return f"Reinstalled hz {current} from {target}"
+        if index_lookup_failed:
+            return f"hz {current} stays installed. The newest stable release could not be checked."
+        if latest is not None and Version(latest) > _version(current):
+            return (
+                f"hz {current} stays installed. The newest stable release is {latest}. uv kept the existing selection."
+            )
+        return f"hz {current} is up to date{f' ({channel})' if channel else ''}."
+    if explicit_source:
+        return f"Installed hz {after} from {target}; this process is running hz {current}."
+    return f"Updated hz {current} → {after}."
+
+
+def _index_preferred_release(
+    pin: CorePin, current: str, latest: str | None, constraints: tuple[str, ...]
+) -> str | None:
+    """Prefer the known newest stable release only for an unpinned index installation."""
+    if pin.kind != "index" or pin.ref is not None or latest is None or Version(latest) <= _version(current):
+        return None
+    for constraint in map(Requirement, constraints):
+        if canonicalize_name(constraint.name) == "heinzel" and (
+            constraint.url is not None or not constraint.specifier.contains(latest)
+        ):
+            return None
+    return latest
 
 
 def _core_line(current: str, latest: str | None, channel: str) -> str:
