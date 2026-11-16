@@ -123,6 +123,7 @@ WEB_IMPORTS = (
 )
 # An E2E script name, matched only where a name starts, so a long run of name characters is not rescanned.
 MJS_NAME = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+\.mjs")
+E2E_BROWSER_DRIVER = re.compile(r"playwright|_browser_ready|_browser_result|_mounted|web_build")
 E2E_DIR = "tests/e2e"
 REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@^~{}-]*")
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -185,7 +186,7 @@ class Repo:
     # -- E2E lanes ------------------------------------------------------------------------------------------------
     @functools.cached_property
     def lanes(self) -> dict[str, list[str]]:
-        """E2E lane -> its pytest files, from the Makefile's E2E_* variables (web-1 = web_ui_test, web-2 = the rest)."""
+        """E2E lane -> its pytest files, from the Makefile's E2E_* variables."""
         text = (self.root / "Makefile").read_text(encoding="utf-8")
         supervised = make_variable(text, "E2E_SUPERVISED")
         supervised_files = supervised.split() if supervised else []
@@ -194,12 +195,15 @@ class Repo:
         if candidates and "$(" not in candidates:
             web_candidates = candidates.split()
         else:
-            # Browser tests are the ones whose module drives a web/e2e script.
+            # Match E2E_WEB_CANDIDATES in the Makefile; an .mjs reference alone is not a browser lane.
             web_candidates = [
-                f for f in all_e2e if MJS_NAME.search((self.root / f).read_text(encoding="utf-8", errors="replace"))
+                f
+                for f in all_e2e
+                if E2E_BROWSER_DRIVER.search((self.root / f).read_text(encoding="utf-8", errors="replace"))
             ]
         web = [f for f in web_candidates if f not in supervised_files]
-        web_1 = [f for f in web if f == f"{E2E_DIR}/web_ui_test.py"]
+        web_1_files = (make_variable(text, "E2E_WEB_1_FILES") or "").split()
+        web_1 = [f for f in web if f in web_1_files]
         web_2 = [f for f in web if f not in web_1]
         cli = [f for f in all_e2e if f not in web and f not in supervised_files]
         return {"cli": cli, "supervised": supervised_files, "web-1": web_1, "web-2": web_2}

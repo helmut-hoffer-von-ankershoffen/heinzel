@@ -91,6 +91,7 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
         {"full": False, "e2e_lanes": ["web-1"], "jobs_not": ["test-linux"]},
     ),
     ("e2e python test", ["tests/e2e/audio_visualizer_test.py"], {"full": False, "e2e_lanes": ["web-2"]}),
+    ("rebalanced e2e", ["tests/e2e/scheduled_connected_test.py"], {"full": False, "e2e_lanes": ["web-1"]}),
     (
         "desktop",
         ["desktop/src/main.js", "desktop/test/window.test.js"],
@@ -120,6 +121,23 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
 @pytest.fixture(scope="module")
 def repo() -> Any:
     return affected.Repo(ROOT)
+
+
+def test_affected_browser_lanes_match_make_allocation(repo):
+    recipe = "show-lanes:\n\t@printf '%s\\n' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-lanes"],
+        cwd=ROOT,
+        input=recipe + "\n",
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3,
+    )
+    first, second = [set(line.split()) for line in result.stdout.splitlines()]
+    assert set(repo.lanes["web-1"]) == first
+    assert set(repo.lanes["web-2"]) == second
+    assert "tests/e2e/self_chat_ui_test.py" in repo.lanes["cli"]
 
 
 def problems(got: dict[str, Any], want: dict[str, Any]) -> list[str]:
