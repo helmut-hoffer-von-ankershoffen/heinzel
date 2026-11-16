@@ -1604,8 +1604,19 @@ def run_update(case, label, *, previous=None):
     args = ["system", "update", "--json"] + (
         ["--source", str(target["wheel"])] if target["mode"] == "candidate" else []
     )
-    _, out, _ = case.run([str(case.bin / "hz"), *args], label, PHASE_DEADLINE * 2)
+    _, out, err = case.run([str(case.bin / "hz"), *args], label, PHASE_DEADLINE * 2)
     result = json.loads(out)
+    if previous == LEGACY_BRIDGE_VERSION:
+        # Retain bounded, non-secret facts even when the following acceptance check fails.
+        case.notes["legacy_bridge_update"] = {
+            "updated": result.get("updated") if isinstance(result.get("updated"), bool) else None,
+            **{key: safe_version(result.get(key)) for key in ("before", "after", "latest")},
+            "stderr_python_unknown_event_seen": "update.python.unknown" in err,
+            "stderr_python_managed_event_seen": "update.python.managed" in err,
+            "phases": bridge_update_phases(err),
+            "post_interpreter": bridge_post_interpreter(case),
+            "python_need": bridge_python_need(case),
+        }
     check(result["updated"] is True, f"The update reported updated={result['updated']}: {result.get('message')}")
     if previous is not None:
         check(result["before"] == previous, f"The update started from {result['before']}, expected {previous}")
@@ -1621,6 +1632,106 @@ def run_update(case, label, *, previous=None):
         f"The update installed {result['after']}, expected {target['version']}",
     )
     return result
+
+
+def safe_version(value):
+    """A public release version, never arbitrary CLI or receipt text."""
+    return value if isinstance(value, str) and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]{1,4}){2}", value) else None
+
+
+def bridge_post_interpreter(case):
+    try:
+        name = Path(installed_interpreter(case)).name
+        return name if re.fullmatch(r"python[0-9]{1,2}\.[0-9]{1,2}", name) else None
+    except (OSError, AttributeError, StepFailed):
+        return None
+
+
+def bridge_update_phases(stderr):
+    phases = {}
+    for line in stderr[:65536].splitlines():
+        try:
+            event = json.loads(line)
+            if event.get("event") == "phase" and event.get("id") in {"check", "install"}:
+                if event.get("state") in {"pending", "running", "done", "warning", "failed", "skipped"}:
+                    phases[event["id"]] = event["state"]
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return phases
+
+
+def bridge_python_need(case):
+    try:
+        fd = os.open(case.root / "cache_dir/python-need.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+                return None
+            data = json.loads(stream.read(4097))
+        python = data.get("python")
+        return {
+            "release": safe_version(data.get("release")),
+            "python": python if isinstance(python, str) and re.fullmatch(r"[0-9]{1,2}\.[0-9]{1,2}", python) else None,
+            "held": bool(data.get("held")),
+        }
+    except (OSError, AttributeError, ValueError, TypeError):
+        return None
+
+
+def bridge_receipt_facts(raw):
+    """Summarize the fixture's uv receipt without copying paths, URLs, credentials, or unbounded data."""
+    if len(raw) > 65536:
+        raise ValueError("receipt exceeds limit")
+    tool = tomllib.loads(raw.decode("utf-8"))["tool"]
+    allowed = {"heinzel", "heinzel-clock", "heinzel-example", "heinzel-resource", "heinzel-tailscale", "heinzel-theme"}
+
+    def summarize(key):
+        entries = tool.get(key, [])
+        if not isinstance(entries, list) or len(entries) > 64:
+            raise ValueError("invalid receipt entries")
+        result = []
+        for item in entries:
+            if not isinstance(item, dict) or item.get("name") not in allowed:
+                result.append({"source": "other"})
+                continue
+            spec = item.get("specifier")
+            result.append(
+                {
+                    "name": item["name"],
+                    "specifier": spec if isinstance(spec, str) and re.fullmatch(r"[<>=!~.,0-9 ]{1,80}", spec) else None,
+                    "source": "index" if set(item) <= {"name", "specifier"} else "other",
+                }
+            )
+        return result
+
+    return {key: summarize(key) for key in ("requirements", "constraints", "overrides")}
+
+
+def record_legacy_bridge_diagnostics(case):
+    """Record the isolated bridge's public fixture facts without affecting acceptance."""
+    try:
+        fd = os.open(case.prefix / "uv-receipt.toml", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                raise ValueError("unsafe receipt")
+            receipt = bridge_receipt_facts(stream.read(65537))
+        inventory = plugin_map(case, "bridge-diagnostic-plugins")
+        names = {"heinzel-clock", "heinzel-example", "heinzel-resource", "heinzel-tailscale", "heinzel-theme"}
+        interpreter = Path(installed_interpreter(case)).name
+        case.notes["legacy_bridge_diagnostics"] = {
+            "interpreter": interpreter if re.fullmatch(r"python[0-9]{1,2}\.[0-9]{1,2}", interpreter) else None,
+            "receipt": receipt,
+            "plugins": {
+                name: {"version": safe_version(row.get("version")), "enabled": row.get("enabled") is True}
+                for name, row in inventory.items()
+                if name in names
+            },
+        }
+    except (Refused, Skipped, Unprovable):
+        raise
+    except Exception as error:  # noqa: BLE001 - diagnostics must not change acceptance
+        case.notes["legacy_bridge_diagnostics"] = {"unavailable": type(error).__name__}
 
 
 def post_update_profile(case):
@@ -1654,11 +1765,13 @@ def verify_legacy_bridge(case, receipt_profile):
         "The legacy bridge changed configuration",
     )
     case.expect_version = LEGACY_BRIDGE_VERSION
+    state = verify_state(case, "bridge")
+    record_legacy_bridge_diagnostics(case)
     return {
         "version": LEGACY_BRIDGE_VERSION,
         "wheel_sha256": LEGACY_BRIDGE_SHA256,
         "core_files": files["wheel_files_identical"],
-        **verify_state(case, "bridge"),
+        **state,
     }
 
 
@@ -1862,9 +1975,7 @@ def check_installed_version(case, name, version, label):
 def verify_clock_update(case, version):
     prefix = case.prefix.resolve(strict=True)
     check(prefix.is_relative_to(case.root), "The tool environment is outside this case")
-    return compare_wheel(
-        case.root / "clock-update-target.whl", site_packages(prefix), "heinzel-clock", version, prefix
-    )
+    return compare_wheel(case.root / "clock-update-target.whl", site_packages(prefix), "heinzel-clock", version, prefix)
 
 
 def case_plugin_cli(case):
@@ -1901,7 +2012,8 @@ def case_plugin_cli(case):
     case.step("inventory and checkpoint after install", lambda: verify_state(case, "installed"))
     case.step("pin an older plugin version (CLI)", lambda: add("heinzel-clock==0.9.2", "clock-older", "0.9.2"))
     case.step(
-        "update the plugin to the newest (CLI re-add replaces)", lambda: add("heinzel-clock", "clock-update", clock_version)
+        "update the plugin to the newest (CLI re-add replaces)",
+        lambda: add("heinzel-clock", "clock-update", clock_version),
     )
 
     def toggle():
@@ -1953,7 +2065,9 @@ def ui_open_plugins(browser, case, *, deadline=None):
     time.sleep(ui_remaining(deadline, 3))  # a first-run setup dialog may open late; a user dismisses it first
     if browser.present("button", "Close setup"):
         browser.click("button", "Close setup", timeout=ui_remaining(deadline, 60))
-        browser.wait("!document.querySelector('[role=dialog]')", "the setup dialog to close", ui_remaining(deadline, 30))
+        browser.wait(
+            "!document.querySelector('[role=dialog]')", "the setup dialog to close", ui_remaining(deadline, 30)
+        )
     # The account trigger is named for this case's fictional person. Reach it with actual Tab events.
     account = account_trigger(browser)
     focus_deadline = time.monotonic() + ui_remaining(deadline, 60)

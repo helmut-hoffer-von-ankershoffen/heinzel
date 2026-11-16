@@ -668,6 +668,98 @@ def test_legacy_bridge_rejects_wrong_wheel_before_creating_proof(tmp_path, monke
     assert not list(tmp_path.iterdir())
 
 
+def test_bridge_receipt_diagnostics_do_not_expose_private_sources():
+    facts = harness.bridge_receipt_facts(b"""[tool]
+requirements = [
+  { name = "heinzel", specifier = ">=0.9.43" },
+  { name = "heinzel-clock", url = "https://example.invalid/private?token=secret" },
+  { name = "private-package", path = "/secret" },
+]
+constraints = [{ path = "/secret/constraints.txt" }]
+""")
+    assert facts == {
+        "requirements": [
+            {"name": "heinzel", "specifier": ">=0.9.43", "source": "index"},
+            {"name": "heinzel-clock", "specifier": None, "source": "other"},
+            {"source": "other"},
+        ],
+        "constraints": [{"source": "other"}],
+        "overrides": [],
+    }
+    assert "secret" not in json.dumps(facts)
+    with pytest.raises(ValueError, match="receipt exceeds limit"):
+        harness.bridge_receipt_facts(b"x" * 65537)
+
+
+def test_failed_legacy_bridge_update_keeps_bounded_outcome():
+    def cli(_args, _label, _timeout):
+        return 0, json.dumps({"before": "0.9.43", "after": "0.9.43", "latest": "secret-token", "updated": False}), ""
+
+    case = SimpleNamespace(
+        ctx={"update_target": {"mode": "published", "version": "0.9.49"}}, notes={}, bin=Path("bin"), run=cli
+    )
+    with pytest.raises(harness.StepFailed, match="updated=False"):
+        harness.run_update(case, "update", previous="0.9.43")
+    assert case.notes["legacy_bridge_update"] == {
+        "before": "0.9.43",
+        "after": "0.9.43",
+        "latest": None,
+        "updated": False,
+        "post_interpreter": None,
+        "python_need": None,
+        "stderr_python_unknown_event_seen": False,
+        "stderr_python_managed_event_seen": False,
+        "phases": {},
+    }
+
+
+def test_bridge_diagnostics_never_follow_receipt_symlinks(tmp_path):
+    sensitive = tmp_path / "private"
+    sensitive.write_text('private = "secret"')
+    prefix = tmp_path / "tool"
+    prefix.mkdir()
+    (prefix / "uv-receipt.toml").symlink_to(sensitive)
+    case = SimpleNamespace(prefix=prefix, notes={})
+    harness.record_legacy_bridge_diagnostics(case)
+    assert case.notes["legacy_bridge_diagnostics"]["unavailable"] == "OSError"
+    assert "secret" not in json.dumps(case.notes)
+
+
+def test_bridge_diagnostics_do_not_suppress_guard_refusal(tmp_path, monkeypatch):
+    (tmp_path / "uv-receipt.toml").write_text("[tool]\nrequirements = []\n")
+
+    def refused(*_args):
+        message = "guard"
+        raise harness.Refused(message)
+
+    monkeypatch.setattr(harness, "plugin_map", refused)
+    with pytest.raises(harness.Refused, match="guard"):
+        harness.record_legacy_bridge_diagnostics(SimpleNamespace(prefix=tmp_path, notes={}))
+
+
+def test_bridge_post_update_facts_are_bounded_and_redacted(tmp_path):
+    managed = tmp_path / "uv-python"
+    managed.mkdir()
+    python = managed / "python3.12"
+    python.touch()
+    prefix = tmp_path / "tool"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/python").symlink_to(python)
+    cache = tmp_path / "cache_dir"
+    cache.mkdir()
+    (cache / "python-need.json").write_text(json.dumps({"release": "0.9.49", "python": "3.15", "held": "secret"}))
+    case = SimpleNamespace(root=tmp_path, prefix=prefix)
+    assert harness.bridge_post_interpreter(case) == "python3.12"
+    assert harness.bridge_python_need(case) == {"release": "0.9.49", "python": "3.15", "held": True}
+    stderr = "\n".join(
+        [
+            json.dumps({"event": "phase", "id": "check", "state": "warning", "detail": "secret"}),
+            json.dumps({"event": "phase", "id": "secret", "state": "done"}),
+        ]
+    )
+    assert harness.bridge_update_phases(stderr) == {"check": "warning"}
+
+
 @pytest.mark.parametrize(
     ("actual", "version", "error"),
     [
