@@ -187,9 +187,9 @@ struct WidgetCredentialStore {
 
     /// Reserve before any network call. Pending attempts are never retried
     /// automatically because a lost response may already have rotated Core.
-    func beginEnrollment(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
+    func beginEnrollment(expected: ActivityCatalog.Activation, pairingFingerprint: String? = nil) -> ActivityCatalog.Enrollment? {
         guard keychain.preflight() else { return nil }
-        return ActivityCatalog.reserveEnrollment(url: catalogURL, expected: expected)
+        return ActivityCatalog.reserveEnrollment(url: catalogURL, expected: expected, pairingFingerprint: pairingFingerprint)
     }
 
     func capture(now: Date = .now) -> WidgetCredentialCapture? {

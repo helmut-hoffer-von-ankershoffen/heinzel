@@ -125,8 +125,8 @@ struct WidgetFencedEnrollment {
         return result
     }
 
-    func prepare(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
-        guard let reservation = store.beginEnrollment(expected: expected) else { return nil }
+    func prepare(expected: ActivityCatalog.Activation, pairingFingerprint: String? = nil) -> ActivityCatalog.Enrollment? {
+        guard let reservation = store.beginEnrollment(expected: expected, pairingFingerprint: pairingFingerprint) else { return nil }
         var random = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { return nil }
         let secret = "hzw_" + Data(random).base64EncodedString().replacingOccurrences(of: "+", with: "-")

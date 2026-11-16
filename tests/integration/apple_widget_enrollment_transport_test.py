@@ -19,10 +19,14 @@ def test_enrollment_script_restricts_credentials_origin_and_response_size():
     script = source.split('static let script = """', 1)[1].split('        """', 1)[0]
     harness = """
 const assert = require('node:assert/strict');
+const {webcrypto, createHash} = require('node:crypto');
+globalThis.crypto = webcrypto;
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-const run = new AsyncFunction('origin','operation','payload', SCRIPT);
 const origin = 'https://example.test';
 const bearer = 'hzd_' + 'x'.repeat(43);
+const fingerprint = createHash('sha256').update('heinzel-widget-pair-v1|' + origin + '|' + bearer).digest('hex');
+const script = new AsyncFunction('origin','operation','payload','expectedFingerprint', SCRIPT);
+const run = (origin, operation, payload) => script(origin, operation, payload, fingerprint);
 globalThis.location = {origin};
 globalThis.localStorage = {getItem: key => key === 'hz.device' ? bearer : null};
 const epoch = 'a'.repeat(32), revision = 'b'.repeat(32), workspace = 'c'.repeat(64), attempt = 'd'.repeat(32);
@@ -31,9 +35,10 @@ const receipt = {epoch, revision, workspace_id:workspace, attempt,
                  operation:'issue', expires_at:'2026-11-16T04:00:00Z'};
 let status = 200, mime = 'application/json', calls = [];
 let chunks = [Buffer.from(JSON.stringify({...negotiated, leaked:bearer}))];
-let switchOrigin = false, cancelled = false;
+let switchOrigin = false, switchPair = false, cancelled = false;
 globalThis.fetch = async (url, opts) => {
   calls.push({url, opts});
+  if (switchPair) globalThis.localStorage = {getItem: () => 'hzd_' + 'y'.repeat(43)};
   return {status, headers: {get: () => mime}, body: {getReader: () => {
     let index = 0;
     return {read: async () => {
@@ -75,6 +80,16 @@ globalThis.fetch = async (url, opts) => {
   const count = calls.length;
   assert.equal((await run(origin, 'mutate', payload)).state, 'unauthorized');
   assert.equal(calls.length, count);
+  globalThis.localStorage = {getItem: () => 'hzd_' + 'y'.repeat(43)};
+  assert.equal((await run(origin, 'mutate', payload)).state, 'unavailable');
+  assert.equal(calls.length, count);
+  let reads = 0;
+  globalThis.localStorage = {getItem: () => ++reads === 1 ? bearer : 'hzd_' + 'y'.repeat(43)};
+  assert.equal((await run(origin, 'mutate', payload)).state, 'unavailable');
+  assert.equal(calls.length, count);
+  globalThis.localStorage = {getItem: () => bearer}; switchPair = true;
+  assert.equal((await run(origin, 'mutate', payload)).state, 'unavailable');
+  assert.equal(calls.length, count + 1);
 })().catch(error => { console.error(error); process.exit(1); });
 """.replace("SCRIPT", json.dumps(script))
     subprocess.run([node, "-e", harness], check=True, timeout=15)

@@ -55,7 +55,7 @@ def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None
     assert "WidgetCredentialStore.configured()" in enrollment
     assert "self.documentRevision == revision" in enrollment
     assert "self.isEnrollmentViewCurrent()" in enrollment
-    assert "WidgetEnrollmentTransport.hasPairedDevice" in enrollment
+    assert "WidgetEnrollmentTransport.pairedDeviceFingerprint" in enrollment
     assert "enrollment.canResume(pending)" in enrollment
     recovery = enrollment.split("guard enrollment.canResume(pending) else", 1)[1].split("return", 1)[0]
     assert recovery.index("pending.previous.endpoint == endpoint.origin.absoluteString") < recovery.index(

@@ -68,6 +68,7 @@ final class ActivityCatalog {
         var receipt: Data? = nil
         var credentialGeneration: String? = nil
         var activationID: String? = nil
+        var pairingFingerprint: String? = nil
     }
 
     private struct JournalRequest: Decodable {
@@ -90,7 +91,8 @@ final class ActivityCatalog {
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
         if let journal = try? JSONDecoder().decode(EnrollmentJournal.self, from: data) {
             guard journal.version == 1, UUID(uuidString: journal.revision) != nil,
-                  UUID(uuidString: journal.reservation.id) != nil else { return nil }
+                  UUID(uuidString: journal.reservation.id) != nil,
+                  journal.pairingFingerprint.map({ $0.wholeMatch(of: /[a-f0-9]{64}/) != nil }) ?? true else { return nil }
             switch journal.phase {
             case .preparing:
                 guard journal.workspaceID == nil, journal.request == nil, journal.receipt == nil,
@@ -255,8 +257,9 @@ final class ActivityCatalog {
         }
     }
 
-    static func reserveEnrollment(url: URL, expected: Activation) -> Enrollment? {
-        withWriterLock(url: url, failure: nil) {
+    static func reserveEnrollment(url: URL, expected: Activation, pairingFingerprint: String? = nil) -> Enrollment? {
+        guard pairingFingerprint.map({ $0.wholeMatch(of: /[a-f0-9]{64}/) != nil }) ?? true else { return nil }
+        return withWriterLock(url: url, failure: nil) {
             guard !FileManager.default.fileExists(atPath: enrollmentURL(for: url).path) else { return nil }
             guard let data = try? Data(contentsOf: authorityURL(for: url)),
                   let current = try? JSONDecoder().decode(Authority.self, from: data),
@@ -264,8 +267,9 @@ final class ActivityCatalog {
             let attempt = Enrollment(id: UUID().uuidString, previous: expected)
             // Persist the unresolved attempt first. A crash between these writes
             // may block enrollment unnecessarily, but cannot start a second POST.
-            let journal = EnrollmentJournal(version: 1, reservation: attempt, revision: UUID().uuidString,
+            var journal = EnrollmentJournal(version: 1, reservation: attempt, revision: UUID().uuidString,
                                              phase: .preparing, workspaceID: nil, request: nil)
+            journal.pairingFingerprint = pairingFingerprint
             guard let marker = try? JSONEncoder().encode(journal),
                   writeJournal(marker, enrollmentURL(for: url)) else { return nil }
             let pending = Authority(scope: "", generation: UUID().uuidString, activation: expected, enrollment: attempt)
@@ -298,6 +302,15 @@ final class ActivityCatalog {
         }
     }
 
+    static func enrollmentPairingMatches(url: URL, expected: Enrollment, fingerprint: String) -> Bool {
+        guard fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return false }
+        return withWriterLock(url: url, failure: false) {
+            guard let data = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let journal = enrollmentJournal(data), journal.reservation == expected else { return false }
+            return journal.pairingFingerprint == fingerprint
+        }
+    }
+
     /// The exact, non-secret mutation must be durable before WebKit sends it.
     static func armEnrollment(url: URL, expected: Enrollment, workspaceID: String, request: Data) -> Bool {
         guard workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil, !request.isEmpty, request.count <= 4096 else { return false }
@@ -311,8 +324,9 @@ final class ActivityCatalog {
                 return current.workspaceID == workspaceID && current.request == request && writeJournal(data, enrollmentURL(for: url))
             }
             guard current.phase == .preparing || current.phase == .legacyUnknown else { return false }
-            let next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
+            var next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
                                          phase: .armed, workspaceID: workspaceID, request: request)
+            next.pairingFingerprint = current.pairingFingerprint
             guard let encoded = try? JSONEncoder().encode(next), enrollmentJournal(encoded) == next else { return false }
             return writeJournal(encoded, enrollmentURL(for: url))
         }
@@ -338,6 +352,7 @@ final class ActivityCatalog {
             var next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
                                          phase: .receipted, workspaceID: workspaceID, request: request)
             next.receipt = receipt; next.credentialGeneration = generation; next.activationID = UUID().uuidString
+            next.pairingFingerprint = journal.pairingFingerprint
             guard let encoded = try? JSONEncoder().encode(next), enrollmentJournal(encoded) == next,
                   writeJournal(encoded, enrollmentURL(for: url)) else { return nil }
             return next

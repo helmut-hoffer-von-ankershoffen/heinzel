@@ -791,7 +791,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 return !Task.isCancelled && self.workspace === view && self.documentRevision == revision &&
                     self.isEnrollmentViewCurrent() && view.url.map(self.endpoint.owns) == true
             }
-            guard current(), await WidgetEnrollmentTransport.hasPairedDevice(in: view, endpoint: endpoint.origin, isCurrent: current), current() else { return }
+            guard current(), let fingerprint = await WidgetEnrollmentTransport.pairedDeviceFingerprint(in: view, endpoint: endpoint.origin, isCurrent: current), current() else { return }
             let enrollment = WidgetFencedEnrollment(store: store)
             let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
             let result: WidgetEnrollmentOutcome
@@ -811,7 +811,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     }
                     return
                 }
-                result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, isCurrent: current)
+                result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
             } else {
                 let active = ActivityCatalog.activation(url: store.catalogURL)
                 if let active, active.endpoint != endpoint.origin.absoluteString { return }
@@ -821,7 +821,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 }
                 guard store.keychain.preflight(), current() else { return }
                 guard let expected = active ?? ActivityCatalog.activate(url: store.catalogURL, endpoint: endpoint.origin.absoluteString) else { return }
-                result = await coordinator.begin(expected: expected, in: view, endpoint: endpoint.origin, isCurrent: current)
+                result = await coordinator.begin(expected: expected, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
             }
             if case .identityMismatch(let clear) = result {
                 if clear.revoked { ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload() }

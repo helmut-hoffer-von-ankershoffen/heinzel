@@ -400,7 +400,11 @@ private final class NotificationCapture: @unchecked Sendable {
         let transactionStore = WidgetCredentialStore(catalogURL: transactionURL, keychain: transactionKeychain)
         let transactionEnrollment = WidgetFencedEnrollment(store: transactionStore)
         let transactionInitial = ActivityCatalog.activate(url: transactionURL, endpoint: pending.endpoint)!
-        let transactionAttempt = transactionEnrollment.prepare(expected: transactionInitial)!
+        let pairingFingerprint = String(repeating: "e", count: 64)
+        let transactionAttempt = transactionEnrollment.prepare(expected: transactionInitial, pairingFingerprint: pairingFingerprint)!
+        precondition(ActivityCatalog.enrollmentPairingMatches(url: transactionURL, expected: transactionAttempt, fingerprint: pairingFingerprint))
+        precondition(!ActivityCatalog.enrollmentPairingMatches(url: transactionURL, expected: transactionAttempt,
+                                                               fingerprint: String(repeating: "f", count: 64)))
         let transactionWire = transactionAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
         guard case .ready(let transactionRequest) = transactionEnrollment.bind(fixtureStatus, reservation: transactionAttempt) else { fatalError() }
         let transactionPending = try JSONSerialization.jsonObject(with: transactionKeychain.pending[transactionWire]!) as! [String: Any]
@@ -416,6 +420,7 @@ private final class NotificationCapture: @unchecked Sendable {
             workspaceID: credential.workspaceID, request: transactionRequest, receipt: transactionReceipt,
             generation: transactionGeneration)
         precondition(repeatedPlan == plan && ActivityCatalog.savedEnrollmentReceipt(url: transactionURL, expected: transactionAttempt) == transactionReceipt)
+        precondition(plan.pairingFingerprint == pairingFingerprint)
         guard case .receipt(let admittedReceipt) = ActivityCatalog.admitEnrollmentIssue(url: transactionURL,
             expected: transactionAttempt, request: transactionRequest) else { fatalError() }
         precondition(admittedReceipt == transactionReceipt)

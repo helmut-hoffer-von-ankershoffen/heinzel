@@ -17,6 +17,10 @@ enum WidgetEnrollmentResponse {
         if (location.origin !== new URL(origin).origin) return {state: 'unavailable'};
         const device = localStorage.getItem('hz.device');
         if (typeof device !== 'string' || !/^hzd_[A-Za-z0-9_-]{32,128}$/.test(device)) return {state: 'unauthorized'};
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('heinzel-widget-pair-v1|' + location.origin + '|' + device));
+        const fingerprint = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+        if (location.origin !== new URL(origin).origin || localStorage.getItem('hz.device') !== device ||
+            fingerprint !== expectedFingerprint) return {state: 'unavailable'};
         const target = operation === 'negotiate' ? '/api/_web/widget-fence' : '/api/_web/widget-fenced-credential';
         const headers = {Authorization: `Bearer ${device}`};
         if (operation === 'mutate') headers['Content-Type'] = 'application/json';
@@ -24,7 +28,7 @@ enum WidgetEnrollmentResponse {
             const response = await fetch(target, {method: 'POST', headers,
                 body: operation === 'mutate' ? payload : undefined, credentials: 'omit',
                 cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5000)});
-            if (location.origin !== new URL(origin).origin) return {state: 'unavailable'};
+            if (location.origin !== new URL(origin).origin || localStorage.getItem('hz.device') !== device) return {state: 'unavailable'};
             if (response.status === 401 || response.status === 403) return {state: 'unauthorized'};
             if (response.status === 409) return {state: 'conflict'};
             if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json' || !response.body) return {state: 'unavailable'};
@@ -39,7 +43,7 @@ enum WidgetEnrollmentResponse {
                 text += decoder.decode(part.value, {stream: true});
             }
             text += decoder.decode();
-            if (location.origin !== new URL(origin).origin) return {state: 'unavailable'};
+            if (location.origin !== new URL(origin).origin || localStorage.getItem('hz.device') !== device) return {state: 'unavailable'};
             const value = JSON.parse(text);
             const hex32 = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
             const hex64 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -56,7 +60,7 @@ enum WidgetEnrollmentResponse {
         } catch (_) { return {state: 'unavailable'}; }
         """
 
-    static func exchange(_ operation: Operation, payload: Data?, in view: WKWebView, endpoint: URL,
+    static func exchange(_ operation: Operation, payload: Data?, in view: WKWebView, endpoint: URL, fingerprint: String,
                          isCurrent: () -> Bool) async -> WidgetEnrollmentResponse {
         guard endpoint.scheme == "https", view.url.map({ sameOrigin($0, endpoint) }) == true,
               isCurrent(), payload.map({ $0.count <= 4096 }) ?? true,
@@ -68,6 +72,7 @@ enum WidgetEnrollmentResponse {
         } else { body = "" }
         let value = try? await view.callAsyncJavaScript(script, arguments: [
             "origin": endpoint.absoluteString, "operation": operation == .negotiate ? "negotiate" : "mutate", "payload": body,
+            "expectedFingerprint": fingerprint,
         ], in: nil, contentWorld: .defaultClient)
         guard isCurrent(), view.url.map({ sameOrigin($0, endpoint) }) == true,
               let result = value as? [String: Any], let state = result["state"] as? String else { return .unavailable }
@@ -81,14 +86,19 @@ enum WidgetEnrollmentResponse {
         }
     }
 
-    static func hasPairedDevice(in view: WKWebView, endpoint: URL, isCurrent: () -> Bool) async -> Bool {
-        guard endpoint.scheme == "https", view.url.map({ sameOrigin($0, endpoint) }) == true, isCurrent() else { return false }
+    static func pairedDeviceFingerprint(in view: WKWebView, endpoint: URL, isCurrent: () -> Bool) async -> String? {
+        guard endpoint.scheme == "https", view.url.map({ sameOrigin($0, endpoint) }) == true, isCurrent() else { return nil }
         let value = try? await view.callAsyncJavaScript("""
-            if (location.origin !== new URL(origin).origin) return false;
+            if (location.origin !== new URL(origin).origin) return null;
             const value = localStorage.getItem('hz.device');
-            return typeof value === 'string' && /^hzd_[A-Za-z0-9_-]{32,128}$/.test(value);
-            """, arguments: ["origin": endpoint.absoluteString], in: nil, contentWorld: .defaultClient) as? Bool
-        return value == true && isCurrent() && view.url.map({ sameOrigin($0, endpoint) }) == true
+            if (typeof value !== 'string' || !/^hzd_[A-Za-z0-9_-]{32,128}$/.test(value)) return null;
+            const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('heinzel-widget-pair-v1|' + location.origin + '|' + value));
+            if (location.origin !== new URL(origin).origin || localStorage.getItem('hz.device') !== value) return null;
+            return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+            """, arguments: ["origin": endpoint.absoluteString], in: nil, contentWorld: .defaultClient) as? String
+        guard let value, value.wholeMatch(of: /[a-f0-9]{64}/) != nil, isCurrent(),
+              view.url.map({ sameOrigin($0, endpoint) }) == true else { return nil }
+        return value
     }
 
     private static func sameOrigin(_ first: URL, _ second: URL) -> Bool {
@@ -114,18 +124,19 @@ enum WidgetEnrollmentOutcome {
 @MainActor struct WidgetEnrollmentCoordinator {
     let enrollment: WidgetFencedEnrollment
 
-    func begin(expected: ActivityCatalog.Activation, in view: WKWebView, endpoint: URL,
+    func begin(expected: ActivityCatalog.Activation, in view: WKWebView, endpoint: URL, fingerprint: String,
                isCurrent: @escaping () -> Bool) async -> WidgetEnrollmentOutcome {
         guard isCurrent(), expected.endpoint == endpoint.absoluteString,
-              let reservation = enrollment.prepare(expected: expected) else { return .pending }
-        return await resume(reservation, in: view, endpoint: endpoint, isCurrent: isCurrent)
+              let reservation = enrollment.prepare(expected: expected, pairingFingerprint: fingerprint) else { return .pending }
+        return await resume(reservation, in: view, endpoint: endpoint, fingerprint: fingerprint, isCurrent: isCurrent)
     }
 
     /// Resume only the same persisted operation; conflicts never rebase it.
-    func resume(_ reservation: ActivityCatalog.Enrollment, in view: WKWebView, endpoint: URL,
+    func resume(_ reservation: ActivityCatalog.Enrollment, in view: WKWebView, endpoint: URL, fingerprint: String,
                 isCurrent: @escaping () -> Bool) async -> WidgetEnrollmentOutcome {
         let current = {
             isCurrent() && reservation.previous.endpoint == endpoint.absoluteString &&
+            ActivityCatalog.enrollmentPairingMatches(url: enrollment.store.catalogURL, expected: reservation, fingerprint: fingerprint) &&
             ActivityCatalog.withEnrollment(url: enrollment.store.catalogURL, expected: reservation, { true }) == true
         }
         guard current(), enrollment.canResume(reservation) else { return .pending }
@@ -136,7 +147,7 @@ enum WidgetEnrollmentOutcome {
             case .rejected: return .pending
             }
         }
-        let status = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint, isCurrent: current)
+        let status = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint, fingerprint: fingerprint, isCurrent: current)
         guard current() else { return .pending }
         switch status {
         case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
@@ -158,7 +169,7 @@ enum WidgetEnrollmentOutcome {
                     case .rejected: return .pending
                     }
                 case .issue(let admitted):
-                    let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: admitted, in: view, endpoint: endpoint, isCurrent: current)
+                    let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: admitted, in: view, endpoint: endpoint, fingerprint: fingerprint, isCurrent: current)
                     guard current() else { return .pending }
                     switch response {
                     case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
