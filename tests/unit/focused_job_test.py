@@ -180,6 +180,8 @@ def _run_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, ro
     (tmp_path / "rounds_case_test.py").write_text(source, encoding="utf-8")
     monkeypatch.setenv("FOCUSED_REPEAT", str(rounds))
     monkeypatch.setenv("FOCUSED_OUT", str(tmp_path / "out"))
+    # This nested session supplies its two plugins explicitly; unrelated installed plugins slow and interfere with it.
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     monkeypatch.setattr(focused_job, "_ROUNDS", {})
     monkeypatch.setattr(focused_job, "_START", focused_job.time.monotonic())
     monkeypatch.chdir(tmp_path)
