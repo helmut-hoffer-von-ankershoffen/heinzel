@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 TOOLKIT = (
@@ -133,6 +134,8 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
     """
     environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     environment.pop("VIRTUAL_ENV", None)
+    # Tool installs hardlink cache files; a caller cache may retain unsafe modes from unrelated builds.
+    environment["UV_CACHE_DIR"] = str(destination / "uv-cache")
     shim_find_links(environment, destination / "uv-shim")
     environment["HZ_PLUGINS_ENABLED"] = "false"
     for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
@@ -189,6 +192,20 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
             run([*make, target], directory, f"{preset}-{target}")
         check_layout(directory, collection=False)
 
+    collection_journey(core, toolkit, template, destination, run)
+
+
+def collection_journey(
+    core: str, toolkit: str | None, template: Path, destination: Path, run: Callable[[list[str], Path, str], None]
+) -> None:
+    """Exercise collection presets and real private captures of stock and authored source.
+
+    Raises:
+        AssertionError: If scaffolding changes files outside its owning project directories.
+    """
+    import plugin_tooling  # noqa: PLC0415 - only the script entrypoint needs the sibling toolkit loader
+
+    make = ["make", f"CORE={core}", *([f"TOOLING={toolkit}"] if toolkit else [])]
     collection = destination / "collection"
     collection.mkdir()
     marker = collection / "README.md"
@@ -200,21 +217,75 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
         toolkit or TOOLKIT,
         "hz-plugin",
     ]
+    screenshot_env = destination / "screenshot-toolkit"
+    run(["uv", "venv", "--python", "3.15", str(screenshot_env)], destination, "screenshot-toolkit-venv")
+    if toolkit and toolkit != TOOLKIT:
+        selection = [str(plugin_tooling.candidate_wheel(toolkit, screenshot_env))]
+    else:
+        selection = [
+            "--require-hashes",
+            "--requirements",
+            str(plugin_tooling.local_requirements(plugin_tooling.REQUIREMENTS, screenshot_env)),
+        ]
+    screenshot_python = str(screenshot_env / "bin/python")
+    run(
+        ["uv", "pip", "install", "--no-build", "--python", screenshot_python, *selection],
+        destination,
+        "screenshot-toolkit-install",
+    )
+    screenshots = [
+        screenshot_python,
+        str(Path(__file__).resolve().parents[1] / "tests/fixtures/starter_screenshots.py"),
+    ]
     for preset in ("minimal", "contributions"):
         name = f"collection-{preset}"
         run(
-            [*cli, "new", name, "--core", core, "--template", str(template), "--ref", "HEAD", "--preset", preset],
+            [
+                *cli,
+                "new",
+                name,
+                "--core",
+                core,
+                "--template",
+                str(template),
+                "--ref",
+                "HEAD",
+                "--preset",
+                preset,
+                "--no-screenshots",
+            ],
             collection,
             f"{name}-scaffold",
         )
         check_collection_message(destination / f"{name}-scaffold.log")
         owning = collection / "plugins" / f"heinzel-{name}"
         check_layout(owning, collection=True)
+        stock = destination / f"{name}-stock-draft"
+        run(
+            [*screenshots, str(owning), str(stock), "--core", core, "--preset", preset],
+            collection,
+            f"{name}-stock-screenshots",
+        )
         add_first_operation(owning)
         run([*make, "setup"], owning, f"{name}-setup")
         run([*make, "fix"], owning, f"{name}-first-change")
         for command in ("check-fast", "check", "build", "acceptance", "release"):
             run([*make, command], owning, f"{name}-{command}")
+        run(
+            [
+                *screenshots,
+                str(owning),
+                str(destination / f"{name}-authored-draft"),
+                "--core",
+                core,
+                "--preset",
+                preset,
+                "--previous",
+                str(stock),
+            ],
+            collection,
+            f"{name}-authored-screenshots",
+        )
     if marker.read_text() != "Existing collection; no registration edits.\n" or set(collection.iterdir()) != {
         marker,
         collection / "plugins",

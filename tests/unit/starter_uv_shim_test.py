@@ -76,3 +76,23 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
         check=True,
         timeout=15,
     )
+
+
+def test_journey_owns_its_cache_without_changing_the_callers_cache(starter, tmp_path, monkeypatch):
+    caller_cache = str(tmp_path / "caller-cache")
+    destination = tmp_path / "journey"
+    destination.mkdir()
+    monkeypatch.setenv("UV_CACHE_DIR", caller_cache)
+    monkeypatch.delenv("UV_FIND_LINKS", raising=False)
+
+    class FirstCommandError(Exception):
+        pass
+
+    def inspect_first_command(*args, **kwargs):
+        assert kwargs["env"]["UV_CACHE_DIR"] == str(destination / "uv-cache")
+        raise FirstCommandError
+
+    monkeypatch.setattr(starter.subprocess, "run", inspect_first_command)
+    with pytest.raises(FirstCommandError):
+        starter.journey("fixture-core", None, tmp_path, destination)
+    assert os.environ["UV_CACHE_DIR"] == caller_cache
