@@ -14,6 +14,15 @@ Install the native Swift Mac app, with browser and video panes working again in 
 
 - **ci:** Stabilize streaming and template checks ([#842](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/842)) ([a9f765f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/a9f765f8fdd7dd7e7d3f523dac34287ae8db01b1))
 - **web:** Restore Electron browser and player surfaces ([#844](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/844)) ([cd08944](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/cd0894422ecc57b30e64d85b6df4863cb7b7cd93))
+- **ci:** Verify the full public consumer inventory ([76b13e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/76b13e3ccc135bdabeb157b4cea5d254217ae681))
+- **ci:** Satisfy Apple build script contracts ([#845](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/845)) ([9ca565f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/9ca565fe3a33fb2c444fb3d859369307cfe4a593))
+- **web:** Settle audio tests and use shared navigation controls ([#847](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/847)) ([52ff816](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/52ff816385b5b767c63d0940a90ee5492e854b5d))
+- **ci:** Rebalance macOS browser journeys ([#849](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/849)) ([03f777a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/03f777aa33e6a470f1b82ebf9862d7d1eb28a9cd))
+
+### 🧪 Testing
+
+- **ci:** Reduce macOS fixture startup overhead ([#846](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/846)) ([6195675](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/61956756b5dfa8a29995f8af4443034abf2f6a0c))
+- **web:** Read connector switches from one DOM snapshot ([#848](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/848)) ([1010e1f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1010e1f64f1466b7f238dd552768c90911d722b0))
 
 ## [0.9.47](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.47) - 2026-11-16
 
