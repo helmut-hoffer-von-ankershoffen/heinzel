@@ -1,8 +1,10 @@
 """Pure state transitions for recoverable, paired-device widget rotation.
 
 The caller must authenticate the exact pairing incarnation under its storage lock
-and persist the returned state atomically before returning a receipt. No raw bearer
-is accepted or stored here. This module is not yet connected to any endpoint.
+and persist the returned state atomically before returning a receipt. Requests and
+stored state must already have passed strict schema validation, and the clock must
+be trusted. No raw bearer is accepted or stored here. This module is not yet
+connected to any endpoint.
 """
 
 from __future__ import annotations

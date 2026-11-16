@@ -51,3 +51,30 @@ def test_rejects_bad_commitments_and_naive_clock() -> None:
         transition(state, Request(state.epoch, state.revision, "a" * 32, "issue", "hzw_not_a_hash"), now)
     with pytest.raises(FenceConflictError):
         transition(state, Request(state.epoch, state.revision, "a" * 32, "revoke", None), now.replace(tzinfo=None))
+
+
+def test_revoke_empty_is_fenced_and_replay_is_idempotent() -> None:
+    now = datetime(2026, 11, 16, tzinfo=UTC)
+    initial = FenceState.new()
+    request = Request(initial.epoch, initial.revision, "f" * 32, "revoke", None)
+    revoked, receipt = transition(initial, request, now)
+    assert revoked.child_hash is None
+    assert revoked.revision != initial.revision
+    assert transition(revoked, request, now + timedelta(days=1)) == (revoked, receipt)
+    with pytest.raises(FenceConflictError):
+        transition(revoked, replace(request, operation="issue", commitment="1" * 64), now)
+    with pytest.raises(FenceConflictError):
+        transition(revoked, replace(request, revision=revoked.revision), now)
+    with pytest.raises(FenceConflictError):
+        transition(revoked, replace(request, epoch=FenceState.new().epoch), now)
+
+
+def test_old_exact_issue_replay_is_rejected_after_supersession() -> None:
+    now = datetime(2026, 11, 16, tzinfo=UTC)
+    initial = FenceState.new()
+    first = Request(initial.epoch, initial.revision, "a" * 32, "issue", "1" * 64)
+    issued, _ = transition(initial, first, now)
+    second = Request(issued.epoch, issued.revision, "b" * 32, "issue", "2" * 64)
+    replaced, _ = transition(issued, second, now)
+    with pytest.raises(FenceConflictError):
+        transition(replaced, first, now)
