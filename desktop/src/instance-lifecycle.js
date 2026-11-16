@@ -3,6 +3,7 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
   let window = null;
   let connection = null;
   let opening = null;
+  let replacing = false;
   let ready = false;
   let focusWhenReady = false;
 
@@ -17,6 +18,16 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
 
   function setReady() {
     ready = true;
+  }
+
+  function trackWindow(created) {
+    window = created;
+    created.on?.("closed", () => { if (window === created) window = null; });
+    if (focusWhenReady) {
+      focusWhenReady = false;
+      focus();
+    }
+    return created;
   }
 
   function acquire(args) {
@@ -52,13 +63,7 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
     }
     if (!opening) {
       opening = Promise.resolve(createWindow(connection)).then((created) => {
-        window = created;
-        window.on?.("closed", () => { window = null; });
-        if (focusWhenReady) {
-          focusWhenReady = false;
-          focus();
-        }
-        return window;
+        return trackWindow(created);
       }).finally(() => { opening = null; });
     }
     return opening;
@@ -76,5 +81,31 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
     connection = value;
   }
 
-  return Object.freeze({ acquire, open, currentConnection, focus, setReady, setConnection });
+  async function replaceConnection(value) {
+    if (!value || typeof value.origin !== "string" || typeof value.token !== "string")
+      throw new Error("An authenticated workspace is required.");
+    if (replacing) throw new Error("A workspace is already opening.");
+    replacing = true;
+    try {
+      // The first local window may still be loading when the person selects a workspace.
+      // Let that attempt settle, then replace it (or open the selection if it failed).
+      if (opening) {
+        try { await opening; } catch { /* The selected workspace can still open. */ }
+      }
+      const previous = window;
+      const previousConnection = connection;
+      connection = value;
+      opening = Promise.resolve().then(() => createWindow(value));
+      try {
+        const created = await opening;
+        if (previous && !previous.isDestroyed()) previous.destroy();
+        return trackWindow(created);
+      } catch (error) {
+        connection = previousConnection;
+        throw error;
+      } finally { opening = null; }
+    } finally { replacing = false; }
+  }
+
+  return Object.freeze({ acquire, open, currentConnection, focus, setReady, setConnection, replaceConnection });
 }

@@ -1,9 +1,10 @@
 import { parseConnection } from "./connection.js";
+import { parseWorkspaceLink } from "./workspace-directory.js";
 
 /** Use the existing web head's fragment authentication; never attach a bearer to another origin. */
 export function authenticatedUiUrl(connection) {
   const url = `${connection.origin}/#token=${connection.token}`;
-  const checked = parseConnection([`--hz-url=${url}`]);
+  const checked = connection.remote === true ? parseWorkspaceLink(url) : parseConnection([`--hz-url=${url}`]);
   if (checked.origin !== connection.origin || checked.token !== connection.token)
     throw new Error("Invalid local UI connection.");
   return url;
@@ -289,13 +290,23 @@ export function guardUiNavigation(contents, connection, openExternal, options = 
 }
 
 /** Do not open or show a product window after shutdown began, including across asynchronous startup. */
-export async function openProductUi({ connection, lifecycle, createWindow, prepareWindow, cancelled }) {
+export async function openProductUi({ connection, lifecycle, createWindow, prepareWindow, cancelled,
+  loadTimeoutMs = 15000, schedule = setTimeout, unschedule = clearTimeout }) {
   await lifecycle(connection);
   if (cancelled()) throw new Error("Desktop startup was cancelled.");
-  const window = createWindow();
+  const window = await createWindow();
   try {
+    if (cancelled()) throw new Error("Desktop startup was cancelled.");
     prepareWindow(window);
-    await window.loadURL(authenticatedUiUrl(connection));
+    let timer;
+    try {
+      await Promise.race([
+        window.loadURL(authenticatedUiUrl(connection)),
+        new Promise((_, reject) => { timer = schedule(() => {
+          reject(Object.assign(new Error("Workspace loading timed out."), { name: "TimeoutError" }));
+        }, loadTimeoutMs); }),
+      ]);
+    } finally { unschedule(timer); }
     if (cancelled() || window.isDestroyed()) throw new Error("Desktop startup was cancelled.");
     window.show();
     return window;
