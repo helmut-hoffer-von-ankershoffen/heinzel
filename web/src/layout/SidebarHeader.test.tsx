@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { everyday, shell, theme, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -9,6 +9,29 @@ const figures = (root: HTMLElement) =>
   within(root).getByTestId("heinzel-swarm").querySelectorAll(":scope > g[transform]").length;
 
 describe("Sidebar header", () => {
+  it("puts the mobile close control beside the brand without a desktop collapse control", async () => {
+    const width = window.innerWidth;
+    vi.stubGlobal("heinzelDesktop", { mobileWorkspace: true });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      mockApi({ ...shell, "/api/system/expert": everyday });
+      const user = userEvent.setup();
+      renderAt("/doctor");
+      await user.click(screen.getByRole("button", { name: "Open navigation" }));
+      const drawer = await screen.findByRole("dialog", { name: "Main" });
+      const brand = await within(drawer).findByRole("link", { name: "Heinzelmännchen home" });
+      const close = within(drawer).getByRole("button", { name: "Close" });
+      expect(close.parentElement).toBe(brand.parentElement);
+      expect(within(drawer).queryByRole("button", { name: "Collapse navigation" })).toBeNull();
+      await user.click(close);
+      expect(screen.queryByRole("dialog", { name: "Main" })).toBeNull();
+      // Native dialog focus restoration is checked in the browser fixture.
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    }
+  });
+
   it("is the product lockup, the way home, beside the top bar's collapse button; the rail keeps the mark", async () => {
     mockApi({
       ...shell,

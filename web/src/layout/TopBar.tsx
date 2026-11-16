@@ -1,11 +1,11 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Check, ChevronDown, Ellipsis, Globe, Link2, Menu, RefreshCw, SquareTerminal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
-import { HeaderActions } from "@/components/Contributions";
+import { HeaderActions, HeaderShortcut } from "@/components/Contributions";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
@@ -78,61 +78,86 @@ export function TopBar({
       : `${browserBase}: ${t(browserAgents === "waiting" ? "browser.agentsWaiting" : "browser.agentsActive")}`;
   const queries = useQueryClient();
   const playful = usePlayful();
-  const [menu, setMenu] = useState(false);
+  const compact = Boolean(onOpenNavigation);
+  const screenTitle = compact ? title || t("top.screenActions") : title;
+  const [menu, setMenu] = useState<"screen" | "tools" | null>(null);
   const [copied, setCopied] = useState<"command" | "link" | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
+    const anchor = menu === "screen" ? screenRef : toolsRef;
     const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenu(false);
+      if (!anchor.current?.contains(event.target as Node)) setMenu(null);
     };
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setMenu(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenu(null);
+      if (compact) anchor.current?.querySelector("button")?.focus({ preventScroll: true });
+    };
     window.addEventListener("mousedown", close);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [menu]);
+  }, [menu, compact]);
+  const closeTools = () => {
+    setMenu(null);
+    toolsRef.current?.querySelector("button")?.focus({ preventScroll: true });
+  };
   const copy = async (what: "command" | "link") => {
     // The link never carries the session token: the fragment stays out of it.
     const text = what === "command" ? command : `${window.location.origin}${window.location.pathname}`;
     await navigator.clipboard.writeText(text);
     setCopied(what);
-    setMenu(false);
+    setMenu((open) => (open === "screen" ? null : open));
+    if (compact && screenRef.current?.contains(document.activeElement)) {
+      screenRef.current.querySelector("button")?.focus({ preventScroll: true });
+    }
     window.setTimeout(() => setCopied(null), 1500);
   };
   // Reload refetches every query the screen shows, without a page reload that would drop open panels and drafts.
   const fetching = useIsFetching() > 0;
   const refresh = () => {
-    setMenu(false);
+    setMenu(null);
     // Abort reads still in flight first, so an older response can never land after the refetch and overwrite it.
     void Promise.all([
       queries.cancelQueries({ queryKey: ["org", "calendar"] }),
       queries.cancelQueries({ queryKey: ["org", "agenda"], exact: true }),
     ]).then(() => queries.invalidateQueries());
   };
-  const compact = Boolean(onOpenNavigation);
   const screenActions = (
     <>
       <MenuItem
         onSelect={() => copy("command")}
         icon={copied === "command" ? <Check aria-hidden /> : <SquareTerminal aria-hidden />}
       >
-        {t("top.copyCommand")}
-        <code className="ml-auto truncate font-mono text-xs text-muted-foreground">{command}</code>
+        {compact ? (
+          <span className="min-w-0">
+            {t("top.copyCommand")}
+            <code className="block wrap-anywhere font-mono text-xs text-muted-foreground">{command}</code>
+          </span>
+        ) : (
+          <>
+            {t("top.copyCommand")}
+            <code className="ml-auto truncate font-mono text-xs text-muted-foreground">{command}</code>
+          </>
+        )}
       </MenuItem>
       <MenuItem onSelect={() => copy("link")} icon={<Link2 aria-hidden />}>
         {t("top.copyLink")}
       </MenuItem>
-      <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
-        {t("top.refresh")}
-      </MenuItem>
+      {!compact && (
+        <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
+          {t("top.refresh")}
+        </MenuItem>
+      )}
     </>
   );
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
-    // On a phone the five actions leave the title little room: tighter spacing and no chevron keep "Today" whole.
+    // Keep the screen title and the workspace tools on separate anchors at compact widths.
     <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3 max-sm:px-2">
       {compact && (
         <Button
@@ -150,26 +175,33 @@ export function TopBar({
           <Menu aria-hidden />
         </Button>
       )}
-      {compact && <span className="min-w-0 truncate px-1 text-ui font-semibold">{title}</span>}
-      {!compact && (
-        <div ref={menuRef} className="relative min-w-0">
-          <button
-            type="button"
-            onClick={() => setMenu((open) => !open)}
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70 max-sm:px-1"
-          >
-            <span className="truncate">{title}</span>
-            <ChevronDown aria-hidden className="size-4 shrink-0 text-icon max-sm:hidden" />
-          </button>
-          {menu && (
-            <AnchoredPopover anchor={menuRef} role="menu" className="w-64">
-              {screenActions}
-            </AnchoredPopover>
+      <div ref={screenRef} className="relative min-w-0">
+        <button
+          type="button"
+          onClick={() => setMenu((open) => (open === "screen" ? null : "screen"))}
+          aria-haspopup="menu"
+          aria-expanded={menu === "screen"}
+          className={cn(
+            "flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70 max-sm:px-1",
+            compact && "min-h-11 gap-1 font-semibold",
           )}
-        </div>
-      )}
+        >
+          <span className="truncate">{screenTitle}</span>
+          <ChevronDown aria-hidden className={cn("size-4 shrink-0 text-icon", compact ? "size-3" : "max-sm:hidden")} />
+        </button>
+        {menu === "screen" && (
+          <AnchoredPopover
+            anchor={screenRef}
+            role="menu"
+            aria-label={screenTitle || undefined}
+            className="w-64"
+            focusFirst={compact}
+            onKeyDown={compact ? moveMenuFocus : undefined}
+          >
+            {screenActions}
+          </AnchoredPopover>
+        )}
+      </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon max-sm:gap-0">
         {!compact && <HeaderActions />}
         {!compact && (
@@ -262,46 +294,60 @@ export function TopBar({
         {compact && (
           <>
             {audioSlot && <div ref={audioSlot} className="relative size-11 shrink-0" />}
-            <div ref={menuRef}>
+            <div ref={toolsRef}>
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label={t("top.more")}
                 title={t("top.more")}
-                aria-expanded={menu}
+                aria-expanded={menu === "tools"}
                 className="size-11 rounded-full"
-                onClick={() => setMenu((open) => !open)}
+                onClick={() => setMenu((open) => (open === "tools" ? null : "tools"))}
               >
                 <Ellipsis aria-hidden />
               </Button>
-              {menu && (
-                <AnchoredPopover anchor={menuRef} role="region" aria-label={t("top.more")} className="w-64">
-                  <div role="menu" aria-label={t("top.more")}>
-                    <MenuItem
-                      icon={<SquareTerminal aria-hidden />}
-                      onSelect={() => {
-                        setMenu(false);
-                        onToggleTerminal();
-                      }}
-                    >
-                      {t(terminalOpen ? "terminal.show" : "terminal.open")}
-                    </MenuItem>
-                    <MenuItem
-                      icon={<Calendar aria-hidden />}
-                      onSelect={() => {
-                        setMenu(false);
-                        onOpenCalendar();
-                      }}
-                    >
-                      Open calendar
-                    </MenuItem>
-                    {screenActions}
-                  </div>
-                  <div className="flex flex-wrap gap-1 empty:hidden">
-                    <HeaderActions />
-                  </div>
-                </AnchoredPopover>
-              )}
+              <HeaderActions
+                menu={{
+                  anchor: toolsRef,
+                  open: menu === "tools",
+                  onSelect: closeTools,
+                  children: (
+                    <>
+                      <HeaderShortcut
+                        icon={<SquareTerminal aria-hidden />}
+                        aria-pressed={terminalOpen}
+                        onClick={() => {
+                          closeTools();
+                          onToggleTerminal();
+                        }}
+                      >
+                        {t(terminalOpen ? "terminal.show" : "terminal.open")}
+                      </HeaderShortcut>
+                      <HeaderShortcut
+                        icon={<Calendar aria-hidden />}
+                        aria-pressed={calendarOpen}
+                        onClick={() => {
+                          closeTools();
+                          onOpenCalendar();
+                        }}
+                      >
+                        Open calendar
+                      </HeaderShortcut>
+                      <HeaderShortcut
+                        icon={<RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />}
+                        aria-busy={fetching}
+                        title={t(fetching ? "top.refreshing" : "top.refresh")}
+                        onClick={() => {
+                          closeTools();
+                          refresh();
+                        }}
+                      >
+                        {t("top.refresh")}
+                      </HeaderShortcut>
+                    </>
+                  ),
+                }}
+              />
             </div>
           </>
         )}
@@ -333,4 +379,28 @@ function MenuItem({
       {children}
     </button>
   );
+}
+
+function moveMenuFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+  const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+  const current = items.indexOf(document.activeElement as HTMLButtonElement);
+  let next: number;
+  switch (event.key) {
+    case "ArrowDown":
+      next = (current + 1) % items.length;
+      break;
+    case "ArrowUp":
+      next = current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = items.length - 1;
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+  items[next]?.focus();
 }

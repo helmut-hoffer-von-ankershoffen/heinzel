@@ -138,6 +138,10 @@ class DaemonStatus(BaseModel):
     interval_minutes: int | None = Field(description="Minutes between ticks, as installed.")
     executable: Path | None = Field(description="The shim the unit runs, as installed.")
     last_tick: datetime | None = Field(description="When the last tick ran.")
+    last_tick_interval_minutes: int | None = Field(
+        default=None,
+        description="Interval recorded by that manager-bound tick; none if it was not recorded.",
+    )
     jobs: int = Field(description="How many jobs are registered.")
     failing: list[str] = Field(description="Jobs whose last run failed or that can't run.")
     version: str | None = Field(

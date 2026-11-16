@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { TopBar } from "./TopBar";
@@ -110,5 +111,130 @@ describe("TopBar reload", () => {
     act(() => pending.shift()?.("second"));
     await screen.findByText("second");
     await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"));
+  });
+});
+
+function compactBar() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } },
+  });
+  client.setQueryData(
+    ["ui", "actions"],
+    [
+      {
+        id: "clock:team",
+        slots: { header: true },
+        label: "Team clock",
+        icon: "clock",
+        refresh: 300,
+        badge: 2,
+        effect: { kind: "command", command: "hz clock", runs: true },
+      },
+      {
+        id: "clock:disabled",
+        slots: { header: true },
+        label: "Unavailable clock",
+        icon: "clock",
+        refresh: 300,
+        effect: null,
+        problem: "Clock service offline",
+      },
+      { id: "clock:hidden", slots: { header: false }, label: "Hidden clock", icon: "clock", refresh: 300 },
+    ],
+  );
+  const terminal = vi.fn();
+  const calendar = vi.fn();
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/doctor"]}>
+        <button type="button">Outside</button>
+        <TopBar
+          chatOpen={false}
+          onToggleChat={() => {}}
+          terminalOpen={false}
+          onToggleTerminal={terminal}
+          calendarOpen={false}
+          onOpenCalendar={calendar}
+          onOpenNavigation={() => {}}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return { client, terminal, calendar };
+}
+
+describe("compact TopBar menus", () => {
+  it("uses one labeled shortcut presentation for built-ins and dynamic plugin actions", async () => {
+    const user = userEvent.setup();
+    const { client, terminal, calendar } = compactBar();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const trigger = screen.getByRole("button", { name: "More workspace actions" });
+    await user.click(trigger);
+    const tools = screen.getByRole("region", { name: "More workspace actions" });
+    const tool = within(tools);
+    const shortcuts = ["Open a terminal", "Open calendar", "Refresh", "Team clock (2)", "Unavailable clock"].map(
+      (name) => tool.getByRole("button", { name }),
+    );
+    expect(new Set(shortcuts.map((button) => button.className)).size).toBe(1);
+    expect(shortcuts[0]).toHaveFocus();
+    expect(shortcuts[3]).toHaveTextContent("Team clock");
+    expect(shortcuts[4]).toBeDisabled();
+    expect(shortcuts[4]).toHaveAttribute("title", "Clock service offline");
+    expect(tool.queryByRole("button", { name: "Hidden clock" })).not.toBeInTheDocument();
+    expect(tool.queryByText(/Copy/)).not.toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+    expect(terminal).toHaveBeenCalledOnce();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(
+      within(screen.getByRole("region", { name: "More workspace actions" })).getByRole("button", {
+        name: "Open calendar",
+      }),
+    );
+    expect(calendar).toHaveBeenCalledOnce();
+    await user.click(trigger);
+    await user.click(
+      within(screen.getByRole("region", { name: "More workspace actions" })).getByRole("button", { name: "Refresh" }),
+    );
+    await waitFor(() => expect(invalidate).toHaveBeenCalledOnce());
+
+    await user.click(trigger);
+    await user.click(
+      within(screen.getByRole("region", { name: "More workspace actions" })).getByRole("button", {
+        name: "Team clock (2)",
+      }),
+    );
+    expect(tools).not.toBeInTheDocument();
+    // The command stays behind its existing confirmation even after the shortcuts pane closes.
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("hz clock");
+  });
+
+  it("keeps the two copies under the screen title and preserves keyboard and outside dismissal", async () => {
+    const user = userEvent.setup();
+    compactBar();
+    const copyText = vi.spyOn(navigator.clipboard, "writeText");
+    const title = screen.getByRole("button", { name: "Doctor" });
+    await user.click(title);
+    const menu = screen.getByRole("menu", { name: "Doctor" });
+    const command = within(menu).getByRole("menuitem", { name: /Copy the hz command/ });
+    const link = within(menu).getByRole("menuitem", { name: "Copy link to this screen" });
+    expect(within(menu).getAllByRole("menuitem")).toEqual([command, link]);
+    expect(command).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(link).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(title).toHaveFocus();
+    expect(menu).not.toBeInTheDocument();
+
+    await user.click(title);
+    await user.keyboard("{Enter}");
+    expect(copyText).toHaveBeenLastCalledWith("hz system doctor");
+    await user.click(title);
+    await user.keyboard("{End}{Enter}");
+    expect(copyText).toHaveBeenLastCalledWith(window.location.origin + window.location.pathname);
+    await user.click(title);
+    await user.click(screen.getByRole("button", { name: "Outside" }));
+    expect(title).toHaveAttribute("aria-expanded", "false");
   });
 });
