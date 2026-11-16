@@ -72,6 +72,7 @@ final class ActivityCatalog {
         var cancelled: Bool? = nil
         var recoveryStatus: Data? = nil
         var recoveryRequest: Data? = nil
+        var recoveryReceipt: Data? = nil
     }
 
     private struct JournalRequest: Decodable {
@@ -104,6 +105,15 @@ final class ActivityCatalog {
         let attempt: String
         let operation: String
         let commitment: String?
+    }
+
+    private struct JournalRevokeReceipt: Decodable {
+        let epoch: String
+        let workspace_id: String
+        let attempt: String
+        let operation: String
+        let revision: String
+        let expires_at: String?
     }
 
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
@@ -151,10 +161,20 @@ final class ActivityCatalog {
                           revoke.attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil, revoke.attempt != issue.attempt,
                           revoke.operation == "revoke", revoke.commitment == nil,
                           status.revision == issue.revision || status.last_attempt == issue.attempt else { return nil }
+                    if let receiptData = journal.recoveryReceipt {
+                        guard receiptData.count <= 4096,
+                              let receipt = try? JSONDecoder().decode(JournalRevokeReceipt.self, from: receiptData),
+                              receipt.epoch == revoke.epoch, receipt.workspace_id == journal.workspaceID,
+                              receipt.attempt == revoke.attempt, receipt.operation == "revoke", receipt.expires_at == nil,
+                              receipt.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, receipt.revision != revoke.revision,
+                              let object = try? JSONSerialization.jsonObject(with: receiptData) as? [String: Any],
+                              object["expires_at"] is NSNull else { return nil }
+                    }
                 } else {
-                    guard status.revision != issue.revision, let last = status.last_attempt, last != issue.attempt else { return nil }
+                    guard journal.recoveryReceipt == nil, status.revision != issue.revision,
+                          let last = status.last_attempt, last != issue.attempt else { return nil }
                 }
-            } else if journal.recoveryRequest != nil { return nil }
+            } else if journal.recoveryRequest != nil || journal.recoveryReceipt != nil { return nil }
             return journal
         }
         guard let reservation = try? JSONDecoder().decode(Enrollment.self, from: data) else { return nil }
@@ -470,6 +490,45 @@ final class ActivityCatalog {
             guard let encoded = try? JSONEncoder().encode(journal), enrollmentJournal(encoded) == journal,
                   writeJournal(encoded, markerURL) else { return nil }
             return journal.recoveryRequest.map(EnrollmentRecoveryPlan.revoke) ?? .superseded
+        }
+    }
+
+    static func recordRecoveryReceipt(url: URL, expected: Enrollment, fingerprint: String,
+                                      request: Data, receipt: Data) -> Bool {
+        withWriterLock(url: url, failure: false) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), var journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.cancelled == true, journal.pairingFingerprint == fingerprint,
+                  journal.recoveryRequest == request,
+                  let authorityData = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
+                  authority.revoked == true, authority.cleanup == expected.previous else { return false }
+            if let existing = journal.recoveryReceipt {
+                return existing == receipt && writeJournal(marker, markerURL)
+            }
+            journal.recoveryReceipt = receipt; journal.revision = UUID().uuidString
+            guard let encoded = try? JSONEncoder().encode(journal), enrollmentJournal(encoded) == journal else { return false }
+            return writeJournal(encoded, markerURL)
+        }
+    }
+
+    /// Terminal evidence is durable before owned cleanup; the logout tombstone remains.
+    static func finishCancelledRecovery(url: URL, expected: Enrollment, fingerprint: String,
+                                        verify: (EnrollmentJournal) -> Bool, cleanup: () -> Bool) -> ClearResult {
+        withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.cancelled == true, journal.pairingFingerprint == fingerprint,
+                  journal.recoveryStatus != nil, journal.recoveryRequest == nil || journal.recoveryReceipt != nil,
+                  let authorityData = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
+                  authority.revoked == true, authority.cleanup == expected.previous else {
+                return ClearResult(revoked: false, purged: false, stale: true)
+            }
+            guard writeJournal(authorityData, authorityURL(for: url)), writeJournal(marker, markerURL),
+                  verify(journal), cleanup(), ActivityCatalog(url: url)?.purge() == true,
+                  removeJournal(markerURL) else { return ClearResult(revoked: true, purged: false) }
+            return ClearResult(revoked: true, purged: true)
         }
     }
 

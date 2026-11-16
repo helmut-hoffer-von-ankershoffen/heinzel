@@ -334,6 +334,20 @@ private final class NotificationCapture: @unchecked Sendable {
         guard case .revoke(let recoveryReplay) = ActivityCatalog.planCancelledRecovery(url: pairCancelURL,
             expected: pairCancelAttempt, fingerprint: boundFingerprint, observedStatus: fixtureStatus) else { fatalError() }
         precondition(recoveryReplay == recoveryRequest)
+        let revokeAttempt = recoveryObject["attempt"] as! String
+        let revokeReceipt = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch, "workspace_id": credential.workspaceID,
+            "attempt": revokeAttempt, "operation": "revoke", "revision": String(repeating: "6", count: 32), "expires_at": NSNull()])
+        let badRevokeReceipt = try JSONSerialization.data(withJSONObject: ["epoch": fixtureEpoch, "workspace_id": credential.workspaceID,
+            "attempt": String(repeating: "0", count: 32), "operation": "revoke", "revision": String(repeating: "6", count: 32), "expires_at": NSNull()])
+        precondition(!ActivityCatalog.recordRecoveryReceipt(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: boundFingerprint, request: recoveryRequest, receipt: badRevokeReceipt))
+        precondition(ActivityCatalog.recordRecoveryReceipt(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: boundFingerprint, request: recoveryRequest, receipt: revokeReceipt))
+        let recoveryFinished = ActivityCatalog.finishCancelledRecovery(url: pairCancelURL, expected: pairCancelAttempt,
+            fingerprint: boundFingerprint, verify: { pairCancelEnrollment.recoveryEvidenceMatches($0) },
+            cleanup: { pairCancelKeychain.deletePending(pairCancelAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()) && pairCancelStore.purgeCredential() })
+        precondition(recoveryFinished.complete && ActivityCatalog.pendingEnrollment(url: pairCancelURL) == nil)
+        precondition(ActivityCatalog.activation(url: pairCancelURL) == nil)
         for issueWasLast in [true, false] {
             let recoveryURL = directory.appendingPathComponent("recovery-status-\(issueWasLast).sqlite")
             let recoveryKeychain = FakeKeychain()
