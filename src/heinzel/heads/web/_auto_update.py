@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
 from heinzel.heads._stream import WORK
+from heinzel.heads.web._state_directory import private_directory
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -540,7 +541,7 @@ def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
 def _locked(path: Path) -> Generator[None]:
     """Hold an exclusive lock on `path` for the block; without a writable state folder, go on without one."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         handle = path.open("a", encoding="utf-8")
     except OSError:
         yield
@@ -556,7 +557,7 @@ def _locked(path: Path) -> Generator[None]:
 def _try_lock(path: Path) -> IO[str] | None:
     """An exclusive lock on `path` if no other holder has it, kept until released or this process ends."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         handle = path.open("a", encoding="utf-8")
     except OSError:
         return None
@@ -612,6 +613,8 @@ class AutoUpdater:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         folder = kernel.settings.state_dir / "web"
+        with private_directory(folder, migrate_updater=True):
+            pass
         self._path = folder / FILENAME
         self._plan_lock = folder / "auto-update.lock"
         self._apply_lock = folder / "auto-update-apply.lock"
@@ -1147,7 +1150,7 @@ class AutoUpdater:
         """Replace the state file at once; an unwritable state folder only costs what survives a restart."""
         partial = self._path.with_name(f".{FILENAME}.{os.getpid()}")
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             partial.write_text(json.dumps(self.plan.to_json()), encoding="utf-8")
             partial.replace(self._path)
         except OSError:

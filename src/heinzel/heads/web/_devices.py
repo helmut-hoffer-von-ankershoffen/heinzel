@@ -30,6 +30,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
+from heinzel.heads.web._state_directory import private_directory
 from heinzel.heads.web._widget_fence import FenceState, Receipt, Request, transition
 from heinzel.kernel import HeinzelError, clean_text
 from heinzel.kernel._identity import CurrentUser
@@ -484,13 +485,8 @@ class Devices:
 
     @contextmanager
     def _folder(self) -> Generator[int]:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        folder = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            CurrentUser.verify_private(os.fstat(folder), directory=True)
+        with private_directory(self.directory) as folder:
             yield folder
-        finally:
-            os.close(folder)
 
     @contextmanager
     def _locked(self) -> Generator[int]:
