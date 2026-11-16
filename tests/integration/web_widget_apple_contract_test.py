@@ -52,7 +52,10 @@ def test_native_fenced_retry_after_lost_core_reply(make_kernel, tmp_path):
     assert replay.status_code == 200
     assert replay.json() == committed.json()
     (root / "receipt.json").write_text(replay.text)
-    assert native("complete") == "installed"
+    # Another restart completes locally from the persisted receipt: no new Core call.
+    assert native("record") == "recorded"
+    (root / "receipt.json").unlink()
+    assert native("complete-saved") == "installed"
     assert native("verify", request["commitment"]) == "verified"
     fixture_credential = json.loads((root / "active").read_bytes())
     widget_token = fixture_credential["token"]
