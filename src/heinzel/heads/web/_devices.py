@@ -44,6 +44,9 @@ TOUCH_EVERY = timedelta(hours=1)
 """`last_used` is written at most this often, so every request doesn't rewrite the file."""
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
+HEX_64_PATTERN = r"^[0-9a-f]{64}$"
+HEX_32_PATTERN = r"^[0-9a-f]{32}$"
+DEVICES_FILENAME = "devices.json"
 
 
 class Device(BaseModel):
@@ -53,9 +56,7 @@ class Device(BaseModel):
     name: str = Field(description="What the app called itself, e.g. `Chrome on macOS (installed)`.")
     created: AwareDatetime = Field(description="When it was paired.")
     last_used: AwareDatetime = Field(description="When it was last used, to the hour.")
-    sha256: str = Field(
-        pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the token; the token itself is never stored."
-    )
+    sha256: str = Field(pattern=HEX_64_PATTERN, description="SHA-256 of the token; the token itself is never stored.")
     widget: "WidgetCredential | None" = None
     widget_fence: "WidgetFence | None" = None
 
@@ -92,9 +93,9 @@ class Device(BaseModel):
 class WidgetCredential(BaseModel):
     """A single expiring widget credential belonging to this device."""
 
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sha256: str = Field(pattern=HEX_64_PATTERN)
     owner: str = Field(min_length=1, max_length=128)
-    workspace: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workspace: str = Field(pattern=HEX_64_PATTERN)
     expires: AwareDatetime
 
 
@@ -102,11 +103,11 @@ class WidgetReceipt(BaseModel):
     """The last committed fenced operation, with no raw credential."""
 
     model_config = ConfigDict(extra="forbid")
-    attempt: str = Field(pattern=r"^[0-9a-f]{32}$")
+    attempt: str = Field(pattern=HEX_32_PATTERN)
     operation: Literal["issue", "revoke"]
-    previous_revision: str = Field(pattern=r"^[0-9a-f]{32}$")
-    commitment: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    previous_revision: str = Field(pattern=HEX_32_PATTERN)
+    commitment: str | None = Field(default=None, pattern=HEX_64_PATTERN)
+    revision: str = Field(pattern=HEX_32_PATTERN)
     expires: AwareDatetime | None = None
 
 
@@ -114,11 +115,11 @@ class WidgetFence(BaseModel):
     """Durable pairing incarnation and operation receipt."""
 
     model_config = ConfigDict(extra="forbid")
-    epoch: str = Field(pattern=r"^[0-9a-f]{32}$")
-    revision: str = Field(pattern=r"^[0-9a-f]{32}$")
-    initial_revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    epoch: str = Field(pattern=HEX_32_PATTERN)
+    revision: str = Field(pattern=HEX_32_PATTERN)
+    initial_revision: str = Field(pattern=HEX_32_PATTERN)
     owner: str = Field(min_length=1, max_length=128)
-    workspace: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workspace: str = Field(pattern=HEX_64_PATTERN)
     receipt: WidgetReceipt | None = None
 
 
@@ -136,7 +137,7 @@ class Devices:
     def __init__(self, directory: Path, clock: Callable[[], datetime] | None = None) -> None:
         """Keep devices in `directory`/devices.json."""
         self.directory = directory
-        self.path = directory / "devices.json"
+        self.path = directory / DEVICES_FILENAME
         self._lock = directory / "devices.lock"
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -447,7 +448,7 @@ class Devices:
 
     def _read(self, folder: int) -> list[Device]:
         try:
-            descriptor = CurrentUser.open_private(folder, "devices.json", os.O_RDONLY)
+            descriptor = CurrentUser.open_private(folder, DEVICES_FILENAME, os.O_RDONLY)
         except FileNotFoundError:
             return []
         with os.fdopen(descriptor, "rb") as handle:
@@ -475,7 +476,7 @@ class Devices:
                 handle.write(json.dumps(_DEVICES.dump_python(devices, mode="json"), indent=1) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(partial, "devices.json", src_dir_fd=folder, dst_dir_fd=folder)
+            os.replace(partial, DEVICES_FILENAME, src_dir_fd=folder, dst_dir_fd=folder)
             os.fsync(folder)
         finally:
             with contextlib.suppress(FileNotFoundError):
