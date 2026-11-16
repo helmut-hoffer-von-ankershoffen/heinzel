@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-struct WidgetHeinzel: Codable, Identifiable, Equatable {
+struct WidgetHeinzel: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let state: String

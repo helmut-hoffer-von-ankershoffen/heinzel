@@ -157,33 +157,40 @@ enum WidgetTimelineAccess: Sendable {
     }
 }
 
-extension ActivityWidgetData {
-    /// Do not let a permit issued for one activation reveal a replacement's data.
-    static func timelineSnapshot(access: WidgetTimelineAccess) -> Self? {
-        switch access {
-        case .localOnly: return read()
-        case .hidden: return nil
-        case .permitted(let activation, let expiry):
-            guard expiry > .now, let url = sharedCatalogURL(),
-                  ActivityCatalog.activation(url: url) == activation,
-                  let snapshot = read(), snapshot.workspaceScope == activation.scope,
-                  ActivityCatalog.activation(url: url) == activation else { return nil }
-            return snapshot
-        }
-    }
-}
-
 /// WidgetKit can request several timelines together. Share an in-process refresh
 /// while keeping every publish bound to the captured workspace and writer token.
 @MainActor
 final class WidgetTimelineRefresh {
     static let shared = WidgetTimelineRefresh()
     nonisolated static let retryInterval: TimeInterval = 15 * 60
-    private enum Result { case observed(Date), unavailable, rejected }
+    private enum Result { case observed(Date), unavailable, rejected(ActivityCatalog.Activation, ActivityCatalog.ClearResult) }
     private struct Flight { let id: UUID; let task: Task<Result, Never> }
     private var flights: [String: Flight] = [:]
     private var permits: [String: Date] = [:]
     private var rejected: [String: ActivityCatalog.Activation] = [:]
+
+    private func key(for activation: ActivityCatalog.Activation) -> String {
+        activation.id + "/" + (activation.credentialGeneration ?? "")
+    }
+
+    /// This read is actor-owned so a returned permit cannot outlive an
+    /// in-process rejection. Recheck both authority and time after storage IO.
+    func snapshot(access: WidgetTimelineAccess, catalogURL: URL? = ActivityWidgetData.sharedCatalogURL(),
+                  read: () -> ActivityWidgetData? = ActivityWidgetData.read,
+                  clock: () -> Date = { .now }) -> ActivityWidgetData? {
+        switch access {
+        case .localOnly: return read()
+        case .hidden: return nil
+        case .permitted(let activation, let expiry):
+            let key = key(for: activation)
+            guard expiry > clock(), permits[key] == expiry, rejected[key] == nil,
+                  let url = catalogURL, ActivityCatalog.activation(url: url) == activation,
+                  let snapshot = read(), snapshot.workspaceScope == activation.scope,
+                  ActivityCatalog.activation(url: url) == activation, permits[key] == expiry,
+                  rejected[key] == nil, expiry > clock() else { return nil }
+            return snapshot
+        }
+    }
 
     /// Permits are deliberately process-local: after a restart, offline or
     /// inaccessible storage cannot reveal a snapshot whose revocation failed.
@@ -202,8 +209,12 @@ final class WidgetTimelineRefresh {
     func refresh(store: WidgetCredentialStore,
                  fetch: @escaping @MainActor (WidgetCredentialCapture) async -> WidgetSnapshotOutcome,
                  publish: @escaping @MainActor (WidgetSnapshotEnvelope, WidgetCredentialCapture) -> Bool) async -> WidgetTimelineAccess {
+        if let pending = ActivityCatalog.pendingCleanup(url: store.catalogURL) {
+            let cleanup = store.invalidate(pending)
+            if !cleanup.complete && !cleanup.stale { return .hidden }
+        }
         guard let capture = store.capture() else { return .hidden }
-        let key = capture.activation.id + "/" + (capture.activation.credentialGeneration ?? "")
+        let key = key(for: capture.activation)
         if let rejectedActivation = rejected[key] {
             _ = store.invalidate(rejectedActivation)
             return .hidden
@@ -221,7 +232,7 @@ final class WidgetTimelineRefresh {
                           let timestamp = snapshot.timestamp else { return Result.unavailable }
                     return .observed(min(timestamp.addingTimeInterval(300), original.credential.expiresAt))
                 case .unavailable: return .unavailable
-                case .rejected: return .rejected
+                case .rejected(let original, let cleanup): return .rejected(original.activation, cleanup)
                 }
             }
             flight = Flight(id: UUID(), task: task)
@@ -232,14 +243,14 @@ final class WidgetTimelineRefresh {
         let isCurrent = ActivityCatalog.activation(url: store.catalogURL) == capture.activation
         if flights[key]?.id == flight.id {
             flights[key] = nil
-            if isCurrent {
-                switch result {
-                case .observed(let expiry): permits[key] = expiry
-                case .rejected:
+            switch result {
+            case .observed(let expiry): if isCurrent { permits[key] = expiry }
+            case .rejected(let activation, let cleanup):
+                if activation == capture.activation && !cleanup.stale {
                     permits[key] = nil
-                    rejected[key] = capture.activation
-                case .unavailable: break
+                    rejected[key] = activation
                 }
+            case .unavailable: break
             }
         }
         guard isCurrent, rejected[key] == nil else { return .hidden }

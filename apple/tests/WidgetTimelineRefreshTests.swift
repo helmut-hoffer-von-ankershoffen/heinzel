@@ -2,11 +2,12 @@ import Foundation
 
 private final class TimelineKeychain: WidgetCredentialKeychain {
     var data: Data?
+    var deletes = 0
     func preflight() -> Bool { true }
     func read() -> Data? { data }
     func readStatus() -> WidgetKeychainRead { data.map(WidgetKeychainRead.data) ?? .missing }
     func write(_ value: Data) -> Bool { data = value; return true }
-    func delete() -> Bool { false }
+    func delete() -> Bool { deletes += 1; return false }
     func readPending(_: String) -> Data? { nil }
     func createPending(_: Data, attempt _: String) -> Bool { false }
     func updatePending(_: Data, attempt _: String) -> Bool { false }
@@ -61,6 +62,14 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
         }
         precondition(aValue.mayDisplay(at: expiry.addingTimeInterval(-1)))
         precondition(!aValue.mayDisplay(at: expiry) && !aValue.mayDisplay(at: expiry.addingTimeInterval(1)))
+        let cached = ActivityWidgetData(awake: 1, waiting: 0, updatedAt: .now,
+                                        heinzels: [], workspaceScope: first.scope)
+        var clockCalls = 0
+        let expiredDuringRead = scheduler.snapshot(access: aValue, catalogURL: url, read: { cached }, clock: {
+            clockCalls += 1
+            return expiry.addingTimeInterval(clockCalls == 1 ? -1 : 1)
+        })
+        precondition(expiredDuringRead == nil)
         let offline = await scheduler.refresh(store: store, fetch: { _ in .unavailable }, publish: publish)
         guard case .permitted(let offlineActivation, _) = offline, offlineActivation == first else {
             preconditionFailure("offline response lost an unexpired process-local permit")
@@ -70,6 +79,11 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
         let publicationFailure = await WidgetTimelineRefresh().refresh(store: store,
             fetch: { .received(snapshot, $0) }, publish: { _, _ in false })
         guard case .hidden = publicationFailure else { preconditionFailure("failed publication granted a permit") }
+        let failedRejection = await scheduler.refresh(store: store, fetch: { capture in
+            .rejected(capture, .init(revoked: false, purged: false))
+        }, publish: publish)
+        guard case .hidden = failedRejection else { preconditionFailure("rejection retained access") }
+        precondition(scheduler.snapshot(access: aValue, catalogURL: url, read: { cached }) == nil)
 
         let rotationScheduler = WidgetTimelineRefresh()
         var oldPending: CheckedContinuation<WidgetSnapshotOutcome, Never>?
@@ -100,6 +114,13 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
             return .unavailable
         }, publish: publish)
         guard case .hidden = afterRejection, !retriedNetwork else { preconditionFailure("rejected activation retried network or exposed data") }
+        precondition(ActivityCatalog.pendingCleanup(url: url) == replacement)
+        let previousDeletes = keychain.deletes
+        let restartedCleanup = await WidgetTimelineRefresh().refresh(store: store, fetch: { _ in
+            preconditionFailure("cleanup attempted a network fetch")
+        }, publish: publish)
+        guard case .hidden = restartedCleanup else { preconditionFailure("pending cleanup exposed data") }
+        precondition(keychain.deletes > previousDeletes)
         print("PASS: coalescing, restart, publication, rotation and rejected credential fencing")
     }
 }
