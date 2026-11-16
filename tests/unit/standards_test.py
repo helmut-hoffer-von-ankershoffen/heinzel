@@ -166,6 +166,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
     ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
     "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
+    "scripts/acceptance/LEGACY-DISCOVERY-TRACE.md": "documents the core's published legacy updater diagnostic",
+    "scripts/acceptance/legacy_discovery_trace.py": "traces the published core updater; plugins have no core bridge",
     "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
     "scripts/prepare_release_ui.py": "checks the Core app CLI for its acceptance harness; plugins have neither",
     ".github/workflows/focused-job.yml": "dispatched diagnostic of one core test selection on one hosted runner",

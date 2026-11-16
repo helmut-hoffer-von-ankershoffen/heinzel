@@ -1,5 +1,6 @@
 """Run case 6 once with the opt-in published bridge trace on a hosted worker."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -8,10 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from scripts.acceptance import legacy_discovery_trace as trace
-
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(1150)]
 REPO = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location(
+    "legacy_discovery_trace", REPO / "scripts/acceptance/legacy_discovery_trace.py"
+)
+assert spec
+assert spec.loader
+trace = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(trace)
 
 
 def test_published_bridge_discovery_trace(tmp_path):

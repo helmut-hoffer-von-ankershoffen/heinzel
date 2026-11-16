@@ -1,18 +1,31 @@
 """Keep the instrumented bridge trace bounded and separate from acceptance."""
 
 import errno
+import importlib.util
 import json
 import stat
 import sys
 import urllib.error
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from scripts.acceptance import legacy_discovery_trace as trace
-from scripts.acceptance import run_acceptance as harness
-
 pytestmark = pytest.mark.unit
+
+
+def load(name: str):
+    path = Path(__file__).resolve().parents[2] / "scripts" / "acceptance" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"legacy_diagnostic_{name}", path)
+    assert spec
+    assert spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+trace = load("legacy_discovery_trace")
+harness = load("run_acceptance")
 
 
 @pytest.mark.parametrize("trampoline", [False, True])
