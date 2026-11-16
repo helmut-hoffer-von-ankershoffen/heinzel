@@ -567,16 +567,19 @@ private final class NotificationCapture: @unchecked Sendable {
             expected: transactionAttempt, request: transactionRequest) else { fatalError() }
         precondition(admittedReceipt == transactionReceipt)
         var transactionWrites = 0
+        var markerRetirements = 0
         let failedAuthority = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
-            syncAuthority: { _, _ in false }, install: { transactionWrites += 1; return true }, authorize: { true }, cleanup: { true })
-        precondition(failedAuthority == nil && transactionWrites == 1)
+            persistence: .init(syncAuthority: { _, _ in false }, retireMarker: { _ in markerRetirements += 1; return true }),
+            install: { transactionWrites += 1; return true }, authorize: { true }, cleanup: { true })
+        precondition(failedAuthority == nil && transactionWrites == 1 && markerRetirements == 0)
         precondition(ActivityCatalog.savedEnrollmentReceipt(url: transactionURL, expected: transactionAttempt) == transactionReceipt)
         let expiredAuthority = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
             install: { true }, authorize: { false }, cleanup: { true })
         precondition(expiredAuthority == nil && ActivityCatalog.activation(url: transactionURL) == nil)
         let published = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
+            persistence: .init(retireMarker: { _ in markerRetirements += 1; return true }),
             install: { true }, authorize: { true }, cleanup: { false })!
-        precondition(!published.1 && published.0.id == plan.activationID)
+        precondition(!published.1 && published.0.id == plan.activationID && markerRetirements == 0)
         precondition(ActivityCatalog.pendingEnrollment(url: transactionURL) == transactionAttempt)
         precondition(ActivityCatalog.finishReceipted(url: transactionURL, expected: transactionAttempt,
             verify: { _, _ in false }, cleanup: { true }) == nil)

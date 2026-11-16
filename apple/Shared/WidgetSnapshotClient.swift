@@ -42,8 +42,8 @@ struct WidgetSnapshotEnvelope: Decodable {
 }
 
 private final class WidgetRejectRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    func urlSession(_: URLSession, task _: URLSessionTask,
+                    willPerformHTTPRedirection _: HTTPURLResponse, newRequest _: URLRequest,
                     completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
 }
 

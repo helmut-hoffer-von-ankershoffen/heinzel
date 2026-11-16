@@ -40,7 +40,7 @@ protocol WidgetCredentialKeychain {
 }
 
 extension WidgetCredentialKeychain {
-    func readPendingStatus(_ attempt: String) -> WidgetKeychainRead { .unavailable }
+    func readPendingStatus(_: String) -> WidgetKeychainRead { .unavailable }
 }
 
 /// The access group must be explicitly provisioned for both signed targets.

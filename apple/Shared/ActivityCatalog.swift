@@ -91,18 +91,26 @@ final class ActivityCatalog {
 
     private struct JournalReceipt: Decodable {
         let epoch: String
-        let workspace_id: String
+        let workspaceID: String
         let attempt: String
         let operation: String
         let revision: String
-        let expires_at: String
+        let expiresAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case epoch, workspaceID = "workspace_id", attempt, operation, revision, expiresAt = "expires_at"
+        }
     }
 
     private struct JournalStatus: Decodable {
         let epoch: String
-        let workspace_id: String
+        let workspaceID: String
         let revision: String
-        let last_attempt: String?
+        let lastAttempt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case epoch, workspaceID = "workspace_id", revision, lastAttempt = "last_attempt"
+        }
     }
 
     private struct JournalRevoke: Decodable {
@@ -115,11 +123,15 @@ final class ActivityCatalog {
 
     private struct JournalRevokeReceipt: Decodable {
         let epoch: String
-        let workspace_id: String
+        let workspaceID: String
         let attempt: String
         let operation: String
         let revision: String
-        let expires_at: String?
+        let expiresAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case epoch, workspaceID = "workspace_id", attempt, operation, revision, expiresAt = "expires_at"
+        }
     }
 
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
@@ -145,10 +157,10 @@ final class ActivityCatalog {
                 } else {
                     guard let receiptData = journal.receipt, receiptData.count <= 4096,
                           let receipt = try? JSONDecoder().decode(JournalReceipt.self, from: receiptData),
-                          receipt.epoch == value.epoch, receipt.workspace_id == workspace,
+                          receipt.epoch == value.epoch, receipt.workspaceID == workspace,
                           receipt.attempt == value.attempt, receipt.operation == "issue",
                           receipt.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, receipt.revision != value.revision,
-                          !receipt.expires_at.isEmpty,
+                          !receipt.expiresAt.isEmpty,
                           let generation = journal.credentialGeneration, UUID(uuidString: generation) != nil,
                           let activation = journal.activationID, UUID(uuidString: activation) != nil else { return nil }
                 }
@@ -158,27 +170,27 @@ final class ActivityCatalog {
                 guard journal.cancelled == true, (journal.phase == .armed || journal.phase == .receipted), journal.pairingFingerprint != nil,
                       statusData.count <= 4096, let status = try? JSONDecoder().decode(JournalStatus.self, from: statusData),
                       let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
-                      status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                      status.epoch == issue.epoch, status.workspaceID == journal.workspaceID,
                       status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
-                      status.last_attempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true else { return nil }
+                      status.lastAttempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true else { return nil }
                 if let revokeData = journal.recoveryRequest {
                     guard revokeData.count <= 4096, let revoke = try? JSONDecoder().decode(JournalRevoke.self, from: revokeData),
                           revoke.epoch == issue.epoch, revoke.revision == status.revision,
                           revoke.attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil, revoke.attempt != issue.attempt,
                           revoke.operation == "revoke", revoke.commitment == nil,
-                          status.revision == issue.revision || status.last_attempt == issue.attempt else { return nil }
+                          status.revision == issue.revision || status.lastAttempt == issue.attempt else { return nil }
                     if let receiptData = journal.recoveryReceipt {
                         guard receiptData.count <= 4096,
                               let receipt = try? JSONDecoder().decode(JournalRevokeReceipt.self, from: receiptData),
-                              receipt.epoch == revoke.epoch, receipt.workspace_id == journal.workspaceID,
-                              receipt.attempt == revoke.attempt, receipt.operation == "revoke", receipt.expires_at == nil,
+                              receipt.epoch == revoke.epoch, receipt.workspaceID == journal.workspaceID,
+                              receipt.attempt == revoke.attempt, receipt.operation == "revoke", receipt.expiresAt == nil,
                               receipt.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, receipt.revision != revoke.revision,
                               let object = try? JSONSerialization.jsonObject(with: receiptData) as? [String: Any],
                               object["expires_at"] is NSNull else { return nil }
                     }
                 } else {
                     guard journal.recoveryReceipt == nil, status.revision != issue.revision,
-                          let last = status.last_attempt, last != issue.attempt else { return nil }
+                          let last = status.lastAttempt, last != issue.attempt else { return nil }
                 }
             } else if journal.recoveryRequest != nil || journal.recoveryReceipt != nil { return nil }
             if let conflicts = journal.recoveryConflicts {
@@ -191,9 +203,9 @@ final class ActivityCatalog {
                           revoke.epoch == issue.epoch, revoke.operation == "revoke", revoke.commitment == nil,
                           revoke.attempt.wholeMatch(of: /[a-f0-9]{32}/) != nil,
                           revoke.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
-                          status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                          status.epoch == issue.epoch, status.workspaceID == journal.workspaceID,
                           status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, status.revision != revoke.revision,
-                          let last = status.last_attempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil,
+                          let last = status.lastAttempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil,
                           last != revoke.attempt else { return nil }
                 }
             }
@@ -505,9 +517,9 @@ final class ActivityCatalog {
                   journal.reservation == expected, journal.cancelled == true, (journal.phase == .armed || journal.phase == .receipted),
                   journal.pairingFingerprint == fingerprint, fingerprint.wholeMatch(of: /[a-f0-9]{64}/) != nil,
                   let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
-                  status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                  status.epoch == issue.epoch, status.workspaceID == journal.workspaceID,
                   status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
-                  status.last_attempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true,
+                  status.lastAttempt.map({ $0.wholeMatch(of: /[a-f0-9]{32}/) != nil }) ?? true,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data),
                   ownsRecoveryTombstone(authority, journal: journal, expected: expected) else { return nil }
@@ -523,8 +535,8 @@ final class ActivityCatalog {
                 guard writeJournal(marker, markerURL) else { return nil }
                 return .superseded
             }
-            let isSuperseded = status.revision != issue.revision && status.last_attempt != nil && status.last_attempt != issue.attempt
-            guard isSuperseded || status.revision == issue.revision || status.last_attempt == issue.attempt else { return nil }
+            let isSuperseded = status.revision != issue.revision && status.lastAttempt != nil && status.lastAttempt != issue.attempt
+            guard isSuperseded || status.revision == issue.revision || status.lastAttempt == issue.attempt else { return nil }
             journal.recoveryStatus = observedStatus
             if !isSuperseded {
                 let attempt = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -571,10 +583,10 @@ final class ActivityCatalog {
                   journal.recoveryRequest == failedRequest, journal.recoveryReceipt == nil,
                   let revoke = try? JSONDecoder().decode(JournalRevoke.self, from: failedRequest),
                   let issueData = journal.request, let issue = try? JSONDecoder().decode(JournalRequest.self, from: issueData),
-                  status.epoch == issue.epoch, status.workspace_id == journal.workspaceID,
+                  status.epoch == issue.epoch, status.workspaceID == journal.workspaceID,
                   status.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, status.revision != revoke.revision,
                   status.revision != issue.revision,
-                  let last = status.last_attempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil, last != revoke.attempt,
+                  let last = status.lastAttempt, last.wholeMatch(of: /[a-f0-9]{32}/) != nil, last != revoke.attempt,
                   let data = try? Data(contentsOf: authorityURL(for: url)),
                   let authority = try? JSONDecoder().decode(Authority.self, from: data),
                   ownsRecoveryTombstone(authority, journal: journal, expected: expected) else { return nil }
@@ -618,11 +630,15 @@ final class ActivityCatalog {
         }
     }
 
+    struct ReceiptPersistence {
+        var syncAuthority: (Data, URL) -> Bool = ActivityCatalog.writeJournal
+        var retireMarker: (URL) -> Bool = ActivityCatalog.removeJournal
+    }
+
     /// Publish only the activation named by the durable receipt. The journal
     /// remains until the pending item is deleted and marker removal is synced.
     static func installReceipted(url: URL, expected: Enrollment, receipt: EnrollmentJournal,
-                                 syncAuthority: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
-                                 retireMarker: (URL) -> Bool = ActivityCatalog.removeJournal,
+                                 persistence: ReceiptPersistence = ReceiptPersistence(),
                                  install: () -> Bool, authorize: () -> Bool, cleanup: () -> Bool) -> (Activation, Bool)? {
         withWriterLock(url: url, failure: nil) {
             guard let marker = try? Data(contentsOf: enrollmentURL(for: url)),
@@ -637,8 +653,8 @@ final class ActivityCatalog {
                                   workspaceID: workspace, credentialGeneration: generation)
             let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
             guard authorize(), let encoded = try? JSONEncoder().encode(authority),
-                  syncAuthority(encoded, authorityURL(for: url)) else { return nil }
-            let complete = cleanup() && retireMarker(enrollmentURL(for: url))
+                  persistence.syncAuthority(encoded, authorityURL(for: url)) else { return nil }
+            let complete = cleanup() && persistence.retireMarker(enrollmentURL(for: url))
             return (next, complete)
         }
     }
