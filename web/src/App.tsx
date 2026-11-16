@@ -19,7 +19,7 @@ import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
 import { InstalledPage } from "@/plugins/Views";
-import { Splash, SplashGone } from "@/splash/Splash";
+import { isRemoteWorkspace, RemoteWorkspaceSignIn, Splash, SplashGone } from "@/splash/Splash";
 import { splash, unreachableError } from "@/splash/store";
 
 /** `/settings?q=…` from older links: Home with the settings dialog open, searching. */
@@ -81,6 +81,13 @@ export function Providers({ client, children }: { client: QueryClient; children:
 
 /** What the page shows without a token: how to get the link that has one. */
 export function NoToken() {
+  if (isRemoteWorkspace()) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-col gap-3 p-4 text-sm">
+        <RemoteWorkspaceSignIn />
+      </main>
+    );
+  }
   return (
     <main className="mx-auto flex max-w-xl flex-col items-start gap-3 p-10">
       <h1 className="text-2xl font-semibold">{t("token.missingTitle")}</h1>

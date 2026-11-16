@@ -4,6 +4,7 @@ date: 2026-11-06
 implementation: planned
 amends: 0078
 amends-0078: publish a macOS desktop bundle without Developer ID
+amended-by: 0147
 related: 0116, 0134
 ---
 

@@ -107,6 +107,7 @@ def repository_files() -> list[str]:
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
+    "scripts/check_apple_ci.py": "checks Core Apple fixture results; plugins have no Apple CI job",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/ubuntu_browser_mirror.mk": "runs the Core browser CI mirror helper; plugin workflows omit that setup",
     "scripts/ubuntu_browser_mirror.py": "validates Ubuntu sources for Core browser CI; plugins own their browser setup",
@@ -249,8 +250,11 @@ def test_tests_may_use_fake_tokens_in_heinzel_and_in_plugins():
 # Environment variables: tests and the template use only HZ_* names that something reads.
 
 ENV_NAME = re.compile(r"(?<![A-Za-z0-9_])HZ_[A-Z0-9_]+")
-ENV_READ = re.compile(r"""(?:environ\.get\(|environ\[|getenv\()\s*["'](HZ_[A-Z0-9_]+)|\$\{?(HZ_[A-Z0-9_]+)""")
-CODE_SUFFIXES = (".py", ".sh", ".jinja")
+ENV_READ = re.compile(
+    r"""(?:environ\.get\(|environ\[|getenv\(|ProcessInfo\.processInfo\.environment\[)"""
+    r"""\s*["'](HZ_[A-Z0-9_]+)|\$\{?(HZ_[A-Z0-9_]+)"""
+)
+CODE_SUFFIXES = (".py", ".sh", ".jinja", ".swift")
 NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's modules: why they are fine
     "HZ_URL": "a constant in tests/e2e/docs_test.py, not a variable",
     "HZ_CREDENTIAL_": "credentials in the environment fallback, named per declared credential (ADR 0030)",
@@ -273,8 +277,8 @@ def env_names(text: str) -> set[str]:
 
 
 def env_reads(text: str) -> set[str]:
-    """HZ_* variables a Python or shell text reads: os.environ / os.getenv with a literal name, or $NAME."""
-    return {python or shell for python, shell in ENV_READ.findall(text)}
+    """HZ_* variables read through a literal environment lookup in Python, Swift or shell."""
+    return {literal or shell for literal, shell in ENV_READ.findall(text)}
 
 
 def test_finds_env_names_and_reads():
@@ -282,6 +286,7 @@ def test_finds_env_names_and_reads():
     text = f'setenv("{hz}X", x); os.environ.get("{hz}A"); os.getenv("{hz}B"); echo "${{{hz}C:-x}} ${hz}D"; NOT_{hz}E'
     assert env_names(text) == {f"{hz}X", f"{hz}A", f"{hz}B", f"{hz}C", f"{hz}D"}
     assert env_reads(text) == {f"{hz}A", f"{hz}B", f"{hz}C", f"{hz}D"}
+    assert env_reads(f'ProcessInfo.processInfo.environment["{hz}F"]') == {f"{hz}F"}
 
 
 def test_tests_and_template_use_only_variables_something_reads(make_kernel):

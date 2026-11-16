@@ -66,6 +66,18 @@ def _group(kernel=None):
     return _app.desktop_group(kernel, output, error), output, error  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("command", ["install", "update"])
+def test_cli_passes_selected_swift_flavor_to_installer(monkeypatch, tmp_path, command):
+    install = Mock(return_value="current")
+    monkeypatch.setattr(installer, "install_desktop", install)
+    monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
+    monkeypatch.setattr(_app, "_located", lambda _error: tmp_path / "Heinzelmaennchen.app")
+    group, _, _ = _group()
+    result = CliRunner().invoke(group, [command, "--flavor", "swift"])
+    assert result.exit_code == 0, result.output
+    assert install.call_args.kwargs["flavor"] == installer.DesktopFlavor.SWIFT
+
+
 @pytest.mark.parametrize("failure", [OSError("disk is read-only"), _app.HeinzelError("locked by another process")])
 def test_hidden_refresh_reports_a_failed_update_without_failing_the_exit(monkeypatch, failure):
     """An orderly native exit never fails on its refresh: the reason is printed and the command exits 0."""

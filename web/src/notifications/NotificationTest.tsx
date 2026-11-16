@@ -13,7 +13,7 @@ import { isLocalServer } from "@/lib/browser";
 import { appCallFor } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import { type DesktopState, setDesktop, useDesktopState } from "./desktop";
+import { type DesktopState, nativeNotices, notificationStateKey, setDesktop, useDesktopState } from "./desktop";
 import { popUp } from "./useNoticeStream";
 
 type Row = { key: string; label: string; ok: boolean; detail: string; action?: React.ReactNode };
@@ -48,6 +48,7 @@ export function NotificationTest({
   const test = useTestNotice();
   const settings = useOpenNotificationSettings();
   const browser = useDesktopState();
+  const native = Boolean(nativeNotices());
   const local = isLocalServer();
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -113,13 +114,21 @@ export function NotificationTest({
         })),
         {
           key: "browser",
-          label: t("notify.channel.browser"),
+          label: t(native ? "notify.native.channel" : "notify.channel.browser"),
           ok: browser === "on" && delivery === "shown",
-          detail: t(delivery === "failed" ? "notify.browser.failed" : BROWSER[browser]),
+          detail: t(
+            delivery === "failed"
+              ? native
+                ? "notify.native.failed"
+                : "notify.browser.failed"
+              : native
+                ? notificationStateKey(browser)
+                : BROWSER[browser],
+          ),
           action:
             browser === "off" ? (
               <PaneAction ghost icon={Power} onClick={fix(() => void setDesktop(true))}>
-                {t("notify.fix.allowBrowser")}
+                {t(native ? "notify.native.toggle" : "notify.fix.allowBrowser")}
               </PaneAction>
             ) : null,
         },

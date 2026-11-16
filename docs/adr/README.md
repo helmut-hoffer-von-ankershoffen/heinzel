@@ -141,6 +141,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0142](0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md) MCP over HTTP takes per-agent bearer tokens with read and write scopes | proposed · 8 Nov<br>built |  |
 | [0145](0145-installing-a-company-plugin-sets-it-up.md) Installing a company plugin sets it up | proposed · 8 Nov<br>built | [#672](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/672) |
 | [0146](0146-found-mcp-servers-are-on-by-default-and-each-can-be-switched-off.md) Found MCP servers are on by default, and each can be switched off | accepted · 12 Nov<br>partial |  |
+| [0147](0147-use-a-swift-shell-for-apple-workspaces.md) Use a Swift shell for Apple workspaces | proposed · 15 Nov<br>partial |  |
 | [0157](0157-one-kind-of-chat-every-chat-is-with-a-heinzel.md) One kind of chat: every chat is with a Heinzel, and a default Heinzel is named at first start | accepted · 14 Nov<br>built |  |
 | [0158](0158-intelligence-level-per-heinzel-auto-routed-by-code.md) Intelligence level per Heinzel; Auto is routed by code | proposed · 14 Nov<br>partial |  |
 | [0159](0159-plugins-bring-their-own-ai-models-through-pydantic-ai.md) Plugins bring their own AI models through Pydantic AI | proposed · 14 Nov<br>partial |  |

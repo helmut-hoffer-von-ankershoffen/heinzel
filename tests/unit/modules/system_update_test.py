@@ -2,6 +2,7 @@ import json
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -29,6 +30,11 @@ def isolated_python(tmp_path, monkeypatch):
     base.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n")
     base.chmod(0o700)
     monkeypatch.setitem(globals(), "PYTHON", str(base))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_desktop_installation(monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
 
 
 BLOCKED = (

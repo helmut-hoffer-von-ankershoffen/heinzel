@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["@APP_IDENTIFIER_PREFIX@.team.heinzel.apple"],
+        "components": [{"/": "/open/"}]
+      }
+    ]
+  }
+}

@@ -7,6 +7,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from http.client import HTTPException, HTTPMessage
 from pathlib import Path
 from typing import IO, Any, Literal, cast, override
@@ -21,6 +22,14 @@ from heinzel.heads import _desktop_messages as copy
 from heinzel.heads._desktop_archive import MAX_ARCHIVE_BYTES
 from heinzel.heads._desktop_log import step
 from heinzel.heads._desktop_report import SILENT, Advance, Reporter
+
+
+class DesktopFlavor(StrEnum):
+    """The native client packaged for a Heinzel release."""
+
+    ELECTRON = "electron"
+    SWIFT = "swift"
+
 
 REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
@@ -346,7 +355,9 @@ def _run_gh(gh: str, asset: Path, proof: Path, core: _CoreManifest) -> subproces
     )
 
 
-def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) -> Path:
+def fetch_archive(
+    version: str, directory: Path, reporter: Reporter = SILENT, *, flavor: DesktopFlavor = DesktopFlavor.ELECTRON
+) -> Path:
     """Download the exact stable version and authenticate both desktop artifacts.
 
     Raises:
@@ -361,10 +372,12 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
             "Install GitHub CLI (https://cli.github.com) to verify the desktop release, then run hz app install again."
         )
         raise HeinzelError(msg)
-    manifest_path = directory / MANIFEST_NAME
+    swift = flavor == DesktopFlavor.SWIFT
+    manifest_path = directory / ("desktop-swift-artifact-manifest.json" if swift else MANIFEST_NAME)
     core_path = directory / CORE_MANIFEST_NAME
     proof = directory / PROOF_NAME
-    archive = directory / f"heinzel-desktop-{version}-darwin-arm64.tar.gz"
+    archive_prefix = "heinzel-desktop-swift" if swift else "heinzel-desktop"
+    archive = directory / f"{archive_prefix}-{version}-darwin-arm64.tar.gz"
     paths = (manifest_path, core_path, proof, archive)
     names = {path.name for path in paths}
     tag = f"v{version}"

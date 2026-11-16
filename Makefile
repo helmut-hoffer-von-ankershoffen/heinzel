@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -165,6 +165,32 @@ desktop-electron-package: ## Build and verify an unsigned Electron artifact for 
 	pnpm --dir desktop build
 	pnpm --dir desktop verify:package
 
+desktop-swift-package: ## Build the Swift app and write its versioned desktop release manifest on macOS
+	@set -eu; \
+	output="$$(apple/scripts/package-macos "$${TAG#v}")"; \
+	archive="$$(printf '%s\n' "$$output" | tail -1)"; \
+	name="$$(basename "$$archive")"; \
+	digest="$$(shasum -a 256 "$$archive")"; \
+	size="$$(wc -c < "$$archive")"; \
+	mkdir -p desktop-release; \
+	cp -- "$$archive" "desktop-release/$$name"; \
+	jq -n --arg version "$${TAG#v}" --arg commit "$${GITHUB_SHA:?Set GITHUB_SHA}" --arg archive "$$name" \
+		--arg digest "$${digest%% *}" --argjson size "$$size" \
+		'{schema: 1, version: $$version, commit: $$commit, platform: "darwin", arch: "arm64", archive: {name: $$archive, sha256: $$digest, size: $$size}}' > desktop-release/desktop-swift-artifact-manifest.json
+
+desktop-bind-release-assets: ## Verify the desktop manifests and stage their archives for attestation on Linux
+	@set -eu; \
+	for suffix in "" "-swift"; do \
+		archive="heinzel-desktop$$suffix-$${TAG#v}-darwin-arm64.tar.gz"; \
+		manifest="desktop-release/desktop$$suffix-artifact-manifest.json"; \
+		digest="$$(sha256sum "desktop-release/$$archive")"; \
+		size="$$(wc -c < "desktop-release/$$archive")"; \
+		jq -e --arg version "$${TAG#v}" --arg commit "$${SOURCE_COMMIT:?Set SOURCE_COMMIT}" --arg archive "$$archive" \
+			--arg digest "$${digest%% *}" --argjson size "$$size" \
+			'. == {schema: 1, version: $$version, commit: $$commit, platform: "darwin", arch: "arm64", archive: {name: $$archive, sha256: $$digest, size: $$size}}' "$$manifest"; \
+		mv -- "$$manifest" "desktop-release/$$archive" dist/; \
+	done
+
 desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
 	packaged_sandbox="$$PWD/desktop/dist/Heinzelmaennchen-linux-$$(node -p 'process.arch')/chrome-sandbox"; \
 	if [ ! -f "$$packaged_sandbox" ] || [ -L "$$packaged_sandbox" ]; then \
@@ -245,6 +271,13 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 
 test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's required macOS job; build the notifier first: make notifier)
 	$(STEPS) "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
+
+test-apple-ci: ## Run required Apple fixtures and reject skipped tests
+	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
+	python3 scripts/check_apple_ci.py reports/apple-ci.xml
+
+build-apple-ci: ## Compile the unsigned Swift Release app on macOS CI
+	xcodebuild -project apple/Heinzel.xcodeproj -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
 
 test-macos-smoke: ## A pull request's macOS check: the CLI starts and the macOS-only tests pass, serially (make notifier first for its launches)
 	$(STEPS) "cli=uv run hz --version && uv run hz --help >/dev/null" "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
@@ -330,6 +363,9 @@ docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwri
 
 docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
 	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
+
+docs-stage-apple-association: ## Stage the Universal Links association in the built site using APPLE_APPLICATION_IDENTIFIER_PREFIX
+	python3 apple/scripts/association-file --site-dir site -- "$${APPLE_APPLICATION_IDENTIFIER_PREFIX}"
 
 docs-catalog: ## Refresh the public metadata-only website catalog; offline site builds use its checked-in snapshot
 	uv run --quiet --script scripts/site_catalog.py --output "$${HZ_SITE_CATALOG:-docs/_data/catalog.json}"

@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { SchemaNotice } from "@/api/client";
@@ -9,7 +9,7 @@ import { expectAccessible, mockApi } from "@/test/render";
 import { appRoute, desktopState, setDesktop } from "./desktop";
 import { NotificationSettings } from "./NotificationSettings";
 import { follow, parseEvents } from "./stream";
-import { noticePath, popUp } from "./useNoticeStream";
+import { noticePath, popUp, useNoticeStream } from "./useNoticeStream";
 
 const notice: SchemaNotice = {
   id: "20261021T100000000000Z-abc123",
@@ -56,6 +56,82 @@ function installNotification(permission: NotificationPermission = "default") {
 afterEach(() => {
   localStorage.removeItem("hz.notification-sound");
   vi.restoreAllMocks();
+});
+
+function NoticeLocation() {
+  useNoticeStream();
+  const location = useLocation();
+  return <output>{location.pathname + location.search}</output>;
+}
+
+describe("native system notices", () => {
+  it("enables notices through the Apple app's permission flow", async () => {
+    installNotification();
+    const notices = vi.fn().mockResolvedValueOnce("on").mockResolvedValueOnce("off");
+    vi.stubGlobal("heinzelDesktop", { notices });
+    try {
+      expect(await setDesktop(true)).toBe("on");
+      expect(await setDesktop(false)).toBe("off");
+      expect(notices.mock.calls).toEqual([[{ action: "enable" }], [{ action: "disable" }]]);
+      expect(FakeNotification.requestPermission).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uses the Apple app for current notices and skips expired ones", async () => {
+    const notices = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const registration = vi.fn(async () => null);
+    vi.stubGlobal("heinzelDesktop", { notices });
+    try {
+      expect(await popUp(notice, vi.fn(), registration)).toBe(true);
+      expect(await popUp(notice, vi.fn(), registration)).toBe(false);
+      expect(await popUp({ ...notice, expires: "2000-01-01T00:00:00Z" }, vi.fn(), registration)).toBe(false);
+      expect(notices).toHaveBeenCalledTimes(2);
+      expect(notices).toHaveBeenCalledWith({
+        action: "show",
+        id: notice.id,
+        title: notice.title,
+        body: notice.body,
+        path: noticePath(notice),
+        expires: null,
+      });
+      expect(registration).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("routes a pending notification at startup and a later native tap within the workspace", async () => {
+    let pending: string | null = "/contracts/example?event=first";
+    const notices = vi.fn(async ({ action }) => {
+      if (action !== "take") return "off";
+      const route = pending;
+      pending = null;
+      return route;
+    });
+    vi.stubGlobal("heinzelDesktop", { notices });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    try {
+      render(
+        <MemoryRouter>
+          <NoticeLocation />
+        </MemoryRouter>,
+      );
+      expect(await screen.findByText("/contracts/example?event=first")).toBeInTheDocument();
+      pending = "/?panel=notifications&event=second";
+      fireEvent(window, new Event("hz:native-notice"));
+      expect(await screen.findByText("/?panel=notifications&event=second")).toBeInTheDocument();
+      pending = "//example.com/outside";
+      fireEvent(window, new Event("hz:native-notice"));
+      expect(await screen.findByText("/")).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("the notice stream", () => {

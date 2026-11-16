@@ -86,20 +86,32 @@ function publicUrl(value: string | null | undefined): string | null {
   return null;
 }
 
-function authenticatedUrl(control: ContributionToggleControl): string | null {
-  const bearer = token();
-  if (!control.checked || !bearer || /\s/.test(bearer)) return null;
-  if (!control.url || control.sign_in_url !== control.url) return null;
+function approvedOrigin(control: ContributionToggleControl): string | null {
+  if (!control.checked || !control.url || control.sign_in_url !== control.url) return null;
   try {
-    const parsed = new URL(control.sign_in_url);
-    // The server's exact approved origin is the only place a token fragment may go.
-    if (parsed.protocol !== "https:" || parsed.origin !== control.sign_in_url) return null;
-    const link = new URL(parsed.origin);
-    link.hash = new URLSearchParams({ token: bearer }).toString();
-    return link.href;
+    const parsed = new URL(control.url);
+    return parsed.protocol === "https:" && parsed.origin === control.url ? parsed.origin : null;
   } catch {
     return null;
   }
+}
+
+function authenticatedUrl(origin: string | null): string | null {
+  const bearer = token();
+  if (!origin || !bearer || /\s/.test(bearer)) return null;
+  const link = new URL(origin);
+  link.hash = new URLSearchParams({ token: bearer }).toString();
+  return link.href;
+}
+
+function workspaceAppLink(origin: string | null): string | null {
+  if (!origin) return null;
+  const style = (window as Window & { heinzelDesktop?: { workspaceLinkStyle?: unknown } }).heinzelDesktop
+    ?.workspaceLinkStyle;
+  const workspace = new URLSearchParams({ server: origin }).toString();
+  if (style === "https") return `https://heinzel.team/open/#${workspace}`;
+  if (style === "scheme") return `heinzel://connect?${workspace}`;
+  return null;
 }
 
 function expectations(control: ContributionToggleControl): ApplySettings {
@@ -117,6 +129,7 @@ function firstSentence(message: string): [string, string] {
 }
 
 type Gesture = "on" | "off" | "restart";
+type CopyKind = "workspace" | "app";
 
 /** One text as a person reads it, so the same sentence in another case or with other punctuation compares equal. */
 function plain(text: string | null | undefined): string {
@@ -141,7 +154,7 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
   const [failure, setFailure] = useState<{ kind: Gesture; message: string } | null>(null);
   const [stalled, setStalled] = useState(false);
   const [shareFailed, setShareFailed] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<{ url: string | null | undefined; kind: CopyKind } | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -157,8 +170,11 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
   const operation = (chosen ? control.disable : control.enable).call;
   const shown = gesture === "on" ? true : gesture === "off" ? false : chosen;
   const url = control.checked && !pending ? publicUrl(control.url) : null;
-  const displayUrl = url ? (authenticatedUrl(control) ?? url) : null;
-  const copied = control.checked && !!control.url && copiedUrl === control.url;
+  const origin = url ? approvedOrigin(control) : null;
+  const displayUrl = authenticatedUrl(origin) ?? url;
+  const appLink = workspaceAppLink(origin);
+  const copied = displayUrl !== null && copiedLink?.url === control.url && copiedLink?.kind === "workspace";
+  const appCopied = appLink !== null && copiedLink?.url === control.url && copiedLink?.kind === "app";
   const restartNeeded = unfinished && !control.problem && Object.keys(control.apply_settings ?? {}).length > 0;
   const [errorLine, errorRest] = error ? firstSentence(error) : ["", ""];
   // Waiting with nothing to do (no problem, no restart, no gesture) gets a time limit, then Try again.
@@ -189,7 +205,7 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
             ? t("contrib.toggle.notFinished")
             : restartNeeded
               ? t("contrib.toggle.restartHint")
-              : copied
+              : copied || appCopied
                 ? t("copy.done")
                 : control.status
                   ? control.status
@@ -277,7 +293,7 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
       : actionable(control.enable.call) && (!!failure || !!control.problem || stalled));
 
   const share = async () => {
-    const value = authenticatedUrl(control) ?? publicUrl(control.url);
+    const value = authenticatedUrl(approvedOrigin(control)) ?? publicUrl(control.url);
     if (!control.checked || !value || !navigator.share) return;
     setError(null);
     try {
@@ -294,13 +310,12 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
     }
   };
 
-  const copy = async () => {
-    const value = authenticatedUrl(control) ?? publicUrl(control.url);
+  const copy = async (value: string | null, kind: CopyKind) => {
     if (!control.checked || !value) return;
     try {
       await navigator.clipboard.writeText(value);
       if (mounted.current) {
-        setCopiedUrl(control.url ?? null);
+        setCopiedLink({ url: control.url, kind });
         setError(null);
       }
     } catch {
@@ -377,8 +392,16 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
         </PaneAction>
       )}
       {url && (typeof navigator.share !== "function" || shareFailed) && (
-        <PaneAction icon={copied ? Check : Copy} onClick={() => void copy()}>
+        <PaneAction
+          icon={copied ? Check : Copy}
+          onClick={() => void copy(authenticatedUrl(approvedOrigin(control)) ?? publicUrl(control.url), "workspace")}
+        >
           {t("contrib.toggle.copyUrl")}
+        </PaneAction>
+      )}
+      {appLink && (
+        <PaneAction icon={appCopied ? Check : Copy} onClick={() => void copy(appLink, "app")}>
+          {t("contrib.toggle.copyAppLink")}
         </PaneAction>
       )}
       {url && (

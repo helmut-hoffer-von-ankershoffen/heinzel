@@ -1,3 +1,4 @@
+import { useOverlayTarget } from "@/lib/overlayTarget";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
 // The left sidebar: home and search on top, the navigation tree in the middle, profile and settings at the bottom.
 // Collapsed, it becomes a rail of icons with the same screens in the same order.
@@ -66,6 +67,7 @@ const HAIRLINE_BELOW = "-mx-2 flex shrink-0 items-center gap-1 border-b-[0.5px] 
 
 type Props = {
   collapsed: boolean;
+  drawer?: boolean;
   /** The desktop app draws no native title bar: the first line becomes its 44 px row, after the traffic lights. */
   titlebar?: boolean;
   onToggle: () => void;
@@ -77,15 +79,21 @@ type Props = {
 const TITLEBAR_ROW =
   "-mx-2 flex h-(--titlebar-height) shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20";
 
-export function Sidebar({ collapsed, titlebar = false, onToggle, onSearch, onNotifications }: Props) {
+export function Sidebar({ collapsed, drawer = false, titlebar = false, onToggle, onSearch, onNotifications }: Props) {
   return collapsed ? (
     <Rail titlebar={titlebar} onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
   ) : (
-    <Full titlebar={titlebar} onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
+    <Full
+      drawer={drawer}
+      titlebar={titlebar}
+      onToggle={onToggle}
+      onSearch={onSearch}
+      onNotifications={onNotifications}
+    />
   );
 }
 
-function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
+function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
   const contracts = useContracts();
   const expert = useExpert();
   const [folded, toggle] = useFolded();
@@ -244,9 +252,9 @@ function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
       </div>
       {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
           the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
-      <VizStageSlot />
-      <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />
-      <Footer />
+      {!drawer && <VizStageSlot />}
+      {!drawer && <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />}
+      <Footer onPopOut={drawer ? onToggle : undefined} />
     </div>
   );
 }
@@ -256,7 +264,7 @@ function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
  * Holding them it fills the room the navigation leaves, between 5 and 20 rem: a long navigation keeps its links and
  * the stage stays a strip; a short one gives the Heinzels the whole gap.
  */
-function VizStageSlot() {
+export function VizStageSlot({ narrow = false }: { narrow?: boolean }) {
   const playful = usePlayful();
   const [element, setElement] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -267,7 +275,10 @@ function VizStageSlot() {
     <div
       ref={setElement}
       data-viz-stage
-      className="relative -mx-2 [container-type:size] not-empty:max-h-80 not-empty:min-h-20 not-empty:flex-[999_1_0%]"
+      className={cn(
+        "relative [container-type:size]",
+        narrow ? "shrink-0 not-empty:h-20" : "-mx-2 not-empty:max-h-80 not-empty:min-h-20 not-empty:flex-[999_1_0%]",
+      )}
     />
   );
 }
@@ -449,7 +460,8 @@ const ROLE_SHORT: Record<string, string> = {
 };
 
 /** The account at the bottom: the line with name and role, or in the rail just the avatar; both open the same menu. */
-function Footer({ compact = false }: { compact?: boolean }) {
+function Footer({ compact = false, onPopOut }: { compact?: boolean; onPopOut?: () => void }) {
+  const overlayTarget = useOverlayTarget();
   const profile = useProfile();
   const me = profile.data;
   const name = me?.name?.trim() || me?.handle || t("nav.profile");
@@ -559,7 +571,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
               {t("account.learn")}
             </MenuLink>
           </div>,
-          document.body,
+          overlayTarget(),
         )}
       {compact && <SoundButton compact />}
       {compact && <ThemeButton compact />}
@@ -590,7 +602,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </>
         )}
       </button>
-      {!compact && <SoundButton />}
+      {!compact && <SoundButton onPopOut={onPopOut} />}
       {!compact && <ThemeButton />}
     </div>
   );

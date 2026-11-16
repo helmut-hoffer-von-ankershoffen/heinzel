@@ -404,6 +404,30 @@ describe("generic provider toggle", () => {
 });
 
 describe("authenticated URL copy", () => {
+  it.each([
+    ["https", "https://heinzel.team/open/#server="],
+    ["scheme", "heinzel://connect?server="],
+  ])("copies a credential-free %s app link for an approved workspace", async (style, prefix) => {
+    vi.stubGlobal("heinzelDesktop", { workspaceLinkStyle: style });
+    const user = userEvent.setup();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText");
+    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    await user.click(screen.getByRole("button", { name: "Copy app link" }));
+    expect(clipboard).toHaveBeenCalledExactlyOnceWith(prefix + encodeURIComponent(ORIGIN));
+  });
+
+  it("offers no app link for a different origin or a path with a credential fragment", () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceLinkStyle: "https" });
+    const value = control({ checked: true, url: ORIGIN, sign_in_url: "https://other.tail-example.ts.net" });
+    const { rerender, refresh, applySettings } = show(value);
+    expect(screen.queryByRole("button", { name: "Copy app link" })).not.toBeInTheDocument();
+    const invalid = `${ORIGIN}/#token=fixture`;
+    rerender(
+      <ContributionToggle control={{ ...value, url: invalid, sign_in_url: invalid }} {...{ refresh, applySettings }} />,
+    );
+    expect(screen.queryByRole("button", { name: "Copy app link" })).not.toBeInTheDocument();
+  });
+
   it("offers Copy without Share when native sharing is unavailable", async () => {
     vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share: undefined }));
     const user = userEvent.setup();

@@ -6,7 +6,7 @@ import { deviceToken } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { InstallApp } from "@/pwa/InstallApp";
-import { setDesktop, useDesktopState } from "./desktop";
+import { nativeNotices, notificationStateKey, setDesktop, useDesktopState } from "./desktop";
 import { NotificationTest } from "./NotificationTest";
 import { notificationSoundAvailable, notificationSoundEnabled, setNotificationSoundEnabled } from "./sound";
 
@@ -49,7 +49,7 @@ export function NotificationSettings() {
 
   return (
     <div className="flex flex-col gap-3">
-      <InstallApp />
+      {!nativeNotices() && <InstallApp />}
       <label htmlFor={id} className="flex items-center gap-2 text-sm">
         <input
           id={id}
@@ -60,9 +60,9 @@ export function NotificationSettings() {
           disabled={busy || state === "unsupported" || state === "install" || state === "denied"}
           onChange={(event) => void toggle(event.target.checked)}
         />
-        {t("notify.toggle")}
+        {t(nativeNotices() ? "notify.native.toggle" : "notify.toggle")}
       </label>
-      <p className="text-xs text-muted-foreground">{t(`notify.state.${state}`)}</p>
+      <p className="text-xs text-muted-foreground">{t(notificationStateKey(state))}</p>
       <div className="flex flex-col gap-1">
         <label htmlFor={soundId} className="flex items-center gap-2 text-sm">
           <input

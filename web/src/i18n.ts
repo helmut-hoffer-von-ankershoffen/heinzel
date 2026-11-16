@@ -352,6 +352,7 @@ const en = {
   "contrib.toggle.notOff": "Could not turn it off. Try again.",
   "contrib.toggle.details": "Details",
   "contrib.toggle.copyUrl": "Copy link",
+  "contrib.toggle.copyAppLink": "Copy app link",
   "contrib.toggle.shareUrl": "Share",
   "contrib.toggle.shareFailed": "Could not share the link; copy it instead.",
   "contrib.toggle.copySignIn": "Copy sign-in link",
@@ -474,8 +475,8 @@ const en = {
   "settings.preview.weather.heat": "Hot",
   "settings.preview.weather.cold": "Cold",
   "status.about": "About Heinzelmännchen",
-  "status.tagline": "Heinzels accelerating product teams,",
-  "status.origin": "like the little elves from Cologne",
+  "status.tagline": "Durable agents accelerating product teams,",
+  "status.origin": "like the little elves from Cologne.",
   "app.name": "Heinzelmännchen",
   "top.copyCommand": "Copy the hz command",
   "top.copyLink": "Copy link to this screen",
@@ -500,7 +501,7 @@ const en = {
     "Nothing is recorded or uploaded. The microphone hears the room; sharing a tab shows your browser's sharing bar.",
   "audio.visualizerHelpMicrophone": "Nothing is recorded or uploaded. The microphone hears the room.",
   "audio.visualizerHelpSystem":
-    "Nothing is recorded or uploaded. Heinzel listens to the sound this computer plays, after you allow it each time.",
+    "Nothing is recorded or uploaded. Heinzel listens to system audio after you allow it each time.",
   "audio.visualizerHelpShared": "Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar.",
   "audio.visualizerHelpOwn": "Nothing is recorded or uploaded. This browser shows Heinzel's own sound only.",
   "proposal.intro":
@@ -517,10 +518,12 @@ const en = {
   "readSet.decisionUnclear":
     "The decision outcome needs inspection; it will not be retried. Select Check decision outcome to look again.",
   "top.refresh": "Refresh",
+  "top.more": "More workspace actions",
   "top.refreshing": "Getting the latest data…",
   "command.copied": "Copied",
   "app.skip": "Skip to content",
   "nav.label": "Main",
+  "nav.openMenu": "Open navigation",
   "nav.brand": "Heinzelmännchen home",
   "nav.home": "Today",
   "nav.heinzelmaennchen": "Heinzelmännchen",
@@ -686,6 +689,12 @@ const en = {
     "{command} isn't running on this machine, or it stopped. An installed hz starts again on its own, and this app connects by itself once it runs.",
   "splash.unreachableCommand": "If it does not, start it in a terminal:",
   "splash.tokenTitle": "Sign in again",
+  "splash.remoteTitle": "Sign in to this workspace",
+  "splash.remoteToken": "Ask your host for the private sign-in link and paste it here.",
+  "splash.remoteOffline": "Check that you're on the workspace's private network.",
+  "splash.remotePasteLabel": "Private sign-in link",
+  "splash.remotePasteProblem": "Use the sign-in link for {address}.",
+  "splash.signIn": "Sign in",
   "splash.token":
     "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
   "splash.tokenApp":
@@ -1401,6 +1410,7 @@ const en = {
   "browser.passkeyNote":
     "Passkeys may not work in the built-in browser. Choose another sign-in option, or open the page in your browser.",
   "browser.clearFailedNote": "Browsing data could not be cleared. Try again, or quit and reopen the app.",
+  "browser.externalFailedNote": "This page could not be opened in your browser. Check the page and try again.",
   "browser.noDeviceNote":
     "No device was found for this website. Connect it and try again, or open the page in your browser.",
   "browser.webOnly":
@@ -1460,6 +1470,12 @@ const en = {
   "chat.capShort": "Your agent runner · at most {cap} per answer",
   "chat.you": "You",
   "notify.toggle": "Notify me in this browser",
+  "notify.native.toggle": "Notify me on this device",
+  "notify.native.channel": "System notifications on this device",
+  "notify.native.on": "Keep Heinzel open to receive workspace notifications.",
+  "notify.native.denied": "Notifications are blocked. Allow Heinzel in System Settings.",
+  "notify.native.unsupported": "This device can't display system notifications.",
+  "notify.native.failed": "The test notification didn't reach this device.",
   "notify.state.on": "On: keep this app open to receive browser notifications.",
   "notify.state.off": "Off: read your notifications inside this app.",
   "notify.state.denied": "Blocked by your browser. Allow this page in site settings.",

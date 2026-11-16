@@ -244,6 +244,37 @@ def test_fetch_archive_verifies_before_and_after_archive_download(fictional_arch
     ]
 
 
+def test_swift_fetch_selects_and_verifies_only_swift_assets(fictional_archive, monkeypatch, tmp_path):
+    contents, assets, calls = fictional_archive
+    old = "heinzel-desktop-1.2.3-darwin-arm64.tar.gz"
+    archive = "heinzel-desktop-swift-1.2.3-darwin-arm64.tar.gz"
+    manifest = "desktop-swift-artifact-manifest.json"
+    contents[archive] = contents.pop(old)
+    payload = json.loads(contents.pop(release.MANIFEST_NAME))
+    payload["archive"]["name"] = archive
+    contents[manifest] = json.dumps(payload).encode()
+    assets.clear()
+    assets.update(
+        {
+            name: release._AssetIdentity(TAG, i, hashlib.sha256(data).hexdigest())
+            for i, (name, data) in enumerate(contents.items(), 1)
+        }
+    )
+    requested = []
+    monkeypatch.setattr(release, "_release_assets", lambda _tag, names, _reporter: requested.append(names) or assets)
+    result = release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.SWIFT)
+    assert result.name == archive
+    assert result.read_bytes() == contents[archive]
+    assert requested == [set(contents), set(contents)]
+    assert ("verify", manifest) in calls
+    assert ("verify", archive) in calls
+
+    payload["archive"]["name"] = old
+    contents[manifest] = json.dumps(payload).encode()
+    with pytest.raises(release.HeinzelError, match="different artifact"):
+        release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.SWIFT)
+
+
 def test_fetch_archive_rejects_bad_version_and_missing_verifier(monkeypatch, tmp_path):
     with pytest.raises(release.HeinzelError, match="published stable"):
         release.fetch_archive("v1.2.3", tmp_path)
