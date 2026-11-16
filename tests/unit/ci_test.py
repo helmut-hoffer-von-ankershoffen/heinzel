@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shards():
-    recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
+    recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)' '$(E2E_WEB_3)'"
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-browser-allocation"],
         cwd=REPO,
@@ -34,15 +34,17 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
         text=True,
         timeout=3,
     )
-    browser, first, second = [set(line.split()) for line in result.stdout.splitlines()]
+    browser, first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
     assert journey not in browser
-    assert journey not in first | second
+    assert journey not in first | second | third
     assert "tests/e2e/ui_service_test.py" not in browser
-    assert first.isdisjoint(second)
-    assert first | second == browser
-    assert first == {"tests/e2e/web_ui_test.py", "tests/e2e/scheduled_connected_test.py"}
-    assert second == browser - first
+    assert first.isdisjoint(second | third)
+    assert second.isdisjoint(third)
+    assert first | second | third == browser
+    assert first == {"tests/e2e/web_ui_test.py"}
+    assert third == {"tests/e2e/scheduled_connected_test.py", "tests/e2e/generic_agent_chat_test.py"}
+    assert second == browser - first - third
 
 
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
@@ -1844,7 +1846,7 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
         "ubuntu-24.04",
         "macos-latest",
     ]
-    assert jobs["e2e"]["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2"]
+    assert jobs["e2e"]["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert "needs.changes.outputs.full_ci == 'true'" in jobs["notifier"]["if"]
     assert "needs.changes.outputs.full_ci == 'true'" in jobs["macos-specific"]["if"]
     assert "needs.changes.outputs.full_ci != 'true'" in jobs["macos-smoke"]["if"]

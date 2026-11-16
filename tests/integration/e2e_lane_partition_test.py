@@ -54,7 +54,7 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
 
 
 def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations(collected_e2e_nodes):
-    groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2")}
+    groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2", "web-3")}
     # Before the split, CLI ignored only browser files. Reconstruct that exact original selection.
     groups["original-cli"] = [
         [

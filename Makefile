@@ -316,14 +316,16 @@ E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 # Keep the mounted app sweep in its existing lane when a supervised journey uses a browser helper.
 # Classifying installed-server journeys first keeps their cold starts apart from unrelated browser builds.
 # Rebalance the measured macOS browser work without changing worker counts or deadlines.
-E2E_WEB_1_FILES := tests/e2e/web_ui_test.py tests/e2e/scheduled_connected_test.py
+E2E_WEB_1_FILES := tests/e2e/web_ui_test.py
+E2E_WEB_3_FILES := tests/e2e/scheduled_connected_test.py tests/e2e/generic_agent_chat_test.py
 E2E_WEB_1 := $(filter $(E2E_WEB_1_FILES),$(E2E_WEB))
-E2E_WEB_2 := $(filter-out $(E2E_WEB_1),$(E2E_WEB))
-E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
+E2E_WEB_3 := $(filter $(E2E_WEB_3_FILES),$(E2E_WEB))
+E2E_WEB_2 := $(filter-out $(E2E_WEB_1) $(E2E_WEB_3),$(E2E_WEB))
+E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))$(if $(filter web-3,$(SUITE)),$(foreach f,$(E2E_WEB_3), $(f)))
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), supervised (installed server and offline lifecycle), web-1 or web-2 (browser halves) runs one part
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli, supervised, web-1, web-2 or web-3 runs one part
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) $(if $(filter supervised web-1 web-2,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) $(if $(filter supervised web-1 web-2 web-3,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare the locked controller and current build assets before end-to-end procedure deadlines
 	@uv run --quiet --script scripts/build.py sync

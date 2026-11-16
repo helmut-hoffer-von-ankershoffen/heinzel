@@ -253,7 +253,7 @@ def expected_jobs(event: str) -> dict[str, str]:
         ],
         *[
             f"End-to-end {suite} ({runner})"
-            for suite in ("supervised", "cli", "web-1", "web-2")
+            for suite in ("supervised", "cli", "web-1", "web-2", "web-3")
             for runner in ("ubuntu-24.04", "macos-latest")
         ],
         *[f"Electron ({runner})" for runner in ("ubuntu-24.04", "macos-latest")],

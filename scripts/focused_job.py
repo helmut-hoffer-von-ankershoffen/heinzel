@@ -9,7 +9,7 @@ focused-job workflow runs one selection on the requested runner instead. Its inp
 environment only, are validated here, and become argument lists: nothing is passed through a shell.
 
     FOCUSED_KIND      e2e | pytest | vitest
-    FOCUSED_SELECTOR  e2e: a lane (cli, supervised, web-1, web-2) or test ids under tests/e2e/;
+    FOCUSED_SELECTOR  e2e: a lane (cli, supervised, web-1, web-2, web-3) or test ids under tests/e2e/;
                       pytest: test ids under tests/; vitest: test files under web/ (with or without the `web/` prefix),
                       or exactly `web/ALL` for the whole Vitest suite.
                       Up to 10 space-separated ids; an id is a path with an optional `::name[param]`.
@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("e2e", "pytest", "vitest")
-LANES = ("cli", "supervised", "web-1", "web-2")
+LANES = ("cli", "supervised", "web-1", "web-2", "web-3")
 MAX_IDS = 4096
 """The limit on ids in a non-Python lane: above any number of test files, so it never binds (owner rule, 2026-11-14:
 focused tests for PRs of any size). The key stays until the steuermaschine stops reading it, then goes."""
