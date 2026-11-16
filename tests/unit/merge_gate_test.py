@@ -338,7 +338,8 @@ def test_evidence_refuses_non_api_evidence_origin(url):
 
 
 @pytest.mark.parametrize("result", ["ok", "redirect", "oversize"])
-def test_evidence_single_hop_drops_credentials_and_disables_proxy(monkeypatch, result):
+@pytest.mark.parametrize("job_path", ["jobs/1/steps/2/logs", "jobs/1/logs"])
+def test_evidence_single_hop_drops_credentials_and_disables_proxy(monkeypatch, result, job_path):
     seen = []
 
     class Reply(io.BytesIO):
@@ -368,7 +369,7 @@ def test_evidence_single_hop_drops_credentials_and_disables_proxy(monkeypatch, r
         return Opener()
 
     monkeypatch.setattr(merge_gate.urllib.request, "build_opener", opener)
-    url = "https://api.github.com/repos/a/b/actions/jobs/1/steps/2/logs"
+    url = f"https://api.github.com/repos/a/b/actions/{job_path}"
     if result == "ok":
         assert merge_gate.fetch_evidence(url, "secret", limit=3) == b"123"
     else:

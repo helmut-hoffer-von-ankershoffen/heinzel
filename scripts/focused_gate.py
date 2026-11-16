@@ -40,7 +40,9 @@ from scripts.release_candidate import (
     REPOSITORY,
     WORKFLOW,
     CandidateError,
+    expected_jobs,
     job_inventory,
+    quarantine_lane,
     release_version,
     require,
     valid_sha,
@@ -55,6 +57,7 @@ MAX_ARTIFACTS = 100
 MAX_ARCHIVE = 5 * 1024 * 1024
 REMOTE_FIELDS = 2
 MAX_UPLOAD_LOG = 64 * 1024
+FULL_EXECUTION_INPUTS = (*PROTECTED_FILES, "Makefile", "pyproject.toml")
 UPLOAD_NAME = "Upload focused CI evidence"
 CANDIDATE_UPLOAD_NAME = "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 STATIC_JOBS = {
@@ -448,29 +451,85 @@ def _tested_source_after_main_moves(
     return GateSource(source.run, recovered, commit)
 
 
+def full_checkout(log: bytes) -> str:
+    """Read the unique checkout action's actual commit, never a branch name or inferred head."""
+    matches = re.findall(
+        rb"(?m)^\d{4}-[^ \r\n]+ \[command\][^\r\n]+/git log -1 --format=%H\r?\n"
+        rb"\d{4}-[^ \r\n]+ ([0-9a-f]{40})\r?$",
+        log,
+    )
+    require(len(log) <= 1024 * 1024 and len(matches) == 1, "missing or ambiguous full CI checkout identity")
+    return matches[0].decode()
+
+
+def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str], bytes]) -> list[dict[str, Any]]:
+    """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
+    require(source.run["event"] == "pull_request", "full PR evidence requires the PR event")
+    associated = source.run["pull_requests"]
+    require(len(associated) == 1 and associated[0]["base"]["sha"] == base, "full PR evidence has a stale tested base")
+    require(
+        all(git_blob(source.commit, path) == git_blob(base, path) for path in FULL_EXECUTION_INPUTS),
+        "full PR execution inputs differ from protected main",
+    )
+    workflow = git("show", f"{base}:{WORKFLOW}")
+    require(
+        b"name: Run the complete CI workload without an external admission plan" in workflow
+        and b"run: echo 'selected=true' >> \"$GITHUB_OUTPUT\"" in workflow,
+        "protected main does not select unconditional full CI",
+    )
+    require(
+        git("rev-list", "--parents", "-n", "1", source.commit).decode().split()
+        == [source.commit, base, source.source.head],
+        "full CI merge parents differ from the exact base and head",
+    )
+    jobs = quarantine_lane(jobs_for(gate, source), source.run["id"], source.source.head)
+    inventory = expected_jobs("pull_request")
+    inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    require(
+        len(jobs) == len(inventory) and {job["name"] for job in jobs} == set(inventory), "full PR job inventory differs"
+    )
+    for job in jobs:
+        require(job["conclusion"] == inventory[job["name"]], "full PR job did not meet its required conclusion")
+        if job["conclusion"] == "success":
+            _check(gate, source, job)
+    changed = next(job for job in jobs if job["name"] == "Changed paths")
+    log = read(f"actions/jobs/{changed['id']}/logs")
+    require(full_checkout(log) == source.commit, "full CI tested another merge commit")
+    return jobs
+
+
 def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes], *, slots: tuple[str, ...] = ()) -> str:
     """Return a typed verdict for the completed original CI attempt, without publishing checks."""
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     if not candidate:
         manifest = selected_registry(manifest, slots, f"pull_request:{gate.head}")
+    full = not candidate and not json.loads(manifest, object_pairs_hook=unique_object)
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
     source = _pr_source(gate, run, snapshot, candidate=candidate)
     if (
         not candidate
+        and not full
         and json.loads(manifest, object_pairs_hook=unique_object).get(f"pull_request:{gate.head}", {}).get("base")
         != snapshot[2]
     ):
         source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
-    scope = resolve(
-        source.source,
-        source.commit,
-        manifest,
-        source.source.payload["pull_request"],
-        pr_base_limit=None if candidate else snapshot[2],
+    full_jobs = full_pr_jobs(gate, source, snapshot[2], read) if full else None
+    scope = (
+        None
+        if full
+        else resolve(
+            source.source,
+            source.commit,
+            manifest,
+            source.source.payload["pull_request"],
+            pr_base_limit=None if candidate else snapshot[2],
+        )
     )
     if not isinstance(scope, Scope):
-        jobs = [job for job in jobs_for(gate, source) if job["name"] == "Coverage"]
+        jobs = [
+            job for job in (full_jobs if full_jobs is not None else jobs_for(gate, source)) if job["name"] == "Coverage"
+        ]
         require(len(jobs) == 1, "canonical candidate requires the exact Coverage job")
         _check(gate, source, jobs[0])
         response = gate.github(f"actions/runs/{run_id}/artifacts?name={ARTIFACT}")
@@ -483,7 +542,11 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
         )
         total = whole_total(_verified_archive(read, jobs[0], artifacts[0], ARTIFACT, CANDIDATE_UPLOAD_NAME))
         require(total >= red_below(Path(WORKFLOW).read_text()), "full candidate coverage is below its floor")
-        verdict = "Whole-project coverage measured by the full release candidate"
+        verdict = (
+            "Whole-project coverage measured by full PR CI"
+            if full
+            else "Whole-project coverage measured by the full release candidate"
+        )
     else:
         require(
             all(git_blob(source.commit, path) == scope.execution[path] for path in PROTECTED_FILES),
@@ -501,9 +564,9 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
     current, merge, main = pull_identity(gate, gate.head)
     require(
         main == snapshot[2]
-        and (not candidate or current["base"]["sha"] == main)
+        and (not (candidate or full) or current["base"]["sha"] == main)
         and (source.source.event != "pull_request" or merge == snapshot[1])
-        and (not candidate or source.source.event != "pull_request" or merge == source.commit)
+        and (not (candidate or full) or source.source.event != "pull_request" or merge == source.commit)
         and _authenticated_run(gate, run_id, candidate_composite=candidate) == run,
         "source or workflow attempt changed during verification",
     )
@@ -570,7 +633,7 @@ def main() -> None:
 
     def read(path: str) -> bytes:
         url = f"{GITHUB}/repos/{REPOSITORY}/{path}"
-        limit = MAX_UPLOAD_LOG if path.endswith("/logs") else MAX_ARCHIVE
+        limit = 1024 * 1024 if path.endswith("/logs") else MAX_ARCHIVE
         return fetch_evidence(url, gate.token, limit=limit)
 
     run = int(os.environ["CI_RUN_ID"])
