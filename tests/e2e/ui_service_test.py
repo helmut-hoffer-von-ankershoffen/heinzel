@@ -18,9 +18,15 @@ pytestmark = pytest.mark.e2e
 
 
 @pytest.fixture
-def supervised(service, tmp_path, sandbox, wheel):
+def supervised_install_options():
+    """The cold-start tests exercise uv's default, source-only tool installation."""
+    return ()
+
+
+@pytest.fixture
+def supervised(service, tmp_path, sandbox, wheel, supervised_install_options):
     service, manager, port = service
-    sandbox.run("uv", "tool", "install", "--offline", wheel)
+    sandbox.run("uv", "tool", "install", "--offline", *supervised_install_options, wheel)
     service.executable = sandbox.hz_bin
     service.prefix = sandbox.root / "tools/heinzel"
     config = tmp_path / "selected-config/config.toml"
