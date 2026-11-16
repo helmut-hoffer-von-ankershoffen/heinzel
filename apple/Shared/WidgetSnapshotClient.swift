@@ -168,6 +168,7 @@ final class WidgetTimelineRefresh {
     private var flights: [String: Flight] = [:]
     private var permits: [String: Date] = [:]
     private var rejected: [String: ActivityCatalog.Activation] = [:]
+    private var cleanupPending: [String: ActivityCatalog.Activation] = [:]
 
     private func key(for activation: ActivityCatalog.Activation) -> String {
         activation.id + "/" + (activation.credentialGeneration ?? "")
@@ -209,16 +210,23 @@ final class WidgetTimelineRefresh {
     func refresh(store: WidgetCredentialStore,
                  fetch: @escaping @MainActor (WidgetCredentialCapture) async -> WidgetSnapshotOutcome,
                  publish: @escaping @MainActor (WidgetSnapshotEnvelope, WidgetCredentialCapture) -> Bool) async -> WidgetTimelineAccess {
+        // Retry the captured activation even if the Keychain is now unavailable
+        // or the credential expired; neither condition permits a new request.
+        for (key, activation) in cleanupPending {
+            let cleanup = store.invalidate(activation)
+            if cleanup.complete || cleanup.stale {
+                cleanupPending[key] = nil
+            } else {
+                return .hidden
+            }
+        }
         if let pending = ActivityCatalog.pendingCleanup(url: store.catalogURL) {
             let cleanup = store.invalidate(pending)
             if !cleanup.complete && !cleanup.stale { return .hidden }
         }
         guard let capture = store.capture() else { return .hidden }
         let key = key(for: capture.activation)
-        if let rejectedActivation = rejected[key] {
-            _ = store.invalidate(rejectedActivation)
-            return .hidden
-        }
+        if rejected[key] != nil { return .hidden }
         let flight: Flight
         if let existing = flights[key] {
             flight = existing
@@ -246,9 +254,10 @@ final class WidgetTimelineRefresh {
             switch result {
             case .observed(let expiry): if isCurrent { permits[key] = expiry }
             case .rejected(let activation, let cleanup):
-                if activation == capture.activation && !cleanup.stale {
+                if activation == capture.activation {
                     permits[key] = nil
                     rejected[key] = activation
+                    if !cleanup.complete && !cleanup.stale { cleanupPending[key] = activation }
                 }
             case .unavailable: break
             }

@@ -3,9 +3,10 @@ import Foundation
 private final class TimelineKeychain: WidgetCredentialKeychain {
     var data: Data?
     var deletes = 0
+    var unavailable = false
     func preflight() -> Bool { true }
-    func read() -> Data? { data }
-    func readStatus() -> WidgetKeychainRead { data.map(WidgetKeychainRead.data) ?? .missing }
+    func read() -> Data? { unavailable ? nil : data }
+    func readStatus() -> WidgetKeychainRead { unavailable ? .unavailable : (data.map(WidgetKeychainRead.data) ?? .missing) }
     func write(_ value: Data) -> Bool { data = value; return true }
     func delete() -> Bool { deletes += 1; return false }
     func readPending(_: String) -> Data? { nil }
@@ -121,6 +122,36 @@ private final class TimelineKeychain: WidgetCredentialKeychain {
         }, publish: publish)
         guard case .hidden = restartedCleanup else { preconditionFailure("pending cleanup exposed data") }
         precondition(keychain.deletes > previousDeletes)
+
+        let secondURL = directory.appendingPathComponent("unavailable-keychain.sqlite")
+        _ = ActivityCatalog(url: secondURL)!
+        let secondKeychain = TimelineKeychain()
+        let secondStore = WidgetCredentialStore(catalogURL: secondURL, keychain: secondKeychain)
+        let secondPending = ActivityCatalog.activate(url: secondURL, endpoint: "https://example.test")!
+        let secondCredential = WidgetCredential(endpoint: secondPending.endpoint, workspaceID: workspace,
+            generation: UUID().uuidString, token: "hzw_" + String(repeating: "y", count: 40),
+            expiresAt: .now.addingTimeInterval(3600))
+        let secondData = try JSONEncoder().encode(secondCredential)
+        let secondActivation = ActivityCatalog.installCredential(url: secondURL, expected: secondPending,
+            workspaceID: workspace, generation: secondCredential.generation, install: { secondKeychain.write(secondData) })!
+        let secondScheduler = WidgetTimelineRefresh()
+        let firstRejected = await secondScheduler.refresh(store: secondStore, fetch: { capture in
+            .rejected(capture, .init(revoked: false, purged: false))
+        }, publish: publish)
+        guard case .hidden = firstRejected else { preconditionFailure("failed revocation exposed data") }
+        secondKeychain.unavailable = true
+        let retryUnavailable = await secondScheduler.refresh(store: secondStore, fetch: { _ in
+            preconditionFailure("unavailable credential attempted network")
+        }, publish: publish)
+        guard case .hidden = retryUnavailable else { preconditionFailure("unavailable cleanup exposed data") }
+        precondition(ActivityCatalog.pendingCleanup(url: secondURL) == secondActivation)
+        secondKeychain.unavailable = false
+        let retryRecovered = await secondScheduler.refresh(store: secondStore, fetch: { _ in
+            preconditionFailure("pending cleanup attempted network")
+        }, publish: publish)
+        guard case .hidden = retryRecovered, secondKeychain.deletes > 0 else {
+            preconditionFailure("remembered cleanup did not progress after Keychain recovery")
+        }
         print("PASS: coalescing, restart, publication, rotation and rejected credential fencing")
     }
 }
