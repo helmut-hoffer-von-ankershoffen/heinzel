@@ -316,7 +316,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
+      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # stop waiting for other setup cells on a red PR
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
     steps:
@@ -362,7 +362,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
+      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # a red cell is enough to know on a pull request
       matrix:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
@@ -603,8 +603,14 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Install what the tests need, and no more
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          uv sync --frozen --no-build --no-dev --group test --group build --no-install-package pyyaml
           bash scripts/bootstrap-pyyaml.sh
+      - run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
+      - name: Select Xcode with the macOS 15 SDK or newer
+        run: |
+          echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer' >> "$GITHUB_ENV"
+          DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -version
+          DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --sdk macosx --show-sdk-version
       - run: make notifier # the real-launch tests skip without the built app
       # Serial on purpose (no -n): the notifier tests share one machine-wide bundle id, and contention must not hit them.
       - name: Tests that only exercise macOS behaviour (marker macos_specific)
@@ -612,6 +618,10 @@ jobs:
           UV_NO_SYNC: "1"
           VERBOSE: "1"
         run: make test-macos-specific
+      - name: Run Apple fixtures without skips
+        run: make test-apple-ci
+      - name: Compile the unsigned Swift Mac Release target
+        run: make build-apple-ci
 
   macos-smoke:
     permissions:
@@ -918,7 +928,7 @@ jobs:
     name: Stop after dependency-review failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [dependency-review]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -935,7 +945,7 @@ jobs:
     name: Stop after commits failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [commits]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -952,7 +962,7 @@ jobs:
     name: Stop after lint failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [lint]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -969,7 +979,7 @@ jobs:
     name: Stop after secrets failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [secrets]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -986,7 +996,7 @@ jobs:
     name: Stop after setup failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [setup]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -1003,7 +1013,7 @@ jobs:
     name: Stop after audit failure
     # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
     needs: [audit]
-    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: failure() && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:

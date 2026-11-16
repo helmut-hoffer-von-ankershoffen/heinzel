@@ -272,6 +272,13 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's required macOS job; build the notifier first: make notifier)
 	$(STEPS) "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
 
+test-apple-ci:
+	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
+	python3 scripts/check_apple_ci.py reports/apple-ci.xml
+
+build-apple-ci:
+	xcodebuild -project apple/Heinzel.xcodeproj -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+
 test-macos-smoke: ## A pull request's macOS check: the CLI starts and the macOS-only tests pass, serially (make notifier first for its launches)
 	$(STEPS) "cli=uv run hz --version && uv run hz --help >/dev/null" "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
 

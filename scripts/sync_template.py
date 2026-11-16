@@ -146,6 +146,8 @@ def makefile() -> str:
         "desktop-electron-sandbox",
         "desktop-electron-native",
         "desktop-electron-package",
+        "test-apple-ci",
+        "build-apple-ci",
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
         "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
@@ -162,7 +164,9 @@ def makefile() -> str:
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
-    text = re.sub(r"\n(?:notifier|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(
+        r"\n(?:notifier|test-apple-ci|build-apple-ci|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text
+    )
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
     text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)

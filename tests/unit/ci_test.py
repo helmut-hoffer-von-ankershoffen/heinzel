@@ -59,6 +59,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
@@ -1792,6 +1793,7 @@ def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():
         stop = jobs[f"stop-after-{cheap}"]
         assert stop["if"] == (
             "failure() && github.event_name == 'pull_request' && "
+            "!startsWith(github.head_ref, 'release/') && "
             "github.event.pull_request.head.repo.full_name == github.repository"
         )
         assert stop["needs"] == [cheap]
@@ -2092,3 +2094,19 @@ def test_direct_coverage_has_no_write_token_and_enforces_its_floor():
     )
     assert "--fail-under=90" in report["run"]
     assert "> coverage-total.txt" in report["run"]
+
+
+def test_release_prs_keep_diagnostics_and_apple_ci_is_required():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    for name in ("setup", "test"):
+        assert "!startsWith(github.head_ref, 'release/')" in jobs[name]["strategy"]["fail-fast"]
+    for name, job in jobs.items():
+        if name.startswith("stop-after-"):
+            assert "!startsWith(github.head_ref, 'release/')" in job["if"]
+    steps = jobs["macos-specific"]["steps"]
+    assert any(step.get("run") == "make test-apple-ci" for step in steps)
+    assert any(step.get("run") == "make build-apple-ci" for step in steps)
+    assert "macos-specific" in jobs["ci-ok"]["needs"]
+    recipe = (REPO / "Makefile").read_text()
+    assert "CODE_SIGNING_ALLOWED=NO" in recipe
+    assert "scripts/check_apple_ci.py reports/apple-ci.xml" in recipe
