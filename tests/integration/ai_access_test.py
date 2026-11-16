@@ -94,6 +94,7 @@ def test_the_listing_shows_every_option_with_the_one_in_use(make_kernel, fakes):
         "gateway": (False, "signed in", ["ai.acme.example"]),
         "pydantic-ai": (False, "needs setup", []),
         "chatgpt": (False, "not signed in", ["api.openai.com", "auth.openai.com"]),
+        "dummy": (False, "not tested", []),
     }
     assert [u["use"] for u in listing["uses"]] == ["chat", "turns", "coding"]
     assert set(fakes.read_text(encoding="utf-8").splitlines()) == {"claude auth status --json", "acme ai status"}
@@ -112,7 +113,7 @@ def test_use_binds_the_access_and_the_runner_it_names(make_kernel, fakes):
 def test_use_refuses_an_option_nobody_installed(make_kernel, fakes):
     result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ai", "access", "use", "nope"])
     assert result.exit_code != 0
-    assert "installed: chatgpt, claude-code, codex, gateway, pydantic-ai" in result.output
+    assert "installed: chatgpt, claude-code, codex, dummy, gateway, pydantic-ai" in result.output
 
 
 def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
