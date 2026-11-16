@@ -28,5 +28,5 @@ def test_widget_contract_report_requires_all_four_clean_cases(tmp_path: Path, de
     report = tmp_path / "focused-artifacts" / "junit.xml"
     report.parent.mkdir()
     ET.ElementTree(suite).write(report)
-    result = subprocess.run(["bash", str(SCRIPT), "verify"], cwd=tmp_path, capture_output=True, check=False)
+    result = subprocess.run(["bash", str(SCRIPT), "verify"], cwd=tmp_path, capture_output=True, check=False, timeout=10)
     assert (result.returncode == 0) is (defect is None)
