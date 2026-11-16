@@ -90,13 +90,35 @@ def add_installed_release(state_path):
     state_path.write_text(json.dumps(state))
 
 
+def first_draft_tick(sandbox, session, *, uncertain_append=False, timeout=60):
+    # The installed fixture gives the scheduler, draft host and journal a common instant for the first tick.
+    # The actual daemon would correctly refuse a slot that expires before the job starts.
+    instant = datetime.now(UTC)
+    result = subprocess.run(
+        [str(sandbox.hz_bin), "system", "daemon", "tick", "--json"],
+        env={**sandbox.env, "FIXTURE_DRAFT_TICK_AT": instant.isoformat()},
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    assert result.returncode == (1 if uncertain_append else 0), result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert datetime.fromisoformat(report["at"]) == instant, report
+    job = "heinzel:draft-" + session.lower()
+    runs = [run for run in report["runs"] if run["job"] == job]
+    assert len(runs) == 1, report
+    assert runs[0]["disposition"] == ("failed" if uncertain_append else "rendered"), report
+    if uncertain_append:
+        assert "draft append outcome is uncertain" in (runs[0]["error"] or ""), report
+    return report
+
+
 def test_installed_cli_daemon_release_draft_edit_approval_and_restart(sandbox, wheel):
     session, state_path = start_workflow(sandbox, wheel)
     add_installed_release(state_path)
     # This is the supported CLI tick used by launchd/systemd, in the isolated installation profile.
-    report = json.loads(sandbox.hz("system", "daemon", "tick", "--json"))
-    job = "heinzel:draft-" + session.lower()
-    assert any(run["job"] == job and run["disposition"] == "rendered" for run in report["runs"]), report
+    first_draft_tick(sandbox, session, timeout=240)
     state = json.loads(state_path.read_text())
     assert state["appends"] == 1
     assert state["shares"] == []
@@ -144,17 +166,9 @@ def test_installed_lost_acknowledgement_survives_new_daemon_and_cli_processes(sa
     state = json.loads(state_path.read_text())
     state[effect + "_lost_ack"] = True
     state_path.write_text(json.dumps(state))
-    result = subprocess.run(
-        [str(sandbox.hz_bin), "system", "daemon", "tick", "--json"],
-        env=sandbox.env,
-        text=True,
-        capture_output=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode == (1 if effect == "append" else 0), result.stdout + result.stderr
+    report = first_draft_tick(sandbox, session, uncertain_append=effect == "append")
     state = json.loads(state_path.read_text())
-    assert state["appends"] == 1
+    assert state["appends"] == 1, report
     assert state["shares"] == []
     if effect == "share":
         key = next(iter(state["drafts"]))
