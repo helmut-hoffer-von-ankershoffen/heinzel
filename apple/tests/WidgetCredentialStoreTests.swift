@@ -171,6 +171,10 @@ private final class NotificationCapture: @unchecked Sendable {
         let prepEnrollment = WidgetFencedEnrollment(store: prepStore)
         let prepInitial = ActivityCatalog.activate(url: prepURL, endpoint: pending.endpoint)!
         let prepAttempt = prepStore.beginEnrollment(expected: prepInitial)!
+        var prepDeleteCalled = false
+        precondition(!ActivityCatalog.abandonPreparing(url: prepURL, expected: prepAttempt,
+            syncAuthority: { _, _ in false }) { prepDeleteCalled = true; return true })
+        precondition(!prepDeleteCalled && ActivityCatalog.pendingEnrollment(url: prepURL) == prepAttempt)
         prepKeychain.canDeletePending = false
         precondition(!prepEnrollment.abandonInterruptedPreparation(prepAttempt))
         precondition(ActivityCatalog.pendingEnrollment(url: prepURL) == prepAttempt)
@@ -181,6 +185,15 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(prepStore.clearCurrent().complete)
         precondition(prepEnrollment.abandonInterruptedPreparation(tombstoneAttempt))
         precondition(ActivityCatalog.activation(url: prepURL) == nil && ActivityCatalog.pendingCleanup(url: prepURL) == prepInitial)
+        let armedPrepURL = directory.appendingPathComponent("armed-preparation.sqlite")
+        let armedPrepKeychain = FakeKeychain()
+        let armedPrepStore = WidgetCredentialStore(catalogURL: armedPrepURL, keychain: armedPrepKeychain)
+        let armedPrepEnrollment = WidgetFencedEnrollment(store: armedPrepStore)
+        let armedPrepInitial = ActivityCatalog.activate(url: armedPrepURL, endpoint: pending.endpoint)!
+        let armedPrepAttempt = armedPrepEnrollment.prepare(expected: armedPrepInitial)!
+        guard case .ready = armedPrepEnrollment.bind(fixtureStatus, reservation: armedPrepAttempt) else { fatalError() }
+        precondition(!armedPrepEnrollment.abandonInterruptedPreparation(armedPrepAttempt))
+        precondition(armedPrepEnrollment.canResume(armedPrepAttempt))
         let failedURL = directory.appendingPathComponent("failed-install.sqlite")
         let failedActivation = ActivityCatalog.activate(url: failedURL, endpoint: pending.endpoint)!
         let failedAttempt = ActivityCatalog.reserveEnrollment(url: failedURL, expected: failedActivation)!

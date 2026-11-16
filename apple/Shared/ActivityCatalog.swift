@@ -111,6 +111,14 @@ final class ActivityCatalog {
         defer { close(directory) }
         return fsync(directory) == 0
     }
+
+    private static func removeJournal(_ url: URL) -> Bool {
+        guard removeAuthority(url) else { return false }
+        let directory = open(url.deletingLastPathComponent().path, O_RDONLY | O_CLOEXEC)
+        guard directory >= 0 else { return false }
+        defer { close(directory) }
+        return fsync(directory) == 0
+    }
     private struct WriterToken: Codable, Equatable {
         let authority: Data
         let epoch: String
@@ -286,7 +294,10 @@ final class ActivityCatalog {
 
     /// A preparing journal has never authorized an issue POST. Repairing this
     /// interrupted local reservation must never restore a tombstoned authority.
-    static func abandonPreparing(url: URL, expected: Enrollment, deletePending: () -> Bool) -> Bool {
+    static func abandonPreparing(url: URL, expected: Enrollment,
+                                 syncAuthority: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
+                                 retireMarker: (URL) -> Bool = ActivityCatalog.removeJournal,
+                                 deletePending: () -> Bool) -> Bool {
         withWriterLock(url: url, failure: false) {
             let markerURL = enrollmentURL(for: url)
             guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
@@ -297,13 +308,15 @@ final class ActivityCatalog {
             if current.enrollment == expected && current.activation == expected.previous && current.revoked != true {
                 let restored = Authority(scope: "", generation: UUID().uuidString, activation: expected.previous)
                 guard let encoded = try? JSONEncoder().encode(restored),
-                      writeAuthority(encoded, authorityURL(for: url)) else { return false }
+                      syncAuthority(encoded, authorityURL(for: url)) else { return false }
             } else if !(current.activation == expected.previous && current.enrollment == nil && current.revoked != true) &&
                         !(current.revoked == true && current.cleanup == expected.previous) {
                 return false
+            } else if !syncAuthority(data, authorityURL(for: url)) {
+                return false
             }
             guard deletePending() else { return false }
-            return removeAuthority(markerURL)
+            return retireMarker(markerURL)
         }
     }
 
