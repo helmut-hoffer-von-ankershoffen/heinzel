@@ -209,7 +209,7 @@ final class ActivityCatalog {
                 guard let encoded = try? JSONEncoder().encode(tombstone),
                       writeAuthority(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
             } else if current.revoked != true || current.cleanup != expected {
-                return ClearResult(revoked: false, purged: false)
+                return ClearResult(revoked: false, purged: false, stale: true)
             }
             let deleted = deleteCredential()
             let purged = ActivityCatalog(url: url)?.purge() ?? false
@@ -335,8 +335,13 @@ final class ActivityCatalog {
     static func clear(url: URL, expectedToken: Data? = nil, write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority,
                       remove: (URL) -> Bool = ActivityCatalog.removeAuthority) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
-            if let expectedToken, ActivityCatalog(url: url)?.matches(expectedToken) != true {
-                return ClearResult(revoked: false, purged: false, stale: true)
+            if let expectedToken {
+                guard let currentData = ActivityCatalog(url: url)?.refreshToken(),
+                      let current = try? JSONDecoder().decode(WriterToken.self, from: currentData),
+                      let expected = try? JSONDecoder().decode(WriterToken.self, from: expectedToken) else {
+                    return ClearResult(revoked: false, purged: false)
+                }
+                if current != expected { return ClearResult(revoked: false, purged: false, stale: true) }
             }
             let authority = authorityURL(for: url)
             let previousData = try? Data(contentsOf: authority)

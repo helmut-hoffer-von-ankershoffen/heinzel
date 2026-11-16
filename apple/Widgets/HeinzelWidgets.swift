@@ -378,15 +378,16 @@ private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
 
     private func entry(for configuration: SelectHeinzelIntent, from snapshot: ActivityWidgetData?, at date: Date) -> PinnedHeinzelEntry {
         let scope = snapshot?.workspaceScope
-        var observedInProjection = false
+        var selectedID: String?
         let item = scope.flatMap { scope -> WidgetHeinzel? in
             guard let identifier = configuration.heinzel?.id, identifier.hasPrefix(scope + "/") else { return nil }
             let id = String(identifier.dropFirst(scope.count + 1))
-            if let rich = snapshot?.roster.first(where: { $0.id == id }) { observedInProjection = true; return rich }
+            selectedID = id
+            if let rich = snapshot?.roster.first(where: { $0.id == id }) { return rich }
             guard let generation = snapshot?.generation, let entry = ActivityWidgetData.find(scope: scope, generation: generation, id: id) else { return nil }
             return entry.widgetHeinzel
         }
-        let updatedAt = observedInProjection ? snapshot?.updatedAt : (snapshot?.catalogUpdatedAt ?? snapshot?.updatedAt)
+        let updatedAt = selectedID.flatMap { id in snapshot?.observationTime(for: id) }
         return PinnedHeinzelEntry(date: date, heinzel: item, fresh: updatedAt.map { $0.addingTimeInterval(ActivityWidgetData.freshness) > date } == true,
                                   workspaceScope: scope, updatedAt: updatedAt,
                                   configured: configuration.heinzel != nil)

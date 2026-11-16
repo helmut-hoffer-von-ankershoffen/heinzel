@@ -85,6 +85,7 @@ struct ActivityWidgetData: Codable, Equatable {
     static func backgroundCatalog() -> ActivityCatalog? { catalog }
     static func refreshToken() -> Data? { catalogURL.flatMap(ActivityCatalog.refreshToken(url:)) }
     static func legacyRefreshToken() -> Data? { catalogURL.flatMap(ActivityCatalog.legacyRefreshToken(url:)) }
+    static func currentActivation() -> ActivityCatalog.Activation? { catalogURL.flatMap(ActivityCatalog.activation(url:)) }
     private static let detailsKey = "activityDetailRequests"
 
     let awake: Int
@@ -98,6 +99,10 @@ struct ActivityWidgetData: Codable, Equatable {
     var expiresAt: Date { updatedAt.addingTimeInterval(Self.freshness) }
 
     var roster: [WidgetHeinzel] { heinzels ?? [] }
+
+    func observationTime(for id: String) -> Date {
+        roster.contains(where: { $0.id == id }) ? updatedAt : (catalogUpdatedAt ?? updatedAt)
+    }
 
     static func scope(for origin: URL) -> String {
         #if os(macOS)
@@ -172,13 +177,17 @@ struct ActivityWidgetData: Codable, Equatable {
         }
         let result = ActivityCatalog.clear(url: catalogURL, expectedToken: expectedToken)
         if result.stale { return false }
-        invalidation &+= 1
-        defaults?.removeObject(forKey: detailsKey)
-        defaults?.removeObject(forKey: "activitySnapshot")
+        didInvalidate()
         if !result.complete {
             NSLog("Heinzel widget catalog cleanup incomplete; revoked=%d purged=%d", result.revoked ? 1 : 0, result.purged ? 1 : 0)
             NotificationCenter.default.post(name: clearFailed, object: nil)
         }
         return result.complete
+    }
+
+    @MainActor static func didInvalidate() {
+        invalidation &+= 1
+        defaults?.removeObject(forKey: detailsKey)
+        defaults?.removeObject(forKey: "activitySnapshot")
     }
 }

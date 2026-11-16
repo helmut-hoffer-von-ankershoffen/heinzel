@@ -613,6 +613,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         let revision = documentRevision
         let invalidation = ActivityWidgetData.invalidation
         guard let refreshToken = ActivityWidgetData.refreshToken() else { return }
+        let refreshActivation = ActivityWidgetData.currentActivation()
         // The session and device tokens stay inside WebKit.
         guard let scope = ActivityWidgetData.currentScope(for: endpoint.origin) else { return }
         let details = ActivityWidgetData.requestedDetails(scope: scope)
@@ -681,7 +682,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               let result, isWidgetWorkspaceCurrent() else { return }
         let changed: Bool
         if result.isEmpty {
-            _ = WidgetCredentialStore.clearShared(expectedToken: refreshToken)
+            if let refreshActivation {
+                _ = WidgetCredentialStore.invalidateShared(refreshActivation)
+            } else {
+                _ = WidgetCredentialStore.clearShared(expectedToken: refreshToken)
+            }
             ActivityWidgetData.reload()
             return
         }

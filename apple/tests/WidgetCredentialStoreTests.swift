@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 private final class FakeKeychain: WidgetCredentialKeychain {
     var data: Data?
@@ -51,6 +52,26 @@ private final class FakeKeychain: WidgetCredentialKeychain {
         precondition(store.clearCurrent().complete && keychain.data == nil)
         precondition(SharedWidgetKeychain(accessGroup: "group.team.heinzel.apple.activity") == nil)
         precondition(SharedWidgetKeychain(accessGroup: "ABCDEFGHIJ.team.heinzel.widget") != nil)
+        let lockedURL = directory.appendingPathComponent("locked.sqlite")
+        let lockedCatalog = ActivityCatalog(url: lockedURL)!
+        let lockedKeychain = FakeKeychain()
+        let lockedStore = WidgetCredentialStore(catalogURL: lockedURL, keychain: lockedKeychain)
+        let lockedPending = ActivityCatalog.activate(url: lockedURL, endpoint: pending.endpoint)!
+        let lockedBound = lockedStore.install(credential, expected: lockedPending, now: now)!
+        let beforePublication = lockedStore.capture(now: now)!
+        precondition(lockedCatalog.publish(scope: lockedBound.scope!, generation: UUID().uuidString, snapshot: snapshot,
+                     entries: [], expectedToken: beforePublication.writerToken))
+        var db: OpaquePointer?
+        precondition(sqlite3_open(lockedURL.path, &db) == SQLITE_OK)
+        precondition(sqlite3_exec(db, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        let unreadable = ActivityCatalog.clear(url: lockedURL, expectedToken: beforePublication.writerToken)
+        precondition(!unreadable.stale && !unreadable.complete)
+        let failedPurge = lockedStore.invalidate(beforePublication.activation)
+        precondition(failedPurge.revoked && !failedPurge.complete)
+        precondition(sqlite3_exec(db, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(db)
+        precondition(lockedCatalog.snapshot() == nil && ActivityCatalog.pendingCleanup(url: lockedURL) == lockedBound)
+        precondition(lockedStore.invalidate(lockedBound).complete)
         print("PASS: widget credential fencing and retry")
     }
 }

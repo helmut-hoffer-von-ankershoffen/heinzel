@@ -114,6 +114,20 @@ struct WidgetCredentialStore {
         ActivityCatalog.invalidate(url: catalogURL, expected: expected) { keychain.delete() }
     }
 
+    /// Response-scoped invalidation does not consult SQLite before revocation.
+    @MainActor @discardableResult static func invalidateShared(_ expected: ActivityCatalog.Activation) -> Bool {
+        guard let url = ActivityWidgetData.sharedCatalogURL() else {
+            NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil)
+            return false
+        }
+        let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String
+        let keychain = group.flatMap(SharedWidgetKeychain.init(accessGroup:))
+        let result = ActivityCatalog.invalidate(url: url, expected: expected) { keychain?.delete() ?? false }
+        if result.revoked { ActivityWidgetData.didInvalidate() }
+        if !result.stale && !result.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
+        return result.complete
+    }
+
     /// Caller must retry if a concurrent workspace replacement makes this stale.
     func clearCurrent() -> ActivityCatalog.ClearResult {
         guard let expected = ActivityCatalog.activation(url: catalogURL) ?? ActivityCatalog.pendingCleanup(url: catalogURL) else {

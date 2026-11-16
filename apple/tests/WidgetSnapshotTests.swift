@@ -4,11 +4,13 @@ import Foundation
     static func main() throws {
         let workspace = String(repeating: "a", count: 64)
         let id = "hz-" + String(repeating: "0", count: 26)
+        let newID = "hz-" + String(repeating: "1", count: 26)
         let now = ISO8601DateFormatter().date(from: "2026-11-16T00:00:00Z")!
         func decode(_ changes: (String) -> String = { $0 }) throws -> WidgetSnapshotEnvelope {
             let json = """
             {"version":1,"workspace_id":"\(workspace)","generated_at":"2026-11-15T23:59:30Z","fresh_for_seconds":300,
-             "awake":1,"waiting":1,"roster":[{"id":"\(id)","name":"Example","state":"awake","activity":"working","asks":1}]}
+             "awake":1,"waiting":1,"roster":[{"id":"\(id)","name":"Example","state":"awake","activity":"working","asks":1},
+             {"id":"\(newID)","name":"New arrival","state":"awake","activity":"idle","asks":0}]}
             """
             return try JSONDecoder().decode(WidgetSnapshotEnvelope.self, from: Data(changes(json).utf8))
         }
@@ -34,18 +36,22 @@ import Foundation
             token: "hzw_" + String(repeating: "x", count: 40), expiresAt: now.addingTimeInterval(3600))
         let active = ActivityCatalog.installCredential(url: url, expected: pending, workspaceID: workspace,
                                                        generation: credential.generation, install: { true })!
-        let rows = (0..<60).map { CatalogHeinzel(id: "item-\($0)", name: "Name \($0)", state: "awake") }
+        let rows = [CatalogHeinzel(id: id, name: "Old name", state: "awake")] +
+            (0..<59).map { CatalogHeinzel(id: "item-\($0)", name: "Name \($0)", state: "awake") }
         precondition(ActivityWidgetData.save(awake: 1, waiting: 0, heinzels: [], entries: rows,
                      workspaceScope: active.scope!, expectedToken: ActivityCatalog.refreshToken(url: url)!,
-                     now: now.addingTimeInterval(-60), catalogOverride: catalog))
+                     now: now.addingTimeInterval(-600), catalogOverride: catalog))
         let capture = WidgetCredentialCapture(activation: active, credential: credential,
                                               writerToken: ActivityCatalog.refreshToken(url: url)!)
         precondition(ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog, clock: { now }))
         let saved = try JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
-        precondition(saved.updatedAt == valid.timestamp && saved.roster.count == 1)
-        precondition(saved.catalogUpdatedAt == now.addingTimeInterval(-60))
+        precondition(saved.updatedAt == valid.timestamp && saved.roster.count == 2)
+        precondition(saved.catalogUpdatedAt == now.addingTimeInterval(-600))
+        precondition(saved.observationTime(for: id) == valid.timestamp)
+        precondition(saved.observationTime(for: "item-58") == now.addingTimeInterval(-600))
         precondition(catalog.search(scope: active.scope!, generation: saved.generation!, offset: 50).count == 11)
         precondition(catalog.find(scope: active.scope!, generation: saved.generation!, id: id)?.name == "Example")
+        precondition(catalog.find(scope: active.scope!, generation: saved.generation!, id: newID)?.name == "New arrival")
         precondition(!ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog, clock: { now }))
         let freshCapture = WidgetCredentialCapture(activation: active, credential: credential,
                                                    writerToken: ActivityCatalog.refreshToken(url: url)!)
