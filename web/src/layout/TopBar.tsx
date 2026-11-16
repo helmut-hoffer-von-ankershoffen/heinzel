@@ -192,7 +192,11 @@ export function TopBar({
             aria-pressed={browserOpen}
             aria-label={browserLabel}
             title={browserLabel}
-            className={cn("relative", compact && "size-11 rounded-full", browserOpen && "bg-accent text-accent-foreground")}
+            className={cn(
+              "relative",
+              compact && "size-11 rounded-full",
+              browserOpen && "bg-accent text-accent-foreground",
+            )}
           >
             <Globe aria-hidden />
             {browserAgents !== "none" && (
