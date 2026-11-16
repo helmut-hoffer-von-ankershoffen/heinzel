@@ -55,6 +55,11 @@ def test_cancelled_issue_race_replans_and_replays_revoke(make_kernel, tmp_path):
     (root / "status.json").write_text(client.post("/api/_web/widget-fence", headers=headers).text)
     next_revoke = base64.b64decode(native("recovery-conflict", fingerprint))
     assert next_revoke != first_revoke
+    next_revoke_body = json.loads(next_revoke)
+    assert next_revoke_body["operation"] == "revoke"
+    assert next_revoke_body["commitment"] is None
+    assert next_revoke_body["attempt"] != json.loads(first_revoke)["attempt"]
+    assert next_revoke_body["revision"] == issued.json()["revision"]
     committed = client.post("/api/_web/widget-fenced-credential", headers=headers, content=next_revoke)
     assert committed.status_code == 200
     # Lose the committed response and restart the native process; replay must be exact.
@@ -62,6 +67,7 @@ def test_cancelled_issue_race_replans_and_replays_revoke(make_kernel, tmp_path):
     replay = base64.b64decode(native("recovery-plan", fingerprint))
     assert replay == next_revoke
     receipt = client.post("/api/_web/widget-fenced-credential", headers=headers, content=replay)
+    assert receipt.status_code == 200
     assert receipt.json() == committed.json()
     (root / "recovery-request.json").write_bytes(replay)
     (root / "receipt.json").write_text(receipt.text)
