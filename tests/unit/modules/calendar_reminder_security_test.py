@@ -2,6 +2,7 @@
 
 import plistlib
 import subprocess
+import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -219,6 +220,7 @@ def test_user_policy_is_reloaded_from_selected_file_after_validation(tmp_path, s
     monkeypatch.setenv("HZ_CONFIG", str(path))
     path.write_text("[system.notify]\ncalendar = true\nworking_hours = false\n")
     service = NotifyService.for_user(Mock(spec=Kernel))
+    monkeypatch.setattr(service, "kick_chat", lambda: None)
     now = datetime(2026, 11, 4, 10, tzinfo=UTC)
     service._clock = lambda: now
     service.store.directory = settings.state_dir / "notify"
@@ -228,16 +230,59 @@ def test_user_policy_is_reloaded_from_selected_file_after_validation(tmp_path, s
     [notice] = service.recent()
 
     def read(_):
-        path.write_text(
+        updated = path.with_suffix(".new")
+        updated.write_text(
             "[system.notify]\ncalendar = true\nworking_hours = true\n"
             '[org]\nworking_hours = "07-22"\ntimezone = "Europe/Berlin"\n'
         )
+        updated.replace(path)
         service._clock = lambda: datetime(2026, 11, 4, 22, tzinfo=UTC)
         return {"meeting"}
 
-    service.calendar_valid = read
+    service.calendar_valid = Mock(side_effect=read)
     assert service.deliver([notice.id], Delivery.WEB) == []
+    service.calendar_valid.assert_called_once()
     assert (service.hours.start, service.hours.end, str(service.hours.zone)) == (7, 22, "Europe/Berlin")
+
+
+def test_delayed_chat_refresh_does_not_replace_calendar_policy(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from heinzel import Config, Kernel
+
+    path = tmp_path / "profile.toml"
+    path.write_text("[system.notify]\ncalendar = false\n")
+    monkeypatch.setenv("HZ_CONFIG", str(path))
+    service = NotifyService.for_user(Mock(spec=Kernel))
+    started = threading.Event()
+    release = threading.Event()
+    load = Config.load
+    old = load(Path.home())
+    updated = path.with_suffix(".new")
+    updated.write_text('[system.notify]\ncalendar = true\n[org]\nworking_hours = "07-22"\ntimezone = "Europe/Berlin"\n')
+    updated.replace(path)
+
+    def delayed_load(_cls, cwd=None):
+        if threading.current_thread() is worker:
+            started.set()
+            assert release.wait(5)
+            return old
+        return load(cwd)
+
+    monkeypatch.setattr(Config, "load", classmethod(delayed_load))
+    worker = threading.Thread(target=service._channel)
+    worker.start()
+    try:
+        assert started.wait(5)
+        assert service.enabled(NoticeKind.CALENDAR)
+        release.set()
+        worker.join(5)
+        assert not worker.is_alive()
+        assert service.settings.calendar is True
+        assert (service.hours.start, service.hours.end, str(service.hours.zone)) == (7, 22, "Europe/Berlin")
+    finally:
+        release.set()
+        worker.join(5)
 
 
 @pytest.mark.parametrize("hour", [22, 23, 0, 6])
