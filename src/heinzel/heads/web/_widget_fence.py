@@ -3,8 +3,8 @@
 The caller must authenticate the exact pairing incarnation under its storage lock
 and persist the returned state atomically before returning a receipt. Requests and
 stored state must already have passed strict schema validation, and the clock must
-be trusted. No raw bearer is accepted or stored here. This module is not yet
-connected to any endpoint.
+be trusted. No raw bearer is accepted or stored here. The widget fence routes
+use these transitions while enforcing authentication and durable storage.
 """
 
 from __future__ import annotations
