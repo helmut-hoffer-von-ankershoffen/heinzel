@@ -292,6 +292,72 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+# The published 0.9.43 stable index path calls highest_version once before interpreter selection.
+# Check its exact first release-list page, and reserve that one request *after* this probe.
+BRIDGE_RELEASES_API = "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel/releases?per_page=30&page=1"
+BRIDGE_RELEASE_REQUESTS = 1
+BRIDGE_QUOTA_WAIT = 120
+BRIDGE_PROBE_TIMEOUT = 10
+
+
+def _bridge_quota(timeout: float) -> tuple[int, int]:
+    request = urllib.request.Request(
+        BRIDGE_RELEASES_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Cache-Control": "no-cache",
+            "User-Agent": f"heinzel/{LEGACY_BRIDGE_VERSION}",
+        },
+    )
+    # The updater runs with a clean case environment, independently of the harness's proxy variables.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            if response.status != 200 or response.headers.get_content_type() not in (
+                "application/json", "application/vnd.github+json"
+            ):
+                raise Refused("Legacy bridge infrastructure: unexpected GitHub release response")
+            return _bridge_quota_headers(response.headers)
+    except urllib.error.HTTPError as error:
+        try:
+            if error.code in (403, 429) and error.headers.get("X-RateLimit-Remaining") == "0":
+                return _bridge_quota_headers(error.headers)
+            raise Refused("Legacy bridge infrastructure: GitHub release endpoint rejected the anonymous probe") from None
+        finally:
+            error.close()
+    except OSError:
+        raise Refused("Legacy bridge infrastructure: GitHub release endpoint unavailable") from None
+
+
+def _bridge_quota_headers(headers):
+    remaining = headers.get("X-RateLimit-Remaining", "")
+    reset = headers.get("X-RateLimit-Reset", "")
+    if (
+        headers.get("X-RateLimit-Resource") != "core"
+        or not re.fullmatch(r"[0-9]{1,3}", remaining)
+        or not re.fullmatch(r"[0-9]{1,12}", reset)
+    ):
+        raise Refused("Legacy bridge infrastructure: GitHub anonymous core quota could not be verified")
+    return int(remaining), int(reset)
+
+
+def verify_legacy_bridge_readiness() -> dict[str, int]:
+    """Probe the real release endpoint from this runner without lending credentials or a response to the updater."""
+    deadline = time.monotonic() + BRIDGE_QUOTA_WAIT
+    while (budget := deadline - time.monotonic()) > 0:
+        remaining, reset = _bridge_quota(min(budget, BRIDGE_PROBE_TIMEOUT))
+        if time.monotonic() >= deadline:
+            break
+        if remaining >= BRIDGE_RELEASE_REQUESTS:
+            return {"required_requests": BRIDGE_RELEASE_REQUESTS, "remaining_after_probe": remaining}
+        # Wake just after the server's reset. A stale reset must not spin or consume the next window.
+        delay = reset - time.time() + 1
+        if not 0 < delay < deadline - time.monotonic():
+            break
+        time.sleep(delay)
+    raise Refused("Legacy bridge infrastructure: insufficient anonymous GitHub quota within the readiness deadline")
+
+
 def latest_app_version():
     opener = urllib.request.build_opener(_NoRedirect())
     try:
@@ -1838,6 +1904,7 @@ def case_update(case):
         case.step(
             "published legacy bridge bytes and retained state", lambda: verify_legacy_bridge(case, old["profile"])
         )
+        case.step("anonymous GitHub quota for the published bridge", verify_legacy_bridge_readiness)
         case.step(
             "the published bridge updates to the target release",
             lambda: _summarize(run_update(case, "hz-system-update-from-bridge", previous=LEGACY_BRIDGE_VERSION)),
