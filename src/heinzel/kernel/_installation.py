@@ -303,10 +303,12 @@ def _transient_entry(added: str) -> str:
         return _transient_wheel_entry(requirement)
     specifiers = list(requirement.specifier)
     if requirement.marker or requirement.extras or len(specifiers) != 1:
-        raise HeinzelError(_CONSTRAINT_ERROR)
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary version guard)"
+        raise HeinzelError(msg)
     specifier = specifiers[0]
     if specifier.operator != "==" or "*" in specifier.version:
-        raise HeinzelError(_CONSTRAINT_ERROR)
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary version guard)"
+        raise HeinzelError(msg)
     Version(specifier.version)
     entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
     return json.dumps(entry, sort_keys=True, separators=(",", ":"))
@@ -330,10 +332,12 @@ def _transient_wheel_entry(requirement: Requirement) -> str:
         or not source.path.startswith("/")
         or not re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment)
     ):
-        raise HeinzelError(_CONSTRAINT_ERROR)
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary wheel guard)"
+        raise HeinzelError(msg)
     name, _, _, _ = parse_wheel_filename(unquote(source.path.rsplit("/", 1)[-1]))
     if name != canonicalize_name(requirement.name):
-        raise HeinzelError(_CONSTRAINT_ERROR)
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary wheel guard)"
+        raise HeinzelError(msg)
     entry = {"name": name, "path": unquote(source.path)}
     return json.dumps(entry, sort_keys=True, separators=(",", ":"))
 
@@ -349,18 +353,35 @@ def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
     try:
         data = tomllib.loads(raw.decode("utf-8"))
         if data["tool"].get("options") != dict(options):
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            msg = f"{_CONSTRAINT_ERROR} (temporary resolver options mismatch)"
+            raise HeinzelError(msg)
         document = tomlkit.parse(raw.decode("utf-8"))
         del cast("Any", document)["tool"]["options"]
         del data["tool"]["options"]
         # uv separates the table with a blank line; without it the receipt ends as uv writes one with no options.
         replacement = (tomlkit.dumps(document).rstrip("\n") + "\n").encode("utf-8")
         if tomllib.loads(replacement.decode("utf-8")) != data:
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            msg = f"{_CONSTRAINT_ERROR} (resolver option removal serialization mismatch)"
+            raise HeinzelError(msg)
     except (KeyError, TypeError, ValueError, UnicodeError) as exc:
-        raise HeinzelError(_CONSTRAINT_ERROR) from exc
+        msg = f"{_CONSTRAINT_ERROR} (invalid receipt during resolver option removal)"
+        raise HeinzelError(msg) from exc
     else:
         return replacement
+
+
+def _constraint_mismatch(
+    original: ToolConstraintPolicy, actual: ToolConstraintPolicy, expected: tuple[str, ...]
+) -> str:
+    """Describe a refused comparison without exposing requirement names, sources or credentials."""
+    if not actual.present:
+        return "post-mutation constraints missing"
+    count = len(original.entries) + len(expected)
+    if len(actual.entries) != count:
+        return f"constraint count: expected {count}, observed {len(actual.entries)}"
+    if actual.entries[: len(original.entries)] != original.entries:
+        return "captured constraint entries changed or reordered"
+    return "temporary constraint entries changed or reordered"
 
 
 def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
@@ -379,12 +400,15 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
             or (not snapshot.present and snapshot.entries)
             or not added
         ):
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            msg = f"{_CONSTRAINT_ERROR} (invalid captured constraint snapshot)"
+            raise HeinzelError(msg)
         expected = tuple(_transient_entry(item) for item in added)
         data = tomllib.loads(raw.decode("utf-8"))
         actual = _constraint_policy(data)
         if not actual.present or actual.entries != (*original.entries, *expected):
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            reason = _constraint_mismatch(original, actual, expected)
+            msg = f"{_CONSTRAINT_ERROR} ({reason})"
+            raise HeinzelError(msg)
         document = tomlkit.parse(raw.decode("utf-8"))
         table = cast("MutableMapping[str, Any]", document["tool"])
         for current in (table, data["tool"]):
@@ -395,9 +419,11 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
                 del current["constraints"]
         replacement = tomlkit.dumps(document).encode("utf-8")
         if tomllib.loads(replacement.decode("utf-8")) != data:
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            msg = f"{_CONSTRAINT_ERROR} (constraint removal serialization mismatch)"
+            raise HeinzelError(msg)
     except (KeyError, TypeError, ValueError, UnicodeError, InvalidRequirement, InvalidVersion) as exc:
-        raise HeinzelError(_CONSTRAINT_ERROR) from exc
+        msg = f"{_CONSTRAINT_ERROR} (invalid post-mutation receipt or guard)"
+        raise HeinzelError(msg) from exc
     else:
         return replacement
 
@@ -766,9 +792,11 @@ class Installation:
         try:
             result = _constraint_policy(_read_tool_receipt(self.prefix))
         except (OSError, ValueError, TypeError, KeyError, tomllib.TOMLDecodeError) as exc:
-            raise HeinzelError(_CONSTRAINT_ERROR) from exc
+            msg = f"{_CONSTRAINT_ERROR} (cannot capture existing constraint policy)"
+            raise HeinzelError(msg) from exc
         if self.startup_fingerprint() != before:
-            raise HeinzelError(_CONSTRAINT_ERROR)
+            msg = f"{_CONSTRAINT_ERROR} (installation changed while capturing constraint policy)"
+            raise HeinzelError(msg)
         return result
 
     def receipt(self) -> bytes:
@@ -890,7 +918,8 @@ class Installation:
             try:
                 receipt = _read_tool_receipt_bytes(self.prefix)
             except ValueError as exc:
-                raise HeinzelError(_CONSTRAINT_ERROR) from exc
+                msg = f"{_CONSTRAINT_ERROR} (cannot read post-mutation receipt)"
+                raise HeinzelError(msg) from exc
             if options:
                 receipt = _without_added_options(receipt, options)
             return _remove_transient_constraint(receipt, original, (added,) if isinstance(added, str) else added)
