@@ -1,4 +1,4 @@
-"""Private web state shared by pairing and the updater, with a narrow legacy migration."""
+"""Private web state shared by pairing and the updater; existing unsafe state is never repaired online."""
 
 import os
 import stat
@@ -8,7 +8,6 @@ from pathlib import Path
 
 from heinzel.kernel import CurrentUser, HeinzelError
 
-UPDATER_FILES = frozenset({"auto-update.json", "auto-update.lock", "auto-update-apply.lock"})
 PRIVATE_DIRECTORY = 0o700
 
 
@@ -29,36 +28,20 @@ def _verify_updater_entry(info: os.stat_result) -> None:
         raise HeinzelError(msg)
 
 
-def _migrate_updater_only(folder: int) -> None:
-    """Tighten only an owned, non-writable legacy updater directory without credential state.
-
-    Raises:
-        HeinzelError: The directory or any entry is not recognizable safe legacy updater state.
-    """
-    info = os.fstat(folder)
-    names = os.listdir(folder)
-    if not _owned_read_only_to_others(info, directory=True) or not set(names) <= UPDATER_FILES:
-        msg = "The web state directory cannot be migrated safely"
-        raise HeinzelError(msg)
-    for name in names:
-        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
-        try:
-            _verify_updater_entry(os.fstat(descriptor))
-        finally:
-            os.close(descriptor)
-    os.fchmod(folder, PRIVATE_DIRECTORY)
-    os.fsync(folder)
-
-
 @contextmanager
-def private_directory(directory: Path, *, migrate_updater: bool = False) -> Generator[int]:
+def private_directory(directory: Path) -> Generator[int]:
     """Open private state by descriptor; credential readers never repair unsafe permissions.
+
+    An updater-only directory scan cannot exclude an uncooperative legacy writer
+    adding credentials before chmod. Advisory locks cannot make that predicate
+    atomic, so existing nonprivate directories require separately verified offline
+    recovery. Online readers and writers never chmod or replace them.
 
     Yields:
         The verified private directory descriptor, valid until the context exits.
 
     Raises:
-        HeinzelError: Existing state is unsafe or contains credentials that cannot be migrated.
+        HeinzelError: Existing state or its parent is unsafe.
         OSError: A path cannot be opened without following a link.
     """
     directory.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +54,6 @@ def private_directory(directory: Path, *, migrate_updater: bool = False) -> Gene
             os.mkdir(directory.name, mode=PRIVATE_DIRECTORY, dir_fd=parent)
         folder = os.open(directory.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
         try:
-            if migrate_updater and stat.S_IMODE(os.fstat(folder).st_mode) != PRIVATE_DIRECTORY:
-                _migrate_updater_only(folder)
             CurrentUser.verify_private(os.fstat(folder), directory=True)
             yield folder
         finally:

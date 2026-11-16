@@ -1,4 +1,4 @@
-"""Real updater/pairing startup shares private state and migrates only updater-only legacy folders."""
+"""Shared startup creates private state; online recovery never promotes unsafe legacy directories."""
 
 import os
 import stat
@@ -20,17 +20,13 @@ TOKEN = "shared-directory-session"
 BASE = "http://127.0.0.1:8000"
 
 
-@pytest.mark.parametrize("first", ["updater", "devices", "legacy-updater"])
+@pytest.mark.parametrize("first", ["updater", "devices"])
 def test_shared_startup_pairs_and_reopens_without_weakening_widget_storage(make_kernel, monkeypatch, first):
     kernel = make_kernel(builtins=True)
     directory = kernel.settings.state_dir / "web"
     devices = Devices(directory)
     if first == "devices":
         devices.pair("existing browser")
-    elif first == "legacy-updater":
-        directory.mkdir(parents=True, mode=0o755)
-        directory.chmod(0o755)
-        (directory / "auto-update.lock").write_bytes(b"legacy updater lock")
     monkeypatch.setattr(web, "devices_for_user", lambda: devices)
     client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
@@ -51,38 +47,39 @@ def test_shared_startup_pairs_and_reopens_without_weakening_widget_storage(make_
 
 
 @pytest.mark.parametrize("mode", [0o755, 0o750])
-def test_legacy_migration_preserves_only_owned_updater_state(tmp_path, mode):
+def test_online_open_preserves_legacy_updater_state_for_offline_recovery(tmp_path, mode):
     directory = tmp_path / "web"
     directory.mkdir(mode=mode)
     directory.chmod(mode)
-    for name in storage.UPDATER_FILES:
+    names = {"auto-update.json", "auto-update.lock", "auto-update-apply.lock"}
+    for name in names:
         (directory / name).write_bytes(b"existing updater state")
-    with storage.private_directory(directory, migrate_updater=True) as folder:
-        assert stat.S_IMODE(os.fstat(folder).st_mode) == 0o700
-    assert all((directory / name).read_bytes() == b"existing updater state" for name in storage.UPDATER_FILES)
+    with pytest.raises(HeinzelError), storage.private_directory(directory):
+        pytest.fail("legacy state was silently promoted")
+    assert stat.S_IMODE(directory.stat().st_mode) == mode
+    assert all((directory / name).read_bytes() == b"existing updater state" for name in names)
 
 
 @pytest.mark.parametrize(
     "name",
     ["devices.json", "devices.lock", "widget-workspace", "widget-fenced-deadbeef", ".devices-partial", "unknown"],
 )
-def test_legacy_migration_never_repairs_or_resets_credential_state(tmp_path, name):
+def test_online_open_never_repairs_or_resets_credential_state(tmp_path, name):
     directory = tmp_path / "web"
     directory.mkdir(mode=0o755)
     directory.chmod(0o755)
     target = directory / name
     target.write_bytes(b"preserve even damaged state")
-    with pytest.raises(HeinzelError), storage.private_directory(directory, migrate_updater=True):
+    with pytest.raises(HeinzelError), storage.private_directory(directory):
         pytest.fail("unsafe credential state was admitted")
     assert stat.S_IMODE(directory.stat().st_mode) == 0o755
     assert target.read_bytes() == b"preserve even damaged state"
 
 
 @pytest.mark.parametrize("kind", ["symlink", "hardlink", "fifo", "writable", "foreign"])
-def test_legacy_migration_rejects_unsafe_updater_entries(tmp_path, monkeypatch, kind):
+def test_updater_file_open_rejects_unsafe_entries(tmp_path, monkeypatch, kind):
     directory = tmp_path / "web"
-    directory.mkdir(mode=0o755)
-    directory.chmod(0o755)
+    directory.mkdir(mode=0o700)
     outside = tmp_path / "outside"
     outside.write_bytes(b"untouched")
     target = directory / "auto-update.json"
@@ -106,14 +103,14 @@ def test_legacy_migration_rejects_unsafe_updater_entries(tmp_path, monkeypatch, 
             return os.stat_result(values)
 
         monkeypatch.setattr(storage.os, "fstat", foreign)
-    with pytest.raises((HeinzelError, OSError)), storage.private_directory(directory, migrate_updater=True):
-        pytest.fail("unsafe updater entry was admitted")
-    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    with storage.private_directory(directory) as folder, pytest.raises((HeinzelError, OSError)):
+        os.close(storage.open_updater_file(folder, "auto-update.json", os.O_RDONLY))
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
     assert outside.read_bytes() == b"untouched"
 
 
 @pytest.mark.parametrize("kind", ["symlink", "parent-symlink", "writable", "foreign", "writable-parent"])
-def test_legacy_migration_rejects_unsafe_directory(tmp_path, monkeypatch, kind):
+def test_online_open_rejects_unsafe_directory(tmp_path, monkeypatch, kind):
     parent = tmp_path / "state"
     parent.mkdir(mode=0o700)
     directory = parent / "web"
@@ -135,7 +132,7 @@ def test_legacy_migration_rejects_unsafe_directory(tmp_path, monkeypatch, kind):
         owner = os.getuid()
         monkeypatch.setattr(storage.os, "getuid", lambda: owner + 1)
     before = directory.stat().st_mode
-    with pytest.raises((HeinzelError, OSError)), storage.private_directory(directory, migrate_updater=True):
+    with pytest.raises((HeinzelError, OSError)), storage.private_directory(directory):
         pytest.fail("unsafe directory was admitted")
     assert directory.stat().st_mode == before
 
@@ -148,12 +145,12 @@ def test_private_or_legacy_directory_both_require_trusted_parent(tmp_path, mode)
     directory.mkdir(mode=mode)
     directory.chmod(mode)
     parent.chmod(0o777)
-    with pytest.raises(HeinzelError, match="parent"), storage.private_directory(directory, migrate_updater=True):
+    with pytest.raises(HeinzelError, match="parent"), storage.private_directory(directory):
         pytest.fail("untrusted parent admitted")
     assert stat.S_IMODE(directory.stat().st_mode) == mode
 
 
-@pytest.mark.parametrize("kind", ["unavailable", "credentials", "symlink", "writable-parent"])
+@pytest.mark.parametrize("kind", ["unavailable", "credentials", "legacy-updater", "symlink", "writable-parent"])
 def test_web_build_degrades_updater_without_admitting_unsafe_pairing(make_kernel, monkeypatch, tmp_path, kind):
     kernel = make_kernel(builtins=True)
     directory = kernel.settings.state_dir / "web"
@@ -172,6 +169,9 @@ def test_web_build_degrades_updater_without_admitting_unsafe_pairing(make_kernel
         monkeypatch.setattr(storage.os, "open", unavailable)
     elif kind == "credentials":
         devices.pair("existing")
+        directory.chmod(0o755)
+    elif kind == "legacy-updater":
+        (directory / "auto-update-apply.lock").write_bytes(b"legacy updater state")
         directory.chmod(0o755)
     elif kind == "symlink":
         original = directory.with_name("preserved-web")
@@ -276,3 +276,50 @@ def test_private_directory_updater_files_do_not_follow_links(make_kernel, tmp_pa
         assert auto._try_lock(updater._apply_lock) is None
     assert (directory / name).is_symlink()
     assert outside.read_bytes() == b"outside must remain untouched"
+
+
+@pytest.mark.parametrize("entry", ["devices.json", "widget-workspace", "unknown"])
+def test_concurrent_legacy_entry_insertion_cannot_be_promoted_by_chmod(make_kernel, monkeypatch, entry):
+    """A legacy writer ignores new advisory locks and writes at the former scan/chmod gap."""
+    kernel = make_kernel(builtins=True)
+    directory = kernel.settings.state_dir / "web"
+    directory.mkdir(parents=True, mode=0o755)
+    directory.chmod(0o755)
+    (directory / "auto-update.lock").write_bytes(b"legacy lock")
+    ready, inserted = threading.Event(), threading.Event()
+    attempts = []
+    original_chmod = os.fchmod
+
+    def insert_entry():
+        if ready.wait(5):
+            (directory / entry).write_bytes(b"concurrent legacy state")
+            inserted.set()
+
+    def insert_before_chmod(descriptor, mode):
+        attempts.append(mode)
+        ready.set()
+        assert inserted.wait(5), "legacy writer did not complete"
+        return original_chmod(descriptor, mode)
+
+    monkeypatch.setattr(storage.os, "fchmod", insert_before_chmod)
+    worker = threading.Thread(target=insert_entry)
+    worker.start()
+    try:
+        updater = AutoUpdater(kernel, restart=None)
+        # The safe path refuses before entering the old chmod gap. Release the
+        # writer after refusal too, so both executions preserve its real entry.
+        ready.set()
+        assert inserted.wait(5)
+        updater.plan.message = "must remain in memory"
+        updater._save()
+        with pytest.raises(HeinzelError):
+            Devices(directory).pair("refused")
+    finally:
+        ready.set()
+        worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert attempts == []
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    assert (directory / entry).read_bytes() == b"concurrent legacy state"
+    assert (directory / "auto-update.lock").read_bytes() == b"legacy lock"
+    assert not (directory / "auto-update.json").exists()

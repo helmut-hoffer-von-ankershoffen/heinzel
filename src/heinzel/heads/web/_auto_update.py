@@ -547,7 +547,7 @@ def _locked(path: Path) -> Generator[int | None]:
     """
     with contextlib.ExitStack() as stack:
         try:
-            folder = stack.enter_context(private_directory(path.parent, migrate_updater=True))
+            folder = stack.enter_context(private_directory(path.parent))
             descriptor = open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
             handle = stack.enter_context(os.fdopen(descriptor, "a", encoding="utf-8"))
             fcntl.flock(handle, fcntl.LOCK_EX)
@@ -563,7 +563,7 @@ def _locked(path: Path) -> Generator[int | None]:
 def _try_lock(path: Path) -> IO[str] | None:
     """An exclusive lock on `path` if no other holder has it, kept until released or this process ends."""
     try:
-        with private_directory(path.parent, migrate_updater=True) as folder:
+        with private_directory(path.parent) as folder:
             descriptor = open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
             handle = os.fdopen(descriptor, "a", encoding="utf-8")
     except (OSError, HeinzelError):
@@ -1128,7 +1128,7 @@ class AutoUpdater:
         try:
             with contextlib.ExitStack() as stack:
                 if folder is None:
-                    folder = stack.enter_context(private_directory(self._path.parent, migrate_updater=True))
+                    folder = stack.enter_context(private_directory(self._path.parent))
                 descriptor = open_updater_file(folder, self._path.name, os.O_RDONLY)
                 with os.fdopen(descriptor, encoding="utf-8") as handle:
                     return Plan.from_json(json.load(handle), fresh=fresh)
