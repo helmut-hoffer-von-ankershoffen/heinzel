@@ -1,5 +1,6 @@
 """Private managed Python for isolated uv-tool lifecycle fixtures."""
 
+import fcntl
 import os
 import shutil
 import subprocess
@@ -28,77 +29,119 @@ def copy_managed_installation(installation, copied):
         copied_link.symlink_to(os.path.relpath(copied / target, copied_link.parent))
 
 
-@pytest.fixture(scope="session")
-def fixture_managed_python(tmp_path_factory):
-    """Provision an interpreter under the test's own private directory and verify its physical path."""
-    root = tmp_path_factory.mktemp("managed-python").resolve(strict=True)
-    home = root / "home"
-    home.mkdir(mode=0o700)
-    directory = home / "pythons"
+def python_environment(environ, home, directory, cache):
+    """Remove ambient interpreter selection while preserving uv's transport settings."""
     env = {
-        **os.environ,
+        **environ,
         "HOME": str(home),
         "UV_PYTHON_INSTALL_DIR": str(directory),
-        "UV_CACHE_DIR": str(root / "cache"),
+        "UV_CACHE_DIR": str(cache),
         "UV_NO_CONFIG": "1",
     }
     env.pop("VIRTUAL_ENV", None)
     env.pop("UV_PYTHON", None)
-    version = ".".join(map(str, sys.version_info[:3]))
-    # CI has already provisioned the managed interpreter for the test runner. Copy that installation into the
-    # private fixture rather than downloading it again inside an individual test's outer timeout.
-    source_env = {**os.environ, "UV_NO_CONFIG": "1"}
+    return env
+
+
+def uv_python_path(args, env):
+    path = Path(
+        subprocess.run(
+            ["uv", "--color", "never", "python", *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+    )
+    if not path.is_absolute():
+        pytest.fail("uv did not return an absolute interpreter path")
+    return path
+
+
+def find_managed_source(version, directory, env):
+    source = uv_python_path(
+        ["find", "--no-project", "--managed-python", "--no-python-downloads", version], env
+    ).resolve(strict=True)
+    if source.parent.parent.parent != directory.resolve(strict=True):
+        pytest.fail("uv did not select a managed source interpreter")
+    return source
+
+
+def managed_source(version, base_executable, shared, environ):
+    """Reuse an exact managed runner or provision one private seed for the pytest run."""
+    source_env = {**environ, "UV_NO_CONFIG": "1"}
     source_env.pop("VIRTUAL_ENV", None)
     source_env.pop("UV_PYTHON", None)
-    managed = Path(
-        subprocess.run(
-            ["uv", "--color", "never", "python", "dir"],
-            env=source_env,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout.strip()
-    ).resolve(strict=True)
-    source = Path(
-        subprocess.run(
-            [
-                "uv",
-                "--color",
-                "never",
-                "python",
-                "find",
-                "--no-project",
-                "--managed-python",
-                "--no-python-downloads",
-                version,
-            ],
-            env=source_env,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout.strip()
-    ).resolve(strict=True)
+    managed = uv_python_path(["dir"], source_env).resolve()
+    runner = base_executable.resolve(strict=True)
+    if runner.parent.parent.parent == managed:
+        source = find_managed_source(version, managed, source_env)
+        if source != runner:
+            pytest.fail("uv selected a different interpreter from the managed test runner")
+        return source
+
+    # Hosted images may satisfy uv's project environment with Homebrew/system Python, leaving the managed directory
+    # absent. Provision the exact patch once under the xdist run's owned temp directory, never copy system Python.
+    seed = shared / "fixture-python-source"
+    with (shared / "fixture-python-source.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        seed.mkdir(mode=0o700, exist_ok=True)
+        home = seed / "home"
+        home.mkdir(mode=0o700, exist_ok=True)
+        directory = home / "pythons"
+        completed, failed = seed / "complete", seed / "failed"
+        if failed.exists():
+            pytest.fail("shared managed fixture interpreter provisioning already failed")
+        env = python_environment(environ, home, directory, seed / "cache")
+        if not completed.exists():
+            try:
+                subprocess.run(
+                    [
+                        "uv",
+                        "--color",
+                        "never",
+                        "python",
+                        "install",
+                        "--no-bin",
+                        "--install-dir",
+                        str(directory),
+                        version,
+                    ],
+                    env=env,
+                    check=True,
+                    timeout=60,
+                )
+                source = find_managed_source(version, directory, env)
+            except (OSError, subprocess.SubprocessError, pytest.fail.Exception):
+                failed.touch(mode=0o600)
+                raise
+            completed.touch(mode=0o600)
+            return source
+        return find_managed_source(version, directory, env)
+
+
+@pytest.fixture(scope="session")
+def fixture_managed_python(tmp_path_factory):
+    """Copy the approved managed interpreter into this worker's own private directory."""
+    root = tmp_path_factory.mktemp("managed-python").resolve(strict=True)
+    home = root / "home"
+    home.mkdir(mode=0o700)
+    directory = home / "pythons"
+    env = python_environment(os.environ, home, directory, root / "cache")
+    version = ".".join(map(str, sys.version_info[:3]))
+    base = tmp_path_factory.getbasetemp()
+    shared = base.parent if "PYTEST_XDIST_WORKER" in os.environ else base
+    source = managed_source(version, Path(sys._base_executable), shared, os.environ)
     installation = source.parent.parent
-    if not installation.is_relative_to(managed) or installation.parent != managed:
-        pytest.fail("uv did not select a managed source interpreter")
-    if source != Path(sys._base_executable).resolve(strict=True):
-        pytest.fail("uv selected a different interpreter from the test runner")
     source_identity = external_python(source)
     directory.mkdir(mode=0o700)
     copied = directory / installation.name
     copy_managed_installation(installation, copied)
-    result = subprocess.run(
-        ["uv", "--color", "never", "python", "find", "--managed-python", version],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
-    )
-    python = Path(result.stdout.strip()).resolve(strict=True)
-    if not python.is_relative_to(directory.resolve(strict=True)):
+    python = uv_python_path(
+        ["find", "--no-project", "--managed-python", "--no-python-downloads", version], env
+    ).resolve(strict=True)
+    if python.parent.parent != copied.resolve(strict=True):
         pytest.fail("uv did not select the private managed fixture interpreter")
     if external_python(python)[1] != source_identity[1]:
         pytest.fail("the private managed interpreter differs from its source")
@@ -108,9 +151,9 @@ def fixture_managed_python(tmp_path_factory):
         capture_output=True,
         text=True,
         check=True,
-        timeout=30,
+        timeout=10,
     ).stdout.strip()
-    if copied_version != ".".join(map(str, sys.version_info[:3])):
+    if copied_version != version:
         pytest.fail("the private managed interpreter version differs from the test runner")
     return directory, python
 
@@ -118,8 +161,6 @@ def fixture_managed_python(tmp_path_factory):
 @pytest.fixture(scope="session", autouse=True)
 def reviewed_pyyaml(tmp_path_factory):
     """Python 3.15 has no PyYAML wheel: uv installs in these tests find the reviewed build, not a source build."""
-    import fcntl
-
     shared = tmp_path_factory.getbasetemp().parent
     wheels = shared / "reviewed-pyyaml"
     with (shared / "reviewed-pyyaml.lock").open("w") as lock:
