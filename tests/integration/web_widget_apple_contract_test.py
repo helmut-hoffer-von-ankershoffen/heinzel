@@ -1,6 +1,7 @@
 """Opt-in cross-check of native fenced recovery against the actual Core routes."""
 
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -16,6 +17,59 @@ from heinzel.heads import web
 from heinzel.heads.web._devices import Devices, digest
 
 pytestmark = pytest.mark.integration
+
+
+def test_cancelled_issue_race_replans_and_replays_revoke(make_kernel, tmp_path):
+    harness = os.environ.get("HZ_WIDGET_FENCED_HARNESS")
+    if not harness:
+        pytest.skip("Set HZ_WIDGET_FENCED_HARNESS to the separately built native test harness")
+    root = tmp_path / "native-race"
+    root.mkdir()
+    devices = Devices(tmp_path / "devices-race")
+    client = TestClient(
+        web.build(make_kernel(builtins=True), port=8000, token="widget-race-session", devices=devices, static=None),
+        base_url="http://127.0.0.1:8000",
+    )
+    paired = client.post("/api/_web/device", headers={"Authorization": "Bearer widget-race-session"}, json={}).json()
+    headers = {"Authorization": f"Bearer {paired['token']}"}
+    fingerprint = hashlib.sha256(f"heinzel-widget-pair-v1|https://example.test|{paired['token']}".encode()).hexdigest()
+
+    def native(operation, *arguments):
+        return subprocess.run(
+            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    assert native("prepare-paired", fingerprint) == "prepared"
+    initial = client.post("/api/_web/widget-fence", headers=headers)
+    assert initial.status_code == 200
+    (root / "status.json").write_text(initial.text)
+    issue = json.loads(base64.b64decode(native("bind")))
+    secret = json.loads(next(root.glob("pending-*")).read_bytes())["secret"]
+    assert native("cancel") == "cancelled"
+    first_revoke = base64.b64decode(native("recovery-plan", fingerprint))
+    # The previously admitted issue wins after cancellation; the first revoke loses.
+    issued = client.post("/api/_web/widget-fenced-credential", headers=headers, json=issue)
+    assert issued.status_code == 200
+    assert client.post("/api/_web/widget-fenced-credential", headers=headers, content=first_revoke).status_code == 409
+    (root / "recovery-request.json").write_bytes(first_revoke)
+    (root / "status.json").write_text(client.post("/api/_web/widget-fence", headers=headers).text)
+    next_revoke = base64.b64decode(native("recovery-conflict", fingerprint))
+    assert next_revoke != first_revoke
+    committed = client.post("/api/_web/widget-fenced-credential", headers=headers, content=next_revoke)
+    assert committed.status_code == 200
+    # Lose the committed response and restart the native process; replay must be exact.
+    (root / "status.json").write_text(client.post("/api/_web/widget-fence", headers=headers).text)
+    replay = base64.b64decode(native("recovery-plan", fingerprint))
+    assert replay == next_revoke
+    receipt = client.post("/api/_web/widget-fenced-credential", headers=headers, content=replay)
+    assert receipt.json() == committed.json()
+    (root / "recovery-request.json").write_bytes(replay)
+    (root / "receipt.json").write_text(receipt.text)
+    assert native("recovery-receipt", fingerprint) == "recorded"
+    assert native("recovery-finish", fingerprint) == "recovered"
+    assert not (root / "catalog.sqlite.enrollment-pending").exists()
+    widget = {"Authorization": f"Bearer {secret}", "X-Hz-Workspace-Id": initial.json()["workspace_id"]}
+    assert client.get("/api/_web/widget-snapshot", headers=widget).status_code == 401
 
 
 def test_native_fenced_retry_after_lost_core_reply(make_kernel, tmp_path):
