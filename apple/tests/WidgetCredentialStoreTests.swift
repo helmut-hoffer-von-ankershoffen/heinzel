@@ -240,9 +240,6 @@ private final class NotificationCapture: @unchecked Sendable {
         let staleReceipt = Data(String(decoding: receipt, as: UTF8.self).replacingOccurrences(of: wireAttempt, with: String(repeating: "f", count: 32)).utf8)
         guard case .rejected = restarted.complete(staleReceipt, reservation: fencedAttempt, now: now, clock: { now }) else { fatalError() }
         precondition(fencedStore.capture(now: now) == nil && fencedKeychain.pending[wireAttempt] != nil)
-        guard case .rejected = restarted.complete(receipt, reservation: fencedAttempt, now: now,
-                                                   clock: { now.addingTimeInterval(3601) }) else { fatalError() }
-        precondition(fencedKeychain.pending[wireAttempt] != nil)
         guard case .installed(let fencedActive) = restarted.complete(receipt, reservation: fencedAttempt, now: now, clock: { now }) else { fatalError() }
         precondition(fencedStore.capture(now: now)?.credential.token == secret)
         precondition(fencedStore.capture(now: now)?.activation == fencedActive && fencedKeychain.pending[wireAttempt] == nil)
@@ -409,6 +406,9 @@ private final class NotificationCapture: @unchecked Sendable {
         let transactionPending = try JSONSerialization.jsonObject(with: transactionKeychain.pending[transactionWire]!) as! [String: Any]
         let transactionGeneration = transactionPending["generation"] as! String
         let transactionReceipt = fixtureReceipt(transactionAttempt)
+        guard case .issue(let admitted) = ActivityCatalog.admitEnrollmentIssue(url: transactionURL,
+            expected: transactionAttempt, request: transactionRequest) else { fatalError() }
+        precondition(admitted == transactionRequest)
         let plan = ActivityCatalog.recordEnrollmentReceipt(url: transactionURL, expected: transactionAttempt,
             workspaceID: credential.workspaceID, request: transactionRequest, receipt: transactionReceipt,
             generation: transactionGeneration)!
@@ -416,6 +416,9 @@ private final class NotificationCapture: @unchecked Sendable {
             workspaceID: credential.workspaceID, request: transactionRequest, receipt: transactionReceipt,
             generation: transactionGeneration)
         precondition(repeatedPlan == plan && ActivityCatalog.savedEnrollmentReceipt(url: transactionURL, expected: transactionAttempt) == transactionReceipt)
+        guard case .receipt(let admittedReceipt) = ActivityCatalog.admitEnrollmentIssue(url: transactionURL,
+            expected: transactionAttempt, request: transactionRequest) else { fatalError() }
+        precondition(admittedReceipt == transactionReceipt)
         var transactionWrites = 0
         let failedAuthority = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
             syncAuthority: { _, _ in false }, install: { transactionWrites += 1; return true }, authorize: { true }, cleanup: { true })
@@ -433,6 +436,34 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(ActivityCatalog.finishReceipted(url: transactionURL, expected: transactionAttempt,
             verify: { _, _ in true }, cleanup: { true }) == published.0)
         precondition(ActivityCatalog.pendingEnrollment(url: transactionURL) == nil)
+        let expiredURL = directory.appendingPathComponent("expired-receipt.sqlite")
+        let expiredKeychain = FakeKeychain()
+        let expiredStore = WidgetCredentialStore(catalogURL: expiredURL, keychain: expiredKeychain)
+        let expiredEnrollment = WidgetFencedEnrollment(store: expiredStore)
+        let expiredInitial = ActivityCatalog.activate(url: expiredURL, endpoint: pending.endpoint)!
+        let expiredAttempt = expiredEnrollment.prepare(expected: expiredInitial)!
+        let expiredWire = expiredAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready(let expiredRequest) = expiredEnrollment.bind(fixtureStatus, reservation: expiredAttempt) else { fatalError() }
+        let expiredReceipt = fixtureReceipt(expiredAttempt)
+        let expiredPending = try JSONSerialization.jsonObject(with: expiredKeychain.pending[expiredWire]!) as! [String: Any]
+        let expiredGeneration = expiredPending["generation"] as! String
+        _ = ActivityCatalog.recordEnrollmentReceipt(url: expiredURL, expected: expiredAttempt, workspaceID: credential.workspaceID,
+            request: expiredRequest, receipt: expiredReceipt, generation: expiredGeneration)!
+        let interruptedItem = WidgetCredential(endpoint: pending.endpoint, workspaceID: credential.workspaceID,
+            generation: expiredGeneration, token: expiredPending["secret"] as! String,
+            expiresAt: now.addingTimeInterval(3600), pendingAttempt: expiredWire)
+        expiredKeychain.data = try JSONEncoder().encode(interruptedItem)
+        expiredKeychain.canDeletePending = false
+        guard case .identityMismatch(let expiredClear) = WidgetFencedEnrollment(store: expiredStore).complete(expiredReceipt,
+            reservation: expiredAttempt, now: now.addingTimeInterval(3601), clock: { now.addingTimeInterval(3601) }) else { fatalError() }
+        precondition(expiredClear.revoked && !expiredClear.complete && expiredKeychain.pending[expiredWire] != nil)
+        expiredKeychain.canDeletePending = true
+        let resumedExpired = WidgetFencedEnrollment(store: expiredStore).finishExpiredReceipt(expiredAttempt,
+            clock: { now.addingTimeInterval(3601) })!
+        precondition(resumedExpired.complete && expiredKeychain.pending[expiredWire] == nil && expiredKeychain.data == nil)
+        let expiredPin = ActivityCatalog.activation(url: expiredURL)!
+        precondition(ActivityCatalog.pendingEnrollment(url: expiredURL) == nil && expiredPin.workspaceID == credential.workspaceID &&
+                     expiredPin.credentialGeneration == nil && expiredStore.capture(now: now) == nil)
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)

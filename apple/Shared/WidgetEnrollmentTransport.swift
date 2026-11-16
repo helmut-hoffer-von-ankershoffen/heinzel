@@ -148,17 +148,28 @@ enum WidgetEnrollmentOutcome {
             case .conflict: return .conflict
             case .unavailable: return .pending
             case .ready(let request):
-                let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: request, in: view, endpoint: endpoint, isCurrent: current)
-                guard current() else { return .pending }
-                switch response {
-                case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
-                case .conflict: return .conflict
-                case .unavailable: return .pending
-                case .ok(let receipt):
+                guard let admission = ActivityCatalog.admitEnrollmentIssue(url: enrollment.store.catalogURL,
+                                                                            expected: reservation, request: request) else { return .pending }
+                switch admission {
+                case .receipt(let receipt):
                     switch enrollment.complete(receipt, reservation: reservation) {
                     case .installed(let activation): return .installed(activation)
                     case .identityMismatch(let result): return .identityMismatch(result)
                     case .rejected: return .pending
+                    }
+                case .issue(let admitted):
+                    let response = await WidgetEnrollmentTransport.exchange(.mutate, payload: admitted, in: view, endpoint: endpoint, isCurrent: current)
+                    guard current() else { return .pending }
+                    switch response {
+                    case .unauthorized: return .identityMismatch(enrollment.cancel(reservation))
+                    case .conflict: return .conflict
+                    case .unavailable: return .pending
+                    case .ok(let receipt):
+                        switch enrollment.complete(receipt, reservation: reservation) {
+                        case .installed(let activation): return .installed(activation)
+                        case .identityMismatch(let result): return .identityMismatch(result)
+                        case .rejected: return .pending
+                        }
                     }
                 }
             }

@@ -801,6 +801,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                         if let installed = enrollment.finishInterruptedInstallation(pending), current(),
                            ActivityCatalog.activation(url: store.catalogURL) == installed {
                             NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
+                        } else if let expired = enrollment.finishExpiredReceipt(pending), expired.revoked {
+                            ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload()
+                            if !expired.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
                         } else if enrollment.abandonInterruptedPreparation(pending), current(),
                                   ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
                             NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)

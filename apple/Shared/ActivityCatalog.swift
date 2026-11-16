@@ -352,6 +352,27 @@ final class ActivityCatalog {
         }
     }
 
+    enum EnrollmentAdmission {
+        case issue(Data)
+        case receipt(Data)
+    }
+
+    /// Serializes request admission with receipt recording. An exact request
+    /// admitted before a receipt may still be in flight; Core deduplicates it.
+    static func admitEnrollmentIssue(url: URL, expected: Enrollment, request: Data) -> EnrollmentAdmission? {
+        withWriterLock(url: url, failure: nil) {
+            guard let authorityData = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
+                  authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
+                  let marker = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let journal = enrollmentJournal(marker), journal.reservation == expected,
+                  journal.request == request, writeJournal(marker, enrollmentURL(for: url)) else { return nil }
+            if journal.phase == .receipted, let receipt = journal.receipt { return .receipt(receipt) }
+            guard journal.phase == .armed else { return nil }
+            return .issue(request)
+        }
+    }
+
     /// Publish only the activation named by the durable receipt. The journal
     /// remains until the pending item is deleted and marker removal is synced.
     static func installReceipted(url: URL, expected: Enrollment, receipt: EnrollmentJournal,
@@ -392,6 +413,44 @@ final class ActivityCatalog {
                   writeJournal(marker, markerURL), writeJournal(data, authorityURL(for: url)),
                   verify(journal, active), cleanup(), removeJournal(markerURL) else { return nil }
             return active
+        }
+    }
+
+    /// A committed but expired receipt cannot authorize installation. Retire
+    /// only the matching reservation after durable revocation and owned cleanup.
+    static func retireExpiredReceipt(url: URL, expected: Enrollment,
+                                     verify: (EnrollmentJournal) -> Bool,
+                                     cleanup: () -> Bool) -> ClearResult {
+        withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.phase == .receipted,
+                  let id = journal.activationID, let workspace = journal.workspaceID,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: data) else {
+                return ClearResult(revoked: false, purged: false)
+            }
+            let pinned = Activation(id: id, endpoint: expected.previous.endpoint, workspaceID: workspace, credentialGeneration: nil)
+            if authority.enrollment == expected && authority.activation == expected.previous && authority.revoked != true {
+                let tombstone = Authority(scope: "", generation: UUID().uuidString, revoked: true, cleanup: expected.previous)
+                guard let encoded = try? JSONEncoder().encode(tombstone),
+                      writeJournal(encoded, authorityURL(for: url)) else { return ClearResult(revoked: false, purged: false) }
+            } else if !(authority.revoked == true && authority.cleanup == expected.previous) &&
+                        !(authority.activation == pinned && authority.enrollment == nil && authority.revoked != true) {
+                return ClearResult(revoked: false, purged: false, stale: true)
+            } else if !writeJournal(data, authorityURL(for: url)) {
+                return ClearResult(revoked: false, purged: false)
+            }
+            guard writeJournal(marker, markerURL), verify(journal), cleanup(),
+                  ActivityCatalog(url: url)?.purge() == true else {
+                return ClearResult(revoked: true, purged: false)
+            }
+            let pinnedAuthority = Authority(scope: "", generation: UUID().uuidString, activation: pinned)
+            guard let pinnedData = try? JSONEncoder().encode(pinnedAuthority),
+                  writeJournal(pinnedData, authorityURL(for: url)), removeJournal(markerURL) else {
+                return ClearResult(revoked: true, purged: false)
+            }
+            return ClearResult(revoked: true, purged: true)
         }
     }
 

@@ -110,6 +110,21 @@ struct WidgetFencedEnrollment {
         }, cleanup: { self.store.keychain.deletePending(attempt) })
     }
 
+    func finishExpiredReceipt(_ reservation: ActivityCatalog.Enrollment, clock: () -> Date = { .now }) -> ActivityCatalog.ClearResult? {
+        guard let data = ActivityCatalog.savedEnrollmentReceipt(url: store.catalogURL, expected: reservation),
+              let receipt = try? JSONDecoder().decode(FenceReceipt.self, from: data),
+              let expiry = receipt.expiry, expiry <= clock() else { return nil }
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        let result = ActivityCatalog.retireExpiredReceipt(url: store.catalogURL, expected: reservation, verify: {
+            $0.receipt == data && expiry <= clock() && self.recoveryEvidenceMatches($0)
+        }, cleanup: { self.store.keychain.deletePending(attempt) && self.store.purgeCredential() })
+        if result.complete, let pinned = ActivityCatalog.activation(url: store.catalogURL),
+           pinned.endpoint == reservation.previous.endpoint, pinned.workspaceID == receipt.workspaceID {
+            NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: pinned.id)
+        }
+        return result
+    }
+
     func prepare(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
         guard let reservation = store.beginEnrollment(expected: expected) else { return nil }
         var random = [UInt8](repeating: 0, count: 32)
@@ -233,11 +248,22 @@ struct WidgetFencedEnrollment {
         let credential = WidgetCredential(endpoint: reservation.previous.endpoint, workspaceID: workspaceID,
                                           generation: pending.generation, token: pending.secret, expiresAt: expiry,
                                           pendingAttempt: attempt)
-        guard credential.valid(at: now), let encoded = try? JSONEncoder().encode(credential),
+        let validationTime = expiry <= now ? expiry.addingTimeInterval(-1) : now
+        guard credential.valid(at: validationTime), let encoded = try? JSONEncoder().encode(credential),
               let requestData = pending.requestData,
               let journal = ActivityCatalog.recordEnrollmentReceipt(url: store.catalogURL, expected: reservation,
-                  workspaceID: workspaceID, request: requestData, receipt: data, generation: credential.generation),
-              let (installed, cleaned) = ActivityCatalog.installReceipted(url: store.catalogURL, expected: reservation,
+                  workspaceID: workspaceID, request: requestData, receipt: data, generation: credential.generation) else { return .rejected }
+        if expiry <= clock() {
+            let result = ActivityCatalog.retireExpiredReceipt(url: store.catalogURL, expected: reservation, verify: {
+                $0 == journal && expiry <= clock() && self.recoveryEvidenceMatches($0)
+            }, cleanup: { self.store.keychain.deletePending(attempt) && self.store.purgeCredential() })
+            if result.complete, let pinned = ActivityCatalog.activation(url: store.catalogURL),
+               pinned.endpoint == reservation.previous.endpoint, pinned.workspaceID == workspaceID {
+                NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: pinned.id)
+            }
+            return .identityMismatch(result)
+        }
+        guard let (installed, cleaned) = ActivityCatalog.installReceipted(url: store.catalogURL, expected: reservation,
                   receipt: journal, install: {
                       credential.valid(at: clock()) && store.keychain.readPending(attempt) == pendingData &&
                       cleanPreviousPending(except: attempt) && store.keychain.write(encoded) && store.keychain.read() == encoded
