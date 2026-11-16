@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.e2e, pytest.mark.timeout(1150)]
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(1150)]
 
 
 def test_legacy_discovery_after_genuine_failure():
     if (
         os.environ.get("GITHUB_WORKFLOW") != "Focused job"
-        or os.environ.get("FOCUSED_SELECTOR") != "tests/diagnostics/legacy_discovery_test.py"
+        or os.environ.get("FOCUSED_SELECTOR") != "tests/integration/legacy_discovery_test.py"
     ):
         pytest.skip("explicit focused hosted diagnostic only")
     repo = Path(__file__).resolve().parents[2]

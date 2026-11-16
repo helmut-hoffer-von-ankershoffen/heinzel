@@ -5,7 +5,7 @@ This opt-in adapter uses the existing `focused-job.yml` route. It runs unchanged
 After independent exact-head review and coordinator authorization, push the branch normally. From this checkout, the coordinator can dispatch one separate validation SHA:
 
 ```sh
-sm ci one dispatch fix/legacy-discovery-hosted --test tests/diagnostics/legacy_discovery_test.py --kind pytest --os macos-latest --repeat 1 --throwaway
+sm ci one dispatch fix/legacy-discovery-hosted --test tests/integration/legacy_discovery_test.py --kind pytest --os macos-latest --repeat 1 --throwaway
 ```
 
 Do not dispatch directly on a PR head, retry the run, or run this selector locally. The adapter refuses anything except the first attempt of this exact unstressed hosted macOS selector, verifies checkout bytes against `GITHUB_SHA`, and writes exclusive intent files. Existing admission and runner-capacity guards still apply.
@@ -19,4 +19,6 @@ The workflow's `focused-pytest-macOS-<run-id>` artifact contains `legacy-discove
 
 The adapter removes only disposable Core bytecode and copies trusted runner uv executables and the original service-manager refusal spies into the private bin directory after saving the original failure. It passes an allowlisted private environment without GitHub credentials. The follow-up runs the same installed published updater, but is a **second** network observation: network conditions may have changed. Its isolated entry point, output capture and instrumentation also differ from the first update. It can establish a failure category observed during that follow-up, not retrospectively prove the earlier failure's cause. Missing events are not proof that discovery succeeded. Raw CLI and child output are discarded rather than uploaded.
 
-No workflow, public acceptance harness, release receipt or target is modified. The focused runner's 1080-second ceiling includes setup, original case and follow-up; the probe's own 900-second budget therefore does not guarantee completion. A timeout may leave only the pre-probe original case record and intent; the hosted VM must then be destroyed normally. This does not authorize another dispatch. Physical devices and the live Mini are outside this diagnostic.
+No workflow, public acceptance harness, release receipt or target is modified. The focused pytest session has a 900-second deadline; the outer focused command ceiling is 1080 seconds including setup. The probe's own 900-second budget therefore does not guarantee completion. A timeout may leave only the pre-probe original case record and intent; the hosted VM must then be destroyed normally. This does not authorize another dispatch. Physical devices and the live Mini are outside this diagnostic.
+
+The opt-in test lives in the integration lane, as required by the unchanged collection policy. It does not inherit the E2E session's managed-Python/PyYAML fixture preparation. General parent fixtures remain in effect; their Python monkeypatches do not enter the isolated harness subprocess. Outside the exact focused selector the test skips before launching anything. Diagnostic run 43935383190 failed at collection before any upgrade or probe; retain it as a failed diagnostic, not discovery evidence.

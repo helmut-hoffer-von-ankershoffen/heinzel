@@ -48,6 +48,7 @@ def test_exact_hosted_context():
         ("FOCUSED_REPEAT", "2"),
         ("FOCUSED_STRESS", "true"),
         ("FOCUSED_SELECTOR", "tests/other.py"),
+        ("FOCUSED_SELECTOR", "tests/diagnostics/legacy_discovery_test.py"),
         ("GITHUB_SHA", "a" * 8),
         ("FOCUSED_REF", "other"),
     ],

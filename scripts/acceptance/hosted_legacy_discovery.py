@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SELECTOR = "tests/diagnostics/legacy_discovery_test.py"
+SELECTOR = "tests/integration/legacy_discovery_test.py"
 FAILURE_STEP = "the published bridge updates to the target release"
 PRIVATE_PATHS = {
     "HOME": "home",
