@@ -94,7 +94,7 @@ it("hides the native surface while a product popover is open and restores it whe
   }
 });
 
-it("Open in browser and Clear browsing data send their own commands, and only once a page is open", async () => {
+it("Open in browser is available only once a page is open", async () => {
   let url = "";
   const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
     if (action === "navigate") url = "https://example.com/page";
@@ -105,8 +105,7 @@ it("Open in browser and Clear browsing data send their own commands, and only on
   const open = screen.getByRole("button", { name: "Open in browser" });
   expect(open).toHaveAttribute("data-heinzel-browser-external");
   expect(open).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
-  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "clear" }));
+  expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Website address" }), {
     target: { value: "https://example.com/page" },
   });
@@ -114,7 +113,7 @@ it("Open in browser and Clear browsing data send their own commands, and only on
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
   expect(browser).toHaveBeenCalledWith({ action: "external" });
-  expect(screen.getByText(/Sign-ins stay until you clear browsing data/)).toBeVisible();
+  expect(screen.queryByText(/Sign-ins stay until you clear browsing data/)).toBeNull();
 });
 
 it.each([
@@ -125,7 +124,6 @@ it.each([
   const browser = vi.fn(async () => ({ status: "ready", url: "https://accounts.example.com/", notice }));
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(text);
 });
 
@@ -135,15 +133,16 @@ it("web mode has no native browser controls", () => {
   expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
 });
 
-it("a failed Clear browsing data is shown, not hidden", async () => {
-  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
-    if (action === "clear") throw new Error("Browsing data could not be cleared.");
-    return { status: "empty" };
-  });
+it("opens Browser settings and places the address action next to its field", () => {
+  const browser = vi.fn(async () => ({ status: "empty" }));
+  const settings = vi.fn();
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
-  render(<BrowserPanel active={false} onClose={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Clear browsing data" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(/Browsing data could not be cleared/);
+  render(<BrowserPanel active={false} onClose={vi.fn()} onSettings={settings} />);
+  expect(screen.getByRole("textbox", { name: "Website address" }).nextElementSibling).toBe(
+    screen.getByRole("button", { name: "Open this address" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+  expect(settings).toHaveBeenCalledOnce();
 });
 
 it("shows a refused native handoff until a new attempt, without exposing details", async () => {
@@ -511,14 +510,14 @@ it("in the PWA there are no agent tabs, no bar and no commit card", () => {
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 
-it("the panel's help says that some websites forbid automated use of an account, in the desktop app only", () => {
+it("does not show the settings help in the browser panel", () => {
   const sentence = /Some websites forbid automated use of an account/;
   Object.defineProperty(window, "heinzelDesktop", {
     value: { browser: vi.fn(async () => ({ status: "empty" })) },
     configurable: true,
   });
   const desktop = render(<BrowserPanel active onClose={vi.fn()} />);
-  expect(screen.getByText(sentence)).toBeVisible();
+  expect(screen.queryByText(sentence)).toBeNull();
   desktop.unmount();
   Reflect.deleteProperty(window, "heinzelDesktop");
   render(<BrowserPanel active onClose={vi.fn()} />);

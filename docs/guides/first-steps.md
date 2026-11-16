@@ -23,6 +23,16 @@ to another. The account menu at the bottom of the navigation brings together **S
    own setup and may need you to sign in.
 4. Choose how you want to receive notifications, and use the test buttons in setup to check them.
 
+To measure local chat latency without an AI service, select **Dummy (always answers 42)** in AI access, or run
+`hz ai access use dummy`. It answers every message with `42` and does not use tools. Select your usual AI access again
+when you finish testing.
+
+Open **Chat diagnostics** in the chat header to inspect preparation, provider requests,
+internal tool calls, MCP discovery, and MCP tool calls. Tool timings include failed calls and may overlap when
+calls run concurrently. Configured servers are separate from tools offered to the model; cached descriptor counts
+are a passive snapshot, not evidence that a tool was offered or called. Diagnostics do not connect to servers.
+The sidebar keeps at most 20 turns in memory and clears when browser authority changes.
+
 You can return to setup from the account menu. You can also use **Check this machine** and **Get help** if you get
 stuck.
 

@@ -101,6 +101,28 @@ def test_a_failing_relay_never_fails_the_turn(tmp_path, caplog):
     assert any(getattr(r, "event", "") == "heinzel.reply_stream.failed" for r in caplog.records)
 
 
+@pytest.mark.parametrize("factory", [None, streaming])
+def test_attended_turn_streams_diagnostics_without_message_content(tmp_path, factory):
+    events = Events()
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        chat = service(crud, current, Plugin(**({"model_factory": factory} if factory else {})), Settings(), [])
+        chat._emitter = lambda: events
+        answer = asyncio.run(
+            chat.dispatch(
+                session, "hello", lambda: chat._owner(session, "hello"), 10, 30, user_proposals=True, attended=True
+            )
+        )
+    assert answer.message.text == (STREAMED if factory else REPLY)
+    snapshots = [data for kind, data in events if kind == "diagnostics"]
+    assert snapshots
+    assert snapshots[-1]["requests"] == 1
+    assert snapshots[-1]["context"]["messages"] > 0
+    assert REPLY not in repr(snapshots)
+    assert STREAMED not in repr(snapshots)
+
+
 class Whole(Model):
     """A model that answers only whole requests, like Claude Code's subscription model."""
 

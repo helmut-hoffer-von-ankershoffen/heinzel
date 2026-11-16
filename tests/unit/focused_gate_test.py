@@ -851,3 +851,122 @@ def test_protected_main_reader_uses_slots_without_weakening_evidence(focused_gat
     else:
         with pytest.raises(focused_gate.CandidateError):
             focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__, slots=slots)
+
+
+def test_full_checkout_requires_one_actual_checkout_identity(focused_gate):
+    source = "a" * 40
+    log = f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {source}\n".encode()
+    assert focused_gate.full_checkout(log) == source
+    for invalid in (b"", log + log, log.replace(b"a" * 40, b"main"), b"x" * (1024 * 1024) + log):
+        with pytest.raises(focused_gate.CandidateError, match="checkout identity"):
+            focused_gate.full_checkout(invalid)
+
+
+@pytest.mark.parametrize(
+    "defect", [None, "missing", "failed", "stale-base", "workflow", "checkout", "dispatch", "parents"]
+)
+def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focused_gate, monkeypatch, defect):
+    from types import SimpleNamespace
+
+    base, head, merge = (letter * 40 for letter in "abc")
+    inventory = focused_gate.expected_jobs("pull_request")
+    inventory["Release candidate source"] = "skipped"
+    jobs = [
+        {"id": number, "name": name, "conclusion": conclusion}
+        for number, (name, conclusion) in enumerate(inventory.items(), 1)
+    ]
+    if defect == "missing":
+        jobs.pop()
+    if defect == "failed":
+        jobs[0]["conclusion"] = "failure"
+    run = {
+        "id": 123,
+        "event": "workflow_dispatch" if defect == "dispatch" else "pull_request",
+        "pull_requests": [{"base": {"sha": head if defect == "stale-base" else base}}],
+    }
+    source = SimpleNamespace(run=run, source=SimpleNamespace(head=head), commit=merge)
+    monkeypatch.setattr(focused_gate, "jobs_for", lambda *_: jobs)
+    monkeypatch.setattr(focused_gate, "quarantine_lane", lambda rows, *_: rows)
+    checked = []
+    monkeypatch.setattr(focused_gate, "_check", lambda _gate, _source, job: checked.append(job["name"]))
+    monkeypatch.setattr(focused_gate, "git_blob", lambda commit, _path: commit if defect == "workflow" else head)
+
+    def git(*args):
+        if args[0] == "rev-list":
+            return f"{merge} {head if defect == 'parents' else base} {head}".encode()
+        return (
+            b"name: Run the complete CI workload without an external admission plan\n"
+            b"run: echo 'selected=true' >> \"$GITHUB_OUTPUT\""
+        )
+
+    monkeypatch.setattr(focused_gate, "git", git)
+    checkout = head if defect == "checkout" else merge
+    log = f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {checkout}\n".encode()
+    judge = SimpleNamespace(token="fictional")
+    if defect:
+        with pytest.raises(focused_gate.CandidateError):
+            focused_gate.full_pr_jobs(judge, source, base, lambda _path: log)
+    else:
+        assert focused_gate.full_pr_jobs(judge, source, base, lambda _path: log) == jobs
+        assert set(checked) == {name for name, conclusion in inventory.items() if conclusion == "success"}
+
+
+@pytest.mark.parametrize("defect", [None, "below-floor", "tampered-archive", "moved-main"])
+def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
+    focused_gate, first_attempt, monkeypatch, defect
+):
+    gate, run, _manifest, lane, rows, logs, _git_rows = first_attempt
+    lane["name"] = "Coverage"
+    lane["steps"][0]["name"] = focused_gate.CANDIDATE_UPLOAD_NAME
+    rows[f"check-runs/{lane['id']}"]["name"] = "Coverage"
+    monkeypatch.setattr(focused_gate, "full_pr_jobs", lambda *_: [lane])
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("coverage-total.txt", "0" if defect == "below-floor" else "100")
+    content = output.getvalue()
+    artifact = {
+        "id": 456,
+        "name": "coverage-total",
+        "expired": False,
+        "size_in_bytes": len(content),
+        "digest": "sha256:" + hashlib.sha256(content).hexdigest(),
+        "workflow_run": {"id": run},
+    }
+    rows[f"actions/runs/{run}/artifacts?name=coverage-total"] = {"total_count": 1, "artifacts": [artifact]}
+    logs[f"actions/jobs/{lane['id']}/steps/6/logs"] = (
+        "Artifact coverage-total has been successfully uploaded! "
+        f"Final size is {len(content)} bytes. Artifact ID is 456\n"
+    ).encode()
+    logs["actions/artifacts/456/zip"] = content + (b"tamper" if defect == "tampered-archive" else b"")
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    identity = focused_gate.pull_identity
+    calls = []
+
+    def current(*args):
+        result = identity(*args)
+        calls.append(result)
+        return (result[0], result[1], "f" * 40) if defect == "moved-main" and len(calls) > 1 else result
+
+    monkeypatch.setattr(focused_gate, "pull_identity", current)
+    if defect:
+        with pytest.raises(focused_gate.CandidateError):
+            focused_gate.verify(gate, run, "{}", logs.__getitem__)
+    else:
+        assert focused_gate.verify(gate, run, "{}", logs.__getitem__) == "Whole-project coverage measured by full PR CI"
+
+
+def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate, monkeypatch):
+    from types import SimpleNamespace
+
+    base, head, merge = (letter * 40 for letter in "abc")
+    source = SimpleNamespace(
+        run={"event": "pull_request", "pull_requests": [{"base": {"sha": base}}]},
+        source=SimpleNamespace(head=head),
+        commit=merge,
+    )
+    for path in focused_gate.FULL_EXECUTION_INPUTS:
+        monkeypatch.setattr(
+            focused_gate, "git_blob", lambda commit, name, changed=path: commit if name == changed else head
+        )
+        with pytest.raises(focused_gate.CandidateError, match="execution inputs differ"):
+            focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: b"")

@@ -253,7 +253,11 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
-    @State private var connectionSheetHeight: CGFloat = 390
+    @State private var connectionSheetContentHeight: CGFloat = 350
+    @State private var connectionSheetFooterHeight: CGFloat = 40
+    private var connectionSheetHeight: CGFloat {
+        min(520, max(300, (connectionSheetContentHeight + connectionSheetFooterHeight).rounded(.up)))
+    }
     @State private var showDisconnectConfirmation = false
     @State private var choosingWorkspace = false
     @State private var showConnectionHelp = false
@@ -278,10 +282,27 @@ struct ConnectionView: View {
     @State private var loadRevision = 0
     @State private var connectionIssue: WorkspaceProblem?
     @State private var verifiedConnectionOrigin: URL?
+    #if os(iOS)
+    @State private var connectionProbeRevision = 0
+    @State private var connectionProbe: ConnectionProbe?
+    @State private var connectionScopeRevision = 0
+    @State private var signInProbeScope: Int?
+
+    private struct ConnectionProbe {
+        let revision: Int
+        let origin: URL
+        let manual: Bool
+        let task: Task<WorkspaceProblem?, Never>
+    }
+    #endif
     @FocusState private var editingLink: Bool
     @State private var draftRevision = 0
     @State private var checkedDraft: URL?
     @State private var draftIssue: WorkspaceProblem?
+    #if os(iOS)
+    @State private var manualDraftProbe: DraftProbe?
+    @State private var refreshingConnection = false
+    #endif
 
     #if os(macOS)
     @State private var connectionMenuIntent = MacConnectionIntent()
@@ -565,11 +586,13 @@ struct ConnectionView: View {
                     }
                     .connectionPanel()
                 }
-                ConnectionFooter()
             }
             .frame(maxWidth: 420, alignment: .leading)
             .padding(24)
             .frame(maxWidth: .infinity)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ConnectionFooter().background(Color("StartupBackground"))
         }
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
@@ -680,6 +703,13 @@ struct ConnectionView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            #if os(iOS)
+            if phase != .active, signInProbeScope == connectionScopeRevision {
+                loadFailure = .signIn
+                loadingWorkspace = false
+            }
+            invalidateConnectionScope()
+            #endif
             if phase == .active && draftOrigin != nil { draftRevision += 1 }
         }
         .onChange(of: link) { _, _ in error = nil }
@@ -692,6 +722,9 @@ struct ConnectionView: View {
         }
         .task(id: draftProbe) {
             guard let probe = draftProbe else { return }
+            #if os(iOS)
+            guard manualDraftProbe != probe else { return }
+            #endif
             let origin = probe.origin
             let session = Endpoint.probeSession()
             defer { session.invalidateAndCancel() }
@@ -704,6 +737,11 @@ struct ConnectionView: View {
         }
         .task(id: monitoredOrigin) {
             verifiedConnectionOrigin = nil
+            #if os(iOS)
+            connectionProbeRevision += 1
+            connectionProbe?.task.cancel()
+            connectionProbe = nil
+            #endif
             guard let origin = monitoredOrigin else { return }
             await watchConnection(to: origin)
         }
@@ -805,13 +843,39 @@ struct ConnectionView: View {
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
+                        #if os(iOS)
+                        guard scenePhase == .active else {
+                            loadFailure = .signIn
+                            loadingWorkspace = false
+                            return
+                        }
+                        let scope = connectionScopeRevision
+                        signInProbeScope = scope
+                        #endif
                         Task {
+                            #if os(iOS)
+                            defer { if signInProbeScope == scope { signInProbeScope = nil } }
+                            while self.endpoint == endpoint, loadRevision == revision,
+                                  connectionScopeRevision == scope, scenePhase == .active, !Task.isCancelled {
+                                guard let result = await sharedConnectionProbe(endpoint.origin, manual: false) else { continue }
+                                guard self.endpoint == endpoint, loadRevision == revision,
+                                      connectionScopeRevision == scope, scenePhase == .active else { return }
+                                guard connectionProbe?.revision == result.revision else { continue }
+                                connectionIssue = result.issue
+                                loadFailure = result.issue ?? .signIn
+                                if result.issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                                loadingWorkspace = false
+                                finishConnectionProbe(result.revision)
+                                return
+                            }
+                            #else
                             let issue = await Endpoint.connectionIssue(at: endpoint.origin)
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
                             if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
                             loadingWorkspace = false
+                            #endif
                         }
                     } else {
                         loadingWorkspace = false
@@ -1022,16 +1086,25 @@ struct ConnectionView: View {
                     .connectionPanel()
                 }
                 #endif
-                ConnectionFooter()
             }
             .frame(maxWidth: 420, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                connectionSheetHeight = min(520, max(300, height.rounded(.up)))
+                connectionSheetContentHeight = height
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ConnectionFooter()
+                .background(Color("StartupBackground"))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    connectionSheetFooterHeight = height
+                }
+        }
+        #if os(iOS)
+        .refreshable { await refreshConnectionStatus(for: endpoint) }
+        #endif
         #if os(macOS)
         .frame(width: 460, height: connectionSheetHeight)
         #endif
@@ -1289,6 +1362,12 @@ struct ConnectionView: View {
             .padding(24)
             .frame(maxWidth: .infinity)
         }
+        #if os(iOS)
+        .refreshable {
+            guard !loading, let endpoint else { return }
+            await refreshConnectionStatus(for: endpoint)
+        }
+        #endif
         .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.colorScheme, .light)
@@ -1439,6 +1518,7 @@ struct ConnectionView: View {
         }
         #if os(iOS)
         .scrollDismissesKeyboard(.interactively)
+        .refreshable { await refreshSetupStatus() }
         #endif
         .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
         .frame(maxHeight: .infinity)
@@ -1642,6 +1722,9 @@ struct ConnectionView: View {
                 loadFailure = nil
                 loadingWorkspace = true
             }
+            #if os(iOS)
+            if endpoint != target { invalidateConnectionScope() }
+            #endif
             endpoint = target
             #if os(macOS)
             choosingWorkspace = connectionMenuIntent.keepSetup(afterStartedAt: menuRevision)
@@ -1700,6 +1783,9 @@ struct ConnectionView: View {
         #endif
         showConnection = false
         choosingWorkspace = false
+        #if os(iOS)
+        invalidateConnectionScope()
+        #endif
         endpoint = nil
         serverOrigin = ""
         clearWidgetActivity()
@@ -1721,13 +1807,92 @@ struct ConnectionView: View {
         loadRevision += 1
     }
 
+    #if os(iOS)
+    private func invalidateConnectionScope() {
+        connectionScopeRevision += 1
+        connectionProbe?.task.cancel()
+        connectionProbe = nil
+        signInProbeScope = nil
+    }
+
+    private func refreshSetupStatus() async {
+        refreshSyncedWorkspaces()
+        guard let origin = draftOrigin, !connecting else { return }
+        draftRevision += 1
+        let probe = DraftProbe(origin: origin, revision: draftRevision)
+        manualDraftProbe = probe
+        checkedDraft = nil
+        defer { if manualDraftProbe == probe { manualDraftProbe = nil } }
+        let session = Endpoint.probeSession()
+        defer { session.invalidateAndCancel() }
+        let issue = await Endpoint.connectionIssue(at: origin, using: session)
+        guard !Task.isCancelled, draftProbe == probe else { return }
+        draftIssue = issue
+        checkedDraft = origin
+        AccessibilityNotification.Announcement(issue?.title ?? "Workspace reachable").post()
+    }
+
+    private func refreshConnectionStatus(for target: Endpoint) async {
+        guard !refreshingConnection else { return }
+        refreshingConnection = true
+        defer {
+            refreshingConnection = false
+            if connectionProbe?.manual == true { connectionProbe = nil }
+        }
+        guard let result = await sharedConnectionProbe(target.origin, manual: true),
+              endpoint == target, monitoredOrigin == target.origin,
+              connectionProbe?.revision == result.revision else { return }
+        connectionIssue = result.issue
+        verifiedConnectionOrigin = result.issue == nil ? target.origin : nil
+        if result.issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
+        AccessibilityNotification.Announcement(result.issue?.title ?? "Workspace reachable").post()
+        finishConnectionProbe(result.revision, manual: true)
+    }
+
+    private func sharedConnectionProbe(_ origin: URL, manual: Bool) async -> (revision: Int, issue: WorkspaceProblem?)? {
+        let flight: ConnectionProbe
+        if let existing = connectionProbe, existing.origin == origin, !manual || existing.manual {
+            flight = existing
+        } else {
+            connectionProbe?.task.cancel()
+            connectionProbeRevision += 1
+            let task = Task { await Endpoint.connectionIssue(at: origin) }
+            flight = ConnectionProbe(revision: connectionProbeRevision, origin: origin, manual: manual, task: task)
+            connectionProbe = flight
+        }
+        let issue = await flight.task.value
+        guard !Task.isCancelled, connectionProbe?.revision == flight.revision else { return nil }
+        return (flight.revision, issue)
+    }
+
+    private func finishConnectionProbe(_ revision: Int, manual: Bool = false) {
+        guard connectionProbe?.revision == revision, manual || connectionProbe?.manual == false else { return }
+        connectionProbe = nil
+    }
+    #endif
+
     private func watchConnection(to origin: URL) async {
         let session = Endpoint.probeSession()
         defer { session.invalidateAndCancel() }
         var retryDelay = 2
         while !Task.isCancelled {
+            #if os(iOS)
+            guard let result = await sharedConnectionProbe(origin, manual: false) else {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                continue
+            }
+            let issue = result.issue
+            #else
             let issue = await Endpoint.connectionIssue(at: origin, using: session)
+            #endif
             guard !Task.isCancelled, monitoredOrigin == origin else { return }
+            #if os(iOS)
+            if refreshingConnection || connectionProbe?.revision != result.revision {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                continue
+            }
+            finishConnectionProbe(result.revision)
+            #endif
             let recovered = connectionIssue != nil && issue == nil
             connectionIssue = issue
             verifiedConnectionOrigin = issue == nil ? origin : nil
@@ -2078,7 +2243,7 @@ private struct ConnectionHelp: View {
             #if os(macOS)
             return Result(.optional, "Check access to audio from other apps")
             #else
-            return Result(.optional, "Choose an app or window in the system picker")
+            return Result(.optional, "Choose what to share in the system picker")
             #endif
         }
         #if os(macOS)
@@ -2144,6 +2309,12 @@ private struct ConnectionHelp: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
         }
+        #if os(iOS)
+        .refreshable {
+            guard !checking && !testingAudio && !askingPermission else { return }
+            await runDiagnostics()
+        }
+        #endif
         .safeAreaInset(edge: .top, spacing: 0) { diagnosticsHeader }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ConnectionFooter(showTagline: true).background(Color("StartupBackground"))

@@ -64,6 +64,14 @@ SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
+LEGACY_BRIDGE_START = "0.9.8"
+LEGACY_BRIDGE_VERSION = "0.9.43"
+LEGACY_BRIDGE_FILENAME = f"heinzel-{LEGACY_BRIDGE_VERSION}-py3-none-any.whl"
+LEGACY_BRIDGE_URL = (
+    "https://files.pythonhosted.org/packages/28/3b/"
+    f"fe76bbb6cb72eefd5f1e0af67e18af436d5637a7ab31f8d679c5085bad70/{LEGACY_BRIDGE_FILENAME}"
+)
+LEGACY_BRIDGE_SHA256 = "f18571dae4d3533598eaa645367cbe7432d5f915360f01814faf64352bc93b7a"
 # The plugin both plugin cases install unpinned; its expected version is bound from the index in each run.
 EXAMPLE_PLUGIN = "heinzel-example"
 FOREGROUND_UI = {
@@ -101,6 +109,7 @@ FOREGROUND_UI = {
     "0.9.46": ("ui", "serve"),
     "0.9.47": ("ui", "serve"),
     "0.9.48": ("ui", "serve"),
+    "0.9.49": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
     "HZ_ORG__NAME": "Mira Example",
@@ -1588,7 +1597,7 @@ def ui_app(case, label):
     return case.foreground([str(case.bin / "hz"), *command], label)
 
 
-def run_update(case, label):
+def run_update(case, label, *, previous=None):
     """The update the user performs: Core from PyPI when a newer release is published, else the candidate wheel."""
     target = case.ctx.get("update_target")
     check(target, "No update target: neither a newer published release nor --candidate-wheel")
@@ -1598,7 +1607,19 @@ def run_update(case, label):
     _, out, _ = case.run([str(case.bin / "hz"), *args], label, PHASE_DEADLINE * 2)
     result = json.loads(out)
     check(result["updated"] is True, f"The update reported updated={result['updated']}: {result.get('message')}")
-    check(result["after"] == target["version"], f"The update installed {result['after']}, expected {target['version']}")
+    if previous is not None:
+        check(result["before"] == previous, f"The update started from {result['before']}, expected {previous}")
+    bridge = (
+        previous == LEGACY_BRIDGE_START
+        and target["mode"] == "published"
+        and result["after"] == LEGACY_BRIDGE_VERSION
+        and release_key(target["version"]) > release_key(LEGACY_BRIDGE_VERSION)
+        and Path(case.notes["python_before"]).name == "python3.12"
+    )
+    check(
+        result["after"] == target["version"] or bridge,
+        f"The update installed {result['after']}, expected {target['version']}",
+    )
     return result
 
 
@@ -1616,8 +1637,49 @@ def post_update_profile(case):
     return {"format": 2, "core_version": target["version"], "sdk": 1, "artifacts": [core, *plugins]}
 
 
+def verify_legacy_bridge(case, receipt_profile):
+    """Bind the one published interpreter-migration bridge before running its updater."""
+    data = fetch(LEGACY_BRIDGE_URL)
+    check(sha256(data) == LEGACY_BRIDGE_SHA256, "The published legacy bridge wheel fails its digest")
+    accepted = case.root / "bridge-wheel"
+    accepted.mkdir()
+    (accepted / LEGACY_BRIDGE_FILENAME).write_bytes(data)
+    profile = {"artifacts": [{"name": "heinzel", "version": LEGACY_BRIDGE_VERSION, "filename": LEGACY_BRIDGE_FILENAME}]}
+    files = verify_files(case, profile=profile, accepted=accepted, receipt_profile=receipt_profile, plugins=False)
+    check(
+        installed_interpreter(case) == case.notes["python_before"], "The legacy bridge changed Python before migration"
+    )
+    check(
+        snapshot_files(case.root / "config_home") == case.notes["config_before"],
+        "The legacy bridge changed configuration",
+    )
+    case.expect_version = LEGACY_BRIDGE_VERSION
+    return {
+        "version": LEGACY_BRIDGE_VERSION,
+        "wheel_sha256": LEGACY_BRIDGE_SHA256,
+        "core_files": files["wheel_files_identical"],
+        **verify_state(case, "bridge"),
+    }
+
+
+def verify_update_interpreter(case, *, migrated):
+    python = installed_interpreter(case)
+    if not migrated:
+        check(python == case.notes["python_before"], "The update changed the managed interpreter")
+        return python
+    check(Path(python).is_relative_to(case.root.resolve(strict=True)), "The migrated interpreter is outside this case")
+    check(python != case.notes["python_before"], "The legacy update did not migrate the managed interpreter")
+    _, out, _ = case.run(
+        [str(case.prefix / "bin/python"), "-I", "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+        "migrated-python-version",
+        SHORT_DEADLINE,
+    )
+    check(out.strip() == "3.15", "The legacy update must migrate to managed Python 3.15")
+    return python
+
+
 def case_update(case):
-    """Published 0.9.8 -> the new release: Core replaced, interpreter, configuration, plugins and choices kept."""
+    """Update a published app and verify its Core, managed interpreter, configuration, plugins and choices."""
     case.provide_uv()
     old = case.ctx.get("from_app")
     check(old, "The starting app could not be bound")
@@ -1652,7 +1714,18 @@ def case_update(case):
 
     case.step("user state before the update: extra plugin, disabled default, configuration", prepare)
     case.step("state before the update verified", lambda: verify_state(case, "before"))
-    result = case.step("the update the user runs", lambda: _summarize(run_update(case, "hz-system-update")))
+    result = case.step(
+        "the update the user runs", lambda: _summarize(run_update(case, "hz-system-update", previous=old["version"]))
+    )
+    migrated = result["after"] != target["version"]
+    if migrated:
+        case.step(
+            "published legacy bridge bytes and retained state", lambda: verify_legacy_bridge(case, old["profile"])
+        )
+        case.step(
+            "the published bridge updates to the target release",
+            lambda: _summarize(run_update(case, "hz-system-update-from-bridge", previous=LEGACY_BRIDGE_VERSION)),
+        )
 
     def after():
         case.expect_version, case.core_wheel_override = target["version"], target["wheel"]
@@ -1665,7 +1738,7 @@ def case_update(case):
         receipt = json.loads((case.root / "data_dir/standard-app.json").read_bytes())
         evidence["receipt_core_version_after_update"] = receipt["core_version"]
         evidence["receipt_matches_installed_core"] = receipt["core_version"] == target["version"]
-        check(installed_interpreter(case) == case.notes["python_before"], "The update changed the managed interpreter")
+        evidence["interpreter"] = verify_update_interpreter(case, migrated=migrated)
         check(snapshot_files(case.root / "config_home") == case.notes["config_before"], "Configuration changed")
         if target["mode"] == "published":
             for entry in case.plugins_expected.values():
@@ -1694,10 +1767,11 @@ def case_update(case):
         finally:
             case.env.clear()
             case.env.update(saved)
-        return {"offline_continuity": json.loads(out)["version"] == target["version"]}
+        check(json.loads(out)["version"] == target["version"], "The offline app runs a different Core version")
+        return {"offline_continuity": True}
 
     case.step("updated app runs offline without any profile", offline)
-    case.step("a second update is a no-op", lambda: _second_update(case, target))
+    case.step("a repeated update is a no-op", lambda: _second_update(case, target))
 
 
 def _summarize(result):

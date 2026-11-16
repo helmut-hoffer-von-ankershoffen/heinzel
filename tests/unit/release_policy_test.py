@@ -51,8 +51,18 @@ def test_ci_checks_the_manifest_through_make_lint(release_policy):
 
 
 def test_a_later_edit_makes_the_manifest_stale_but_a_new_plain_product_test_does_not(release_policy, tmp_path):
+    from scripts.ci_paths import GLOBS
+
     tracked = _tracked()
-    for path in tracked:
+    # The policy reads workflow files and only glob-matched Python contents. Keep the complete tracked path list,
+    # but do not copy unrelated assets and scripts just to derive the manifest.
+    inputs = [
+        path
+        for path in tracked
+        if re.fullmatch(r"\.github/workflows/[^/]+\.ya?ml", path)
+        or (path.endswith(".py") and any(fnmatch.fnmatchcase(path, glob) for glob in GLOBS))
+    ]
+    for path in inputs:
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         if (ROOT / path).is_symlink():
             (tmp_path / path).symlink_to((ROOT / path).readlink())

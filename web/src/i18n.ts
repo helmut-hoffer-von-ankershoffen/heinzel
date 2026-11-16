@@ -1390,6 +1390,7 @@ const en = {
   "browser.forward": "Forward",
   "browser.reload": "Reload the website",
   "browser.go": "Open this address",
+  "browser.settings": "Browser settings",
   "browser.openExternal": "Open in a new browser tab",
   "browser.address": "Website address",
   "browser.current": "Current website:",
@@ -1405,8 +1406,9 @@ const en = {
   "browser.refusedNote":
     "This address can't open in the built-in browser: only public https websites work here, not local or private addresses.",
   "browser.clearData": "Clear browsing data",
+  "browser.clearDone": "Browsing data cleared.",
   "browser.clearDataHint":
-    "Signs you out of every website and forgets the devices you shared. A device without a serial number stays shared until you unplug it or quit the app.",
+    "Clears browsing history and site data, signs you out of websites, and forgets shared devices. A device without a serial number stays shared until unplugged or the app quits. Bookmarks are kept.",
   "browser.passkeyNote":
     "Passkeys may not work in the built-in browser. Choose another sign-in option, or open the page in your browser.",
   "browser.clearFailedNote": "Browsing data could not be cleared. Try again, or quit and reopen the app.",

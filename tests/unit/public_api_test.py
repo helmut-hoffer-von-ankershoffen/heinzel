@@ -411,6 +411,7 @@ KERNEL = [
     "FOUND_MODULE",
     "FinishOn",
     "FlowState",
+    "FoundMcpDiagnostic",
     "FoundMcpServers",
     "FoundMcpTool",
     "FoundTool",

@@ -406,7 +406,7 @@ def test_a_project_server_is_startable_only_once_claude_code_approved_it(tmp_pat
     folder = home / "Code" / "cloned"
     write(folder / ".mcp.json", {"mcpServers": {"tools": {"command": "node", "args": ["server.js"]}}})
     write(home / ".claude.json", {"projects": {str(folder): project}})
-    scanner = Scanner(home, want="code-project:~/Code/cloned:tools")
+    identity = "code-project:~/Code/cloned:tools"
+    scanner = Scanner(home, want=frozenset({identity}))
     scanner.scan()
-    assert scanner.captured is not None
-    assert scanner.captured.approved is approved
+    assert scanner.captured[identity].approved is approved

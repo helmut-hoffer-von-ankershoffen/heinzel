@@ -10,6 +10,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
+| [`ai.dummy`](#aidummy) | A local test model that always answers 42. |
 | [`document`](#document) | Open and search your documents in every documents connector that is on. |
 | [`graph`](#graph) | Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval. |
@@ -73,6 +74,10 @@ Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plug
 Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 
 Health checks: reported by `hz system doctor`.
+
+## `ai.dummy`
+
+A local test model that always answers 42.
 
 ## `document`
 

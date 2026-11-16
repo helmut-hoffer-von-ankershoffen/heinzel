@@ -532,22 +532,26 @@ def test_an_outside_agent_over_stdio_is_local_and_its_commit_waits_for_the_card(
     assert stdio(kernel, [("ui_browser_type", {"tab": tab, "text": "x", "ref": "ref_3"})])[0][0]
 
 
+async def http_call(app, token: str, tool: str, arguments: dict) -> tuple[bool, str]:
+    async with (
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url=BASE, headers={"Authorization": f"Bearer {token}"}
+        ) as client,
+        streamable_http_client(f"{BASE}/mcp", http_client=client) as (read, write, *_),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool(tool, arguments)
+        return result.is_error, " ".join(getattr(part, "text", "") for part in result.content)
+
+
 def http(kernel, tokens, token: str, tool: str, arguments: dict) -> tuple[bool, str]:
     server, security = mcp.http_server(kernel, "127.0.0.1", tokens=tokens)
     app = server.streamable_http_app(transport_security=security)
 
     async def run() -> tuple[bool, str]:
         async with app.router.lifespan_context(app):
-            client = httpx2.AsyncClient(
-                transport=httpx2.ASGITransport(app=app), base_url=BASE, headers={"Authorization": f"Bearer {token}"}
-            )
-            async with (
-                streamable_http_client(f"{BASE}/mcp", http_client=client) as (read, write, *_),
-                ClientSession(read, write) as session,
-            ):
-                await session.initialize()
-                result = await session.call_tool(tool, arguments)
-                return result.is_error, " ".join(getattr(part, "text", "") for part in result.content)
+            return await http_call(app, token, tool, arguments)
 
     return anyio.run(run)
 
@@ -556,22 +560,30 @@ def test_over_http_the_actor_is_the_token_s_and_inputs_need_the_write_scope(kern
     tokens = McpTokens(tmp_path / "mcp")
     _, reader = tokens.create("reader", "read", timedelta(hours=1))
     _, writer = tokens.create("writer", "write", timedelta(hours=1))
-    error, text = http(kernel, tokens, reader, "ui_browser_open", {})
-    assert error
-    assert "may only read" in text
-    error, text = http(kernel, tokens, reader, "ui_browser_tabs", {})
-    assert not error
-    assert desktop.commands[-1].actor == "token:reader"
-    error, text = http(kernel, tokens, writer, "ui_browser_open", {"url": "https://shop.example.org/"})
-    assert not error
-    tab = json.loads(text)["id"]
-    assert (desktop.commands[-1].actor, desktop.commands[-1].kind) == ("token:writer", "external")
-    for name in ("click", "type", "key"):
-        arguments = {"click": {"ref": "ref_1"}, "type": {"text": "a"}, "key": {"keys": "Tab"}}[name]
-        assert http(kernel, tokens, reader, f"ui_browser_{name}", {"tab": tab, **arguments})[0]
-    assert desktop.acted() == []
-    assert http(kernel, tokens, reader, "ui_browser_read", {"tab": tab})[0]  # the writer's tab is not the reader's
-    assert not http(kernel, tokens, writer, "ui_browser_click", {"tab": tab, "ref": "ref_1"})[0]
+    server, security = mcp.http_server(kernel, "127.0.0.1", tokens=tokens)
+    app = server.streamable_http_app(transport_security=security)
+
+    async def run():
+        # Each call retains its own HTTP client, bearer token and MCP session; only the app lifespan is shared.
+        async with app.router.lifespan_context(app):
+            error, text = await http_call(app, reader, "ui_browser_open", {})
+            assert error
+            assert "may only read" in text
+            error, text = await http_call(app, reader, "ui_browser_tabs", {})
+            assert not error
+            assert desktop.commands[-1].actor == "token:reader"
+            error, text = await http_call(app, writer, "ui_browser_open", {"url": "https://shop.example.org/"})
+            assert not error
+            tab = json.loads(text)["id"]
+            assert (desktop.commands[-1].actor, desktop.commands[-1].kind) == ("token:writer", "external")
+            for name in ("click", "type", "key"):
+                arguments = {"click": {"ref": "ref_1"}, "type": {"text": "a"}, "key": {"keys": "Tab"}}[name]
+                assert (await http_call(app, reader, f"ui_browser_{name}", {"tab": tab, **arguments}))[0]
+            assert desktop.acted() == []
+            assert (await http_call(app, reader, "ui_browser_read", {"tab": tab}))[0]
+            assert not (await http_call(app, writer, "ui_browser_click", {"tab": tab, "ref": "ref_1"}))[0]
+
+    anyio.run(run)
 
 
 # Screenshots

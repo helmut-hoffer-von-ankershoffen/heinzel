@@ -621,7 +621,86 @@ def test_installed_example_must_be_at_the_bound_version(listed, passes, monkeypa
 
 
 VERSION = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
-VERSION_TABLES = {"FOREGROUND_UI", "UPGRADES_PLUGINS_ON_ADD"}  # Core versions, each keyed by what that Core does
+
+
+@pytest.mark.parametrize(
+    ("target", "versions", "python", "error"),
+    [
+        (("published", "0.9.49"), ("0.9.8", "0.9.8", "0.9.43"), "python3.12", None),
+        (("published", "0.9.49"), ("0.9.43", "0.9.43", "0.9.49"), "python3.12", None),
+        (("candidate", "0.9.49"), ("0.9.8", "0.9.8", "0.9.43"), "python3.12", "installed"),
+        (("published", "0.9.49"), ("0.9.9", "0.9.9", "0.9.43"), "python3.12", "installed"),
+        (("published", "0.9.49"), ("0.9.8", "0.9.8", "0.9.42"), "python3.12", "installed"),
+        (("published", "0.9.49"), ("0.9.8", "0.9.8", "0.9.43"), "python3.15", "installed"),
+        (("published", "0.9.42"), ("0.9.8", "0.9.8", "0.9.43"), "python3.12", "installed"),
+        (("published", "0.9.49"), ("0.9.8", "0.9.9", "0.9.43"), "python3.12", "started"),
+        (("published", "0.9.49"), ("0.9.43", "0.9.43", "0.9.43"), "python3.12", "installed"),
+        (("published", "0.9.49"), (None, "0.9.8", "0.9.43"), "python3.12", "installed"),
+    ],
+)
+def test_update_allows_only_the_published_legacy_bridge(target, versions, python, error):
+    mode, target_version = target
+    previous, before, after = versions
+
+    def cli(args, _label, _timeout):
+        assert args == ["bin/hz", "system", "update", "--json"] + (
+            ["--source", "candidate.whl"] if mode == "candidate" else []
+        )
+        return 0, json.dumps({"before": before, "after": after, "updated": True}), ""
+
+    case = SimpleNamespace(
+        ctx={"update_target": {"mode": mode, "version": target_version, "wheel": "candidate.whl"}},
+        notes={"python_before": f"/managed/bin/{python}"},
+        bin=Path("bin"),
+        run=cli,
+    )
+    if error:
+        with pytest.raises(harness.StepFailed, match=error):
+            harness.run_update(case, "update", previous=previous)
+    else:
+        assert harness.run_update(case, "update", previous=previous)["after"] == after
+
+
+def test_legacy_bridge_rejects_wrong_wheel_before_creating_proof(tmp_path, monkeypatch):
+    monkeypatch.setattr(harness, "fetch", lambda _url: b"wrong wheel")
+    with pytest.raises(harness.StepFailed, match="bridge wheel fails its digest"):
+        harness.verify_legacy_bridge(SimpleNamespace(root=tmp_path), {})
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("actual", "version", "error"),
+    [
+        ("python3.15", "3.15", None),
+        ("python3.14", "3.14", "must migrate to managed Python 3.15"),
+        ("python3.12", "3.12", "did not migrate"),
+        ("outside", "3.15", "Not the case's managed Python"),
+    ],
+)
+def test_legacy_migration_requires_a_different_private_python315(tmp_path, actual, version, error):
+    managed = tmp_path / "uv-python"
+    managed.mkdir()
+    previous = managed / "python3.12"
+    previous.touch()
+    interpreter = tmp_path / "outside" if actual == "outside" else managed / actual
+    interpreter.touch()
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/python").symlink_to(interpreter)
+    case = SimpleNamespace(
+        prefix=prefix,
+        root=tmp_path,
+        notes={"python_before": str(previous.resolve())},
+        run=lambda *_args: (0, version, ""),
+    )
+    if error:
+        with pytest.raises(harness.StepFailed, match=error):
+            harness.verify_update_interpreter(case, migrated=True)
+    else:
+        assert harness.verify_update_interpreter(case, migrated=True) == str(interpreter.resolve())
+
+
+VERSION_TABLES = {"FOREGROUND_UI", "UPGRADES_PLUGINS_ON_ADD", "LEGACY_BRIDGE_START", "LEGACY_BRIDGE_VERSION"}
 ALLOWED_VERSIONS = {"0.9.2", "heinzel-clock==0.9.2", "0.9.8"}  # the deliberate older clock pin; the default old app
 
 

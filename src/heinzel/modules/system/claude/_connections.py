@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from heinzel import Check, HeinzelError, Status
-from heinzel.kernel import FoundMcpServers, FoundMcpTool, clean_text
+from heinzel.kernel import FoundMcpDiagnostic, FoundMcpServers, FoundMcpTool, clean_text
 from heinzel.kernel._logging import log_event, step
 from heinzel.modules.system.claude._client import Client, HttpClient, StdioClient, call_tool, list_tools
 from heinzel.modules.system.claude._launch import Launch, NotUsableError, launch
@@ -36,6 +36,8 @@ logger = logging.getLogger("heinzel.claude")
 
 IDLE = 600.0
 """Seconds without a call after which a server is stopped."""
+RETRY = 30.0
+"""Seconds between automatic retries of a failed tool listing; explicit start retries immediately."""
 NAME_LIMIT = 128
 DESCRIPTION_LIMIT = 1024
 SCHEMA_LIMIT = 64 * 1024
@@ -92,6 +94,7 @@ class FoundConnections(FoundMcpServers):
         self._lock = threading.Lock()
         self._connections: dict[str, _Connection] = {}
         self._problems: dict[str, str] = {}
+        self._listing_failures: dict[str, tuple[str, float, str]] = {}
         self._wake = threading.Event()
         self._reaper: threading.Thread | None = None
         self._registered = False
@@ -103,8 +106,8 @@ class FoundConnections(FoundMcpServers):
 
     # --- what is switched on
 
-    def _servers(self, want: str | None = None) -> tuple[list[FoundServer], Scanner]:
-        """The switched-on servers that are not hz itself; with `want`, that one's raw entry is captured."""
+    def _servers(self, want: frozenset[str] = frozenset()) -> tuple[list[FoundServer], Scanner]:
+        """The switched-on servers that are not hz itself, with only requested raw entries captured."""
         scanner = Scanner(self._home, want=want)
         scanner.scan()
         state = self._store.read() if self._store is not None else None
@@ -120,9 +123,9 @@ class FoundConnections(FoundMcpServers):
         names: dict[str, str] = {}
         for server in servers:
             space = namespace(server.name)
-            if not space or space.lower() in OWN or counts[space.lower()] > 1:
+            if not space or len(space) > NAME_LIMIT - 8 or space.lower() in OWN or counts[space.lower()] > 1:
                 self._problems[server.id] = (
-                    f"{server.name} is not offered: its name is another server's, or hz's own, in tool names"
+                    f"{server.name} is not offered: its name is too long, another server's, or hz's own in tool names"
                 )
                 continue
             names[server.id] = space
@@ -132,6 +135,52 @@ class FoundConnections(FoundMcpServers):
 
     def tools(self) -> list[FoundMcpTool]:
         """The tools of every usable switched-on server; a server whose tools aren't known yet is started now."""
+        return self._tools_for(None)
+
+    def names(self) -> list[str]:
+        """List enabled, unambiguous namespaces without starting a server."""
+        servers, _ = self._servers()
+        return sorted(self._namespaces(servers).values())
+
+    def diagnostics(self) -> list[FoundMcpDiagnostic]:
+        """Inspect enabled server and cached-listing state without opening connections."""
+        with self._lock:
+            connections = dict(self._connections)
+        servers, scanner = self._servers(want=frozenset(connections))
+        spaces = self._namespaces(servers)
+        rows: list[FoundMcpDiagnostic] = []
+        for server in servers:
+            space = spaces.get(server.id)
+            if space is None:
+                continue
+            connection = connections.get(server.id)
+            captured = scanner.captured.get(server.id)
+            try:
+                matches = (
+                    connection is not None
+                    and captured is not None
+                    and connection.digest == launch(self._home, server, captured, self._environ).digest
+                )
+            except HeinzelError:
+                matches = False
+            listing = connection.listing if matches and connection is not None else None
+            rows.append(
+                FoundMcpDiagnostic(
+                    namespace=space,
+                    scope=server.scope,
+                    running=bool(connection is not None and connection.client and connection.client.alive()),
+                    known_tool_count=len(listing) if listing is not None else None,
+                    enabled=True,
+                    available=(server.id not in self._problems) if matches else None,
+                )
+            )
+        return rows
+
+    def tools_for(self, namespace: str) -> list[FoundMcpTool]:
+        """List one enabled server's tools without opening other servers."""
+        return self._tools_for(namespace)
+
+    def _tools_for(self, namespace: str | None) -> list[FoundMcpTool]:
         self.reap()
         servers, _ = self._servers()
         on = {server.id for server in servers}
@@ -143,7 +192,7 @@ class FoundConnections(FoundMcpServers):
         found: list[FoundMcpTool] = []
         for server in servers:
             space = spaces.get(server.id)
-            if space is None:
+            if space is None or (namespace is not None and space != namespace):
                 continue
             try:
                 listing = self._listing(server)
@@ -193,6 +242,7 @@ class FoundConnections(FoundMcpServers):
         """Stop the server `server` if hz runs it; whether it ran."""
         with self._lock:
             connection = self._connections.pop(server, None)
+            self._listing_failures.pop(server, None)
         if connection is None:
             return False
         running = connection.client is not None
@@ -212,6 +262,7 @@ class FoundConnections(FoundMcpServers):
         """Stop every server hz runs; the reaper ends too."""
         with self._lock:
             connections, self._connections = self._connections, {}
+            self._listing_failures.clear()
         for server, connection in connections.items():
             self._drop(server, connection)
         self._wake.set()
@@ -281,16 +332,28 @@ class FoundConnections(FoundMcpServers):
         spec = self._launch(server)
         with self._lock:
             connection = self._connections.get(server.id)
+            failure = self._listing_failures.get(server.id)
         if connection is not None and connection.digest == spec.digest and connection.listing is not None:
             return connection.listing
-        return self._connect(server, spec).listing or []
+        if failure is not None and failure[0] == spec.digest and self._clock() < failure[1]:
+            raise HeinzelError(failure[2])
+        try:
+            listing = self._connect(server, spec).listing or []
+        except HeinzelError as exc:
+            with self._lock:
+                self._listing_failures[server.id] = (spec.digest, self._clock() + RETRY, str(exc))
+            raise
+        with self._lock:
+            self._listing_failures.pop(server.id, None)
+        return listing
 
     def _launch(self, server: FoundServer) -> Launch:
-        _, scanner = self._servers(want=server.id)
-        if scanner.captured is None:
+        _, scanner = self._servers(want=frozenset({server.id}))
+        captured = scanner.captured.get(server.id)
+        if captured is None:
             msg = "That MCP server is no longer found"
             raise NotUsableError(msg)
-        return launch(self._home, server, scanner.captured, self._environ)
+        return launch(self._home, server, captured, self._environ)
 
     def _connect(self, server: FoundServer, spec: Launch | None = None) -> _Connection:
         """The running connection to `server`, started now if needed: one per server, also across threads.
