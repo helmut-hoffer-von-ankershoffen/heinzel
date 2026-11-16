@@ -519,6 +519,7 @@ const en = {
     "The decision outcome needs inspection; it will not be retried. Select Check decision outcome to look again.",
   "top.refresh": "Refresh",
   "top.more": "More workspace actions",
+  "top.screenActions": "Screen actions",
   "top.refreshing": "Getting the latest data…",
   "command.copied": "Copied",
   "app.skip": "Skip to content",

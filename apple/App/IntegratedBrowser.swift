@@ -87,6 +87,18 @@ private final class GuestBlank: NSObject, WKNavigationDelegate {
         pending.resume(returning: result)
     }
 
+    func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+        guard pending != nil, action.targetFrame?.isMainFrame == true,
+              action.request.url?.absoluteString == "about:blank" else { return .cancel }
+        return .allow
+    }
+
+    func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        guard pending != nil, response.isForMainFrame,
+              response.response.url?.absoluteString == "about:blank" else { return .cancel }
+        return .allow
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if navigation === self.navigation { finish(true) }
     }

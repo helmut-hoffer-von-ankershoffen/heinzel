@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -1159,6 +1159,28 @@ def test_manual_tick_cannot_attest_the_daemon_and_restart_stays_unknown_until_a_
         service.status().installed_version,
         service.status().version_mismatch,
     ) == (__version__, __version__, False)
+
+
+def test_status_keeps_heartbeat_version_and_time_in_one_snapshot(make, monkeypatch):
+    service = make()
+    service.install(timedelta(minutes=5))
+    read = service._read_state
+    first = {"version": "0.9.43", "last_tick": "2026-11-16T12:00:00+00:00", "interval_minutes": 20}
+    second = {"version": "0.9.49", "last_tick": "2026-11-16T12:05:00+00:00", "interval_minutes": 1}
+    heartbeat_reads = []
+
+    def changing(name):
+        if name != "heartbeat.json":
+            return read(name)
+        heartbeat_reads.append(name)
+        return first if len(heartbeat_reads) == 1 else second
+
+    monkeypatch.setattr(service, "_read_state", changing)
+    status = service.status()
+    assert status.version == "0.9.43"
+    assert status.last_tick == datetime(2026, 11, 16, 12, tzinfo=UTC)
+    assert status.last_tick_interval_minutes == 20
+    assert heartbeat_reads == ["heartbeat.json"]
 
 
 def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(make, tmp_path, monkeypatch):
