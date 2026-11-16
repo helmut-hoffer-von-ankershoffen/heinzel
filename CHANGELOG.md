@@ -21,17 +21,23 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **ci:** Split browser journeys into three lanes ([6431bd9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6431bd9652ac97d31ade858b015039ae423a47c7))
 - **ci:** Balance mobile viewport cases ([e7f598f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e7f598f7f8f997e44f64ee4e3d5a6d748ce0c531))
 - **kernel:** Identify receipt constraint refusal stages ([1479652](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/14796526994926b002f4a271b75c8014db931e11))
+- **template:** Preserve reviewed uv resolver in nested tests ([4779e40](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/4779e40bec0d1e99745dea7980740f1771143752))
+- **ci:** Allow integration sessions to finish ([8a63b79](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8a63b798c779e62c5629b347f8dcb63a475d84be))
 
 ### 📚 Documentation
 
 - **release:** Include the final repair notes ([1f5cd3d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1f5cd3d211471385288d36f04d2cd57bb96ed105))
 - **release:** Record the profile readiness repair ([dcc156d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dcc156d03e60c8757bfa57e9ae8423acb5560319))
+- **release:** Record final validation repairs ([ae5d31b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ae5d31bf1bd0e3ac37385899d99e2036ebfb6fce))
 
 ### 🧪 Testing
 
 - **ci:** Reduce macOS fixture startup overhead ([#846](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/846)) ([6195675](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/61956756b5dfa8a29995f8af4443034abf2f6a0c))
 - **web:** Read connector switches from one DOM snapshot ([#848](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/848)) ([1010e1f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1010e1f64f1466b7f238dd552768c90911d722b0))
 - **web:** Wait for profile setup before changing chat colors ([34529ed](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/34529edd14478196a93ec36c30f9632ec0dd629c))
+- **ci:** Update browser job inventory count ([53320b9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/53320b9da1b5bf33e96f07fdf430430f32f17412))
+- **web:** Capture both owned Python startup phases ([3e4499f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/3e4499f28df319d2ce8daba1077605a1eb811002))
+- **workflow:** Bind installed draft ticks to a common clock ([24eb980](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/24eb980bcf2b4677db668961ae3be6f362d92df6))
 
 ### 🏗️ Build and CI
 
