@@ -201,6 +201,9 @@ import Foundation
 private final class AudioSamples: NSObject, SCStreamOutput, @unchecked Sendable {
     private let lock = NSLock()
     private var bytes = Data()
+    private var received = false
+
+    var hasReceivedSamples: Bool { lock.withLock { received } }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, let format = sample.formatDescription,
@@ -222,6 +225,7 @@ private final class AudioSamples: NSObject, SCStreamOutput, @unchecked Sendable 
         }
         guard result == noErr else { return }
         lock.withLock {
+            received = true
             bytes.append(packet)
             if bytes.count > 48_000 { bytes.removeFirst(bytes.count - 48_000) }
         }
@@ -270,6 +274,7 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
     }
 
     func read() -> String? { output?.drain() }
+    var hasReceivedSamples: Bool { output?.hasReceivedSamples == true }
 
     func stop() {
         revision += 1

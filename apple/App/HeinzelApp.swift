@@ -2604,11 +2604,22 @@ private struct ConnectionHelp: View {
                 results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
             }
             #else
+            if started {
+                for _ in 0..<20 {
+                    if capture.read() == nil || capture.hasReceivedSamples || Task.isCancelled { break }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            let received = capture.hasReceivedSamples
             capture.stop()
             guard !Task.isCancelled else { return }
-            results[.systemAudio] = started
-                ? Result(.passed, "Sharing started and stopped")
-                : Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            if !started {
+                results[.systemAudio] = Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            } else if received {
+                results[.systemAudio] = Result(.passed, "Audio samples received")
+            } else {
+                results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
+            }
             #endif
         }
         #endif
