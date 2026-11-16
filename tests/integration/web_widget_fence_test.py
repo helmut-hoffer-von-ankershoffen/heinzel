@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from heinzel import HeinzelError
 from heinzel.heads import web
 from heinzel.heads.web._devices import Devices, digest
-from heinzel.heads.web._widget_fence import Request
+from heinzel.heads.web._widget_fence import FenceConflictError, Request
 
 pytestmark = pytest.mark.integration
 SESSION = "fixture-session-token"
@@ -97,6 +97,26 @@ def test_competing_mutations_have_one_winner_and_corrupt_fence_fails_closed(tmp_
     with pytest.raises(HeinzelError):
         devices.widget_fence_negotiate(device.id, paired_token, "owner")
     assert devices.widget_issue(device.id, "owner") is None
+
+
+@pytest.mark.parametrize("winner", ["issue", "revoke"])
+def test_recovery_revoke_fences_delayed_issue_and_replays_exactly(tmp_path, winner):
+    devices = Devices(tmp_path / "devices")
+    device, token = devices.pair("phone")
+    fence = devices.widget_fence_negotiate(device.id, token, "owner")
+    assert fence is not None
+    issue = Request(fence.epoch, fence.revision, "a" * 32, "issue", "b" * 64)
+    revoke = Request(fence.epoch, fence.revision, "c" * 32, "revoke", None)
+    first, delayed = (issue, revoke) if winner == "issue" else (revoke, issue)
+    result = devices.widget_fence_mutate(device.id, token, "owner", first)
+    assert result is not None
+    with pytest.raises(FenceConflictError):
+        devices.widget_fence_mutate(device.id, token, "owner", delayed)
+    restarted = Devices(devices.directory)
+    assert restarted.widget_fence_mutate(device.id, token, "owner", first) == result
+    status = restarted.widget_fence_negotiate(device.id, token, "owner")
+    assert status is not None
+    assert status.revision != fence.revision
 
 
 def test_lost_reply_and_failed_write_preserve_fenced_outcome(tmp_path, monkeypatch):
