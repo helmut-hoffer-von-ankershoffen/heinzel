@@ -3,7 +3,7 @@
 import json
 import subprocess
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
@@ -12,6 +12,7 @@ from heinzel import CurrentUser
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
@@ -50,7 +51,7 @@ def test_native_prompt_dispatch_and_lost_answer_recovery(make_kernel, tmp_path):
         def log_message(self, *_args):
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     script = """
