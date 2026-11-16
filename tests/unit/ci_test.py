@@ -43,7 +43,7 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
     assert second.isdisjoint(third)
     assert first | second | third == browser
     assert first == {"tests/e2e/web_ui_test.py"}
-    assert third == {"tests/e2e/scheduled_connected_test.py", "tests/e2e/generic_agent_chat_test.py"}
+    assert third == {"tests/e2e/scheduled_connected_test.py"}
     assert second == browser - first - third
 
 

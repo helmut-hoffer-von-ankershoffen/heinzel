@@ -88,7 +88,7 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
     (
         "e2e script",
         ["web/e2e/mobile-responsive.mjs"],
-        {"full": False, "e2e_lanes": ["web-1"], "jobs_not": ["test-linux"]},
+        {"full": False, "e2e_lanes": ["web-1", "web-3"], "jobs_not": ["test-linux"]},
     ),
     ("e2e python test", ["tests/e2e/audio_visualizer_test.py"], {"full": False, "e2e_lanes": ["web-2"]}),
     ("rebalanced e2e", ["tests/e2e/scheduled_connected_test.py"], {"full": False, "e2e_lanes": ["web-3"]}),

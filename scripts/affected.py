@@ -343,6 +343,8 @@ def _select_python_tests(repo: Repo, sel: Selection, py_tests: list[str], py_sup
             sel.pytest.add(test)
         elif lane := repo.lane_of(test):
             sel.lanes.add(lane)
+            if test == "tests/e2e/web_ui_test.py":
+                sel.lanes.add("web-3")
         else:
             sel.lanes.update(ALL_LANES)
             sel.reasons.append(f"{test}: not in a known E2E lane, all lanes")
@@ -387,6 +389,8 @@ def _select_web_e2e(repo: Repo, sel: Selection, web_e2e: list[str]) -> None:
         owners = repo.script_owners.get(path, [])
         if owners:
             sel.lanes.update(repo.lane_of(owner) or "web-2" for owner in owners)
+            if "tests/e2e/web_ui_test.py" in owners:
+                sel.lanes.add("web-3")
         elif path.endswith(".test.mjs"):
             sel.vitest = None if sel.vitest is None else sel.vitest | {path}
         else:
