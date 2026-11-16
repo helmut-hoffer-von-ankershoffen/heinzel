@@ -22,6 +22,11 @@ and hosted_only selectors. The latter must be precisely the prohibited desktop f
 proof. The caller obtains independent scope review before supplying the digest; the digest binds bytes, not reviewer
 identity. --show-python-push-plan validates that same packet and prints the unchanged guards and resulting Make argv.
 No packet means the existing import-graph selection. This input never authorizes a hosted or coverage acceptance.
+
+For mixed Python/web/Apple changes, HZ_LOCAL_MIXED_SCOPE and HZ_LOCAL_MIXED_SCOPE_SHA256 bind a schema=2 packet.
+It retains schema=1 identity and Python fields, adding web, integration and pending lists. The closed inventory in
+mixed_scope.py requires the owning local recipes and every outstanding native/hosted obligation. --show-mixed-push-plan
+prints the same commands the hook executes. Success means local checks only, never completion of pending obligations.
 """
 
 import argparse
@@ -245,6 +250,7 @@ def python_overrides(changed: list[str], selected: list[str] | None = None) -> l
 
 
 LOCAL_SCOPE_MAX = 32 * 1024
+MIXED_SCOPE_SCHEMA = 2
 LOCAL_SCOPE_SELECTORS = 64
 LOCAL_SELECTOR = re.compile(r"tests/unit/[A-Za-z0-9_/-]+_test\.py(?:::[A-Za-z0-9_]+(?:\[[A-Za-z0-9_.,=+-]+\])?)*")
 HOSTED_ONLY_TESTS = frozenset({"tests/unit/heads/desktop_installation_test.py"})
@@ -283,7 +289,7 @@ def local_python_scope(changed: list[str], base: str) -> tuple[list[str], list[s
     return _local_scope_selection(packet, changed)
 
 
-def _local_scope_packet(name: str, digest: str, base: str) -> dict:
+def _local_scope_packet(name: str, digest: str, base: str, *, schema: int = 1) -> dict:
     """Read bounded reviewed bytes and require the exact unchanged checkout.
 
     Raises:
@@ -295,12 +301,15 @@ def _local_scope_packet(name: str, digest: str, base: str) -> dict:
         msg = "local scope size or reviewed digest mismatch"
         raise ValueError(msg)
     packet = json.loads(data, object_pairs_hook=_scope_object)
-    if not isinstance(packet, dict) or set(packet) != {"schema", "base", "head", "tree", "owning", "hosted_only"}:
+    fields = {"schema", "base", "head", "tree", "owning", "hosted_only"}
+    if schema == MIXED_SCOPE_SCHEMA:
+        fields.update({"web", "integration", "pending"})
+    if not isinstance(packet, dict) or set(packet) != fields:
         msg = "invalid local scope fields"
         raise ValueError(msg)
     if (
         type(packet["schema"]) is not int
-        or packet["schema"] != 1
+        or packet["schema"] != schema
         or packet["base"] != base
         or packet["head"] != resolve_base("HEAD")
         or packet["tree"] != resolve_tree()
@@ -312,6 +321,83 @@ def _local_scope_packet(name: str, digest: str, base: str) -> dict:
         msg = "local scope requires unchanged tracked source"
         raise ValueError(msg)
     return packet
+
+
+def mixed_push_plan(changed: list[str], base: str) -> dict | None:
+    """Validate an explicit mixed scope before any guard, preparation or check runs.
+
+    Raises:
+        ValueError: The packet is ambiguous, stale, dirty or lacks an owning recipe.
+    """
+    name, digest = os.environ.get("HZ_LOCAL_MIXED_SCOPE"), os.environ.get("HZ_LOCAL_MIXED_SCOPE_SHA256")
+    if name is None and digest is None:
+        return None
+    if any(key in os.environ for key in ("HZ_LOCAL_TEST_SCOPE", "HZ_LOCAL_TEST_SCOPE_SHA256")):
+        msg = "mixed scope cannot be combined with a schema-1 scope"
+        raise ValueError(msg)
+    if not name or not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        msg = "mixed scope requires both a packet path and its reviewed SHA256"
+        raise ValueError(msg)
+    packet = _local_scope_packet(name, digest, base, schema=MIXED_SCOPE_SCHEMA)
+    if changed_paths("fast", base):
+        msg = "mixed scope requires no uncommitted or untracked source"
+        raise ValueError(msg)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from mixed_scope import APPLE_SOURCES, NATIVE_FIXTURES, validate  # noqa: PLC0415 - opt-in local policy
+
+    python = validate(packet, changed, ROOT)
+    selected, hosted = _local_scope_selection(packet, python)
+    overrides = python_overrides(python, selected)
+    overrides[0] = f'WEB_TESTS="{web_test_step(" ".join(packet["web"]))}"'
+    checks = [["make", "check-fast", *overrides]]
+    recipe = [sys.executable, "scripts/mixed_scope.py"]
+    if packet["integration"]:
+        checks.append([*recipe, "integration", *sorted(packet["integration"])])
+    if set(changed) & (APPLE_SOURCES | NATIVE_FIXTURES):
+        checks.append([*recipe, "ios"])
+    return {
+        "identity": {key: packet[key] for key in ("base", "head", "tree")},
+        "scope_sha256": digest,
+        "early_guards": early_guard_commands(changed),
+        "checks": checks,
+        "pending": sorted([*packet["pending"], *hosted]),
+        "acceptance": "local checks only; pending obligations require separate exact-head proof",
+    }
+
+
+def configured_mixed_plan(parser: argparse.ArgumentParser, changed: list[str], base: str, *, show: bool) -> bool:
+    """Execute precisely the previewed local plan, keeping remaining proof visibly pending."""
+    try:
+        plan = mixed_push_plan(changed, base)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    if show and plan is None:
+        parser.error("--show-mixed-push-plan requires an explicit reviewed mixed scope")
+    if plan is None:
+        return False
+    print(json.dumps(plan, sort_keys=True), flush=True)
+    if show:
+        return True
+    for command in plan["early_guards"]:
+        unchanged_mixed_plan(parser, plan, changed, base)
+        run_check(command, timeout=180)
+    for command in plan["checks"]:
+        unchanged_mixed_plan(parser, plan, changed, base)
+        run_check(command, timeout=1800)
+    # A hook can take minutes: do not report proof for a checkout or packet changed during its checks.
+    unchanged_mixed_plan(parser, plan, changed, base)
+    print("Local mixed checks passed. PENDING: " + ", ".join(plan["pending"]), flush=True)
+    return True
+
+
+def unchanged_mixed_plan(parser: argparse.ArgumentParser, plan: dict, changed: list[str], base: str) -> None:
+    """Fence every dispatch and the final result to the initially reviewed source and bytes."""
+    try:
+        current = mixed_push_plan(changed, base)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    if current != plan:
+        parser.error("mixed scope changed during local checks")
 
 
 def _local_scope_selection(packet: dict, changed: list[str]) -> tuple[list[str], list[str]]:
@@ -390,6 +476,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
             "tests/_e2e_schedule.py",
             "tests/conftest.py",
             "scripts/scoped_checks.py",
+            "scripts/mixed_scope.py",
         }
         or path.startswith((".github/workflows/", ".github/actions/", "tests/e2e/"))
         or path
@@ -511,8 +598,8 @@ def configured_python_selection(
     return local_scope[0] if local_scope else None
 
 
-def main() -> None:
-    """Preserve core checks and common policies while selecting independent owning plugin work."""
+def arguments() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
+    """Parse mutually exclusive previews before any scope can execute checks."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=MODES)
     parser.add_argument("--base", default="origin/main")
@@ -521,9 +608,22 @@ def main() -> None:
         action="store_true",
         help="validate explicit local scope and print the normal commands without running them",
     )
+    parser.add_argument("--show-mixed-push-plan", action="store_true", help="preview a reviewed mixed local plan")
     args = parser.parse_args()
     if args.show_python_push_plan and args.mode != "push":
         parser.error("--show-python-push-plan requires push")
+    if args.show_mixed_push_plan and (args.mode != "push" or args.show_python_push_plan):
+        parser.error("--show-mixed-push-plan requires push and cannot be combined with the Python preview")
+    if args.show_python_push_plan and any(
+        key in os.environ for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256")
+    ):
+        parser.error("use --show-mixed-push-plan for a mixed scope")
+    return parser, args
+
+
+def main() -> None:
+    """Preserve core checks and common policies while selecting independent owning plugin work."""
+    parser, args = arguments()
     early = args.mode.startswith("early-")
     if early:
         args.mode = args.mode.removeprefix("early-")
@@ -539,6 +639,8 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
+        if configured_mixed_plan(parser, changed, base, show=args.show_mixed_push_plan):
+            return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
