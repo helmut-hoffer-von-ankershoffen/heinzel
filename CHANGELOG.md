@@ -29,6 +29,7 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **release:** Include the final repair notes ([1f5cd3d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1f5cd3d211471385288d36f04d2cd57bb96ed105))
 - **release:** Record the profile readiness repair ([dcc156d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dcc156d03e60c8757bfa57e9ae8423acb5560319))
 - **release:** Record final validation repairs ([ae5d31b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ae5d31bf1bd0e3ac37385899d99e2036ebfb6fce))
+- **release:** Include final fixture repairs ([d48b5c9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d48b5c9efbcfed6e59e0dcf982cc231970368bbe))
 
 ### 🧪 Testing
 
@@ -38,6 +39,7 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **ci:** Update browser job inventory count ([53320b9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/53320b9da1b5bf33e96f07fdf430430f32f17412))
 - **web:** Capture both owned Python startup phases ([3e4499f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/3e4499f28df319d2ce8daba1077605a1eb811002))
 - **workflow:** Bind installed draft ticks to a common clock ([24eb980](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/24eb980bcf2b4677db668961ae3be6f362d92df6))
+- **ci:** Isolate release policy glob imports ([fb7183a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fb7183a87fa23bbebd6cb7efd6d042c1048f4fc3))
 
 ### 🏗️ Build and CI
 
