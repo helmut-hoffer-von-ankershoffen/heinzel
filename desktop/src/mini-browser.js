@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
 import { builtInBrowserLink, classifyUiLink, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
-import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
+import { browserBounds, browserOwner, browserUrl, hasExactKeys, nativeSurfaceDiagnostics } from "./mini-browser-policy.js";
 
 /** The one persistent partition for websites: never the product's session, so no hz cookie or token is in it. */
 export const BROWSER_PARTITION = "persist:hz-browser";
@@ -713,11 +713,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       let surface = surfaces.get(window);
       if (action === "diagnostics") {
         const selected = surface?.tabs.get(surface.selected);
-        const focused = window.isFocused();
-        const visible = selected && !selected.view.webContents.isDestroyed() ? selected.view.getVisible() : null;
-        const reason = !selected ? "no guest" : !focused ? "unfocused" : selected.status === "unavailable" ? "unavailable"
-          : selected.blank ? "blank" : !surface.shown ? "hidden by frontend" : visible ? "draw-enabled" : "unknown";
-        return { focused, visible, status: selected?.status ?? "empty", reason };
+        return nativeSurfaceDiagnostics(window, selected, { browser: true, shown: surface?.shown });
       }
       if (action === "link-dismiss") { if (surface) surface.link = null; return state(window); }
       if (action === "link-external") {

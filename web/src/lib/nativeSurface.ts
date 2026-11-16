@@ -63,7 +63,10 @@ export function useNativeSurface(
     const update = () => {
       const element = surface.current;
       if (!active || !element || element.closest("[hidden], [inert]") || document.hidden) {
-        hide(!active ? "inactive" : document.hidden ? "background" : "hidden");
+        let reason = "hidden";
+        if (!active) reason = "inactive";
+        else if (document.hidden) reason = "background";
+        hide(reason);
         return;
       }
       const box = element.getBoundingClientRect();

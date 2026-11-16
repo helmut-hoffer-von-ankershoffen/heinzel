@@ -51,6 +51,34 @@ function stepReloadChecks() {
   return (ms: number) => act(() => vi.advanceTimersByTime(ms));
 }
 
+function oldFrontendFixture() {
+  sessionStorage.removeItem("hz.frontend.skew-reload");
+  const script = document.createElement("script");
+  script.type = "module";
+  script.src = "/assets/old.js";
+  document.body.append(script);
+  return {
+    build: {
+      version: "1.1.0",
+      identity: "a".repeat(64),
+      entrypoints: ["/assets/new.js"],
+      files: { "/assets/new.js": "b".repeat(64) },
+    },
+    close: () => {
+      script.remove();
+      sessionStorage.removeItem("hz.frontend.skew-reload");
+    },
+  };
+}
+
+function readyFrontend(build: ReturnType<typeof oldFrontendFixture>["build"]) {
+  vi.spyOn(updateTransport, "frontend").mockResolvedValue(build);
+  const assets = vi.spyOn(updateTransport, "assets").mockResolvedValue(undefined);
+  const clean = vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
+  const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+  return { assets, clean, reload };
+}
+
 describe("automatic updates", () => {
   it("shows the server's countdown with what will be installed and one Postpone button", async () => {
     // A frozen clock: the countdown ticks from Date.now, so a slow render must not turn 30 s into 29 s.
@@ -96,21 +124,9 @@ describe("automatic updates", () => {
   });
 
   it("detects old renderer assets even when the first backend status is already new, and waits for open work", async () => {
-    sessionStorage.removeItem("hz.frontend.skew-reload");
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "/assets/old.js";
-    document.body.append(script);
-    const build = {
-      version: "1.1.0",
-      identity: "a".repeat(64),
-      entrypoints: ["/assets/new.js"],
-      files: { "/assets/new.js": "b".repeat(64) },
-    };
-    vi.spyOn(updateTransport, "frontend").mockResolvedValue(build);
-    const assets = vi.spyOn(updateTransport, "assets").mockResolvedValue(undefined);
-    vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
-    const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+    const fixture = oldFrontendFixture();
+    const { build } = fixture;
+    const { assets, reload } = readyFrontend(build);
     let holding = true;
     const release = registerReloadHold(() => holding);
     try {
@@ -123,36 +139,21 @@ describe("automatic updates", () => {
       await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
     } finally {
       release();
-      script.remove();
-      sessionStorage.removeItem("hz.frontend.skew-reload");
+      fixture.close();
     }
   });
 
   it("does not reload if work starts while cleanup is in flight", async () => {
-    sessionStorage.removeItem("hz.frontend.skew-reload");
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "/assets/old.js";
-    document.body.append(script);
-    const build = {
-      version: "1.1.0",
-      identity: "a".repeat(64),
-      entrypoints: ["/assets/new.js"],
-      files: { "/assets/new.js": "b".repeat(64) },
-    };
-    vi.spyOn(updateTransport, "frontend").mockResolvedValue(build);
-    vi.spyOn(updateTransport, "assets").mockResolvedValue(undefined);
+    const fixture = oldFrontendFixture();
+    const { build } = fixture;
+    const { clean, reload } = readyFrontend(build);
     let finish!: () => void;
-    const clean = vi
-      .spyOn(updateTransport, "clean")
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      )
-      .mockResolvedValue(undefined);
-    const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+    clean.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
     let holding = false;
     const release = registerReloadHold(() => holding);
     try {
@@ -169,28 +170,15 @@ describe("automatic updates", () => {
       await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
     } finally {
       release();
-      script.remove();
-      sessionStorage.removeItem("hz.frontend.skew-reload");
+      fixture.close();
     }
   });
 
   it("invalidates held skew verification when another update starts", async () => {
     const step = stepReloadChecks();
-    sessionStorage.removeItem("hz.frontend.skew-reload");
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "/assets/old.js";
-    document.body.append(script);
-    const build = {
-      version: "1.1.0",
-      identity: "a".repeat(64),
-      entrypoints: ["/assets/new.js"],
-      files: { "/assets/new.js": "b".repeat(64) },
-    };
-    vi.spyOn(updateTransport, "frontend").mockResolvedValue(build);
-    const assets = vi.spyOn(updateTransport, "assets").mockResolvedValue(undefined);
-    vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
-    const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+    const fixture = oldFrontendFixture();
+    const { build } = fixture;
+    const { assets, reload } = readyFrontend(build);
     let holding = true;
     const release = registerReloadHold(() => holding);
     let server = { ...base, version: "1.1.0", phase: "idle" as AutoUpdateStatus["phase"], seconds_left: null };
@@ -213,23 +201,13 @@ describe("automatic updates", () => {
       expect(sessionStorage.getItem("hz.frontend.skew-reload")).toBeNull();
     } finally {
       release();
-      script.remove();
-      sessionStorage.removeItem("hz.frontend.skew-reload");
+      fixture.close();
     }
   });
 
   it("retries a transient frontend check without overlapping probes", async () => {
-    sessionStorage.removeItem("hz.frontend.skew-reload");
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "/assets/old.js";
-    document.body.append(script);
-    const build = {
-      version: "1.1.0",
-      identity: "a".repeat(64),
-      entrypoints: ["/assets/new.js"],
-      files: { "/assets/new.js": "b".repeat(64) },
-    };
+    const fixture = oldFrontendFixture();
+    const { build } = fixture;
     let fail!: (error: Error) => void;
     const frontend = vi
       .spyOn(updateTransport, "frontend")
@@ -265,8 +243,7 @@ describe("automatic updates", () => {
       expect(frontend).toHaveBeenCalledTimes(2);
     } finally {
       release();
-      script.remove();
-      sessionStorage.removeItem("hz.frontend.skew-reload");
+      fixture.close();
     }
   });
 

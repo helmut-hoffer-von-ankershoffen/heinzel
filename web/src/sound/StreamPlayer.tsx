@@ -2,6 +2,7 @@ import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { useNativeSurface } from "@/lib/nativeSurface";
@@ -320,9 +321,9 @@ function Player({
       {guestUnavailable && (
         <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">
           <span>{t("sound.desktopUnavailable")}</span>
-          <button type="button" className={button} onClick={retry}>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
             {t("sound.retryPlayer")}
-          </button>
+          </Button>
         </div>
       )}
       {surfaceFailed && (

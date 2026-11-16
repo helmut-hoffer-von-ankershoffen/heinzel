@@ -6,14 +6,13 @@ const entries: Partial<Record<SurfaceName, RecordEntry>> = {};
 
 export function recordSurface(name: SurfaceName, decision: string, bridge: string, native?: Native) {
   const previous = entries[name];
+  let beforeOverlay: string | null = null;
+  if (decision === "overlay" && previous) {
+    beforeOverlay = previous.decision === "overlay" ? previous.beforeOverlay : previous.decision;
+  }
   entries[name] = {
     decision,
-    beforeOverlay:
-      decision === "overlay"
-        ? previous?.decision === "overlay"
-          ? previous.beforeOverlay
-          : (previous?.decision ?? null)
-        : null,
+    beforeOverlay,
     bridge,
     native: native === undefined ? (previous?.native ?? null) : native,
   };
@@ -24,9 +23,12 @@ export function surfaceDetails(): string[] {
     const value = entries[name];
     if (!value) return [];
     const native = value.native;
-    return [
-      `${name} surface: ${value.decision}${value.beforeOverlay ? ` (before overlay: ${value.beforeOverlay})` : ""}; bridge: ${value.bridge}; native last sample: ${native ? `focused=${native.focused} view-visible=${native.visible ?? "unknown"} status=${native.status} reason=${native.reason ?? "unknown"}` : "unavailable"}`,
-    ];
+    let overlay = "";
+    if (value.beforeOverlay) overlay = ` (before overlay: ${value.beforeOverlay})`;
+    let sample = "unavailable";
+    if (native)
+      sample = `focused=${native.focused} view-visible=${native.visible ?? "unknown"} status=${native.status} reason=${native.reason ?? "unknown"}`;
+    return [`${name} surface: ${value.decision}${overlay}; bridge: ${value.bridge}; native last sample: ${sample}`];
   });
 }
 
