@@ -30,6 +30,7 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **release:** Record the profile readiness repair ([dcc156d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dcc156d03e60c8757bfa57e9ae8423acb5560319))
 - **release:** Record final validation repairs ([ae5d31b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ae5d31bf1bd0e3ac37385899d99e2036ebfb6fce))
 - **release:** Include final fixture repairs ([d48b5c9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d48b5c9efbcfed6e59e0dcf982cc231970368bbe))
+- **release:** Record isolated policy fixture ([a045e01](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/a045e01bdd8db11c71c18369923e46abbde608eb))
 
 ### 🧪 Testing
 
@@ -40,6 +41,8 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **web:** Capture both owned Python startup phases ([3e4499f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/3e4499f28df319d2ce8daba1077605a1eb811002))
 - **workflow:** Bind installed draft ticks to a common clock ([24eb980](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/24eb980bcf2b4677db668961ae3be6f362d92df6))
 - **ci:** Isolate release policy glob imports ([fb7183a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fb7183a87fa23bbebd6cb7efd6d042c1048f4fc3))
+- **template:** Bound resolver probe subprocesses ([97af082](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/97af0824bb68c43eba067e22bf1acb9d0c2edeb4))
+- **template:** Capture reviewed starter stories without sign-in ([7130166](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/71301664b1e9fff1526eca4c391a040d99c8eafa))
 
 ### 🏗️ Build and CI
 
