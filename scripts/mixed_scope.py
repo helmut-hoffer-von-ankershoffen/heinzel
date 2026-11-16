@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """Closed ownership inventory for reviewed mixed local push scopes.
 
 This inventory selects local checks, not release acceptance. Native fixtures that

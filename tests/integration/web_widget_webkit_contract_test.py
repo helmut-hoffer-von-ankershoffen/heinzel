@@ -171,6 +171,7 @@ def run_webkit_fixture(make_kernel, tmp_path, harness):
     bridge_handler = make_bridge(client, paired, state)
     bridge = BoundedTLSServer(("127.0.0.1", 0), bridge_handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(cert, key)
     bridge.socket = context.wrap_socket(bridge.socket, server_side=True, do_handshake_on_connect=False)
     thread = threading.Thread(target=bridge.serve_forever, daemon=True)
