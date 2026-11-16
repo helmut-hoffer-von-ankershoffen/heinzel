@@ -7,7 +7,7 @@
 # Run, with no network at all (the fixture site is on loopback):
 #   docker run --rm --network none --cap-add=SYS_ADMIN --shm-size=1g hz-browser-journey
 # SYS_ADMIN is what Chromium's own sandbox helper needs inside a container; the app runs as an ordinary user.
-FROM python:3.12-bookworm@sha256:4209fae09a3e20afd863e528bfddc235da5fd5977983e1996cd54cc9a72e6267
+FROM python@sha256:4209fae09a3e20afd863e528bfddc235da5fd5977983e1996cd54cc9a72e6267
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       xvfb openssl ca-certificates fonts-liberation \
@@ -18,10 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pip install --no-cache-dir --only-binary=:all: uv==0.13.5 \
     && useradd --create-home journey
 
-COPY --chown=journey:journey pyproject.toml uv.lock .python-version hatch_build.py CHANGELOG.md PYPI.md LICENSE ATTRIBUTIONS.md /work/
+COPY --chown=root:root pyproject.toml uv.lock .python-version hatch_build.py \
+    CHANGELOG.md PYPI.md LICENSE ATTRIBUTIONS.md /work/
 COPY --chown=journey:journey src/ /work/src/
 COPY --chown=journey:journey agent-skills/skills/ /work/agent-skills/skills/
-COPY --chown=journey:journey scripts/bootstrap-pyyaml.sh scripts/web_build.py scripts/tools.py scripts/tools.toml /work/scripts/
+COPY --chown=root:root scripts/bootstrap-pyyaml.sh scripts/web_build.py scripts/tools.py scripts/tools.toml /work/scripts/
 COPY --chown=journey:journey web/package.json web/pnpm-lock.yaml web/index.html web/vite.config.ts web/tsconfig.json /work/web/
 COPY --chown=journey:journey web/src/ /work/web/src/
 COPY --chown=journey:journey web/public/ /work/web/public/
@@ -30,13 +31,16 @@ COPY --chown=journey:journey desktop/src/ /work/desktop/src/
 COPY --chown=journey:journey desktop/assets/ /work/desktop/assets/
 COPY --chown=journey:journey desktop/e2e/ /work/desktop/e2e/
 WORKDIR /work
+# Build outputs are writable; the build inputs and helper scripts remain root-owned and cannot be replaced.
+RUN mkdir .venv .tools && chown journey:journey .venv .tools
 USER journey
 ENV UV_LINK_MODE=copy
 # The editable wheel is built from this checkout with the backend already installed from uv.lock.
 RUN uv sync --frozen --no-build --no-dev --group build --no-install-project --no-install-package pyyaml \
     && bash scripts/bootstrap-pyyaml.sh \
     && wheel_dir="$(mktemp -d)" \
-    && .venv/bin/python -c 'from hatchling.build import build_editable; import sys; build_editable(sys.argv[1])' "$wheel_dir" \
+    && .venv/bin/python -c \
+      'from hatchling.build import build_editable; import sys; build_editable(sys.argv[1])' "$wheel_dir" \
     && uv pip install --offline --no-build --no-deps "$wheel_dir"/heinzel-*.whl \
     && rm -r "$wheel_dir" \
     && .venv/bin/python scripts/web_build.py build \
