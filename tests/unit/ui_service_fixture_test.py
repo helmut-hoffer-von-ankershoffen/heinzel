@@ -37,7 +37,7 @@ class HungChild:
 
 
 def running(child):
-    service = SimpleNamespace(_control=lambda *args: None)
+    service = SimpleNamespace(_control=lambda *args: None, runtime=SimpleNamespace(exists=lambda: True))
     result = RunningService(service, None, [], {})
     result.processes.append(child)
     return result
@@ -221,6 +221,7 @@ def owned_fixture(monkeypatch, tmp_path):
     clock = SimpleNamespace(value=10.0)
     child = SimpleNamespace(pid=4242, poll=lambda: None)
     service = SimpleNamespace(_control=lambda *args: None, directory=tmp_path, runtime=tmp_path / "runtime.json")
+    service.runtime.touch()
     fixture = RunningService(service, SimpleNamespace(), [], {})
     monkeypatch.setattr(_ui_service.time, "monotonic", lambda: clock.value)
     monkeypatch.setattr(_ui_service.subprocess, "Popen", lambda *args, **kwargs: child)
@@ -364,6 +365,51 @@ def test_successful_readiness_keeps_existing_gate_without_any_cpu_or_native_quer
     assert reads == [1, 1]
     assert waits == [0.02]
     assert clock.value == 10.0 + elapsed
+
+
+def test_cold_readiness_waits_for_publication_before_authenticated_status(monkeypatch, tmp_path):
+    fixture, _child, clock = owned_fixture(monkeypatch, tmp_path)
+    runtime = fixture.service.runtime
+    runtime.unlink()
+    reads = []
+    current = SimpleNamespace(ready=True, instance="new")
+
+    def status():
+        reads.append(clock.value)
+        assert runtime.exists()
+        return current
+
+    def wait(seconds):
+        assert seconds == 0.02
+        clock.value += 1.0
+        if clock.value == 14.0:
+            runtime.touch()
+
+    fixture.service.status = status
+    monkeypatch.setattr(_ui_service.threading, "Event", lambda: SimpleNamespace(wait=wait))
+    assert fixture.ready() is current
+    assert reads == [14.0]
+
+
+def test_unpublished_runtime_cannot_use_diagnostic_status_as_late_success(monkeypatch, tmp_path):
+    fixture, _child, clock = owned_fixture(monkeypatch, tmp_path)
+    fixture.service.runtime.unlink()
+    reads = []
+
+    def status():
+        reads.append(clock.value)
+        return SimpleNamespace(ready=True, instance="too-late", model_dump_json=lambda: '{"ready":true}')
+
+    def wait(_seconds):
+        clock.value += 1.0
+
+    fixture.service.status = status
+    monkeypatch.setattr(_ui_service.threading, "Event", lambda: SimpleNamespace(wait=wait))
+    monkeypatch.setattr(fixture, "wait_channel", lambda: "unavailable")
+    monkeypatch.setattr(fixture, "publication_evidence", lambda **kwargs: {})
+    with pytest.raises(pytest.fail.Exception, match="did not become ready with a new lifecycle instance"):
+        fixture.ready()
+    assert reads == [22.0]
 
 
 def test_readiness_still_fails_at_the_twelve_second_deadline(monkeypatch, tmp_path):
