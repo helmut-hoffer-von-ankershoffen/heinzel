@@ -105,7 +105,8 @@ def test_recovery_revoke_fences_delayed_issue_and_replays_exactly(tmp_path, winn
     device, token = devices.pair("phone")
     fence = devices.widget_fence_negotiate(device.id, token, "owner")
     assert fence is not None
-    issue = Request(fence.epoch, fence.revision, "a" * 32, "issue", "b" * 64)
+    secret = "hzw_" + "x" * 43
+    issue = Request(fence.epoch, fence.revision, "a" * 32, "issue", digest(secret))
     revoke = Request(fence.epoch, fence.revision, "c" * 32, "revoke", None)
     first, delayed = (issue, revoke) if winner == "issue" else (revoke, issue)
     result = devices.widget_fence_mutate(device.id, token, "owner", first)
@@ -117,6 +118,12 @@ def test_recovery_revoke_fences_delayed_issue_and_replays_exactly(tmp_path, winn
     status = restarted.widget_fence_negotiate(device.id, token, "owner")
     assert status is not None
     assert status.revision != fence.revision
+    assert (restarted.widget_check(secret, "owner", fence.workspace) is not None) == (winner == "issue")
+    if winner == "issue":
+        cleanup = Request(fence.epoch, status.revision, "d" * 32, "revoke", None)
+        cleanup_receipt = restarted.widget_fence_mutate(device.id, token, "owner", cleanup)
+        assert Devices(devices.directory).widget_fence_mutate(device.id, token, "owner", cleanup) == cleanup_receipt
+        assert restarted.widget_check(secret, "owner", fence.workspace) is None
 
 
 def test_lost_reply_and_failed_write_preserve_fenced_outcome(tmp_path, monkeypatch):
