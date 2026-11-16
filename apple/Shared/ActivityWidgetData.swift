@@ -22,6 +22,16 @@ struct WidgetHeinzel: Codable, Identifiable, Equatable {
         #endif
     }
 
+    /// Attention first, then work in progress; lifecycle state wins over stale activity.
+    var widgetPriority: Int {
+        if state == "retired" { return 3 }
+        switch activity {
+        case "waiting_for_you", "stuck", "overloaded": return 0
+        case "working": return 1
+        default: return 2
+        }
+    }
+
     var status: String {
         if state == "retired" { return "Retired" }
         if state == "proposed", activity == nil || activity == "idle" { return "New" }
@@ -134,13 +144,13 @@ struct ActivityWidgetData: Codable, Equatable {
     }
 
     @discardableResult
-    static func save(awake: Int, waiting: Int, heinzels: [WidgetHeinzel], entries: [CatalogHeinzel], workspaceScope: String, expectedToken: Data, now: Date = .now) -> Bool {
-        guard awake >= 0, waiting >= 0, let catalog else { return false }
+    static func save(awake: Int, waiting: Int, heinzels: [WidgetHeinzel], entries: [CatalogHeinzel], workspaceScope: String, expectedToken: Data, now: Date = .now, catalogOverride: ActivityCatalog? = nil) -> Bool {
+        guard awake >= 0, waiting >= 0, let catalog = catalogOverride ?? catalog else { return false }
         let generation = UUID().uuidString
         let snapshot = Self(awake: awake, waiting: waiting, updatedAt: now, heinzels: heinzels, workspaceScope: workspaceScope, generation: generation)
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
         guard catalog.publish(scope: workspaceScope, generation: generation, snapshot: data, entries: entries, expectedToken: expectedToken) else { return false }
-        defaults?.removeObject(forKey: "activitySnapshot")
+        if catalogOverride == nil { defaults?.removeObject(forKey: "activitySnapshot") }
         return true
     }
 

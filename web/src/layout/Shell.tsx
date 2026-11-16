@@ -794,6 +794,7 @@ function Layout() {
                               bookmarks
                               active={selectedPanel === "browser"}
                               onClose={() => setBrowserOpen(false)}
+                              onSettings={() => setSettings("browser")}
                             />
                           ),
                         },

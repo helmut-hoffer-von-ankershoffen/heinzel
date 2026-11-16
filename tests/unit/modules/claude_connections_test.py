@@ -145,6 +145,34 @@ def test_one_connection_per_server_and_the_secret_reaches_only_the_server(connec
     assert {e["secret"] for e in entries(log) if "call" in e} == {SECRET}  # expanded from the environment
 
 
+def test_listing_one_namespace_never_starts_the_other(home, store, log):
+    configure(home, {"words": server(log), "other": server(log, FAKE_MCP_CHATTY="1")})
+    found = FoundConnections(home, store, environ={"FAKE_TOKEN": SECRET})
+    try:
+        assert found.names() == ["other", "words"]
+        before = {row.namespace: row for row in found.diagnostics()}
+        assert before["words"].known_tool_count is None
+        assert before["words"].available is None
+        assert not before["words"].running
+        assert entries(log) == []
+        assert {tool.namespace for tool in found.tools_for("words")} == {"words"}
+        after = {row.namespace: row for row in found.diagnostics()}
+        assert after["words"].known_tool_count == 4
+        assert after["words"].available is True
+        assert after["words"].running
+        assert after["other"].known_tool_count is None
+        assert len([entry for entry in entries(log) if "start" in entry]) == 1
+        assert found.tools_for("not-enabled") == []
+        assert len([entry for entry in entries(log) if "start" in entry]) == 1
+        configure(home, {"words": server(log, EXTRA="changed"), "other": server(log, FAKE_MCP_CHATTY="1")})
+        changed = {row.namespace: row for row in found.diagnostics()}
+        assert changed["words"].known_tool_count is None
+        assert changed["words"].available is None
+        assert changed["words"].running  # The old process is still alive until the next connection update.
+    finally:
+        found.stop_all()
+
+
 def test_an_idle_server_is_stopped_and_starts_again_on_its_next_call(home, store, log):
     clock = [0.0]
     found = FoundConnections(home, store, idle=10, clock=lambda: clock[0], environ={"FAKE_TOKEN": SECRET})
@@ -201,6 +229,56 @@ def test_a_server_that_does_not_answer_is_stopped(connections, log, monkeypatch)
     with pytest.raises(HeinzelError, match="did not answer"):
         connections.call("code-user:words", "slow", {})
     assert not any(row.running for row in connections.status())
+
+
+def test_failed_discovery_waits_before_retry_but_changed_config_retries(home, store, log, monkeypatch):
+    clock = [0.0]
+    found = FoundConnections(home, store, clock=lambda: clock[0], environ={"FAKE_TOKEN": SECRET})
+    original = found._connect
+    attempts = []
+
+    def fail_once(server, spec=None):
+        attempts.append(server.id)
+        if len(attempts) == 1:
+            msg = "server unavailable"
+            raise HeinzelError(msg)
+        return original(server, spec)
+
+    monkeypatch.setattr(found, "_connect", fail_once)
+    try:
+        assert found.tools() == []
+        assert found.tools() == []
+        assert attempts == ["code-user:words"]
+        assert "server unavailable" in found.status()[0].problem
+        configure(home, {"words": server(log, EXTRA="changed")})
+        assert found.tools()
+        assert len(attempts) == 2
+        assert found.status()[0].problem is None
+    finally:
+        found.stop_all()
+
+
+def test_failed_discovery_is_retried_after_backoff(home, store, monkeypatch):
+    clock = [0.0]
+    found = FoundConnections(home, store, clock=lambda: clock[0], environ={"FAKE_TOKEN": SECRET})
+    original = found._connect
+    attempts = []
+
+    def fail_once(server, spec=None):
+        attempts.append(server.id)
+        if len(attempts) == 1:
+            msg = "server unavailable"
+            raise HeinzelError(msg)
+        return original(server, spec)
+
+    monkeypatch.setattr(found, "_connect", fail_once)
+    try:
+        assert found.tools() == []
+        clock[0] = 31.0
+        assert found.tools()
+        assert len(attempts) == 2
+    finally:
+        found.stop_all()
 
 
 def test_a_request_from_the_server_is_refused_and_the_call_completes(tmp_path, store, log):

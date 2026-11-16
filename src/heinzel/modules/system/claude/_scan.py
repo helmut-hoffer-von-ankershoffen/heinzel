@@ -5,9 +5,8 @@ it is expected in (a dotfiles link inside your home directory is fine, a link to
 `O_NOFOLLOW`, only as a regular file, and with a size limit. Secrets are never kept: an entry's environment and headers
 are reduced to their names, and the models have no field for a value (ADR 0062).
 
-The one exception is `Scanner.want`: when hz starts a found server (ADR 0162), the scan is repeated for that one id
-and its raw entry is kept in `Scanner.captured`, for that start only, so how to start it is always read from the
-source file and never stored.
+The exception is `Scanner.want`: the scan keeps the requested servers' raw entries in `Scanner.captured` for a
+launch or diagnostic cache check. These entries stay in the temporary scanner and are never stored.
 """
 
 import contextlib
@@ -153,9 +152,9 @@ class Scanner:
     skills: list[FoundSkill] = field(default_factory=list[FoundSkill])
     skipped: list[Skipped] = field(default_factory=list[Skipped])
     connectors: int = 0
-    want: str | None = None
-    """The id of the one server whose raw entry the scan keeps in `captured`, to start it; none for a listing."""
-    captured: "Captured | None" = None
+    want: frozenset[str] = frozenset()
+    """Only these server IDs have raw entries captured; empty for an ordinary listing."""
+    captured: dict[str, "Captured"] = field(default_factory=dict[str, "Captured"], repr=False)
     _enabled: set[str] = field(default_factory=set[str])
     _approvals: dict[Path, dict[str, Any]] = field(default_factory=dict[Path, dict[str, Any]])
     _sensitive: set[str] = field(default_factory=set[str])
@@ -224,9 +223,11 @@ class Scanner:
         executable = Path(command).name if command else None
         own = executable in OWN or any(a in OWN for a in arguments)
         identity = ":".join(part for part in (source, origin, name) if part)
-        if self.want is not None and identity == self.want and self.captured is None:
+        if identity in self.want and identity not in self.captured:
             approved = source != "code-project" or self._approved(name, path.parent)
-            self.captured = Captured(entry=json.loads(json.dumps(entry)), path=path, origin=origin, approved=approved)
+            self.captured[identity] = Captured(
+                entry=json.loads(json.dumps(entry)), path=path, origin=origin, approved=approved
+            )
         self.servers.append(
             FoundServer(
                 id=identity,

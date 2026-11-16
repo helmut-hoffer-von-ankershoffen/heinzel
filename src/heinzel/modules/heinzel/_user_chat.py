@@ -8,6 +8,7 @@ usage remains unpriced: tokens are recorded, with no dollar cost.
 
 import asyncio
 import shutil
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -460,6 +461,7 @@ class UserChatService:
             HeinzelError: If the turn may not run, or a recorded state forbids running it again.
             PluginModelError: If a plugin's model fails; before it answered, the turn is set aside.
         """
+        started = time.monotonic()
         verify()
         events = self._crud.repository.control_read(session).events
         turn = interactive_turn_id(request)
@@ -474,7 +476,7 @@ class UserChatService:
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
-        from heinzel.modules.heinzel._direct_tools import turn_toolbox  # noqa: PLC0415 - model execution only during a turn
+        from heinzel.modules.heinzel._chat_diagnostics import prepare_toolbox  # noqa: PLC0415 - model execution only
         from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
         from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
 
@@ -522,13 +524,15 @@ class UserChatService:
             if user_proposals and connected is not None
             else None
         )
-        toolbox = (
-            await asyncio.to_thread(
-                turn_toolbox, self._tools_kernel, session, self._crud.repository.principal_id, attended=attended
-            )
-            if self._tools_kernel is not None
-            else None
+        toolbox, diagnostics = await prepare_toolbox(
+            self._tools_kernel,
+            session,
+            self._crud.repository.principal_id,
+            attended=attended,
+            emit=emit,
+            started=started,
         )
+        hooks.extend((diagnostics,) if diagnostics else ())
         run = InteractiveTurn(self._crud).run(
             session,
             request,

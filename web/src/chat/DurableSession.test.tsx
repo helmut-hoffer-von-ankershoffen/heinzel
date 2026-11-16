@@ -1947,7 +1947,28 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
-          controller.enqueue(encoder.encode(frame("text", { text: "Hello " }) + frame("text", { text: "from" })));
+          controller.enqueue(
+            encoder.encode(
+              frame("diagnostics", {
+                preparation_ms: 12,
+                discovery_ms: 3,
+                provider_ms: 40,
+                requests: 1,
+                context: { messages: 2, input_tokens: null, window_tokens: null },
+                servers: [
+                  {
+                    name: "Internal",
+                    internal: true,
+                    offered: true,
+                    tool_count: 1,
+                    tools: [{ name: "doctor", description: "Health" }],
+                  },
+                ],
+              }) +
+                frame("text", { text: "Hello " }) +
+                frame("text", { text: "from" }),
+            ),
+          );
           await next();
           controller.enqueue(encoder.encode(frame("text", { text: " the model, word" })));
           await next();
@@ -1973,6 +1994,12 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
   fireEvent.keyDown(composer, { key: "Enter" });
   // The partial reply grows in a Heinzel bubble in place of "thinking"; it is busy, not a live region.
   const partial = (await screen.findByText("Hello from")).closest("[data-streaming]") as HTMLElement;
+  fireEvent.click(screen.getByRole("button", { name: "Chat diagnostics" }));
+  expect(await screen.findByText("Preparation: 12 ms")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Internal/ }));
+  expect(screen.getByText("doctor")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(partial).toHaveAttribute("data-message-speaker", "heinzel");
   expect(partial).toHaveAttribute("aria-busy", "true");
   expect(partial.closest("[aria-live]")).toBeNull();
@@ -2481,4 +2508,55 @@ it("offers no composer for a retired Heinzel, only the way to its page", async (
   expect(chat.queryByLabelText(/^Message /)).not.toBeInTheDocument();
   fireEvent.click(chat.getByRole("button", { name: "Open Personal helper's page" }));
   await waitFor(() => expect(router.state.location.pathname).toBe(`/heinzel/${sessionId}`));
+});
+
+it("discards previous authority diagnostics and ignores late stream measurements", async () => {
+  let channel: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const encoder = new TextEncoder();
+  const diagnostic = (preparation_ms: number) =>
+    frame("diagnostics", {
+      preparation_ms,
+      discovery_ms: 0,
+      provider_ms: 0,
+      requests: 1,
+      context: {},
+      servers: [],
+    });
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": () => ({ ...snapshot, messages: [] }),
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+    },
+    "/api/stream/heinzel/answer-chat": () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            channel = controller;
+            controller.enqueue(encoder.encode(diagnostic(813)));
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const composer = await screen.findByLabelText(/^Message /);
+  fireEvent.change(composer, { target: { value: "Hi" } });
+  fireEvent.keyDown(composer, { key: "Enter" });
+  await waitFor(() => expect(channel).toBeDefined());
+  fireEvent.click(screen.getByRole("button", { name: "Chat diagnostics" }));
+  expect(await screen.findByText("Preparation: 813 ms")).toBeInTheDocument();
+  act(() => {
+    sessionStorage.setItem("hz.token", "replacement-token");
+    window.dispatchEvent(new Event("storage"));
+  });
+  expect(screen.queryByText("Preparation: 813 ms")).not.toBeInTheDocument();
+  await act(async () => {
+    channel?.enqueue(encoder.encode(diagnostic(913)));
+    channel?.close();
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Chat diagnostics" }));
+  expect(await screen.findByText(/Send a message to measure a turn/)).toBeInTheDocument();
+  expect(screen.queryByText("Preparation: 913 ms")).not.toBeInTheDocument();
 });

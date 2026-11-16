@@ -53,7 +53,7 @@ REDIRECTS = (301, 302, 303, 307, 308)
 MAX_PERCENT = 100
 RUN_URL = re.compile(r"/actions/runs/(\d+)")
 EVIDENCE_API = re.compile(
-    r"https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/(?:artifacts/[1-9][0-9]*/zip|jobs/[1-9][0-9]*/steps/[1-9][0-9]*/logs)"
+    r"https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/(?:artifacts/[1-9][0-9]*/zip|jobs/[1-9][0-9]*(?:/steps/[1-9][0-9]*)?/logs)"
 )
 EVIDENCE_HOST = re.compile(r"productionresultssa[0-9]+\.blob\.core\.windows\.net")
 
