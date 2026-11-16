@@ -18,10 +18,14 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **ci:** Satisfy Apple build script contracts ([#845](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/845)) ([9ca565f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/9ca565fe3a33fb2c444fb3d859369307cfe4a593))
 - **web:** Settle audio tests and use shared navigation controls ([#847](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/847)) ([52ff816](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/52ff816385b5b767c63d0940a90ee5492e854b5d))
 - **ci:** Rebalance macOS browser journeys ([#849](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/849)) ([03f777a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/03f777aa33e6a470f1b82ebf9862d7d1eb28a9cd))
+- **ci:** Split browser journeys into three lanes ([6431bd9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6431bd9652ac97d31ade858b015039ae423a47c7))
+- **ci:** Balance mobile viewport cases ([e7f598f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e7f598f7f8f997e44f64ee4e3d5a6d748ce0c531))
+- **kernel:** Identify receipt constraint refusal stages ([1479652](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/14796526994926b002f4a271b75c8014db931e11))
 
 ### 📚 Documentation
 
 - **release:** Include the final repair notes ([1f5cd3d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1f5cd3d211471385288d36f04d2cd57bb96ed105))
+- **release:** Record the profile readiness repair ([dcc156d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dcc156d03e60c8757bfa57e9ae8423acb5560319))
 
 ### 🧪 Testing
 
