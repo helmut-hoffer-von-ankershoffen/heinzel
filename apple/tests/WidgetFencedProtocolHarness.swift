@@ -34,16 +34,48 @@ private struct FixtureKeychain: WidgetCredentialKeychain {
         let store = WidgetCredentialStore(catalogURL: url, keychain: keychain)
         let enrollment = WidgetFencedEnrollment(store: store)
         let reservationURL = root.appendingPathComponent("reservation.json")
-        if operation == "prepare" {
+        if operation == "prepare" || operation == "prepare-paired" {
             _ = ActivityCatalog(url: url)!
             let activation = ActivityCatalog.activate(url: url, endpoint: "https://example.test")!
-            let reservation = enrollment.prepare(expected: activation)!
+            let fingerprint = operation == "prepare-paired" ? CommandLine.arguments[3] : nil
+            let reservation = enrollment.prepare(expected: activation, pairingFingerprint: fingerprint)!
             try JSONEncoder().encode(reservation).write(to: reservationURL, options: .atomic)
             print("prepared")
             return
         }
         let reservation = try JSONDecoder().decode(ActivityCatalog.Enrollment.self, from: Data(contentsOf: reservationURL))
-        if operation == "bind" {
+        if operation == "cancel" {
+            precondition(enrollment.cancel(reservation).complete)
+            print("cancelled")
+        } else if operation == "recovery-plan" || operation == "recovery-conflict" {
+            let status = try Data(contentsOf: root.appendingPathComponent("status.json"))
+            let fingerprint = CommandLine.arguments[3]
+            let decision: ActivityCatalog.EnrollmentRecoveryPlan?
+            if operation == "recovery-plan" {
+                decision = ActivityCatalog.planCancelledRecovery(url: url, expected: reservation, fingerprint: fingerprint, observedStatus: status)
+            } else {
+                let request = try Data(contentsOf: root.appendingPathComponent("recovery-request.json"))
+                decision = ActivityCatalog.resolveRecoveryConflict(url: url, expected: reservation, fingerprint: fingerprint,
+                                                                    failedRequest: request, observedStatus: status)
+            }
+            switch decision {
+            case .revoke(let request): print(request.base64EncodedString())
+            case .superseded: print("superseded")
+            case nil: fatalError("recovery plan")
+            }
+        } else if operation == "recovery-receipt" {
+            let request = try Data(contentsOf: root.appendingPathComponent("recovery-request.json"))
+            let receipt = try Data(contentsOf: root.appendingPathComponent("receipt.json"))
+            precondition(ActivityCatalog.recordRecoveryReceipt(url: url, expected: reservation, fingerprint: CommandLine.arguments[3],
+                                                               request: request, receipt: receipt))
+            print("recorded")
+        } else if operation == "recovery-finish" {
+            let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+            let result = ActivityCatalog.finishCancelledRecovery(url: url, expected: reservation, fingerprint: CommandLine.arguments[3],
+                verify: { enrollment.recoveryEvidenceMatches($0) }, cleanup: { keychain.deletePending(attempt) && store.purgeCredential() })
+            precondition(result.complete)
+            print("recovered")
+        } else if operation == "bind" {
             let status = try Data(contentsOf: root.appendingPathComponent("status.json"))
             guard case .ready(let request) = enrollment.bind(status, reservation: reservation) else { fatalError("bind") }
             print(request.base64EncodedString())
