@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from heinzel.heads import web
 from heinzel.heads.web._devices import Devices, digest
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.integration
 
@@ -183,7 +184,7 @@ def test_native_script_and_core_recover_lost_reply(make_kernel, tmp_path):
         def log_message(self, *_args):
             return
 
-    bridge = ThreadingHTTPServer(("127.0.0.1", 0), Bridge)
+    bridge = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Bridge)
     thread = threading.Thread(target=bridge.serve_forever, daemon=True)
     thread.start()
     runner = """
