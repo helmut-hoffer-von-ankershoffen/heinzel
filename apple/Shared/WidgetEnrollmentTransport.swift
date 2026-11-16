@@ -129,6 +129,13 @@ enum WidgetEnrollmentOutcome {
             ActivityCatalog.withEnrollment(url: enrollment.store.catalogURL, expected: reservation, { true }) == true
         }
         guard current(), enrollment.canResume(reservation) else { return .pending }
+        if let receipt = ActivityCatalog.savedEnrollmentReceipt(url: enrollment.store.catalogURL, expected: reservation) {
+            switch enrollment.complete(receipt, reservation: reservation) {
+            case .installed(let activation): return .installed(activation)
+            case .identityMismatch(let result): return .identityMismatch(result)
+            case .rejected: return .pending
+            }
+        }
         let status = await WidgetEnrollmentTransport.exchange(.negotiate, payload: nil, in: view, endpoint: endpoint, isCurrent: current)
         guard current() else { return .pending }
         switch status {

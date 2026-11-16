@@ -92,6 +92,24 @@ struct WidgetFencedEnrollment {
         }
     }
 
+    /// Finish cleanup after the planned authority was published before a crash.
+    func finishInterruptedInstallation(_ reservation: ActivityCatalog.Enrollment) -> ActivityCatalog.Activation? {
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        return ActivityCatalog.finishReceipted(url: store.catalogURL, expected: reservation, verify: { journal, active in
+            guard self.recoveryEvidenceMatches(journal),
+                  case .data(let raw) = self.store.keychain.readStatus(),
+                  let credential = try? JSONDecoder().decode(WidgetCredential.self, from: raw),
+                  credential.valid(at: credential.expiresAt.addingTimeInterval(-1)),
+                  credential.endpoint == active.endpoint, credential.workspaceID == active.workspaceID,
+                  credential.generation == active.credentialGeneration, credential.pendingAttempt == attempt,
+                  let requestData = journal.request, let request = try? JSONDecoder().decode(FenceMutation.self, from: requestData),
+                  let receiptData = journal.receipt, let receipt = try? JSONDecoder().decode(FenceReceipt.self, from: receiptData),
+                  receipt.expiry == credential.expiresAt else { return false }
+            let commitment = SHA256.hash(data: Data(credential.token.utf8)).map { String(format: "%02x", $0) }.joined()
+            return request.commitment == commitment
+        }, cleanup: { self.store.keychain.deletePending(attempt) })
+    }
+
     func prepare(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
         guard let reservation = store.beginEnrollment(expected: expected) else { return nil }
         var random = [UInt8](repeating: 0, count: 32)
@@ -141,7 +159,7 @@ struct WidgetFencedEnrollment {
                   pending.valid, pending.reservation == journal.reservation else { return false }
             switch journal.phase {
             case .preparing: return pending.request == nil && pending.workspaceID == nil
-            case .armed: return pending.requestData == journal.request && pending.workspaceID == journal.workspaceID
+            case .armed, .receipted: return pending.requestData == journal.request && pending.workspaceID == journal.workspaceID
             case .legacyUnknown: return false
             }
         }
@@ -216,12 +234,16 @@ struct WidgetFencedEnrollment {
                                           generation: pending.generation, token: pending.secret, expiresAt: expiry,
                                           pendingAttempt: attempt)
         guard credential.valid(at: now), let encoded = try? JSONEncoder().encode(credential),
-              let installed = ActivityCatalog.completeEnrollment(url: store.catalogURL, expected: reservation,
-                  workspaceID: workspaceID, generation: credential.generation, install: {
+              let requestData = pending.requestData,
+              let journal = ActivityCatalog.recordEnrollmentReceipt(url: store.catalogURL, expected: reservation,
+                  workspaceID: workspaceID, request: requestData, receipt: data, generation: credential.generation),
+              let (installed, cleaned) = ActivityCatalog.installReceipted(url: store.catalogURL, expected: reservation,
+                  receipt: journal, install: {
                       credential.valid(at: clock()) && store.keychain.readPending(attempt) == pendingData &&
-                      cleanPreviousPending(except: attempt) && store.keychain.write(encoded)
-                  }) else { return .rejected }
-        if !store.keychain.deletePending(attempt) {
+                      cleanPreviousPending(except: attempt) && store.keychain.write(encoded) && store.keychain.read() == encoded
+                  }, authorize: { credential.valid(at: clock()) && store.keychain.read() == encoded },
+                  cleanup: { store.keychain.deletePending(attempt) }) else { return .rejected }
+        if !cleaned {
             NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil)
         }
         NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)

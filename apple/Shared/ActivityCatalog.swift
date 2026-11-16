@@ -57,13 +57,16 @@ final class ActivityCatalog {
 
     /// Independent, non-secret fence. Legacy markers remain conservatively unknown.
     struct EnrollmentJournal: Codable, Equatable {
-        enum Phase: String, Codable { case preparing, armed, legacyUnknown }
+        enum Phase: String, Codable { case preparing, armed, receipted, legacyUnknown }
         let version: Int
         let reservation: Enrollment
         let revision: String
         let phase: Phase
         let workspaceID: String?
         let request: Data?
+        var receipt: Data? = nil
+        var credentialGeneration: String? = nil
+        var activationID: String? = nil
     }
 
     private struct JournalRequest: Decodable {
@@ -74,14 +77,24 @@ final class ActivityCatalog {
         let commitment: String
     }
 
+    private struct JournalReceipt: Decodable {
+        let epoch: String
+        let workspace_id: String
+        let attempt: String
+        let operation: String
+        let revision: String
+        let expires_at: String
+    }
+
     private static func enrollmentJournal(_ data: Data) -> EnrollmentJournal? {
         if let journal = try? JSONDecoder().decode(EnrollmentJournal.self, from: data) {
             guard journal.version == 1, UUID(uuidString: journal.revision) != nil,
                   UUID(uuidString: journal.reservation.id) != nil else { return nil }
             switch journal.phase {
             case .preparing:
-                guard journal.workspaceID == nil, journal.request == nil else { return nil }
-            case .armed:
+                guard journal.workspaceID == nil, journal.request == nil, journal.receipt == nil,
+                      journal.credentialGeneration == nil, journal.activationID == nil else { return nil }
+            case .armed, .receipted:
                 guard let workspace = journal.workspaceID, workspace.wholeMatch(of: /[a-f0-9]{64}/) != nil,
                       let request = journal.request, !request.isEmpty, request.count <= 4096,
                       let value = try? JSONDecoder().decode(JournalRequest.self, from: request),
@@ -89,6 +102,18 @@ final class ActivityCatalog {
                       value.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil,
                       value.attempt == journal.reservation.id.replacingOccurrences(of: "-", with: "").lowercased(),
                       value.operation == "issue", value.commitment.wholeMatch(of: /[a-f0-9]{64}/) != nil else { return nil }
+                if journal.phase == .armed {
+                    guard journal.receipt == nil, journal.credentialGeneration == nil, journal.activationID == nil else { return nil }
+                } else {
+                    guard let receiptData = journal.receipt, receiptData.count <= 4096,
+                          let receipt = try? JSONDecoder().decode(JournalReceipt.self, from: receiptData),
+                          receipt.epoch == value.epoch, receipt.workspace_id == workspace,
+                          receipt.attempt == value.attempt, receipt.operation == "issue",
+                          receipt.revision.wholeMatch(of: /[a-f0-9]{32}/) != nil, receipt.revision != value.revision,
+                          !receipt.expires_at.isEmpty,
+                          let generation = journal.credentialGeneration, UUID(uuidString: generation) != nil,
+                          let activation = journal.activationID, UUID(uuidString: activation) != nil else { return nil }
+                }
             case .legacyUnknown: return nil
             }
             return journal
@@ -281,7 +306,7 @@ final class ActivityCatalog {
                   authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
                   let data = try? Data(contentsOf: enrollmentURL(for: url)),
                   let current = enrollmentJournal(data), current.reservation == expected else { return false }
-            if current.phase == .armed {
+            if current.phase == .armed || current.phase == .receipted {
                 return current.workspaceID == workspaceID && current.request == request && writeJournal(data, enrollmentURL(for: url))
             }
             guard current.phase == .preparing || current.phase == .legacyUnknown else { return false }
@@ -289,6 +314,84 @@ final class ActivityCatalog {
                                          phase: .armed, workspaceID: workspaceID, request: request)
             guard let encoded = try? JSONEncoder().encode(next), enrollmentJournal(encoded) == next else { return false }
             return writeJournal(encoded, enrollmentURL(for: url))
+        }
+    }
+
+    /// Record a validated receipt and a stable installation identity before
+    /// writing the active Keychain item. Exact retries retain both identities.
+    static func recordEnrollmentReceipt(url: URL, expected: Enrollment, workspaceID: String,
+                                        request: Data, receipt: Data, generation: String) -> EnrollmentJournal? {
+        withWriterLock(url: url, failure: nil) {
+            guard let authorityData = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: authorityData),
+                  authority.enrollment == expected, authority.activation == expected.previous, authority.revoked != true,
+                  let marker = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let journal = enrollmentJournal(marker), journal.reservation == expected,
+                  journal.workspaceID == workspaceID, journal.request == request else { return nil }
+            if journal.phase == .receipted {
+                guard journal.receipt == receipt, journal.credentialGeneration == generation,
+                      writeJournal(marker, enrollmentURL(for: url)) else { return nil }
+                return journal
+            }
+            guard journal.phase == .armed else { return nil }
+            var next = EnrollmentJournal(version: 1, reservation: expected, revision: UUID().uuidString,
+                                         phase: .receipted, workspaceID: workspaceID, request: request)
+            next.receipt = receipt; next.credentialGeneration = generation; next.activationID = UUID().uuidString
+            guard let encoded = try? JSONEncoder().encode(next), enrollmentJournal(encoded) == next,
+                  writeJournal(encoded, enrollmentURL(for: url)) else { return nil }
+            return next
+        }
+    }
+
+    static func savedEnrollmentReceipt(url: URL, expected: Enrollment) -> Data? {
+        withWriterLock(url: url, failure: nil) {
+            guard let data = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let journal = enrollmentJournal(data), journal.reservation == expected,
+                  journal.phase == .receipted else { return nil }
+            return journal.receipt
+        }
+    }
+
+    /// Publish only the activation named by the durable receipt. The journal
+    /// remains until the pending item is deleted and marker removal is synced.
+    static func installReceipted(url: URL, expected: Enrollment, receipt: EnrollmentJournal,
+                                 syncAuthority: (Data, URL) -> Bool = ActivityCatalog.writeJournal,
+                                 retireMarker: (URL) -> Bool = ActivityCatalog.removeJournal,
+                                 install: () -> Bool, authorize: () -> Bool, cleanup: () -> Bool) -> (Activation, Bool)? {
+        withWriterLock(url: url, failure: nil) {
+            guard let marker = try? Data(contentsOf: enrollmentURL(for: url)),
+                  let currentJournal = enrollmentJournal(marker), currentJournal == receipt,
+                  receipt.phase == .receipted, let workspace = receipt.workspaceID,
+                  let generation = receipt.credentialGeneration, let id = receipt.activationID,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data),
+                  current.enrollment == expected, current.activation == expected.previous, current.revoked != true,
+                  receipt.reservation == expected, writeJournal(marker, enrollmentURL(for: url)), install() else { return nil }
+            let next = Activation(id: id, endpoint: expected.previous.endpoint,
+                                  workspaceID: workspace, credentialGeneration: generation)
+            let authority = Authority(scope: "", generation: UUID().uuidString, activation: next)
+            guard authorize(), let encoded = try? JSONEncoder().encode(authority),
+                  syncAuthority(encoded, authorityURL(for: url)) else { return nil }
+            let complete = cleanup() && retireMarker(enrollmentURL(for: url))
+            return (next, complete)
+        }
+    }
+
+    static func finishReceipted(url: URL, expected: Enrollment,
+                                verify: (EnrollmentJournal, Activation) -> Bool,
+                                cleanup: () -> Bool) -> Activation? {
+        withWriterLock(url: url, failure: nil) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.phase == .receipted,
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let authority = try? JSONDecoder().decode(Authority.self, from: data),
+                  authority.revoked != true, authority.enrollment == nil, let active = authority.activation,
+                  active.id == journal.activationID, active.endpoint == expected.previous.endpoint,
+                  active.workspaceID == journal.workspaceID, active.credentialGeneration == journal.credentialGeneration,
+                  writeJournal(marker, markerURL), writeJournal(data, authorityURL(for: url)),
+                  verify(journal, active), cleanup(), removeJournal(markerURL) else { return nil }
+            return active
         }
     }
 
@@ -434,9 +537,11 @@ final class ActivityCatalog {
             if markerStatus != 0 && errno != ENOENT { return ClearResult(revoked: true, purged: false) }
             if markerStatus == 0 {
                 guard let recovery else { return ClearResult(revoked: true, purged: false) }
-                guard recovery.previous == expected,
-                      let marker = try? Data(contentsOf: markerURL),
+                guard let marker = try? Data(contentsOf: markerURL),
                       let journal = enrollmentJournal(marker), journal.reservation == recovery,
+                      (recovery.previous == expected || (journal.phase == .receipted &&
+                       journal.activationID == expected.id && journal.workspaceID == expected.workspaceID &&
+                       journal.credentialGeneration == expected.credentialGeneration && recovery.previous.endpoint == expected.endpoint)),
                       journal.phase != .legacyUnknown, journalSync(marker, markerURL), recoveryCheck(journal) else {
                     return ClearResult(revoked: true, purged: false)
                 }

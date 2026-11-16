@@ -260,14 +260,15 @@ private final class NotificationCapture: @unchecked Sendable {
         guard case .installed(let cleanupActive) = cleanupEnrollment.complete(cleanupReceipt, reservation: cleanupAttempt,
                                                                               now: now, clock: { now }) else { fatalError() }
         precondition(cleanupKeychain.pending[cleanupWire] != nil)
+        precondition(cleanupEnrollment.prepare(expected: cleanupActive) == nil)
+        precondition(cleanupEnrollment.finishInterruptedInstallation(cleanupAttempt) == nil)
+        cleanupKeychain.canDeletePending = true
+        precondition(cleanupEnrollment.finishInterruptedInstallation(cleanupAttempt) == cleanupActive)
+        precondition(cleanupKeychain.pending[cleanupWire] == nil)
         let replacementPending = cleanupEnrollment.prepare(expected: cleanupActive)!
         let replacementWire = replacementPending.id.replacingOccurrences(of: "-", with: "").lowercased()
         guard case .ready = cleanupEnrollment.bind(status, reservation: replacementPending) else { fatalError() }
         let replacementReceipt = Data(String(decoding: receipt, as: UTF8.self).replacingOccurrences(of: wireAttempt, with: replacementWire).utf8)
-        guard case .rejected = cleanupEnrollment.complete(replacementReceipt, reservation: replacementPending,
-                                                        now: now, clock: { now }) else { fatalError() }
-        precondition(cleanupKeychain.pending[cleanupWire] != nil)
-        cleanupKeychain.canDeletePending = true
         guard case .installed(let replacementActive) = cleanupEnrollment.complete(replacementReceipt, reservation: replacementPending,
                                                                                    now: now, clock: { now }) else { fatalError() }
         precondition(cleanupKeychain.pending[cleanupWire] == nil)
@@ -397,6 +398,41 @@ private final class NotificationCapture: @unchecked Sendable {
         let replacementBound = seed(credential, expected: mismatchReplacement, at: mismatchURL, in: mismatchKeychain)
         guard case .identityMismatch(let staleMismatch) = mismatchEnrollment.bind(wrongIdentity, reservation: mismatchAttempt) else { fatalError() }
         precondition(staleMismatch.stale && mismatchStore.capture(now: now)?.activation == replacementBound)
+        let transactionURL = directory.appendingPathComponent("receipt-transaction.sqlite")
+        let transactionKeychain = FakeKeychain()
+        let transactionStore = WidgetCredentialStore(catalogURL: transactionURL, keychain: transactionKeychain)
+        let transactionEnrollment = WidgetFencedEnrollment(store: transactionStore)
+        let transactionInitial = ActivityCatalog.activate(url: transactionURL, endpoint: pending.endpoint)!
+        let transactionAttempt = transactionEnrollment.prepare(expected: transactionInitial)!
+        let transactionWire = transactionAttempt.id.replacingOccurrences(of: "-", with: "").lowercased()
+        guard case .ready(let transactionRequest) = transactionEnrollment.bind(fixtureStatus, reservation: transactionAttempt) else { fatalError() }
+        let transactionPending = try JSONSerialization.jsonObject(with: transactionKeychain.pending[transactionWire]!) as! [String: Any]
+        let transactionGeneration = transactionPending["generation"] as! String
+        let transactionReceipt = fixtureReceipt(transactionAttempt)
+        let plan = ActivityCatalog.recordEnrollmentReceipt(url: transactionURL, expected: transactionAttempt,
+            workspaceID: credential.workspaceID, request: transactionRequest, receipt: transactionReceipt,
+            generation: transactionGeneration)!
+        let repeatedPlan = ActivityCatalog.recordEnrollmentReceipt(url: transactionURL, expected: transactionAttempt,
+            workspaceID: credential.workspaceID, request: transactionRequest, receipt: transactionReceipt,
+            generation: transactionGeneration)
+        precondition(repeatedPlan == plan && ActivityCatalog.savedEnrollmentReceipt(url: transactionURL, expected: transactionAttempt) == transactionReceipt)
+        var transactionWrites = 0
+        let failedAuthority = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
+            syncAuthority: { _, _ in false }, install: { transactionWrites += 1; return true }, authorize: { true }, cleanup: { true })
+        precondition(failedAuthority == nil && transactionWrites == 1)
+        precondition(ActivityCatalog.savedEnrollmentReceipt(url: transactionURL, expected: transactionAttempt) == transactionReceipt)
+        let expiredAuthority = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
+            install: { true }, authorize: { false }, cleanup: { true })
+        precondition(expiredAuthority == nil && ActivityCatalog.activation(url: transactionURL) == nil)
+        let published = ActivityCatalog.installReceipted(url: transactionURL, expected: transactionAttempt, receipt: plan,
+            install: { true }, authorize: { true }, cleanup: { false })!
+        precondition(!published.1 && published.0.id == plan.activationID)
+        precondition(ActivityCatalog.pendingEnrollment(url: transactionURL) == transactionAttempt)
+        precondition(ActivityCatalog.finishReceipted(url: transactionURL, expected: transactionAttempt,
+            verify: { _, _ in false }, cleanup: { true }) == nil)
+        precondition(ActivityCatalog.finishReceipted(url: transactionURL, expected: transactionAttempt,
+            verify: { _, _ in true }, cleanup: { true }) == published.0)
+        precondition(ActivityCatalog.pendingEnrollment(url: transactionURL) == nil)
         let forgottenURL = directory.appendingPathComponent("forgotten-pending.sqlite")
         let forgottenKeychain = FakeKeychain()
         let forgottenStore = WidgetCredentialStore(catalogURL: forgottenURL, keychain: forgottenKeychain)

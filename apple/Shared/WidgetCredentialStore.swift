@@ -217,7 +217,7 @@ struct WidgetCredentialStore {
     /// Stale failures may revoke only the captured credential, including on retry.
     func invalidate(_ expected: ActivityCatalog.Activation) -> ActivityCatalog.ClearResult {
         let pending = ActivityCatalog.pendingEnrollment(url: catalogURL)
-        let recovery = pending.flatMap { $0.previous == expected ? $0 : nil }
+        let recovery = pending
         return ActivityCatalog.invalidate(url: catalogURL, expected: expected, recovery: recovery,
                                           recoveryCheck: { WidgetFencedEnrollment(store: self).recoveryEvidenceMatches($0) }) {
             var pendingDeleted = true

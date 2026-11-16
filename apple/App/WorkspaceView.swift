@@ -797,10 +797,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             let result: WidgetEnrollmentOutcome
             if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
                 guard enrollment.canResume(pending) else {
-                    if pending.previous.endpoint == endpoint.origin.absoluteString, current(),
-                       enrollment.abandonInterruptedPreparation(pending), current(),
-                       ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
-                        NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)
+                    if pending.previous.endpoint == endpoint.origin.absoluteString, current() {
+                        if let installed = enrollment.finishInterruptedInstallation(pending), current(),
+                           ActivityCatalog.activation(url: store.catalogURL) == installed {
+                            NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
+                        } else if enrollment.abandonInterruptedPreparation(pending), current(),
+                                  ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
+                            NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)
+                        }
                     }
                     return
                 }
