@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -356,6 +357,7 @@ def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report
         ["integration"],
         ["integration", "tests/integration/desktop_framework_wrap_test.py"],
         ["integration", "--collect-only"],
+        ["partition", "--collect-only"],
     ],
 )
 def test_recipe_entrypoint_rejects_arbitrary_commands(args):
@@ -798,8 +800,7 @@ def test_consuming_candidate_preview_has_no_local_test_directories(candidate_sco
             if argument.startswith("tests/"):
                 assert argument.partition("::")[0].endswith(".py")
     partition = plan["early_guards"][-1]
-    assert partition[3:5] == list(mixed.LOCAL_PARTITION_TESTS)
-    assert partition[5:7] == ["-m", "integration"]
+    assert partition == [sys.executable, "scripts/mixed_scope.py", "partition"]
     assert {mixed.HOSTED_E2E, mixed.HOSTED_PARTITION_TEST} <= set(plan["pending"])
     assert "tests/e2e" in scoped.early_guard_commands(changed)[-1]  # unchanged default guard
 
@@ -912,10 +913,18 @@ def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(tmp_
     uv.write_text(
         f"#!{sys.executable}\n"
         "import json, os, subprocess, sys\n"
+        "import xml.etree.ElementTree as ET\n"
         "with open(os.environ['MIXED_NESTED_RECORD'], 'a') as stream:\n"
         "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "if 'scripts/scoped_checks.py' in sys.argv:\n"
         "    sys.exit(subprocess.run([sys.executable, 'scripts/scoped_checks.py', 'early-fast']).returncode)\n"
+        "for argument in sys.argv:\n"
+        "    if argument.startswith('--junitxml='):\n"
+        "        root = ET.Element('testsuites')\n"
+        f"        for name in {mixed.LOCAL_PARTITION_CASES!r}:\n"
+        "            ET.SubElement(root, 'testcase', "
+        "classname='tests.integration.e2e_lane_partition_test', name=name)\n"
+        "        ET.ElementTree(root).write(argument.split('=', 1)[1])\n"
     )
     uv.chmod(0o700)
     driver = tmp_path / "driver.py"
@@ -963,6 +972,84 @@ def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(tmp_
     plan = json.loads(plan_path.read_text())
     commands = [json.loads(line) for line in record.read_text().splitlines()]
     actual_guards = [["uv", *command] for command in commands if command[:2] == ["run", "pytest"]]
-    assert actual_guards == plan["early_guards"]
+    assert actual_guards[:-1] == plan["early_guards"][:-1]
+    assert plan["early_guards"][-1][1:] == ["scripts/mixed_scope.py", "partition"]
+    assert actual_guards[-1][3:5] == list(mixed.LOCAL_PARTITION_TESTS)
+    assert actual_guards[-1][-1].startswith("--junitxml=")
     assert all("tests/e2e" not in command for command in commands)
     assert plan["base_ref"] == "reviewed-base"
+
+
+@pytest.mark.parametrize(
+    "problem", [None, "missing-parameter", "missing-assertion", "skipped", "failed", "error", "duplicate"]
+)
+def test_partition_evidence_requires_each_exact_body_once(tmp_path, problem):
+    root = ET.Element("testsuites")
+    names = list(mixed.LOCAL_PARTITION_CASES)
+    if problem == "missing-parameter":
+        names.pop(0)
+    elif problem == "missing-assertion":
+        names.pop()
+    elif problem == "duplicate":
+        names.append(names[0])
+    for name in names:
+        case = ET.SubElement(root, "testcase", classname="tests.integration.e2e_lane_partition_test", name=name)
+        if name == names[0] and problem in {"skipped", "failed", "error"}:
+            ET.SubElement(case, "failure" if problem == "failed" else problem)
+    report = tmp_path / "partition.xml"
+    ET.ElementTree(root).write(report)
+    if problem is None:
+        mixed.partition_result(report)
+    else:
+        with pytest.raises(ValueError, match="every expected body exactly once"):
+            mixed.partition_result(report)
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize("mode", ["complete", "filtered-parameter", "filtered-assertion", "skipped-parameter"])
+def test_real_partition_runner_rejects_incomplete_successful_pytest_runs(tmp_path, mode):
+    """Run only the six real bounded cases; no E2E directory is collected or body executed."""
+    parameter = mixed.LOCAL_PARTITION_TESTS[0] + "[arguments0]"
+    environment = dict(os.environ, PYTEST_ADDOPTS="")
+    if mode == "filtered-parameter":
+        environment["PYTEST_ADDOPTS"] = f"--deselect={parameter}"
+    elif mode == "filtered-assertion":
+        environment["PYTEST_ADDOPTS"] = f"--deselect={mixed.LOCAL_PARTITION_TESTS[1]}"
+    elif mode == "skipped-parameter":
+        plugin = tmp_path / "partition_skip_probe.py"
+        plugin.write_text(
+            "import pytest\n"
+            "def pytest_collection_modifyitems(items):\n"
+            "    for item in items:\n"
+            f"        if item.nodeid == {parameter!r}:\n"
+            "            item.add_marker(pytest.mark.skip(reason='synthetic missing-body probe'))\n"
+        )
+        environment["PYTHONPATH"] = str(tmp_path) + os.pathsep + environment.get("PYTHONPATH", "")
+        environment["PYTEST_ADDOPTS"] = "-p partition_skip_probe"
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts/mixed_scope.py"), "partition"],
+        cwd=REPO,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+    if mode == "complete":
+        assert result.returncode == 0, result.stderr
+        assert "6 passed" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "every expected body exactly once" in result.stderr
+        assert "5 passed" in result.stdout  # pytest itself succeeded; exact-body verification must refuse it
+
+
+def test_nested_partition_binding_is_independent_of_python_environment(candidate_scope, monkeypatch):
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    original = scoped.mixed_guard_binding(plan)
+    monkeypatch.setattr(scoped.sys, "executable", "/synthetic/python-environment/bin/python")
+    nested = scoped.current_mixed_plan("origin/main", require_push=True)
+    assert nested["early_guards"][-1][0] != plan["early_guards"][-1][0]
+    assert scoped.mixed_guard_binding(nested) == original
+    nested["early_guards"][-1].append("--collect-only")
+    assert scoped.mixed_guard_binding(nested) != original

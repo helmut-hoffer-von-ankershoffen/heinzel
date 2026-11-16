@@ -36,6 +36,7 @@ The original partition guard collects full E2E inventory with -m integration; it
 Mixed local plans instead run the bounded selector/partition assertions without directory collection. Complete
 real-inventory partition proof and full E2E/integration execution remain explicit hosted obligations. Nested Make
 guards require the same reviewed scope, pushed refs and guard-plan binding; nonmixed guards are unchanged.
+The fixed partition runner verifies all six expected parametrized bodies exactly once, without missing or skipped cases.
 """
 
 import argparse
@@ -381,7 +382,7 @@ def mixed_early_guard_commands(changed: list[str]) -> list[list[str]]:
     Raises:
         ValueError: The existing inventory recipe changed beyond the reviewed replacement.
     """
-    from mixed_scope import LOCAL_PARTITION_TESTS, PARTITION_TEST  # noqa: PLC0415
+    from mixed_scope import PARTITION_TEST  # noqa: PLC0415
 
     result = []
     for command in early_guard_commands(changed):
@@ -391,7 +392,7 @@ def mixed_early_guard_commands(changed: list[str]) -> list[list[str]]:
         if command[:5] != ["uv", "run", "pytest", PARTITION_TEST, "tests/e2e"] or command[5:7] != ["-m", "integration"]:
             msg = "mixed partition guard no longer matches the reviewed bounded replacement"
             raise ValueError(msg)
-        result.append([*command[:3], *LOCAL_PARTITION_TESTS, *command[5:]])
+        result.append([sys.executable, "scripts/mixed_scope.py", "partition"])
     if any(
         (argument == "tests" or argument.startswith("tests/")) and not argument.partition("::")[0].endswith(".py")
         for command in result
@@ -486,7 +487,14 @@ def configured_mixed_plan(parser: argparse.ArgumentParser, base_ref: str, *, sho
 def mixed_guard_binding(plan: dict) -> str:
     """Bind the policy identity and exact guard plan across Python tool environments."""
     keys = ("identity", "scope_sha256", "base_ref", "changed", "push", "early_guards", "pending")
-    data = json.dumps({key: plan[key] for key in keys}, sort_keys=True).encode()
+    binding = {key: plan[key] for key in keys}
+    # uv may use a different Python environment for the nested script. Bind the
+    # fixed runner and operands, while each process uses its own interpreter.
+    binding["early_guards"] = [
+        command[1:] if command[1:] == ["scripts/mixed_scope.py", "partition"] else command
+        for command in plan["early_guards"]
+    ]
+    data = json.dumps(binding, sort_keys=True).encode()
     return hashlib.sha256(data).hexdigest()
 
 
