@@ -1,4 +1,4 @@
-"""Private web state shared by pairing and the updater; existing unsafe state is never repaired online."""
+"""Private web state shared by pairing and the updater, within an owner-controlled directory boundary."""
 
 import os
 import stat
@@ -30,12 +30,12 @@ def _verify_updater_entry(info: os.stat_result) -> None:
 
 @contextmanager
 def private_directory(directory: Path) -> Generator[int]:
-    """Open private state by descriptor; credential readers never repair unsafe permissions.
+    """Tighten an owned directory through the same descriptor used for all subsequent I/O.
 
-    An updater-only directory scan cannot exclude an uncooperative legacy writer
-    adding credentials before chmod. Advisory locks cannot make that predicate
-    atomic, so existing nonprivate directories require separately verified offline
-    recovery. Online readers and writers never chmod or replace them.
+    Both parent and child must exclude writes by other users. Legacy read/execute
+    permissions are removed without inspecting or trusting directory contents.
+    Concurrent same-owner entries still require each consumer's independent file
+    validation; device credentials remain strictly private, owned and unlinked.
 
     Yields:
         The verified private directory descriptor, valid until the context exits.
@@ -54,6 +54,13 @@ def private_directory(directory: Path) -> Generator[int]:
             os.mkdir(directory.name, mode=PRIVATE_DIRECTORY, dir_fd=parent)
         folder = os.open(directory.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
         try:
+            info = os.fstat(folder)
+            if not _owned_read_only_to_others(info, directory=True):
+                msg = "The web state directory is not owner-controlled"
+                raise HeinzelError(msg)
+            if stat.S_IMODE(info.st_mode) != PRIVATE_DIRECTORY:
+                os.fchmod(folder, PRIVATE_DIRECTORY)
+                os.fsync(folder)
             CurrentUser.verify_private(os.fstat(folder), directory=True)
             yield folder
         finally:

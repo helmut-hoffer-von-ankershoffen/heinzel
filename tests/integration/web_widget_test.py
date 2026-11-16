@@ -226,11 +226,11 @@ def test_widget_rejects_unsafe_storage(tmp_path, name, kind):
         devices.widget_check(token, "owner", workspace)
 
 
-def test_widget_rejects_unsafe_directory(tmp_path):
+def test_widget_rejects_other_writable_directory(tmp_path):
     devices = Devices(tmp_path / "devices")
     device, _ = devices.pair("phone")
     token, workspace, _ = devices.widget_issue(device.id, "owner")
-    devices.directory.chmod(0o755)
+    devices.directory.chmod(0o777)
     with pytest.raises(HeinzelError):
         devices.widget_check(token, "owner", workspace)
 
