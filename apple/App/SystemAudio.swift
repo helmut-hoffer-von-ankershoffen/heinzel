@@ -1,3 +1,23 @@
+import Foundation
+
+/// Serializes teardown with an in-flight start and keeps failed teardown retryable.
+@MainActor
+final class AudioStopFence {
+    private var cleanup: Task<Void, Never>?
+
+    func stop(after start: Task<Bool, Never>?,
+              captureStop: @escaping @MainActor () async -> Bool,
+              finished: @escaping @MainActor (Bool) -> Void) {
+        guard cleanup == nil else { return }
+        cleanup = Task {
+            let started = await start?.value ?? false
+            let stopped = started ? await captureStop() : true
+            cleanup = nil
+            finished(stopped)
+        }
+    }
+}
+
 #if os(macOS)
 
 import AppKit
@@ -246,16 +266,26 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
     let sampleRate = 48_000.0
     static var available: Bool { SCContentSharingPicker.shared.isAvailable }
 
-    private static weak var owner: SystemAudio?
+    private static var owner: SystemAudio?
     private let picker = SCContentSharingPicker.shared
     private var pending: CheckedContinuation<Bool, Never>?
     private var stream: SCStream?
     private var output: AudioSamples?
     private var revision = 0
     private var pickerTimeout: Task<Void, Never>?
+    private var captureStart: Task<Bool, Never>?
+    private let stopFence = AudioStopFence()
+    private var didStop = false
+    private var tearingDown = false
+    private var used = false
 
     func start() async -> Bool {
-        guard Self.owner == nil else { return false }
+        guard !used else { return false }
+        guard Self.owner == nil else {
+            if Self.owner?.tearingDown == true { Self.owner?.stop() }
+            return false
+        }
+        used = true
         Self.owner = self
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -277,16 +307,27 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
     var hasReceivedSamples: Bool { output?.hasReceivedSamples == true }
 
     func stop() {
+        tearingDown = true
         revision += 1
         finishPicker(false)
-        let current = stream
-        stream = nil
         output = nil
-        if Self.owner === self {
-            picker.isActive = false
-            Self.owner = nil
+        guard let current = stream else {
+            releaseOwner()
+            return
         }
-        if let current { Task { try? await current.stopCapture() } }
+        stopFence.stop(after: captureStart, captureStop: {
+            do { try await current.stopCapture(); return true }
+            catch { return self.didStop }
+        }, finished: { stopped in
+            guard stopped else { return }
+            self.stream = nil
+            self.captureStart = nil
+            self.releaseOwner()
+        })
+    }
+
+    private func releaseOwner() {
+        if Self.owner === self { picker.isActive = false; Self.owner = nil }
     }
 
     private func finishPicker(_ result: Bool) {
@@ -295,7 +336,7 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
         pickerTimeout?.cancel()
         pickerTimeout = nil
         picker.remove(self)
-        if !result, Self.owner === self {
+        if !result, stream == nil, Self.owner === self {
             picker.isActive = false
             Self.owner = nil
         }
@@ -330,24 +371,28 @@ final class SystemAudio: NSObject, SCContentSharingPickerObserver, SCStreamDeleg
         let capture = SCStream(filter: filter, configuration: configuration, delegate: self)
         self.stream = capture
         let attempt = revision
-        Task {
-            guard attempt == revision else { return }
+        let starting = Task { @MainActor in
             do {
                 try capture.addStreamOutput(samples, type: .audio, sampleHandlerQueue: DispatchQueue(label: "team.heinzel.audio"))
                 try await capture.startCapture()
-                guard attempt == revision else { try? await capture.stopCapture(); return }
+                return true
+            } catch { return false }
+        }
+        captureStart = starting
+        Task {
+            let started = await starting.value
+            guard attempt == revision else { return }
+            if started {
                 output = samples
                 finishPicker(true)
-            } catch {
-                if attempt == revision { stop() }
-            }
+            } else { stop() }
         }
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         let stopped = ObjectIdentifier(stream)
         Task { @MainActor in
-            if self.stream.map(ObjectIdentifier.init) == stopped { stop() }
+            if self.stream.map(ObjectIdentifier.init) == stopped { self.didStop = true; stop() }
         }
     }
 }
