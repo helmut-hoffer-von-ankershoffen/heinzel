@@ -19,10 +19,19 @@ Install the native Swift Mac app, with browser and video panes working again in 
 - **web:** Settle audio tests and use shared navigation controls ([#847](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/847)) ([52ff816](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/52ff816385b5b767c63d0940a90ee5492e854b5d))
 - **ci:** Rebalance macOS browser journeys ([#849](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/849)) ([03f777a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/03f777aa33e6a470f1b82ebf9862d7d1eb28a9cd))
 
+### 📚 Documentation
+
+- **release:** Include the final repair notes ([1f5cd3d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1f5cd3d211471385288d36f04d2cd57bb96ed105))
+
 ### 🧪 Testing
 
 - **ci:** Reduce macOS fixture startup overhead ([#846](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/846)) ([6195675](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/61956756b5dfa8a29995f8af4443034abf2f6a0c))
 - **web:** Read connector switches from one DOM snapshot ([#848](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/848)) ([1010e1f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1010e1f64f1466b7f238dd552768c90911d722b0))
+- **web:** Wait for profile setup before changing chat colors ([34529ed](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/34529edd14478196a93ec36c30f9632ec0dd629c))
+
+### 🏗️ Build and CI
+
+- **release:** Regenerate the full consumer policy ([b8be16c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b8be16cacf4cc8a8da420569b0ee62d32fcf7a77))
 
 ## [0.9.47](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.47) - 2026-11-16
 
