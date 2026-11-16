@@ -315,9 +315,9 @@ E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 # Keep the mounted app sweep in its existing lane when a supervised journey uses a browser helper.
 # Classifying installed-server journeys first keeps their cold starts apart from unrelated browser builds.
-# The mounted UI sweep accounts for about half the measured browser work; alternating filenames overloaded its lane.
-# Keep every other browser file together in the other existing lane, with the same workers and deadlines.
-E2E_WEB_1 := $(filter tests/e2e/web_ui_test.py,$(E2E_WEB))
+# Rebalance the measured macOS browser work without changing worker counts or deadlines.
+E2E_WEB_1_FILES := tests/e2e/web_ui_test.py tests/e2e/scheduled_connected_test.py
+E2E_WEB_1 := $(filter $(E2E_WEB_1_FILES),$(E2E_WEB))
 E2E_WEB_2 := $(filter-out $(E2E_WEB_1),$(E2E_WEB))
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
 
