@@ -25,7 +25,7 @@ class BoundedTLSServer(ThreadingHTTPServer):
 
     def get_request(self):
         connection, address = super().get_request()
-        connection.settimeout(3)
+        connection.settimeout(6)
         return connection, address
 
 
@@ -185,8 +185,9 @@ def run_webkit_fixture(make_kernel, tmp_path, harness):
         }
         assert_webkit_exchange(harness, fixture_input, (bridge.server_port, paired, client, devices), state)
     finally:
-        if stalled is not None:
-            stalled.close()
         bridge.shutdown()
         thread.join(timeout=5)
+        if stalled is not None:
+            stalled.close()
         bridge.server_close()
+        assert not thread.is_alive()
