@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkspaceDirectory, parseWorkspaceLink, workspaceName } from "../src/workspace-directory.js";
+import { createWorkspaceDirectory, parseSharedWorkspace, parseWorkspaceLink, workspaceName } from "../src/workspace-directory.js";
 import { authenticatedUiUrl, isOwnedUiNavigation } from "../src/ui-navigation.js";
 import { lifecycle } from "../src/connection.js";
 
 const token = "t".repeat(32);
 const target = parseWorkspaceLink(`https://studio.example/#token=${token}`);
+
+test("shared links carry only a validated workspace address", () => {
+  const server = encodeURIComponent("https://studio.example");
+  assert.equal(parseSharedWorkspace(`heinzel://connect?server=${server}`), target.origin);
+  assert.equal(parseSharedWorkspace(`https://heinzel.team/open/#server=${server}`), target.origin);
+  for (const value of [`heinzel://connect?server=${server}&server=${server}`, `heinzel://connect?server=${server}#x`,
+    `https://heinzel.team/open/#server=${server}&token=${token}`, `https://user@heinzel.team/open/#server=${server}`,
+    `heinzel://connect?server=${encodeURIComponent(`https://studio.example/#token=${token}`)}`,
+    `heinzel://connect?server=${encodeURIComponent("http://127.0.0.1")}`])
+    assert.throws(() => parseSharedWorkspace(value));
+});
 function fixture(options = {}) {
   let bytes = options.bytes ?? "[]";
   let mode;

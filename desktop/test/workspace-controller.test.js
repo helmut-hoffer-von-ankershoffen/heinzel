@@ -38,6 +38,20 @@ test("switch verifies the explicit remote before replacing and never starts loca
   assert.equal(state.message, "Connected");
 });
 
+test("a shared workspace address requires a matching separate private sign-in", async () => {
+  const f = fixture();
+  const shared = `https://heinzel.team/open/#server=${encodeURIComponent("https://studio.example")}`;
+  const pending = await f.controller.connect({ kind: "link", link: shared });
+  assert.equal(pending.busy, false);
+  assert.equal(pending.needsSignIn, true);
+  assert.match(pending.message, /studio.example/);
+  assert.equal(f.events.some((event) => event[0] === "verify" || event[0] === "replace"), false);
+  const wrong = await f.controller.connect({ kind: "link", link: `https://other.example/#token=${token}` });
+  assert.equal(wrong.needsSignIn, true);
+  assert.equal(f.events.some((event) => event[0] === "verify" || event[0] === "replace"), false);
+  assert.equal((await f.controller.connect(request)).current, "https://studio.example");
+});
+
 test("authentication failure retains the existing workspace and requires a fresh sign-in", async () => {
   let denied = true;
   const f = fixture({ verify: async () => { if (denied) throw { status: 401 }; } });

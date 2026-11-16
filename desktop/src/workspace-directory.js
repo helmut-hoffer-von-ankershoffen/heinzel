@@ -16,6 +16,25 @@ export function parseWorkspaceLink(input, { requireToken = true } = {}) {
   return Object.freeze({ origin: url.origin, token: token ?? null, remote: true });
 }
 
+/** A shared address identifies a workspace; it never supplies or redirects a credential. */
+export function parseSharedWorkspace(input) {
+  if (typeof input !== "string" || input.length > 4096 || /[\u0000-\u001f\u007f\\]/.test(input)) throw new Error("Invalid workspace link.");
+  let url;
+  try { url = new URL(input.trim()); } catch { throw new Error("Invalid workspace link."); }
+  if (url.username || url.password || url.port) throw new Error("Invalid workspace link.");
+  let parameters;
+  if (url.protocol === "heinzel:" && url.hostname === "connect" && url.pathname === "" && !url.hash)
+    parameters = url.searchParams;
+  else if (url.protocol === "https:" && url.hostname === "heinzel.team" && url.pathname === "/open/" && !url.search && url.hash && !url.hash.includes("?"))
+    parameters = new URLSearchParams(url.hash.slice(1));
+  else throw new Error("Invalid workspace link.");
+  const entries = [...parameters];
+  if (entries.length !== 1 || entries[0][0] !== "server") throw new Error("Invalid workspace link.");
+  const target = parseWorkspaceLink(entries[0][1], { requireToken: false });
+  if (target.token) throw new Error("Invalid workspace link.");
+  return target.origin;
+}
+
 export function workspaceName(origin) {
   const host = new URL(origin).hostname;
   if (!host.endsWith(".ts.net") && !host.endsWith(".local")) return host;
