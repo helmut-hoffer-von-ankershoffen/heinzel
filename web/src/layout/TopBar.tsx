@@ -139,6 +139,7 @@ export function TopBar({
           variant="ghost"
           size="icon"
           aria-label={t("nav.openMenu")}
+          title={t("nav.openMenu")}
           aria-haspopup="dialog"
           className="size-11 shrink-0 rounded-full"
           onClick={(event) => {
@@ -266,6 +267,7 @@ export function TopBar({
                 variant="ghost"
                 size="icon"
                 aria-label={t("top.more")}
+                title={t("top.more")}
                 aria-expanded={menu}
                 className="size-11 rounded-full"
                 onClick={() => setMenu((open) => !open)}
