@@ -140,9 +140,10 @@ def test_startup_snapshot_keeps_unknown_plugin_and_similar_source_names_private(
 
 
 @pytest.mark.parametrize("system_customizer", [False, True])
-def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path, system_customizer):
+@pytest.mark.parametrize("isolated", [False, True])
+def test_fixture_enables_fatal_traces_in_both_sdk_stages(tmp_path, system_customizer, isolated):
     prefix = tmp_path / "owned-sdk"
-    env = {"HOME": str(tmp_path), "PYTHONFAULTHANDLER": "1"}
+    env = {"HOME": str(tmp_path)}
     subprocess.run(
         [sys.executable, "-I", "-m", "venv", "--without-pip", str(prefix)],
         env=env,
@@ -158,10 +159,13 @@ def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path, system_customize
         packages = next((prefix / "lib").glob("python*/site-packages"))
         (packages / "00-system-library.pth").write_text(f"import sys; sys.path.insert(0, {str(system_library)!r})\n")
         probe += "; import sys; assert sys._fixture_system_customizer"
-    command = [str(prefix / "bin/python"), "-I", "-c", probe]
+    command = [str(prefix / "bin/python"), *(["-I"] if isolated else []), "-c", probe]
     assert subprocess.check_output(command, env=env, timeout=5) == b"False\n"
     _ui_service.startup_diagnostics(prefix, tmp_path)
     assert subprocess.check_output(command, env=env, timeout=5) == b"True\n"
+    lines = (tmp_path / "startup-phases.txt").read_text().splitlines()
+    assert lines
+    assert all(line.split()[-1] == ("isolated" if isolated else "initial") for line in lines)
 
 
 def test_early_signal_exit_reports_only_allowlisted_fatal_trace():
@@ -417,3 +421,22 @@ def test_a_signal_exit_adds_the_crash_trace_and_still_hides_child_output():
     assert "crash trace={'error': 'Segmentation fault', 'frames': [('other', 2)]}" in message
     assert "a/b.py" not in message
     assert "#token=" not in message
+
+
+@pytest.mark.parametrize("phase", ["initial", "isolated"])
+def test_signal_exit_reports_only_the_owned_process_phase(tmp_path, phase):
+    child = SimpleNamespace(pid=12345, poll=lambda: -11, communicate=lambda timeout: (b"private", b"secret"))
+    fixture = running(child)
+    fixture.service.directory = tmp_path
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    (tmp_path / "startup-phases.txt").write_text(
+        f"12345 {phase}\n67890 isolated\n12345 private-error-body #token=secret\n"
+    )
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    message = str(failure.value)
+    assert f"last observed Python phase={phase}" in message
+    assert "signal=11" in message
+    assert not any(value in message for value in ("12345", "67890", "private", "secret"))
+    (tmp_path / "startup-phases.txt").write_text("67890 isolated\n12345 unrecognized\n")
+    assert fixture.startup_phase() == "unobserved"
