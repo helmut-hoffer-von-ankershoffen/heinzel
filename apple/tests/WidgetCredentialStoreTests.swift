@@ -40,6 +40,8 @@ private final class FakeKeychain: WidgetCredentialKeychain {
         let nextCredential = WidgetCredential(endpoint: next.endpoint, workspaceID: credential.workspaceID,
             generation: UUID().uuidString, token: credential.token, expiresAt: credential.expiresAt)
         let nextBound = store.install(nextCredential, expected: next, now: now)!
+        let staleClear = ActivityCatalog.clear(url: url, expectedToken: capture.writerToken)
+        precondition(staleClear.stale && ActivityCatalog.activation(url: url) == nextBound && keychain.data != nil)
         keychain.canDelete = false
         let revoked = store.clearCurrent()
         precondition(revoked.revoked && !revoked.complete && store.capture(now: now) == nil)

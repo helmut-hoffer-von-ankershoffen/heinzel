@@ -672,8 +672,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 };
             }));
             return JSON.stringify({
-                awake: sessions.filter(session => session.state === 'awake').length,
-                waiting: sessions.filter(session => session.state === 'waiting').length,
+                awake: Math.min(9999, sessions.filter(session => session.state === 'awake').length),
+                waiting: Math.min(9999, sessions.filter(session => session.state !== 'retired' && Number.isInteger(session.waiting_count) && session.waiting_count > 0).length),
                 roster, catalog
             });
             """) as? String
@@ -681,7 +681,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               let result, isWidgetWorkspaceCurrent() else { return }
         let changed: Bool
         if result.isEmpty {
-            _ = WidgetCredentialStore.clearShared()
+            _ = WidgetCredentialStore.clearShared(expectedToken: refreshToken)
             ActivityWidgetData.reload()
             return
         }

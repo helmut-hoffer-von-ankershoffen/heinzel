@@ -57,6 +57,7 @@ final class ActivityCatalog {
     struct ClearResult {
         let revoked: Bool
         let purged: Bool
+        var stale: Bool = false
         var complete: Bool { revoked && purged }
     }
 
@@ -86,6 +87,13 @@ final class ActivityCatalog {
 
     static func refreshToken(url: URL) -> Data? {
         ActivityCatalog(url: url)?.refreshToken()
+    }
+
+    static func legacyRefreshToken(url: URL) -> Data? {
+        withWriterLock(url: url, failure: nil) {
+            guard !FileManager.default.fileExists(atPath: secureModeURL(for: url).path) else { return nil }
+            return ActivityCatalog(url: url)?.refreshToken()
+        }
     }
 
     private func refreshToken() -> Data? {
@@ -250,12 +258,12 @@ final class ActivityCatalog {
 
     /// Publish only a bounded projection while retaining every existing catalog row.
     /// Validate the current snapshot under the same lock and never recapture the token.
-    func publishPartial(scope: String, generation: String, snapshot: Data, expectedToken: Data,
+    func publishPartial(scope: String, generation: String, snapshot: Data, entries: [CatalogHeinzel], expectedToken: Data,
                         acceptPrevious: (Data) -> Bool) -> Bool {
         Self.withWriterLock(url: databaseURL, failure: false) {
             guard matches(expectedToken), let current = authority(), current.activation?.scope == scope,
                   current.scope == scope, let previous = self.snapshot(), acceptPrevious(previous) else { return false }
-            return publishLocked(scope: scope, generation: generation, snapshot: snapshot, entries: [],
+            return publishLocked(scope: scope, generation: generation, snapshot: snapshot, entries: entries,
                                  expectedToken: expectedToken, preserveCatalog: true, write: Self.writeAuthority)
         }
     }
@@ -289,7 +297,10 @@ final class ActivityCatalog {
             bind(generation, to: copy, at: 1); bind(current, to: copy, at: 2)
             guard sqlite3_step(copy) == SQLITE_DONE else { return false }
         }
-        guard let insert = prepare("INSERT INTO catalog_v3 VALUES (?, ?, ?, ?, ?, ?, ?, ?)") else { return false }
+        let insertSQL = preserveCatalog
+            ? "INSERT INTO catalog_v3 VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(generation,id) DO UPDATE SET name=excluded.name, state=excluded.state, activity=excluded.activity, asks=excluded.asks"
+            : "INSERT INTO catalog_v3 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        guard let insert = prepare(insertSQL) else { return false }
         defer { sqlite3_finalize(insert) }
         for (ordinal, item) in entries.enumerated() {
             bind(generation, to: insert, at: 1); bind(item.id, to: insert, at: 2)
@@ -321,9 +332,12 @@ final class ActivityCatalog {
 
     // Revoke the cross-process authority before opening or locking SQLite. A failed
     // purge can leave bytes on disk, but no reader may use that generation.
-    static func clear(url: URL, write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority,
+    static func clear(url: URL, expectedToken: Data? = nil, write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority,
                       remove: (URL) -> Bool = ActivityCatalog.removeAuthority) -> ClearResult {
         withWriterLock(url: url, failure: ClearResult(revoked: false, purged: false)) {
+            if let expectedToken, ActivityCatalog(url: url)?.matches(expectedToken) != true {
+                return ClearResult(revoked: false, purged: false, stale: true)
+            }
             let authority = authorityURL(for: url)
             let previousData = try? Data(contentsOf: authority)
             let previous = previousData.flatMap { try? JSONDecoder().decode(Authority.self, from: $0) }

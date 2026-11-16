@@ -97,18 +97,24 @@ struct WidgetSnapshotClient {
 extension ActivityWidgetData {
     /// A background projection never replaces the full catalog.
     static func savePartial(_ source: WidgetSnapshotEnvelope, capture: WidgetCredentialCapture,
-                            now: Date = .now, catalogOverride: ActivityCatalog? = nil) -> Bool {
+                            now: Date = .now, catalogOverride: ActivityCatalog? = nil,
+                            clock: () -> Date = { .now }) -> Bool {
         guard source.valid(now: now), source.workspaceID == capture.credential.workspaceID,
               let timestamp = source.timestamp, let scope = capture.activation.scope,
-              let catalog = catalogOverride ?? backgroundCatalog() else { return false }
+              let catalog = catalogOverride ?? backgroundCatalog(), let previousData = catalog.snapshot(),
+              let old = try? JSONDecoder().decode(Self.self, from: previousData),
+              old.workspaceScope == scope, old.updatedAt < timestamp else { return false }
         let generation = UUID().uuidString
         let snapshot = Self(awake: source.awake, waiting: source.waiting, updatedAt: timestamp,
-                            heinzels: source.roster, workspaceScope: scope, generation: generation)
+                            heinzels: source.roster, workspaceScope: scope, generation: generation,
+                            catalogUpdatedAt: old.catalogUpdatedAt ?? old.updatedAt)
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
-        return catalog.publishPartial(scope: scope, generation: generation, snapshot: data,
+        let entries = source.roster.map { CatalogHeinzel(id: $0.id, name: $0.name, state: $0.state,
+                                                          activity: $0.activity, asks: $0.asks) }
+        return catalog.publishPartial(scope: scope, generation: generation, snapshot: data, entries: entries,
                                       expectedToken: capture.writerToken) { previous in
-            guard let old = try? JSONDecoder().decode(Self.self, from: previous) else { return false }
-            return old.workspaceScope == scope && old.updatedAt < timestamp
+            let checkedAt = clock()
+            return previous == previousData && capture.credential.valid(at: checkedAt) && source.valid(now: checkedAt)
         }
     }
 }

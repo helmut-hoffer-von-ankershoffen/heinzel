@@ -124,8 +124,9 @@ struct WidgetCredentialStore {
 
     /// Used by foreground logout and authentication failure. Revocation is
     /// published first; missing entitlements leave a retryable cleanup warning.
-    @MainActor @discardableResult static func clearShared() -> Bool {
-        let snapshotCleared = ActivityWidgetData.clear()
+    @MainActor @discardableResult static func clearShared(expectedToken: Data? = nil) -> Bool {
+        let snapshotCleared = ActivityWidgetData.clear(expectedToken: expectedToken)
+        if expectedToken != nil && !snapshotCleared { return false }
         guard let url = ActivityWidgetData.sharedCatalogURL(),
               let pending = ActivityCatalog.pendingCleanup(url: url) else { return snapshotCleared }
         guard let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String,

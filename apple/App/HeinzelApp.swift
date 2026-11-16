@@ -846,6 +846,9 @@ struct ConnectionView: View {
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
+                        // The navigation error has no captured secure activation.
+                        // Do not let it revoke a newer credential at this origin.
+                        let signInWidgetToken = ActivityWidgetData.legacyRefreshToken()
                         #if os(iOS)
                         guard scenePhase == .active else {
                             loadFailure = .signIn
@@ -866,7 +869,10 @@ struct ConnectionView: View {
                                 guard connectionProbe?.revision == result.revision else { continue }
                                 connectionIssue = result.issue
                                 loadFailure = result.issue ?? .signIn
-                                if result.issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                                if result.issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                    _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                    ActivityWidgetData.reload()
+                                }
                                 loadingWorkspace = false
                                 finishConnectionProbe(result.revision)
                                 return
@@ -876,7 +882,10 @@ struct ConnectionView: View {
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
-                            if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                            if issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                ActivityWidgetData.reload()
+                            }
                             loadingWorkspace = false
                             #endif
                         }

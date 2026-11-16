@@ -40,14 +40,24 @@ import Foundation
                      now: now.addingTimeInterval(-60), catalogOverride: catalog))
         let capture = WidgetCredentialCapture(activation: active, credential: credential,
                                               writerToken: ActivityCatalog.refreshToken(url: url)!)
-        precondition(ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog))
+        precondition(ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog, clock: { now }))
         let saved = try JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
         precondition(saved.updatedAt == valid.timestamp && saved.roster.count == 1)
-        precondition(catalog.search(scope: active.scope!, generation: saved.generation!, offset: 50).count == 10)
-        precondition(!ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog))
+        precondition(saved.catalogUpdatedAt == now.addingTimeInterval(-60))
+        precondition(catalog.search(scope: active.scope!, generation: saved.generation!, offset: 50).count == 11)
+        precondition(catalog.find(scope: active.scope!, generation: saved.generation!, id: id)?.name == "Example")
+        precondition(!ActivityWidgetData.savePartial(valid, capture: capture, now: now, catalogOverride: catalog, clock: { now }))
         let freshCapture = WidgetCredentialCapture(activation: active, credential: credential,
                                                    writerToken: ActivityCatalog.refreshToken(url: url)!)
-        precondition(!ActivityWidgetData.savePartial(old, capture: freshCapture, now: now, catalogOverride: catalog))
+        precondition(!ActivityWidgetData.savePartial(old, capture: freshCapture, now: now, catalogOverride: catalog, clock: { now }))
+        let later = try decode { $0.replacingOccurrences(of: "23:59:30Z", with: "23:59:45Z") }
+        let expiring = WidgetCredential(endpoint: credential.endpoint, workspaceID: workspace, generation: credential.generation,
+                                        token: credential.token, expiresAt: now.addingTimeInterval(10))
+        let expiryCapture = WidgetCredentialCapture(activation: active, credential: expiring, writerToken: freshCapture.writerToken)
+        precondition(!ActivityWidgetData.savePartial(later, capture: expiryCapture, now: now, catalogOverride: catalog,
+                                                    clock: { now.addingTimeInterval(11) }))
+        let afterExpiry = try JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
+        precondition(afterExpiry.updatedAt == valid.timestamp)
         print("PASS: widget snapshot version, freshness and data bounds")
     }
 }

@@ -367,7 +367,7 @@ private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
             ActivityWidgetData.requestDetails(for: String(identifier.dropFirst(scope.count + 1)), scope: scope)
         }
         var entries = [current]
-        if let expiry = snapshot?.expiresAt, expiry > date, current.heinzel != nil {
+        if let expiry = current.updatedAt?.addingTimeInterval(ActivityWidgetData.freshness), expiry > date, current.heinzel != nil {
             if let wake = current.nextWake, wake < expiry {
                 entries.append(entry(for: configuration, from: snapshot, at: wake))
             }
@@ -378,15 +378,17 @@ private struct PinnedHeinzelProvider: AppIntentTimelineProvider {
 
     private func entry(for configuration: SelectHeinzelIntent, from snapshot: ActivityWidgetData?, at date: Date) -> PinnedHeinzelEntry {
         let scope = snapshot?.workspaceScope
+        var observedInProjection = false
         let item = scope.flatMap { scope -> WidgetHeinzel? in
             guard let identifier = configuration.heinzel?.id, identifier.hasPrefix(scope + "/") else { return nil }
             let id = String(identifier.dropFirst(scope.count + 1))
-            if let rich = snapshot?.roster.first(where: { $0.id == id }) { return rich }
+            if let rich = snapshot?.roster.first(where: { $0.id == id }) { observedInProjection = true; return rich }
             guard let generation = snapshot?.generation, let entry = ActivityWidgetData.find(scope: scope, generation: generation, id: id) else { return nil }
             return entry.widgetHeinzel
         }
-        return PinnedHeinzelEntry(date: date, heinzel: item, fresh: snapshot.map { $0.expiresAt > date } == true,
-                                  workspaceScope: scope, updatedAt: snapshot?.updatedAt,
+        let updatedAt = observedInProjection ? snapshot?.updatedAt : (snapshot?.catalogUpdatedAt ?? snapshot?.updatedAt)
+        return PinnedHeinzelEntry(date: date, heinzel: item, fresh: updatedAt.map { $0.addingTimeInterval(ActivityWidgetData.freshness) > date } == true,
+                                  workspaceScope: scope, updatedAt: updatedAt,
                                   configured: configuration.heinzel != nil)
     }
 }
