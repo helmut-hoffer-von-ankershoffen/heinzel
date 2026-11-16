@@ -294,13 +294,52 @@ def test_a_main_install_with_an_unreachable_release_source_still_updates(tmp_pat
 )
 def test_a_default_branch_or_index_install_is_reinstalled_asking_again_with_its_plugins(tmp_path, core, requirement):
     uv = FakeUv("0.2.0")
-    result = UpdateService(installation(tmp_path, core, uv), FakeReleases()).update(current="0.2.0")
+    releases = FakeReleases()
+    result = UpdateService(installation(tmp_path, core, uv), releases).update(current="0.2.0")
+    assert releases.asked == ([] if core.startswith("git") else [False])
     assert uv.commands == [install_command(requirement, PLUGIN)]
     assert result.message.splitlines()[0] == (
         "hz 0.2.0 is up to date."
         if core.startswith("git")
         else "hz 0.2.0 stays installed. The newest stable release is 0.4.0. uv kept the existing selection."
     )
+
+
+@pytest.mark.parametrize(
+    ("core", "requirement", "pinned_to"),
+    [("", "heinzel", None), ('specifier = "==0.2.0"', "heinzel==0.2.0", "==0.2.0")],
+)
+def test_unchanged_index_install_says_when_the_newest_release_could_not_be_checked(
+    tmp_path, core, requirement, pinned_to
+):
+    uv = FakeUv("0.2.0")
+    releases = FakeReleases(OSError("offline discovery"))
+    service = UpdateService(installation(tmp_path, core, uv), releases)
+    result = service.update(current="0.2.0")
+    assert releases.asked == [False]
+    assert uv.commands == [install_command(requirement, PLUGIN)]
+    assert (result.after, result.latest, result.pinned_to, result.updated) == ("0.2.0", None, pinned_to, False)
+    assert result.message == "hz 0.2.0 stays installed. The newest stable release could not be checked."
+    assert [(plugin.distribution, plugin.status) for plugin in result.plugins] == [("heinzel-acme", "unchanged")]
+
+
+def test_unchanged_index_install_is_up_to_date_when_the_latest_release_is_confirmed(tmp_path):
+    uv = FakeUv("0.2.0")
+    releases = FakeReleases("0.2.0")
+    result = UpdateService(installation(tmp_path, "", uv), releases).update(current="0.2.0")
+    assert releases.asked == [False]
+    assert (result.after, result.latest, result.updated) == ("0.2.0", "0.2.0", False)
+    assert result.message == "hz 0.2.0 is up to date."
+
+
+def test_an_unchanged_explicit_index_source_does_not_try_release_discovery(tmp_path):
+    uv = FakeUv("0.2.0")
+    releases = FakeReleases(OSError("offline discovery"))
+    service = UpdateService(installation(tmp_path, "", uv), releases)
+    result = service.update("heinzel==0.2.0", current="0.2.0")
+    assert releases.asked == []
+    assert uv.commands == [install_command("heinzel==0.2.0", PLUGIN)]
+    assert result.message == "Reinstalled hz 0.2.0 from heinzel==0.2.0"
 
 
 def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):

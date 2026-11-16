@@ -1264,7 +1264,13 @@ class UpdateService:
             raise HeinzelError(msg)
         now = self._installation.core_pin()
         message = _install_message(
-            current, after, latest, target=target, channel=channel, explicit_source=explicit_source
+            current,
+            after,
+            latest,
+            target=target,
+            channel=channel,
+            explicit_source=explicit_source,
+            index_lookup_failed=pin.kind == "index" and channel is None and not explicit_source and latest is None,
         )
         after_plugins = self._plugin_versions(strict=True)
         self._verify_plugin_versions(metadata, after_plugins)
@@ -1986,11 +1992,20 @@ def _verify_core_selection(selected: str, current: str, minimum: str | None, *, 
 
 
 def _install_message(  # noqa: PLR0913 - report the resolved version and how the source was chosen
-    current: str, after: str, latest: str | None, *, target: str | None, channel: str | None, explicit_source: bool
+    current: str,
+    after: str,
+    latest: str | None,
+    *,
+    target: str | None,
+    channel: str | None,
+    explicit_source: bool,
+    index_lookup_failed: bool,
 ) -> str:
     if after == current:
         if target is not None:
             return f"Reinstalled hz {current} from {target}"
+        if index_lookup_failed:
+            return f"hz {current} stays installed. The newest stable release could not be checked."
         if latest is not None and Version(latest) > _version(current):
             return (
                 f"hz {current} stays installed. The newest stable release is {latest}. uv kept the existing selection."
