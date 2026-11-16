@@ -691,11 +691,18 @@ def test_bridge_quota_wait_is_bounded(monkeypatch, responses, delays, refusal):
     clock = SimpleNamespace(monotonic=lambda: elapsed, time=lambda: 1000 + elapsed, sleep=sleep)
     monkeypatch.setattr(harness, "time", clock)
     monkeypatch.setattr(harness, "_bridge_quota", probe)
+    evidence = {}
     if refusal:
         with pytest.raises(harness.Refused, match="insufficient anonymous GitHub quota"):
-            harness.verify_legacy_bridge_readiness()
+            harness.verify_legacy_bridge_readiness(evidence=evidence)
+        assert evidence["remaining_after_probe"] == 0
+        assert evidence["reset_epoch"] == responses[-1][1]
+        assert evidence["sleep_seconds"] == sum(delays)
     else:
-        assert harness.verify_legacy_bridge_readiness() == {"required_requests": 1, "remaining_after_probe": 1}
+        result = harness.verify_legacy_bridge_readiness()
+        assert result["required_requests"] == result["remaining_after_probe"] == 1
+        assert result["sleep_seconds"] == result["elapsed_seconds"] == sum(delays)
+        assert result["reset_epoch"] == responses[-1][1]
     assert waits == delays
     assert next(results, None) is None
 
@@ -767,7 +774,7 @@ def test_bridge_readiness_precedes_literal_update_and_does_not_mask_its_failure(
         assert profile == "published profile"
         calls.append("verified bridge")
 
-    def quota():
+    def quota(_case):
         calls.append("quota")
         if not quota_ready:
             message = "infrastructure deadline"
@@ -802,7 +809,7 @@ def test_bridge_readiness_precedes_literal_update_and_does_not_mask_its_failure(
     monkeypatch.setattr(harness, "snapshot_files", lambda _path: {"config": b"preserved"})
     monkeypatch.setattr(harness, "verify_state", lambda *_args: None)
     monkeypatch.setattr(harness, "verify_legacy_bridge", verify_bridge)
-    monkeypatch.setattr(harness, "verify_legacy_bridge_readiness", quota)
+    monkeypatch.setattr(harness, "wait_for_legacy_bridge", quota)
     monkeypatch.setattr(harness, "bridge_post_interpreter", lambda _case: "python3.12")
     monkeypatch.setattr(harness, "bridge_python_need", lambda _case: None)
 
@@ -1188,3 +1195,86 @@ def test_plugin_apply_requires_one_confirmation_new_document_and_success(action,
     assert "window.__hzAcceptancePluginRestart === undefined" in browser.waits[0]
     assert 'data-stage=\\"done\\"' in browser.waits[1]
     assert 'data-stage=\\"failed\\"' in browser.waits[1]
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "3901", "1.5", "nan"])
+def test_bridge_quota_cli_rejects_unbounded_wait(value):
+    with pytest.raises(SystemExit):
+        harness.parse_args(
+            ["--expect-version", "published", "--expect-app-version", "published", "--bridge-quota-wait-seconds", value]
+        )
+
+
+@pytest.mark.parametrize("value", [None, "1", "3900"])
+def test_bridge_quota_cli_budget(value):
+    argv = ["--expect-version", "published", "--expect-app-version", "published"]
+    if value is not None:
+        argv += ["--bridge-quota-wait-seconds", value]
+    assert harness.parse_args(argv).bridge_quota_wait_seconds == (int(value) if value else 120)
+
+
+@pytest.mark.parametrize("oversleep", [False, True])
+def test_bridge_quota_long_window_records_only_bounded_sleep_credit(monkeypatch, oversleep):
+    elapsed = 0.0
+    calls = []
+
+    def sleep(delay):
+        nonlocal elapsed
+        assert delay == 3601
+        elapsed += 5000 if oversleep else delay
+
+    def probe(timeout):
+        nonlocal elapsed
+        calls.append(timeout)
+        elapsed += 2  # Network work must consume workload time, never sleep credit.
+        return (0, 4602) if len(calls) == 1 else (1, 8202)
+
+    monkeypatch.setattr(
+        harness, "time", SimpleNamespace(monotonic=lambda: elapsed, time=lambda: 1000 + elapsed, sleep=sleep)
+    )
+    monkeypatch.setattr(harness, "_bridge_quota", probe)
+    case = SimpleNamespace(
+        ctx={"args": SimpleNamespace(bridge_quota_wait_seconds=3900)}, notes={}, infrastructure_sleep=0.0
+    )
+    if oversleep:
+        with pytest.raises(harness.Refused):
+            harness.wait_for_legacy_bridge(case)
+        assert case.infrastructure_sleep == 3900
+        assert len(calls) == 1
+    else:
+        result = harness.wait_for_legacy_bridge(case)
+        assert result["reset_epoch"] == 8202
+        assert result["remaining_after_probe"] == 1
+        assert result["elapsed_seconds"] == 3605
+        assert case.infrastructure_sleep == 3601
+        assert len(calls) == 2
+    assert case.notes["legacy_bridge_quota"]["sleep_seconds"] == case.infrastructure_sleep
+    assert elapsed - case.infrastructure_sleep >= 2
+
+
+@pytest.mark.parametrize("work_seconds", [2400, 2401])
+def test_bridge_sleep_credit_keeps_original_workload_deadline(monkeypatch, work_seconds):
+    monkeypatch.setattr(harness.time, "monotonic", lambda: 3601 + work_seconds)
+    monkeypatch.setattr(harness, "manager_gate", lambda: None)
+    case = SimpleNamespace(
+        started=0,
+        infrastructure_sleep=3601,
+        steps=[],
+        first_failure=None,
+        check_denied=lambda: None,
+        notes={"legacy_bridge_quota": {"sleep_seconds": 999999}},
+    )
+    if work_seconds > harness.CASE_DEADLINE:
+        with pytest.raises(harness.StepFailed, match="case deadline"):
+            harness.Case.step(case, "original updater", lambda: pytest.fail("must not execute"))
+    else:
+        assert harness.Case.step(case, "original updater", lambda: "executed") == "executed"
+
+
+def test_full_acceptance_quota_window_does_not_change_sharded_budget():
+    workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/acceptance.yml").read_text()
+    shard = (Path(__file__).resolve().parents[2] / ".github/workflows/acceptance-sharded.yml").read_text()
+    assert "--bridge-quota-wait-seconds 3900" in workflow
+    assert "timeout-minutes: 240" in workflow
+    assert "--bridge-quota-wait-seconds" not in shard
+    assert "timeout-minutes: 15" in shard

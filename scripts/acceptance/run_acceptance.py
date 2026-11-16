@@ -341,21 +341,50 @@ def _bridge_quota_headers(headers):
     return int(remaining), int(reset)
 
 
-def verify_legacy_bridge_readiness() -> dict[str, int]:
-    """Probe the real release endpoint from this runner without lending credentials or a response to the updater."""
-    deadline = time.monotonic() + BRIDGE_QUOTA_WAIT
-    while (budget := deadline - time.monotonic()) > 0:
-        remaining, reset = _bridge_quota(min(budget, BRIDGE_PROBE_TIMEOUT))
-        if time.monotonic() >= deadline:
-            break
-        if remaining >= BRIDGE_RELEASE_REQUESTS:
-            return {"required_requests": BRIDGE_RELEASE_REQUESTS, "remaining_after_probe": remaining}
-        # Wake just after the server's reset. A stale reset must not spin or consume the next window.
-        delay = reset - time.time() + 1
-        if not 0 < delay < deadline - time.monotonic():
-            break
-        time.sleep(delay)
-    raise Refused("Legacy bridge infrastructure: insufficient anonymous GitHub quota within the readiness deadline")
+def verify_legacy_bridge_readiness(wait_seconds=BRIDGE_QUOTA_WAIT, *, evidence=None, credit_sleep=None):
+    """Wait for real anonymous quota; never supply credentials or a response to the updater."""
+    if type(wait_seconds) is not int or not 1 <= wait_seconds <= 3900:
+        raise ValueError("bridge quota wait must be between 1 and 3900 seconds")
+    evidence = evidence if evidence is not None else {}
+    started = time.monotonic()
+    deadline = started + wait_seconds
+    slept = 0.0
+    evidence.update(required_requests=BRIDGE_RELEASE_REQUESTS, wait_budget_seconds=wait_seconds)
+    try:
+        while (budget := deadline - time.monotonic()) > 0:
+            remaining, reset = _bridge_quota(min(budget, BRIDGE_PROBE_TIMEOUT))
+            evidence.update(remaining_after_probe=remaining, reset_epoch=reset)
+            if time.monotonic() >= deadline:
+                break
+            if remaining >= BRIDGE_RELEASE_REQUESTS:
+                return evidence
+            # Wake just after the server reset; stale or out-of-budget resets must not spin.
+            delay = reset - time.time() + 1
+            if not 0 < delay < deadline - time.monotonic():
+                break
+            sleep_started = time.monotonic()
+            try:
+                time.sleep(delay)
+            finally:
+                measured = min(max(0.0, time.monotonic() - sleep_started), wait_seconds - slept)
+                slept += measured
+                if credit_sleep is not None:
+                    credit_sleep(measured)
+        raise Refused("Legacy bridge infrastructure: insufficient anonymous GitHub quota within the readiness deadline")
+    finally:
+        evidence.update(elapsed_seconds=round(time.monotonic() - started, 3), sleep_seconds=round(slept, 3))
+
+
+def wait_for_legacy_bridge(case):
+    evidence = case.notes["legacy_bridge_quota"] = {}
+
+    def credit_sleep(seconds):
+        # Only this helper's measured sleep is excluded from the unchanged workload deadline.
+        case.infrastructure_sleep += seconds
+
+    return verify_legacy_bridge_readiness(
+        case.ctx["args"].bridge_quota_wait_seconds, evidence=evidence, credit_sleep=credit_sleep
+    )
 
 
 def latest_app_version():
@@ -576,6 +605,7 @@ class Case:
         self.root.mkdir(mode=0o700)
         self.root = self.root.resolve(strict=True)
         self.started = time.monotonic()
+        self.infrastructure_sleep = 0.0
         self.steps, self.hits, self.secrets = [], [], set()
         self.first_failure = None
         self.status = "RUNNING"
@@ -635,7 +665,7 @@ class Case:
         record = {"name": name, "ok": False}
         self.steps.append(record)
         try:
-            if time.monotonic() - self.started > CASE_DEADLINE:
+            if time.monotonic() - self.started - self.infrastructure_sleep > CASE_DEADLINE:
                 fail("The case deadline passed")
             manager_gate()
             result = action()
@@ -1904,7 +1934,7 @@ def case_update(case):
         case.step(
             "published legacy bridge bytes and retained state", lambda: verify_legacy_bridge(case, old["profile"])
         )
-        case.step("anonymous GitHub quota for the published bridge", verify_legacy_bridge_readiness)
+        case.step("anonymous GitHub quota for the published bridge", lambda: wait_for_legacy_bridge(case))
         case.step(
             "the published bridge updates to the target release",
             lambda: _summarize(run_update(case, "hz-system-update-from-bridge", previous=LEGACY_BRIDGE_VERSION)),
@@ -2942,7 +2972,15 @@ def parse_args(argv=None):
         help="NOT ACCEPTANCE: set HZ_APP_PROFILE to the published profile so a release whose discovery fails can "
         "still exercise later checks. Forces the verdict NOT_ACCEPTANCE_DIAGNOSTIC.",
     )
+    parser.add_argument(
+        "--bridge-quota-wait-seconds",
+        type=int,
+        default=BRIDGE_QUOTA_WAIT,
+        help="Anonymous legacy bridge infrastructure wait budget in seconds (1-3900; default 120).",
+    )
     args = parser.parse_args(argv)
+    if not 1 <= args.bridge_quota_wait_seconds <= 3900:
+        parser.error("--bridge-quota-wait-seconds must be between 1 and 3900")
     given = [bool(args.candidate_wheel_url), bool(args.candidate_wheel_sha256), bool(args.candidate_profile_url)]
     if any(given) and not all(given):
         parser.error("--candidate-wheel-url, --candidate-wheel-sha256 and --candidate-profile-url go together")
