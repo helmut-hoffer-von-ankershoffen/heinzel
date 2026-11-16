@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """Reject missing or skipped Apple CI fixtures from the pytest JUnit report."""
 
 import sys
