@@ -3,7 +3,7 @@ import Foundation
 // Standalone, isolated model probe; does not read or write shared widget defaults.
 @main
 struct WidgetStatusTests {
-    static func main() {
+    static func main() throws {
         func item(_ activity: String?, state: String = "active") -> WidgetHeinzel {
             WidgetHeinzel(id: "fixture", name: "Example", state: state, activity: activity,
                           asks: nil, lastApproved: nil, nextWake: nil, portrait: nil)
@@ -26,11 +26,11 @@ struct WidgetStatusTests {
         precondition(snapshot.roster.map(\.activity) == ["working", "waiting_for_you"])
         precondition(snapshot.roster.allSatisfy { $0.asks == nil && $0.nextWake == nil })
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("widget-test-" + UUID().uuidString)
-        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("catalog.sqlite")
         let catalog = ActivityCatalog(url: url)!
-        let scope = ActivityWidgetData.scope(for: "https://example.test")
+        let scope = ActivityWidgetData.scope(for: "fictional-workspace")
         precondition(ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: snapshot.roster,
                                              entries: [], workspaceScope: scope, expectedToken: ActivityCatalog.refreshToken(url: url)!,
                                              now: date, catalogOverride: catalog))
@@ -38,7 +38,7 @@ struct WidgetStatusTests {
         precondition(ActivityWidgetData.save(awake: 1, waiting: 1, heinzels: snapshot.roster,
                                              entries: [], workspaceScope: scope, expectedToken: ActivityCatalog.refreshToken(url: url)!,
                                              now: later, catalogOverride: catalog))
-        let saved = try! JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
+        let saved = try JSONDecoder().decode(ActivityWidgetData.self, from: catalog.snapshot()!)
         precondition(saved.updatedAt == later && saved.workspaceScope == scope)
         precondition(saved.expiresAt == later.addingTimeInterval(300))
         print("PASS: attention ordering, lifecycle status, expiry and unknown details")

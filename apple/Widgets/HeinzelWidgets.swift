@@ -547,6 +547,11 @@ private struct HeinzelRosterView: View {
         }.map(\.element)
     }
 
+    private var preferredLimit: Int {
+        if family == .systemLarge { return 6 }
+        return family == .systemSmall ? 1 : 3
+    }
+
     var body: some View {
         Group {
             if entry.loading || !redaction.isEmpty {
@@ -555,7 +560,7 @@ private struct HeinzelRosterView: View {
                     .unredacted()
             } else {
                 ViewThatFits(in: .vertical) {
-                    roster(limit: family == .systemLarge ? 6 : (family == .systemSmall ? 1 : 3))
+                    roster(limit: preferredLimit)
                     roster(limit: family == .systemLarge ? 4 : 2)
                     roster(limit: 1)
                 }
