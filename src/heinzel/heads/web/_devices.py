@@ -23,11 +23,14 @@ import re
 import secrets
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
+from heinzel.heads.web._widget_fence import FenceState, Receipt, Request, transition
 from heinzel.kernel import HeinzelError, clean_text
 from heinzel.kernel._identity import CurrentUser
 
@@ -54,6 +57,36 @@ class Device(BaseModel):
         pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the token; the token itself is never stored."
     )
     widget: "WidgetCredential | None" = None
+    widget_fence: "WidgetFence | None" = None
+
+    @model_validator(mode="after")
+    def validate_fence(self) -> "Device":
+        """Reject inconsistent persisted fencing state instead of resetting it.
+
+        Raises:
+            ValueError: The stored credential and fence disagree.
+        """
+        fence = self.widget_fence
+        if fence is None:
+            return self
+        if fence.receipt is None:
+            if self.widget is not None or fence.revision != fence.initial_revision:
+                msg = "Widget fence has an untracked credential"
+                raise ValueError(msg)
+            return self
+        receipt = fence.receipt
+        valid = receipt.revision == fence.revision
+        if receipt.operation == "issue":
+            valid = valid and self.widget is not None and receipt.commitment == self.widget.sha256
+            valid = valid and self.widget is not None and receipt.expires == self.widget.expires
+            valid = valid and self.widget is not None and self.widget.owner == fence.owner
+            valid = valid and self.widget is not None and self.widget.workspace == fence.workspace
+        else:
+            valid = valid and self.widget is None and receipt.commitment is None and receipt.expires is None
+        if not valid:
+            msg = "Inconsistent widget fence"
+            raise ValueError(msg)
+        return self
 
 
 class WidgetCredential(BaseModel):
@@ -63,6 +96,30 @@ class WidgetCredential(BaseModel):
     owner: str = Field(min_length=1, max_length=128)
     workspace: str = Field(pattern=r"^[0-9a-f]{64}$")
     expires: AwareDatetime
+
+
+class WidgetReceipt(BaseModel):
+    """The last committed fenced operation, with no raw credential."""
+
+    model_config = ConfigDict(extra="forbid")
+    attempt: str = Field(pattern=r"^[0-9a-f]{32}$")
+    operation: Literal["issue", "revoke"]
+    previous_revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    commitment: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    expires: AwareDatetime | None = None
+
+
+class WidgetFence(BaseModel):
+    """Durable pairing incarnation and operation receipt."""
+
+    model_config = ConfigDict(extra="forbid")
+    epoch: str = Field(pattern=r"^[0-9a-f]{32}$")
+    revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    initial_revision: str = Field(pattern=r"^[0-9a-f]{32}$")
+    owner: str = Field(min_length=1, max_length=128)
+    workspace: str = Field(pattern=r"^[0-9a-f]{64}$")
+    receipt: WidgetReceipt | None = None
 
 
 _DEVICES = TypeAdapter(list[Device])
@@ -127,12 +184,16 @@ class Devices:
             self._touch(found.id)
         return found
 
-    def widget_issue(self, device_id: str, owner: str) -> tuple[str, str, datetime] | None:
+    def widget_issue(self, device_id: str, owner: str, token: str | None = None) -> tuple[str, str, datetime] | None:
         """Replace this device's widget credential; never issue to an unpaired device."""
         with self._locked() as folder:
             devices = self._read(folder)
             device = next((d for d in devices if d.id == device_id), None)
+            if token is not None:
+                device = self._widget_parent(devices, device_id, token)
             if device is None or self._clock() - device.last_used > UNUSED_FOR:
+                return None
+            if device.widget_fence is not None or self._fence_marker(folder, device):
                 return None
             workspace = self._widget_workspace(folder)
             token = "hzw_" + secrets.token_urlsafe(32)
@@ -144,7 +205,11 @@ class Devices:
             return token, workspace, expires
 
     def widget_check(self, token: str, owner: str, workspace: str) -> str | None:
-        """Check scope, expiry and live parent pairing on every request."""
+        """Check scope, expiry and live parent pairing on every request.
+
+        Raises:
+            HeinzelError: The private fence or workspace identity is damaged.
+        """
         if not token.startswith("hzw_") or not re.fullmatch(r"[0-9a-f]{64}", workspace):
             return None
         with self._locked() as folder:
@@ -152,6 +217,10 @@ class Devices:
                 return None
             now = self._clock()
             for device in self._read(folder):
+                marked = self._fence_marker(folder, device)
+                if marked != (device.widget_fence is not None):
+                    msg = "The widget fence is damaged"
+                    raise HeinzelError(msg)
                 widget = device.widget
                 if (
                     widget
@@ -164,14 +233,152 @@ class Devices:
                     return device.id
         return None
 
-    def widget_revoke(self, device_id: str) -> None:
+    def widget_revoke(self, device_id: str, token: str | None = None) -> bool:
         """Revoke only this paired device's widget credential."""
         with self._locked() as folder:
             devices = self._read(folder)
-            if any(d.id == device_id for d in devices):
+            device = next((d for d in devices if d.id == device_id), None)
+            if token is not None:
+                device = self._widget_parent(devices, device_id, token)
+                if device is None:
+                    return False
+            if device and (device.widget_fence is not None or self._fence_marker(folder, device)):
+                return False
+            if device:
                 self._write(
                     folder, [d.model_copy(update={"widget": None}) if d.id == device_id else d for d in devices]
                 )
+            return True
+
+    def _fence_marker(self, folder: int, device: Device, *, create: bool = False) -> bool:
+        name = "widget-fenced-" + device.sha256
+        try:
+            descriptor = CurrentUser.open_private(folder, name, os.O_RDONLY)
+        except FileNotFoundError:
+            if not create:
+                return False
+            descriptor = CurrentUser.open_private(folder, name, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(b"1")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.fsync(folder)
+            return True
+        with os.fdopen(descriptor, "rb") as handle:
+            CurrentUser.verify_private(os.fstat(handle.fileno()))
+            if handle.read(2) != b"1":
+                msg = "The widget fence marker is damaged"
+                raise HeinzelError(msg)
+        return True
+
+    def _widget_parent(self, devices: list[Device], device_id: str, token: str) -> Device | None:
+        if not token.startswith(PREFIX):
+            return None
+        presented = digest(token)
+        return next(
+            (
+                d
+                for d in devices
+                if d.id == device_id
+                and hmac.compare_digest(d.sha256, presented)
+                and self._clock() - d.last_used <= UNUSED_FOR
+            ),
+            None,
+        )
+
+    def widget_fence_negotiate(self, device_id: str, token: str, owner: str) -> WidgetFence | None:
+        """Bind a durable fence to the exact live pairing; a partial setup fails closed.
+
+        Raises:
+            HeinzelError: The stored fence is damaged or belongs to another workspace.
+        """
+        with self._locked() as folder:
+            devices = self._read(folder)
+            device = self._widget_parent(devices, device_id, token)
+            if device is None:
+                return None
+            marked = self._fence_marker(folder, device)
+            workspace = self._widget_workspace(folder)
+            if device.widget_fence is not None:
+                if not marked or device.widget_fence.owner != owner or device.widget_fence.workspace != workspace:
+                    msg = "The widget fence is damaged"
+                    raise HeinzelError(msg)
+                return device.widget_fence
+            if marked:
+                msg = "The widget fence is incomplete"
+                raise HeinzelError(msg)
+            state = FenceState.new()
+            fence = WidgetFence(
+                epoch=state.epoch,
+                revision=state.revision,
+                initial_revision=state.revision,
+                owner=owner,
+                workspace=workspace,
+            )
+            self._fence_marker(folder, device, create=True)
+            self._write(
+                folder,
+                [
+                    d.model_copy(update={"widget": None, "widget_fence": fence}) if d.id == device.id else d
+                    for d in devices
+                ],
+            )
+            return fence
+
+    def widget_fence_mutate(
+        self, device_id: str, token: str, owner: str, request: Request
+    ) -> tuple[WidgetFence, Receipt] | None:
+        """Authenticate, compare and commit the operation under one process lock.
+
+        Raises:
+            HeinzelError: The stored fence is damaged or belongs to another workspace.
+        """
+        with self._locked() as folder:
+            devices = self._read(folder)
+            device = self._widget_parent(devices, device_id, token)
+            if device is None:
+                return None
+            fence = device.widget_fence
+            if fence is None or not self._fence_marker(folder, device):
+                msg = "The widget fence is unavailable"
+                raise HeinzelError(msg)
+            if fence.owner != owner or fence.workspace != self._widget_workspace(folder, create=False):
+                msg = "The widget fence belongs to another workspace"
+                raise HeinzelError(msg)
+            receipt = Receipt(**fence.receipt.model_dump()) if fence.receipt else None
+            state = FenceState(
+                fence.epoch,
+                fence.revision,
+                device.widget.sha256 if device.widget else None,
+                device.widget.expires if device.widget else None,
+                receipt,
+            )
+            result, saved = transition(state, request, self._clock())
+            if result == state:
+                return fence, saved
+            updated_fence = WidgetFence(
+                epoch=result.epoch,
+                revision=result.revision,
+                initial_revision=fence.initial_revision,
+                owner=owner,
+                workspace=fence.workspace,
+                receipt=WidgetReceipt.model_validate(asdict(saved)),
+            )
+            widget = (
+                WidgetCredential(
+                    sha256=result.child_hash, owner=owner, workspace=fence.workspace, expires=result.child_expires
+                )
+                if result.child_hash and result.child_expires
+                else None
+            )
+            self._write(
+                folder,
+                [
+                    d.model_copy(update={"widget": widget, "widget_fence": updated_fence}) if d.id == device.id else d
+                    for d in devices
+                ],
+            )
+            return updated_fence, saved
 
     def _widget_workspace(self, folder: int, *, create: bool = True) -> str:
         try:

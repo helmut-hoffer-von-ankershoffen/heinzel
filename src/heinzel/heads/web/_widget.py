@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
+from heinzel.heads.web._widget_fence_routes import add_widget_fence, paired_token
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, OperationLet
 from heinzel.kernel._identity import LOCAL_READ_PERMISSIONS
 
@@ -26,12 +27,13 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
     """Install device-only issuance and a separately authenticated snapshot route."""
     add_pairing(endpoints, devices)
     user = kernel.resolve(CurrentUser)
+    add_widget_fence(endpoints, devices, user)
 
     @endpoints.post("/_web/widget-credential", include_in_schema=False)
     def issue(request: Request) -> JSONResponse:
         if getattr(request.state, "auth", None) != "device":
             return JSONResponse({"error": "A paired device is required."}, status_code=403, headers=NO_STORE)
-        issued = devices.widget_issue(request.state.device, user.principal().id)
+        issued = devices.widget_issue(request.state.device, user.principal().id, paired_token(request))
         if issued is None:
             return JSONResponse({"error": "The device is no longer paired."}, status_code=403, headers=NO_STORE)
         token, workspace, expires = issued
@@ -43,8 +45,8 @@ def add_widget(app: FastAPI, endpoints: FastAPI, devices: Devices, kernel: Kerne
     def revoke(request: Request) -> JSONResponse:
         if getattr(request.state, "auth", None) != "device":
             return JSONResponse({"error": "A paired device is required."}, status_code=403, headers=NO_STORE)
-        devices.widget_revoke(request.state.device)
-        return JSONResponse({"revoked": True}, headers=NO_STORE)
+        revoked = devices.widget_revoke(request.state.device, paired_token(request))
+        return JSONResponse({"revoked": revoked}, status_code=200 if revoked else 409, headers=NO_STORE)
 
     @app.get("/api/_web/widget-snapshot", include_in_schema=False)
     def snapshot(request: Request) -> JSONResponse:
