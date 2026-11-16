@@ -109,13 +109,16 @@ def test_native_script_and_core_recover_lost_reply(make_kernel, tmp_path):
     thread.start()
     runner = """
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+const {webcrypto, createHash} = require('node:crypto');
+globalThis.crypto = webcrypto;
 const script = Buffer.from(process.argv[1], 'base64').toString('utf8');
 const [device, bridge, operation, payload] = process.argv.slice(2);
 globalThis.location = {origin:'https://example.test'};
 globalThis.localStorage = {getItem: key => key === 'hz.device' ? device : null};
 const realFetch = globalThis.fetch;
 globalThis.fetch = (path, options) => realFetch(bridge + path, options);
-new AsyncFunction('origin','operation','payload',script)('https://example.test',operation,payload)
+const fingerprint = createHash('sha256').update('heinzel-widget-pair-v1|https://example.test|' + device).digest('hex');
+new AsyncFunction('origin','operation','payload','expectedFingerprint',script)('https://example.test',operation,payload,fingerprint)
   .then(value => process.stdout.write(JSON.stringify(value))).catch(() => process.exit(1));
 """
 
