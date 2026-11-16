@@ -30,7 +30,8 @@ function fixture({ answer = () => ({ ready: true, state: 1, error: false }), pla
     const contents = Object.assign(new EventEmitter(), { preferences, isDestroyed: () => dead, mainFrame: { top: null },
       close: () => { dead = true; calls.push(["close"]); }, getURL: () => url,
       loadURL: async (target, options) => { url = target; calls.push(["load", target, options]); },
-      reload: () => {}, navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+      reload: () => {}, navigationHistory: { canGoBack: () => false, canGoForward: () => false,
+        clear: () => calls.push(["history-clear"]) },
       setWebRTCIPHandlingPolicy: () => {}, setWindowOpenHandler: (handler) => { contents.popup = handler; },
       executeJavaScript: async (code, gesture) => { calls.push(["script", code, gesture]); return code.includes("getPlayerState") ? answer() : true; } });
     const view = { webContents: contents, setBounds: (bounds) => calls.push(["bounds", bounds]), setVisible: (visible) => calls.push(["visible", visible]) };
@@ -89,6 +90,7 @@ test("a sign-in cookie set in the sidebar browser is visible to the player guest
   assert.deepEqual(order, [["player", "about:blank", undefined], ["wipe"],
     ["player", `${PLAYER_ORIGIN}/embed/${VIDEO}?playsinline=1&rel=0`, { httpReferrer: `${ORIGIN}/` }]]);
   assert.equal(playerSession.cookies.size, 0);
+  assert.equal(f.calls.filter(([name]) => name === "history-clear").length, 1);
 });
 
 test("a failed open releases its lease, also when the product connection is gone", async () => {

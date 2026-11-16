@@ -50,9 +50,8 @@ export function BrowserSettings() {
           </label>
           <p className="text-xs text-muted-foreground">{t("settings.linksInBrowserHelp")}</p>
         </div>
-      ) : !browser ? (
-        <p className="text-sm text-muted-foreground">{t("settings.browserWebOnly")}</p>
       ) : null}
+      {!available && !browser && <p className="text-sm text-muted-foreground">{t("settings.browserWebOnly")}</p>}
       {browser && (
         <div className="flex flex-col items-start gap-2 text-sm">
           <p className="text-muted-foreground">{t("browser.private")}</p>
@@ -61,11 +60,8 @@ export function BrowserSettings() {
           <Button type="button" variant="outline" disabled={clearing} onClick={() => void clear()}>
             {t("browser.clearData")}
           </Button>
-          {clearStatus && (
-            <p role={clearStatus === "failed" ? "alert" : "status"}>
-              {t(clearStatus === "failed" ? "browser.clearFailedNote" : "browser.clearDone")}
-            </p>
-          )}
+          {clearStatus === "failed" && <p role="alert">{t("browser.clearFailedNote")}</p>}
+          {clearStatus === "done" && <output>{t("browser.clearDone")}</output>}
         </div>
       )}
     </div>
