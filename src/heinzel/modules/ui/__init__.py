@@ -5,7 +5,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Config, HeinzelError, Kernel, Module, Settings
+from heinzel import Config, Kernel, Module, Settings
+from heinzel import HeinzelError as HeinzelError
 from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh, WebOverview
 from heinzel.modules.ui._overview import WebOverviewService
 from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
@@ -31,23 +32,44 @@ module.service(PersistentWeb, _persistent_web)
 
 
 def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
-    def refresh(target: str) -> HeadRefresh:
+    # Resolve before the updater replaces its own installation. Resolving afterwards can boot a mixture of
+    # already-imported old modules and new files on disk, which cannot reliably import either generation.
+    try:
         settings = Config.load(Path.home()).settings(Settings, "hz")
-        try:
-            (settings.state_dir / "ui/service.json").lstat()
-        except FileNotFoundError:
-            return HeadRefresh(head="web", status="not-installed")
-        except OSError as exc:
-            return HeadRefresh(head="web", status="failed", detail=f"The web service record can't be read ({exc}).")
-        try:
-            service = kernel.resolve(WebService)
-        except (OSError, HeinzelError) as exc:
-            return HeadRefresh(
-                head="web", status="failed", detail=f"The web service can't be inspected ({exc}). Run `hz ui status`."
-            )
-        return service.refresh(target)
+    except Exception as exc:  # noqa: BLE001 - a failed head must not prevent the core update
+        result = HeadRefresh(head="web", status="failed", detail=f"The web service can't be inspected ({exc}).")
+        return WebHeadRefresh(refresh=lambda _target: result)
+    record = settings.state_dir / "ui/service.json"
+    try:
+        record.lstat()
+    except FileNotFoundError:
 
-    return WebHeadRefresh(refresh=refresh)
+        def absent(_target: str) -> HeadRefresh:
+            try:
+                record.lstat()
+            except FileNotFoundError:
+                return HeadRefresh(head="web", status="not-installed")
+            except OSError as exc:
+                return HeadRefresh(head="web", status="failed", detail=f"The web service record can't be read ({exc}).")
+            return HeadRefresh(
+                head="web",
+                status="pending",
+                detail="The web service was installed during the update. Run `hz ui status`.",
+            )
+
+        return WebHeadRefresh(refresh=absent)
+    except Exception as exc:  # noqa: BLE001 - a failed head must not prevent the core update
+        result = HeadRefresh(head="web", status="failed", detail=f"The web service record can't be read ({exc}).")
+        return WebHeadRefresh(refresh=lambda _target: result)
+    try:
+        service = kernel.resolve(WebService)
+    except Exception as exc:  # noqa: BLE001 - a failed head must not prevent the core update
+        result = HeadRefresh(
+            head="web", status="failed", detail=f"The web service can't be inspected ({exc}). Run `hz ui status`."
+        )
+        return WebHeadRefresh(refresh=lambda _target: result)
+
+    return WebHeadRefresh(refresh=service.refresh)
 
 
 module.service(WebHeadRefresh, _web_head_refresh)
