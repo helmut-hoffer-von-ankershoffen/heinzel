@@ -60,7 +60,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
         "python3 -I scripts/release_candidate.py": "records release source",
-        "python3 -I scripts/focused_plan.py": "routes exact source to a reviewed focused plan or a full candidate",
+        "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
             "restricts scheduled maintenance to canonical main"
         ),
@@ -275,8 +275,8 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert "lint" in jobs["ci-ok"]["needs"]
     runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
     assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
-    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_release != 'true'"
-    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
+    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_ci != 'true'"
+    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_ci == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
 
@@ -1097,7 +1097,7 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
     context = {
         "github.event_name": event,
         "needs.changes.outputs.macos_full": str(full).lower(),
-        "needs.changes.outputs.full_release": str(release).lower(),
+        "needs.changes.outputs.full_ci": str(release).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -1476,13 +1476,13 @@ def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_test
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     for name in ("test", "coverage", "perf", "e2e"):
         assert jobs[name]["if"] == (
-            "needs.changes.outputs.full_release == 'true' && "
+            "needs.changes.outputs.full_ci == 'true' && "
             "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
         )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
     assert jobs["site-tests"]["if"] == (
-        "needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true')"
+        "needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true')"
     )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
@@ -1547,11 +1547,11 @@ def _ci_jobs() -> dict:
     ("event", "candidate", "selected"),
     [
         ("schedule", False, {"maintenance"}),
-        ("pull_request", False, {"release", "focused", "paths"}),
-        ("push", False, {"release", "focused", "paths"}),
-        ("workflow_dispatch", False, {"release", "focused", "paths"}),
-        ("pull_request", True, {"release", "paths"}),
-        ("workflow_dispatch", True, {"release", "paths"}),
+        ("pull_request", False, {"release", "full", "paths"}),
+        ("push", False, {"release", "full", "paths"}),
+        ("workflow_dispatch", False, {"release", "full", "paths"}),
+        ("pull_request", True, {"release", "full", "paths"}),
+        ("workflow_dispatch", True, {"release", "full", "paths"}),
     ],
 )
 def test_changed_paths_event_policy(event, candidate, selected):
@@ -1566,7 +1566,8 @@ def test_changed_paths_event_policy(event, candidate, selected):
     assert all(step["if"] == nonscheduled for step in changes["steps"] if "uses" in step)
     assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
     assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
-    assert changes["outputs"]["focused_mode"] == "${{ steps.focused.outputs.focused_mode }}"
+    assert changes["outputs"]["full_ci"] == "${{ steps.full.outputs.selected }}"
+    assert not any("FOCUSED_CI_PLANS" in str(step) for step in changes["steps"])
 
 
 @pytest.mark.parametrize(
@@ -1610,8 +1611,9 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
         condition = job["if"]
         assert condition.startswith(
             (
+                "needs.changes.outputs.full_ci == 'true'",
                 "needs.changes.outputs.full_release == 'true'",
-                "${{ !cancelled() && needs.changes.outputs.full_release == 'true'",
+                "${{ !cancelled() && needs.changes.outputs.full_ci == 'true'",
                 "github.event_name == 'pull_request'",
                 "failure() && github.event_name == 'pull_request'",
                 "github.event_name == 'push' &&",
@@ -1705,7 +1707,7 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
 
 def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
     jobs = _ci_jobs()
-    candidate_only = "needs.changes.outputs.full_release == 'true'"
+    candidate_only = "needs.changes.outputs.full_ci == 'true'"
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron", "quarantine"):
         assert jobs[name]["if"].startswith(candidate_only)
     assert jobs["focused-tests"]["if"] == "needs.changes.outputs.focused_mode != ''"
@@ -1718,7 +1720,7 @@ def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
     smoke = jobs["macos-smoke"]
     assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
     assert smoke["timeout-minutes"] <= 10
-    assert "needs.changes.outputs.full_release != 'true'" in smoke["if"]
+    assert "needs.changes.outputs.full_ci != 'true'" in smoke["if"]
     runs = {step.get("run"): step.get("if") for step in smoke["steps"] if "run" in step}
     assert runs["make test-macos-smoke"] is None
     assert runs["make notifier"] is None  # the macos_specific real-launch tests must not skip
@@ -1843,9 +1845,9 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
         "macos-latest",
     ]
     assert jobs["e2e"]["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2"]
-    assert "needs.changes.outputs.full_release == 'true'" in jobs["notifier"]["if"]
-    assert "needs.changes.outputs.full_release == 'true'" in jobs["macos-specific"]["if"]
-    assert "needs.changes.outputs.full_release != 'true'" in jobs["macos-smoke"]["if"]
+    assert "needs.changes.outputs.full_ci == 'true'" in jobs["notifier"]["if"]
+    assert "needs.changes.outputs.full_ci == 'true'" in jobs["macos-specific"]["if"]
+    assert "needs.changes.outputs.full_ci != 'true'" in jobs["macos-smoke"]["if"]
     assert "release-candidate-source" in jobs["ci-ok"]["needs"]
 
 
@@ -1855,14 +1857,14 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "release-candidate-source" not in generated
     assert "full_release" not in generated
     assert (
-        "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
 
 
 def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     lint = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]["lint"]
-    assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_release == 'true'", "run": "make test-web"}
+    assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_ci == 'true'", "run": "make test-web"}
     # Cancelled at 5:17 under five minutes in the 0.9.40 candidates; ten is about twice the observed duration.
     assert lint["timeout-minutes"] == 10
 
@@ -2027,3 +2029,66 @@ def test_the_readme_install_environment_carries_no_github_token():
     source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
     assert "if key not in TOKENS" in source
     assert "launch_documented_app(block, launch_env," in source
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch"])
+@pytest.mark.parametrize("path", ["README.md", "docs/guide.md", "plugins/example/config.py"])
+def test_direct_full_workload_includes_core_for_every_change(tmp_path, ci_paths, event, path):
+    outputs = _changes_outputs(tmp_path, ci_paths, event, path + "\n", release=True)
+    assert {"core=true", "site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= outputs
+
+
+DIRECT_REQUIRED = [
+    "admission",
+    "changes",
+    "lint",
+    "secrets",
+    "setup",
+    "audit",
+    "test",
+    "coverage",
+    "perf",
+    "e2e",
+    "template",
+    "notifier",
+    "macos-specific",
+    "electron",
+    "build",
+    "core-wheel",
+    "local-plugin-plan",
+    "consumer-plan",
+    "consumer-check",
+    "quarantine-registry",
+]
+
+
+@pytest.mark.parametrize("job", [None, *DIRECT_REQUIRED, "commits", "dependency-review", "local-plugin-check"])
+@pytest.mark.parametrize("outcome", ["skipped", "failure", "cancelled"])
+def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
+    jobs = _ci_jobs()
+    step = next(
+        step for step in jobs["ci-ok"]["steps"] if step.get("name") == "Require the complete direct CI workload"
+    )
+    results = {name: {"result": "success"} for name in jobs["ci-ok"]["needs"]}
+    if job is not None:
+        results[job]["result"] = outcome
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"PATH": os.environ["PATH"], "EVENT": "pull_request", "PLUGINS": "True", "RESULTS": json.dumps(results)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == (job is None)
+    if job is not None:
+        assert f"Required full CI job did not pass: {job}" in result.stdout
+
+
+def test_direct_coverage_has_no_write_token_and_enforces_its_floor():
+    coverage = _ci_jobs()["coverage"]
+    assert coverage["permissions"] == {"contents": "read"}
+    report = next(
+        step for step in coverage["steps"] if step.get("name") == "Enforce coverage and record the measured total"
+    )
+    assert "--fail-under=90" in report["run"]
+    assert "> coverage-total.txt" in report["run"]

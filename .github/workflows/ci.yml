@@ -22,9 +22,9 @@ env:
   UV_FROZEN: "1"
   FORCE_COLOR: "1"
 
-# Ordinary changes and main baselines require a reviewed, exact focused scope.
-# The full matrix is reserved for the canonical release candidate. Cheap checks
-# still cancel failing same-repository PR runs. Fork workloads stay read-only.
+# Ordinary changes and main baselines run the complete matrix directly.
+# External scope registries cannot prevent CI from checking a corrective change.
+# Release identity remains separate from workload selection. Forks stay read-only.
 jobs:
   admission:
     name: Main batch admission
@@ -97,9 +97,11 @@ jobs:
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
-      focused_matrix: ${{ steps.focused.outputs.focused_matrix }}
-      focused_mode: ${{ steps.focused.outputs.focused_mode }}
-      focused_base: ${{ steps.focused.outputs.focused_base }}
+      full_ci: ${{ steps.full.outputs.selected }}
+      # Keep the legacy skipped job names for existing candidate inventory readers.
+      focused_mode: ""
+      focused_matrix: '{"include":[]}'
+      focused_base: ""
     steps:
       - id: maintenance
         name: Select bounded scheduled main maintenance
@@ -125,23 +127,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
-      - id: focused
-        name: Resolve the exact reviewed focused plan
-        if: github.event_name != 'schedule' && steps.release.outputs.full_release != 'true'
-        env:
-          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
-          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
-          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
-          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
-          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
-          BATCH_BASE: ${{ needs.admission.outputs.base }}
-        run: python3 -I scripts/focused_plan.py
+      - id: full
+        name: Run the complete CI workload without an external admission plan
+        if: github.event_name != 'schedule'
+        run: echo 'selected=true' >> "$GITHUB_OUTPUT"
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         if: github.event_name != 'schedule'
         env:
           EVENT: ${{ github.event_name }}
-          FULL_RELEASE: ${{ steps.release.outputs.full_release }}
+          FULL_RELEASE: ${{ steps.full.outputs.selected }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
         run: |
@@ -174,7 +169,7 @@ jobs:
             macos_full=false
           fi
           echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
-          if [ -n "${BATCH_BASE:-}" ]; then
+          if [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ]; then
             prose_push=false
           fi
           if [ "$prose_push" = true ]; then
@@ -265,7 +260,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
+          enable-cache: ${{ needs.changes.outputs.full_ci == 'true' }}
           cache-dependency-glob: uv.lock
           save-cache: false
       - name: Require the confidential terms
@@ -279,11 +274,11 @@ jobs:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
       - run: make managed-backend-setup # private Node process owner
       - run: make managed-backend-static
-        if: needs.changes.outputs.full_release != 'true'
+        if: needs.changes.outputs.full_ci != 'true'
       - run: make managed-backend-check
-        if: needs.changes.outputs.full_release == 'true'
+        if: needs.changes.outputs.full_ci == 'true'
       - run: make typecheck
-      - if: needs.changes.outputs.full_release == 'true'
+      - if: needs.changes.outputs.full_ci == 'true'
         run: make test-web # full candidate component suite
 
   secrets:
@@ -315,7 +310,7 @@ jobs:
       contents: read
     name: make setup (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
     # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
@@ -353,7 +348,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
+          enable-cache: ${{ needs.changes.outputs.full_ci == 'true' }}
           cache-dependency-glob: uv.lock
           save-cache: false
       - run: make audit
@@ -362,7 +357,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -378,7 +373,7 @@ jobs:
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
       CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}
@@ -414,14 +409,13 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
     timeout-minutes: 18 # setup, then make test's 720 s covered session (es8j), then the report
     permissions:
-      contents: write # publishes the badge to the python-coverage-comment-action-data branch
-      pull-requests: write # comments the coverage report on pull requests
+      contents: read
     env:
       UV_NO_SYNC: "1"
     steps:
@@ -441,27 +435,21 @@ jobs:
       - name: Select the locked wheel Node without executing it
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
-      - name: Record the total for the merge gate
-        run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
+      - name: Enforce coverage and record the measured total
+        env:
+          MINIMUM_ORANGE: 80
+        run: uv run --no-build coverage report --format=total --precision=2 --fail-under=90 > coverage-total.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-total
           path: coverage-total.txt
           retention-days: 7
-      - name: Report coverage on pull requests and publish the badge
-        # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
-        if: github.event_name != 'workflow_dispatch'
-        uses: py-cov-action/python-coverage-comment-action@e5fb2218463c3377f3504b0c5b5646ed53da7a2f # v4.5
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
-          MINIMUM_GREEN: 90
-          MINIMUM_ORANGE: 80
 
   perf:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -489,7 +477,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -508,7 +496,7 @@ jobs:
   e2e:
     name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -558,7 +546,7 @@ jobs:
       contents: read
     name: Plugin template
     needs: [lint, changes] # the slowest offline check runs only once the cheap ones pass
-    if: needs.changes.outputs.full_release == 'true'
+    if: needs.changes.outputs.full_ci == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -578,7 +566,7 @@ jobs:
       contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -601,7 +589,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -632,7 +620,7 @@ jobs:
     # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
     # Build the notifier so the real-launch tests cannot silently skip.
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -667,7 +655,7 @@ jobs:
       contents: read
     name: Electron (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -711,7 +699,7 @@ jobs:
       contents: read
     name: Build
     needs: [changes, notifier, macos-smoke]
-    if: ${{ !cancelled() && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -746,7 +734,7 @@ jobs:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -766,7 +754,7 @@ jobs:
       contents: read
     name: Optional source plugins
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -860,7 +848,7 @@ jobs:
       contents: read
     name: Public contract consumers
     needs: [changes, core-wheel]
-    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.contracts == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1077,7 +1065,7 @@ jobs:
       contents: read
     name: Quarantine plan
     needs: changes
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1099,7 +1087,7 @@ jobs:
     name: Quarantine (${{ matrix.os }})
     needs: [changes, quarantine-plan]
     # Non-blocking by design: not in `CI OK`, and `make test-quarantine` exits 0 whatever the tests do.
-    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -1219,4 +1207,18 @@ jobs:
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required $EVENT workload job did not pass: $job"; exit 1; }
+          done
+      - name: Require the complete direct CI workload
+        if: github.event_name != 'schedule'
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
+        run: |
+          required=(admission changes lint secrets setup audit test coverage perf e2e template notifier macos-specific electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry)
+          if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
+          if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
+          for job in "${required[@]}"; do
+            jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
+              || { echo "::error::Required full CI job did not pass: $job"; exit 1; }
           done

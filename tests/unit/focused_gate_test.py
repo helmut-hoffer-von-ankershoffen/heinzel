@@ -705,9 +705,9 @@ def test_full_slots_cannot_evict_or_split_an_admission_pair(registry):
         registry.append_slot("{}", (encoded,) * 4, PAIR)
 
 
-def test_actual_ci_and_protected_gate_inject_all_four_optional_slots(registry):
+def test_legacy_focused_jobs_and_gate_keep_optional_slots(registry):
     root = Path(__file__).resolve().parents[2]
-    for file, readers in (("ci.yml", 2), ("merge-gate.yml", 1)):
+    for file, readers in (("ci.yml", 1), ("merge-gate.yml", 1)):
         text = (root / ".github/workflows" / file).read_text()
         assert text.count("FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}") == readers
         for name in registry.SLOT_VARIABLES:
