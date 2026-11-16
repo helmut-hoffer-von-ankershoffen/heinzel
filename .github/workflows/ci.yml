@@ -360,7 +360,8 @@ jobs:
     if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
+    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # a red cell is enough to know on a pull request
       matrix:

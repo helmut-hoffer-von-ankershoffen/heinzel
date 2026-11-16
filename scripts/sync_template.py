@@ -223,6 +223,12 @@ def _without_release_candidate(text: str) -> str:
     text = text.replace(
         " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
     )
+    text = text.replace(
+        "    # Integration runs two sequential sessions, each still capped at 420 seconds; "
+        "allow setup and cleanup too.\n"
+        "    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}",
+        "    timeout-minutes: 10",
+    )
     text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)

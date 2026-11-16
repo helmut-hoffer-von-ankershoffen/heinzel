@@ -1429,6 +1429,9 @@ def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispat
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    assert jobs["test"]["timeout-minutes"] == "${{ matrix.levels == 'integration' && 15 || 10 }}"
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
+    assert "--session-timeout=420" in recipe
     step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
     assert step["env"]["VERBOSE"] == "1"
 
