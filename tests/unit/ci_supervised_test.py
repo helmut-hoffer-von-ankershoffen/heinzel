@@ -38,7 +38,7 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
         assert not any(arg.startswith("--ignore=") or arg in SUPERVISED for arg in commands[-1])
 
 
-def test_supervised_stays_required_in_the_full_release_candidate_matrix():
+def test_supervised_stays_required_in_the_full_ci_matrix():
     jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
     e2e = jobs["e2e"]
     assert set(e2e["strategy"]["matrix"]) == {"os", "suite"}
@@ -48,7 +48,7 @@ def test_supervised_stays_required_in_the_full_release_candidate_matrix():
         '&& \'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}'
     )
     assert e2e["if"] == (
-        "needs.changes.outputs.full_release == 'true' && "
+        "needs.changes.outputs.full_ci == 'true' && "
         "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
     )
     assert e2e["strategy"]["fail-fast"] is False

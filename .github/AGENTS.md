@@ -16,19 +16,15 @@ native, browser, Electron and release-acceptance coverage and its limits. Linux 
 
 Constraints per workflow:
 
-- `ci.yml`: `CI OK` gates merging. Ordinary PRs, main pushes, schedules and noncandidate dispatches require an
-  independently reviewed focused scope for the exact tested tree. A missing scope fails closed and asks for a reviewed
-  manifest. The full Python, browser, native, build and coverage matrix runs only for a canonical release candidate.
-  A failing cheap check still cancels same-repository PR runs. Fork jobs keep read-only permissions. Main pushes keep
-  individual runs and a canonical release PR run is never cancelled by a newer event. Batch proof may delegate
-  intermediate commits to the final focused integration run with the exact aggregate base. The required
-  `Quarantine registry` job rejects expired entries. The candidate's separate advisory quarantine lane still runs.
-- `merge-gate.yml`: the protected default-branch workflow runs after PR CI completes. It fetches candidate Git objects
-  as data and never checks them out or executes them. It reports the required `merge-gate` and `coverage-floor` contexts.
-  Sonar's current PR and project quality gates and all three A ratings still apply. Scoped Python coverage preserves
-  the 90 percent report threshold and 80 percent floor over executable statements and branches in all reviewed
-  affected production files. This includes files that never ran. Whole-project coverage remains a release-candidate
-  gate. A web-only production change has separate owning tests and no Python percentage.
+- `ci.yml`: ordinary PRs, main pushes and manual runs execute the full test, native, browser, build and
+  coverage matrix without an external admission manifest. Schedules retain bounded maintenance. `CI OK` requires
+  every selected owning job to succeed; skipped required jobs fail. Coverage runs read-only and enforces 90 percent.
+  Candidate identity and source recording remain separate from ordinary full CI. Forks remain read-only.
+- Merge policy: require `CI OK` from GitHub Actions and `SonarCloud Code Analysis` from the Sonar integration.
+  Independently review the exact head before merging, especially workflow and gate changes. This uses conventional
+  reviewed-PR trust: PR jobs execute the reviewed repository code; job names alone do not authenticate that code.
+  The old custom `merge-gate` and `coverage-floor` checks remain diagnostic during migration and are not admission
+  requirements. Their registry and project-wide Sonar dependency must not prevent corrective PRs from merging.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
@@ -51,7 +47,7 @@ Constraints per workflow:
   artifact (ADR 0082).
 
 
-### Reviewed focused plans
+### Legacy focused plans (diagnostic compatibility only)
 
 `FOCUSED_CI_PLANS` is the administrator-controlled, size-bounded JSON registry. Publish an entry only after
 independent source and scope review. Use `<event>:<head>` for a known head. Before a normal main squash or batch

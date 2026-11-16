@@ -211,7 +211,7 @@ def _without_release_candidate(text: str) -> str:
     text = text.replace(
         " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
     )
-    text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
+    text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
 
@@ -239,24 +239,31 @@ def _without_focused_admission(text: str) -> str:
     text = re.sub(r"\n  focused-tests:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
     text = re.sub(r"\n      - name: Require successful focused workload.*", "", text, flags=re.DOTALL) + "\n"
     text = re.sub(
-        r"(?m)^    if: needs\.changes\.outputs\.full_release == 'true' && \((.*)\) # Core candidate-only$",
+        r"(?m)^    if: needs\.changes\.outputs\.full_ci == 'true' && \((.*)\) # Core candidate-only$",
         r"    if: \1",
         text,
     )
     text = text.replace(" || needs.changes.outputs.focused_mode != '' # Core focused structural", "")
     text = text.replace(
-        " && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core",
+        " && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.core",
         " && needs.changes.outputs.core",
     )
     text = text.replace(", focused-tests]", "]")
     return text.replace(
-        "enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}\n"
+        "enable-cache: ${{ needs.changes.outputs.full_ci == 'true' }}\n"
         "          cache-dependency-glob: uv.lock\n"
         "          save-cache: false",
         "enable-cache: true\n"
         "          cache-dependency-glob: uv.lock\n"
         "          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache",
     )
+
+
+def _plugin_coverage(text: str) -> str:
+    """Preserve plugins' coverage badge and merge-gate protocol during Core migration."""
+    start, end = text.index("  coverage:\n"), text.index("  perf:\n")
+    coverage = (ROOT / "scripts" / "template_coverage.yml.tmpl").read_text().rstrip() + "\n\n"
+    return text[:start] + coverage + text[end:]
 
 
 def ci_workflow() -> str:
@@ -288,7 +295,7 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(
-        r"\n(?:      - if: needs\.changes\.outputs\.full_release == 'true'\n        run:|      - run:) "
+        r"\n(?:      - if: needs\.changes\.outputs\.full_ci == 'true'\n        run:|      - run:) "
         r"make test-web[^\n]*",
         "",
         text,
@@ -394,7 +401,7 @@ def ci_workflow() -> str:
         "os: [ubuntu-24.04, macos-latest]",
     )
     text = re.sub(r"\n# Ordinary changes and main baselines.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
-    return text.replace(", template, build]", ", build]").replace(", changes,", ",")
+    return _plugin_coverage(text).replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
 def pyproject() -> str:
