@@ -56,7 +56,7 @@ globalThis.fetch = async (url, opts) => {
   assert.equal(calls[0].opts.redirect, 'error');
   assert.equal(calls[0].opts.cache, 'no-store');
   assert(!JSON.stringify(result).includes(bearer));
-  const payload = '{"commitment":"' + 'a'.repeat(64) + '"}';
+  const payload = '{"operation":"issue","commitment":"' + 'a'.repeat(64) + '"}';
   chunks = [Buffer.from(JSON.stringify({...receipt, leaked:bearer}))];
   result = await run(origin, 'mutate', payload);
   assert.deepEqual(result, {state:'ok', body:JSON.stringify(receipt)});
@@ -64,6 +64,12 @@ globalThis.fetch = async (url, opts) => {
   assert.equal(calls[1].url, '/api/_web/widget-fenced-credential');
   assert.equal(calls[1].opts.body, payload);
   assert(!calls[1].opts.body.includes(bearer));
+  const revokePayload = '{"operation":"revoke","commitment":null}';
+  const revokeReceipt = {...receipt, operation:'revoke', expires_at:null};
+  chunks = [Buffer.from(JSON.stringify(revokeReceipt))];
+  assert.deepEqual(await run(origin, 'mutate', revokePayload), {state:'ok', body:JSON.stringify(revokeReceipt)});
+  chunks = [Buffer.from(JSON.stringify(receipt))];
+  assert.equal((await run(origin, 'mutate', revokePayload)).state, 'unavailable');
   chunks = [Buffer.alloc(2048, 65), Buffer.alloc(2049, 65)];
   result = await run(origin, 'mutate', payload);
   assert.equal(result.state, 'unavailable'); assert(cancelled);

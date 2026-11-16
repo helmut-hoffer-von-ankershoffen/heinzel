@@ -6,10 +6,12 @@ private struct FenceStatus: Decodable {
     let epoch: String
     let revision: String
     let workspaceID: String
-    enum CodingKeys: String, CodingKey { case epoch, revision, workspaceID = "workspace_id" }
+    let lastAttempt: String?
+    enum CodingKeys: String, CodingKey { case epoch, revision, workspaceID = "workspace_id", lastAttempt = "last_attempt" }
     var valid: Bool {
         epoch.wholeMatch(of: /[a-f0-9]{32}/) != nil && revision.wholeMatch(of: /[a-f0-9]{32}/) != nil &&
-        workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil
+        workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil &&
+        (lastAttempt.map { $0.wholeMatch(of: /[a-f0-9]{32}/) != nil } ?? true)
     }
 }
 

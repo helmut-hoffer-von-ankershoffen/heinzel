@@ -25,6 +25,8 @@ enum WidgetEnrollmentResponse {
         const headers = {Authorization: `Bearer ${device}`};
         if (operation === 'mutate') headers['Content-Type'] = 'application/json';
         try {
+            const expectedOperation = operation === 'mutate' ? JSON.parse(payload).operation : null;
+            if (operation === 'mutate' && expectedOperation !== 'issue' && expectedOperation !== 'revoke') return {state: 'unavailable'};
             const response = await fetch(target, {method: 'POST', headers,
                 body: operation === 'mutate' ? payload : undefined, credentials: 'omit',
                 cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5000)});
@@ -53,8 +55,9 @@ enum WidgetEnrollmentResponse {
                 return {state: 'ok', body: JSON.stringify({epoch:value.epoch, revision:value.revision,
                     workspace_id:value.workspace_id, last_attempt:value.last_attempt ?? null})};
             }
-            if (!hex32(value.attempt) || value.operation !== 'issue' || typeof value.expires_at !== 'string' ||
-                !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(?:Z|[+]00:00)$/.test(value.expires_at)) return {state: 'unavailable'};
+            if (!hex32(value.attempt) || value.operation !== expectedOperation) return {state: 'unavailable'};
+            if (value.operation === 'revoke' ? value.expires_at !== null :
+                typeof value.expires_at !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(?:Z|[+]00:00)$/.test(value.expires_at)) return {state: 'unavailable'};
             return {state: 'ok', body: JSON.stringify({epoch:value.epoch, revision:value.revision,
                 workspace_id:value.workspace_id, attempt:value.attempt, operation:value.operation, expires_at:value.expires_at})};
         } catch (_) { return {state: 'unavailable'}; }
