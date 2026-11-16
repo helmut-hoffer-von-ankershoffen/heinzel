@@ -796,7 +796,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
             let result: WidgetEnrollmentOutcome
             if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
-                guard enrollment.canResume(pending) else { return }
+                guard enrollment.canResume(pending) else {
+                    _ = enrollment.abandonInterruptedPreparation(pending)
+                    return
+                }
                 result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, isCurrent: current)
             } else {
                 let active = ActivityCatalog.activation(url: store.catalogURL)

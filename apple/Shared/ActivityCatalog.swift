@@ -284,6 +284,29 @@ final class ActivityCatalog {
         }
     }
 
+    /// A preparing journal has never authorized an issue POST. Repairing this
+    /// interrupted local reservation must never restore a tombstoned authority.
+    static func abandonPreparing(url: URL, expected: Enrollment, deletePending: () -> Bool) -> Bool {
+        withWriterLock(url: url, failure: false) {
+            let markerURL = enrollmentURL(for: url)
+            guard let marker = try? Data(contentsOf: markerURL), let journal = enrollmentJournal(marker),
+                  journal.reservation == expected, journal.phase == .preparing,
+                  writeJournal(marker, markerURL),
+                  let data = try? Data(contentsOf: authorityURL(for: url)),
+                  let current = try? JSONDecoder().decode(Authority.self, from: data) else { return false }
+            if current.enrollment == expected && current.activation == expected.previous && current.revoked != true {
+                let restored = Authority(scope: "", generation: UUID().uuidString, activation: expected.previous)
+                guard let encoded = try? JSONEncoder().encode(restored),
+                      writeAuthority(encoded, authorityURL(for: url)) else { return false }
+            } else if current.activation != expected.previous &&
+                        !(current.revoked == true && current.cleanup == expected.previous) {
+                return false
+            }
+            guard deletePending() else { return false }
+            return removeAuthority(markerURL)
+        }
+    }
+
     static func completeEnrollment(url: URL, expected: Enrollment, workspaceID: String,
                                    generation: String, install: () -> Bool,
                                    write: (Data, URL) -> Bool = ActivityCatalog.writeAuthority) -> Activation? {

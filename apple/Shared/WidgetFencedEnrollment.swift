@@ -85,6 +85,13 @@ struct WidgetFencedEnrollment {
         } == true
     }
 
+    func abandonInterruptedPreparation(_ reservation: ActivityCatalog.Enrollment) -> Bool {
+        let attempt = reservation.id.replacingOccurrences(of: "-", with: "").lowercased()
+        return ActivityCatalog.abandonPreparing(url: store.catalogURL, expected: reservation) {
+            store.keychain.deletePending(attempt)
+        }
+    }
+
     func prepare(expected: ActivityCatalog.Activation) -> ActivityCatalog.Enrollment? {
         guard let reservation = store.beginEnrollment(expected: expected) else { return nil }
         var random = [UInt8](repeating: 0, count: 32)

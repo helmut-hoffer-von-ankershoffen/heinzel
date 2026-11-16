@@ -165,6 +165,22 @@ private final class NotificationCapture: @unchecked Sendable {
         precondition(clearStore.clearCurrent().complete)
         precondition(ActivityCatalog.activation(url: clearURL) == nil)
         precondition(ActivityCatalog.pendingEnrollment(url: clearURL) == clearAttempt)
+        let prepURL = directory.appendingPathComponent("interrupted-preparation.sqlite")
+        let prepKeychain = FakeKeychain()
+        let prepStore = WidgetCredentialStore(catalogURL: prepURL, keychain: prepKeychain)
+        let prepEnrollment = WidgetFencedEnrollment(store: prepStore)
+        let prepInitial = ActivityCatalog.activate(url: prepURL, endpoint: pending.endpoint)!
+        let prepAttempt = prepStore.beginEnrollment(expected: prepInitial)!
+        prepKeychain.canDeletePending = false
+        precondition(!prepEnrollment.abandonInterruptedPreparation(prepAttempt))
+        precondition(ActivityCatalog.pendingEnrollment(url: prepURL) == prepAttempt)
+        prepKeychain.canDeletePending = true
+        precondition(prepEnrollment.abandonInterruptedPreparation(prepAttempt))
+        precondition(ActivityCatalog.pendingEnrollment(url: prepURL) == nil && ActivityCatalog.activation(url: prepURL) == prepInitial)
+        let tombstoneAttempt = prepStore.beginEnrollment(expected: prepInitial)!
+        precondition(prepStore.clearCurrent().complete)
+        precondition(prepEnrollment.abandonInterruptedPreparation(tombstoneAttempt))
+        precondition(ActivityCatalog.activation(url: prepURL) == nil && ActivityCatalog.pendingCleanup(url: prepURL) == prepInitial)
         let failedURL = directory.appendingPathComponent("failed-install.sqlite")
         let failedActivation = ActivityCatalog.activate(url: failedURL, endpoint: pending.endpoint)!
         let failedAttempt = ActivityCatalog.reserveEnrollment(url: failedURL, expected: failedActivation)!
