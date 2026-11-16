@@ -144,7 +144,7 @@ def test_canonical_open_release_pr_uses_current_full_candidate_contract(router, 
     assert dict(result.expected_jobs) == release_candidate.expected_jobs(event)
     assert dict(result.expected_jobs)["Coverage"] == "success"
     assert len([name for name, _ in result.expected_jobs if name.startswith("Test (")]) == 4
-    assert len([name for name, _ in result.expected_jobs if name.startswith("End-to-end ")]) == 8
+    assert len([name for name, _ in result.expected_jobs if name.startswith("End-to-end ")]) == 10
     assert result.coverage_floor == merge_gate.red_below((ROOT / release_candidate.WORKFLOW).read_text()) == 80
 
 
