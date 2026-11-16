@@ -37,6 +37,8 @@ Mixed local plans instead run the bounded selector/partition assertions without 
 real-inventory partition proof and full E2E/integration execution remain explicit hosted obligations. Nested Make
 guards require the same reviewed scope, pushed refs and guard-plan binding; nonmixed guards are unchanged.
 The fixed partition runner verifies all six expected parametrized bodies exactly once, without missing or skipped cases.
+Mixed child checks drop inherited Git environment variables so disposable test repositories cannot target the hook's
+index. Parent source/ref validation retains the original hook environment; nested checks rediscover this worktree.
 """
 
 import argparse
@@ -688,6 +690,22 @@ MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
 GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check's runtime limit
 
 
+def mixed_child_environment() -> dict[str, str] | None:
+    """Clean only explicitly bound mixed child checks, leaving parent Git and default checks untouched."""
+    if not all(
+        os.environ.get(key)
+        for key in (
+            "HZ_LOCAL_MIXED_SCOPE",
+            "HZ_LOCAL_MIXED_SCOPE_SHA256",
+            "HZ_LOCAL_MIXED_GUARD_BINDING",
+        )
+    ):
+        return None
+    from mixed_scope import local_check_environment  # noqa: PLC0415 - only the mixed child path needs this policy
+
+    return local_check_environment()
+
+
 def run_check(
     command: list[str],
     *,
@@ -698,6 +716,7 @@ def run_check(
 ) -> subprocess.CompletedProcess[str]:
     """Run the selected check through the optional host queue, with its own runtime limit."""
     gate = shutil.which("hz-gate")
+    child_environment = mixed_child_environment()
     if gate is None or not Path(gate).is_absolute():
         return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
             command,
@@ -705,8 +724,9 @@ def run_check(
             timeout=timeout,
             capture_output=capture_output,
             text=True,
+            **({"env": child_environment} if child_environment is not None else {}),
         )
-    env = os.environ.copy()
+    env = child_environment if child_environment is not None else os.environ.copy()
     try:
         requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
     except ValueError:

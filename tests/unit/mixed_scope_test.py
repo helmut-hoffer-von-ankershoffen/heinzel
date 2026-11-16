@@ -88,6 +88,58 @@ def scope(monkeypatch, tmp_path):
     return packet, changed, bind
 
 
+@pytest.fixture
+def inherited_git_selection(tmp_path, monkeypatch):
+    """Simulate an invoking hook without ever exposing a real worktree or index to the fixture."""
+    caller = tmp_path.parent / f"{tmp_path.name}-caller"
+    caller.mkdir()
+    environment = {**mixed.local_check_environment(), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*arguments):
+        return subprocess.run(
+            ["git", "-c", "user.name=Example", "-c", "user.email=fixture@example.test", *arguments],
+            cwd=caller,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+
+    git("init", "--initial-branch=caller")
+    (caller / "caller.txt").write_text("invoking repository fixture\n")
+    git("add", "caller.txt")
+    git("commit", "-m", "test(ci): create isolated invoking repository")
+    index = caller / ".git/index"
+    index_before, head_before = index.read_bytes(), git("rev-parse", "HEAD")
+    for key, value in {
+        "GIT_DIR": str(caller / ".git"),
+        "GIT_WORK_TREE": str(caller),
+        "GIT_INDEX_FILE": str(index),
+        "GIT_COMMON_DIR": str(caller / ".git"),
+        "GIT_OBJECT_DIRECTORY": str(caller / ".git/objects"),
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(caller / ".git/objects"),
+        "GIT_NAMESPACE": "synthetic",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.worktree",
+        "GIT_CONFIG_VALUE_0": str(caller),
+    }.items():
+        monkeypatch.setenv(key, value)
+    yield
+    assert index.read_bytes() == index_before
+    assert git("rev-parse", "HEAD") == head_before
+
+
+@pytest.fixture
+def disposable_git_environment(monkeypatch, inherited_git_selection):
+    """Isolate all direct Git helpers, selector reads and nested processes for the entire test."""
+    for key in tuple(os.environ):
+        if key.startswith("GIT_"):
+            monkeypatch.delenv(key)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 def test_preview_and_dispatch_match_and_leave_native_proof_pending(scope, monkeypatch, capsys):
     packet, changed, _ = scope
     # The environment cannot replace the validated Vitest step.
@@ -325,6 +377,8 @@ def test_skipped_empty_or_wrong_file_integration_proof_is_rejected(tmp_path, cas
 
 
 def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report(monkeypatch):
+    monkeypatch.setenv("GIT_DIR", "/synthetic/invoking.git")
+    monkeypatch.setenv("GIT_INDEX_FILE", "/synthetic/invoking.index")
     calls = []
 
     def run(command, **kwargs):
@@ -346,7 +400,8 @@ def test_fixed_recipes_compile_without_booting_and_validate_actual_pytest_report
     assert "generic/platform=iOS Simulator" in native[0]
     assert "-jobs" in native[0]
     assert native[0][-1] == "build"
-    assert native[1] == {"check": True, "timeout": 900}
+    assert native[1] == {"check": True, "timeout": 900, "env": mixed.local_check_environment()}
+    assert not any(key.startswith("GIT_") for key in integration[1]["env"])
 
 
 @pytest.mark.parametrize(
@@ -718,7 +773,7 @@ def test_standalone_preview_cannot_authorize_an_actual_push(scope, monkeypatch, 
     assert error.value.code == 2
 
 
-def test_preserved_push_input_is_bound_to_real_git_head_and_branch(tmp_path, monkeypatch):
+def test_preserved_push_input_is_bound_to_real_git_head_and_branch(tmp_path, monkeypatch, disposable_git_environment):
     """Use a disposable Git repository; no remote, actual hook or product state is touched."""
 
     def git(*args):
@@ -868,7 +923,11 @@ def test_future_directory_guard_cannot_enter_mixed_plan(monkeypatch):
 
 
 @pytest.mark.timeout(30)
-def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(tmp_path, candidate_scope):
+def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(
+    tmp_path,
+    candidate_scope,
+    disposable_git_environment,
+):
     """Only Git, Make and the selector execute; the disposable uv records all owning test commands."""
     _, changed, _ = candidate_scope
     repository = tmp_path / "repository"
@@ -1053,3 +1112,53 @@ def test_nested_partition_binding_is_independent_of_python_environment(candidate
     assert scoped.mixed_guard_binding(nested) == original
     nested["early_guards"][-1].append("--collect-only")
     assert scoped.mixed_guard_binding(nested) != original
+
+
+@pytest.mark.parametrize("gated", [False, True])
+def test_mixed_children_drop_git_redirection_without_changing_parent_binding(scope, monkeypatch, tmp_path, gated):
+    plan = scoped.current_mixed_plan("origin/main", require_push=True)
+    for key in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_COMMON_DIR",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_KEY_0",
+        "GIT_CONFIG_VALUE_0",
+        "GIT_CONFIG_PARAMETERS",
+    ):
+        monkeypatch.setenv(key, "synthetic-parent-value")
+    calls = []
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: str(tmp_path / "hz-gate") if gated else None)
+    monkeypatch.setattr(scoped.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+    with scoped.mixed_guard_context(plan):
+        scoped.run_check(["uv", "run", "pytest", "tests/unit/ci_test.py"], timeout=180)
+        assert os.environ["GIT_DIR"] == "synthetic-parent-value"
+        assert os.environ["GIT_INDEX_FILE"] == "synthetic-parent-value"
+        assert scoped.mixed_guard_binding(
+            scoped.current_mixed_plan("origin/main", require_push=True)
+        ) == scoped.mixed_guard_binding(plan)
+    [(_, options)] = calls
+    environment = options["env"]
+    assert not any(key.startswith("GIT_") for key in environment)
+    for key in (
+        "HZ_LOCAL_MIXED_SCOPE",
+        "HZ_LOCAL_MIXED_SCOPE_SHA256",
+        "HZ_DEV_PUSH_REFS_FILE",
+        "PRE_COMMIT",
+        "PREK_HOOK_STAGE",
+    ):
+        assert environment[key] == os.environ[key]
+    assert environment["HZ_LOCAL_MIXED_GUARD_BINDING"] == scoped.mixed_guard_binding(plan)
+    assert os.environ["GIT_DIR"] == "synthetic-parent-value"
+
+
+def test_nonmixed_child_environment_is_unchanged(monkeypatch):
+    for key in ("HZ_LOCAL_MIXED_SCOPE", "HZ_LOCAL_MIXED_SCOPE_SHA256", "HZ_LOCAL_MIXED_GUARD_BINDING"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("GIT_DIR", "synthetic-parent-value")
+    assert scoped.mixed_child_environment() is None
+    assert os.environ["GIT_DIR"] == "synthetic-parent-value"

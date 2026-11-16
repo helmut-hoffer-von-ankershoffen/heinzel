@@ -7,6 +7,7 @@ one passing body; platform skips are counted and remain unverified, not passed.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -89,6 +90,16 @@ HOSTED_PARTITION_TEST = (
     f"{PARTITION_TEST}::test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations"
 )
 HOSTED_E2E = "full-hosted-e2e-and-integration"
+
+
+def local_check_environment() -> dict[str, str]:
+    """Keep parent scope/ref bindings but never redirect child Git into the invoking index.
+
+    Tests own their disposable repositories and configuration. Inherited Git
+    directory, index, object-store and injected-config variables must not escape
+    the hook process into those tests or their subprocesses.
+    """
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
 def files(root: Path, paths: list[str]) -> None:
@@ -320,7 +331,12 @@ def check_fast(arguments: list[str], directory: Path) -> None:
         f'WEB_TESTS="{web_test_step(" ".join(web))} --reporter=default --reporter=json --outputFile.json={web_operand}"'
     )
     overrides[-1] += f" --junitxml={unit_operand}"
-    subprocess.run(["make", "check-fast", *overrides], check=True, timeout=1800)  # noqa: S603, S607
+    subprocess.run(  # noqa: S603 - fixed Make target and validated selectors
+        ["make", "check-fast", *overrides],  # noqa: S607 - Make from the configured toolchain
+        env=local_check_environment(),
+        check=True,
+        timeout=1800,
+    )
     pytest_result(unit_report, unit, allow_partial_skips=True)
     vitest_result(web_report, web, ROOT)
 
@@ -375,6 +391,7 @@ def run_partition() -> None:
                 "--session-timeout=120",
                 f"--junitxml={report}",
             ],
+            env=local_check_environment(),
             check=True,
             timeout=180,
         )
@@ -405,7 +422,12 @@ def run_recipe(arguments: list[str]) -> None:
     with tempfile.TemporaryDirectory(prefix="heinzel-mixed-check-") as scratch:
         directory = Path(scratch)
         if arguments == ["ios"]:
-            subprocess.run(ios_command(directory / "ios"), check=True, timeout=900)  # noqa: S603
+            subprocess.run(  # noqa: S603 - fixed unsigned build recipe
+                ios_command(directory / "ios"),
+                env=local_check_environment(),
+                check=True,
+                timeout=900,
+            )
         else:
             report = directory / "integration.xml"
             subprocess.run(  # noqa: S603 - fixed recipe and closed test inventory
@@ -421,6 +443,7 @@ def run_recipe(arguments: list[str]) -> None:
                     "--session-timeout=180",
                     f"--junitxml={report}",
                 ],
+                env=local_check_environment(),
                 check=True,
                 timeout=210,
             )
