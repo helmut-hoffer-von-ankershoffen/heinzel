@@ -37,7 +37,7 @@ def test_cancelled_issue_race_replans_and_replays_revoke(make_kernel, tmp_path):
 
     def native(operation, *arguments):
         return subprocess.run(
-            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True
+            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True, timeout=30
         ).stdout.strip()
 
     assert native("prepare-paired", fingerprint) == "prepared"
@@ -95,7 +95,9 @@ def test_native_fenced_retry_after_lost_core_reply(make_kernel, tmp_path):
     headers = {"Authorization": f"Bearer {paired['token']}"}
 
     def native(operation, *arguments):
-        result = subprocess.run([harness, str(root), operation, *arguments], check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True, timeout=30
+        )
         return result.stdout.strip()
 
     assert native("prepare") == "prepared"
@@ -204,7 +206,7 @@ new AsyncFunction('origin','operation','payload','expectedFingerprint',script)('
 
     def native(operation, *arguments):
         return subprocess.run(
-            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True
+            [harness, str(root), operation, *arguments], check=True, capture_output=True, text=True, timeout=30
         ).stdout.strip()
 
     def webkit(operation, payload=""):
@@ -223,6 +225,7 @@ new AsyncFunction('origin','operation','payload','expectedFingerprint',script)('
             check=True,
             capture_output=True,
             text=True,
+            timeout=30,
         )
         value = json.loads(result.stdout)
         assert value["state"] == "ok"
