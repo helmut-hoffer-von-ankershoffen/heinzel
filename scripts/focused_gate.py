@@ -515,17 +515,15 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
     ):
         source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
     full_jobs = full_pr_jobs(gate, source, snapshot[2], read) if full else None
-    scope = (
-        None
-        if full
-        else resolve(
+    scope = None
+    if not full:
+        scope = resolve(
             source.source,
             source.commit,
             manifest,
             source.source.payload["pull_request"],
             pr_base_limit=None if candidate else snapshot[2],
         )
-    )
     if not isinstance(scope, Scope):
         jobs = [
             job for job in (full_jobs if full_jobs is not None else jobs_for(gate, source)) if job["name"] == "Coverage"
