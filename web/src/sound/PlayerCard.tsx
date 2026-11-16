@@ -174,6 +174,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
     <section
       ref={card}
       aria-label={t("sound.player", { title })}
+      data-native-surface-container=""
       data-dock={docked ? "docked" : "floating"}
       style={style}
       hidden={compact}

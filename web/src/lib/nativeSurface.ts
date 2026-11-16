@@ -24,14 +24,25 @@ export function useNativeSurface(
     const hide = () => void send({ action: "hide" }).catch(() => {});
     const update = () => {
       const element = surface.current;
-      const overlay = Array.from(document.querySelectorAll(OVERLAYS)).some(
-        (node) => node.getClientRects().length > 0 && !node.closest("[hidden], [inert]"),
-      );
-      if (!active || !element || element.closest("[hidden], [inert]") || overlay || document.hidden) {
+      if (!active || !element || element.closest("[hidden], [inert]") || document.hidden) {
         hide();
         return;
       }
       const box = element.getBoundingClientRect();
+      // The player card contains its own surface and can sit beside another. Other overlays still hide every
+      // native view, including their backdrops, so a modal cannot leave a guest interactive behind it.
+      const overlay = Array.from(document.querySelectorAll(OVERLAYS)).some((node) => {
+        if (node.closest("[hidden], [inert]")) return false;
+        if (!node.hasAttribute("data-native-surface-container")) return node.getClientRects().length > 0;
+        if (node.contains(element)) return false;
+        return Array.from(node.getClientRects()).some(
+          (rect) => rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top,
+        );
+      });
+      if (overlay) {
+        hide();
+        return;
+      }
       // The native surface must stay inside the visible viewport; anything else hides it rather than overflowing.
       const view = viewportBounds();
       if (
