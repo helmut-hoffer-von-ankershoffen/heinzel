@@ -112,6 +112,7 @@ FOREGROUND_UI = {
     "0.9.48": ("ui", "serve"),
     "0.9.49": ("ui", "serve"),
     "0.9.50": ("ui", "serve"),
+    "0.9.51": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
     "HZ_ORG__NAME": "Mira Example",
