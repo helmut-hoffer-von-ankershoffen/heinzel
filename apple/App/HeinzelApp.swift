@@ -306,6 +306,8 @@ struct ConnectionView: View {
     @AppStorage("workspaceBackendVersions") private var workspaceBackendVersions = Data()
     @AppStorage("appBuildObservation") private var appBuildObservation = Data()
     @State private var syncedWorkspaces: [RecentWorkspace] = []
+    @State private var cloudDirectoryUnavailable = false
+    @State private var cloudDirectoryChecked = false
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
     #if os(macOS)
@@ -935,7 +937,7 @@ struct ConnectionView: View {
                 if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
             }
             #if os(iOS)
-            .overlay { workspaceFooterControl(for: endpoint, fallback: true) }
+            .safeAreaInset(edge: .bottom, spacing: 0) { recoveryWorkspaceFooter(for: endpoint) }
             #endif
         } else if let endpoint {
             let revision = loadRevision
@@ -1101,15 +1103,18 @@ struct ConnectionView: View {
                 #endif
             }
             #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if obscured { recoveryWorkspaceFooter(for: endpoint) }
+            }
             .overlay {
-                workspaceFooterControl(for: endpoint, fallback: obscured)
+                if !obscured { workspaceFooterControl(for: endpoint, fallback: false) }
             }
             #endif
         } else if connecting || showingColdStart {
             startup
             #if os(iOS)
-            .overlay {
-                if let saved = Endpoint(serverOrigin) { workspaceFooterControl(for: saved, fallback: true) }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let saved = Endpoint(serverOrigin) { recoveryWorkspaceFooter(for: saved) }
             }
             #endif
         } else if let target = sharedWorkspace {
@@ -1157,6 +1162,30 @@ struct ConnectionView: View {
     }
 
     #if os(iOS)
+    // Native recovery screens reserve their own space; the web footer uses reported geometry.
+    private func recoveryWorkspaceFooter(for endpoint: Endpoint) -> some View {
+        Button {
+            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
+                Text(workspaceName(endpoint.origin)).fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.down").accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Workspace: \(workspaceName(endpoint.origin))")
+        .accessibilityHint("Open connection details or switch workspace")
+        .foregroundStyle(ConnectionPalette.ink)
+        .environment(\.colorScheme, .light)
+        .background(Color("StartupBackground").ignoresSafeArea(.container, edges: .bottom))
+    }
+
     private func workspaceFooterControl(for endpoint: Endpoint, fallback: Bool) -> some View {
         GeometryReader { geometry in
             let bottom = geometry.safeAreaInsets.bottom
@@ -1415,6 +1444,21 @@ struct ConnectionView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 Divider()
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(cloudDirectoryUnavailable
+                        ? "Synced sign-ins couldn’t be read on this device."
+                        : cloudDirectoryChecked
+                            ? "No synced sign-in for this workspace is available on this device."
+                            : "Checking for a synced sign-in…", systemImage: "icloud")
+                    if endpoint.origin.host?.hasSuffix(".ts.net") == true {
+                        Text("Enable private Tailscale sharing on the Mac, then Sync Sign-in with iCloud in the Mac app’s Connection screen. Both devices need the same Apple Account and iCloud Keychain. If that option is missing on the Mac, use a private sign-in link.")
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(ConnectionPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                Divider()
             }
             if endpoint.origin.host?.hasSuffix(".ts.net") == true {
                 Text("On the computer running Heinzel, open **Tailscale** at the bottom of the signed-in workspace. Choose **Copy link** or **Share**, send yourself the link privately, then paste it here.")
@@ -1562,6 +1606,7 @@ struct ConnectionView: View {
             VStack(spacing: 14) {
                 brandHeader(loading: loading, compact: compactBrand || editingLink)
                 actions()
+                if !editingLink { ConnectionFooter(showTagline: !loading) }
             }
             .frame(maxWidth: 420)
             .padding(24)
@@ -1578,9 +1623,6 @@ struct ConnectionView: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingLink { ConnectionFooter(showTagline: !loading) }
-        }
         .overlay(alignment: .topTrailing) {
             if !loading || startupIsSlow && !stoppingLocalWorkspace {
                 helpButton.padding(.trailing, 12)
@@ -1597,8 +1639,9 @@ struct ConnectionView: View {
                 .accessibilityHidden(true)
             Text("Heinzelmännchen")
                 .font(.system(compact ? .title2 : .largeTitle, design: .serif, weight: .semibold))
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
         }
@@ -1817,7 +1860,13 @@ struct ConnectionView: View {
     }
 
     private func refreshSyncedWorkspaces() {
-        if let workspaces = WorkspaceKeychain.workspaces() { syncedWorkspaces = workspaces }
+        cloudDirectoryChecked = true
+        if let workspaces = WorkspaceKeychain.workspaces() {
+            syncedWorkspaces = workspaces
+            cloudDirectoryUnavailable = false
+        } else {
+            cloudDirectoryUnavailable = true
+        }
     }
 
     private func resumeCloudSignInIfReady() {

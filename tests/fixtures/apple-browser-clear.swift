@@ -3,11 +3,11 @@ import WebKit
 
 @MainActor
 final class RejectWorkspaceNavigation: NSObject, WKNavigationDelegate {
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+    func webView(_ _: WKWebView, decidePolicyFor _: WKNavigationAction) async -> WKNavigationActionPolicy {
         .cancel
     }
 
-    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+    func webView(_ _: WKWebView, decidePolicyFor _: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         .cancel
     }
 }
