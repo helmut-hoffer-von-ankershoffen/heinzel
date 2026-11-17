@@ -59,7 +59,9 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
     servers: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     status: dict[str, tuple[str, bool]] = field(default_factory=dict[str, tuple[str, bool]])
     tool_sources: dict[str, tuple[str, str]] = field(default_factory=dict[str, tuple[str, str]])
-    gateway: dict[str, tuple[int, list[dict[str, str]]]] = field(default_factory=dict)
+    gateway: dict[str, tuple[int, list[dict[str, str]]]] = field(
+        default_factory=dict[str, tuple[int, list[dict[str, str]]]]
+    )
 
     def observe_gateway(self, server: str, tools: list[FoundTool]) -> None:
         """Retain bounded descriptors from this turn's existing authorized discovery, never schemas or results."""
@@ -78,6 +80,7 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
         """Merge sampled direct descriptors with distinct gateway discovery; caller holds the timing lock."""
         rows = [dict(row) for row in self.servers]
         for name, (count, details) in self.gateway.items():
+            row: dict[str, Any] | None
             row = next((item for item in rows if not item["internal"] and item["name"].lower() == name.lower()), None)
             if row is None:
                 row = {
