@@ -183,7 +183,7 @@ does not inherit it.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | The model every run uses; the agent's own default when not set. Example: "sonnet". |
+| `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Leave empty for Claude subscription chat. Example: "sonnet". |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI to run: a name found on your PATH, or the full path to it. Never read from a project's hz.toml. |
 | `codex_executable` | `HZ_SYSTEM_RUNNER__CODEX_EXECUTABLE` | `'codex'` | The Codex CLI to run: a name found on your PATH, or the full path to it. Never read from a project's hz.toml. |
 | `codex_model` | `HZ_SYSTEM_RUNNER__CODEX_MODEL` | `None` | The model every Codex run uses; Codex's own default when not set. Example: "gpt-5-codex". |
@@ -196,15 +196,15 @@ does not inherit it.
 | `command_enforces_read_only` | `HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY` | `False` | Your own runner refuses to run until this is on. Turn it on once your command limits its agent to tools that can't change anything. Never read from a project's hz.toml. |
 | `command_read_only_tools` | `HZ_SYSTEM_RUNNER__COMMAND_READ_ONLY_TOOLS` | platform-specific | Tools, as your command names them, that a profile may ask your own runner for; any other is refused. Never read from a project's hz.toml. |
 | `command_env` | `HZ_SYSTEM_RUNNER__COMMAND_ENV` | platform-specific | Environment variables your command gets besides PATH, HOME, LANG, LC_* and TMPDIR, such as the one holding its own sign-in. Heinzelmännchen's credential variables are never passed. Never read from a project's hz.toml. |
-| `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | The most one answer, or one chat message, may cost in US dollars. Never read from a project's hz.toml. |
+| `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | Requested cap; enforcement depends on the runner. Never read from a project's hz.toml. |
 
 ## `[system.runner.chat]`
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer. Never read from a project's hz.toml. |
-| `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
-| `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
+| `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | Stops new messages at the recorded spending limit. Never read from a project's hz.toml. |
+| `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | Runner chats only; personal conversations are excluded. |
+| `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | Oldest runner chats are removed; personal chats stay. |
 | `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's Heinzel can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
 ## `[system.skill]`

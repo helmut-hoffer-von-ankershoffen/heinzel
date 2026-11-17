@@ -8,6 +8,7 @@ import json
 import tomllib
 
 import pytest
+import tomlkit
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -75,7 +76,11 @@ def gateway_config() -> Config:
         "gateway_runner": "command",
         "gateway_hosts": ["https://ai.acme.example/v1"],
     }
-    return Config(files=(), data={"ai": {"access": access}})
+    # The running adapter compares its startup settings with the saved configuration before probing.
+    directory = user_config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.toml").write_text(tomlkit.dumps({"ai": {"access": access}}), encoding="utf-8")
+    return Config.load()
 
 
 def user_file() -> dict:
@@ -137,10 +142,26 @@ def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
     }
 
 
+def test_saved_gateway_changes_refuse_a_stale_cli_probe(make_kernel, fakes):
+    kernel = make_kernel(builtins=True, config=gateway_config())
+    assert hz(kernel, "ai", "access", "test", "--name", "gateway")[1]["ok"]
+    saved = user_file()
+    saved["ai"]["access"]["gateway_test_command"] = ["acme", "ai", "new-ping"]
+    (user_config_dir() / "config.toml").write_text(tomlkit.dumps(saved), encoding="utf-8")
+    fakes.write_text("", encoding="utf-8")
+    _, result = hz(kernel, "ai", "access", "test", "--name", "gateway")
+    assert result["ok"] is False
+    assert result["detail"] == "Gateway commands or environment changed"
+    assert result["fix"] == "Restart Heinzel before testing."
+    assert not any(line.startswith("acme ") for line in fakes.read_text(encoding="utf-8").splitlines())
+
+
 def test_doctor_reports_a_runner_that_does_not_follow_the_access(make_kernel, fakes):
     kernel = make_kernel(builtins=True, config=gateway_config())
     hz(kernel, "ai", "access", "use", "gateway")
-    (user_config_dir() / "config.toml").write_text('[capabilities]\nai_access = "gateway"\n', encoding="utf-8")
+    config = user_file()
+    del config["capabilities"]["agent_runner"]
+    (user_config_dir() / "config.toml").write_text(tomlkit.dumps(config), encoding="utf-8")
     _, report = hz(kernel, "system", "doctor")
     [check] = report["checks"]["ai.access"]
     assert check["status"] == "degraded"

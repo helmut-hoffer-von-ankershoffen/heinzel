@@ -1,6 +1,6 @@
 """Private, ephemeral measurements of one interactive chat turn.
 
-Only counts, tool names and descriptions already offered to the model are sent to the authenticated stream.
+Only counts and tool descriptors offered directly or discovered through the authorized gateway are streamed.
 Prompts, message contents, arguments, credentials and server configuration are never included.
 """
 
@@ -19,7 +19,7 @@ from pydantic_ai.capabilities.abstract import WrapModelRequestHandler
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
 
-from heinzel.kernel import Emit, FoundMcpServers, Kernel
+from heinzel.kernel import Emit, FoundMcpServers, FoundTool, Kernel, clean_text
 from heinzel.modules.heinzel._engine import TurnDeps
 
 if TYPE_CHECKING:
@@ -59,6 +59,37 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
     servers: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     status: dict[str, tuple[str, bool]] = field(default_factory=dict[str, tuple[str, bool]])
     tool_sources: dict[str, tuple[str, str]] = field(default_factory=dict[str, tuple[str, str]])
+    gateway: dict[str, tuple[int, list[dict[str, str]]]] = field(default_factory=dict)
+
+    def observe_gateway(self, server: str, tools: list[FoundTool]) -> None:
+        """Retain bounded descriptors from this turn's existing authorized discovery, never schemas or results."""
+        with self._timing_lock:
+            if server not in self.gateway and len(self.gateway) >= _TOTAL_DETAIL_LIMIT:
+                return
+            remaining = _TOTAL_DETAIL_LIMIT - sum(len(row[1]) for key, row in self.gateway.items() if key != server)
+            details = [
+                {"name": clean_text(tool.name)[:128], "description": clean_text(tool.description)[:_DESCRIPTION_LIMIT]}
+                for tool in tools[: min(_DETAIL_LIMIT, remaining)]
+            ]
+            self.gateway[server] = (len(tools), details)
+        self.publish()
+
+    def _server_snapshot(self) -> list[dict[str, Any]]:
+        """Merge sampled direct descriptors with distinct gateway discovery; caller holds the timing lock."""
+        rows = [dict(row) for row in self.servers]
+        for name, (count, details) in self.gateway.items():
+            row = next((item for item in rows if not item["internal"] and item["name"].lower() == name.lower()), None)
+            if row is None:
+                row = {
+                    "name": clean_text(name)[:128],
+                    "internal": False,
+                    "offered": False,
+                    "tools": [],
+                    "tool_count": None,
+                }
+                rows.append(row)
+            row.update(gateway_tool_count=count, gateway_tools=details)
+        return rows
 
     def observe_connections(self, kernel: Kernel | None) -> None:
         """Read passive connection status only; never start a server for the sidebar."""
@@ -110,6 +141,7 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
                 "mcp_discovery_ms": self.mcp_discovery_ms,
                 "mcp_tool_ms": self.mcp_tool_ms,
             }
+            servers = self._server_snapshot()
         with contextlib.suppress(Exception):
             self.emit(
                 "diagnostics",
@@ -120,7 +152,7 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
                     "provider_ms": self.provider_ms,
                     "requests": self.requests,
                     "context": self.context,
-                    "servers": self.servers,
+                    "servers": servers,
                 },
             )
 
@@ -236,6 +268,8 @@ async def prepare_toolbox(  # noqa: PLR0913
         diagnostic.discovery_ms = (time.monotonic() - tools_started) * 1000
         if toolbox is not None:
             toolbox.measure = diagnostic.observe_tool
+            if toolbox.external is not None:
+                toolbox.external.observe = diagnostic.observe_gateway
             for tool in toolbox.tools:
                 found = getattr(tool, "found", None)
                 if found is not None:

@@ -81,6 +81,11 @@ export function AiAccessSetting() {
       </p>
       <p className="mt-0.5 text-sm text-muted-foreground">{t("aiAccess.intro")}</p>
       {note && <p className="mt-1 text-sm text-warn">{note}</p>}
+      {check.error && (
+        <p role="alert" className="mt-1 text-sm text-bad">
+          {check.error.message}
+        </p>
+      )}
       <div role="radiogroup" aria-labelledby={labelId} className="mt-3 flex flex-col gap-2">
         {options.map((option) => (
           <Option
@@ -308,9 +313,9 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
   const [saved, setSaved] = useState(false);
   const labelId = useId();
   const pick = async (model: string) => {
-    setChosen(model);
     setSaved(false);
     await save.mutateAsync({ key: "ai.access.plugin_model", value: model });
+    setChosen(model);
     await client.invalidateQueries({ queryKey: ["ai", "access", "list"] });
     setSaved(true);
   };
@@ -326,7 +331,6 @@ function PluginModelSetup({ option }: { option: SchemaAccessOption }) {
         {models.map((model) => {
           const down = unavailable.has(model);
           return (
-            // biome-ignore lint/a11y/useSemanticElements: a pickable row with an "unavailable" note, like the option cards
             <Button
               key={model}
               type="button"
@@ -422,7 +426,15 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
   const keyState = useAiKey();
   const storeKey = useSetAiKey();
   const removeKey = useRemoveAiKey();
+  const busy = save.isPending || storeKey.isPending;
+  const changesSettings = fields.some((field) => values[field.key]?.trim());
+  const hasEdits = changesSettings || (kind === "model" && !!secret.trim());
+  const changed = () => {
+    setSaved(false);
+    check.reset();
+  };
   const store = async () => {
+    if (!hasEdits || busy) return;
     for (const field of fields) {
       const value = values[field.key]?.trim();
       if (value) await save.mutateAsync({ key: field.key, value });
@@ -451,11 +463,22 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
             list={field.list ? listId : undefined}
             value={values[field.key] ?? ""}
             placeholder={field.placeholder}
-            onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+            disabled={busy}
+            onChange={(event) => {
+              changed();
+              setValues({ ...values, [field.key]: event.target.value });
+            }}
             className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
           />
         </label>
       ))}
+      <details className="text-sm text-muted-foreground">
+        <summary className="cursor-pointer">When changes take effect</summary>
+        <p className="mt-1">
+          Model and gateway settings need a restart of Heinzel. Tests wait until these changes are loaded. API keys are
+          read again for each test.
+        </p>
+      </details>
       {kind === "model" && (
         <>
           <datalist id={listId}>
@@ -470,8 +493,12 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
               autoComplete="off"
               spellCheck={false}
               value={secret}
+              disabled={busy}
               placeholder={keyState.data?.stored ? t("aiAccess.setup.keyStored") : ""}
-              onChange={(event) => setSecret(event.target.value)}
+              onChange={(event) => {
+                changed();
+                setSecret(event.target.value);
+              }}
               className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
             />
           </label>
@@ -490,7 +517,9 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
         </>
       )}
       {error && <p className="text-sm text-bad">{error.message}</p>}
-      {saved && !error && <p className="text-sm text-ok">{t("aiAccess.setup.saved")}</p>}
+      {saved && !error && (
+        <p className="text-sm text-ok">{t(changesSettings ? "aiAccess.setup.savedRestart" : "aiAccess.setup.saved")}</p>
+      )}
       {check.data && <TestResult result={check.data} />}
       {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
       <PaneActions align="end" words="all">
@@ -498,12 +527,12 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
           key="test"
           icon={FlaskConical}
           type="button"
-          disabled={!saved || check.isPending}
+          disabled={!saved || changesSettings || check.isPending}
           onClick={() => check.mutate(option.name)}
         >
           {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
         </PaneAction>
-        <PaneAction key="save" icon={Settings2} primary type="submit" disabled={save.isPending || storeKey.isPending}>
+        <PaneAction key="save" icon={Settings2} primary type="submit" disabled={busy || !hasEdits || saved}>
           {t("aiAccess.setup.save")}
         </PaneAction>
       </PaneActions>

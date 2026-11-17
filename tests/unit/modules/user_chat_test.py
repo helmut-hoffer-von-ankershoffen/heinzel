@@ -211,6 +211,36 @@ def test_earlier_started_uncertain_turn_blocks_later_without_launch(tmp_path):
         assert not (tmp_path / "model-calls").exists()
 
 
+def test_queue_head_survives_paging_and_advances_without_replaying(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        _, crud, session = setup_chat(current)
+        with crud.repository.control_writer(session) as writer:
+            turn = interactive_turn_id("hello")
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
+        for request in ("second", "third"):
+            crud.accept(session, MessageRequest(request_id=request, text=request))
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        first_page = crud.snapshot(session, limit=1)
+        later_page = crud.snapshot(session, cursor=first_page.next_cursor, limit=1)
+        assert later_page.messages[0].id == "second"
+        assert later_page.queue_head.id == "hello"
+        with pytest.raises(HeinzelError, match="uncertain"):
+            asyncio.run(service.answer(session, "third"))
+        assert not (tmp_path / "model-calls").exists()
+        service.abandon(session, "hello")
+        assert crud.snapshot(session).queue_head.id == "second"
+        with pytest.raises(HeinzelError, match="earlier accepted"):
+            asyncio.run(service.answer(session, "third"))
+        asyncio.run(service.answer(session, "second"))
+        assert crud.snapshot(session).queue_head.id == "third"
+        asyncio.run(service.answer(session, "third"))
+        assert crud.snapshot(session).queue_head is None
+        starts = [e for e in crud.repository.control_read(session).events if e.kind == "interactive.started"]
+        assert sum(e.key == interactive_turn_id("hello") for e in starts) == 1
+
+
 def test_fifo_executable_is_refused_without_blocking(tmp_path):
     import os
 
@@ -364,6 +394,122 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
             service.abandon(session, "hello")
         assert service.abandon(session, "hello").status == "abandoned"
         assert service.abandon(session, "hello").status == "abandoned"
+
+
+@pytest.fixture
+def expired_chat(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        _, crud, session = setup_chat(current)
+        accepted = next(e for e in crud.repository.control_read(session).events if e.key == "message-hello")
+        path = (
+            current.directory.parent
+            / "heinzel-sessions"
+            / current.principal().id
+            / "control"
+            / session
+            / "turns"
+            / f"{accepted.data['body_id']}.jsonl"
+        )
+        body = path.read_bytes()
+        path.unlink()
+        crud.accept(session, MessageRequest(request_id="later", text="A fresh message"))
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        yield current, crud, session, service, path, body
+
+
+def test_expired_unstarted_human_queue_head_can_be_explicitly_set_aside(tmp_path, expired_chat):
+    _, crud, session, service, _path, _body = expired_chat
+    assert crud.snapshot(session).queue_head.status == "expired"
+    assert service.turn_state(session, "hello").status == "pending"
+    assert service.abandon(session, "hello", expected_status="pending").status == "abandoned"
+    assert service.abandon(session, "hello", expected_status="pending").status == "abandoned"
+    assert service.turn_state(session, "hello").status == "abandoned"
+    assert crud.snapshot(session).queue_head.id == "later"
+    assert not (tmp_path / "model-calls").exists()
+    assert asyncio.run(service.answer(session, "later")).message.text == "A real recorded reply"
+
+
+@pytest.mark.parametrize(
+    "change", ["started", "restored", "foreign", "foreign-after-lock", "locked", "wrong-state", "wrong-request"]
+)
+def test_expired_input_cancellation_rechecks_owner_and_state_under_lock(expired_chat, tmp_path, monkeypatch, change):
+    from contextlib import contextmanager
+
+    current, crud, session, service, path, body = expired_chat
+    original = crud.repository.main_writer
+    assert service.turn_state(session, "hello").status == "pending"
+
+    @contextmanager
+    def changed_writer(session_id):
+        with original(session_id) as writer:
+            if change == "started":
+                with crud.repository.control_writer(session_id) as control:
+                    turn = interactive_turn_id("hello")
+                    control.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
+            elif change == "restored":
+                path.write_bytes(body)
+            if change == "foreign-after-lock":
+                stranger = CallIdentity(
+                    Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:write"})
+                )
+                with current.using(stranger):
+                    yield writer
+            else:
+                yield writer
+
+    monkeypatch.setattr(crud.repository, "main_writer", changed_writer)
+    if change == "foreign":
+        stranger = CallIdentity(
+            Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:write"})
+        )
+        with current.using(stranger), pytest.raises(HeinzelError):
+            service.abandon(session, "hello", expected_status="pending")
+    elif change == "locked":
+        with original(session), pytest.raises(HeinzelError):
+            service.abandon(session, "hello", expected_status="pending")
+    else:
+        with pytest.raises(HeinzelError):
+            service.abandon(
+                session,
+                "missing" if change == "wrong-request" else "hello",
+                expected_status="unresolved" if change == "wrong-state" else "pending",
+            )
+    assert not any(e.kind == "interactive.abandoned" for e in crud.repository.control_read(session).events)
+    assert not (tmp_path / "model-calls").exists()
+
+
+def test_expired_cancellation_receipt_cannot_hide_a_started_turn(expired_chat, tmp_path):
+    _, crud, session, service, _path, _body = expired_chat
+    service.abandon(session, "hello", expected_status="pending")
+    with crud.repository.control_writer(session) as writer:
+        turn = interactive_turn_id("hello")
+        writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
+    with pytest.raises(HeinzelError, match="invalid resolution"):
+        service.turn_state(session, "hello")
+    assert crud.snapshot(session).queue_head.id == "hello"
+    with pytest.raises(HeinzelError, match="invalid resolution"):
+        asyncio.run(service.answer(session, "later"))
+    assert not (tmp_path / "model-calls").exists()
+
+
+def test_expired_cancellation_refuses_mismatched_accepted_request_identity(expired_chat, monkeypatch):
+    _, crud, session, service, _path, _body = expired_chat
+    read = crud.repository.control_read
+    snapshot = read(session)
+    corrupted = snapshot.model_copy(
+        update={
+            "events": [
+                e.model_copy(update={"data": {**e.data, "message_id": "different"}}) if e.key == "message-hello" else e
+                for e in snapshot.events
+            ]
+        }
+    )
+    monkeypatch.setattr(crud.repository, "control_read", lambda _session: corrupted)
+    with pytest.raises(HeinzelError, match="authenticated user-chat origin"):
+        service.abandon(session, "hello", expected_status="pending")
+    assert not any(e.kind == "interactive.abandoned" for e in read(session).events)
 
 
 def test_fake_model_suggests_inert_schedule_in_personal_turn(tmp_path):

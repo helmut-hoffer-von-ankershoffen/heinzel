@@ -401,7 +401,11 @@ class UserChatService:
         allowed_origins = _HEADS
         if allow_daemon_origin:
             allowed_origins = _ANSWERED | frozenset(["daemon"])
-        if len(matches) != 1 or matches[0].data.get("origin") not in allowed_origins:
+        if (
+            len(matches) != 1
+            or matches[0].data.get("origin") not in allowed_origins
+            or matches[0].data.get("message_id") != request
+        ):
             msg = "This message has no authenticated user-chat origin"
             raise HeinzelError(msg)
 
@@ -780,7 +784,17 @@ class UserChatService:
             unstarted = event.data.get("unstarted") is True
             accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
             if (
-                (unstarted and (starts or accepted.data.get("origin") != "daemon" or event.seq <= accepted.seq))
+                (
+                    unstarted
+                    and (
+                        starts
+                        or event.seq <= accepted.seq
+                        or not (
+                            accepted.data.get("origin") == "daemon"
+                            or (accepted.data.get("origin") in _HEADS and event.data.get("expired_input") is True)
+                        )
+                    )
+                )
                 or (
                     not unstarted
                     and (len(starts) != 1 or event.seq <= starts[0].seq or starts[0].data.get("message_id") != request)
@@ -802,11 +816,13 @@ class UserChatService:
             status = "unresolved"
         return UserTurnState(session_id=session, request_id=request, status=status)
 
-    def abandon(self, session: str, request: str) -> UserTurnResolution:
+    def abandon(
+        self, session: str, request: str, *, expected_status: Literal["pending", "unresolved"] = "unresolved"
+    ) -> UserTurnResolution:
         """Record an explicit owner decision to proceed without replaying a stopped uncertain turn.
 
         Raises:
-            HeinzelError: If the turn is active, finished, not owner-bound, or an unstarted user message.
+            HeinzelError: If the turn is active, finished, not owner-bound, or an unstarted retained user message.
         """
         self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
@@ -818,9 +834,17 @@ class UserChatService:
                 starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
                 resolutions = [e for e in events if e.kind == "interactive.abandoned" and e.key == turn]
                 accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
-                unstarted = not starts and accepted.data.get("origin") == "daemon"
+                expired_input = (
+                    not starts
+                    and accepted.data.get("origin") in _HEADS
+                    and self._crud.read_message(session, accepted).status == "expired"
+                )
+                unstarted = not starts and (accepted.data.get("origin") == "daemon" or expired_input)
                 if not unstarted and (len(starts) != 1 or starts[0].data.get("message_id") != request):
-                    msg = "Only a stopped uncertain turn or unstarted daemon occurrence can be set aside"
+                    msg = "Only a stopped uncertain turn or unstarted daemon/expired input can be set aside"
+                    raise HeinzelError(msg)
+                if expected_status != ("pending" if unstarted else "unresolved"):
+                    msg = "The turn state changed; inspect it and confirm again"
                     raise HeinzelError(msg)
                 if any(e.kind == "message.replied" and e.key == turn for e in events):
                     msg = "This turn already has a recorded reply"
@@ -832,6 +856,7 @@ class UserChatService:
                         or resolutions[0].data.get("owner") != repo.principal_id
                         or resolutions[0].data.get("origin") not in _ANSWERED
                         or resolutions[0].data.get("unstarted", False) != unstarted
+                        or resolutions[0].data.get("expired_input", False) != expired_input
                         or resolutions[0].seq <= accepted.seq
                         or (not unstarted and resolutions[0].seq <= starts[0].seq)
                     ):
@@ -847,6 +872,7 @@ class UserChatService:
                         "owner": repo.principal_id,
                         "origin": self.current.context().authentication,
                         **({"unstarted": True} if unstarted else {}),
+                        **({"expired_input": True} if expired_input else {}),
                     },
                 )
         return UserTurnResolution(session_id=session, request_id=request)

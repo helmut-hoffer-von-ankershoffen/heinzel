@@ -1,9 +1,13 @@
 """On-demand access to enabled external MCP tools for a Heinzel's turn (ADR 0164)."""
 
+import contextlib
 import json
-from typing import Any, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 from heinzel.kernel import ChatToolError, FoundMcpServers, FoundTool, Kernel, found_tools, untrusted
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 PAGE = 5
 SCHEMA_CHUNK = 8000
@@ -19,6 +23,7 @@ class ExternalTools:
 
     def __init__(self, kernel: Kernel, actions: str, *, attended: bool) -> None:
         self.kernel, self.actions, self.attended = kernel, actions, attended
+        self.observe: Callable[[str, list[FoundTool]], None] | None = None
 
     def _names(self) -> list[str]:
         return self.kernel.resolve(FoundMcpServers).names()
@@ -40,7 +45,11 @@ class ExternalTools:
     def _tools(self, server: object) -> list[FoundTool]:
         if not isinstance(server, str) or server not in self._names():
             return []
-        return found_tools(self.kernel, self.actions, attended=self.attended, namespace=server)
+        tools = found_tools(self.kernel, self.actions, attended=self.attended, namespace=server)
+        if self.observe is not None:
+            with contextlib.suppress(Exception):  # diagnostics must never affect discovery or tool policy
+                self.observe(server, tools)
+        return tools
 
     def tools(self, server: object, offset: object = 0) -> str:
         """Open one server and list its available tools; errors remain visible as unavailable."""

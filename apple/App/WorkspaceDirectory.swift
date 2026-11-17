@@ -26,6 +26,29 @@ enum WorkspaceFooterGeometry {
     }
 }
 
+struct AppBuildObservation: Codable, Equatable {
+    struct Build: Codable, Equatable {
+        let version: String
+        let number: String
+        let revision: String?
+
+        init?(version: String?, number: String?, revision: String?) {
+            guard let version, !version.isEmpty, let number, !number.isEmpty else { return nil }
+            self.version = version
+            self.number = number
+            self.revision = revision.flatMap { $0.range(of: #"^[a-f0-9]{7,64}$"#, options: .regularExpression) == nil ? nil : $0 }
+        }
+    }
+
+    let build: Build
+    let observedSince: Date
+
+    static func recording(_ build: Build, previous: Self?, now: Date) -> Self {
+        if let previous, previous.build == build, previous.observedSince <= now { return previous }
+        return Self(build: build, observedSince: now)
+    }
+}
+
 struct WorkspaceVersionObservation: Codable, Equatable {
     let version: String
     let observedAt: Date
@@ -62,6 +85,42 @@ struct WorkspaceVersionObservation: Codable, Equatable {
         guard origin == selectedOrigin, requestRevision == currentRevision else { return false }
         values[origin] = observation
         return true
+    }
+}
+
+/// One bounded metadata lookup at a time; failed or superseded requests never relabel cached observations.
+@MainActor
+final class WorkspaceVersionRefresh {
+    private var lastRevision = 0
+    private var generation = 0
+    private var task: Task<Void, Never>?
+
+    func cancel() {
+        generation &+= 1
+        task?.cancel()
+        task = nil
+    }
+
+    @discardableResult
+    func request(revision: Int? = nil,
+                 read: @escaping @MainActor () async -> WorkspaceVersionObservation?,
+                 isCurrent: @escaping @MainActor () -> Bool,
+                 report: @escaping @MainActor (WorkspaceVersionObservation) -> Void) -> Task<Void, Never>? {
+        if let revision {
+            guard revision != lastRevision else { return nil }
+            lastRevision = revision
+        }
+        cancel()
+        let requestedGeneration = generation
+        let pending = Task { [weak self] in
+            guard !Task.isCancelled, isCurrent() else { return }
+            let observation = await read()
+            guard !Task.isCancelled, self?.generation == requestedGeneration, isCurrent(),
+                  let observation else { return }
+            report(observation)
+        }
+        task = pending
+        return pending
     }
 }
 

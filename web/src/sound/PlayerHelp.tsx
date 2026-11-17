@@ -3,6 +3,7 @@
 // of the card. The parent video area is the `group/video` that reveals it. A dot on the icon says playback needs attention, so a real problem is still noticeable.
 import { CircleHelp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -10,9 +11,9 @@ import { cn } from "@/lib/utils";
 
 const CLOSE_DELAY = 200;
 
-type Props = { attention: boolean; children: ReactNode; actions: ReactNode };
+type Props = { attention: boolean; children: ReactNode; actions: ReactNode; inHeader?: boolean };
 
-export function PlayerHelp({ attention, children, actions }: Props) {
+export function PlayerHelp({ attention, children, actions, inHeader = false }: Props) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -49,7 +50,7 @@ export function PlayerHelp({ attention, children, actions }: Props) {
     // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus only preview what the button opens on click
     <span
       ref={wrapper}
-      className="absolute right-2 bottom-12 z-10 inline-flex"
+      className={cn("inline-flex", inHeader ? "relative" : "absolute right-2 bottom-12 z-10")}
       onMouseEnter={enter}
       onMouseLeave={leave}
       onFocus={() => {
@@ -60,7 +61,21 @@ export function PlayerHelp({ attention, children, actions }: Props) {
         if (!wrapper.current?.contains(next) && !pane.current?.contains(next)) setFocused(false);
       }}
       onKeyDown={(event) => {
-        if (event.key !== "Escape" || !open) return;
+        if (!open) return;
+        if (event.key === "Tab") {
+          const first = pane.current?.querySelector<HTMLElement>(
+            "a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled])",
+          );
+          if (!event.shiftKey && document.activeElement === trigger.current && first) {
+            event.preventDefault();
+            first.focus();
+          } else if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            trigger.current?.focus();
+          }
+          return;
+        }
+        if (event.key !== "Escape") return;
         event.stopPropagation();
         setHovered(false);
         setFocused(false);
@@ -87,10 +102,11 @@ export function PlayerHelp({ attention, children, actions }: Props) {
         aria-label={attention ? `${label} ${t("sound.needsAttention")}` : label}
         title={label}
         className={cn(
-          "relative flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-popover/90 text-icon shadow-sm backdrop-blur-sm transition-opacity hover:bg-accent focus-visible:opacity-100",
+          "relative flex shrink-0 items-center justify-center rounded-full border border-border bg-popover/90 text-icon shadow-sm backdrop-blur-sm transition-opacity hover:bg-accent focus-visible:opacity-100",
+          inHeader ? "size-8" : "size-7",
           // Hidden until the video is hovered or holds focus; a touch screen has no hover, so it stays faintly visible.
           // A problem, or an open pane, keeps it fully visible.
-          attention || open
+          attention || open || inHeader
             ? "opacity-100"
             : "opacity-0 group-focus-within/video:opacity-100 group-hover/video:opacity-100 pointer-coarse:opacity-70",
         )}
@@ -104,22 +120,24 @@ export function PlayerHelp({ attention, children, actions }: Props) {
           />
         )}
       </button>
-      {open && (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the pane shares hover and focus with its button
-        <div onMouseEnter={enter} onMouseLeave={leave} onFocus={() => setFocused(true)}>
-          <AnchoredPopover
-            anchor={trigger}
-            contentRef={pane}
-            id={id}
-            role="region"
-            aria-label={label}
-            className="w-72 max-w-[calc(100vw-1rem)] p-2 text-ui-sm text-foreground"
-          >
-            <div className="px-1.5 py-1">{children}</div>
-            <PaneActions className="mt-1">{actions}</PaneActions>
-          </AnchoredPopover>
-        </div>
-      )}
+      {open &&
+        createPortal(
+          // biome-ignore lint/a11y/noStaticElementInteractions: the pane shares hover and focus with its button
+          <div onMouseEnter={enter} onMouseLeave={leave} onFocus={() => setFocused(true)}>
+            <AnchoredPopover
+              anchor={trigger}
+              contentRef={pane}
+              id={id}
+              role="region"
+              aria-label={label}
+              className="w-72 max-w-[calc(100vw-1rem)] p-2 text-ui-sm text-foreground"
+            >
+              <div className="px-1.5 py-1">{children}</div>
+              <PaneActions className="mt-1">{actions}</PaneActions>
+            </AnchoredPopover>
+          </div>,
+          document.body,
+        )}
     </span>
   );
 }

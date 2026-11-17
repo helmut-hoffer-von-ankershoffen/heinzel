@@ -357,8 +357,18 @@ def test_cancelled_turn_survives_reload_and_restart_without_replay_until_the_own
 
     # Only the owner's explicit acknowledgment moves on, and it keeps the conversation.
     path = "/api/heinzel/abandon-chat-turn"
-    assert reopened.post(path, headers=AUTH, json={**body, "acknowledge_uncertain": False}).status_code == 400
-    assert reopened.post(path, headers=AUTH, json={**body, "acknowledge_uncertain": True}).status_code == 200
+    assert (
+        reopened.post(
+            path, headers=AUTH, json={**body, "acknowledge_uncertain": False, "expected_status": "unresolved"}
+        ).status_code
+        == 400
+    )
+    assert (
+        reopened.post(
+            path, headers=AUTH, json={**body, "acknowledge_uncertain": True, "expected_status": "unresolved"}
+        ).status_code
+        == 200
+    )
     assert reopened.get(state_path, headers=AUTH, params=body).json()["status"] == "abandoned"
     answer = _say(reopened, session, "continue", "Please continue.")
     assert answer["session_id"] == session

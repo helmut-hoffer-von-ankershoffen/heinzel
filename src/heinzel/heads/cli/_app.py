@@ -242,12 +242,22 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
             error.print(line, markup=False)
         raise typer.Exit(1)
     location = _located(error)
-    if state == "current":
-        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+    if _installed_status(state, location, output):
         return
     if location.parent != folder:
         error.print(say.not_moved(location, SYSTEM_APPLICATIONS), markup=False, soft_wrap=True)
     output.print(say.done(location), markup=False, soft_wrap=True)
+
+
+def _installed_status(state: str, location: Path, output: Console) -> bool:
+    if state == "installed-pending":
+        output.print("The app is installed; registration or old widget cleanup is still pending.", markup=False)
+        output.print("hz will retry during its next update check, or run hz app install again.", markup=False)
+        return True
+    if state == "current":
+        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+        return True
+    return False
 
 
 def _where_installed() -> Path:

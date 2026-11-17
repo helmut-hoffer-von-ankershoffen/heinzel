@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 @main
 struct BrowserClearProbe {
@@ -18,6 +19,7 @@ struct BrowserClearProbe {
         }
         let otherPort = Endpoint("https://workspace.example.com:8443")!
         precondition(!IntegratedBrowser.permits(URL(string: "https://workspace.example.com/")!, excluding: otherPort))
+        await tabCommands(endpoint)
         let dns = BoundedGuestDNS()
         let unblock = DispatchSemaphore(value: 0)
         let delayed = await dns.resolve("example.com", timeout: .milliseconds(30)) { _ in
@@ -58,5 +60,43 @@ struct BrowserClearProbe {
         precondition(retried && !clear.clearing && workspace == "workspace-token")
         let empty = await clear.run { nil } erase: { _ in fatalError("empty store") }
         precondition(empty && !clear.clearing)
+    }
+
+    @MainActor
+    static func tabCommands(_ endpoint: Endpoint) async {
+        let browser = IntegratedBrowser()
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let workspace = WKWebView(frame: .zero, configuration: configuration)
+        let store = workspace.configuration.websiteDataStore
+        let workspaceSubviews = workspace.subviews.map(ObjectIdentifier.init)
+        func command(_ action: String, _ tab: String? = nil) async -> [String: Any] {
+            var request: [String: Any] = ["action": action]
+            if let tab { request["tab"] = tab }
+            return await browser.handle(request, in: workspace, excluding: endpoint)
+        }
+        func ids(_ state: [String: Any]) -> [String] {
+            let tabs = state["tabs"] as! [[String: Any]]
+            return tabs.map { $0["id"] as! String }
+        }
+        let empty = await command("tabs")
+        precondition(ids(empty).isEmpty)
+        let first = await command("new-tab")
+        let firstID = ids(first)[0]
+        let second = await command("new-tab")
+        let secondID = ids(second)[1]
+        precondition(firstID != secondID && second["selected"] as? String == secondID)
+        let missing = await command("select-tab", "unknown")
+        precondition(missing["selected"] as? String == secondID)
+        let selected = await command("select-tab", firstID)
+        precondition(selected["selected"] as? String == firstID)
+        let closed = await command("close-tab", firstID)
+        precondition(ids(closed) == [secondID] && closed["selected"] as? String == secondID)
+        for _ in 0..<8 { _ = await command("new-tab") }
+        let bounded = await command("tabs")
+        precondition(ids(bounded).count == 8)
+        let cleared = await command("clear")
+        precondition(ids(cleared).isEmpty && cleared["selected"] == nil && cleared["notice"] == nil)
+        precondition(workspace.configuration.websiteDataStore === store && workspace.subviews.map(ObjectIdentifier.init) == workspaceSubviews)
     }
 }

@@ -18,6 +18,7 @@ import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
+import { AiSettings } from "./AiSettings";
 import { BrowserSettings } from "./BrowserSettings";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { DaemonSettings } from "./DaemonSettings";
@@ -276,7 +277,12 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 </div>
               </>
             )}
-            {current === "ai" && <AiAccessSetting />}
+            {current === "ai" && (
+              <>
+                <AiAccessSetting />
+                <AiSettings settings={matching} />
+              </>
+            )}
             {current === "notifications" && <NotificationSettings />}
             {current === "browser" && <BrowserSettings />}
             {current === "web-server" && <WebServerSettings />}
@@ -287,19 +293,20 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <DaemonSettings />
               </>
             )}
-            {(matching.length > 0 ||
-              !["appearance", "ai", "notifications", "browser", "daemon", "web-server", "mcp"].includes(current)) && (
-              <div className={current === "daemon" ? "mt-8" : undefined}>
-                <Sections
-                  settings={matching}
-                  heading={current === "daemon" ? t("daemon.configuration") : page.title}
-                  header={
-                    ["appearance", "ai", "notifications", "browser", "daemon"].includes(current) ? undefined : header
-                  }
-                  summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
-                />
-              </div>
-            )}
+            {current !== "ai" &&
+              (matching.length > 0 ||
+                !["appearance", "ai", "notifications", "browser", "daemon", "web-server", "mcp"].includes(current)) && (
+                <div className={current === "daemon" ? "mt-8" : undefined}>
+                  <Sections
+                    settings={matching}
+                    heading={current === "daemon" ? t("daemon.configuration") : page.title}
+                    header={
+                      ["appearance", "ai", "notifications", "browser", "daemon"].includes(current) ? undefined : header
+                    }
+                    summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
+                  />
+                </div>
+              )}
             {current === "notifications" && <ChatChannelSettings />}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (

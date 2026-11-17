@@ -16481,6 +16481,17 @@
             "title": "Questions",
             "type": "array"
           },
+          "queue_head": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionMessage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The earliest accepted message without a recorded answer or resolution, across all pages."
+          },
           "schedule": {
             "anyOf": [
               {
@@ -22282,6 +22293,15 @@
             "title": "Acknowledge Uncertain",
             "type": "boolean"
           },
+          "expected_status": {
+            "description": "The exact state the owner acknowledged.",
+            "enum": [
+              "pending",
+              "unresolved"
+            ],
+            "title": "Expected Status",
+            "type": "string"
+          },
           "request_id": {
             "description": "A stable client request id; reuse it only for an exact retry.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -22298,7 +22318,8 @@
         "required": [
           "session_id",
           "request_id",
-          "acknowledge_uncertain"
+          "acknowledge_uncertain",
+          "expected_status"
         ],
         "title": "heinzel_abandon_chat_turn_Input",
         "type": "object"
@@ -24637,7 +24658,7 @@
     },
     "/heinzel/abandon-chat-turn": {
       "post": {
-        "description": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.\n\nRaises:\n    HeinzelError: If the uncertain outcome was not acknowledged.",
+        "description": "Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.\n\nRaises:\n    HeinzelError: If the uncertain outcome was not acknowledged.",
         "operationId": "heinzel_abandon_chat_turn",
         "requestBody": {
           "content": {
@@ -24671,7 +24692,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.",
+        "summary": "Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.",
         "tags": [
           "heinzel"
         ]
