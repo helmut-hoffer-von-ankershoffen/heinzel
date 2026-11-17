@@ -49,6 +49,19 @@ function validTool(value: unknown): boolean {
   );
 }
 
+function validGateway(server: Server): boolean {
+  if (server.gateway_tool_count === undefined) return server.gateway_tools === undefined;
+  return (
+    !server.internal &&
+    Number.isInteger(server.gateway_tool_count) &&
+    nonnegative(server.gateway_tool_count) &&
+    Array.isArray(server.gateway_tools) &&
+    server.gateway_tools.length <= 100 &&
+    server.gateway_tools.length <= server.gateway_tool_count &&
+    server.gateway_tools.every(validTool)
+  );
+}
+
 function validServer(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const server = value as Server;
@@ -64,18 +77,7 @@ function validServer(value: unknown): boolean {
   if (server.scope != null && !["user", "project", "plugin"].includes(server.scope)) return false;
   if (server.running != null && typeof server.running !== "boolean") return false;
   if (server.cached_tool_count != null && !nonnegative(server.cached_tool_count)) return false;
-  if (
-    server.gateway_tool_count !== undefined &&
-    (server.internal ||
-      !Number.isInteger(server.gateway_tool_count) ||
-      !nonnegative(server.gateway_tool_count) ||
-      !Array.isArray(server.gateway_tools) ||
-      server.gateway_tools.length > 100 ||
-      server.gateway_tools.length > server.gateway_tool_count ||
-      !server.gateway_tools.every(validTool))
-  )
-    return false;
-  if (server.gateway_tools !== undefined && server.gateway_tool_count === undefined) return false;
+  if (!validGateway(server)) return false;
   const countValid = server.offered
     ? nonnegative(server.tool_count) && server.tool_count >= server.tools.length
     : server.tool_count === null && server.tools.length === 0;
@@ -284,6 +286,11 @@ function ContextDetails({ snapshot }: Readonly<{ snapshot: Diagnostics }>) {
   );
 }
 
+function serverToolCount(server: Server): string {
+  if (server.gateway_tool_count !== undefined) return `${server.gateway_tool_count} gateway tools`;
+  return server.tool_count == null ? "Not offered" : `${server.tool_count} tools`;
+}
+
 function ServerList({ snapshot, onSelect }: Readonly<{ snapshot: Diagnostics; onSelect: (key: string) => void }>) {
   return (
     <section className="space-y-1">
@@ -298,13 +305,7 @@ function ServerList({ snapshot, onSelect }: Readonly<{ snapshot: Diagnostics; on
           onClick={() => onSelect(`${item.internal}:${item.name}`)}
         >
           <span className="truncate">{!item.internal && item.name === "Internal" ? "Internal (MCP)" : item.name}</span>
-          <span>
-            {item.gateway_tool_count !== undefined
-              ? `${item.gateway_tool_count} gateway tools`
-              : item.tool_count == null
-                ? "Not offered"
-                : `${item.tool_count} tools`}
-          </span>
+          <span>{serverToolCount(item)}</span>
         </Button>
       ))}
     </section>

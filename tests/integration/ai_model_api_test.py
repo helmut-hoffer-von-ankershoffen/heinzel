@@ -11,10 +11,12 @@ from http.server import BaseHTTPRequestHandler
 from typing import ClassVar
 
 import pytest
+import tomlkit
 from typer.testing import CliRunner
 
 from heinzel import Config, Kernel
 from heinzel.heads.cli import build
+from heinzel.kernel import user_config_dir
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.integration
@@ -80,8 +82,17 @@ def hz(kernel: Kernel, *args: str) -> tuple[int, dict]:
     return result.exit_code, json.loads(result.output)
 
 
+def saved_model_config(base_url: str) -> Config:
+    # Probes compare their startup settings with the current file before reading credentials or reaching the server.
+    directory = user_config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    access = {"model": "tiny", "base_url": base_url}
+    (directory / "config.toml").write_text(tomlkit.dumps({"ai": {"access": access}}), encoding="utf-8")
+    return Config.load()
+
+
 def test_a_local_openai_compatible_endpoint_answers_a_test_and_lists_its_models(make_kernel, endpoint):
-    config = Config(files=(), data={"ai": {"access": {"model": "tiny", "base_url": endpoint}}})
+    config = saved_model_config(endpoint)
     kernel = make_kernel(builtins=True, config=config)
     code, report = hz(kernel, "ai", "access", "test", "--name", "pydantic-ai")
     assert code == 0
@@ -100,7 +111,7 @@ def test_a_local_openai_compatible_endpoint_answers_a_test_and_lists_its_models(
 def test_a_listing_follows_no_redirect(make_kernel, endpoint, monkeypatch):
     monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-local")
     moved = endpoint.replace("/v1", "/moved/v1")
-    config = Config(files=(), data={"ai": {"access": {"model": "tiny", "base_url": moved}}})
+    config = saved_model_config(moved)
     _, report = hz(make_kernel(builtins=True, config=config), "ai", "access", "test", "--name", "pydantic-ai")
     assert "models not listed" in report["detail"]
     assert "sk-local" not in report["detail"]

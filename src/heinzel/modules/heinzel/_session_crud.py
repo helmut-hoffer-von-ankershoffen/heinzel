@@ -1970,39 +1970,40 @@ class SessionCrud(ApprovalIssuer):
                 msg = "An accepted message has an invalid identity"
                 raise HeinzelError(msg)
             turn = interactive_turn_id(message_id)
-            matching_starts = starts.get(turn, [])
-            matching_resolutions = resolutions.get(turn, [])
-            resolution = matching_resolutions[0] if len(matching_resolutions) == 1 else None
-            start = matching_starts[0] if len(matching_starts) == 1 else None
-            resolved = (
-                resolution is not None
-                and resolution.data.get("message_id") == message_id
-                and resolution.data.get("owner") == self.repository.principal_id
-                and resolution.data.get("origin") in {"cli", "api-bearer", "web-session", "web-device"}
-                and (
-                    (
-                        start is not None
-                        and resolution.data.get("unstarted") is not True
-                        and start.data.get("message_id") == message_id
-                        and start.seq < resolution.seq
-                    )
-                    or (
-                        not matching_starts
-                        and (
-                            accepted.data.get("origin") == "daemon"
-                            or (
-                                accepted.data.get("origin") in {"cli", "api-bearer", "web-session", "web-device"}
-                                and resolution.data.get("expired_input") is True
-                            )
-                        )
-                        and resolution.data.get("unstarted") is True
-                        and accepted.seq < resolution.seq
-                    )
-                )
+            resolved = self._queue_resolution_matches(
+                accepted, message_id, starts.get(turn, []), resolutions.get(turn, [])
             )
             if turn not in replies and not resolved:
                 return accepted
         return None
+
+    def _queue_resolution_matches(
+        self, accepted: SessionEvent, message_id: str, starts: list[SessionEvent], resolutions: list[SessionEvent]
+    ) -> bool:
+        """Check that one owner-bound resolution can advance this accepted message."""
+        if len(resolutions) != 1:
+            return False
+        resolution = resolutions[0]
+        head_origins = {"cli", "api-bearer", "web-session", "web-device"}
+        if (
+            resolution.data.get("message_id") != message_id
+            or resolution.data.get("owner") != self.repository.principal_id
+            or resolution.data.get("origin") not in head_origins
+        ):
+            return False
+        if starts:
+            return (
+                len(starts) == 1
+                and resolution.data.get("unstarted") is not True
+                and starts[0].data.get("message_id") == message_id
+                and starts[0].seq < resolution.seq
+            )
+        origin = accepted.data.get("origin")
+        return (
+            (origin == "daemon" or (origin in head_origins and resolution.data.get("expired_input") is True))
+            and resolution.data.get("unstarted") is True
+            and accepted.seq < resolution.seq
+        )
 
     def recent_history(self, session_id: str, limit: int = 20) -> list[SessionMessage]:
         """Return a bounded tail of durable conversation messages for a user-opened runner chat.

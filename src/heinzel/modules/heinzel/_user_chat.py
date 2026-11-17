@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter, UsageEntry
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionEvent, SessionWriter, UsageEntry
 from heinzel.kernel import (
     PRIVATE_WRITE,
     AiModelsSource,
@@ -816,6 +816,24 @@ class UserChatService:
             status = "unresolved"
         return UserTurnState(session_id=session, request_id=request, status=status)
 
+    def _abandonment_state(
+        self, session: str, request: str, accepted: SessionEvent, starts: list[SessionEvent]
+    ) -> tuple[bool, bool]:
+        """Decide whether to set aside an unstarted turn and whether its input expired.
+
+        Raises:
+            HeinzelError: If the request is neither an allowed unstarted turn nor a single recorded start.
+        """
+        origin = accepted.data.get("origin")
+        expired_input = (
+            not starts and origin in _HEADS and self._crud.read_message(session, accepted).status == "expired"
+        )
+        unstarted = not starts and (origin == "daemon" or expired_input)
+        if not unstarted and (len(starts) != 1 or starts[0].data.get("message_id") != request):
+            msg = "Only a stopped uncertain turn or unstarted daemon/expired input can be set aside"
+            raise HeinzelError(msg)
+        return unstarted, expired_input
+
     def abandon(
         self, session: str, request: str, *, expected_status: Literal["pending", "unresolved"] = "unresolved"
     ) -> UserTurnResolution:
@@ -834,15 +852,7 @@ class UserChatService:
                 starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
                 resolutions = [e for e in events if e.kind == "interactive.abandoned" and e.key == turn]
                 accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
-                expired_input = (
-                    not starts
-                    and accepted.data.get("origin") in _HEADS
-                    and self._crud.read_message(session, accepted).status == "expired"
-                )
-                unstarted = not starts and (accepted.data.get("origin") == "daemon" or expired_input)
-                if not unstarted and (len(starts) != 1 or starts[0].data.get("message_id") != request):
-                    msg = "Only a stopped uncertain turn or unstarted daemon/expired input can be set aside"
-                    raise HeinzelError(msg)
+                unstarted, expired_input = self._abandonment_state(session, request, accepted, starts)
                 if expected_status != ("pending" if unstarted else "unresolved"):
                     msg = "The turn state changed; inspect it and confirm again"
                     raise HeinzelError(msg)

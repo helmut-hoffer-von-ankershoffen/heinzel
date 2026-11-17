@@ -22,6 +22,7 @@ KEYCHAIN = "keychain-access-groups"
 GROUPS = "com.apple.security.application-groups"
 ENTITLEMENTS = Path("Shared/WidgetActivity.entitlements")
 SOURCE_REVISION = "HeinzelSourceRevision"
+type Plist = dict[str, Any]
 
 
 class ConfigurationError(ValueError):
@@ -38,21 +39,32 @@ def require(condition: bool, problem: str) -> None:
         raise ConfigurationError(problem)
 
 
-def plist(path: Path) -> dict[str, Any]:
+def contained_path(root: Path, relative: Path | str) -> Path:
+    """Resolve a fixed product path without following an escape from its selected root."""
+    base = root.resolve(strict=True)
+    candidate = (base / relative).resolve(strict=True)
+    require(candidate.is_relative_to(base), "Product path escapes its selected root")
+    return candidate
+
+
+def plist(path: Path) -> Plist:
     """Read one property list dictionary.
 
     Raises:
         ConfigurationError: The property list is not a dictionary.
     """
+    require(not path.is_symlink(), "Property list must not be a symbolic link")
+    path = path.resolve(strict=True)
+    require(path.is_file(), "Property list must be a regular file")
     with path.open("rb") as stream:
         data = plistlib.load(stream)
     if isinstance(data, dict):
-        return cast("dict[str, Any]", data)
+        return cast("Plist", data)
     msg = f"{path.name} must contain a property list dictionary"
     raise ConfigurationError(msg)
 
 
-def check_info(info: dict[str, Any], keychain: str, *, widget: bool) -> None:
+def check_info(info: Plist, keychain: str, *, widget: bool) -> None:
     """Require enrollment, shared Keychain group and app-only background capture."""
     role = "Widget" if widget else "App"
     require(
@@ -65,7 +77,7 @@ def check_info(info: dict[str, Any], keychain: str, *, widget: bool) -> None:
         extension = info.get("NSExtension")
         require(
             isinstance(extension, dict)
-            and cast("dict[str, Any]", extension).get("NSExtensionPointIdentifier") == "com.apple.widgetkit-extension",
+            and cast("Plist", extension).get("NSExtensionPointIdentifier") == "com.apple.widgetkit-extension",
             "Widget extension must use the WidgetKit extension point",
         )
 
@@ -78,7 +90,8 @@ def output(command: list[str]) -> bytes:
 
 def check_source(apple: Path) -> None:
     """Verify the exact iOS settings for each app and widget build configuration."""
-    objects = json.loads(output(["/usr/bin/plutil", "-convert", "json", "-o", "-", str(apple / PROJECT)]))["objects"]
+    project = contained_path(apple, PROJECT)
+    objects = json.loads(output(["/usr/bin/plutil", "-convert", "json", "-o", "-", str(project)]))["objects"]
     for name, (path, identifier) in TARGETS.items():
         (target,) = [obj for obj in objects.values() if obj.get("isa") == "PBXNativeTarget" and obj.get("name") == name]
         configs = objects[target["buildConfigurationList"]]["buildConfigurations"]
@@ -99,14 +112,14 @@ def check_source(apple: Path) -> None:
                     == str(ENTITLEMENTS),
                     "Widget iOS entitlements mapping differs",
                 )
-        info = plist(apple / path)
+        info = plist(contained_path(apple, path))
         require(info.get(SOURCE_REVISION) == "$(HEINZEL_SOURCE_REVISION)", f"{name} source revision mapping differs")
         check_info(
             info,
             f"$(AppIdentifierPrefix){SHARED_KEYCHAIN}",
             widget=name == "HeinzelWidgets",
         )
-    entitlements = plist(apple / ENTITLEMENTS)
+    entitlements = plist(contained_path(apple, ENTITLEMENTS))
     require(entitlements.get(GROUPS) == [APP_GROUP], "Source widget App Group differs")
     require(
         entitlements.get(KEYCHAIN)
@@ -115,7 +128,7 @@ def check_source(apple: Path) -> None:
     )
 
 
-def signed_entitlements(bundle: Path) -> dict[str, Any]:
+def signed_entitlements(bundle: Path) -> Plist:
     """Read actual entitlements after strict signature verification.
 
     Raises:
@@ -124,20 +137,20 @@ def signed_entitlements(bundle: Path) -> dict[str, Any]:
     output(["/usr/bin/codesign", "--verify", "--strict", str(bundle)])
     data = plistlib.loads(output(["/usr/bin/codesign", "--display", "--entitlements", ":-", str(bundle)]))
     if isinstance(data, dict):
-        return cast("dict[str, Any]", data)
+        return cast("Plist", data)
     msg = "Signed bundle entitlements must be a dictionary"
     raise ConfigurationError(msg)
 
 
 def check_archive(archive: Path, build: str, revision: str) -> str:
     """Verify both signed products and the requested build and source metadata."""
-    require(re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", build) is not None, "Expected an explicit build number")
+    require(re.fullmatch(r"\d+(?:\.\d+){0,2}", build, flags=re.ASCII) is not None, "Expected an explicit build number")
     require(re.fullmatch(r"[a-f0-9]{40}", revision) is not None, "Expected an exact source commit")
-    app = archive / "Products/Applications/Heinzel.app"
-    widget = app / "PlugIns/HeinzelWidgets.appex"
+    app = contained_path(archive, "Products/Applications/Heinzel.app")
+    widget = contained_path(app, "PlugIns/HeinzelWidgets.appex")
     identities: set[tuple[str, str]] = set()
     for bundle, (_, identifier) in zip((app, widget), TARGETS.values(), strict=True):
-        info = plist(bundle / "Info.plist")
+        info = plist(contained_path(bundle, "Info.plist"))
         signed = signed_entitlements(bundle)
         require(info.get("CFBundleVersion") == build, f"{bundle.name} signed build number differs")
         require(info.get(SOURCE_REVISION) == revision, f"{bundle.name} signed source revision differs")
@@ -164,6 +177,12 @@ def check_archive(archive: Path, build: str, revision: str) -> str:
 
 def upload(archive: Path, options: Path, destination: Path, build: str, revision: str) -> None:
     """Run the existing Xcode export only after verifying its source and archive."""
+    # Absolute operands cannot be interpreted as Xcode switches, even for names beginning with '-'.
+    archive = archive.resolve(strict=True)
+    require(archive.is_dir(), "Archive must be a directory")
+    require(not options.is_symlink(), "Export options must not be a symbolic link")
+    options = options.resolve(strict=True)
+    destination = destination.resolve()
     export = plist(options)
     require(export.get("destination") == "upload", "TestFlight export options must request upload")
     require(export.get("method") in ("app-store-connect", "app-store"), "TestFlight export requires App Store method")

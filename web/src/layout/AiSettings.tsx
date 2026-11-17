@@ -62,27 +62,33 @@ const GROUPS = {
 
 type Group = keyof typeof GROUPS;
 
+function runnerSettingGroup(key: string): Group {
+  if (key === "ask_max_usd") return "budget";
+  if (key === "model") return "model";
+  if (key.startsWith("codex_")) return "codex";
+  if (key.startsWith("command")) return "command";
+  if (key === "claude_executable" || key === "read_only_tools") return "claude";
+  return "other";
+}
+
+function accessSettingGroup(key: string): Group {
+  if (key.startsWith("gateway_")) return "gateway";
+  if (key.startsWith("plugin_")) return "plugin";
+  if (key === "chatgpt_model") return "chatgpt";
+  if (["model", "base_url", "api"].includes(key)) return "api";
+  return "other";
+}
+
 /** Keep unknown settings editable when a server adds fields before this page is updated. */
 export function aiSettingGroup({ section, key }: Pick<SchemaSettingInfo, "section" | "key">): Group {
   if (section === "ai") return "usage";
   if (section === "system.runner.chat") return "chat";
-  if (section === "system.runner") {
-    if (key === "ask_max_usd") return "budget";
-    if (key === "model") return "model";
-    if (key.startsWith("codex_")) return "codex";
-    if (key.startsWith("command")) return "command";
-    if (key === "claude_executable" || key === "read_only_tools") return "claude";
-  }
-  if (section === "ai.access") {
-    if (key.startsWith("gateway_")) return "gateway";
-    if (key.startsWith("plugin_")) return "plugin";
-    if (key === "chatgpt_model") return "chatgpt";
-    if (["model", "base_url", "api"].includes(key)) return "api";
-  }
+  if (section === "system.runner") return runnerSettingGroup(key);
+  if (section === "ai.access") return accessSettingGroup(key);
   return "other";
 }
 
-export function AiSettings({ settings }: { settings: SchemaSettingInfo[] }) {
+export function AiSettings({ settings }: Readonly<{ settings: SchemaSettingInfo[] }>) {
   return (
     <>
       {Object.entries(GROUPS).map(([group, [title, scope, detail]]) => {

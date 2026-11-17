@@ -225,3 +225,88 @@ def test_missing_capture_mode_prevents_export(signed_archive, monkeypatch):
     with pytest.raises(ValueError, match="background capture modes"):
         guard.upload(root, options, root / "export", "28", REVISION)
     assert calls == []
+
+
+@pytest.mark.parametrize("build", ["\uff12\uff18", "\u0662\u0668", "28.\uff11", "28\n", "-exportArchive"])
+def test_archive_requires_ascii_build_number(tmp_path, build):
+    with pytest.raises(ValueError, match="explicit build number"):
+        guard.check_archive(tmp_path, build, REVISION)
+
+
+def test_archive_rejects_info_symlink_escape(signed_archive, tmp_path):
+    root, app, _, _ = signed_archive
+    info = app / "Info.plist"
+    outside = tmp_path / "outside.plist"
+    info.rename(outside)
+    info.symlink_to(outside)
+    with pytest.raises(ValueError, match="escapes its selected root"):
+        guard.check_archive(root, "28", REVISION)
+
+
+def test_archive_rejects_widget_directory_escape(signed_archive, tmp_path):
+    root, _, widget, _ = signed_archive
+    outside = tmp_path / "outside-widget"
+    widget.rename(outside)
+    widget.symlink_to(outside, target_is_directory=True)
+    # The widget must remain inside the app, not merely somewhere in the archive.
+    with pytest.raises(ValueError, match="escapes its selected root"):
+        guard.check_archive(root, "28", REVISION)
+
+
+def test_plist_rejects_non_regular_file(tmp_path):
+    with pytest.raises(ValueError, match="regular file"):
+        guard.plist(tmp_path)
+
+
+def test_upload_canonicalizes_option_like_operands(signed_archive, monkeypatch):
+    root, _, _, _ = signed_archive
+    options = root / "-exportOptions.plist"
+    write_plist(
+        options, {"destination": "upload", "method": "app-store-connect", "manageAppVersionAndBuildNumber": False}
+    )
+    calls = []
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(guard, "check_source", lambda _path: None)
+    monkeypatch.setattr(subprocess, "run", lambda command, **kwargs: calls.append(command))
+    guard.upload(Path(), Path(options.name), Path("-allowProvisioningUpdates"), "28", REVISION)
+    assert calls == [
+        [
+            "/usr/bin/xcodebuild",
+            "-exportArchive",
+            "-archivePath",
+            str(root),
+            "-exportOptionsPlist",
+            str(options),
+            "-exportPath",
+            str(root / "-allowProvisioningUpdates"),
+        ]
+    ]
+
+
+def test_upload_rejects_symlink_options_before_any_tool(signed_archive, monkeypatch):
+    root, _, _, _ = signed_archive
+    target = root / "actual.plist"
+    write_plist(target, {})
+    options = root / "export.plist"
+    options.symlink_to(target)
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(ValueError, match="symbolic link"):
+        guard.upload(root, options, root / "output", "28", REVISION)
+    assert calls == []
+
+
+@pytest.mark.parametrize("member", [guard.PROJECT, Path("App/iOS-Info.plist")])
+@pytest.mark.skipif(sys.platform != "darwin", reason="Apple project parsing uses plutil")
+def test_source_rejects_members_outside_selected_root(tmp_path, member):
+    root = tmp_path / "apple"
+    for file in [guard.PROJECT, guard.ENTITLEMENTS, *(Path(path) for path, _ in guard.TARGETS.values())]:
+        destination = root / file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(guard.APPLE / file, destination)
+    selected = root / member
+    outside = tmp_path / "outside"
+    selected.rename(outside)
+    selected.symlink_to(outside)
+    with pytest.raises(ValueError, match="escapes its selected root"):
+        guard.check_source(root)

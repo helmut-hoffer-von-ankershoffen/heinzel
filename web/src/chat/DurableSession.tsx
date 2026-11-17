@@ -1750,13 +1750,13 @@ function QueueHeadRecovery({
   busy,
   setBusy,
   onChanged,
-}: {
+}: Readonly<{
   sessionId: string;
   message: NonNullable<SchemaSessionSnapshot["queue_head"]>;
   busy: boolean;
   setBusy: (busy: boolean) => void;
   onChanged: () => void;
-}) {
+}>) {
   const state = useTurnState(sessionId, message.id);
   const begin = useTurnAction(sessionId, message.id);
   const expiredInput =
@@ -1799,7 +1799,7 @@ function QueueHeadRecovery({
       <p className="break-words">{message.status === "expired" ? "Message no longer retained" : message.text}</p>
       {state.isError && <p role="alert">The saved turn state could not be checked.</p>}
       {state.data?.status === "completed" && (
-        <p role="status">An answer was recorded. Check again to update the queue.</p>
+        <output className="block">An answer was recorded. Check again to update the queue.</output>
       )}
       {error && <p role="alert">The answer was not confirmed. Check the saved turn before continuing.</p>}
       {state.data?.status === "pending" && message.status !== "expired" && message.origin !== "daemon" && (

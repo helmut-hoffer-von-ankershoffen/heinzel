@@ -63,6 +63,16 @@ class TurnDiagnostics(AbstractCapability[TurnDeps]):
         default_factory=dict[str, tuple[int, list[dict[str, str]]]]
     )
 
+    def attach_toolbox(self, toolbox: "TurnToolbox") -> None:
+        """Observe the toolbox's existing tool calls and record where its tools came from."""
+        toolbox.measure = self.observe_tool
+        if toolbox.external is not None:
+            toolbox.external.observe = self.observe_gateway
+        for tool in toolbox.tools:
+            found = getattr(tool, "found", None)
+            if found is not None:
+                self.tool_sources[found.title] = (found.namespace, found.name)
+
     def observe_gateway(self, server: str, tools: list[FoundTool]) -> None:
         """Retain bounded descriptors from this turn's existing authorized discovery, never schemas or results."""
         with self._timing_lock:
@@ -270,13 +280,7 @@ async def prepare_toolbox(  # noqa: PLR0913
     if diagnostic is not None:
         diagnostic.discovery_ms = (time.monotonic() - tools_started) * 1000
         if toolbox is not None:
-            toolbox.measure = diagnostic.observe_tool
-            if toolbox.external is not None:
-                toolbox.external.observe = diagnostic.observe_gateway
-            for tool in toolbox.tools:
-                found = getattr(tool, "found", None)
-                if found is not None:
-                    diagnostic.tool_sources[found.title] = (found.namespace, found.name)
+            diagnostic.attach_toolbox(toolbox)
             await asyncio.to_thread(diagnostic.observe_connections, kernel)
         diagnostic.preparation_ms = (time.monotonic() - started) * 1000
         diagnostic.publish()

@@ -470,13 +470,21 @@ export function BrowserPanel({
             size="icon"
             className="size-8 shrink-0 sm:size-9"
             aria-label={t("browser.moreActions")}
+            title={t("browser.moreActions")}
             aria-expanded={toolsOpen}
             onClick={() => setToolsOpen((open) => !open)}
           >
             <Ellipsis aria-hidden />
           </Button>
         ) : (
-          <Button type="button" variant="ghost" size="icon" aria-label={t("browser.close")} onClick={onClose}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("browser.close")}
+            title={t("browser.close")}
+            onClick={onClose}
+          >
             <X aria-hidden />
           </Button>
         )}
@@ -485,7 +493,7 @@ export function BrowserPanel({
         <section
           ref={overflowContent}
           aria-label={t("browser.moreActions")}
-          className="flex shrink-0 flex-wrap items-center justify-end gap-1 border-t border-border px-2 py-1"
+          className="flex shrink-0 flex-wrap items-center gap-1 px-2 py-1"
         >
           {bookmarks && <span ref={setStarSlot} className="contents" />}
           <Button
@@ -529,12 +537,11 @@ export function BrowserPanel({
       )}
       {native ? (
         <>
-          <p
-            role="status"
-            className={state.status === "unavailable" ? "px-3 py-1 text-xs text-muted-foreground" : "sr-only"}
+          <output
+            className={state.status === "unavailable" ? "block px-3 py-1 text-xs text-muted-foreground" : "sr-only"}
           >
             {status}
-          </p>
+          </output>
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />
           )}

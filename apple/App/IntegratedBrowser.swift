@@ -205,19 +205,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 reset()
                 return store.map { (guests, $0) }
             } erase: { pair in
-                let (guests, store) = pair
-                // Never clear a persistent store or the workspace's own session.
-                guard !store.isPersistent, store !== workspaceStore else { return false }
-                let blanks = guests.map { guest in Task { await GuestBlank().run(guest) } }
-                var blanked = true
-                for blank in blanks {
-                    let finished = await blank.value
-                    blanked = blanked && finished
-                }
-                let types = WKWebsiteDataStore.allWebsiteDataTypes()
-                await store.removeData(ofTypes: types, modifiedSince: .distantPast)
-                let remaining = await store.dataRecords(ofTypes: types)
-                return blanked && remaining.isEmpty
+                await Self.eraseGuests(pair, excluding: workspaceStore)
             }
             clearFailed = !cleared
         case "back": pageRevision &+= 1; surface?.goBack()
@@ -238,6 +226,23 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         #else
         return css
         #endif
+    }
+
+    private static func eraseGuests(_ pair: ([WKWebView], WKWebsiteDataStore),
+                                    excluding workspaceStore: WKWebsiteDataStore) async -> Bool {
+        let (guests, store) = pair
+        // Never clear a persistent store or the workspace's own session.
+        guard !store.isPersistent, store !== workspaceStore else { return false }
+        let blanks = guests.map { guest in Task { await GuestBlank().run(guest) } }
+        var blanked = true
+        for blank in blanks {
+            let finished = await blank.value
+            blanked = blanked && finished
+        }
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        await store.removeData(ofTypes: types, modifiedSince: .distantPast)
+        let remaining = await store.dataRecords(ofTypes: types)
+        return blanked && remaining.isEmpty
     }
 
     private var state: [String: Any] {

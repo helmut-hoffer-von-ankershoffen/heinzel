@@ -13,7 +13,7 @@ const CLOSE_DELAY = 200;
 
 type Props = { attention: boolean; children: ReactNode; actions: ReactNode; inHeader?: boolean };
 
-export function PlayerHelp({ attention, children, actions, inHeader = false }: Props) {
+export function PlayerHelp({ attention, children, actions, inHeader = false }: Readonly<Props>) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);

@@ -1,7 +1,7 @@
 import Foundation
 
 @main struct WorkspaceFooterGeometryTests {
-    @MainActor static func main() async {
+    @MainActor static func main() async throws {
         let viewport = CGSize(width: 390, height: 844)
         let valid: [String: NSNumber] = ["x": 0, "y": 762, "width": 100, "height": 48,
                                                 "viewportWidth": 390, "viewportHeight": 844]
@@ -48,7 +48,7 @@ import Foundation
         precondition(versions.isEmpty)
         precondition(!WorkspaceVersionObservation.record(observed, origin: origin, selectedOrigin: origin,
                                                          requestRevision: 1, currentRevision: 2, into: &versions))
-        verifyAppBuildObservation(now: now)
+        try verifyAppBuildObservation(now: now)
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
     }
@@ -121,7 +121,7 @@ import Foundation
         print("PASS: version refresh preserves offline cache and rejects superseded workspaces")
     }
 
-    private static func verifyAppBuildObservation(now: Date) {
+    private static func verifyAppBuildObservation(now: Date) throws {
         let original = AppBuildObservation.Build(version: "0.9.50", number: "28", revision: "abcdef012345")!
         let next = AppBuildObservation.Build(version: "0.9.50", number: "29", revision: "abcdef012345")!
         let rebuilt = AppBuildObservation.Build(version: "0.9.50", number: "28", revision: "fedcba987654")!
@@ -134,8 +134,8 @@ import Foundation
         precondition(AppBuildObservation.recording(original, previous: first, now: now.addingTimeInterval(-1)).observedSince < now)
         precondition(AppBuildObservation.Build(version: nil, number: "28", revision: nil) == nil)
         precondition(AppBuildObservation.Build(version: "0.9.50", number: "28", revision: "$(HEINZEL_SOURCE_REVISION)")?.revision == nil)
-        let saved = try! JSONEncoder().encode(first)
-        let restored = try! JSONDecoder().decode(AppBuildObservation.self, from: saved)
+        let saved = try JSONEncoder().encode(first)
+        let restored = try JSONDecoder().decode(AppBuildObservation.self, from: saved)
         precondition(restored == first)
     }
 }

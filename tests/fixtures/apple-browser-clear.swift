@@ -1,6 +1,17 @@
 import Foundation
 import WebKit
 
+@MainActor
+final class RejectWorkspaceNavigation: NSObject, WKNavigationDelegate {
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+        .cancel
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        .cancel
+    }
+}
+
 @main
 struct BrowserClearProbe {
     @MainActor static func main() async {
@@ -68,6 +79,8 @@ struct BrowserClearProbe {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let workspace = WKWebView(frame: .zero, configuration: configuration)
+        let rejectNavigation = RejectWorkspaceNavigation()
+        workspace.navigationDelegate = rejectNavigation
         let store = workspace.configuration.websiteDataStore
         let workspaceSubviews = workspace.subviews.map(ObjectIdentifier.init)
         func command(_ action: String, _ tab: String? = nil) async -> [String: Any] {
@@ -97,6 +110,7 @@ struct BrowserClearProbe {
         precondition(ids(bounded).count == 8)
         let cleared = await command("clear")
         precondition(ids(cleared).isEmpty && cleared["selected"] == nil && cleared["notice"] == nil)
+        precondition(workspace.navigationDelegate === rejectNavigation)
         precondition(workspace.configuration.websiteDataStore === store && workspace.subviews.map(ObjectIdentifier.init) == workspaceSubviews)
     }
 }

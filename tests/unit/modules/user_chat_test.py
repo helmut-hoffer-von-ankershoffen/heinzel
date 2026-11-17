@@ -211,6 +211,11 @@ def test_earlier_started_uncertain_turn_blocks_later_without_launch(tmp_path):
         assert not (tmp_path / "model-calls").exists()
 
 
+async def assert_answer_rejected(service: UserChatService, session: str, request: str, *, match: str) -> None:
+    with pytest.raises(HeinzelError, match=match):
+        await service.answer(session, request)
+
+
 def test_queue_head_survives_paging_and_advances_without_replaying(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
@@ -226,13 +231,11 @@ def test_queue_head_survives_paging_and_advances_without_replaying(tmp_path):
         later_page = crud.snapshot(session, cursor=first_page.next_cursor, limit=1)
         assert later_page.messages[0].id == "second"
         assert later_page.queue_head.id == "hello"
-        with pytest.raises(HeinzelError, match="uncertain"):
-            asyncio.run(service.answer(session, "third"))
+        asyncio.run(assert_answer_rejected(service, session, "third", match="uncertain"))
         assert not (tmp_path / "model-calls").exists()
         service.abandon(session, "hello")
         assert crud.snapshot(session).queue_head.id == "second"
-        with pytest.raises(HeinzelError, match="earlier accepted"):
-            asyncio.run(service.answer(session, "third"))
+        asyncio.run(assert_answer_rejected(service, session, "third", match="earlier accepted"))
         asyncio.run(service.answer(session, "second"))
         assert crud.snapshot(session).queue_head.id == "third"
         asyncio.run(service.answer(session, "third"))
@@ -489,8 +492,7 @@ def test_expired_cancellation_receipt_cannot_hide_a_started_turn(expired_chat, t
     with pytest.raises(HeinzelError, match="invalid resolution"):
         service.turn_state(session, "hello")
     assert crud.snapshot(session).queue_head.id == "hello"
-    with pytest.raises(HeinzelError, match="invalid resolution"):
-        asyncio.run(service.answer(session, "later"))
+    asyncio.run(assert_answer_rejected(service, session, "later", match="invalid resolution"))
     assert not (tmp_path / "model-calls").exists()
 
 
