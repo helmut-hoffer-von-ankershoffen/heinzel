@@ -69,6 +69,7 @@ from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._supervision import WebPublication, restart_when_settled
 from heinzel.heads.web._updates import add_updates
 from heinzel.heads.web._widget import add_widget
+from heinzel.heads.web._workspace_version import add_workspace_version
 from heinzel.kernel import (
     FONT_ROUTE,
     KERNEL_SECTION,
@@ -182,6 +183,7 @@ def api_app(
     )
 
     add_lifecycle(app, kernel, restart)
+    add_workspace_version(app, kernel)
     app.state.chatgpt_sign_in = sign_in = ChatGptSignIn(kernel, port)
     sign_in.add_start(app)
     return app

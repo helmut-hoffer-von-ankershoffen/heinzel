@@ -159,7 +159,7 @@ function body(request) {
 /** A certificate for the two names, made for this run only; the test's Electron trusts exactly this one. */
 function certificate(directory) {
   const key = join(directory, "site-key.pem"), cert = join(directory, "site-cert.pem");
-  const made = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+  const made = spawnSync("/usr/bin/openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
     "-days", "2", "-subj", `/CN=${SHOP}`, "-addext", `subjectAltName=DNS:${SHOP},DNS:${WIDGET}`], { encoding: "utf8" });
   assert.equal(made.status, 0, `openssl could not make the fixture certificate: ${made.error?.message ?? made.stderr}`);
   return { key: readFileSync(key), cert: readFileSync(cert), path: cert };
