@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
 
@@ -255,6 +255,49 @@ it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the sele
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "t", ctrlKey: true });
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+});
+
+it("a delayed new-tab response clears the address restored while that request was pending", async () => {
+  vi.useFakeTimers();
+  try {
+    const browser = tabBridge();
+    const read = browser.getMockImplementation();
+    if (!read) throw new Error("The fixture must supply a browser bridge");
+    let restore = () => {};
+    let open = () => {};
+    const restored = new Promise<void>((resolve) => {
+      restore = resolve;
+    });
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    browser.mockImplementation(async (request) => {
+      // A state poll can display the existing tabs before the opening tabs request returns.
+      if (request.action === "tabs") {
+        const snapshot = await read(request);
+        await restored;
+        return snapshot;
+      }
+      if (request.action === "new-tab") await opened;
+      return read(request);
+    });
+    render(<BrowserPanel active onClose={vi.fn()} />);
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    const field = screen.getByRole("textbox", { name: "Website address" });
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await act(async () => restore());
+    await act(async () => open());
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getByRole("tab", { name: "New tab" })).toHaveAttribute("aria-selected", "true");
+    expect(field).toHaveValue("");
+    // A poll of the same selected tab must still leave an address being typed alone.
+    fireEvent.change(field, { target: { value: "example.com/draft" } });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(field).toHaveValue("example.com/draft");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("the Mac menu's New Tab and Close Tab are taken by the panel, and Close Tab is left alone with no tab", async () => {

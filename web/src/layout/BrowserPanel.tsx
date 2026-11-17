@@ -180,7 +180,8 @@ export function BrowserPanel({
     if (selectedId === shownTab) return;
     setShownTab(selectedId);
     const current = (state.tabs ?? []).find((tab) => tab.id === selectedId);
-    if (current?.url) setAddress(current.url);
+    // An empty tab owns an empty address too: an older restore may have replaced the optimistic new-tab clear.
+    setAddress(current?.url ?? "");
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
     if (!native || ownTabs >= MAX_TABS) return;
