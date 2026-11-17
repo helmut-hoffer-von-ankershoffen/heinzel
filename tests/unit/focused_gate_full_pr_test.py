@@ -1,5 +1,6 @@
 """A reviewed Makefile exception never grants authority over other execution inputs."""
 
+import json
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -108,3 +109,40 @@ def test_reviewed_full_pr_rejects_ambiguous_or_inexact_manifest(authorization, f
         inputs["Makefile"] = entry["execution"]["Makefile"] = inputs["pyproject.toml"]
     with pytest.raises(focused_gate.CandidateError):
         focused_gate.full_pr_inputs(source, base, entry)
+
+
+def test_review_cannot_authorize_mode_only_protected_input_changes(authorization, focused_gate, monkeypatch):
+    source, base, entry, inputs = authorization
+    original = focused_gate.raw_diff(base, source.commit)
+    for path in focused_gate.FULL_EXECUTION_INPUTS:
+        if path == "Makefile":
+            continue
+        blob = inputs[path]
+        raw = original + f":100644 100755 {blob} {blob} M\0{path}\0".encode()
+        monkeypatch.setattr(focused_gate, "raw_diff", lambda *_, value=raw: value)
+        reviewed = deepcopy(entry)
+        reviewed["changed"][path] = "M"
+        with pytest.raises(focused_gate.CandidateError, match="only a reviewed Makefile"):
+            focused_gate.full_pr_inputs(source, base, reviewed)
+
+
+@pytest.mark.parametrize("transport", ["legacy-slot", "two-slots"])
+@pytest.mark.parametrize("selected", [True, False])
+def test_duplicate_full_pr_authorizations_refuse_even_when_identical(focused_gate, transport, selected):
+    from scripts.focused_plan import encode_slot
+
+    key = f"pull_request:{'a' * 40}"
+    registry = {key: {"kind": focused_gate.FULL_PR_KIND}}
+    encoded = encode_slot(registry)
+    manifest, slots = (json.dumps(registry), (encoded,)) if transport == "legacy-slot" else ("{}", (encoded, encoded))
+    with pytest.raises(focused_gate.CandidateError, match="duplicate full PR authorization"):
+        focused_gate.selected_pr_registry(manifest, slots, key if selected else f"pull_request:{'b' * 40}")
+
+
+def test_identical_legacy_focused_entries_remain_compatible(focused_gate):
+    from scripts.focused_plan import encode_slot
+
+    key = f"pull_request:{'a' * 40}"
+    registry = {key: {"schema": 1, "mode": "pr-scoped"}}
+    selected = focused_gate.selected_pr_registry(json.dumps(registry), (encode_slot(registry),) * 2, key)
+    assert json.loads(selected) == registry

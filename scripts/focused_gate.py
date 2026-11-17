@@ -26,6 +26,7 @@ from scripts.focused_plan import (
     PROTECTED_FILES,
     Scope,
     changed_paths,
+    decode_slot,
     git,
     git_blob,
     object_id,
@@ -486,12 +487,26 @@ def full_pr_inputs(source: GateSource, base: str, authorization: dict[str, Any] 
     changed = changed_paths(raw_diff(base, source.commit))
     require(
         authorization["changed"] == changed
+        and set(FULL_EXECUTION_INPUTS).intersection(changed) == {"Makefile"}
         and changed.get("Makefile") == "M"
         and authorization["execution"] == actual
         and actual["Makefile"] != baseline["Makefile"]
         and all(actual[path] == baseline[path] for path in FULL_EXECUTION_INPUTS if path != "Makefile"),
         "full PR authorization must cover the exact change and only a reviewed Makefile execution input",
     )
+
+
+def selected_pr_registry(manifest: str, slots: tuple[str, ...], key: str) -> str:
+    """Keep legacy focused duplicate compatibility, but require unique full-PR authorizations."""
+    selected = selected_registry(manifest, slots, key)  # validate bounds and conflicts before decoding again
+    seen = set()
+    registries = [json.loads(manifest or "{}", object_pairs_hook=unique_object), *(decode_slot(slot) for slot in slots)]
+    for registry in registries:
+        for entry_key, entry in registry.items():
+            if isinstance(entry, dict) and entry.get("kind") == FULL_PR_KIND:
+                require(entry_key not in seen, "duplicate full PR authorization")
+                seen.add(entry_key)
+    return selected
 
 
 def full_pr_jobs(
@@ -538,7 +553,7 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     if not candidate:
-        manifest = selected_registry(manifest, slots, f"pull_request:{gate.head}")
+        manifest = selected_pr_registry(manifest, slots, f"pull_request:{gate.head}")
     registry = json.loads(manifest, object_pairs_hook=unique_object) if not candidate else {}
     authorization = registry.get(f"pull_request:{gate.head}") if not candidate else None
     reviewed_full = isinstance(authorization, dict) and authorization.get("kind") == FULL_PR_KIND

@@ -934,7 +934,9 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
         assert set(checked) == {name for name, conclusion in inventory.items() if conclusion == "success"}
 
 
-@pytest.mark.parametrize("defect", [None, "below-floor", "tampered-archive", "moved-main", "rerun", "unknown-kind"])
+@pytest.mark.parametrize(
+    "defect", [None, "below-floor", "tampered-archive", "moved-main", "rerun", "unknown-kind", "duplicate"]
+)
 @pytest.mark.parametrize("reviewed", [False, "legacy", "slot"])
 def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
     focused_gate, first_attempt, monkeypatch, defect, reviewed
@@ -950,7 +952,7 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
         return [lane]
 
     monkeypatch.setattr(focused_gate, "full_pr_jobs", full_jobs)
-    authorization = {"kind": focused_gate.FULL_PR_KIND} if reviewed else None
+    authorization = {"kind": focused_gate.FULL_PR_KIND} if reviewed or defect == "duplicate" else None
     if defect == "unknown-kind":
         authorization = {"kind": "full-pr-unreviewed"}
     if defect == "rerun":
@@ -962,6 +964,10 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
 
         slots = (encode_slot(json.loads(manifest)),)
         manifest = "{}"
+    if defect == "duplicate":
+        from scripts.focused_plan import encode_slot
+
+        slots += (encode_slot({f"pull_request:{gate.head}": authorization}),)
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("coverage-total.txt", "0" if defect == "below-floor" else "100")
@@ -996,7 +1002,7 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
     else:
         result = focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
         assert result == "Whole-project coverage measured by full PR CI"
-    assert received == ([] if defect in {"rerun", "unknown-kind"} else [authorization])
+    assert received == ([] if defect in {"rerun", "unknown-kind", "duplicate"} else [authorization])
 
 
 def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate, monkeypatch):
