@@ -865,7 +865,8 @@ def test_full_checkout_requires_one_actual_checkout_identity(focused_gate):
 @pytest.mark.parametrize(
     "defect", [None, "missing", "failed", "stale-base", "workflow", "checkout", "dispatch", "parents"]
 )
-def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focused_gate, monkeypatch, defect):
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focused_gate, monkeypatch, defect, reviewed):
     from types import SimpleNamespace
 
     base, head, merge = (letter * 40 for letter in "abc")
@@ -889,7 +890,29 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
     monkeypatch.setattr(focused_gate, "quarantine_lane", lambda rows, *_: rows)
     checked = []
     monkeypatch.setattr(focused_gate, "_check", lambda _gate, _source, job: checked.append(job["name"]))
-    monkeypatch.setattr(focused_gate, "git_blob", lambda commit, _path: commit if defect == "workflow" else head)
+
+    def blob(commit, path):
+        if defect == "workflow" or (reviewed and path == "Makefile"):
+            return commit
+        return head
+
+    monkeypatch.setattr(focused_gate, "git_blob", blob)
+    monkeypatch.setattr(focused_gate, "object_id", lambda _: "d" * 40)
+    monkeypatch.setattr(focused_gate, "raw_diff", lambda *_: f":100644 100644 {base} {merge} M\0Makefile\0".encode())
+    authorization = (
+        {
+            "schema": 1,
+            "kind": focused_gate.FULL_PR_KIND,
+            "repository": focused_gate.REPOSITORY,
+            "head": head,
+            "base": base,
+            "tree": "d" * 40,
+            "changed": {"Makefile": "M"},
+            "execution": {path: blob(merge, path) for path in focused_gate.FULL_EXECUTION_INPUTS},
+        }
+        if reviewed
+        else None
+    )
 
     def git(*args):
         if args[0] == "rev-list":
@@ -905,21 +928,40 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
     judge = SimpleNamespace(token="fictional")
     if defect:
         with pytest.raises(focused_gate.CandidateError):
-            focused_gate.full_pr_jobs(judge, source, base, lambda _path: log)
+            focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization)
     else:
-        assert focused_gate.full_pr_jobs(judge, source, base, lambda _path: log) == jobs
+        assert focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization) == jobs
         assert set(checked) == {name for name, conclusion in inventory.items() if conclusion == "success"}
 
 
-@pytest.mark.parametrize("defect", [None, "below-floor", "tampered-archive", "moved-main"])
+@pytest.mark.parametrize("defect", [None, "below-floor", "tampered-archive", "moved-main", "rerun", "unknown-kind"])
+@pytest.mark.parametrize("reviewed", [False, "legacy", "slot"])
 def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
-    focused_gate, first_attempt, monkeypatch, defect
+    focused_gate, first_attempt, monkeypatch, defect, reviewed
 ):
     gate, run, _manifest, lane, rows, logs, _git_rows = first_attempt
     lane["name"] = "Coverage"
     lane["steps"][0]["name"] = focused_gate.CANDIDATE_UPLOAD_NAME
     rows[f"check-runs/{lane['id']}"]["name"] = "Coverage"
-    monkeypatch.setattr(focused_gate, "full_pr_jobs", lambda *_: [lane])
+    received = []
+
+    def full_jobs(*args):
+        received.append(args[-1])
+        return [lane]
+
+    monkeypatch.setattr(focused_gate, "full_pr_jobs", full_jobs)
+    authorization = {"kind": focused_gate.FULL_PR_KIND} if reviewed else None
+    if defect == "unknown-kind":
+        authorization = {"kind": "full-pr-unreviewed"}
+    if defect == "rerun":
+        rows[f"actions/runs/{run}"]["run_attempt"] = 2
+    manifest = json.dumps({f"pull_request:{gate.head}": authorization}) if authorization else "{}"
+    slots = ()
+    if reviewed == "slot":
+        from scripts.focused_plan import encode_slot
+
+        slots = (encode_slot(json.loads(manifest)),)
+        manifest = "{}"
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("coverage-total.txt", "0" if defect == "below-floor" else "100")
@@ -950,9 +992,11 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
     monkeypatch.setattr(focused_gate, "pull_identity", current)
     if defect:
         with pytest.raises(focused_gate.CandidateError):
-            focused_gate.verify(gate, run, "{}", logs.__getitem__)
+            focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
     else:
-        assert focused_gate.verify(gate, run, "{}", logs.__getitem__) == "Whole-project coverage measured by full PR CI"
+        result = focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
+        assert result == "Whole-project coverage measured by full PR CI"
+    assert received == ([] if defect in {"rerun", "unknown-kind"} else [authorization])
 
 
 def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate, monkeypatch):
