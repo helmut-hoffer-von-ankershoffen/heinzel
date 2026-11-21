@@ -33,7 +33,10 @@ def test_native_prompt_dispatch_and_lost_answer_recovery(make_kernel, tmp_path):
     created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new"})
     assert created.status_code == 200
     session = created.json()["session_id"]
-    source = Path("apple/App/WorkspaceView.swift").read_text()
+    source = "\n".join(
+        Path(f"apple/App/{n}.swift").read_text(encoding="utf-8")
+        for n in ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    )
     body = source.split("let result = try await inspectWorkspace(in: workspace, arguments: [", 1)[1]
     body = body.split('], body: """', 1)[1].split('""") as? String', 1)[0]
     calls = []

@@ -13,7 +13,8 @@ from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseCache, Rel
 from heinzel.modules.system._github import asset_host
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import _edge_release, _published_version
-from heinzel.modules.system.updater._update import UpdateService, blocking_plugins
+from heinzel.modules.system.updater._update import UpdateService
+from heinzel.modules.system.updater._update_rules import blocking_plugins
 
 pytestmark = pytest.mark.unit
 
@@ -1635,7 +1636,7 @@ def _channels(pin, releases):
     )
     service._releases = releases
     service._clock, service._home = time.monotonic, None
-    service._daemon = service._lifecycle = service._web = None
+    service._daemon = service._lifecycle = service._web = service._state = None
     service._running = lambda: False
     service._automatic_generation = lambda _current: None
     service._with_plugins = lambda result, *_a: result
@@ -2121,7 +2122,7 @@ def test_the_plugin_dependency_graph_follows_requirements_through_plugins_and_ig
 
 
 def test_dropping_a_plugin_drops_everything_that_needs_it_through_others_too():
-    from heinzel.modules.system.updater._update import _drop_dependents
+    from heinzel.modules.system.updater._update_install import _drop_dependents
 
     modes = {"heinzel-clock": "drop", "heinzel-alarm": "keep", "heinzel-snooze": "new", "heinzel-other": "new"}
     reasons = {"heinzel-clock": "blocked."}

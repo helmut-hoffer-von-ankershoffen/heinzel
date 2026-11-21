@@ -17,8 +17,8 @@ exclude = ["src/heinzel/_lifecycle_control.py"]
 tests = ["tests/unit/kernel/**"]
 
 [context.runtime-update]
-summary = "update plan, apply, schedule and retry; the policy half of the web head's auto update stays in `heads/web` for now"
-src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_auto_update.py", "src/heinzel/heads/web/_updates.py"]
+summary = "update plan, apply, schedule and retry; the web head's auto update keeps only its routes"
+src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_updates.py"]
 tests = ["tests/unit/runtime/updater/**"]
 package = "heinzel.modules.system.updater"
 adapters_only = true
@@ -30,7 +30,6 @@ src = [
     "src/heinzel/_lifecycle_control.py",
     "src/heinzel/modules/ui/__init__.py",
     "src/heinzel/modules/ui/_overview.py",
-    "src/heinzel/heads/web/_lifecycle.py",
 ]
 tests = ["tests/unit/runtime/lifecycle/**"]
 package = "heinzel.modules.system.lifecycle"
@@ -130,9 +129,7 @@ head = true
 summary = "the web head: routes and the server of the web app"
 src = ["src/heinzel/heads/web/**"]
 exclude = [
-    "src/heinzel/heads/web/_auto_update.py",
     "src/heinzel/heads/web/_updates.py",
-    "src/heinzel/heads/web/_lifecycle.py",
 ]
 package = "heinzel.heads.web"
 head = true
@@ -175,7 +172,7 @@ contexts = [
     "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
-    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._historical_launcher",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._launcher_transition",
 ]
@@ -196,7 +193,7 @@ heads = [
 # Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
-"src/heinzel/heads/web/_auto_update.py" = 1
 "src/heinzel/heads/web/_updates.py" = 1
 "src/heinzel/modules/system/lifecycle/_service.py" = 7
+"src/heinzel/modules/system/updater/_schedule.py" = 1
 "src/heinzel/modules/ui/_overview.py" = 1

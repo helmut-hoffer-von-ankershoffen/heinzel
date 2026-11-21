@@ -833,7 +833,7 @@ def candidate_scope(scope, monkeypatch):
             "tests/unit/scoped_checks_test.py",
         }
     )
-    assert len(changed) == 43  # exact consuming candidate path inventory, including its selector repairs
+    assert len(changed) == 46  # exact consuming candidate path inventory, including its selector repairs
     for name in changed:
         path = scoped.ROOT / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1262,3 +1262,8 @@ def test_nonmixed_child_environment_is_unchanged(monkeypatch):
     monkeypatch.setenv("GIT_DIR", "synthetic-parent-value")
     assert scoped.mixed_child_environment() is None
     assert os.environ["GIT_DIR"] == "synthetic-parent-value"
+
+
+@pytest.mark.parametrize("name", ["NativePrompt", "Navigation", "TitleBarDragLayout", "WorkspaceView"])
+def test_every_workspace_swift_file_has_an_owning_recipe(name):
+    assert f"apple/App/{name}.swift" in mixed.APPLE_SOURCES

@@ -10,7 +10,7 @@ from heinzel.kernel import CorePin
 from heinzel.modules.system import _render
 from heinzel.modules.system._models import PluginUpdate, UpdateResult
 from heinzel.modules.system._render import render_update, standing
-from heinzel.modules.system.updater._update import _pinned, _plugin_step
+from heinzel.modules.system.updater._update_rules import pinned_ref, plugin_step
 
 pytestmark = pytest.mark.unit
 
@@ -21,7 +21,7 @@ def _unchanged(**fields: object) -> PluginUpdate:
 
 def test_a_plugin_that_follows_a_branch_or_the_index_is_newest():
     assert standing(_unchanged()) == "already newest (1.0.0)"
-    assert _plugin_step(_unchanged()) == ("done", "Already newest (1.0.0)")
+    assert plugin_step(_unchanged()) == ("done", "Already newest (1.0.0)")
 
 
 def test_a_pinned_plugin_is_kept_never_called_newest():
@@ -33,7 +33,7 @@ def test_a_pinned_plugin_is_kept_never_called_newest():
 def test_a_plugin_the_update_never_reached_is_not_updated_with_a_warning():
     update = _unchanged(checked=False)
     assert standing(update).startswith("not updated (1.0.0)")
-    assert _plugin_step(update)[0] == "warn"
+    assert plugin_step(update)[0] == "warn"
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_a_plugin_the_update_never_reached_is_not_updated_with_a_warning():
     ],
 )
 def test_pinned_reads_the_install_spec(kind, ref, pinned):
-    assert _pinned(CorePin(kind=kind, requirement="heinzel-acme", ref=ref, name="heinzel-acme")) == pinned
+    assert pinned_ref(CorePin(kind=kind, requirement="heinzel-acme", ref=ref, name="heinzel-acme")) == pinned
 
 
 @pytest.mark.parametrize("known", [{}, {"checked": True}, {"pinned": None}])
@@ -73,7 +73,7 @@ def test_the_render_module_imports_no_model_an_older_hz_lacks():
 
 
 def test_the_stated_check_interval_is_the_web_servers():
-    from heinzel.heads.web._auto_update import CHECK_EVERY
     from heinzel.modules.system import AUTOMATIC_CHECK_MINUTES
+    from heinzel.modules.system.updater._schedule import CHECK_EVERY
 
     assert CHECK_EVERY.total_seconds() == AUTOMATIC_CHECK_MINUTES * 60
