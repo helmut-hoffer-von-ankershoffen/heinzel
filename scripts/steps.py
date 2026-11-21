@@ -9,6 +9,7 @@ failure is never hidden behind a pipe: the exit code is the failing step's.
 
 A step prefixed with `&` runs concurrently with the step before it, so `"a=…" "&b=…" "&c=…" "d=…"` runs a, b and c
 together, then d. Results print in the declared order; the first failure cancels the rest of its group and stops.
+`STEPS_KEEP_GOING=1` lets every step finish and reports all failures in one pass (the pre-push hook sets it).
 Every step is killed after `STEP_TIMEOUT` seconds (default 600). `VERBOSE=1` runs everything in order and streams.
 
 Usage: uv run --script scripts/steps.py "name=command" ["&name=command" ...]
@@ -154,7 +155,9 @@ def stop_steps(steps: list[Step], note: str, code: int = -1) -> None:
         step.code, step.note = code, note
 
 
-def run_group(group: list[Step], timeout: float, interruption: Interruption, *, verbose: bool = False) -> int:  # noqa: C901 - bounded child lifecycle
+def run_group(  # noqa: C901 - bounded child lifecycle
+    group: list[Step], timeout: float, interruption: Interruption, *, verbose: bool = False, keep_going: bool = False
+) -> int:
     """Run owned steps together and cancel their process groups on failure or termination."""
     try:
         for step in group:
@@ -170,7 +173,7 @@ def run_group(group: list[Step], timeout: float, interruption: Interruption, *, 
                 return 128 + interruption.signum
             for step in group:
                 step.poll(timeout)
-            if any(step.code for step in group):
+            if not keep_going and any(step.code for step in group):
                 stop_steps([step for step in group if step.code is None], "cancelled")
             while reported < len(group) and group[reported].code is not None:
                 if not verbose:
@@ -181,6 +184,27 @@ def run_group(group: list[Step], timeout: float, interruption: Interruption, *, 
     except BaseException:
         stop_steps(group, "interrupted")
         raise
+
+
+def run_plan(execution: list[list[Step]], timeout: float, interruption: Interruption, *, verbose: bool) -> int:
+    """Run the groups in order; the first failure stops them, or with `STEPS_KEEP_GOING` every group runs."""
+    keep_going = os.environ.get("STEPS_KEEP_GOING", "") not in {"", "0"}
+    first_failure = 0
+    for index, group in enumerate(execution):
+        if interrupted := interruption.exit_code():
+            return interrupted
+        if code := run_group(group, timeout, interruption, verbose=verbose, keep_going=keep_going):
+            if interrupted := interruption.exit_code():
+                return interrupted
+            if keep_going:
+                first_failure = first_failure or code
+                continue
+            if not verbose:
+                for later in execution[index + 1 :]:
+                    for step in later:
+                        step.report()
+            return code
+    return interruption.exit_code() or first_failure
 
 
 def main(argv: list[str]) -> int:
@@ -196,18 +220,7 @@ def main(argv: list[str]) -> int:
     try:
         verbose = os.environ.get("VERBOSE", "") not in {"", "0"}
         execution = [[step] for group in plan for step in group] if verbose else plan
-        for index, group in enumerate(execution):
-            if interrupted := interruption.exit_code():
-                return interrupted
-            if code := run_group(group, timeout, interruption, verbose=verbose):
-                if interrupted := interruption.exit_code():
-                    return interrupted
-                if not verbose:
-                    for later in execution[index + 1 :]:
-                        for step in later:
-                            step.report()
-                return code
-        return interruption.exit_code()
+        return run_plan(execution, timeout, interruption, verbose=verbose)
     finally:
         for sig, handler in handlers.items():
             signal.signal(sig, handler)

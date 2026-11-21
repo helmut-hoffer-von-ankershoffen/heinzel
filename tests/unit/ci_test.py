@@ -1601,6 +1601,8 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
 
 
 SCHEDULED_REQUIRED = ("admission", "changes", "lint", "secrets", "audit", "quarantine-registry")
+# The nightly is where the full macOS matrix runs (pull requests only run macOS unit, integration, specific, notifier).
+SCHEDULED_FULL_MATRIX = ("setup", "test", "e2e", "notifier", "macos-specific", "electron")
 
 
 def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
@@ -1636,7 +1638,7 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
         (None, "success", "", "Scheduled maintenance was not selected"),
         *(
             (job, outcome, "true", f"Required schedule workload job did not pass: {job}")
-            for job in SCHEDULED_REQUIRED
+            for job in (*SCHEDULED_REQUIRED, *SCHEDULED_FULL_MATRIX)
             for outcome in ("failure", "cancelled", "skipped")
         ),
     ],
@@ -1646,7 +1648,8 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
     step = next(step for step in jobs["ci-ok"]["steps"] if "EVENT" in step.get("env", {}))
     assert step["if"] == "github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''"
     results = {
-        name: {"result": "success" if name in SCHEDULED_REQUIRED else "skipped"} for name in jobs["ci-ok"]["needs"]
+        name: {"result": "success" if name in (*SCHEDULED_REQUIRED, *SCHEDULED_FULL_MATRIX) else "skipped"}
+        for name in jobs["ci-ok"]["needs"]
     }
     if job is not None:
         results[job]["result"] = outcome
@@ -1704,8 +1707,11 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
     script = next(step["run"] for step in jobs["ci-ok"]["steps"] if "RESULTS" in step.get("env", {}))
     assert "success | skipped) ;;" in script
     assert "continue-on-error" not in jobs["ci-ok"]
-    for name in ("setup", "e2e", "electron"):
-        assert "needs.changes.outputs.macos_full != 'true'" in jobs[name]["strategy"]["matrix"]["os"]
+    for name in ("setup", "e2e", "electron"):  # narrowed by matrix, never by a job-level if; a release PR keeps macOS
+        expression = jobs[name]["strategy"]["matrix"]["os"]
+        assert "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'" in expression
+        assert "macos_full" not in expression
+        assert "macos-latest" not in jobs[name]["if"]
     assert "needs.changes.outputs.macos_full" not in jobs["test"]["strategy"]["matrix"]["include"]
 
 
@@ -1741,15 +1747,15 @@ def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
-@pytest.mark.parametrize("macos_full", [False, True])
-def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_full):
+@pytest.mark.parametrize("release", [False, True])
+def test_macos_e2e_setup_and_electron_run_on_main_schedule_dispatch_and_release_prs_only(event, release):
     jobs = _ci_jobs()
-    native = event != "pull_request" or macos_full
-    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+    native = event != "pull_request" or release
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, release=release) == (
         ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest"] if native else ["ubuntu-24.04", "ubuntu-24.04-arm"]
     )
     for name in ("e2e", "electron"):
-        assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+        assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, release=release) == (
             ["ubuntu-24.04", "macos-latest"] if native else ["ubuntu-24.04"]
         )
 
@@ -1845,7 +1851,7 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
         "3.15",
     ]
     assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 2
-    assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", macos_full=True) == [
+    assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", release=True) == [
         "ubuntu-24.04",
         "macos-latest",
     ]
@@ -2103,7 +2109,7 @@ def test_direct_coverage_has_no_write_token_and_enforces_its_floor():
 def test_release_prs_keep_diagnostics_and_apple_ci_is_required():
     jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
     for name in ("setup", "test"):
-        assert "!startsWith(github.head_ref, 'release/')" in jobs[name]["strategy"]["fail-fast"]
+        assert jobs[name]["strategy"]["fail-fast"] is False  # every red cell shows in one run
     for name, job in jobs.items():
         if name.startswith("stop-after-"):
             assert "!startsWith(github.head_ref, 'release/')" in job["if"]
@@ -2114,3 +2120,15 @@ def test_release_prs_keep_diagnostics_and_apple_ci_is_required():
     recipe = (REPO / "Makefile").read_text()
     assert "CODE_SIGNING_ALLOWED=NO" in recipe
     assert "scripts/check_apple_ci.py reports/apple-ci.xml" in recipe
+
+
+def test_pull_requests_do_not_wait_for_lint_before_the_template_job_and_never_stop_at_the_first_red_cell():
+    jobs = _ci_jobs()
+    assert jobs["template"]["needs"] == "changes"
+    for name in ("setup", "test"):
+        assert jobs[name]["strategy"]["fail-fast"] is False
+
+
+def test_the_nightly_requires_the_whole_macos_matrix_to_pass():
+    script = "\n".join(step.get("run", "") for step in _ci_jobs()["ci-ok"]["steps"])
+    assert "required+=(setup test e2e notifier macos-specific electron)" in script
