@@ -6,7 +6,8 @@ import contextlib
 import fcntl
 import os
 import re
-from pathlib import Path
+import time
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -26,6 +27,29 @@ def _checked(name: str) -> str:
     return name
 
 
+_POLL_SECONDS = 0.05
+
+
+def _flock_within(descriptor: int, wait: float) -> None:
+    """Take the exclusive `flock` of `descriptor` within `wait` seconds.
+
+    Raises:
+        TimeoutError: If another holder still has it after `wait` seconds.
+    """
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                msg = "the lock is still held by another holder"
+                raise TimeoutError(msg) from None
+            time.sleep(min(_POLL_SECONDS, left))
+        else:
+            return
+
+
 class FileInstallationState:
     """One installation's state folder (mode 0700); its files are written for this user only."""
 
@@ -41,12 +65,19 @@ class FileInstallationState:
         return self._folder
 
     @contextlib.contextmanager
-    def lock(self, name: str) -> Generator[None]:
-        """Hold the exclusive `flock` of `<name>.lock`; another process or thread that asks waits for it."""
+    def lock(self, name: str, wait: float | None = None) -> Generator[None]:
+        """Hold the exclusive `flock` of `<name>.lock`; another process or thread that asks waits for it.
+
+        Raises:
+            TimeoutError: If `wait` seconds passed and another holder still has it.
+        """
         path = self.folder / f"{_checked(name)}.lock"
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT, OWNER_ONLY_FILE)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if wait is None:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            else:
+                _flock_within(descriptor, wait)
             yield
         finally:
             os.close(descriptor)  # closing releases the lock
@@ -61,14 +92,17 @@ class FileInstallationState:
         return iter(text.splitlines())
 
     def home_file(self, relative: str) -> str | None:
-        """The text of `relative` under the home folder; None if it is missing, unreadable or outside the home."""
-        home = self._home or Path.home()
-        path = (home / relative).resolve()
-        if not path.is_relative_to(home.resolve()):
+        """The text of `relative` under the home folder; None if it is missing, unreadable or names a path outside.
+
+        Only the path as written is checked (no `..`, not absolute): symlinks under home are followed, so a receipt
+        under a `~/.config` that links to a dotfiles checkout is found, as it was before this port.
+        """
+        parts = PurePosixPath(relative)
+        if parts.is_absolute() or ".." in parts.parts:
             return None
         try:
-            return path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            return ((self._home or Path.home()) / parts).read_text(encoding="utf-8")
+        except (OSError, RuntimeError, UnicodeDecodeError):  # RuntimeError: no home to look in
             return None
 
     def append(self, name: str, line: str) -> None:
