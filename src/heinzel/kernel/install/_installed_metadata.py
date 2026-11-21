@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import re
 import stat
@@ -17,6 +18,9 @@ from packaging.utils import InvalidWheelFilename, canonicalize_name, parse_wheel
 from packaging.version import Version
 
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._logging import log_event
+
+logger = logging.getLogger(__name__)
 
 _MAX_PTH_FILES = 128
 _MAX_PTH_BYTES = 65_536
@@ -26,6 +30,27 @@ _MAX_PATH_BYTES = 4096
 
 class _StartupPathError(ValueError):
     """The tool has Python startup paths that cannot be inspected safely."""
+
+
+class _MismatchError(ValueError):
+    """One selected requirement's installed metadata differs from what was selected: which, and how."""
+
+    def __init__(self, requirement: str, expected: str, found: str) -> None:
+        super().__init__(f"{requirement}: expected {expected}, found {found}")
+        self.requirement, self.expected, self.found = requirement, expected, found
+
+
+def _describe_source(source: Requirement) -> str:
+    return f"{source.name} from {source.url}" if source.url is not None else f"{source.name} from the package index"
+
+
+def _describe_direct(name: str, version: str, direct: dict[str, object] | None) -> str:
+    if direct is None:
+        return f"{name} {version} from the package index"
+    vcs = direct.get("vcs_info")
+    commit = vcs.get("commit_id") if isinstance(vcs, dict) else None
+    url = direct.get("url")
+    return f"{name} {version} from {url}" + (f" at commit {commit}" if isinstance(commit, str) else "")
 
 
 def _source_matches(requirement: Requirement, direct: dict[str, object] | None) -> bool:
@@ -113,6 +138,20 @@ def inspect_requirements(
             "or reinstall it from verified sources without executable or external startup hooks."
         )
         raise HeinzelError(msg) from exc
+    except _MismatchError as exc:
+        log_event(
+            logger,
+            "install.verify.mismatch",
+            level=logging.WARNING,
+            requirement=exc.requirement,
+            expected=exc.expected,
+            found=exc.found,
+        )
+        msg = (
+            f"The installed tool metadata does not match the selected sources and versions ({exc}); "
+            "no code was started."
+        )
+        raise HeinzelError(msg) from exc
     except (OSError, ValueError, KeyError, TypeError) as exc:
         msg = "The installed tool metadata does not match the selected sources and versions; no code was started."
         raise HeinzelError(msg) from exc
@@ -189,17 +228,18 @@ def _inspect(
     for (requirement, applicable, source), name in zip(policies, names, strict=True):
         matches = found.get(name, [])
         if len(matches) != 1:
-            raise ValueError
+            raise _MismatchError(str(requirement), "one installed distribution", f"{len(matches)}")
         version, direct = matches[0]
-        if (
-            Version(version) not in requirement.specifier
-            or any(Version(version) not in item.specifier for item in applicable)
-            or not _source_matches(source, direct)
-        ):
-            raise ValueError
+        allowed = [requirement.specifier, *(item.specifier for item in applicable)]
+        if any(Version(version) not in specifier for specifier in allowed):
+            versions = ",".join(str(specifier) for specifier in allowed if str(specifier))
+            raise _MismatchError(str(requirement), f"{name} {versions}", f"{name} {version}")
+        if not _source_matches(source, direct):
+            raise _MismatchError(str(requirement), _describe_source(source), _describe_direct(name, version, direct))
         result[name] = version
     if expected_version is not None and Version(result["heinzel"]) != Version(expected_version):
-        raise ValueError
+        core = f"heinzel {result['heinzel']}"
+        raise _MismatchError(core, f"heinzel {expected_version}", core)
     return result
 
 
