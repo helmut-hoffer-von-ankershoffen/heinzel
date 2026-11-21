@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { DurableSession } from "@/chat/DurableSession";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";

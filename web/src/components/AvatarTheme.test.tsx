@@ -1,6 +1,6 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { theme, themeList } from "@/test/fixtures";
 import { mockApi } from "@/test/render";
 import { AvatarThemeProvider } from "./AvatarTheme";

@@ -5,7 +5,8 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import * as browser from "@/lib/browser";
 import { shell } from "@/test/fixtures";
-import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
+import { eventStream, expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { CalendarPanel } from "./CalendarPanel";
 
 afterEach(() => {

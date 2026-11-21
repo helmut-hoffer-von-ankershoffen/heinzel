@@ -1,7 +1,8 @@
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { config, noTeam, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 describe("Organisation", () => {
   it("says why there is no org chart yet and what to look at", async () => {

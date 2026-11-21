@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { OperationDialog } from "@/components/OperationDialog";
 import { DAEMON_INSTALL, DAEMON_RESTART } from "@/lib/operationCalls";
 import {

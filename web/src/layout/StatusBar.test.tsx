@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const answers = {
   ...shell,

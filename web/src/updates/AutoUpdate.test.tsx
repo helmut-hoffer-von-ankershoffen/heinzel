@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { expectAccessible, mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus, secondsLeft, updateSummary } from "./AutoUpdate";

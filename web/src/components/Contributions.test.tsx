@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { assertActionStructure } from "@/components/PaneActions";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
-import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
+import { eventStream, expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { axisLabel, type ChartData } from "./ChartBody";
 import { ICONS, liveText, widgetText } from "./Contributions";
 

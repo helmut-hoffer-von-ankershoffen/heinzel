@@ -2,7 +2,8 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const sessions = [
   {

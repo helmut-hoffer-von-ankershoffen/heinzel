@@ -2,7 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const token = {
   id: "ab12cd34",

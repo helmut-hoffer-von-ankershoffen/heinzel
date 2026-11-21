@@ -2,8 +2,8 @@
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { Providers, queryClient } from "@/App";
 import type { components } from "@/api/schema";
+import { Providers, queryClient } from "@/app/providers";
 
 export const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 

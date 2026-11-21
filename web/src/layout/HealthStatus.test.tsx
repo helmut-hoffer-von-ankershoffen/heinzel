@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { doctor } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";

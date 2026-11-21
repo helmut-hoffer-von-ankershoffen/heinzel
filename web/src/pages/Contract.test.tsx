@@ -1,7 +1,8 @@
 import { screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const base = {
   name: "weekly-digest",

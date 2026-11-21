@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal, runInTerminal } from "@/lib/terminal";
 import { config, doctor, noTeam, profile, shell } from "@/test/fixtures";
-import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
+import { eventStream, expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { loadProgress, setupIncomplete } from "./progress";
 
 const answers = {

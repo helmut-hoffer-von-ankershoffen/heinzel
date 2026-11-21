@@ -2,7 +2,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { base } from "@/test/chat";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { fitsBeside } from "./Shell";
 
 const wide = window.innerWidth;

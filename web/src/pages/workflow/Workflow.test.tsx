@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { SchemaCapabilityReport, SchemaContractGraph, SchemaDiscovery, SchemaPlaybookList } from "@/api/client";
 import { graph, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { layoutWorkflow } from "./layout";
 import { buildWorkflow, isEmpty, templateCommand } from "./model";
 

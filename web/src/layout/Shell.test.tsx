@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { createDraftPath } from "@/lib/chatIntent";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 /** One Heinzel, Helmi, so the chat opens on it (ADR 0157). */
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";

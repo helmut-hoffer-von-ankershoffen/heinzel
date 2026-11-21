@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { SchemaNotice } from "@/api/client";
 import { doctor, shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const checkIn: SchemaNotice = {
   id: "20261027T0900-ab12",

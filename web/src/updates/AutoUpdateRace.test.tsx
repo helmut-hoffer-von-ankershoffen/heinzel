@@ -1,8 +1,8 @@
 // The popup follows the server even when the setting is switched off and on while a poll is on its way (ADR 0116).
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
 import { keys } from "@/api/queries";
+import { Providers, queryClient } from "@/app/providers";
 import { mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus } from "./AutoUpdate";
 import { KEY } from "./autoUpdateApi";

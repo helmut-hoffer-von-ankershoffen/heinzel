@@ -5,7 +5,8 @@ import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today"
 import { assertActionStructure } from "@/components/PaneActions";
 import { base } from "@/test/chat";
 import { doctor } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 afterEach(() => {
   sessionStorage.clear();

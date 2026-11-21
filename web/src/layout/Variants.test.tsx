@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaThemeVariant } from "@/api/client";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { backdropCss, coloursOf, variantOf } from "./variants";
 
 const root = () => document.documentElement.style;

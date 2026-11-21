@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { Providers, queryClient } from "../src/App";
+import { Providers, queryClient } from "../src/app/providers";
 import { DaemonSettings } from "../src/layout/DaemonSettings";
 import "../src/index.css";
 

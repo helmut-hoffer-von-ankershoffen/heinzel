@@ -1,8 +1,6 @@
-// The routes, and the providers every screen needs.
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+// The routes and the app root.
 import { createBrowserRouter, Navigate, type RouteObject, RouterProvider, useSearchParams } from "react-router";
-import { ApiError } from "@/api/client";
+import { Providers, queryClient } from "@/app/providers";
 import { CopyCommand } from "@/components/common";
 import { ErrorBoundary, RouteError } from "@/components/ErrorScreen";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
@@ -20,7 +18,6 @@ import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
 import { InstalledPage } from "@/plugins/Views";
 import { isRemoteWorkspace, RemoteWorkspaceSignIn, Splash, SplashGone } from "@/splash/Splash";
-import { splash, unreachableError } from "@/splash/store";
 
 /** `/settings?q=…` from older links: Home with the settings dialog open, searching. */
 function SettingsLink() {
@@ -54,30 +51,6 @@ export const routes: RouteObject[] = [
     ],
   },
 ];
-
-/** A call that couldn't reach hz makes the splash ask whether it is gone (and come back over the app if so). */
-const suspect = (error: unknown) => {
-  if (unreachableError(error)) splash.send({ type: "suspect" });
-};
-
-export function queryClient(): QueryClient {
-  return new QueryClient({
-    queryCache: new QueryCache({ onError: suspect }),
-    mutationCache: new MutationCache({ onError: suspect }),
-    defaultOptions: {
-      queries: {
-        staleTime: 30_000,
-        refetchOnWindowFocus: false,
-        // A refused token won't get better by retrying.
-        retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 1,
-      },
-    },
-  });
-}
-
-export function Providers({ client, children }: { client: QueryClient; children: ReactNode }) {
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-}
 
 /** What the page shows without a token: how to get the link that has one. */
 export function NoToken() {
