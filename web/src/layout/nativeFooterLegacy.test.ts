@@ -5,7 +5,9 @@ import { act, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 it("reserves space on an older workspace and yields when a new workspace supplies its own slot", async () => {
-  const swift = readFileSync(resolve(process.cwd(), "../apple/App/WorkspaceView.swift"), "utf8");
+  const swift = ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    .map((name) => readFileSync(resolve(process.cwd(), `../apple/App/${name}.swift`), "utf8"))
+    .join("\n");
   const start = swift.indexOf("                let footerMetrics =");
   const end = swift.indexOf('                Object.defineProperty(window, "heinzelDesktop"', start);
   expect(start).toBeGreaterThan(-1);
