@@ -14,7 +14,7 @@ permissions: {}
 # each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
 # release PR (head release/*): its full-suite run is release evidence and is never cancelled.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:

@@ -248,16 +248,16 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
-def test_every_main_commit_and_release_pr_run_completes_while_other_pull_requests_cancel_superseded_runs():
+def test_main_pushes_share_one_group_and_other_pull_requests_cancel_superseded_runs():
     concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
 
     def group(ref: str, sha: str) -> str:
-        # Evaluate the one expression shape the group uses: `<cond> && github.sha || github.ref`.
+        # Evaluate the one expression shape the group uses: `<cond> && 'main' || github.ref`.
         expr = concurrency["group"]
-        assert "github.ref == 'refs/heads/main' && github.sha || github.ref" in expr
-        return f"{ref}:{sha}" if ref == "refs/heads/main" else ref
+        assert "github.ref == 'refs/heads/main' && 'main' || github.ref" in expr
+        return "main" if ref == "refs/heads/main" else ref
 
-    assert group("refs/heads/main", "a") != group("refs/heads/main", "b")
+    assert group("refs/heads/main", "a") == group("refs/heads/main", "b")
     assert group("refs/pull/1/merge", "a") == group("refs/pull/1/merge", "b")
     assert concurrency["cancel-in-progress"] == (
         "${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}"
