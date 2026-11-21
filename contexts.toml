@@ -30,7 +30,6 @@ src = [
     "src/heinzel/_lifecycle_control.py",
     "src/heinzel/modules/ui/__init__.py",
     "src/heinzel/modules/ui/_overview.py",
-    "src/heinzel/heads/web/_lifecycle.py",
 ]
 tests = ["tests/unit/runtime/lifecycle/**"]
 package = "heinzel.modules.system.lifecycle"
@@ -132,7 +131,6 @@ src = ["src/heinzel/heads/web/**"]
 exclude = [
     "src/heinzel/heads/web/_auto_update.py",
     "src/heinzel/heads/web/_updates.py",
-    "src/heinzel/heads/web/_lifecycle.py",
 ]
 package = "heinzel.heads.web"
 head = true
