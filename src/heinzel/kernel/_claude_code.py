@@ -18,9 +18,9 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from heinzel.kernel._ai_models import Level
 from heinzel.kernel._bounded_process import ProcessOutcome as Outcome
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
+from heinzel.kernel.ai._ai_models import Level
 
 VERSION = "Claude Code option contract"
 """The pre-probe contract label bound by the host verifier."""

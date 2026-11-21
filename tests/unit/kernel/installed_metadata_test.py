@@ -5,7 +5,7 @@ import tomllib
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.kernel._installed_metadata import inspect_requirements
+from heinzel.kernel.install._installed_metadata import inspect_requirements
 
 pytestmark = pytest.mark.unit
 
@@ -135,7 +135,7 @@ def test_editable_tool_pointing_outside_prefix_refuses_with_repair_guidance(tmp_
 
 
 def test_initial_version_observation_does_not_approve_file_source(tmp_path):
-    from heinzel.kernel._installed_metadata import inspect_core_version
+    from heinzel.kernel.install._installed_metadata import inspect_core_version
 
     distribution(tmp_path, "heinzel", "0.9.7", {"url": "file:///tmp/heinzel.whl", "archive_info": {}})
     assert inspect_core_version(tmp_path) == "0.9.7"
@@ -145,7 +145,7 @@ def test_initial_version_observation_does_not_approve_file_source(tmp_path):
 
 @pytest.mark.parametrize("problem", ["duplicate", "missing", "invalid", "unsafe_startup"])
 def test_initial_version_refuses_ambiguous_or_unsafe_metadata(tmp_path, problem):
-    from heinzel.kernel._installed_metadata import inspect_core_version
+    from heinzel.kernel.install._installed_metadata import inspect_core_version
 
     if problem != "missing":
         distribution(tmp_path, "heinzel", "invalid" if problem == "invalid" else "0.9.7")
@@ -182,7 +182,7 @@ def test_constraint_version_is_enforced_with_direct_source(tmp_path):
 
 
 def test_preserved_wheels_supply_exact_sources_without_relaxing_index_validation(tmp_path):
-    from heinzel.kernel._installed_metadata import preserved_wheel_constraints
+    from heinzel.kernel.install._installed_metadata import preserved_wheel_constraints
 
     url = f"file:///fixture/heinzel-0.9.15-py3-none-any.whl#sha256={'a' * 64}"
     info = distribution(tmp_path, "heinzel", "0.9.15", {"url": url, "archive_info": {}})
@@ -201,7 +201,7 @@ def test_preserved_wheels_supply_exact_sources_without_relaxing_index_validation
     "problem", ["unhashed", "wrong-name", "wrong-version", "credentials", "malformed", "duplicate"]
 )
 def test_preserved_wheel_metadata_requires_an_unambiguous_hash_bound_identity(tmp_path, problem):
-    from heinzel.kernel._installed_metadata import preserved_wheel_constraints
+    from heinzel.kernel.install._installed_metadata import preserved_wheel_constraints
 
     url = f"file:///fixture/heinzel-0.9.15-py3-none-any.whl#sha256={'a' * 64}"
     if problem == "unhashed":
@@ -223,8 +223,8 @@ def test_preserved_wheel_metadata_requires_an_unambiguous_hash_bound_identity(tm
 @pytest.mark.parametrize("selected", ["index", "plain", "hashed"])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_uv_local_receipt_roundtrip_preserves_the_strongest_wheel_hash(tmp_path, selected, reverse):
-    from heinzel.kernel._installation import _constraints_from_receipt
-    from heinzel.kernel._installed_metadata import validate_constraint_policy
+    from heinzel.kernel.install._installation import _constraints_from_receipt
+    from heinzel.kernel.install._installed_metadata import validate_constraint_policy
 
     wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
     wheel.write_bytes(b"selected immutable wheel")
@@ -261,7 +261,7 @@ def test_uv_local_receipt_roundtrip_preserves_the_strongest_wheel_hash(tmp_path,
 
 @pytest.mark.parametrize("problem", ["missing", "corrupt", "symlink", "directory"])
 def test_local_receipt_reconciliation_requires_the_selected_wheel_bytes(tmp_path, problem):
-    from heinzel.kernel._installed_metadata import validate_constraint_policy
+    from heinzel.kernel.install._installed_metadata import validate_constraint_policy
 
     wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
     content = b"selected immutable wheel"
@@ -298,7 +298,7 @@ def test_local_receipt_reconciliation_requires_the_selected_wheel_bytes(tmp_path
     ],
 )
 def test_local_receipt_reconciliation_does_not_accept_a_different_or_ambiguous_source(tmp_path, problem):
-    from heinzel.kernel._installed_metadata import validate_constraint_policy
+    from heinzel.kernel.install._installed_metadata import validate_constraint_policy
 
     wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
     wheel.write_bytes(b"selected immutable wheel")
@@ -338,7 +338,7 @@ def test_local_receipt_reconciliation_does_not_accept_a_different_or_ambiguous_s
 
 @pytest.mark.parametrize("problem", ["foreign-owner", "group-writable", "world-writable", "changed-during-read"])
 def test_local_receipt_reconciliation_requires_owned_safe_stable_source_bytes(tmp_path, monkeypatch, problem):
-    from heinzel.kernel import _installed_metadata as metadata
+    from heinzel.kernel.install import _installed_metadata as metadata
 
     wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
     wheel.write_bytes(b"selected immutable wheel")
@@ -367,7 +367,7 @@ def test_local_receipt_reconciliation_requires_owned_safe_stable_source_bytes(tm
 def test_local_receipt_reconciliation_refuses_raw_empty_url_delimiters(tmp_path, suffix, reverse):
     from packaging.requirements import Requirement
 
-    from heinzel.kernel._installed_metadata import validate_constraint_policy
+    from heinzel.kernel.install._installed_metadata import validate_constraint_policy
 
     wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
     wheel.write_bytes(b"selected immutable wheel")

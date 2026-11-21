@@ -24,7 +24,8 @@ from heinzel import (
     Principal,
     Settings,
 )
-from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models
+from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer
+from heinzel.kernel.ai import _ai_models
 from heinzel.modules.ai.access._configured import (
     ConfiguredApiBinding,
     EndpointApiBinding,

@@ -10,8 +10,8 @@ from typing import Literal
 
 from pydantic import TypeAdapter
 
-from heinzel.kernel._contributions import Effect
 from heinzel.kernel._lets import NAME_PATTERN, Let
+from heinzel.kernel.look._contributions import Effect
 
 VIEW_ABI = 1
 MAX_VIEW_FILE = 4 * 1024 * 1024

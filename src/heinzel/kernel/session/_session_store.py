@@ -21,8 +21,8 @@ from typing import cast
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
-from heinzel.kernel._session_io import (
+from heinzel.kernel.session._session import SessionEvent, SessionHead, SessionProjector, SessionRead
+from heinzel.kernel.session._session_io import (
     ID,
     JSON_VALUE,
     MAX_LINE,

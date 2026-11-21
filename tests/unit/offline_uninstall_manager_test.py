@@ -9,7 +9,7 @@ import pytest
 
 from heinzel import HeinzelError, Kernel, Settings
 from heinzel.kernel import ProcessOutcome
-from heinzel.modules.system.daemon import _service as daemon_module
+from heinzel.modules.system.daemon import _manager_commands as daemon_module
 from heinzel.modules.system.daemon._models import DaemonSettings
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.lifecycle import _service as web_module

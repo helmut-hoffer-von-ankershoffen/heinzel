@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from heinzel.kernel._host_maintenance import HostIntegration, HostIntegrationScope
+    from heinzel.kernel.install._host_maintenance import HostIntegration, HostIntegrationScope
 
-from heinzel.kernel import _uninstall_recovery as recovery
-from heinzel.kernel._installation_continuity import tool_python
-from heinzel.kernel._offline_uv import VerifiedUV, fsync_directory
 from heinzel.kernel._private_control import private_directory
-from heinzel.kernel._tool_uninstall import OwnedFile, owned_file
+from heinzel.kernel.install import _uninstall_recovery as recovery
+from heinzel.kernel.install._installation_continuity import tool_python
+from heinzel.kernel.install._offline_uv import VerifiedUV, fsync_directory
+from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file
 
 
 @dataclass(frozen=True)

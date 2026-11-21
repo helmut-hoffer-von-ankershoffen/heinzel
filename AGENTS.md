@@ -50,7 +50,7 @@ every operation takes `--json`; options in [docs/CLI_REFERENCE.md](docs/CLI_REFE
   touching a branch someone else started.
 - When a pushed branch needs an update, use `git merge origin/main`, not a rebase (PRs squash-merge).
   Core's merge queue uses each PR's tested head without an automatic update to `main`; green `CI OK` remains required.
-- Big work merges dark: register a flag in `src/heinzel/kernel/_features.py`, check it with `feature_enabled`, delete both
+- Big work merges dark: register a flag in `src/heinzel/kernel/ai/_features.py`, check it with `feature_enabled`, delete both
   when it ships (ADR 0115). A flag hides behaviour, not state schema changes.
 - ADR numbers collide across open PRs. Before merging, take the next free number on `main` and fix every reference
   (README index, `amended-by` lines, docstrings).

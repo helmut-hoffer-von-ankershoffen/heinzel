@@ -34,14 +34,14 @@ from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol, c
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
-from heinzel.kernel._agents import Effort
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._text import clean_text
+from heinzel.kernel.ai._agents import Effort
 
 if TYPE_CHECKING:
-    from heinzel.kernel._ai import AiAccess
+    from heinzel.kernel.ai._ai import AiAccess
 
 AI_MODELS_INTERFACE = "1.0"
 """The `ai-models` interface this Core implements, `major.minor`: within a major version, changes are additive."""

@@ -1,7 +1,7 @@
 """A Heinzel's own turn calls its tools in-process: hz's operations, the browser and found MCP servers (ADR 0162).
 
 The turn behind `/api/heinzel/chat` and a scheduled turn run their model inside hz (`_engine.py`), so they need no
-MCP server: they get the tools as Pydantic AI tools, decided by the one tool policy in `kernel/_chat_tools.py`
+MCP server: they get the tools as Pydantic AI tools, decided by the one tool policy in `kernel/session/_chat_tools.py`
 (reads run; a write follows its `agents=` marker, budget and audit; a browser commit and every other change wait
 for the person). What waits lands in the Heinzel's actions chat, an owner-bound chat of `system.runner.chat`, and
 the person confirms it there with the chat's card.
@@ -28,7 +28,7 @@ from heinzel.kernel import (
 from heinzel.modules.heinzel._lazy_mcp import ExternalTools
 
 READS: Final = "mcp-stdio"
-"""The identity the tool set is built with: the one every chat tool reads with (`kernel/_chat_tools.py`)."""
+"""The identity the tool set is built with: the one every chat tool reads with (`kernel/session/_chat_tools.py`)."""
 REFUSED = "Error: "
 """How the policy hands a refusal or a failure to the model (`direct_result`)."""
 INSTRUCTIONS = (

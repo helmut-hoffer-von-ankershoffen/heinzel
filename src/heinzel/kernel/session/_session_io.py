@@ -14,7 +14,7 @@ from pathlib import Path
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._session import SessionEvent, SessionRead
+from heinzel.kernel.session._session import SessionEvent, SessionRead
 
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600

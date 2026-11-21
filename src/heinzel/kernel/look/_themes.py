@@ -30,7 +30,7 @@ from pydantic import (
 )
 
 from heinzel.kernel._lets import Let
-from heinzel.kernel._theme_signals import Daypart, Weather
+from heinzel.kernel.look._theme_signals import Daypart, Weather
 
 THEME_SUFFIX = ".toml"
 DEFAULT = "default"
@@ -1105,6 +1105,6 @@ DEFAULT_LOGO = ThemeLogoFiles(
         alt="Heinzelmännchen",
         height="24px",
     ),
-    directory=Path(__file__).parent / "assets" / "theme",
+    directory=Path(__file__).parent.parent / "assets" / "theme",
 )
 """The built-in theme's logo: the Heinzelmännchen mark and wordmark, package data of the kernel."""

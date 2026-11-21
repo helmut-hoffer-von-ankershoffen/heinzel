@@ -17,10 +17,10 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 from rich.console import RenderableType
 
-from heinzel.kernel._agent_writes import AGENT_WRITES, AgentWrites, ByArguments
-from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._text import clean_text
+from heinzel.kernel.ai._agent_writes import AGENT_WRITES, AgentWrites, ByArguments
+from heinzel.kernel.ai._capabilities import Mode, Requirement
 
 Audience = Literal["everyday", "expert"]
 """Who an operation is for: `everyday` is the small surface newcomers see, `expert` everything else (ADR 0041)."""

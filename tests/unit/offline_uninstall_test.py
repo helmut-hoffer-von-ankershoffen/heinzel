@@ -10,9 +10,9 @@ import pytest
 
 from heinzel import HeinzelError
 from heinzel.heads import cli
-from heinzel.kernel import _installation
-from heinzel.kernel._offline_uv import VerifiedUV
-from heinzel.kernel._tool_uninstall import owned_file
+from heinzel.kernel.install import _installation
+from heinzel.kernel.install._offline_uv import VerifiedUV
+from heinzel.kernel.install._tool_uninstall import owned_file
 from heinzel.modules.system import _uninstall
 from tests.unit.kernel.installation_continuity_test import tool
 

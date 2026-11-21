@@ -34,7 +34,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel.ai._features import feature_enabled
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost
 from heinzel.modules.heinzel._channel_binding import ChannelBinding

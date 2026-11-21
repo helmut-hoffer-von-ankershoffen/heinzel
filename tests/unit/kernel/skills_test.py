@@ -27,7 +27,7 @@ from heinzel.kernel import (
     skill_tools,
     skills_in,
 )
-from heinzel.kernel import _skills as skills
+from heinzel.kernel.ai import _skills as skills
 
 pytestmark = pytest.mark.unit
 

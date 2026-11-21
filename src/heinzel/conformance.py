@@ -158,7 +158,7 @@ class Report:
 
 def versions() -> dict[str, str]:
     """The versions a check ran against: Core, the `ai-models` interface, Pydantic AI and httpx2."""
-    from heinzel.kernel._ai_models import AI_MODELS_INTERFACE  # noqa: PLC0415 - cheap import of this module
+    from heinzel.kernel.ai._ai_models import AI_MODELS_INTERFACE  # noqa: PLC0415 - cheap import of this module
 
     found = {"heinzel": _version("heinzel"), "ai-models interface": AI_MODELS_INTERFACE}
     found["pydantic-ai"] = _version("pydantic-ai-slim")
@@ -271,7 +271,7 @@ def check_adapter(  # noqa: PLR0913 - the adapter, its declaration and the check
     if capability == "ai-models":
         report.findings += _ai_models(adapter, label, live_request=live_request, timeout=timeout)
         return report
-    from heinzel.kernel._capabilities import declared_unsupported  # noqa: PLC0415
+    from heinzel.kernel.ai._capabilities import declared_unsupported  # noqa: PLC0415
 
     skip = declared_unsupported(adapter, spec)
     for method, mode in spec.methods.items():
@@ -326,7 +326,7 @@ def parameters(function: Callable[..., object]) -> list[str]:
 
 
 def _shape(adapter: object, spec: "Capability", served: frozenset[str], label: str) -> list[Finding]:
-    from heinzel.kernel._capabilities import declared_unsupported  # noqa: PLC0415
+    from heinzel.kernel.ai._capabilities import declared_unsupported  # noqa: PLC0415
 
     findings: list[Finding] = []
     declared: object = getattr(adapter, "unsupported", ())
@@ -555,7 +555,7 @@ def _says(method: str, word: str) -> str:
 
 
 def _ai_models(adapter: object, label: str, *, live_request: bool, timeout: float) -> list[Finding]:
-    from heinzel.kernel._ai_models import LIST_TIMEOUT  # noqa: PLC0415
+    from heinzel.kernel.ai._ai_models import LIST_TIMEOUT  # noqa: PLC0415
 
     findings = [
         Finding(label, "shape", f"`{attribute}` must be a plain str")

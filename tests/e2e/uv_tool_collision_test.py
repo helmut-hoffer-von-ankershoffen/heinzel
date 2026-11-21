@@ -138,7 +138,8 @@ def _assert_dangling_guard(root, shim, monkeypatch, run, previous):
     # An unresolved foreign link is invisible to uv's exists() collision check. Our guard must stop
     # the command before its runner, even though the fixture would otherwise let uv replace the link.
     from heinzel import HeinzelError, Progress
-    from heinzel.kernel import Installation, _installation
+    from heinzel.kernel import Installation
+    from heinzel.kernel.install import _installation
 
     dangling = root / "bin" / "fixture-dangling"
     missing = root / "absent-target"

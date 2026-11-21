@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 from heinzel.kernel import HeinzelError, Kernel, OperationLet, using_tick_interval
-from heinzel.kernel._agent_writes import Caller, calling
+from heinzel.kernel.ai._agent_writes import Caller, calling
 
 TICK_MODULE = "system.daemon"
 TICK_OPERATION = "tick"

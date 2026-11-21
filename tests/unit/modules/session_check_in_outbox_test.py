@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from heinzel import CurrentUser, HeinzelError, Notifications
 from heinzel.kernel._jobs import JobInactive
-from heinzel.kernel._session import SessionEvent
+from heinzel.kernel.session._session import SessionEvent
 from heinzel.modules.heinzel import _session_crud as crud
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts

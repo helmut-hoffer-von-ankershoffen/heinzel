@@ -95,7 +95,7 @@ result, contract hints and the shared adapter contract-test suite are not built 
 while building it:
 
 - **Protocol** `AgentRunner.run(prompt, *, contract, tools, timeout, budget) -> AgentResult` in the kernel
-  (`heinzel.kernel._agents`, public in `heinzel`), the capability `agent-runner` with one mode, `read`: a session with
+  (`heinzel.kernel.ai._agents`, public in `heinzel`), the capability `agent-runner` with one mode, `read`: a session with
   read-only tools. `ToolProfile` lists tools in the runner's own naming (empty: its read-only default) and the working
   directory, which must exist; `Budget` has `max_usd`. `AgentResult` carries runner, model, status (`completed`,
   `timeout`, `budget`, `failed`), draft, tool calls by name, turns, token usage and cost, duration, why it didn't

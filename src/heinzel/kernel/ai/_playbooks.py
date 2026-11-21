@@ -17,12 +17,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
 
-from heinzel.kernel._capabilities import CAPABILITIES
 from heinzel.kernel._config import ConfigEditor
 from heinzel.kernel._duration import parse_window
 from heinzel.kernel._lets import Let
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._text import clean_text
+from heinzel.kernel.ai._capabilities import CAPABILITIES
 
 SLUG = re.compile(r"^[a-z](?:-?[a-z0-9])*$")
 """Asset type and template names: lowercase words joined by single dashes, like contract names."""

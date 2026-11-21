@@ -39,7 +39,7 @@ from heinzel import (
     redact_emails,
 )
 from heinzel.kernel import Effort, clean_text
-from heinzel.kernel._ai_models import build_model, choose, effort_settings, list_offers, model_failure
+from heinzel.kernel.ai._ai_models import build_model, choose, effort_settings, list_offers, model_failure
 from heinzel.modules.ai.access._engine_history import SessionHistory, capped, session_of, stopped
 from heinzel.modules.ai.access._file_tools import TOOL_NAMES, TOOL_SECONDS, ConfinedFiles, FileToolError, too_wide
 from heinzel.modules.ai.access._file_tools import run as run_file_tool

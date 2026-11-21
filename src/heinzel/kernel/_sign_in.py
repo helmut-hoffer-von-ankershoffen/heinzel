@@ -14,9 +14,9 @@ from typing import Literal, Protocol, Self, runtime_checkable
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from heinzel.kernel._capabilities import MODES, Mode
 from heinzel.kernel._lets import NAME_PATTERN, Let
 from heinzel.kernel._text import clean_text
+from heinzel.kernel.ai._capabilities import MODES, Mode
 
 GrantState = Literal["granted", "missing", "unknown"]
 """Whether the vendor confirms a grant: granted, confirmed absent, or unknown because nothing says (ADR 0136)."""

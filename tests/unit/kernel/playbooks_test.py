@@ -6,7 +6,7 @@ import pytest
 
 from heinzel import AssetType, ChatDraftTemplate, ContractTemplate, DiscoveryHint, Module, PlaybookLet, SetupLet
 from heinzel.kernel import PlaybookSetup
-from heinzel.kernel._playbooks import templates_in
+from heinzel.kernel.ai._playbooks import templates_in
 
 pytestmark = pytest.mark.unit
 

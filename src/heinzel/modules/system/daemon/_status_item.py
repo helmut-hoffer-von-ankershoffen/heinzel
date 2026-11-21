@@ -11,7 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 from heinzel import DetailLine, LiveTime, RunCommand, RunOperation, StatusItem, WidgetAction, __version__
 from heinzel.modules.system.daemon._models import DaemonStatus
-from heinzel.modules.system.daemon._service import DEFAULT_INTERVAL, PLATFORMS
+from heinzel.modules.system.daemon._service import DEFAULT_INTERVAL
+from heinzel.modules.system.daemon._units import PLATFORMS
 
 STALE_INTERVALS = 2
 """A last tick older than this many intervals means the daemon isn't ticking."""

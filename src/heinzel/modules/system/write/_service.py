@@ -20,8 +20,8 @@ from pydantic import ValidationError
 
 from heinzel import HeinzelError, Kernel
 from heinzel.kernel import AgentWriteLog, ByArguments, Caller, OperationLet, declared_agent_writes
-from heinzel.kernel._agent_writes import AgentWrites as Policy
-from heinzel.kernel._agent_writes import WriteOutcome, arguments_digest, reaches_people, target_of
+from heinzel.kernel.ai._agent_writes import AgentWrites as Policy
+from heinzel.kernel.ai._agent_writes import WriteOutcome, arguments_digest, reaches_people, target_of
 from heinzel.modules.system.write._models import AgentWrite, AgentWrites, CallerActivity, PluginWrite, PluginWrites
 
 PRIVATE_DIR = 0o700

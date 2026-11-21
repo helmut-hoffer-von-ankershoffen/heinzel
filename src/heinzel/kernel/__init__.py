@@ -3,66 +3,11 @@
 The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
 """
 
-from heinzel.kernel._agent_writes import (
-    AgentWriteLog,
-    AgentWrites,
-    ByArguments,
-    Caller,
-    WriteBudget,
-    agent_writes,
-    audit_write,
-    calling,
-    current_caller,
-    declared_agent_writes,
-)
-from heinzel.kernel._agents import (
-    AgentResult,
-    AgentRunner,
-    Billing,
-    Budget,
-    ChatToolSet,
-    Effort,
-    HzTools,
-    McpServer,
-    RunStatus,
-    TokenUsage,
-    ToolProfile,
-)
-from heinzel.kernel._ai import (
-    AccessStatus,
-    AccessTest,
-    AiAccess,
-    AiAccessWebAttempt,
-    AiAccessWebSignIn,
-    UsageCause,
-    UsageEntry,
-    UsageLog,
-    record_usage,
-)
-from heinzel.kernel._ai_models import (
-    AI_MODELS_INTERFACE,
-    AiModelOptions,
-    AiModels,
-    AiModelsSource,
-    ModelId,
-    ModelOffer,
-    ModelUnavailableError,
-)
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
-from heinzel.kernel._capabilities import (
-    CAPABILITIES,
-    MODES,
-    NO_ADAPTER,
-    Capability,
-    Mode,
-    Requirement,
-    declared_unsupported,
-)
-from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._captured_write import (
     CapturedWriteAcknowledgement,
@@ -84,28 +29,6 @@ from heinzel.kernel._channels import (
     NotificationChannel,
     VerifiedChannelReply,
 )
-from heinzel.kernel._chat import ActionGate, ProposedCall
-from heinzel.kernel._chat_services import (
-    FOUND_MODULE,
-    CheckInChatContext,
-    CheckInChatContextSource,
-    CheckInHistoryMessage,
-    FoundMcpDiagnostic,
-    FoundMcpServers,
-    FoundMcpTool,
-    McpChatSessions,
-)
-from heinzel.kernel._chat_tools import (
-    ChatTool,
-    ChatToolError,
-    FoundTool,
-    TurnTool,
-    chat_tools,
-    direct_tools,
-    found_tools,
-    pydantic_ai_tools,
-    untrusted,
-)
 from heinzel.kernel._config import (
     FILENAME,
     KERNEL_SECTION,
@@ -125,46 +48,6 @@ from heinzel.kernel._connected_read import (
     ConnectedReadMethod,
     ConnectedReadReview,
     ConnectedReadService,
-)
-from heinzel.kernel._contributions import (
-    ICONS,
-    ActionLet,
-    Avatar,
-    Badge,
-    CardWidget,
-    ChartPoint,
-    ChartRange,
-    ChartWidget,
-    ContributionLet,
-    DetailLine,
-    Effect,
-    GraphicWidget,
-    Icon,
-    ListEntry,
-    ListWidget,
-    Live,
-    LiveClock,
-    LiveTime,
-    LiveUntil,
-    MetricWidget,
-    Navigate,
-    NavLet,
-    NavSettings,
-    OpenUrl,
-    OperationCall,
-    ProgressWidget,
-    RunCommand,
-    RunOperation,
-    Slot,
-    StatusItem,
-    StatusLet,
-    StatusMeter,
-    ToggleControl,
-    Tone,
-    Widget,
-    WidgetAction,
-    WidgetLet,
-    link_problem,
 )
 from heinzel.kernel._credentials import (
     CredentialBackend,
@@ -225,7 +108,6 @@ from heinzel.kernel._exposure import (
     input_schema,
     restricts,
 )
-from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -235,27 +117,7 @@ from heinzel.kernel._git import (
     git_command,
 )
 from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
-from heinzel.kernel._host_maintenance import (
-    HostIntegration,
-    HostIntegrationScope,
-    HostMaintenanceIntegration,
-    HostServiceManager,
-    MaintenanceLocks,
-    host_maintenance_directory,
-    host_maintenance_gate,
-    host_maintenance_lock,
-)
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
-from heinzel.kernel._installation import (
-    CORE_DISTRIBUTION,
-    EDGE_WHEEL_PREFIX,
-    CorePin,
-    IndexPluginPin,
-    Installation,
-    ToolConstraintPolicy,
-    requirement_from_receipt,
-)
-from heinzel.kernel._installation_mutations import installation_mutation_paths, installation_mutation_pending
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
 from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -293,7 +155,6 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
-from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import (
     CapabilityState,
@@ -304,17 +165,8 @@ from heinzel.kernel._notifications import (
     Notifications,
     ResolveWhen,
 )
-from heinzel.kernel._offline_uninstall import OfflineUninstall, UninstallResult
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
-from heinzel.kernel._playbooks import (
-    AssetType,
-    ChatDraftTemplate,
-    ContractTemplate,
-    DiscoveryHint,
-    PlaybookLet,
-    PlaybookSetup,
-)
 from heinzel.kernel._prerequisites import (
     PREREQUISITE_CONTEXTS,
     PREREQUISITE_READY,
@@ -328,7 +180,6 @@ from heinzel.kernel._prerequisites import (
     PrerequisiteService,
     PrerequisiteStatus,
 )
-from heinzel.kernel._presence import Presence
 from heinzel.kernel._private_control import (
     PrivateControl,
     private_directory,
@@ -389,19 +240,8 @@ from heinzel.kernel._protocols import (
     free_busy_people,
     plain_addresses,
 )
-from heinzel.kernel._release import (
-    EdgeRelease,
-    PluginNews,
-    PluginRelease,
-    PluginReleases,
-    ReleaseCache,
-    ReleaseFacts,
-    ReleaseSource,
-)
 from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
-from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
-from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._sign_in import (
     FLOW_ENDED,
@@ -417,10 +257,85 @@ from heinzel.kernel._sign_in import (
     SignInStatus,
 )
 from heinzel.kernel._signals import SIGNALS, Signal
-from heinzel.kernel._skills import (
+from heinzel.kernel._source_loading import SourceGuardedConnectedService
+from heinzel.kernel._telemetry import (
+    HEINZEL_ID,
+    VERBS,
+    TelemetryEntry,
+    TelemetryLog,
+    TelemetryRead,
+    Verb,
+    check_target,
+)
+from heinzel.kernel._text import clean_text, redact_emails
+from heinzel.kernel.ai._agent_writes import (
+    AgentWriteLog,
+    AgentWrites,
+    ByArguments,
+    Caller,
+    WriteBudget,
+    agent_writes,
+    audit_write,
+    calling,
+    current_caller,
+    declared_agent_writes,
+)
+from heinzel.kernel.ai._agents import (
+    AgentResult,
+    AgentRunner,
+    Billing,
+    Budget,
+    ChatToolSet,
+    Effort,
+    HzTools,
+    McpServer,
+    RunStatus,
+    TokenUsage,
+    ToolProfile,
+)
+from heinzel.kernel.ai._ai import (
+    AccessStatus,
+    AccessTest,
+    AiAccess,
+    AiAccessWebAttempt,
+    AiAccessWebSignIn,
+    UsageCause,
+    UsageEntry,
+    UsageLog,
+    record_usage,
+)
+from heinzel.kernel.ai._ai_models import (
+    AI_MODELS_INTERFACE,
+    AiModelOptions,
+    AiModels,
+    AiModelsSource,
+    ModelId,
+    ModelOffer,
+    ModelUnavailableError,
+)
+from heinzel.kernel.ai._capabilities import (
+    CAPABILITIES,
+    MODES,
+    NO_ADAPTER,
+    Capability,
+    Mode,
+    Requirement,
+    declared_unsupported,
+)
+from heinzel.kernel.ai._capability_schema import capability_read_schema
+from heinzel.kernel.ai._features import feature_catalog, feature_enabled
+from heinzel.kernel.ai._playbooks import (
+    AssetType,
+    ChatDraftTemplate,
+    ContractTemplate,
+    DiscoveryHint,
+    PlaybookLet,
+    PlaybookSetup,
+)
+from heinzel.kernel.ai._skills import (
     MAX_LOAD as MAX_SKILL_LOAD,
 )
-from heinzel.kernel._skills import (
+from heinzel.kernel.ai._skills import (
     LoadedSkill,
     Skill,
     SkillEntry,
@@ -436,10 +351,93 @@ from heinzel.kernel._skills import (
     skill_tools,
     skills_in,
 )
-from heinzel.kernel._skills import (
+from heinzel.kernel.ai._skills import (
     name_problem as skill_name_problem,
 )
-from heinzel.kernel._soundscapes import (
+from heinzel.kernel.install._host_maintenance import (
+    HostIntegration,
+    HostIntegrationScope,
+    HostMaintenanceIntegration,
+    HostServiceManager,
+    MaintenanceLocks,
+    host_maintenance_directory,
+    host_maintenance_gate,
+    host_maintenance_lock,
+)
+from heinzel.kernel.install._installation import (
+    CORE_DISTRIBUTION,
+    EDGE_WHEEL_PREFIX,
+    CorePin,
+    IndexPluginPin,
+    Installation,
+    ToolConstraintPolicy,
+    requirement_from_receipt,
+)
+from heinzel.kernel.install._installation_mutations import installation_mutation_paths, installation_mutation_pending
+from heinzel.kernel.install._metadata_verifier import CoreMetadataVerifier
+from heinzel.kernel.install._offline_uninstall import OfflineUninstall, UninstallResult
+from heinzel.kernel.install._release import (
+    EdgeRelease,
+    PluginNews,
+    PluginRelease,
+    PluginReleases,
+    ReleaseCache,
+    ReleaseFacts,
+    ReleaseSource,
+)
+from heinzel.kernel.install._tool_uninstall import (
+    OwnedFile as OwnedIntegrationFile,
+)
+from heinzel.kernel.install._tool_uninstall import (
+    owned_file as capture_owned_integration_file,
+)
+from heinzel.kernel.install._tool_uninstall import (
+    physical_directory as verify_integration_directory,
+)
+from heinzel.kernel.install._tool_uninstall import (
+    remove_owned_file as remove_owned_integration_file,
+)
+from heinzel.kernel.look._contributions import (
+    ICONS,
+    ActionLet,
+    Avatar,
+    Badge,
+    CardWidget,
+    ChartPoint,
+    ChartRange,
+    ChartWidget,
+    ContributionLet,
+    DetailLine,
+    Effect,
+    GraphicWidget,
+    Icon,
+    ListEntry,
+    ListWidget,
+    Live,
+    LiveClock,
+    LiveTime,
+    LiveUntil,
+    MetricWidget,
+    Navigate,
+    NavLet,
+    NavSettings,
+    OpenUrl,
+    OperationCall,
+    ProgressWidget,
+    RunCommand,
+    RunOperation,
+    Slot,
+    StatusItem,
+    StatusLet,
+    StatusMeter,
+    ToggleControl,
+    Tone,
+    Widget,
+    WidgetAction,
+    WidgetLet,
+    link_problem,
+)
+from heinzel.kernel.look._soundscapes import (
     SOUND_CSP,
     SOUND_ROUTE,
     STREAM_PROVIDERS,
@@ -452,19 +450,8 @@ from heinzel.kernel._soundscapes import (
     StreamProvider,
     ThemeChoice,
 )
-from heinzel.kernel._source_loading import SourceGuardedConnectedService
-from heinzel.kernel._telemetry import (
-    HEINZEL_ID,
-    VERBS,
-    TelemetryEntry,
-    TelemetryLog,
-    TelemetryRead,
-    Verb,
-    check_target,
-)
-from heinzel.kernel._text import clean_text, redact_emails
-from heinzel.kernel._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
-from heinzel.kernel._themes import (
+from heinzel.kernel.look._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
+from heinzel.kernel.look._themes import (
     DEFAULT_LOGO,
     DEFAULT_THEME,
     FONT_ROUTE,
@@ -482,19 +469,32 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
-from heinzel.kernel._tool_uninstall import (
-    OwnedFile as OwnedIntegrationFile,
+from heinzel.kernel.look._views import ViewLet, ViewSlot, read_view_asset
+from heinzel.kernel.session._chat import ActionGate, ProposedCall
+from heinzel.kernel.session._chat_services import (
+    FOUND_MODULE,
+    CheckInChatContext,
+    CheckInChatContextSource,
+    CheckInHistoryMessage,
+    FoundMcpDiagnostic,
+    FoundMcpServers,
+    FoundMcpTool,
+    McpChatSessions,
 )
-from heinzel.kernel._tool_uninstall import (
-    owned_file as capture_owned_integration_file,
+from heinzel.kernel.session._chat_tools import (
+    ChatTool,
+    ChatToolError,
+    FoundTool,
+    TurnTool,
+    chat_tools,
+    direct_tools,
+    found_tools,
+    pydantic_ai_tools,
+    untrusted,
 )
-from heinzel.kernel._tool_uninstall import (
-    physical_directory as verify_integration_directory,
-)
-from heinzel.kernel._tool_uninstall import (
-    remove_owned_file as remove_owned_integration_file,
-)
-from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
+from heinzel.kernel.session._presence import Presence
+from heinzel.kernel.session._session import SessionEvent, SessionHead, SessionProjector, SessionRead
+from heinzel.kernel.session._session_store import SessionStore, SessionWriter
 
 __all__ = [
     "AI_MODELS_INTERFACE",

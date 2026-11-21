@@ -22,8 +22,9 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.models.test import TestModel
 
 from heinzel import Budget, Config, Credentials, CurrentUser, HeinzelError, McpServer, Progress, Settings, ToolProfile
-from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models, _claude_code
-from heinzel.kernel._ai_models import OUTPUT_TOKENS, PROMPT_CACHE
+from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _claude_code
+from heinzel.kernel.ai import _ai_models
+from heinzel.kernel.ai._ai_models import OUTPUT_TOKENS, PROMPT_CACHE
 from heinzel.modules.ai.access._engine_history import SessionHistory
 from heinzel.modules.ai.access._engine_runner import ENGINE, EngineModel, EngineRunner, SelectedModels
 from heinzel.modules.ai.access._models import AccessSettings

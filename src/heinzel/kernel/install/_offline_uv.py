@@ -13,7 +13,7 @@ from pathlib import Path
 
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._private_control import private_directory
-from heinzel.kernel._tool_uninstall import owned_file, physical_directory
+from heinzel.kernel.install._tool_uninstall import owned_file, physical_directory
 
 VERSION = "0.13.7"
 # Independent hashes of native bytes and WHEEL from Astral's archive-hash-verified PyPI wheels.

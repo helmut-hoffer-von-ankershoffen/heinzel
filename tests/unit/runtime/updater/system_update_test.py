@@ -787,7 +787,7 @@ def test_removed_interpreter_after_failed_update_still_triggers_restore(tmp_path
 
 @pytest.mark.parametrize("wrong", ["version", "plugin_source"])
 def test_successful_update_rejects_wrong_metadata_before_starting_target(tmp_path, wrong):
-    from heinzel.kernel._installed_metadata import inspect_requirements
+    from heinzel.kernel.install._installed_metadata import inspect_requirements
 
     uv = FakeUv("0.2.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
@@ -825,7 +825,7 @@ def test_successful_update_rejects_wrong_metadata_before_starting_target(tmp_pat
 
 
 def test_successful_fallback_refuses_a_dropped_plugin_still_installed(tmp_path):
-    from heinzel.kernel._installed_metadata import inspect_requirements
+    from heinzel.kernel.install._installed_metadata import inspect_requirements
 
     uv = FakeUv("0.2.0")
     uv.failures = [BLOCKED, BLOCKED]
@@ -1164,7 +1164,7 @@ def test_failed_uv_with_changed_identity_stays_pending(tmp_path):
 
 
 def test_stale_running_process_cannot_automatically_downgrade_newer_installed_core(tmp_path):
-    from heinzel.kernel._installed_metadata import inspect_requirements
+    from heinzel.kernel.install._installed_metadata import inspect_requirements
 
     uv = FakeUv("0.9.9")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.9.9"', uv)
@@ -1526,7 +1526,7 @@ def test_initial_version_rejects_generation_change_during_inspection(tmp_path):
 
 @pytest.mark.parametrize("wrong", ["none", "source", "hash"])
 def test_index_update_uses_pre_uv_direct_constraint_before_runtime(tmp_path, wrong):
-    from heinzel.kernel._installed_metadata import inspect_requirements
+    from heinzel.kernel.install._installed_metadata import inspect_requirements
 
     uv = FakeUv("0.9.6")
     uv.next_version = "0.9.7"
@@ -1837,7 +1837,7 @@ def test_update_forwards_explicit_and_checkpoint_wheel_hashes_without_changing_r
 
 
 def test_update_never_obtains_preserved_hash_authority_without_a_valid_checkpoint(tmp_path, monkeypatch):
-    from heinzel.kernel import _installation
+    from heinzel.kernel.install import _installation
 
     uv = FakeUv("0.9.6")
     target = installation(tmp_path, 'specifier = ">=0.9"', uv)

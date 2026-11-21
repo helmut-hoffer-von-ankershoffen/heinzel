@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.kernel._installation_continuity import external_python
+from heinzel.kernel.install._installation_continuity import external_python
 
 
 def copy_managed_installation(installation, copied):

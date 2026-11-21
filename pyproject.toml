@@ -374,7 +374,7 @@ forbidden_modules = ["heinzel.heads"]
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: system's submodules don't import each other"
 type = "independence"
-modules = ["heinzel.modules.system.agent", "heinzel.modules.system.bookmark", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui", "heinzel.modules.system.updater", "heinzel.modules.system.write"]
+modules = ["heinzel.modules.system.agent", "heinzel.modules.system.bookmark", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.client", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui", "heinzel.modules.system.updater", "heinzel.modules.system.write"]
 # Edges the move into `updater` made visible (the files were system's own before); they may only shrink.
 ignore_imports = [
     "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
@@ -395,9 +395,9 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._connected_read", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
-    "heinzel.kernel._git", "heinzel.kernel._presence",
-    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings", "heinzel.kernel._session", "heinzel.kernel._session_io", "heinzel.kernel._session_store", "heinzel.kernel._skills", "heinzel.kernel._signals", "heinzel.kernel._soundscapes",
+    "heinzel.kernel.ai._agents", "heinzel.kernel._bindings", "heinzel.kernel.session._chat", "heinzel.kernel._boot", "heinzel.kernel.ai._capabilities", "heinzel.kernel._config", "heinzel.kernel._connected_read", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel.install._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
+    "heinzel.kernel._git", "heinzel.kernel.session._presence",
+    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel.install._release", "heinzel.kernel._settings", "heinzel.kernel.session._session", "heinzel.kernel.session._session_io", "heinzel.kernel.session._session_store", "heinzel.kernel.ai._skills", "heinzel.kernel._signals", "heinzel.kernel.look._soundscapes",
     "heinzel.kernel._protocols", "heinzel.kernel._spec", "heinzel.kernel._telemetry",
 ]
 allow_indirect_imports = true

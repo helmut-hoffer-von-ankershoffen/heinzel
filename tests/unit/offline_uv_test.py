@@ -11,7 +11,7 @@ from subprocess import CompletedProcess
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.kernel import _offline_uv
+from heinzel.kernel.install import _offline_uv
 
 pytestmark = pytest.mark.unit
 
