@@ -184,7 +184,18 @@ describe("Footer items are icons with a state and a pane", () => {
   const widthBefore = window.innerWidth;
   afterEach(() => {
     window.innerWidth = widthBefore;
+    vi.useRealTimers();
   });
+
+  // The calendar lists events of the current day, and these meetings sit up to 15 minutes ahead: pin the
+  // clock (the date only, so waits stay real) to local noon, or the test fails when it runs near midnight.
+  function noon(): number {
+    const at = new Date();
+    at.setHours(12, 0, 0, 0);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(at);
+    return at.getTime();
+  }
 
   it("gives each state its own colour and accessible state, and passes axe", async () => {
     mockApi(states);
@@ -322,7 +333,7 @@ describe("Footer items are icons with a state and a pane", () => {
   });
 
   it("shows current and next meeting together and opens the week", async () => {
-    const now = Date.now();
+    const now = noon();
     const current = {
       title: "Standup",
       start: new Date(now - 60_000).toISOString(),
@@ -370,7 +381,7 @@ describe("Footer items are icons with a state and a pane", () => {
   });
 
   it("draws no dead Decline, Extend or running-late button once the calendar is writable", async () => {
-    const now = Date.now();
+    const now = noon();
     const current = {
       title: "Standup",
       start: new Date(now - 60_000).toISOString(),
@@ -393,7 +404,7 @@ describe("Footer items are icons with a state and a pane", () => {
   });
 
   it("only renders safe conference links in the calendar", async () => {
-    const now = Date.now();
+    const now = noon();
     const base = {
       start: new Date(now - 60_000).toISOString(),
       end: new Date(now + 300_000).toISOString(),
