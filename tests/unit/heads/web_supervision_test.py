@@ -44,8 +44,9 @@ def test_publication_failure_keeps_shutdown_and_sanitizes_error(caplog, monkeypa
     assert announced == []
     assert publication.control is None
     assert len(caplog.records) == 1
-    assert caplog.records[0].exc_info is None
-    assert caplog.records[0].getMessage() == f"Owned web publication failed: category={category} errno={number}"
+    assert not caplog.records[0].exc_info
+    record = caplog.records[0]
+    assert (record.getMessage(), record.category, record.errno) == ("web.publication.failed", category, number)
     assert "private-error-body" not in caplog.text
     assert "/private/example" not in caplog.text
     assert "#token=" not in caplog.text

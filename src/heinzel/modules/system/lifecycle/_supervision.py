@@ -21,6 +21,7 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.kernel._logging import log_event
 
 logger = logging.getLogger(__name__)
 _MAX_ERRNO = 4095
@@ -179,7 +180,7 @@ class WebPublication:
             category = "os" if isinstance(exc, OSError) else "value" if isinstance(exc, ValueError) else "ownership"
             number = exc.errno if isinstance(exc, OSError) else None
             errno = str(number) if type(number) is int and 1 <= number <= _MAX_ERRNO else "none"
-            logger.warning("Owned web publication failed: category=%s errno=%s", category, errno)
+            log_event(logger, "web.publication.failed", level=logging.WARNING, category=category, errno=errno)
             self.failed()
 
     def close(self) -> None:
