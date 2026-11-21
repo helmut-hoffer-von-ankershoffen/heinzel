@@ -31,7 +31,7 @@ TAIL = 40
 POLL = 0.05
 STOP_GRACE = 0.5
 REAP_TIMEOUT = 2.0
-ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+ANSI = re.compile(r"\x1b\[" r"[0-9;?]*[A-Za-z]")  # split so Copier sees none of its delimiters
 # `uv run --script` points VIRTUAL_ENV at this script's own environment; steps run project commands (`uv run ...`),
 # which would warn on every step that it doesn't match the project's .venv.
 ENV = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"} | {
@@ -237,7 +237,8 @@ def main(argv: list[str]) -> int:
     handlers = {sig: signal.signal(sig, interruption.receive) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         verbose = os.environ.get("VERBOSE", "") not in {"", "0"}
-        execution = [[step] for group in plan for step in group] if verbose else plan
+        singles = ([step] for group in plan for step in group)  # one group per step, streamed in order
+        execution = list(singles) if verbose else plan
         return run_plan(execution, timeout, interruption, verbose=verbose)
     finally:
         for sig, handler in handlers.items():
