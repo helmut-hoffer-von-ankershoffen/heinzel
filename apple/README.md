@@ -73,3 +73,16 @@ the existing durable chat API; the regular web interface is unchanged. A confirm
 to follow the response. Unconfirmed sends keep a private copy on this device and retry with the same request ID,
 so a lost acknowledgement does not duplicate the prompt. **Discard** removes that retry copy but does not cancel
 work the host may already have accepted. Prompt text is never saved in shared widget storage or widget links.
+
+## TestFlight without an Apple ID session
+
+`apple/scripts/testflight` talks to App Store Connect with an API key (ASC_KEY_ID, ASC_ISSUER_ID and
+ASC_KEY_PATH from `~/.appstoreconnect/heinzel-mini.env`, override with `ASC_ENV_FILE`; the key is never printed).
+
+- `testflight upload X.xcarchive` runs `xcodebuild -exportArchive` with `distribution/ExportOptions-testflight.plist`
+  (`destination=upload`) and the `-authenticationKey*` flags, so no Xcode sign-in is needed.
+- `testflight status [BUILD]` lists processing state and group membership of "Heinzel Internal Auto".
+- That internal group has automatic distribution ON (set once in the web UI; Apple refuses it over the API,
+  `hasAccessToAllBuilds` cannot be updated), so every processed build reaches the testers by itself.
+- `testflight assign [BUILD]` is therefore optional: it adds a processed build the group does not hold yet.
+- `testflight setup` only reports the group's `hasAccessToAllBuilds` state.
