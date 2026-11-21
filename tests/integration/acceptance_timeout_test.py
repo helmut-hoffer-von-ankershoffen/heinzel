@@ -1,11 +1,14 @@
 """Real collection keeps the batched acceptance-row expressions under the normal unit deadline."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.integration
 
@@ -39,8 +42,9 @@ raise SystemExit(pytest.main(
         cwd=Path(__file__).resolve().parents[2],
         capture_output=True,
         text=True,
-        timeout=12,
+        timeout=scaled(12),
         check=False,
+        env={**os.environ, "HZ_TEST_TIMEOUT_SCALE": "1"},  # the probe checks the unscaled five-second contract
     )
     assert result.returncode == 0, result.stdout + result.stderr
     collected = json.loads(report.read_text())

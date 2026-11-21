@@ -14,6 +14,12 @@ from tests.e2e._ui_service import RunningService
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def unscaled_deadlines(monkeypatch):
+    """These tests check the 12 s readiness contract against a simulated clock, so the CI scale must not move it."""
+    monkeypatch.setenv("HZ_TEST_TIMEOUT_SCALE", "1")
+
+
 class HungChild:
     def __init__(self, output=b"", errors=b""):
         self.output, self.errors = output, errors
