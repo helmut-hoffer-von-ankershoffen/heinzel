@@ -144,6 +144,8 @@ def test_build_only_copies_the_wheel_and_installs_nothing(tmp_path, commands, ca
     assert curl[0] == "curl"
     assert bootstrap.SOURCE_URL in curl
     assert curl[curl.index("--proto") + 1] == "=https"
+    assert curl[curl.index("--retry") + 1] == "5"  # a DNS blip must not fail the job (curl exit 6)
+    assert "--retry-all-errors" in curl
     assert curl[curl.index("--proto-redir") + 1] == "=https"
     assert venv[:4] == ["uv", "venv", "--python", "3.15"]
     assert backend[:3] == ["uv", "pip", "install"]
