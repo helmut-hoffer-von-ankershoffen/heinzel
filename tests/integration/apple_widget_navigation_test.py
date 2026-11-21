@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_webview_auth_context_is_immutable_and_main_frame_scoped() -> None:
-    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    source = "\n".join(
+        (ROOT / "apple/App" / f"{n}.swift").read_text(encoding="utf-8")
+        for n in ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    )
     navigation = source.split("final class Navigation:", 1)[1]
     assert "private let widgetActivation: ActivityCatalog.Activation?" in navigation
     assert (
@@ -50,7 +53,10 @@ def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:
 
 
 def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None:
-    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    source = "\n".join(
+        (ROOT / "apple/App" / f"{n}.swift").read_text(encoding="utf-8")
+        for n in ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    )
     enrollment = source.split("private func scheduleWidgetEnrollment", 1)[1].split("\n    func webView(", 1)[0]
     assert "WidgetCredentialStore.configured()" in enrollment
     assert "self.documentRevision == revision" in enrollment

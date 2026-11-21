@@ -104,7 +104,7 @@ ALLOWED_PATHS = [
     r"^docs/overrides/[^/]+\.html$",
     r"^web/src/(components|pages|layout|splash)/.+\.(tsx?|css)$",
     r"^web/src/index\.css$",
-    r"^web/src/i18n\.ts$",  # the app's words; only plain string entries may change (I18N_ENTRY)
+    r"^web/src/(i18n|messages/[\w-]+)\.ts$",  # the app's words; only plain string entries may change (I18N_ENTRY)
 ]
 DERIVED = {"README.md": ["template/README.md.jinja"]}  # generated from the key by `generate_docs.py`
 CODE = re.compile(r"\.(tsx?|css|html)$")
@@ -419,7 +419,9 @@ def diff_reasons(change: Change) -> list[str]:
             reasons.append("changes inline code, a command or an external link")
     else:
         for number, line in change.added:
-            if change.path == "web/src/i18n.ts" and not I18N_ENTRY.fullmatch(line.strip()):
+            if re.fullmatch(r"web/src/(i18n|messages/[\w-]+)\.ts", change.path) and not I18N_ENTRY.fullmatch(
+                line.strip()
+            ):
                 reasons.append(f"line {number}: not a plain string entry")
             elif DANGEROUS.search(line):
                 reasons.append(f"line {number}: security-sensitive or network code")

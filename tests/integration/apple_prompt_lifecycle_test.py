@@ -25,7 +25,7 @@ def test_prompt_sheet_and_suspended_send_lifecycle(tmp_path):
     close = sheet.split('connectionSheetHeader("Write a Prompt")', 1)[1].split("if composer.scope", 1)[0]
     assert ".disabled(composer.sending)" not in close
 
-    source = (ROOT / "apple/App/WorkspaceView.swift").read_text()
+    source = (ROOT / "apple/App/NativePrompt.swift").read_text(encoding="utf-8")
     composer = source.split("struct NativePromptRequest:", 1)[1].split("\nstruct WorkspaceView:", 1)[0]
     composer = "struct NativePromptRequest:" + composer
     # Keep the production persistence logic, but isolate its Application Support root for this probe.

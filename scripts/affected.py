@@ -143,7 +143,7 @@ def make_variable(text: str, name: str) -> str | None:
     return None
 
 
-WEB_SHARED = re.compile(r"^web/src/(?:i18n\.ts|index\.css|api/|lib/|components/ui/|splash/|lifecycle/)")
+WEB_SHARED = re.compile(r"^web/src/(?:i18n\.ts|messages/|index\.css|api/|lib/|components/ui/|splash/|lifecycle/)")
 
 
 class Repo:

@@ -38,6 +38,11 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
         {"full": False, "vitest": ["ALL"], "jobs_not": ["test-linux"]},
     ),
     (
+        "web shared messages",
+        ["web/src/messages/chat.ts", "web/src/layout/SearchPalette.tsx"],
+        {"full": False, "vitest": ["ALL"], "jobs_not": ["test-linux"]},
+    ),
+    (
         "docs only",
         ["docs/guides/install.md", "README.md"],
         {
