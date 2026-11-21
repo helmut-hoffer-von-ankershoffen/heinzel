@@ -75,19 +75,19 @@ type Mode = Literal["new", "keep", "drop"]
 REASON_LENGTH = 300
 
 
-def _release_version(target: str | None) -> str | None:
+def release_version(target: str | None) -> str | None:
     """The version a release tag `vX.Y.Z` names; None for any other source."""
     if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*", target):
         return target.removeprefix("v")
     return None
 
 
-def _is_conflict(output: str) -> bool:
+def is_conflict(output: str) -> bool:
     """Whether uv's output says the requirements can't be resolved together, as opposed to a failure to fetch."""
     return bool(re.search(r"no solution found|unsatisfiable|depends on|conflict", output, re.IGNORECASE))
 
 
-def _reason(output: str) -> str:
+def uv_reason(output: str) -> str:
     """The line of uv's output that says why, shortened: the first one that names a cause, else the last one."""
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     line = next(
@@ -103,7 +103,7 @@ def _reason(output: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class _Before:
+class Before:
     """The tool before an automatic update: its generation, and for a move to another interpreter its content."""
 
     generation: str
@@ -113,7 +113,7 @@ class _Before:
     """Whether the continuity record matched before; only then is it renewed after a put-back."""
 
 
-_ORIGINALS: ContextVar[Mapping[str, _Before]] = ContextVar("update_originals", default=MappingProxyType({}))
+ORIGINALS: ContextVar[Mapping[str, Before]] = ContextVar("update_originals", default=MappingProxyType({}))
 """Each generation captured before a move to another interpreter, with what a restore of it must match."""
 
 
@@ -132,7 +132,7 @@ def _sentence(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def _pinned(plugin: CorePin) -> str | None:
+def pinned_ref(plugin: CorePin) -> str | None:
     """What `plugin`'s install spec pins it to, so an update reinstalls the same; None if it follows newer ones."""
     ref = plugin.ref or ""
     if plugin.kind in {"release", "commit", "url", "local"} or (plugin.kind == "index" and ref.startswith("==")):
@@ -141,7 +141,7 @@ def _pinned(plugin: CorePin) -> str | None:
 
 
 @dataclass(frozen=True)
-class _Agreed:
+class Agreed:
     """What one `update` call was allowed to move: nothing, unless a person agreed to a plan."""
 
     moves: Mapping[str, str] = field(default_factory=dict[str, str])
@@ -150,7 +150,7 @@ class _Agreed:
     """The pinned plugins whose releases the plan asked and found nothing newer or moved: none is "not checked"."""
 
     @classmethod
-    def of(cls, plan: UpdatePlan | None) -> "_Agreed":
+    def of(cls, plan: UpdatePlan | None) -> "Agreed":
         """The moves of `plan`; nothing without one."""
         if plan is None:
             return cls()
@@ -160,11 +160,11 @@ class _Agreed:
         )
 
 
-_AGREED: ContextVar[_Agreed] = ContextVar("heinzel_update_agreed", default=_Agreed())  # noqa: B039 - frozen, never changed
+AGREED: ContextVar[Agreed] = ContextVar("heinzel_update_agreed", default=Agreed())  # noqa: B039 - frozen, never changed
 """The agreement of the `update` call running in this thread or task; never shared between requests."""
 
 
-def _verify_core_selection(selected: str, current: str, minimum: str | None, *, explicit_source: bool) -> None:
+def verify_core_selection(selected: str, current: str, minimum: str | None, *, explicit_source: bool) -> None:
     """Check the resolved version before any changed Core code is started.
 
     Raises:
@@ -181,7 +181,7 @@ def _verify_core_selection(selected: str, current: str, minimum: str | None, *, 
         raise HeinzelError(msg)
 
 
-def _install_message(  # noqa: PLR0913 - report the resolved version and how the source was chosen
+def install_message(  # noqa: PLR0913 - report the resolved version and how the source was chosen
     current: str,
     after: str,
     latest: str | None,
@@ -196,7 +196,7 @@ def _install_message(  # noqa: PLR0913 - report the resolved version and how the
             return f"Reinstalled hz {current} from {target}"
         if index_lookup_failed:
             return f"hz {current} stays installed. The newest stable release could not be checked."
-        if latest is not None and Version(latest) > _version(current):
+        if latest is not None and Version(latest) > parse_version(current):
             return (
                 f"hz {current} stays installed. The newest stable release is {latest}. uv kept the existing selection."
             )
@@ -206,11 +206,9 @@ def _install_message(  # noqa: PLR0913 - report the resolved version and how the
     return f"Updated hz {current} → {after}"
 
 
-def _index_preferred_release(
-    pin: CorePin, current: str, latest: str | None, constraints: tuple[str, ...]
-) -> str | None:
+def index_preferred_release(pin: CorePin, current: str, latest: str | None, constraints: tuple[str, ...]) -> str | None:
     """Prefer the known newest stable release only for an unpinned index installation."""
-    if pin.kind != "index" or pin.ref is not None or latest is None or Version(latest) <= _version(current):
+    if pin.kind != "index" or pin.ref is not None or latest is None or Version(latest) <= parse_version(current):
         return None
     for constraint in map(Requirement, constraints):
         if canonicalize_name(constraint.name) == "heinzel" and (
@@ -220,18 +218,18 @@ def _index_preferred_release(
     return latest
 
 
-def _core_line(current: str, latest: str | None, channel: str) -> str:
+def core_line(current: str, latest: str | None, channel: str) -> str:
     """What happens to hz itself, in one line of the plan."""
     if channel in {"edge", "main"}:
         return f"hz {current} follows {channel}: its newest build is installed."
     if latest is None:
         return f"hz {current}: the newest release couldn't be asked; the update asks again."
-    if _version(latest) > _version(current):
+    if parse_version(latest) > parse_version(current):
         return f"hz {current} → {latest}"
     return f"hz {current} is the newest release."
 
 
-def _plan_token(latest: str | None, plans: Sequence[PluginPlan]) -> str:
+def plan_token(latest: str | None, plans: Sequence[PluginPlan]) -> str:
     """A digest of what the plan would install: hz's newest release and each plugin's target and requirement."""
     facts = [latest, *([p.distribution, p.action, p.target, p.moves_to] for p in plans)]
     return hashlib.sha256(json.dumps(facts, separators=(",", ":")).encode()).hexdigest()[:32]
@@ -239,7 +237,7 @@ def _plan_token(latest: str | None, plans: Sequence[PluginPlan]) -> str:
 
 def _pinned_plan(pin: CorePin, name: str, version: str | None, found: PinnedPlugins) -> PluginPlan | None:
     """The plan of a plugin whose pinned releases were asked; None if it wasn't among them."""
-    pinned = _pinned(pin)
+    pinned = pinned_ref(pin)
     short = pinned[:12] if pinned and pin.kind == "commit" else pinned
     index = pin.kind == "index"
     if (release := found.newer.get(name)) is not None:
@@ -279,7 +277,7 @@ def _at_commit(pin: CorePin, commit: str | None) -> str | None:
     return pin.at(commit) if commit is not None and pin.git is not None else None
 
 
-def _plugin_plan(
+def plugin_plan(
     pin: CorePin, installed: Mapping[str, str], found: PinnedPlugins, newer: Mapping[str, str]
 ) -> PluginPlan:
     """What a confirmed update would do to one plugin."""
@@ -287,7 +285,7 @@ def _plugin_plan(
     version = installed.get(name)
     if (asked := _pinned_plan(pin, name, version, found)) is not None:
         return asked
-    pinned = _pinned(pin)
+    pinned = pinned_ref(pin)
     if pinned is not None:
         short = pinned[:12] if pin.kind == "commit" else pinned
         detail = f"Pinned to {short}, which names no release to follow; an update leaves it as it is."
@@ -300,7 +298,7 @@ def _plugin_plan(
     return PluginPlan(distribution=name, installed=version, action="refresh", detail=detail)
 
 
-def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
+def plugin_step(update: PluginUpdate) -> tuple[State, str]:
     """How one plugin's step ended: updated, already new, held back at its version or taken out."""
     if update.status == "upgraded":
         return "done", f"Updated {update.before or '?'} → {update.after or '?'}"
@@ -311,7 +309,7 @@ def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
     return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"
 
 
-def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
+def with_heads(message: str, heads: list[HeadRefresh]) -> str:
     """`message`, with one line per installed head and, unless every one is settled, that the update isn't done."""
     shown = [head for head in heads if head.status != "not-installed"]
     if not shown:
@@ -322,7 +320,7 @@ def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
     return "\n".join([message, *lines])
 
 
-def _with_summary(message: str, updates: list[PluginUpdate]) -> str:
+def with_summary(message: str, updates: list[PluginUpdate]) -> str:
     """`message` and a line for each plugin that was upgraded or failed; the unchanged ones are in the plugins."""
     lines: list[str] = []
     for update in updates:
@@ -334,7 +332,7 @@ def _with_summary(message: str, updates: list[PluginUpdate]) -> str:
 
 
 @dataclass(frozen=True)
-class _Selection:
+class Selection:
     """What `apply_announced` hands uv, decided before anything changes."""
 
     pin: CorePin
@@ -349,14 +347,14 @@ class _Selection:
     """Plugins from git held at their installed commit while installing; the receipt names their ref again after."""
 
 
-def _by_hand(version: str, why: str) -> AnnouncedUpdate:
+def refused_by_hand(version: str, why: str) -> AnnouncedUpdate:
     """The one-line answer for an update that is made by hand; nothing was installed."""
     return AnnouncedUpdate(
         updated=False, after=version, restored=False, refused=True, message=f"{why}; hz isn't updated by itself."
     )
 
 
-def _require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
+def require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
     """Every plugin updated by hand must be exactly as before: same version, same files, same source.
 
     Raises:
@@ -367,22 +365,22 @@ def _require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
         raise HeinzelError(msg)
 
 
-def _added_options(announced: Announcement) -> dict[str, object]:
+def added_options(announced: Announcement) -> dict[str, object]:
     """The `[tool.options]` uv records for the resolver options an automatic update passes, as uv writes them."""
     options: dict[str, object] = {}
     if announced.exclude_newer is not None:
-        options["exclude-newer"] = _stamp(announced.exclude_newer)
+        options["exclude-newer"] = stamp(announced.exclude_newer)
     if announced.exclude_newer_core is not None:
-        options["exclude-newer-package"] = {"heinzel": _stamp(announced.exclude_newer_core)}
+        options["exclude-newer-package"] = {"heinzel": stamp(announced.exclude_newer_core)}
     return options
 
 
-def _stamp(moment: datetime) -> str:
+def stamp(moment: datetime) -> str:
     """A time as uv's `--exclude-newer` takes it: RFC 3339 in UTC."""
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _version(version: str) -> Version:
+def parse_version(version: str) -> Version:
     """`version` parsed; a version that isn't one (a local build) counts as the lowest, so any release is newer."""
     try:
         return Version(version)

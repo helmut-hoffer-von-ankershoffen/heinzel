@@ -13,7 +13,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import log_event, step
 from heinzel.modules.system._models import UpdateResult
-from heinzel.modules.system.updater._update_core import _UpdateCore
+from heinzel.modules.system.updater._update_core import UpdateCore
 from heinzel.modules.system.updater._update_rules import (
     DAEMON_POLL_SECONDS,
     DAEMON_SECONDS,
@@ -25,7 +25,7 @@ from heinzel.modules.system.updater._update_rules import (
 )
 
 
-class _UpdateHeads(_UpdateCore):
+class UpdateHeads(UpdateCore):
     """Refreshes the daemon, the web server and the desktop app after an install."""
 
     def _desktop_state(self) -> tuple[str | None, bool] | None:
@@ -35,7 +35,7 @@ class _UpdateHeads(_UpdateCore):
         release = None
         with suppress(OSError, ValueError, AttributeError, RuntimeError):
             text = self._home_file(DESKTOP_RECEIPT)
-            found = json.loads(text) if text is not None else {}
+            found: dict[str, object] = json.loads(text) if text is not None else {}
             release = found.get("release")
         return release if isinstance(release, str) else None, self._running()
 

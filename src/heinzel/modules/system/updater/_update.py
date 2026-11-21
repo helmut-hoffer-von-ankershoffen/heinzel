@@ -44,26 +44,26 @@ from heinzel.modules.system.updater._announced import (
     plugin_commit,
 )
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
-from heinzel.modules.system.updater._update_channels import _UpdateChannels
+from heinzel.modules.system.updater._update_channels import UpdateChannels
 from heinzel.modules.system.updater._update_rules import (
-    _AGREED,
+    AGREED,
+    Agreed,
+    Before,
+    Selection,
     UpdateChannel,
-    _added_options,
-    _Agreed,
-    _Before,
-    _by_hand,
-    _core_line,
-    _plan_token,
-    _plugin_plan,
-    _require_untouched,
-    _Selection,
-    _with_heads,
+    added_options,
+    core_line,
     log,
+    plan_token,
+    plugin_plan,
+    refused_by_hand,
+    require_untouched,
+    with_heads,
 )
-from heinzel.modules.system.updater._update_steps import _own_rows, _Steps
+from heinzel.modules.system.updater._update_steps import Steps, own_rows
 
 
-class UpdateService(_UpdateChannels):
+class UpdateService(UpdateChannels):
     """Updates the uv tool environment Heinzelmännchen runs in, keeping its plugins."""
 
     def apply_announced(
@@ -124,9 +124,9 @@ class UpdateService(_UpdateChannels):
                     generation = self._install_announced(
                         [core_requirement, *specs], (guards, constraints), expected, announced
                     )
-                    _require_untouched(prefix, untouched)
+                    require_untouched(prefix, untouched)
                     generation = self._installation.remove_transient_tool_constraint(
-                        expected=generation, original=policy, added=guards, options=_added_options(announced)
+                        expected=generation, original=policy, added=guards, options=added_options(announced)
                     )
                     if pin.kind == "release":
                         generation = self._installation.name_core_by_tag(
@@ -158,11 +158,11 @@ class UpdateService(_UpdateChannels):
             after=target,
             restored=False,
             refused=False,
-            message=_with_heads(f"Installed hz {target}.", heads),
+            message=with_heads(f"Installed hz {target}.", heads),
             heads=heads,
         )
 
-    def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
+    def _announced_selection(self, target: str, announced: Announcement) -> "Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
 
         Plugins from git, a folder or a URL are updated by hand: they go in exactly as installed (one from git at its
@@ -181,7 +181,7 @@ class UpdateService(_UpdateChannels):
         if pin.kind == "release" and pin.git:
             commit = announced.commit if announced.core is not None else installed_commit(prefix)
             if commit is None:
-                return _by_hand(target, f"The release tag of hz {target} names no commit to hold it to")
+                return refused_by_hand(target, f"The release tag of hz {target} names no commit to hold it to")
             core_requirement = pin.at(commit)
         elif pin.kind in ("index", "default") and pin.git is None:
             core_requirement = pin.requirement
@@ -193,7 +193,7 @@ class UpdateService(_UpdateChannels):
         if isinstance(plugins, AnnouncedUpdate):
             return plugins
         names, specs, by_hand, held_at_commit = plugins
-        return _Selection(pin, core_requirement, plugin_pins, names, specs, by_hand, held_at_commit)
+        return Selection(pin, core_requirement, plugin_pins, names, specs, by_hand, held_at_commit)
 
     @staticmethod
     def _announced_plugins(
@@ -231,7 +231,9 @@ class UpdateService(_UpdateChannels):
                 specs.append(plugin.at(announced.plugin_commits[name]))
                 continue
             if not allows_core(prefix, name, target):
-                return _by_hand(target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first")
+                return refused_by_hand(
+                    target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first"
+                )
             if plugin.git is None:
                 specs.append(plugin.requirement)
                 continue
@@ -279,7 +281,7 @@ class UpdateService(_UpdateChannels):
         self,
         snapshot: ToolSnapshot,
         lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
-        before: "_Before",
+        before: "Before",
         current: str,
         why: str | None,
         *,
@@ -374,8 +376,8 @@ class UpdateService(_UpdateChannels):
         if not self._updating.acquire(blocking=False):
             msg = "An update is already running here; wait for it to finish, then look at the result."
             raise HeinzelError(msg)
-        moves = _Agreed.of(agreed if source is None else None)
-        held = _AGREED.set(moves)
+        moves = Agreed.of(agreed if source is None else None)
+        held = AGREED.set(moves)
         self._restart_daemon = daemon
         try:
             with self._across_processes():
@@ -384,7 +386,7 @@ class UpdateService(_UpdateChannels):
                 )
         finally:
             self._restart_daemon = True
-            _AGREED.reset(held)
+            AGREED.reset(held)
             self._updating.release()
 
     def _update_with_steps(  # noqa: PLR0913 - the answers of one call
@@ -403,8 +405,8 @@ class UpdateService(_UpdateChannels):
         names = [canonicalize_name(p.name) for p in pins]
         app = self._desktop_state()
         ran = self._daemon_version()
-        steps = self._steps = _Steps(
-            self._progress, _own_rows(names, shown), len(names), desktop=app is not None, daemon=ran is not None
+        steps = self._steps = Steps(
+            self._progress, own_rows(names, shown), len(names), desktop=app is not None, daemon=ran is not None
         )
         try:
             steps.start("check")
@@ -424,7 +426,7 @@ class UpdateService(_UpdateChannels):
                 heads.append(head)
                 steps.desktop(head)
             seconds = round(self._clock() - started, 1)
-            message = _with_heads(result.message, heads) if result.updated else result.message
+            message = with_heads(result.message, heads) if result.updated else result.message
             return result.model_copy(update={"heads": heads, "message": message, "seconds": seconds})
         finally:
             self._steps = None
@@ -443,7 +445,7 @@ class UpdateService(_UpdateChannels):
                 installed = self._installation.installed_versions([canonicalize_name(p.name) for p in pins])
             except HeinzelError:
                 installed = {}
-            plans = [_plugin_plan(pin, installed, found, newer) for pin in pins]
+            plans = [plugin_plan(pin, installed, found, newer) for pin in pins]
             outcome.note(
                 moved=sorted(p.distribution for p in plans if p.moves_to),
                 ahead=sorted(found.ahead),
@@ -454,12 +456,12 @@ class UpdateService(_UpdateChannels):
         return UpdatePlan(
             current=current,
             latest=latest,
-            core=_core_line(current, latest, channel),
+            core=core_line(current, latest, channel),
             plugins=plans,
             desktop=self._desktop_installed(),
             desktop_running=self._desktop_installed() and self._running(),
             daemon=self._daemon_version() is not None,
-            token=_plan_token(latest, plans),
+            token=plan_token(latest, plans),
         )
 
     def _asked_plugins(self, pins: Sequence[CorePin]) -> tuple[PinnedPlugins, Mapping[str, str]]:

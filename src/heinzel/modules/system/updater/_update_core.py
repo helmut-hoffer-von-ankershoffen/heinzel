@@ -33,20 +33,20 @@ from heinzel.modules.system._service import RELEASE_TIMEOUT
 from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
 from heinzel.modules.system.updater._update_rules import (
-    _ORIGINALS,
     DESKTOP_SECONDS,
-    _Before,
-    _release_version,
-    _version,
+    ORIGINALS,
+    Before,
     log,
+    parse_version,
+    release_version,
 )
 from heinzel.ports import Clock, InstallationState, ProcessRunner, ReleaseSource
 
 if TYPE_CHECKING:
-    from heinzel.modules.system.updater._update_steps import _Steps
+    from heinzel.modules.system.updater._update_steps import Steps
 
 
-class _UpdateCore:
+class UpdateCore:
     """The update service's seams and the checks every mutation shares."""
 
     def __init__(  # noqa: PLR0913 - the installation, its boundaries, its heads and the seams tests replace
@@ -92,7 +92,7 @@ class _UpdateCore:
         """Whether the update in progress may restart the daemon and the web server (`--no-daemon` says not)."""
 
         self._progress = progress or Progress()
-        self._steps: _Steps | None = None
+        self._steps: Steps | None = None
         self._installation = installation
         self._releases = releases
         self._lifecycle = lifecycle
@@ -235,23 +235,23 @@ class _UpdateCore:
     def _target_release(pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
         """The release an install moves to, whose Python requirement decides the interpreter."""
         if target is not None:
-            return _release_version(target)
+            return release_version(target)
         if (
             pin.kind in {"default", "index"}
             and pin.git is None
             and latest is not None
-            and Version(latest) > _version(current)
+            and Version(latest) > parse_version(current)
             and Requirement(pin.requirement).specifier.contains(latest)
         ):
             return latest
         return None
 
-    def _fingerprints(self) -> "_Before":
+    def _fingerprints(self) -> "Before":
         """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
         generation = self._installation.startup_fingerprint()
         if not self._installation.changes_interpreter:
-            return _Before(generation)
-        return _Before(generation, self._installation.content_fingerprint(), self._installation.startup_state_matches())
+            return Before(generation)
+        return Before(generation, self._installation.content_fingerprint(), self._installation.startup_state_matches())
 
     def needed_python(self, version: str | None) -> str | None:
         """The newer Python (`X.Y`) release `version` requires than this one runs on; None if this one will do.
@@ -289,7 +289,7 @@ class _UpdateCore:
             yield
             return
         entered = False
-        token = _ORIGINALS.set({})  # what this update captured; none of it outlives it
+        token = ORIGINALS.set({})  # what this update captured; none of it outlives it
         try:
             with self._installation.newer_interpreter(needed, subprocess_environment()) as path:
                 entered = True
@@ -302,7 +302,7 @@ class _UpdateCore:
                 self._need.remember(version, needed, held=str(exc))
             raise
         finally:
-            _ORIGINALS.reset(token)
+            ORIGINALS.reset(token)
 
     def _app_open(self) -> bool:
         """Whether the managed desktop app is open now: one of its processes runs from inside its folder."""
@@ -327,7 +327,7 @@ class _UpdateCore:
             generation = self._installation.startup_fingerprint()
             if self._installation.changes_interpreter:  # uv will recreate the folder: remember its content too
                 before = self._fingerprints()
-                _ORIGINALS.set({**_ORIGINALS.get(), generation: before})
+                ORIGINALS.set({**ORIGINALS.get(), generation: before})
         except HeinzelError:
             return None
         return generation
@@ -343,7 +343,7 @@ class _UpdateCore:
             return False
         if current is None or current == expected:
             return current is not None
-        before = _ORIGINALS.get().get(expected or "")
+        before = ORIGINALS.get().get(expected or "")
         try:
             if before is None or before.content is None or self._installation.content_fingerprint() != before.content:
                 return False

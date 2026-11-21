@@ -29,24 +29,24 @@ from heinzel.modules.system.updater._announced import (
     installed_commit,
     plugin_commit,
 )
-from heinzel.modules.system.updater._update_heads import _UpdateHeads
+from heinzel.modules.system.updater._update_heads import UpdateHeads
 from heinzel.modules.system.updater._update_rules import (
-    _AGREED,
+    AGREED,
     Installed,
     Mode,
-    _index_preferred_release,
-    _install_message,
-    _is_conflict,
-    _pinned,
-    _reason,
-    _stamp,
-    _verify_core_selection,
-    _with_summary,
     blocking_plugins,
+    index_preferred_release,
+    install_message,
+    is_conflict,
+    pinned_ref,
+    stamp,
+    uv_reason,
+    verify_core_selection,
+    with_summary,
 )
 
 
-class _UpdateInstall(_UpdateHeads):
+class UpdateInstall(UpdateHeads):
     """Installs hz and its plugins in one resolver step and verifies the result."""
 
     def _install_announced(
@@ -67,10 +67,10 @@ class _UpdateInstall(_UpdateHeads):
         for name in moving:  # only what was announced is asked again and reinstalled; the rest stays as it is
             command += ["--refresh-package", name, "--reinstall-package", name]
         if announced.exclude_newer is not None:
-            command += ["--exclude-newer", _stamp(announced.exclude_newer)]
+            command += ["--exclude-newer", stamp(announced.exclude_newer)]
         if announced.exclude_newer_core is not None:
-            command += ["--exclude-newer-package", f"heinzel={_stamp(announced.exclude_newer_core)}"]
-        # uv records both in the receipt (`[tool.options]`); `_added_options` names them so they are taken out again.
+            command += ["--exclude-newer-package", f"heinzel={stamp(announced.exclude_newer_core)}"]
+        # uv records both in the receipt (`[tool.options]`); `added_options` names them so they are taken out again.
         self._installation.run(
             command,
             "uv couldn't install exactly the announced versions",
@@ -162,7 +162,7 @@ class _UpdateInstall(_UpdateHeads):
         with self._install_constraints(
             core, current, self._constraint_candidates(core, plugins, before), enabled=not explicit_source, scope=scope
         ) as (constraints, captured_constraints):
-            preferred = _index_preferred_release(pin, current, latest, captured_constraints) if target is None else None
+            preferred = index_preferred_release(pin, current, latest, captured_constraints) if target is None else None
             modes, reasons, failure, minimum = self._converge(
                 core,
                 plugins,
@@ -203,7 +203,7 @@ class _UpdateInstall(_UpdateHeads):
             forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
             constraints=captured_constraints,
         )
-        _verify_core_selection(metadata["heinzel"], current, minimum, explicit_source=explicit_source)
+        verify_core_selection(metadata["heinzel"], current, minimum, explicit_source=explicit_source)
         try:
             after = self._version()
         except HeinzelError as exc:
@@ -219,7 +219,7 @@ class _UpdateInstall(_UpdateHeads):
             msg = "The running hz version does not match its inspected metadata."
             raise HeinzelError(msg)
         now = self._installation.core_pin()
-        message = _install_message(
+        message = install_message(
             current,
             after,
             latest,
@@ -231,7 +231,7 @@ class _UpdateInstall(_UpdateHeads):
         after_plugins = self._plugin_versions(strict=True)
         self._verify_plugin_versions(metadata, after_plugins)
         updates = self._plugin_updates(plugins, modes, reasons, before, after_plugins, core)
-        message = _with_summary(message, updates)
+        message = with_summary(message, updates)
         if candidate is not None and self._installation.startup_fingerprint() != candidate:
             msg = "The installation changed during post-update verification."
             raise HeinzelError(msg)
@@ -256,7 +256,7 @@ class _UpdateInstall(_UpdateHeads):
         """
         # A core that follows a branch would move with the reinstall, which is `--source`'s job, not this one's.
         if pin.kind not in ("release", "commit", "local", "url") or not (
-            _AGREED.get().moves or any(p.kind in ("index", "default", "ref") for p in plugins)
+            AGREED.get().moves or any(p.kind in ("index", "default", "ref") for p in plugins)
         ):
             return result
         with self._mutation() as scope:
@@ -305,12 +305,12 @@ class _UpdateInstall(_UpdateHeads):
                 names = blocking_plugins([p.requirement for p in plugins], failure) or [
                     canonicalize_name(p.name) for p in plugins
                 ]
-                reason = f"Not updated: {_reason(failure)}"
+                reason = f"Not updated: {uv_reason(failure)}"
                 updates = [
                     self._unchanged(p, before, reason if canonicalize_name(p.name) in names else None) for p in plugins
                 ]
                 return result.model_copy(
-                    update={"plugins": updates, "message": f"{_with_summary(result.message, updates)}\n{recovery}"}
+                    update={"plugins": updates, "message": f"{with_summary(result.message, updates)}\n{recovery}"}
                 )
             candidate = self._installation.startup_fingerprint() if scope is not None else None
             selected = self._selected_requirements(pin.requirement, plugins, modes, before)
@@ -332,7 +332,7 @@ class _UpdateInstall(_UpdateHeads):
             refreshed = result.model_copy(
                 update={
                     "plugins": updates,
-                    "message": _with_summary(result.message, updates),
+                    "message": with_summary(result.message, updates),
                     "updated": result.updated or any(u.status == "upgraded" for u in updates),
                 }
             )
@@ -480,7 +480,7 @@ class _UpdateInstall(_UpdateHeads):
             if result.returncode == 0:
                 return modes, reasons, "", preferred
             output = result.stderr.strip() or result.stdout.strip()
-            if not _is_conflict(output):  # a network, credential or timeout failure is not the plugins' fault
+            if not is_conflict(output):  # a network, credential or timeout failure is not the plugins' fault
                 return None, reasons, output, None
             if preferred is not None:
                 # A preference for the newest release must not force plugin removal.
@@ -498,7 +498,7 @@ class _UpdateInstall(_UpdateHeads):
                 if modes[name] == "keep" and not may_drop:
                     return None, reasons, output, None
                 modes[name] = "keep" if modes[name] == "new" else "drop"
-                reasons[name] = _reason(output)
+                reasons[name] = uv_reason(output)
             _drop_dependents(modes, reasons, graph)
         return None, reasons, output, None
 
@@ -519,7 +519,7 @@ class _UpdateInstall(_UpdateHeads):
 
     def _spec(self, plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
         """The requirement `plugin` goes in with: where a confirmed update moves its pin, else as the receipt has it."""
-        if mode != "keep" and (moved := _AGREED.get().moves.get(canonicalize_name(plugin.name))) is not None:
+        if mode != "keep" and (moved := AGREED.get().moves.get(canonicalize_name(plugin.name))) is not None:
             return moved
         if mode == "keep" and plugin.kind == "index" and installed is not None:
             return f"{plugin.name}=={installed.version}"
@@ -589,7 +589,7 @@ class _UpdateInstall(_UpdateHeads):
                             status="upgraded" if changed else "unchanged",
                             before=old_version,
                             after=new_version,
-                            pinned=None if name in _AGREED.get().asked else _pinned(plugin),
+                            pinned=None if name in AGREED.get().asked else pinned_ref(plugin),
                         )
                     )
         return updates
@@ -604,7 +604,7 @@ class _UpdateInstall(_UpdateHeads):
             before=version,
             after=version,
             reason=failure,
-            pinned=_pinned(plugin),
+            pinned=pinned_ref(plugin),
             checked=False,
         )
 

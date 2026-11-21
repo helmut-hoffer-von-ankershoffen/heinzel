@@ -8,10 +8,10 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system._models import UpdatePlan, UpdateResult
 from heinzel.modules.system.updater._phases import Phases, State
-from heinzel.modules.system.updater._update_rules import SETTLED, _plugin_step
+from heinzel.modules.system.updater._update_rules import SETTLED, plugin_step
 
 
-def _own_rows(names: Sequence[str], plan: UpdatePlan | None) -> list[str]:
+def own_rows(names: Sequence[str], plan: UpdatePlan | None) -> list[str]:
     """The plugins with a row of their own before the install says more: those the plan expects to move, or all."""
     if plan is None:
         return list(names)
@@ -19,7 +19,7 @@ def _own_rows(names: Sequence[str], plan: UpdatePlan | None) -> list[str]:
     return [name for name in names if name in moving]
 
 
-class _Steps:
+class Steps:
     """The checklist of one `update`, told as it happens (ADR 0056): hz, the plugins, the services, the desktop app.
 
     Rows start pending, from the plan; a row is real work or a real outcome. Plugins that stay as they are are one
@@ -68,7 +68,7 @@ class _Steps:
             if update is None or (update.status == "unchanged" and update.checked and update.pinned is None):
                 self._note(id_, "skipped")
                 continue
-            state, detail = _plugin_step(update)
+            state, detail = plugin_step(update)
             self._phases.note(id_, self._labels[id_], state, detail, version=update.after or update.before)
         if "plugins" in self._labels:
             rest = [u for u in result.plugins if u.status == "unchanged" and u.checked and u.pinned is None]

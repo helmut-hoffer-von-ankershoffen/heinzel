@@ -823,7 +823,7 @@ def test_the_agreement_belongs_to_one_call_and_is_gone_afterwards(tmp_path):
     service = UpdateService(target, FakeReleases("0.4.0"), pinned=newer(commit=None))
     agree(service)
     assert uv.commands[-1][-1] == "heinzel-acme>=1.2.0"
-    assert _update_rules._AGREED.get().moves == {}
+    assert _update_rules.AGREED.get().moves == {}
     [pin] = target.plugin_pins()
     assert service._spec(pin, "new", "heinzel", None) == "heinzel-acme==1.0.0"  # nobody agreed: the pin as it is
 
@@ -848,7 +848,7 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
     try:
         assert installing.wait(10)
         # Another request, in its own thread, sees no agreement and may not start a second update.
-        assert _update_rules._AGREED.get().moves == {}
+        assert _update_rules.AGREED.get().moves == {}
         with pytest.raises(HeinzelError, match="An update is already running here"):
             service.update(current="0.2.0")
     finally:

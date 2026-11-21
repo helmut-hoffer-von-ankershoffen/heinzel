@@ -10,11 +10,11 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
-from heinzel.modules.system.updater._update_install import _UpdateInstall
-from heinzel.modules.system.updater._update_rules import DEFAULT_BRANCH, PLACEHOLDER_TAG, UpdateChannel, _version
+from heinzel.modules.system.updater._update_install import UpdateInstall
+from heinzel.modules.system.updater._update_rules import DEFAULT_BRANCH, PLACEHOLDER_TAG, UpdateChannel, parse_version
 
 
-class _UpdateChannels(_UpdateInstall):
+class UpdateChannels(UpdateInstall):
     """Moves the installation within or between the update channels."""
 
     def _asked_latest(self, current: str) -> str | None:
@@ -85,7 +85,7 @@ class _UpdateChannels(_UpdateInstall):
         except Exception as exc:
             msg = f"Could not ask for the newest edge release ({exc}); hz {current} stays as it is."
             raise HeinzelError(msg) from exc
-        if Version(edge.version) <= _version(current):
+        if Version(edge.version) <= parse_version(current):
             message = f"hz {current} is up to date (edge; the newest edge release is {edge.version})."
             same = UpdateResult(
                 before=current,
@@ -120,7 +120,7 @@ class _UpdateChannels(_UpdateInstall):
         except Exception as exc:
             msg = f"Could not ask for the newest stable release ({exc}); hz {current} stays as it is."
             raise HeinzelError(msg) from exc
-        if Version(stable) < _version(current):
+        if Version(stable) < parse_version(current):
             message = (
                 f"hz {current} (edge) is newer than stable {stable}, so it stays until stable catches up. Nothing is "
                 "downgraded and your data is unchanged.\nTo follow edge again: hz system channel --to edge --yes"
@@ -161,7 +161,7 @@ class _UpdateChannels(_UpdateInstall):
         try:
             if chosen == "edge":
                 newest = self._releases.edge_release(RELEASE_TIMEOUT).version
-                if Version(newest) <= _version(current):
+                if Version(newest) <= parse_version(current):
                     return f"hz {current} stays: the newest edge release, {newest}, is not newer."
                 return f"That update moves hz {current} to edge {newest}: every green change, sooner and less tested."
             if chosen == "main":
@@ -170,7 +170,7 @@ class _UpdateChannels(_UpdateInstall):
         # Isolation boundary: not knowing the versions must not stop the choice; the statement says so.
         except Exception as exc:  # noqa: BLE001
             return f"The newest {chosen} version could not be asked for now ({exc})."
-        if Version(stable) < _version(current):
+        if Version(stable) < parse_version(current):
             return (
                 f"hz {current} is newer than stable {stable}, so it stays until stable catches up. It is never "
                 "downgraded."
@@ -191,7 +191,7 @@ class _UpdateChannels(_UpdateInstall):
         except Exception as exc:
             msg = f"Could not ask for the latest release ({exc}); hz {current} stays at {pin.ref}."
             raise HeinzelError(msg) from exc
-        if Version(latest) < _version(current):
+        if Version(latest) < parse_version(current):
             message = (
                 f"hz {current} (main) is ahead of the latest release, {latest}; it moves to releases with the next "
                 "release.\nTo stay on main: hz system update --channel main"
@@ -224,7 +224,7 @@ class _UpdateChannels(_UpdateInstall):
                 f"Try again later, or move to a release you choose: hz system update --source {source}"
             )
             raise HeinzelError(msg) from exc
-        if Version(latest) <= _version(current):
+        if Version(latest) <= parse_version(current):
             current_release = UpdateResult(
                 before=current,
                 after=current,
@@ -251,7 +251,7 @@ class _UpdateChannels(_UpdateInstall):
             latest = self._latest(after)
         except Exception:  # noqa: BLE001 - isolation boundary: without the latest release there is nothing to suggest
             return None, None
-        if Version(latest) <= _version(after):
+        if Version(latest) <= parse_version(after):
             return latest, None
         release = (
             f"git+https://github.com/{DEFAULT_REPOSITORY}@v{latest}" if pin.git is None else pin.source_at(f"v{latest}")
