@@ -245,6 +245,39 @@ def test_a_home_file_reads_the_desktop_receipt_and_nothing_outside_home(state):
     assert state.home_file("../escape.txt") is None
 
 
+def test_a_home_file_follows_a_symlink_under_home_that_points_outside(tmp_path):
+    """A dotfiles `~/.config` that links elsewhere still holds the receipt (the old `exists` semantics)."""
+    dotfiles = tmp_path / "dotfiles/config/heinzel"
+    dotfiles.mkdir(parents=True)
+    (dotfiles / "desktop-installation.json").write_text('{"release": "0.9.53"}', encoding="utf-8")
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home/.config").symlink_to(tmp_path / "dotfiles/config", target_is_directory=True)
+    state = FileInstallationState(tmp_path / "state", tmp_path / "home")
+    assert state.home_file(".config/heinzel/desktop-installation.json") == '{"release": "0.9.53"}'
+    assert state.home_file("/etc/hosts") is None  # an absolute path is not under home
+
+
+def test_a_lock_with_a_wait_gives_up_while_another_holds_it(state):
+    inside, release = threading.Event(), threading.Event()
+
+    def holder():
+        with state.lock("update"):
+            inside.set()
+            release.wait(scaled(5))
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert inside.wait(scaled(5))
+        with pytest.raises(TimeoutError), state.lock("update", wait=0.1):
+            pass
+    finally:
+        release.set()
+        thread.join(scaled(5))
+    with state.lock("update", wait=scaled(5)):  # free again: taken at once
+        pass
+
+
 def test_a_journal_reads_back_what_was_appended_in_order(state):
     assert list(state.journal("update")) == []
     state.append("update", "started 1.0.0")

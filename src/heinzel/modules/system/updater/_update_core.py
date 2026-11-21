@@ -5,7 +5,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Generator
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,6 +44,12 @@ from heinzel.ports import Clock, InstallationState, ProcessRunner, ReleaseSource
 
 if TYPE_CHECKING:
     from heinzel.modules.system.updater._update_steps import Steps
+
+
+UPDATE_LOCK_NOTICE = 1.0
+"""Seconds an update waits for the installation's update lock before it says it waits for another update."""
+UPDATE_LOCK_SECONDS = 600.0
+"""Seconds an update waits for the update lock in all before it gives up with a clear error."""
 
 
 class UpdateCore:
@@ -111,9 +117,35 @@ class UpdateCore:
         lock: threading.Lock = self.__dict__.setdefault("_updating_lock", threading.Lock())
         return lock
 
-    def _across_processes(self) -> AbstractContextManager[None]:
-        """Held while `update` runs, with the state folder's `update` lock: an update in another process waits."""
-        return nullcontext() if self._state is None else self._state.lock("update")
+    @contextmanager
+    def _across_processes(self) -> Generator[None]:
+        """Hold the state folder's `update` lock: one update or automatic update at a time on this installation.
+
+        After `UPDATE_LOCK_NOTICE` seconds it says that it waits for another update; after `UPDATE_LOCK_SECONDS` in
+        all it gives up.
+
+        Raises:
+            HeinzelError: If another update still holds the installation after `UPDATE_LOCK_SECONDS`.
+        """
+        if self._state is None:
+            yield
+            return
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self._state.lock("update", wait=UPDATE_LOCK_NOTICE))
+            except TimeoutError:
+                log_event(log, "update.lock.wait", outcome="waiting")
+                try:
+                    with self._progress.task("Waiting for another update…"):
+                        stack.enter_context(self._state.lock("update", wait=UPDATE_LOCK_SECONDS - UPDATE_LOCK_NOTICE))
+                except TimeoutError:
+                    minutes = round(UPDATE_LOCK_SECONDS / 60)
+                    msg = (
+                        f"Another update has held this installation for {minutes} minutes, so this one didn't start."
+                        " Wait for it to finish, then try again."
+                    )
+                    raise HeinzelError(msg) from None
+            yield
 
     def _home_file(self, relative: Path) -> str | None:
         """A file under the home folder, read through the state port; with no port, under `home` (tests) or `~`."""

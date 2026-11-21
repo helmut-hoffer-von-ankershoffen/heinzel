@@ -94,6 +94,20 @@ class UpdateService(UpdateChannels):
             HeinzelError: If the installation can't be updated this way, before anything was installed, or if there
                 is no folder to copy into.
             OSError: If the copy can't be taken; nothing was installed.
+
+        It holds the installation's update lock (`_across_processes`), so it never runs beside a `hz system update`.
+        """
+        with self._across_processes():
+            return self._apply_announced(announced, current=current, folder=folder, trial=trial)
+
+    def _apply_announced(
+        self, announced: Announcement, *, current: str, folder: Path | None, trial: Callable[[str], bool]
+    ) -> AnnouncedUpdate:
+        """`apply_announced`, under the update lock.
+
+        Raises:
+            HeinzelError: As `apply_announced` says.
+            OSError: If the copy can't be taken; nothing was installed.
         """
         folder = folder or self._state_folder()
         target = announced.core or current
