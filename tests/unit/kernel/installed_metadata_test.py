@@ -68,6 +68,45 @@ def test_local_wheel_hash_can_be_recorded_in_source_fragment(tmp_path):
     assert inspect_requirements(tmp_path, [f"heinzel @ {url}#sha256={digest}"], "0.4.0")["heinzel"] == "0.4.0"
 
 
+def test_a_source_mismatch_names_the_requirement_and_both_sources_and_is_logged(tmp_path, caplog):
+    digest = "d" * 64
+    wheel = f"file:///data/app-artifacts/heinzel_clock-0.5.2-py3-none-any.whl#sha256={digest}"
+    distribution(tmp_path, "heinzel-clock", "0.5.2", {"url": wheel, "archive_info": {}})
+    with caplog.at_level("WARNING"), pytest.raises(HeinzelError) as caught:
+        inspect_requirements(tmp_path, ["heinzel-clock"], None)
+    message = str(caught.value)
+    assert "heinzel-clock: expected heinzel-clock from the package index" in message
+    assert f"found heinzel-clock 0.5.2 from {wheel}" in message
+    assert type(caught.value.__cause__).__name__ == "_MismatchError"
+    [record] = [item for item in caplog.records if getattr(item, "event", None) == "install.verify.mismatch"]
+    assert (record.requirement, record.expected) == ("heinzel-clock", "heinzel-clock from the package index")
+
+
+def test_a_git_mismatch_names_the_commit_that_was_found(tmp_path):
+    distribution(tmp_path, "heinzel", "0.4.0", git_source("https://example.test/other", "v0.4.0"))
+    with pytest.raises(HeinzelError, match=f"found heinzel 0.4.0 from https://example.test/other at commit {'a' * 40}"):
+        inspect_requirements(tmp_path, ["heinzel @ git+https://example.test/heinzel@v0.4.0"], "0.4.0")
+
+
+@pytest.mark.parametrize(
+    ("installed", "requirements", "expected", "named"),
+    [
+        ("0.3.0", ["heinzel>=0.4"], None, "expected heinzel >=0.4, found heinzel 0.3.0"),
+        ("0.4.0", ["heinzel"], "0.5.0", "expected heinzel 0.5.0, found heinzel 0.4.0"),
+        (None, ["heinzel"], None, "expected one installed distribution, found 0"),
+    ],
+)
+def test_a_version_or_count_mismatch_names_what_was_expected_and_found(
+    tmp_path, installed, requirements, expected, named
+):
+    if installed is not None:
+        distribution(tmp_path, "heinzel", installed)
+    else:
+        (tmp_path / "lib/python3.14/site-packages").mkdir(parents=True)
+    with pytest.raises(HeinzelError, match=named):
+        inspect_requirements(tmp_path, requirements, expected)
+
+
 def test_dropped_distribution_must_be_absent_but_unrelated_dependencies_are_allowed(tmp_path):
     distribution(tmp_path, "heinzel", "0.4.0")
     distribution(tmp_path, "ordinary-dependency", "1.0.0")
