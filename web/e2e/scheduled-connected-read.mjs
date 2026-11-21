@@ -16,15 +16,24 @@ const { axe, browser, context, page, token, url } = await openChatJourney();
 await page.addInitScript(() => {
   window.__hzFieldEvents = [];
   for (const type of ["focusin", "focusout", "beforeinput", "input", "change"]) {
-    document.addEventListener(type, (event) => {
-      const node = event.target;
-      if (!(node instanceof HTMLElement)) return;
-      if (window.__hzFieldEvents.length > 100) window.__hzFieldEvents.shift();
-      window.__hzFieldEvents.push({type, tag: node.tagName, inputType: node.getAttribute("type"),
-        length: typeof node.value === "string" ? node.value.length : null,
-        connectedReview: !!node.closest('[aria-label="Connected read review"]'),
-        active: document.activeElement === node, trusted: event.isTrusted});
-    }, true);
+    document.addEventListener(
+      type,
+      (event) => {
+        const node = event.target;
+        if (!(node instanceof HTMLElement)) return;
+        if (window.__hzFieldEvents.length > 100) window.__hzFieldEvents.shift();
+        window.__hzFieldEvents.push({
+          type,
+          tag: node.tagName,
+          inputType: node.getAttribute("type"),
+          length: typeof node.value === "string" ? node.value.length : null,
+          connectedReview: !!node.closest('[aria-label="Connected read review"]'),
+          active: document.activeElement === node,
+          trusted: event.isTrusted,
+        });
+      },
+      true,
+    );
   }
 });
 const lateActivity = process.argv[6] === "late-activity";
@@ -143,25 +152,43 @@ try {
     await original.evaluate((node) => {
       node.__hzInputTrace = [];
       for (const type of ["focus", "beforeinput", "input", "change", "blur"]) {
-        node.addEventListener(type, (event) => {
-          if (node.__hzInputTrace.length < 20)
-            node.__hzInputTrace.push({ type, length: node.value.length, trusted: event.isTrusted });
-        }, { capture: true, once: true });
+        node.addEventListener(
+          type,
+          (event) => {
+            if (node.__hzInputTrace.length < 20)
+              node.__hzInputTrace.push({ type, length: node.value.length, trusted: event.isTrusted });
+          },
+          { capture: true, once: true },
+        );
       }
     });
     await field.fill(value);
     await rendered();
     const held = await field.inputValue();
-    writeFileSync(join(process.argv[4], `input-trace-${label.replaceAll(/[^a-zA-Z]/g, "-")}.json`), JSON.stringify(await field.evaluate(node => ({
-      events: window.__hzFieldEvents, active: document.activeElement === node,
-      rect: node.getBoundingClientRect().toJSON(), scroll: document.querySelector(".workspace-scroll")?.scrollTop,
-      length: node.value.length
-    })), null, 2));
+    writeFileSync(
+      join(process.argv[4], `input-trace-${label.replaceAll(/[^a-zA-Z]/g, "-")}.json`),
+      JSON.stringify(
+        await field.evaluate((node) => ({
+          events: window.__hzFieldEvents,
+          active: document.activeElement === node,
+          rect: node.getBoundingClientRect().toJSON(),
+          scroll: document.querySelector(".workspace-scroll")?.scrollTop,
+          length: node.value.length,
+        })),
+        null,
+        2,
+      ),
+    );
     if (held !== value) {
       const trace = await original.evaluate((node) => ({
-        connected: node.isConnected, events: node.__hzInputTrace, length: node.value.length,
+        connected: node.isConnected,
+        events: node.__hzInputTrace,
+        length: node.value.length,
       }));
-      console.error("review-input-lifetime", JSON.stringify({ label, held, ...trace, page: await page.evaluate(() => window.__hzFieldEvents) }));
+      console.error(
+        "review-input-lifetime",
+        JSON.stringify({ label, held, ...trace, page: await page.evaluate(() => window.__hzFieldEvents) }),
+      );
     }
     assert.equal(held, value, `${label} must keep the entered value after a render`);
   };
