@@ -24,6 +24,6 @@ export function queryClient(): QueryClient {
   });
 }
 
-export function Providers({ client, children }: { client: QueryClient; children: ReactNode }) {
+export function Providers({ client, children }: Readonly<{ client: QueryClient; children: ReactNode }>) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
