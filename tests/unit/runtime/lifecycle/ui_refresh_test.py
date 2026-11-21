@@ -9,8 +9,8 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from heinzel import HeinzelError
+from heinzel.modules.system.lifecycle._service import READY_SECONDS, WebRestart, WebService, WebStatus
 from heinzel.modules.ui import _web_head_refresh
-from heinzel.modules.ui._service import READY_SECONDS, WebRestart, WebService, WebStatus
 
 pytestmark = pytest.mark.unit
 
@@ -452,7 +452,7 @@ def test_a_loaded_label_with_unknown_identity_is_refused(tmp_path):
 
 
 def test_status_reports_a_pending_launcher_transition(tmp_path, monkeypatch):
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     web, _ = _managed(tmp_path, "darwin")
     transition = tmp_path / "transition.json"
@@ -473,7 +473,7 @@ class _Locks:
 
 
 def _in_transition(tmp_path, monkeypatch, *, pending, instance=None, loaded=True):
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     web, _ = _managed(tmp_path, "darwin", loaded=loaded)
     web._transition_needed = lambda: True  # type: ignore[method-assign]
@@ -518,7 +518,7 @@ def test_restart_cannot_migrate_a_historical_launcher_that_is_not_running(tmp_pa
 
 
 def test_restart_job_reports_the_instance_the_runtime_record_names(tmp_path, monkeypatch):
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     web, _ = _managed(tmp_path, "darwin")
     monkeypatch.setattr(_service, "private_read", lambda _path: '{"instance": "' + "f" * 32 + '"}')
@@ -526,7 +526,7 @@ def test_restart_job_reports_the_instance_the_runtime_record_names(tmp_path, mon
 
 
 def test_the_default_runner_runs_the_fixed_vector_with_a_timeout(monkeypatch):
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     seen: dict[str, object] = {}
 

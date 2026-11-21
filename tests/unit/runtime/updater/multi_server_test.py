@@ -11,10 +11,10 @@ import time
 
 import pytest
 
-from heinzel.modules.ui._service import LABEL
+from heinzel.modules.system.lifecycle._service import LABEL
 from heinzel.testing import installation
 from tests.unit.heads.web_auto_update_test import advance, installed_under, updater
-from tests.unit.modules.ui_refresh_test import _restartable
+from tests.unit.runtime.lifecycle.ui_refresh_test import _restartable
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(10)]
 

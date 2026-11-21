@@ -28,7 +28,7 @@ from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
-    from heinzel.modules.ui._service import WebRemoval, WebService
+    from heinzel.modules.system.lifecycle._service import WebRemoval, WebService
 
 
 def uninstall_installation(
@@ -50,8 +50,8 @@ def uninstall_installation(
         OSError: If local authority cannot be read or written safely.
     """
     from heinzel.modules.system.daemon._service import DaemonService  # noqa: PLC0415 - only explicit uninstall
-    from heinzel.modules.ui._profile import installation_overrides, user_profile  # noqa: PLC0415 - owned user scope
-    from heinzel.modules.ui._service import WebService  # noqa: PLC0415 - cleanup does not require a preview flag
+    from heinzel.modules.system.lifecycle._profile import installation_overrides, user_profile  # noqa: PLC0415 - owned user scope
+    from heinzel.modules.system.lifecycle._service import WebService  # noqa: PLC0415 - cleanup does not require a preview flag
 
     installation = installation or Installation(Progress())
     store, binary = installation.tool_destination()

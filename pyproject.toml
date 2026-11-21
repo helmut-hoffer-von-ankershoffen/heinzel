@@ -413,7 +413,7 @@ forbidden_modules = ["heinzel.modules"]
 [[tool.importlinter.contracts]]
 name = "Contexts import the spec and the ports, not each other (contexts.toml)"
 type = "independence"
-modules = ["heinzel.modules.system.updater", "heinzel.modules.system.lifecycle", "heinzel.modules.system.daemon", "heinzel.modules.system.plugin", "heinzel.modules.heinzel", "heinzel.modules.ai", "heinzel.modules.ui"]
+modules = ["heinzel.modules.system.updater", "heinzel.modules.system.lifecycle", "heinzel.modules.system.daemon", "heinzel.modules.system.plugin", "heinzel.modules.heinzel", "heinzel.modules.ai", "heinzel.modules.ui.browser"]
 ignore_imports = [
     "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
@@ -421,9 +421,8 @@ ignore_imports = [
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
-    "heinzel.modules.ui._overview -> heinzel.modules.system.daemon._overview",
-    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._historical_launcher",
-    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._launcher_transition",
+    "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._historical_launcher",
+    "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._launcher_transition",
 ]
 
 [[tool.importlinter.contracts]]

@@ -44,7 +44,7 @@ from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_f
 from heinzel.kernel._uv_locate import find_uv
 from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
 from heinzel.modules.system.lifecycle._launcher_transition import Action, LauncherTransition
-from heinzel.modules.ui._profile import (
+from heinzel.modules.system.lifecycle._profile import (
     default_profile,
     environment_command,
     installation_overrides,

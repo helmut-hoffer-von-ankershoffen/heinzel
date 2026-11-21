@@ -12,7 +12,7 @@ from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon_module
 from heinzel.modules.system.daemon._models import DaemonSettings
 from heinzel.modules.system.daemon._service import DaemonService
-from heinzel.modules.ui import _service as web_module
+from heinzel.modules.system.lifecycle import _service as web_module
 from tests.integration.ui_service_test import service_factory
 from tests.unit.modules.daemon_service_test import bin_dir, make
 

@@ -236,3 +236,25 @@ new = '''"""How long `hz app install --restart` waits for an open app to quit.
 
 `heinzel.modules.system._update` mirrors it.
 """'''
+
+# Second pass, after the splits: the web job's service and profile belong to the lifecycle context, which also
+# removes the import cycle between `modules.ui` and the lifecycle package.
+[[move]]
+stage = "lifecycle"
+old = "src/heinzel/modules/ui/_service.py"
+new = "src/heinzel/modules/system/lifecycle/_service.py"
+
+[[move]]
+stage = "lifecycle"
+old = "src/heinzel/modules/ui/_profile.py"
+new = "src/heinzel/modules/system/lifecycle/_profile.py"
+
+[[move]]
+stage = "lifecycle"
+old = "tests/unit/modules/ui_service_test.py"
+new = "tests/unit/runtime/lifecycle/ui_service_test.py"
+
+[[move]]
+stage = "lifecycle"
+old = "tests/unit/modules/ui_refresh_test.py"
+new = "tests/unit/runtime/lifecycle/ui_refresh_test.py"

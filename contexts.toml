@@ -28,7 +28,8 @@ summary = "start, stop and restart of the web job and the daemon; the handover t
 src = [
     "src/heinzel/modules/system/lifecycle/**",
     "src/heinzel/_lifecycle_control.py",
-    "src/heinzel/modules/ui/_service.py",
+    "src/heinzel/modules/ui/__init__.py",
+    "src/heinzel/modules/ui/_overview.py",
     "src/heinzel/heads/web/_lifecycle.py",
     "src/heinzel/heads/web/_supervision.py",
 ]
@@ -75,8 +76,8 @@ src = [
     "src/heinzel/modules/system/sound/**",
     "src/heinzel/modules/system/notify/**",
 ]
-exclude = ["src/heinzel/modules/ui/_service.py"]
-package = "heinzel.modules.ui"
+exclude = ["src/heinzel/modules/ui/__init__.py", "src/heinzel/modules/ui/_overview.py"]
+package = "heinzel.modules.ui.browser"
 
 [context.leaf]
 summary = "small modules that stand alone: org, team, graph, document, telemetry and system's small parts"
@@ -177,9 +178,8 @@ contexts = [
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
-    "heinzel.modules.ui._overview -> heinzel.modules.system.daemon._overview",
-    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._historical_launcher",
-    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._launcher_transition",
+    "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._historical_launcher",
+    "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._launcher_transition",
 ]
 heads = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
@@ -201,4 +201,5 @@ heads = [
 [allow.adapters]
 "src/heinzel/heads/web/_auto_update.py" = 1
 "src/heinzel/heads/web/_updates.py" = 1
-"src/heinzel/modules/ui/_service.py" = 7
+"src/heinzel/modules/system/lifecycle/_service.py" = 7
+"src/heinzel/modules/ui/_overview.py" = 1

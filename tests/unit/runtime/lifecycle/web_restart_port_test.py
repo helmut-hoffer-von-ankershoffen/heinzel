@@ -3,9 +3,9 @@
 import pytest
 
 from heinzel._adapter_service import Job
-from heinzel.modules.ui._service import LABEL, UNIT
+from heinzel.modules.system.lifecycle._service import LABEL, UNIT
 from heinzel.testing import FakeServiceManager
-from tests.unit.modules.ui_refresh_test import _managed
+from tests.unit.runtime.lifecycle.ui_refresh_test import _managed
 
 pytestmark = pytest.mark.unit
 
