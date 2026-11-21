@@ -1194,3 +1194,80 @@ def test_manual_recheck_when_auto_updates_are_off_still_checks_core_but_is_throt
     clock.now += timedelta(seconds=11)
     made.recheck()
     assert len(calls) == 2
+
+
+# A release installed under a running server (bead: the 0.9.52 auto-update that never applied) ------------------------
+
+
+class Installed(Receipt):
+    """A receipt whose installed hz is `version`, as `hz system update` or another server left it."""
+
+    def __init__(self, pin, prefix, version):
+        super().__init__(pin, prefix)
+        self.version = version
+
+    def installed_core_version(self):
+        if isinstance(self.version, Exception):
+            raise self.version
+        return self.version
+
+
+def installed_under(kernel, tmp_path, version):
+    kernel.bind(
+        Installation,
+        Installed(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path, version),
+    )
+
+
+def test_a_server_outdated_by_another_update_restarts_into_it_instead_of_failing(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    installed_under(kernel, tmp_path, "9.9.9")
+    advance(made, clock, 5 * 60)
+    assert calls == {"restart": 1, "update": 0}
+    status = made.status()
+    assert (status.message, status.core, status.phase) == (None, None, "idle")  # no failure holds other servers off
+    advance(made, clock, 60 * 60)
+    assert calls == {"restart": 1, "update": 0}  # asked once; the restart replaces this process
+
+
+def test_the_restart_into_the_installed_hz_waits_for_work_and_retries_a_failed_restart(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    installed_under(kernel, tmp_path, "9.9.9")
+    made._activity.enter()
+    advance(made, clock, 5 * 60)
+    assert calls == {"restart": 0, "update": 0}
+    made._activity.leave()
+    attempts: list[int] = []
+
+    def refused():
+        attempts.append(1)
+        if len(attempts) == 1:
+            msg = "An installation change requires completion"
+            raise auto.HeinzelError(msg)
+
+    made._restart = refused
+    advance(made, clock, 60)
+    assert attempts == [1]
+    assert made.status().message is None
+    advance(made, clock, 60)
+    assert attempts == [1, 1]
+    assert calls["update"] == 0
+
+
+def test_an_install_under_the_server_during_the_countdown_restarts_instead_of_applying(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    advance(made, clock, 5 * 60)
+    assert made.status().phase == "countdown"
+    installed_under(kernel, tmp_path, "9.9.9")  # the footer of another window installed it meanwhile
+    advance(made, clock, 30)
+    assert calls == {"restart": 1, "update": 0}
+    assert made.status().message is None
+
+
+def test_the_same_or_an_unreadable_installed_version_keeps_the_normal_update(make_kernel, tmp_path):
+    for version in ["1.0.0", auto.HeinzelError("unreadable metadata")]:
+        made, clock, calls, kernel = updater(make_kernel, tmp_path / type(version).__name__)
+        installed_under(kernel, tmp_path, version)
+        advance(made, clock, 5 * 60)
+        advance(made, clock, 30)
+        assert calls == {"restart": 1, "update": 1}
