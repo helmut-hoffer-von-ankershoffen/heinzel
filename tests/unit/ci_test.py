@@ -126,6 +126,29 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "Chromium's system libraries, from the runner"
         ),
     },
+    "release-chain.yml": {
+        'if [ "$EVENT" = pull_request ]': "chooses a dry run and its throwaway version from the trigger",
+        'tip="$(gh api': "reads main's tip, the commit the plan gates",
+        "echo /.chain/": "keeps the chain's own checkout out of the release tree",
+        'if [ -n "$RELEASE_TOKEN" ]': "commits as the owner identity the ruleset needs",
+        "git checkout -q -B main": "puts main at the gated tip, the branch release.sh prepares from",
+        "uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py": (
+            "checks the release commit with the chain's own reviewed script"
+        ),
+        'tip="$(GH_TOKEN=': "refuses to push a cut when main moved during it",
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "one step of the release chain, reading GitHub first"
+        ),
+        "published() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
+        'if curl -fsS -o /dev/null "https://pypi.org': "dispatches PyPI on the tag unless the version is there",
+        'if gh release view "app-v': "dispatches the standard app composition unless it exists",
+        'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",
+    },
+    "release-freeze.yml": {
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "the freeze check of one PR, or of every open PR"
+        ),
+    },
     "publish.yml": {
         'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",

@@ -202,7 +202,11 @@ jobs:
           # The bundles' DSSE envelopes are the signed in-toto SLSA provenance on its own, the format OpenSSF
           # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
           jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
-          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag
+          # The Core release is never Latest at creation: the updater offers releases/latest, so the Release workflow
+          # marks it Latest only after its acceptance marker (release_chain.py verdict). Plugins keep GitHub's default.
+          latest=()
+          if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then latest=(--latest=false); fi
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag "${latest[@]}"
 
       - name: Request the independent release docs refresh
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
