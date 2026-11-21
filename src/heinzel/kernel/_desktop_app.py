@@ -4,9 +4,9 @@ Both variants install as `Heinzelmaennchen.app` in the same folder, so the name 
 `Contents/Info.plist` does. The installer, the updater, `hz --version` and the about API all read it here.
 """
 
+import platform
 import plistlib
 import stat
-import sys
 from pathlib import Path
 from typing import Literal, cast
 from xml.parsers.expat import ExpatError
@@ -96,7 +96,7 @@ def app_hint(head: object) -> str:
 
 def desktop_app_here() -> DesktopApp | None:
     """The desktop app on this Mac, for `hz --version` and the about API; None elsewhere or when there is none."""
-    if sys.platform != "darwin":
+    if platform.system() != "Darwin":
         return None
     try:
         return installed_desktop_app(Path.home())

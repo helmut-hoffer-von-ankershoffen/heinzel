@@ -420,7 +420,11 @@ def not_genuine(bundle: Path, flavor: DesktopFlavor) -> str | None:
         return None
     if (reason := _identity_problem(found, "native" if flavor == DesktopFlavor.NATIVE else "electron")) is not None:
         return reason
-    return say.REASON_SIGNATURE if inspect_bundle(bundle).problem is not None else None
+    try:
+        broken = inspect_bundle(bundle).problem is not None
+    except (OSError, subprocess.SubprocessError):  # no codesign to ask: never vouch for the copy
+        broken = True
+    return say.REASON_SIGNATURE if broken else None
 
 
 def _identity_problem(found: DesktopApp, variant: DesktopVariant) -> str | None:
@@ -483,7 +487,7 @@ def _trash_unowned(home: Path, config: Path, genuine: DesktopFlavor | None = Non
             if _owned_installation(bundle, config) is not None:
                 continue
         if genuine is not None and (reason := not_genuine(bundle, genuine)) is not None:
-            msg = f"{bundle} is not a Heinzel app hz may replace: {reason}."
+            msg = f"{_CONFLICT} {bundle} is not a Heinzel app hz may replace: {reason}."
             raise DesktopInstallationError(msg, say.not_genuine(bundle, reason, everyone=_everyone(bundle.parent)))
         if _in_use(bundle):
             msg = f"{bundle} is in use."

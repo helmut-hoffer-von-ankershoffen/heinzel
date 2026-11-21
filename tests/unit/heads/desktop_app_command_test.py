@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from heinzel import Settings, __version__
 from heinzel.heads import _desktop_installation as installer
+from heinzel.heads import _desktop_release
 from heinzel.heads.cli import _app
 from heinzel.kernel import CorePin
 
@@ -72,10 +73,20 @@ def test_cli_passes_selected_swift_flavor_to_installer(monkeypatch, tmp_path, co
     monkeypatch.setattr(installer, "install_desktop", install)
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
     monkeypatch.setattr(_app, "_located", lambda _error: tmp_path / "Heinzelmaennchen.app")
+    monkeypatch.setattr(_desktop_release.sys, "platform", "darwin")  # the native app exists only on macOS
     group, _, _ = _group()
     result = CliRunner().invoke(group, [command, "--flavor", "swift"])
     assert result.exit_code == 0, result.output
     assert install.call_args.kwargs["flavor"] == installer.DesktopFlavor.NATIVE
+
+
+def test_cli_refuses_the_native_app_off_macos_in_one_line(monkeypatch):
+    monkeypatch.setattr(_desktop_release.sys, "platform", "linux")
+    monkeypatch.setattr(installer, "install_desktop", Mock(side_effect=AssertionError("never installs")))
+    group, _, error = _group()
+    result = CliRunner().invoke(group, ["install", "--flavor", "native"])
+    assert result.exit_code == 1
+    assert error.export_text().strip() == "The native app is macOS only: use --flavor electron here."
 
 
 @pytest.mark.parametrize("failure", [OSError("disk is read-only"), _app.HeinzelError("locked by another process")])

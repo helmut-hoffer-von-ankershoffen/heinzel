@@ -42,13 +42,13 @@ class DesktopFlavor(StrEnum):
 NATIVE_MACOS_ONLY = "The native app is macOS only: use --flavor electron here."
 
 
-def platform_flavor(asked: DesktopFlavor | None, system: str = sys.platform) -> DesktopFlavor | None:
+def platform_flavor(asked: DesktopFlavor | None, system: str | None = None) -> DesktopFlavor | None:
     """The flavor for this platform: on macOS as asked (none: the installed app's, else native), elsewhere Electron.
 
     Raises:
         HeinzelError: If the native app is asked for anywhere but macOS.
     """
-    if system == "darwin":
+    if (system or sys.platform) == "darwin":
         return asked
     if asked == DesktopFlavor.NATIVE:
         raise HeinzelError(NATIVE_MACOS_ONLY)
