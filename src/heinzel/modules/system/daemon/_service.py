@@ -62,10 +62,16 @@ from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, mutation_record
 from heinzel.modules.system.daemon._handover_files import (
-    _handover_absolute_path,
-    _invalid_handover,
-    _open_verified_handover_file,
-    _safely_absent,
+    handover_absolute_path as _handover_absolute_path,
+)
+from heinzel.modules.system.daemon._handover_files import (
+    invalid_handover as _invalid_handover,
+)
+from heinzel.modules.system.daemon._handover_files import (
+    safely_absent as _safely_absent,
+)
+from heinzel.modules.system.daemon._handover_files import (
+    verified_handover_file as _open_verified_handover_file,
 )
 from heinzel.modules.system.daemon._handover_request import (
     MAX_BOOT_IDENTITY,
@@ -73,13 +79,19 @@ from heinzel.modules.system.daemon._handover_request import (
     MAX_HANDOVER_FILE_BYTES,
     MAX_OBSERVATION_BYTES,
     STALE_TICKS,
-    _HandoverRequest,
-    _heartbeat_covers,
+)
+from heinzel.modules.system.daemon._handover_request import (
+    HandoverRequests as _HandoverRequest,
+)
+from heinzel.modules.system.daemon._handover_request import (
+    heartbeat_covers as _heartbeat_covers,
 )
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._manager_commands import (
-    _linux_user_manager_identity,
-    _quiescence_command,
+    linux_user_manager_identity as _linux_user_manager_identity,
+)
+from heinzel.modules.system.daemon._manager_commands import (
+    quiescence_command as _quiescence_command,
 )
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
@@ -95,14 +107,19 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
-from heinzel.modules.system.daemon._mutation_scope import _MutationAuthority, _MutationScope
+from heinzel.modules.system.daemon._mutation_scope import (
+    MutationAuthority as _MutationAuthority,
+)
+from heinzel.modules.system.daemon._mutation_scope import (
+    MutationScope as _MutationScope,
+)
 from heinzel.modules.system.daemon._ownership import (
     ManagerState,
     profile_digest,
     profile_environment,
 )
-from heinzel.modules.system.daemon._quiescence import _Quiescence
-from heinzel.modules.system.daemon._removal import _Removal
+from heinzel.modules.system.daemon._quiescence import QuiescenceChecks as _Quiescence
+from heinzel.modules.system.daemon._removal import OfflineRemoval as _Removal
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
     Runner,

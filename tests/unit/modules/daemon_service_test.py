@@ -2574,7 +2574,7 @@ def test_linux_quiescence_requires_own_bus_and_both_inactive_units(make, tmp_pat
 
 
 def test_linux_quiescence_denies_missing_properties_and_queued_jobs():
-    from heinzel.modules.system.daemon._manager_commands import _systemd_quiescent_unit
+    from heinzel.modules.system.daemon._manager_commands import systemd_quiescent_unit as _systemd_quiescent_unit
 
     unit = "hz-daemon.service"
     base = f"Id={unit}\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nJob=\nMainPID=0\nControlPID=0\n"

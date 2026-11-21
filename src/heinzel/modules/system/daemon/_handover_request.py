@@ -21,7 +21,12 @@ from heinzel.kernel import (
     DaemonHandoverRequest,
 )
 from heinzel.modules.system.daemon import _process_birth
-from heinzel.modules.system.daemon._handover_files import _invalid_handover, _open_verified_handover_file
+from heinzel.modules.system.daemon._handover_files import (
+    invalid_handover as _invalid_handover,
+)
+from heinzel.modules.system.daemon._handover_files import (
+    verified_handover_file as _open_verified_handover_file,
+)
 from heinzel.modules.system.daemon._ownership import ManagerState
 from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME
@@ -41,7 +46,7 @@ MAX_BOOT_IDENTITY = 128
 MAX_OBSERVATION_BYTES = 128 * 1024
 
 
-def _heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: str) -> bool:
+def heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: str) -> bool:
     last_tick = heartbeat.get("last_tick")
     if not isinstance(last_tick, str) or heartbeat.get("version") != version:
         return False
@@ -51,7 +56,7 @@ def _heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: st
         return False
 
 
-class _HandoverRequest:
+class HandoverRequests:
     """Handover requests and observations of DaemonService; their state lives on the service."""
 
     if TYPE_CHECKING:
@@ -174,7 +179,7 @@ class _HandoverRequest:
                 or result.new_unit_signature != self._handover_signature()
                 or not re.fullmatch(r"[a-f0-9]{64}", result.fingerprint)
                 or len(result.contributions) > MAX_HANDOVER_CONTRIBUTIONS
-                or not _heartbeat_covers(heartbeat, result.tick_at, result.version)
+                or not heartbeat_covers(heartbeat, result.tick_at, result.version)
                 or age < timedelta(0)
                 or age > timedelta(minutes=STALE_TICKS * self._interval())
             ):

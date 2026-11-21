@@ -15,11 +15,20 @@ from typing import TYPE_CHECKING
 from heinzel import HeinzelError
 from heinzel.kernel import Installation, ProcessOutcome, host_maintenance_gate, private_read
 from heinzel.modules.system.daemon._abandoned_mutation import marker_token_matches
-from heinzel.modules.system.daemon._handover_files import _open_verified_handover_file, _safely_absent
+from heinzel.modules.system.daemon._handover_files import (
+    safely_absent as _safely_absent,
+)
+from heinzel.modules.system.daemon._handover_files import (
+    verified_handover_file as _open_verified_handover_file,
+)
 from heinzel.modules.system.daemon._manager_commands import (
-    _launchctl_quiescent_output,
-    _launchctl_records,
-    _systemd_quiescent_unit,
+    launchctl_quiescent_output as _launchctl_quiescent_output,
+)
+from heinzel.modules.system.daemon._manager_commands import (
+    launchctl_records as _launchctl_records,
+)
+from heinzel.modules.system.daemon._manager_commands import (
+    systemd_quiescent_unit as _systemd_quiescent_unit,
 )
 from heinzel.modules.system.daemon._ownership import (
     ManagerState,
@@ -32,7 +41,7 @@ from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._units import LABEL, PLATFORMS, SYSTEMD_NAME, plist_path, systemd_paths
 
 
-class _Quiescence:
+class QuiescenceChecks:
     """Quiescence and recovery checks of DaemonService; their state lives on the service."""
 
     if TYPE_CHECKING:

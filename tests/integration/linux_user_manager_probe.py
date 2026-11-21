@@ -15,9 +15,13 @@ from heinzel import Kernel, Progress, Settings
 from heinzel.kernel import Installation
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._manager_commands import (
-    _linux_user_manager_identity,
-    _quiescence_command,
-    _systemd_quiescent_unit,
+    linux_user_manager_identity as _linux_user_manager_identity,
+)
+from heinzel.modules.system.daemon._manager_commands import (
+    quiescence_command as _quiescence_command,
+)
+from heinzel.modules.system.daemon._manager_commands import (
+    systemd_quiescent_unit as _systemd_quiescent_unit,
 )
 
 

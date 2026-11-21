@@ -14,14 +14,14 @@ from heinzel import HeinzelError
 def _handover_absolute_path(path: Path) -> Path:
     absolute = path if path.is_absolute() else Path.cwd() / path
     if ".." in absolute.parts:
-        _invalid_handover()
+        invalid_handover()
     # These root-owned aliases are part of macOS's filesystem layout. Other symlinks
     # are refused, including aliases in user-controlled directories.
     if sys.platform == "darwin" and len(absolute.parts) > 1 and absolute.parts[1] in {"tmp", "var", "etc"}:
         alias = Path("/") / absolute.parts[1]
         info = os.lstat(alias)
         if not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or alias.readlink() != Path(f"private/{alias.name}"):
-            _invalid_handover()
+            invalid_handover()
         absolute = Path("/private") / absolute.relative_to("/")
     return absolute
 
@@ -30,7 +30,7 @@ def _check_handover_directory(descriptor: int) -> None:
     info = os.fstat(descriptor)
     sticky_root = info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
     if info.st_uid not in (0, os.getuid()) or (info.st_mode & 0o022 and not sticky_root):
-        _invalid_handover()
+        invalid_handover()
 
 
 @contextmanager
@@ -60,18 +60,18 @@ def _open_verified_handover_file(path: Path) -> Generator[BinaryIO]:
                 _check_handover_directory(directory)
             for child, parent, child_name in parents[1:]:
                 if parent is None or child_name is None:
-                    _invalid_handover()
+                    invalid_handover()
                 current_info = os.stat(child_name, dir_fd=parent, follow_symlinks=False)
                 initial = os.fstat(child)
                 if (current_info.st_dev, current_info.st_ino) != (initial.st_dev, initial.st_ino):
-                    _invalid_handover()
+                    invalid_handover()
             entry = os.stat(parts[-1], dir_fd=current, follow_symlinks=False)
             file_info = os.fstat(handle.fileno())
             if (entry.st_dev, entry.st_ino) != (file_info.st_dev, file_info.st_ino):
-                _invalid_handover()
+                invalid_handover()
 
 
-def _safely_absent(path: Path) -> bool:
+def safely_absent(path: Path) -> bool:
     """Confirm absence through physical, trusted parents without following directory links."""
     try:
         parts = _handover_absolute_path(path).parts[1:]
@@ -96,7 +96,7 @@ def _safely_absent(path: Path) -> bool:
         return False
 
 
-def _invalid_handover() -> Never:
+def invalid_handover() -> Never:
     msg = "The existing daemon unit could not be verified; no handover was requested."
     raise HeinzelError(msg)
 

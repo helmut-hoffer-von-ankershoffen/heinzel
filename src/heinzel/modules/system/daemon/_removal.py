@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from heinzel import HeinzelError
 from heinzel.kernel import Installation, MaintenanceLocks, private_lock
 from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
-from heinzel.modules.system.daemon._handover_files import _safely_absent
+from heinzel.modules.system.daemon._handover_files import safely_absent as _safely_absent
 from heinzel.modules.system.daemon._mutation_scope import DaemonRemoval
 from heinzel.modules.system.daemon._ownership import ManagerState, tick_environment
 from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     import subprocess
 
 
-class _Removal:
+class OfflineRemoval:
     """Offline removal of DaemonService; its state lives on the service."""
 
     if TYPE_CHECKING:

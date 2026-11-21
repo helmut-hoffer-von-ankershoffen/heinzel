@@ -11,7 +11,7 @@ from heinzel.kernel.install._tool_uninstall import OwnedFile
 
 
 @dataclass(frozen=True, slots=True)
-class _MutationAuthority:
+class MutationAuthority:
     pending_path: Path
     token_matches: Callable[[str], bool]
     capture: Callable[[], DaemonHandoverPlan]
@@ -24,10 +24,10 @@ class _MutationAuthority:
     rollback_identity: Callable[[], str]
 
 
-class _MutationScope:
+class MutationScope:
     """One lock-held mutation; only trusted host callers can supply checkpoint evidence."""
 
-    def __init__(self, token: str, authority: _MutationAuthority) -> None:
+    def __init__(self, token: str, authority: MutationAuthority) -> None:
         self.token = token
         self.authority = authority
         self.active = True

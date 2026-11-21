@@ -18,7 +18,7 @@ MANAGER_TIMEOUT = 5
 OWNED_KICKSTART_TIMEOUT = 15
 
 
-def _launchctl_quiescent_output(output: str) -> bool:
+def launchctl_quiescent_output(output: str) -> bool:
     """Whether the documented legacy list format holds no daemon record."""
     labels = _launchctl_records(output)
     return labels is not None and LABEL not in labels
@@ -110,10 +110,10 @@ def bounded_manager_command(
 
 
 # Retain the internal lifecycle probe name used by the Linux session acceptance harness.
-_quiescence_command = bounded_manager_command
+quiescence_command = bounded_manager_command
 
 
-def _linux_user_manager_identity(run_root: Path = Path("/run")) -> tuple[int, ...] | None:
+def linux_user_manager_identity(run_root: Path = Path("/run")) -> tuple[int, ...] | None:
     """Observe the private manager socket and its physical, safely owned parent directories."""
     try:
         uid = os.getuid()
@@ -143,7 +143,7 @@ def _linux_user_manager_identity(run_root: Path = Path("/run")) -> tuple[int, ..
         return directory.st_dev, directory.st_ino, systemd.st_dev, systemd.st_ino, socket.st_dev, socket.st_ino
 
 
-def _systemd_quiescent_unit(output: str, name: str) -> bool:
+def systemd_quiescent_unit(output: str, name: str) -> bool:
     """Require the documented unit properties, including an empty queued-job property."""
     values: dict[str, str] = {}
     for line in output.splitlines():
