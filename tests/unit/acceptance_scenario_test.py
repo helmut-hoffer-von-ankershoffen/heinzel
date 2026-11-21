@@ -124,3 +124,32 @@ def test_the_scenario_uses_the_users_default_state_folder_inside_the_private_hom
     assert (tmp_path / "state_dir").resolve() == folder.resolve()
     with pytest.raises(scenario.HARNESS.StepFailed, match="already exists"):
         scenario.default_state_folder(case)
+
+
+@pytest.mark.parametrize(("hours", "expected"), [(0, "0"), (24, "24")])
+def test_the_second_pass_keeps_the_plugin_gate_so_only_the_core_updates(hours, expected):
+    settings = scenario.user_settings(hours)
+    assert settings["hz.auto_update_plugin_min_age_hours"] == expected
+    assert settings["hz.auto_update_min_age_hours"] == "0"
+    assert (
+        scenario.parse_args(["--expect-version", "1.0.0", "--plugin-age-hours", str(hours)]).plugin_age_hours == hours
+    )
+    with pytest.raises(SystemExit):
+        scenario.parse_args(["--expect-version", "1.0.0", "--plugin-age-hours", "5"])
+
+
+def test_diagnostics_copy_logs_plan_and_receipts_redacted_and_never_outside_the_case(tmp_path):
+    root = tmp_path / "case"
+    (root / "logs").mkdir(parents=True)
+    (root / "logs/01-server-a.log").write_text("token SECRET-TOKEN here")
+    (root / "state_dir/web").mkdir(parents=True)
+    (root / "state_dir/web/auto-update.json").write_text('{"core": "1.0.1"}')
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not ours")
+    (root / "data_dir").mkdir()
+    (root / "data_dir/standard-app.json").symlink_to(outside)
+    out = tmp_path / "out"
+    copied = scenario.save_diagnostics(SimpleNamespace(root=root), out, {"SECRET-TOKEN"})
+    assert copied == ["logs/01-server-a.log", "state_dir/web/auto-update.json"]
+    assert "SECRET-TOKEN" not in (out / "logs/01-server-a.log").read_text()
+    assert not (out / "data_dir/standard-app.json").exists()

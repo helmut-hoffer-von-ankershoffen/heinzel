@@ -49,7 +49,7 @@ concurrency:
 
 jobs:
   scenario:
-    name: Scenario slice 1 (${{ matrix.os }})
+    name: Scenario slice 1 (${{ matrix.os }}, plugin gate ${{ matrix.plugin_age_hours }} h)
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/'))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -59,10 +59,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest]
+        # 0: core and plugins update together; 24 (a user's default): core only. Two passes tell the two apart.
+        plugin_age_hours: [0, 24]
     env:
       EXPECTED_VERSION: ${{ inputs.expected_version || 'published' }}
       FROM_VERSION: ${{ inputs.from_version || '' }}
       EXPECTED_WHEEL_SHA256: ${{ inputs.expected_wheel_sha256 || '' }}
+      PLUGIN_AGE_HOURS: ${{ matrix.plugin_age_hours }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,6 +83,8 @@ jobs:
           --expect-version "$EXPECTED_VERSION"
           --from-version "$FROM_VERSION"
           --expect-wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+          --plugin-age-hours "$PLUGIN_AGE_HOURS"
+          --diagnostics reports/acceptance/scenario-diagnostics
       - name: Summarize the scenario
         if: always()
         run: >-
@@ -89,6 +94,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: acceptance-scenario-${{ runner.os }}
+          name: acceptance-scenario-${{ runner.os }}-plugins-${{ matrix.plugin_age_hours }}h
           path: reports/acceptance/scenario.json
           if-no-files-found: error
+      - name: Upload the logs, the updater plan and the receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-scenario-diagnostics-${{ runner.os }}-plugins-${{ matrix.plugin_age_hours }}h
+          path: reports/acceptance/scenario-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7

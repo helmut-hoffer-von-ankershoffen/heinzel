@@ -141,11 +141,17 @@ def default_state_folder(case):
     return {"state_folder": str(folder)}
 
 
-def prepare_state(case):
+def user_settings(plugin_age_hours):
+    """B2's settings: the core age gate is 0 h; the plugin gate is the pass's (0: core and plugins, 24: core only)."""
+    return USER_SETTINGS | {"hz.auto_update_plugin_min_age_hours": str(plugin_age_hours)}
+
+
+def prepare_state(case, plugin_age_hours=0):
     """B2: what a user has before the update; the configuration snapshot is compared after it."""
     HARNESS.hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
     HARNESS.hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
-    for key, value in USER_SETTINGS.items():
+    settings = user_settings(plugin_age_hours)
+    for key, value in settings.items():
         HARNESS.hz(case, "system", "config", "set", key, value, label=f"user-config-{key}")
     HARNESS.expect_plugins(case, heinzel_example={"enabled": True}, heinzel_resource={"enabled": False})
     for entry in case.plugins_expected.values():
@@ -153,7 +159,7 @@ def prepare_state(case):
     case.notes["python_before"] = HARNESS.installed_interpreter(case)
     case.notes["config_before"] = HARNESS.snapshot_files(case.root / "config_home")
     HARNESS.check(case.notes["config_before"], "No user configuration exists to retain")
-    return {"user_plugin": "heinzel-example", "disabled_default": "heinzel-resource", "settings": USER_SETTINGS}
+    return {"user_plugin": "heinzel-example", "disabled_default": "heinzel-resource", "settings": settings}
 
 
 def start_servers(case, version):
@@ -258,6 +264,38 @@ def stop_all(case, servers):
     return {"stopped": [server.label for server in servers]}
 
 
+DIAGNOSTICS = (
+    "logs",  # every owned command's and server's output, redacted by the harness
+    "log_dir",  # hz's own logs
+    "state_dir/web",  # the updater's plan (auto-update.json) and locks
+    "state_dir/daemon",  # installer transactions and receipts
+    "data_dir/standard-app.json",  # the standard-app receipt
+    "tools/heinzel/uv-receipt.toml",  # what the tool environment installs from
+)
+
+
+def save_diagnostics(case, directory, secrets):
+    """Copy what explains a failed update into `directory` for upload; session tokens are redacted.
+
+    Only text files under the case root are copied, never a link that leaves it.
+    """
+    copied = []
+    for name in DIAGNOSTICS:
+        source = case.root / name
+        files = sorted(p for p in source.rglob("*") if p.is_file()) if source.is_dir() else [source]
+        for path in files:
+            if not path.is_file() or not path.resolve().is_relative_to(case.root.resolve()):
+                continue
+            target = directory / path.relative_to(case.root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            text = path.read_bytes()[: 4 * 1024 * 1024].decode(errors="replace")
+            for secret in secrets:
+                text = text.replace(secret, "<redacted>")
+            target.write_text(HARNESS.redact(text))
+            copied.append(str(path.relative_to(case.root)))
+    return copied
+
+
 def record(result, ident, status, case=None, why=None):
     result["steps"][ident] = {"status": status, **({"why": why} if why else {})}
     if case is not None:
@@ -290,7 +328,7 @@ def run_scenario(args, parent, result, ctx_base):
             case.env.pop("HZ_APP_PROFILE", None)
         record(result, "B1", "PASS", case)
         current = "B2"
-        case.step("user state before the update", lambda: prepare_state(case))
+        case.step("user state before the update", lambda: prepare_state(case, args.plugin_age_hours))
         case.step("state before the update verified", lambda: HARNESS.verify_state(case, "before"))
         record(result, "B2", "PASS", case)
         current = "B3"
@@ -350,6 +388,14 @@ def parse_args(argv=None):
     parser.add_argument("--expect-wheel-sha256", default="", help="Optional: N's Core wheel must have this digest")
     parser.add_argument("--update-deadline", type=int, default=UPDATE_DEADLINE, help="Seconds B4 may take")
     parser.add_argument("--output", type=Path, default=Path("reports/acceptance/scenario.json"))
+    parser.add_argument(
+        "--plugin-age-hours",
+        type=int,
+        choices=(0, 24),
+        default=0,
+        help="The plugin age gate: 0 updates core and plugins together, 24 (the default a user has) core only",
+    )
+    parser.add_argument("--diagnostics", type=Path, help="Copy logs, the updater plan and receipts here")
     args = parser.parse_args(argv)
     for name in ("expect_version", "from_version"):
         value = getattr(args, name)
@@ -383,6 +429,7 @@ def main(argv=None):
     result = {
         "schema": "acceptance-scenario/v1",
         "slice": 1,
+        "plugin_age_hours": args.plugin_age_hours,
         "advisory": True,
         "scenario_sha256": HARNESS.file_sha256(Path(__file__).resolve()),
         "harness_sha256": HARNESS.file_sha256(DIRECTORY / "run_acceptance.py"),
@@ -394,7 +441,8 @@ def main(argv=None):
             "The servers run in the foreground; the daemon and the service manager are not involved (case 11 says "
             "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
             "one state folder.",
-            "The age gates are set to 0 hours as a user can, so a release of minutes is installed by itself.",
+            "The core age gate is set to 0 hours as a user can, so a release of minutes is installed by itself; the "
+            "plugin gate is 0 hours (core and plugins update together) or 24 hours (the default: core only).",
             "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
             "updater treats any other state folder as development and never updates.",
             "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
@@ -424,6 +472,9 @@ def main(argv=None):
         result["verdict"] = "SCENARIO_REJECTED_ISOLATION"
     result["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     write(path, result, secrets)
+    if case is not None and args.diagnostics:
+        result["diagnostics"] = save_diagnostics(case, args.diagnostics, secrets)
+        write(path, result, secrets)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, args.output)
     print(json.dumps({"scenario_verdict": result["verdict"], "result": str(args.output)}))
