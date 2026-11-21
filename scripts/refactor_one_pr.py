@@ -75,10 +75,26 @@ def _git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True, timeout=600).stdout  # noqa: S603, S607
 
 
+def _inside(root: Path, rel: str) -> Path:
+    """The path of `rel` under `root`; a path that leaves the repository (absolute, `..`, a link out) is refused.
+
+    Raises:
+        ValueError: If `rel` does not stay inside `root`.
+    """
+    target = (root / rel).resolve()
+    if rel.startswith("/") or not target.is_relative_to(root.resolve()):
+        msg = f"{rel!r} leaves the repository"
+        raise ValueError(msg)
+    return target
+
+
 def load(root: Path, stage: str) -> Plan:
-    """Read the map and keep the entries of one stage."""
+    """Read the map and keep the entries of one stage; every path in it must stay inside the repository."""
     data = tomllib.loads((root / MAP).read_text(encoding="utf-8"))
     moves = {m["old"]: m["new"] for m in data["move"] if m["stage"] == stage}
+    for old, new in moves.items():
+        _inside(root, old)
+        _inside(root, new)
     edits = [Edit(e["file"], e["old"], e["new"]) for e in data.get("edit", []) if e["stage"] == stage]
     return Plan(moves, edits)
 
@@ -253,7 +269,7 @@ def apply(root: Path, stage: str) -> int:
         if rel.endswith(SOURCE_EXTENSIONS):
             new_text = rewriter.specifiers(new_text, old_rel, rel)
         if new_text != text:
-            (root / rel).write_text(new_text, encoding="utf-8")
+            _inside(root, rel).write_text(new_text, encoding="utf-8")
             written.add(rel)
             changed += 1
     _normalise(root, sorted(rel for rel in written if rel.endswith(".py")))
