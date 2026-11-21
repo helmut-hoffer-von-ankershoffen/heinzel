@@ -325,8 +325,8 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
-    #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
     @State private var nativeFooterWidth: CGFloat = 88
     @State private var nativeFooterBottom: CGFloat = 0
     @State private var nativeFooterGeneration = 0
