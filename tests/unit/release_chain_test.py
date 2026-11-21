@@ -451,7 +451,8 @@ def test_the_marker_is_written_once(monkeypatch):
 
 
 def git(cwd, *args):
-    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True).stdout.strip()
+    done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True, timeout=60)
+    return done.stdout.strip()
 
 
 @pytest.fixture

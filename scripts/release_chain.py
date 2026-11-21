@@ -71,6 +71,7 @@ INTRO_ITEMS = 4
 INTRO_LIMIT = 600
 PAGE = 100
 POLL = 20
+COMMAND_TIMEOUT = 300  # seconds for one gh, git or curl call
 RUN_OUTPUT = "GITHUB_OUTPUT"
 NO_RELEASE_IDENTITY = (
     "the repository secret RELEASE_TOKEN is missing: the release PR is opened and merged as the owner identity. Create "
@@ -99,7 +100,11 @@ def run(argv: list[str], *, env: dict[str, str] | None = None) -> str:
     Raises:
         ChainError: The command failed; its stderr tail is in the message.
     """
-    done = subprocess.run(argv, capture_output=True, text=True, check=False, env=env)  # noqa: S603
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, check=False, env=env, timeout=COMMAND_TIMEOUT)  # noqa: S603
+    except subprocess.TimeoutExpired as exc:
+        msg = f"{argv[0]} {argv[1] if len(argv) > 1 else ''} timed out after {COMMAND_TIMEOUT} s"
+        raise ChainError(msg) from exc
     if done.returncode:
         tail = (done.stderr or done.stdout).strip()[-600:]
         msg = f"{argv[0]} {argv[1] if len(argv) > 1 else ''} failed ({done.returncode}): {tail}"
@@ -121,12 +126,17 @@ def get(path: str, *, repo: str = REPOSITORY) -> Any:  # noqa: ANN401 - GitHub J
     Raises:
         ChainError: Any other failure.
     """
-    done = subprocess.run(  # noqa: S603
-        ["gh", "api", f"repos/{repo}/{path}"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        done = subprocess.run(  # noqa: S603
+            ["gh", "api", f"repos/{repo}/{path}"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"GitHub read {path} timed out after {COMMAND_TIMEOUT} s"
+        raise ChainError(msg) from exc
     if done.returncode:
         if "HTTP 404" in done.stderr or "Not Found" in done.stderr:
             return None
@@ -767,7 +777,16 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
 def pypi_wheel_digest(version: str) -> str | None:
     """The sha256 PyPI serves for the Core wheel of `version`, else None."""
     url = f"https://pypi.org/pypi/heinzel/{version}/json"
-    done = subprocess.run(["curl", "-fsSL", "--max-time", "30", url], capture_output=True, text=True, check=False)  # noqa: S603, S607
+    try:
+        done = subprocess.run(  # noqa: S603
+            ["curl", "-fsSL", "--max-time", "30", url],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if done.returncode:
         return None
     name = f"heinzel-{version}-py3-none-any.whl"
@@ -862,11 +881,16 @@ def download_artifact(artifact: int) -> bytes:
     Raises:
         ChainError: It cannot be downloaded.
     """
-    done = subprocess.run(  # noqa: S603
-        ["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact}/zip"],  # noqa: S607
-        capture_output=True,
-        check=False,
-    )
+    try:
+        done = subprocess.run(  # noqa: S603
+            ["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact}/zip"],  # noqa: S607
+            capture_output=True,
+            check=False,
+            timeout=COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"downloading the candidate source artifact {artifact} timed out"
+        raise ChainError(msg) from exc
     if done.returncode:
         msg = f"cannot download the candidate source artifact {artifact}"
         raise ChainError(msg)

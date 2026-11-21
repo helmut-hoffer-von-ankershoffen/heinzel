@@ -367,7 +367,8 @@ jobs:
           RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
         run: |
           if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
-          wheel="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/heinzel-$VERSION-py3-none-any.whl"
+          wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
+            --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
           # Dispatching saves up to 15 minutes; without the grant the plugins' own schedule composes it from PyPI.
           GH_TOKEN="$RELEASE_TOKEN" gh workflow run compose.yml -R helmut-hoffer-von-ankershoffen/heinzel-plugins --ref main \
             -f version="$VERSION" -f core_wheel="$wheel" \
