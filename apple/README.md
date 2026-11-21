@@ -115,4 +115,8 @@ ASC_KEY_PATH from `~/.appstoreconnect/heinzel-mini.env`, override with `ASC_ENV_
 - That internal group has automatic distribution ON (set once in the web UI; Apple refuses it over the API,
   `hasAccessToAllBuilds` cannot be updated), so every processed build reaches the testers by itself.
 - `testflight assign [BUILD]` is therefore optional: it adds a processed build the group does not hold yet.
+- `testflight beta BUILD` prints the build's internal beta state (`IN_BETA_TESTING` once testers can install it).
+- `testflight notes BUILD FILE` sets the build's "What to Test" text (en-US) from FILE; the release tooling uses the
+  GitHub release notes of the tag.
+- Export compliance needs no step: both Info.plists declare `ITSAppUsesNonExemptEncryption` false.
 - `testflight setup` only reports the group's `hasAccessToAllBuilds` state.
