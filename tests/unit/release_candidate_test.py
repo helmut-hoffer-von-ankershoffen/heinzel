@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
@@ -122,7 +123,7 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 61
+    assert len(value["jobs"]) == 62
     assert next(job for job in value["jobs"] if job["name"].startswith("Focused tests ("))["conclusion"] == "skipped"
     assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 4
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 10
@@ -325,7 +326,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 61
+    assert result["job_count"] == 62
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
@@ -537,3 +538,10 @@ def test_candidate_demands_exactly_the_python_3_15_test_cells(event):
         for runner in ("ubuntu-24.04", "macos-latest")
         for level in ("unit", "integration")
     }
+
+
+@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
+def test_candidates_expect_the_macos_main_dispatch_job_skipped(event):
+    """A candidate never dispatches the coalesced macOS main run; only a push to main does."""
+    jobs = yaml.safe_load((ROOT / candidate.WORKFLOW).read_text(encoding="utf-8"))["jobs"]
+    assert candidate.expected_jobs(event)[jobs["macos-main"]["name"]] == "skipped"

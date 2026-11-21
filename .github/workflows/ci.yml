@@ -1,11 +1,17 @@
 name: CI
-run-name: "${{ github.event_name == 'push' && 'CI batch admission ' || 'CI ' }}${{ github.sha }}"
+run-name: "${{ github.event_name == 'push' && 'CI batch admission ' || inputs.lane == 'macos' && 'CI macOS main ' || 'CI ' }}${{ github.sha }}"
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      lane: # main lanes: a push runs Linux; its macos-main job dispatches lane macos on main
+        description: "all: the whole workflow; macos: the coalesced macOS main run"
+        type: choice
+        options: [all, macos]
+        default: all
   schedule:
     - cron: "23 5 * * *" # daily: new advisories and upstream changes break unchanged code too
 
@@ -14,8 +20,12 @@ permissions: {}
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
 # each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
 # release PR (head release/*): its full-suite run is release evidence and is never cancelled.
+# main lanes: a push to main runs the Linux jobs in that per-commit group and dispatches the macOS jobs (lane macos)
+# into the one group ci-main-macos. That group keeps the running run and the newest pending one: GitHub cancels
+# an older pending run when a newer one arrives. The macOS run always runs its full macOS set, so a replaced run
+# never hides a change behind a diff base, and no batch proof binds to it (proofs bind to push runs only).
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.lane == 'macos' && 'ci-main-macos' || format('ci-{0}-{1}', github.workflow, github.ref == 'refs/heads/main' && github.sha || github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:
@@ -88,6 +98,8 @@ jobs:
     timeout-minutes: 3
     outputs:
       batch_base: ${{ needs.admission.outputs.base }}
+      lane: ${{ steps.lane.outputs.lane }} # main lanes
+      lane_exclude: ${{ steps.lane.outputs.exclude }} # main lanes
       notifier: ${{ steps.paths.outputs.notifier }}
       contracts: ${{ steps.paths.outputs.contracts }}
       electron: ${{ steps.paths.outputs.electron }}
@@ -104,6 +116,23 @@ jobs:
       focused_matrix: '{"include":[]}'
       focused_base: ""
     steps:
+      - id: lane # main lanes
+        name: Select the lane, Linux for a push to main and macOS for its coalesced dispatch
+        env:
+          EVENT: ${{ github.event_name }}
+          LANE: ${{ inputs.lane }}
+        run: |
+          case "$EVENT:${LANE:-all}" in
+            push:*) lane=linux exclude='[{"os":"macos-latest"}]' ;;
+            workflow_dispatch:macos)
+              if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+                echo "::error::The macOS lane runs only on the canonical main branch"
+                exit 1
+              fi
+              lane=macos exclude='[{"os":"ubuntu-24.04"},{"os":"ubuntu-24.04-arm"}]' ;;
+            *) lane=all exclude='[]' ;;
+          esac
+          { echo "lane=$lane"; echo "exclude=$exclude"; } >> "$GITHUB_OUTPUT"
       - id: maintenance
         name: Select bounded scheduled main maintenance
         if: github.event_name == 'schedule'
@@ -223,6 +252,20 @@ jobs:
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
 
+  macos-main: # main lanes
+    permissions:
+      actions: write
+    name: Dispatch the coalesced macOS main run
+    needs: changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Queue lane macos on main in group ci-main-macos (it replaces an older pending run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos
+
   dependency-review:
     permissions:
       contents: read
@@ -264,7 +307,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
+    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -331,6 +374,7 @@ jobs:
     strategy:
       fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -351,7 +395,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
+    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -378,6 +422,7 @@ jobs:
     strategy:
       fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
         python: ${{ fromJSON('["3.15"]') }}
@@ -387,7 +432,7 @@ jobs:
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
@@ -424,7 +469,7 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
@@ -464,7 +509,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -492,7 +537,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -519,6 +564,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
         # Core E2E lanes: supervised cold starts, tool-install/CLI, and three browser shards; every lane blocks CI OK.
         suite: [cli, supervised, web-1, web-2, web-3]
@@ -563,7 +609,7 @@ jobs:
       contents: read
     name: Plugin template
     needs: changes # starts with the Linux jobs; lint gates the merge through CI OK
-    if: needs.changes.outputs.full_ci == 'true'
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -583,7 +629,7 @@ jobs:
       contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.notifier == 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -606,7 +652,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -691,6 +737,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -764,7 +811,7 @@ jobs:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -784,7 +831,7 @@ jobs:
       contents: read
     name: Optional source plugins
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -878,7 +925,7 @@ jobs:
       contents: read
     name: Public contract consumers
     needs: [changes, core-wheel]
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.contracts == 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.contracts == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1049,7 +1096,7 @@ jobs:
   release-candidate-source:
     name: Release candidate source
     needs: changes
-    if: needs.changes.outputs.full_release == 'true'
+    if: needs.changes.outputs.full_release == 'true' && needs.changes.outputs.lane != 'macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions:
@@ -1123,6 +1170,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
         os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1203,7 +1251,7 @@ jobs:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, macos-main]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -1244,8 +1292,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
+          LANE: ${{ needs.changes.outputs.lane }} # main lanes
         run: |
           required=(admission changes lint secrets setup audit test coverage perf e2e template notifier macos-specific electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry)
+          case "${LANE:-all}" in # main lanes
+            linux) required=(admission changes lint secrets setup audit test coverage perf e2e template electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry macos-main) ;; # main lanes
+            macos) required=(admission changes secrets setup test e2e notifier macos-specific electron build quarantine-registry) ;; # main lanes
+          esac # main lanes
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
           # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
