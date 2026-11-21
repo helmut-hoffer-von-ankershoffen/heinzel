@@ -378,7 +378,7 @@ modules = ["heinzel.modules.system.agent", "heinzel.modules.system.bookmark", "h
 # Edges the move into `updater` made visible (the files were system's own before); they may only shrink.
 ignore_imports = [
     "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
@@ -407,14 +407,15 @@ name = "Heads only know what the kernel discovered"
 type = "forbidden"
 source_modules = ["heinzel.heads"]
 forbidden_modules = ["heinzel.modules"]
-# The one planned exception: heads present what the `client` context owns (device and MCP tokens, the workspace
-# handshake) by importing the context's public entry, never a private file. Until the kernel injects it by type, each
-# importing file is listed; the list may only shrink.
+# The planned exceptions: heads present what the `client` context owns (device and MCP tokens, the workspace
+# handshake) and the web head serves the `updater` context's schedule, each by importing the context's public entry,
+# never a private file. Until the kernel injects them by type, each importing file is listed; the list may only shrink.
 ignore_imports = [
     "heinzel.heads.cli._serve -> heinzel.modules.system.client",
     "heinzel.heads.mcp -> heinzel.modules.system.client",
     "heinzel.heads.web -> heinzel.modules.system.client",
     "heinzel.heads.web._auto_update -> heinzel.modules.system.client",
+    "heinzel.heads.web._auto_update -> heinzel.modules.system.updater",
     "heinzel.heads.web._mcp -> heinzel.modules.system.client",
     "heinzel.heads.web._pairing -> heinzel.modules.system.client",
     "heinzel.heads.web._widget -> heinzel.modules.system.client",
@@ -438,7 +439,7 @@ ignore_imports = [
     "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
-    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._historical_launcher",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._launcher_transition",
 ]

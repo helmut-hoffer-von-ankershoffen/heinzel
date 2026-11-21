@@ -61,7 +61,11 @@ WIDGET_CORE = frozenset(
 )
 CORE_INTEGRATION = frozenset({"tests/integration/web_widget_test.py", "tests/integration/web_widget_fence_test.py"})
 PAIRING_SOURCES = frozenset(
-    {"src/heinzel/heads/web/_auto_update.py", "src/heinzel/modules/system/client/_state_directory.py"}
+    {
+        "src/heinzel/heads/web/_auto_update.py",
+        "src/heinzel/modules/system/client/_state_directory.py",
+        "src/heinzel/modules/system/updater/_schedule.py",
+    }
 )
 PAIRING_INTEGRATION = frozenset({"tests/integration/web_state_directory_test.py"})
 APPLE_INTEGRATION = frozenset(

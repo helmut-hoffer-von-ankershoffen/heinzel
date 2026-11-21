@@ -266,6 +266,7 @@ def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
     )
     monkeypatch.setattr(announced, "installed_commit", lambda prefix: TAG_COMMIT)
     monkeypatch.setattr("heinzel.modules.system.updater._update.installed_commit", lambda prefix: TAG_COMMIT)
+    monkeypatch.setattr("heinzel.modules.system.updater._update_install.installed_commit", lambda prefix: TAG_COMMIT)
     lifecycle = Lifecycle()
     update = UpdateService(tool, Releases(), lifecycle=lifecycle)
     update.retagged = retagged
