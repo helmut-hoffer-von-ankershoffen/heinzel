@@ -175,7 +175,7 @@ contexts = [
     "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
-    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._historical_launcher",
     "heinzel.modules.system.lifecycle._service -> heinzel.modules.system.lifecycle._launcher_transition",
 ]
