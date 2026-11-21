@@ -291,3 +291,266 @@ new = "tests/integration/runtime/client/web_devices_test.py"
 stage = "client"
 old = "tests/integration/mcp_token_cli_test.py"
 new = "tests/integration/runtime/client/mcp_token_cli_test.py"
+
+# The kernel into slices (PLAN.md section 5, locality step 10): install, session, look and ai files move into
+# subpackages of the kernel; they stay in the `spec` context until the kernel gets them by type.
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_host_maintenance.py"
+new = "src/heinzel/kernel/install/_host_maintenance.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_installation.py"
+new = "src/heinzel/kernel/install/_installation.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_installation_continuity.py"
+new = "src/heinzel/kernel/install/_installation_continuity.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_installation_mutations.py"
+new = "src/heinzel/kernel/install/_installation_mutations.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_installed_metadata.py"
+new = "src/heinzel/kernel/install/_installed_metadata.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_metadata_verifier.py"
+new = "src/heinzel/kernel/install/_metadata_verifier.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_offline_uninstall.py"
+new = "src/heinzel/kernel/install/_offline_uninstall.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_offline_uv.py"
+new = "src/heinzel/kernel/install/_offline_uv.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_release.py"
+new = "src/heinzel/kernel/install/_release.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_tool_python.py"
+new = "src/heinzel/kernel/install/_tool_python.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_tool_uninstall.py"
+new = "src/heinzel/kernel/install/_tool_uninstall.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_uninstall_journal.py"
+new = "src/heinzel/kernel/install/_uninstall_journal.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_uninstall_recovery.py"
+new = "src/heinzel/kernel/install/_uninstall_recovery.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_uv_locate.py"
+new = "src/heinzel/kernel/install/_uv_locate.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_chat.py"
+new = "src/heinzel/kernel/session/_chat.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_chat_services.py"
+new = "src/heinzel/kernel/session/_chat_services.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_chat_tools.py"
+new = "src/heinzel/kernel/session/_chat_tools.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_presence.py"
+new = "src/heinzel/kernel/session/_presence.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_presence_marks.py"
+new = "src/heinzel/kernel/session/_presence_marks.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_self_chat.py"
+new = "src/heinzel/kernel/session/_self_chat.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_session.py"
+new = "src/heinzel/kernel/session/_session.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_session_io.py"
+new = "src/heinzel/kernel/session/_session_io.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_session_store.py"
+new = "src/heinzel/kernel/session/_session_store.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_contributions.py"
+new = "src/heinzel/kernel/look/_contributions.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_soundscapes.py"
+new = "src/heinzel/kernel/look/_soundscapes.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_theme_signals.py"
+new = "src/heinzel/kernel/look/_theme_signals.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_themes.py"
+new = "src/heinzel/kernel/look/_themes.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_views.py"
+new = "src/heinzel/kernel/look/_views.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_agent_writes.py"
+new = "src/heinzel/kernel/ai/_agent_writes.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_agents.py"
+new = "src/heinzel/kernel/ai/_agents.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_ai.py"
+new = "src/heinzel/kernel/ai/_ai.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_ai_models.py"
+new = "src/heinzel/kernel/ai/_ai_models.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_capabilities.py"
+new = "src/heinzel/kernel/ai/_capabilities.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_capability_schema.py"
+new = "src/heinzel/kernel/ai/_capability_schema.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_features.py"
+new = "src/heinzel/kernel/ai/_features.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_playbooks.py"
+new = "src/heinzel/kernel/ai/_playbooks.py"
+
+[[move]]
+stage = "kernel"
+old = "src/heinzel/kernel/_skills.py"
+new = "src/heinzel/kernel/ai/_skills.py"
+
+[[edit]]
+stage = "kernel"
+file = "src/heinzel/kernel/_themes.py"
+old = 'directory=Path(__file__).parent / "assets" / "theme",'
+new = 'directory=Path(__file__).parent.parent / "assets" / "theme",'
+
+[[edit]]
+stage = "kernel"
+file = ".github/workflows/ci.yml"
+old = '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|'
+new = '^(src/heinzel/(kernel/(look/_contributions|_exposure)\.py$|'
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/review_tier_test.py"
+old = 'parse_status("M\tdocs/a.md\nD\tsrc/heinzel/kernel/_installation.py\n")'
+new = 'parse_status("M\tdocs/a.md\nD\tsrc/heinzel/kernel/install/_installation.py\n")'
+
+[[edit]]
+stage = "kernel"
+file = "docs/research/plugin-extraction-opportunities.md"
+old = "(../../src/heinzel/kernel/_ai.py)"
+new = "(../../src/heinzel/kernel/ai/_ai.py)"
+
+# Mixed `from heinzel.kernel import` lines: a moved slice module next to names that stay.
+
+[[edit]]
+stage = "kernel"
+file = "tests/e2e/uv_tool_collision_test.py"
+old = '    from heinzel.kernel import Installation, _installation'
+new = '''    from heinzel.kernel import Installation
+    from heinzel.kernel import _installation'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/integration/auto_update_real_uv_test.py"
+old = 'from heinzel.kernel import Installation, ReleaseSource, _installation_continuity'
+new = '''from heinzel.kernel import Installation, ReleaseSource
+from heinzel.kernel import _installation_continuity'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/kernel/installation_continuity_test.py"
+old = 'from heinzel.kernel import Installation, _installation, _installation_continuity'
+new = '''from heinzel.kernel import Installation
+from heinzel.kernel import _installation, _installation_continuity'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/kernel/installation_test.py"
+old = 'from heinzel.kernel import Installation, ToolConstraintPolicy, _installation, requirement_from_receipt'
+new = '''from heinzel.kernel import Installation, ToolConstraintPolicy, requirement_from_receipt
+from heinzel.kernel import _installation'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/modules/ai_access_bindings_test.py"
+old = 'from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models'
+new = '''from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer
+from heinzel.kernel import _ai_models'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/modules/engine_runner_test.py"
+old = 'from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _ai_models, _claude_code'
+new = '''from heinzel.kernel import AiModelsSource, EnvironmentBackend, ModelOffer, _claude_code
+from heinzel.kernel import _ai_models'''
+
+[[edit]]
+stage = "kernel"
+file = "tests/unit/modules/plugin_unpin_test.py"
+old = 'from heinzel.kernel import ENTRY_POINT_GROUP, Installation, _installation_continuity'
+new = '''from heinzel.kernel import ENTRY_POINT_GROUP, Installation
+from heinzel.kernel import _installation_continuity'''
