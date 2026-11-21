@@ -23,9 +23,9 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [attrs](#attrs-2610) | 26.1.0 | MIT |
 | [cffi](#cffi-211) | 2.1.1 | MIT-0 |
 | [click](#click-850) | 8.5.0 | BSD-3-Clause |
-| [croniter](#croniter-624) | 6.2.4 | MIT |
+| [croniter](#croniter-700) | 7.0.0 | MIT |
 | [cryptography](#cryptography-5002) | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
-| [fastapi](#fastapi-01620) | 0.162.0 | MIT |
+| [fastapi](#fastapi-01627) | 0.162.7 | MIT |
 | [genai-prices](#genai-prices-0113) | 0.1.13 | MIT |
 | [griffelib](#griffelib-241) | 2.4.1 | ISC |
 | [h11](#h11-0160) | 0.16.0 | MIT |
@@ -47,15 +47,15 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [more-itertools](#more-itertools-1121) | 11.2.1 | MIT |
 | [opentelemetry-api](#opentelemetry-api-1452) | 1.45.2 | Apache-2.0 |
 | [packaging](#packaging-263) | 26.3 | Apache-2.0 OR BSD-2-Clause |
-| [platformdirs](#platformdirs-4140) | 4.14.0 | MIT |
+| [platformdirs](#platformdirs-4145) | 4.14.5 | MIT |
 | [pluggy](#pluggy-170) | 1.7.0 | MIT |
 | [psutil](#psutil-722) | 7.2.2 | BSD-3-Clause |
 | [pycparser](#pycparser-312) | 3.12 | BSD-3-Clause |
-| [pydantic](#pydantic-2142) | 2.14.2 | MIT |
+| [pydantic](#pydantic-2143) | 2.14.3 | MIT |
 | [pydantic-ai-slim](#pydantic-ai-slim-2610) | 2.61.0 | MIT |
-| [pydantic-core](#pydantic-core-2502) | 2.50.2 | MIT |
+| [pydantic-core](#pydantic-core-2504) | 2.50.4 | MIT |
 | [pydantic-graph](#pydantic-graph-2610) | 2.61.0 | MIT |
-| [pydantic-settings](#pydantic-settings-2162) | 2.16.2 | MIT |
+| [pydantic-settings](#pydantic-settings-2163) | 2.16.3 | MIT |
 | [pygments](#pygments-2210) | 2.21.0 | BSD-2-Clause |
 | [pyjwt](#pyjwt-2151) | 2.15.1 | MIT |
 | [python-dateutil](#python-dateutil-300) | 3.0.0 | Apache-2.0 OR BSD |
@@ -72,11 +72,11 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [starlette](#starlette-190) | 1.9.0 | BSD-3-Clause |
 | [tomlkit](#tomlkit-0152) | 0.15.2 | MIT |
 | [truststore](#truststore-0105) | 0.10.5 | MIT |
-| [typer](#typer-0290) | 0.29.0 | MIT |
+| [typer](#typer-0291) | 0.29.1 | MIT |
 | [typing-extensions](#typing-extensions-4160) | 4.16.0 | PSF-2.0 |
 | [typing-inspection](#typing-inspection-044) | 0.4.4 | MIT |
 | [tzdata](#tzdata-20265) | 2026.5 | Apache-2.0 |
-| [uv](#uv-0137) | 0.13.7 | MIT OR Apache-2.0 |
+| [uv](#uv-0138) | 0.13.8 | MIT OR Apache-2.0 |
 | [uvicorn](#uvicorn-0540) | 0.54.0 | BSD-3-Clause |
 | [wsproto](#wsproto-132) | 1.3.2 | MIT |
 
@@ -290,7 +290,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### croniter 6.2.4
+### croniter 7.0.0
 
 - License: MIT
 - Homepage: <https://github.com/pallets-eco/croniter>
@@ -566,7 +566,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### fastapi 0.162.0
+### fastapi 0.162.7
 
 - License: MIT
 - Homepage: <https://github.com/fastapi/fastapi>
@@ -1699,7 +1699,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### platformdirs 4.14.0
+### platformdirs 4.14.5
 
 - License: MIT
 - Homepage: <https://github.com/tox-dev/platformdirs>
@@ -1849,7 +1849,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### pydantic 2.14.2
+### pydantic 2.14.3
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic>
@@ -1917,7 +1917,7 @@ SOFTWARE.
 
 </details>
 
-### pydantic-core 2.50.2
+### pydantic-core 2.50.4
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic/tree/main/pydantic-core>
@@ -1985,7 +1985,7 @@ SOFTWARE.
 
 </details>
 
-### pydantic-settings 2.16.2
+### pydantic-settings 2.16.3
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic-settings>
@@ -2783,7 +2783,7 @@ THE SOFTWARE.
 
 </details>
 
-### typer 0.29.0
+### typer 0.29.1
 
 - License: MIT
 - Homepage: <https://github.com/fastapi/typer>
@@ -3380,7 +3380,7 @@ limitations under the License.
 
 </details>
 
-### uv 0.13.7
+### uv 0.13.8
 
 - License: MIT OR Apache-2.0
 - Homepage: <https://github.com/astral-sh/uv>
