@@ -13,6 +13,44 @@ struct LocalServiceProbe {
             }
             throw ProbeFailure.unexpectedStartup
         }
+        if CommandLine.arguments.last == "flaky" {
+            // The service fails two probes, then answers again: below the threshold of three, so no loss.
+            service.probeInterval = .milliseconds(100)
+            var lost = false
+            service.onLost = { lost = true }
+            let endpoint = try await service.start()
+            try await Task.sleep(for: .milliseconds(1500))
+            guard !lost else { throw ProbeFailure.falseLoss }
+            try await expectFixture(endpoint)
+            await service.stop()
+            return
+        }
+        if CommandLine.arguments.last == "overlap" {
+            // A re-attach and the person's click at once share one attach.
+            async let first = service.start()
+            async let second = service.start()
+            let (a, b) = try await (first, second)
+            guard a.origin == b.origin else { throw ProbeFailure.unexpectedLifecycle }
+            await service.stop()
+            return
+        }
+        if CommandLine.arguments.last == "backoff" {
+            var waits: [Duration] = []
+            var attempts = 0
+            let back = await LocalService.retrying(wait: { waits.append($0) }) {
+                attempts += 1
+                return attempts == 3
+            }
+            guard back, attempts == 3, waits == [.seconds(5), .seconds(10)] else { throw ProbeFailure.backoff }
+            waits = []
+            attempts = 0
+            let never = await LocalService.retrying(wait: { waits.append($0) }) {
+                attempts += 1
+                return false
+            }
+            guard !never, attempts == 5, waits == LocalService.reattachDelays else { throw ProbeFailure.backoff }
+            return
+        }
         if CommandLine.arguments.last == "lost" {
             try await reattachAfterLoss(service)
             return
@@ -68,6 +106,6 @@ struct LocalServiceProbe {
     }
 
     enum ProbeFailure: Error {
-        case spawnsAServer, unexpectedStartup, unexpectedLifecycle, uncleanShutdown, serviceStopped, lossUnnoticed
+        case spawnsAServer, unexpectedStartup, unexpectedLifecycle, uncleanShutdown, serviceStopped, lossUnnoticed, falseLoss, backoff
     }
 }

@@ -9,6 +9,7 @@ const STARTUP_TIMEOUT_MS = 60_000;
 const OUTPUT_LIMIT = 4096;
 // How often the app asks the attached service whether it still answers; a lost service is attached again.
 const PROBE_INTERVAL_MS = 5_000;
+const LOST_AFTER = 3;
 /** The exact arguments: the app only ever attaches, never `ui serve`. */
 export const ATTACH_ARGUMENTS = Object.freeze(["ui", "attach", "--bridge-token-stdin"]);
 
@@ -56,6 +57,16 @@ export function installedCli(home = homedir()) {
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/**
+ * The CLI an unpackaged (dev) app attaches with: `HZ_DESKTOP_DEV_CLI` when it is an absolute path, else `hz` on
+ * PATH. `hz ui attach` installs or starts that user's own login service, so point this at an isolated stand-in
+ * (`e2e/isolated-service.mjs`, as the e2e harnesses do) to keep a dev run off your own service.
+ */
+export function developmentCli(env = process.env) {
+  const chosen = env.HZ_DESKTOP_DEV_CLI;
+  return typeof chosen === "string" && isAbsolute(chosen) && !chosen.includes("\0") ? chosen : "hz";
 }
 
 /** Hold the installer's exclusive gate until this process exits. */
@@ -135,6 +146,8 @@ export function createOwnedCli({
   // Asks the attached service whether it still answers this connection (its lifecycle); rejects when it does not.
   probe = null,
   probeIntervalMs = PROBE_INTERVAL_MS,
+  // Consecutive failed probes before the service counts as lost: one slow answer during a restart is not a loss.
+  lostAfter = LOST_AFTER,
   startupTimeoutMs = STARTUP_TIMEOUT_MS,
   setInterval: every = setInterval,
   clearInterval: stopEvery = clearInterval,
@@ -225,13 +238,16 @@ export function createOwnedCli({
 
   function watch() {
     let probing = false;
+    let failures = 0;
     watcher = every(async () => {
       if (probing || !attached || detached) return;
       probing = true;
       try {
         await probe(connection);
+        failures = 0;
       } catch {
-        if (!attached || detached) return;
+        failures += 1;
+        if (!attached || detached || failures < lostAfter) return;
         attached = false;
         stopEvery(watcher);
         watcher = null;

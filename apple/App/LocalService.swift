@@ -12,22 +12,46 @@ import Synchronization
 final class LocalService: NSObject, NSApplicationDelegate {
     private var installation: ManagedInstallation?
     private var attached: (executable: String, environment: [String: String])?
-    private var attaching = false
+    private var pending: Task<Endpoint, Error>?
     private var monitor: Task<Void, Never>?
     /// Called when the attached service stops answering this endpoint (a crash restart has a new session token);
     /// the app then attaches again.
     var onLost: (() -> Void)?
     /// How often the app asks the attached service whether it still answers.
     var probeInterval: Duration = .seconds(5)
+    /// Consecutive failed probes before the service counts as lost: one slow answer during a restart is no loss.
+    var lostAfter = 3
+    /// The waits between attempts to attach again after a loss (bounded backoff).
+    static let reattachDelays: [Duration] = [.seconds(5), .seconds(10), .seconds(20), .seconds(40)]
+
+    /// Try `attempt` now, then after each delay; true at the first success, false when all failed.
+    static func retrying(
+        delays: [Duration] = reattachDelays,
+        wait: (Duration) async -> Void = { try? await Task.sleep(for: $0) },
+        attempt: () async -> Bool
+    ) async -> Bool {
+        for index in 0...delays.count {
+            if Task.isCancelled { return false }
+            if await attempt() { return true }
+            if index < delays.count { await wait(delays[index]) }
+        }
+        return false
+    }
 
     /// The exact arguments: the app only ever attaches. Tests check that `serve` never appears.
     static let attachArguments = ["ui", "attach"]
 
+    /// Attach, or wait for the attach already running (a re-attach and the person's click share one).
     func start() async throws -> Endpoint {
+        if let pending { return try await pending.value }
+        let task = Task { try await self.attach() }
+        pending = task
+        defer { pending = nil }
+        return try await task.value
+    }
+
+    private func attach() async throws -> Endpoint {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        guard !attaching else { throw ConnectionError.startup }
-        attaching = true
-        defer { attaching = false }
         let executable: String
         if Bundle.main.object(forInfoDictionaryKey: "HeinzelManagedInstall") as? String == "YES" {
             let binding = try installation ?? ManagedInstallation(home: home)
@@ -97,14 +121,19 @@ final class LocalService: NSObject, NSApplicationDelegate {
     private func watch(_ endpoint: Endpoint) {
         monitor?.cancel()
         let interval = probeInterval
+        let threshold = max(1, lostAfter)
         monitor = Task { [weak self] in
+            var failures = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: interval)
                 if Task.isCancelled { return }
                 do {
                     _ = try await endpoint.readLifecycle()
+                    failures = 0
                 } catch {
+                    failures += 1
                     if Task.isCancelled { return }
+                    if failures < threshold { continue }
                     self?.monitor = nil
                     self?.onLost?()
                     return

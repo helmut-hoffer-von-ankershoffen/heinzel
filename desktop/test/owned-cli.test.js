@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { ATTACH_ARGUMENTS, acquireDesktopGate, createOwnedCli, installedCli } from "../src/owned-cli.js";
+import { ATTACH_ARGUMENTS, acquireDesktopGate, createOwnedCli, developmentCli, installedCli } from "../src/owned-cli.js";
 
 const url = "http://127.0.0.1:43817/#token=abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -193,10 +193,13 @@ test("a service that stops answering (a crash restart: new token, bridge forgott
   assert.equal(owned.isRunning(), true);
   answering = false;
   await tick();
-  assert.equal(owned.isRunning(), false);
+  await tick();
+  assert.equal(owned.isRunning(), true, "two failed probes are not yet a loss");
+  await tick();
+  assert.equal(owned.isRunning(), false, "the third consecutive failure is");
   assert.deepEqual(await owned.exited(), { code: null, signal: null, serviceLost: true });
   assert.equal(cleared, 1);
-  assert.deepEqual(probed, ["http://127.0.0.1:43817", "http://127.0.0.1:43817"]);
+  assert.equal(probed.length, 4);
   // The next attach is a new handle, so it registers the bridge token again with the new server.
   const next = makeChild();
   const again = createOwnedCli({ spawn: () => next, bridgeToken: "c".repeat(43) });
@@ -204,6 +207,29 @@ test("a service that stops answering (a crash restart: new token, bridge forgott
   next.finish(`${url}\n`);
   await reattached;
   assert.equal(next.received, `${"c".repeat(43)}\n`);
+});
+
+test("a probe that fails and then answers again resets the count: a restart blip is no loss", async () => {
+  const child = makeChild();
+  let tick;
+  const answers = [false, false, true, false, false, true];
+  const owned = createOwnedCli({
+    spawn: () => child,
+    probe: async () => { if (!answers.shift()) throw new Error("refused"); },
+    setInterval: (callback) => { tick = callback; return 1; },
+    clearInterval: () => assert.fail("never lost"),
+  });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  for (let i = 0; i < 6; i++) await tick();
+  assert.equal(owned.isRunning(), true);
+});
+
+test("a dev run takes only an absolute HZ_DESKTOP_DEV_CLI, else hz on PATH", () => {
+  assert.equal(developmentCli({}), "hz");
+  assert.equal(developmentCli({ HZ_DESKTOP_DEV_CLI: "/tmp/isolated/hz" }), "/tmp/isolated/hz");
+  assert.equal(developmentCli({ HZ_DESKTOP_DEV_CLI: "relative/hz" }), "hz");
 });
 
 test("quitting stops the probe", async () => {

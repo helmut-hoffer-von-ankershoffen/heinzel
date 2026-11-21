@@ -39,10 +39,15 @@ if mode == "oversized":
     exit(0)
 
 token = "x" * 43
+answered = []
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.headers.get("Authorization") != "Bearer " + token:
             self.send_error(401)
+            return
+        answered.append(self.path)
+        if mode == "flaky" and self.path == "/api/lifecycle" and len(answered) in {2, 3}:
+            self.send_error(503)  # two failed probes during a restart, then it answers again
             return
         if self.path == "/api/lifecycle":
             self.send_response(200)
@@ -64,6 +69,9 @@ with open("service.pid", "w") as record:
 os.write(1, f"http://127.0.0.1:{server.server_port}/#token={token}\\n".encode())
 exit(1 if mode == "fails" else 0)
 """
+
+
+PROBES = {"lost", "flaky", "overlap", "backoff", "outdated"}
 
 
 @pytest.fixture(scope="module")
@@ -93,7 +101,9 @@ def local_service_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.timeout(75)  # Includes a cold Swift compiler and SDK module cache.
-@pytest.mark.parametrize("mode", ["attach", "lost", "outdated", "fails", "eof", "oversized"])
+@pytest.mark.parametrize(
+    "mode", ["attach", "lost", "flaky", "overlap", "backoff", "outdated", "fails", "eof", "oversized"]
+)
 def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     local_service_probe: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
@@ -104,13 +114,14 @@ def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     monkeypatch.setenv("HEINZEL_PROBE_REPO", str(ROOT))
     try:
         subprocess.run(
-            [str(local_service_probe), {"attach": "open", "lost": "lost", "outdated": "outdated"}.get(mode, "refuse")],
+            [str(local_service_probe), {"attach": "open"}.get(mode, mode if mode in PROBES else "refuse")],
             cwd=tmp_path,
             check=True,
             timeout=15,
         )
-        # One attach per start, never `serve`; a lost service is attached again.
-        assert (tmp_path / "argv").read_text(encoding="utf-8") == ("attach\n" * (2 if mode == "lost" else 1))
+        # One attach per start, never `serve`; a lost service is attached again; overlapping starts share one.
+        if mode != "backoff":
+            assert (tmp_path / "argv").read_text(encoding="utf-8") == ("attach\n" * (2 if mode == "lost" else 1))
     finally:
         record = tmp_path / "service.pid"
         if record.exists():

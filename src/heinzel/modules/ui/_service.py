@@ -840,13 +840,23 @@ class WebService:
         return url
 
     def _load(self) -> None:
-        """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it."""
+        """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it.
+
+        Raises:
+            HeinzelError: With the manager's own reason when it refuses.
+        """
         command = (
             self._command("bootstrap", f"gui/{self.uid}", str(self.unit))
             if self.platform == "darwin"
             else self._command("start", UNIT)
         )
-        self.runner(command)  # The readiness wait that follows is the only evidence; a refusal shows there.
+        result = self.runner(command)
+        if result.returncode != 0:
+            # The manager's own words, e.g. a Linux login without a `systemd --user` session, not a readiness timeout.
+            detail = (result.stderr or result.stdout).strip().splitlines()
+            reason = detail[-1][:300] if detail else f"exit {result.returncode}"
+            msg = f"The service manager could not start the web service ({reason}). Inspect `hz ui status`."
+            raise HeinzelError(msg)
 
     def restart(self) -> WebRestart:
         """Ask the live owned web server to use its existing socket and token handoff.

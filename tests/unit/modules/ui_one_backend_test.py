@@ -153,14 +153,25 @@ def test_an_unreadable_process_list_retires_nothing():
 class _Attachable(WebService):
     """A WebService with its OS seams replaced: installing, loading and readiness are scripted."""
 
-    def __init__(self, tmp_path: Path, statuses: list[WebStatus], *, installed: bool = True) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        statuses: list[WebStatus],
+        *,
+        installed: bool = True,
+        platform: str = "darwin",
+        runner=None,
+    ) -> None:
+        self.manager = runner
         super().__init__(
             tmp_path / "state",
             tmp_path / "home",
             tmp_path / "bin/hz",
-            platform="darwin",
+            platform=platform,
             profile={},
             prefix=tmp_path / "tool",
+            which=lambda name: f"/usr/bin/{name}",
+            **({"runner": runner} if runner is not None else {}),
             clock=lambda: float(len(self.calls)),
             sleep=lambda _seconds: self.calls.append("sleep"),
         )
@@ -181,6 +192,8 @@ class _Attachable(WebService):
 
     def _load(self) -> None:
         self.calls.append("load")
+        if self.manager is not None:
+            super()._load()
 
     def open_local(self) -> str | None:
         self.calls.append("open")
@@ -267,3 +280,38 @@ def test_doctor_runtime_without_a_service_or_in_a_dev_checkout_is_not_a_finding(
     assert found == [("runtime: one backend", Status.UP), ("runtime: no leftover servers", Status.UP)]
     stuck = WebStatus(installed=True, loaded=True, ready=False)
     assert _doctor(stuck, Machine())[0][0] == ("runtime: one backend", Status.DEGRADED)
+
+
+class _Systemctl:
+    """A user systemd that records its commands and refuses with its own words when asked to."""
+
+    def __init__(self, refusal: str | None = None) -> None:
+        self.commands: list[list[str]] = []
+        self.refusal = refusal
+
+    def __call__(self, command):
+        import subprocess
+
+        self.commands.append(list(command))
+        if self.refusal is not None:
+            return subprocess.CompletedProcess(command, 1, "", f"{self.refusal}\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+
+def test_on_linux_attach_starts_a_unit_its_manager_lost_with_systemctl_user_start(tmp_path):
+    unloaded = WebStatus(installed=True, loaded=False, ready=False, port=8737)
+    systemd = _Systemctl()
+    web = _Attachable(tmp_path, [unloaded, READY], platform="linux", runner=systemd)
+    web.attach(8737)
+    assert systemd.commands == [["/usr/bin/systemctl", "--user", "start", "hz-web.service"]]
+    assert web.calls[-1] == "open"
+
+
+def test_on_linux_a_refused_start_names_the_managers_reason_at_once(tmp_path):
+    unloaded = WebStatus(installed=True, loaded=False, ready=False, port=8737)
+    refusal = "Failed to connect to bus: No medium found"
+    web = _Attachable(tmp_path, [unloaded], platform="linux", runner=_Systemctl(refusal))
+    with pytest.raises(HeinzelError, match="No medium found"):
+        web.attach(8737)
+    assert "sleep" not in web.calls  # no readiness wait: the reason is known
+    assert "open" not in web.calls
