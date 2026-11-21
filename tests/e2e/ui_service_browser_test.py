@@ -5,6 +5,7 @@ import subprocess
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.e2e.ui_service_test import supervised
 from tests.e2e.web_ui_test import REPO, _browser_ready
@@ -37,7 +38,7 @@ def test_installed_server_restarts_from_settings_and_reconnects_the_selected_pro
         capture_output=True,
         text=True,
         check=False,
-        timeout=200,
+        timeout=scaled(200),
     )
     assert driven.returncode == 0, driven.stderr
     assert json.loads(driven.stdout.strip().splitlines()[-1]) == {

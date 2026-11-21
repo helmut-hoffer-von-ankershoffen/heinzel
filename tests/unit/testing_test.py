@@ -9,7 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from heinzel.testing import CATEGORIES, OWN_DIRECTORIES, TIMEOUTS, hz_isolation, pytest_collection_modifyitems
+from heinzel.testing import (
+    CATEGORIES,
+    OWN_DIRECTORIES,
+    TIMEOUTS,
+    hz_isolation,
+    pytest_collection_modifyitems,
+    scaled,
+    timeout_scale,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -25,7 +33,7 @@ class FakeItem:
     def get_closest_marker(self, name: str) -> pytest.Mark | None:
         return self.markers.get(name)
 
-    def add_marker(self, marker: pytest.MarkDecorator) -> None:
+    def add_marker(self, marker: pytest.MarkDecorator, append: bool = True) -> None:
         self.markers[marker.name] = marker.mark
 
 
@@ -45,7 +53,11 @@ def test_orders_tests_by_level_and_gives_each_its_timeout_unless_set():
     items = [item("e", "e2e"), item("i", "integration", timeout=60), item("u", "unit")]
     pytest_collection_modifyitems(config(MARKERS), items)  # type: ignore[arg-type]
     assert [i.nodeid for i in items] == ["u", "i", "e"]
-    assert [i.markers["timeout"].args[0] for i in items] == [TIMEOUTS["unit"], 60, TIMEOUTS["e2e"]]
+    assert [i.markers["timeout"].args[0] for i in items] == [
+        scaled(TIMEOUTS["unit"]),
+        scaled(60),
+        scaled(TIMEOUTS["e2e"]),
+    ]
 
 
 def test_refuses_tests_without_exactly_one_level():
@@ -70,7 +82,25 @@ def test_sets_no_timeout_without_pytest_timeout():
 def test_this_suite_runs_with_the_policy(request):
     marker = request.node.get_closest_marker("timeout")
     assert marker
-    assert marker.args[0] == TIMEOUTS["unit"]
+    assert marker.args[0] == scaled(TIMEOUTS["unit"])
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, 1.0), ("3", 3.0), ("2.5", 2.5), ("0.5", 1.0), ("x", 1.0), ("nan", 1.0), ("inf", 1.0)]
+)
+def test_timeout_scale_reads_the_variable_and_ignores_unusable_values(monkeypatch, value, expected):
+    monkeypatch.delenv("HZ_TEST_TIMEOUT_SCALE", raising=False)
+    if value is not None:
+        monkeypatch.setenv("HZ_TEST_TIMEOUT_SCALE", value)
+    assert timeout_scale() == expected
+    assert scaled(10) == 10 * expected
+
+
+def test_scale_multiplies_level_and_explicit_timeouts(monkeypatch):
+    monkeypatch.setenv("HZ_TEST_TIMEOUT_SCALE", "3")
+    items = [item("u", "unit"), item("i", "integration", timeout=60)]
+    pytest_collection_modifyitems(config(MARKERS), items)  # type: ignore[arg-type]
+    assert [i.markers["timeout"].args[0] for i in items] == [15, 180]
 
 
 def test_coding_standards_state_the_enforced_timeouts():

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from heinzel.kernel import HeinzelError
+from heinzel.testing import scaled
 
 _TRACEBACK_FILES = {
     "__init__.py",
@@ -306,8 +307,9 @@ class RunningService:
 
     def ready(self, previous=None):
         status = None
-        deadline = time.monotonic() + 12
-        self.ready_started = deadline - 12
+        limit = scaled(12)
+        deadline = time.monotonic() + limit
+        self.ready_started = deadline - limit
         self.control_failure = None
         self.control_failure_count = 0
         changed = threading.Event()

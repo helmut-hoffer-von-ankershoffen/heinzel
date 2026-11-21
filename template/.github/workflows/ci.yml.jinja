@@ -160,6 +160,8 @@ jobs:
         # under that same cap. PRs run the newest version; non-PR runs cover all versions.
         include:
           ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+    env:
+      HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -252,6 +254,8 @@ jobs:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    env:
+      HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}"
     strategy:
       fail-fast: false
       matrix:
