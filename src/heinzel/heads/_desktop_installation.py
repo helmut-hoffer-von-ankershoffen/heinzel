@@ -12,7 +12,7 @@ import struct
 import subprocess
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -444,6 +444,47 @@ def _in_use(bundle: Path) -> bool:
     return any(
         line.startswith(prefix) or (translocated in line and name in line) for line in result.stdout.splitlines()
     )
+
+
+QUIT_SECONDS = 20.0
+"""How long `hz app install --restart` waits for an open app to quit (`heinzel.modules.system._update` mirrors it)."""
+_QUIT_POLL_SECONDS = 0.5
+_QUIT_SCRIPT = ("on run argv", "tell application (item 1 of argv) to quit", "end run")
+
+
+def is_open(bundle: Path) -> bool:
+    """Whether the app at `bundle` is open now."""
+    return _in_use(bundle)
+
+
+def quit_app(  # noqa: PLR0913 - the seams a test replaces: the clock, the wait, the quit and the check
+    bundle: Path,
+    *,
+    wait: float = QUIT_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    run: Callable[..., object] = subprocess.run,
+    running: Callable[[Path], bool] = _in_use,
+) -> bool:
+    """Ask the open app to quit with an Apple event and wait up to `wait` seconds; whether it is gone.
+
+    It never signals the process: an app that is still open after `wait` (an unsaved-changes dialog, a refusal, no
+    Automation permission) stays open and the caller defers. The path goes in as an argument, never into the script.
+    """
+    with step("install", "quit", path=str(bundle)) as result:
+        command = ["/usr/bin/osascript", *(part for line in _QUIT_SCRIPT for part in ("-e", line)), str(bundle)]
+        try:
+            run(command, check=False, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            result["asked"] = False
+        deadline = clock() + wait
+        while running(bundle):
+            if clock() >= deadline:
+                result["outcome"] = "open"
+                return False
+            sleep(_QUIT_POLL_SECONDS)
+        result["outcome"] = "gone"
+        return True
 
 
 def _verify_bundle(bundle: Path, version: str, flavor: DesktopFlavor = DesktopFlavor.ELECTRON) -> None:

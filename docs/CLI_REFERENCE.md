@@ -253,6 +253,7 @@ $ hz app install [OPTIONS]
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
 * `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
+* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
 * `--help`: Show this message and exit.
 
 ### `hz app open`
@@ -320,6 +321,7 @@ $ hz app update [OPTIONS]
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
 * `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
+* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
 * `--help`: Show this message and exit.
 
 ## `hz chat`
@@ -4965,7 +4967,7 @@ $ hz system uninstall [OPTIONS]
 
 ### `hz system update`
 
-Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
 
 **Usage**:
 
@@ -4977,11 +4979,12 @@ $ hz system update [OPTIONS]
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
 * `--channel <stable|edge|main|release>`: Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.
-* `--yes / --no-yes`: Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question.  [default: no-yes]
-* `--plan <str>`: The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.
+* `--plan <str>`: The `token` of the plan that was shown (`--preview`). The update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.
 * `--preview / --no-preview`: Only show what the update would change (`plan`); nothing is installed.  [default: no-preview]
 * `--keep-pins / --no-keep-pins`: Leave plugins pinned to an exact version or a commit where they are.  [default: no-keep-pins]
-* `--desktop / --no-desktop`: Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app&#x27;s own next update.
+* `--desktop-app / --no-desktop-app`: Whether to bring an installed desktop app along with `hz app install`; `--no-desktop-app` leaves it.  [default: desktop-app]
+* `--desktop-app-restart / --no-desktop-app-restart`: Whether an open desktop app is quit and reopened so it can be replaced. `--no-desktop-app-restart` never quits it: it then installs when you quit it. The app&#x27;s own service never quits the app, whatever this says.  [default: desktop-app-restart]
+* `--daemon / --no-daemon`: Whether the daemon and the web server are restarted onto what was installed. `--no-daemon` leaves them running and says which version they still run.  [default: daemon]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
