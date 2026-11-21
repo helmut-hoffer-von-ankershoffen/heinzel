@@ -14,7 +14,7 @@ from heinzel.kernel import (
     CapturedWriteTarget,
     Kernel,
 )
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel.ai._features import feature_enabled
 
 OPERATION = "insert-draft"
 NEW_FILE = "new:"

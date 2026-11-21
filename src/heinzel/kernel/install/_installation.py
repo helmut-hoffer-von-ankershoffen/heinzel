@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
 
 if TYPE_CHECKING:
-    from heinzel.kernel._offline_uv import VerifiedUV
+    from heinzel.kernel.install._offline_uv import VerifiedUV
 
 import tomlkit
 from packaging.requirements import InvalidRequirement, Requirement
@@ -40,11 +40,11 @@ from packaging.utils import (
 )
 from packaging.version import InvalidVersion, Version
 
-from heinzel.kernel import _installation_continuity, _installed_metadata, _tool_python
 from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
-from heinzel.kernel._uv_locate import find_uv, missing_uv_message, with_search_path
+from heinzel.kernel.install import _installation_continuity, _installed_metadata, _tool_python
+from heinzel.kernel.install._uv_locate import find_uv, missing_uv_message, with_search_path
 
 RECEIPT_FILENAME = "uv-receipt.toml"
 _MAX_RECEIPT_BYTES = 1024 * 1024
@@ -1065,7 +1065,7 @@ class Installation:
             HeinzelError: If the running tool's receipt or physical authority cannot be verified.
             OSError: If a target cannot be inspected.
         """
-        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
+        from heinzel.kernel.install._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
 
         target = self._current_tool_target()
         store, binary = Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])
@@ -1092,7 +1092,7 @@ class Installation:
             HeinzelError: If continuity, target, uv or the observed removal cannot be verified.
             OSError: If a selected path cannot be inspected.
         """
-        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal only
+        from heinzel.kernel.install._tool_uninstall import physical_directory  # noqa: PLC0415 - removal only
 
         with self.tool_transaction():
             target = self._current_tool_target()
@@ -1129,7 +1129,7 @@ class Installation:
                     "Offline removal could not be verified. Heinzel services remain stopped; inspect the local uv tool."
                 )
                 raise HeinzelError(msg)
-            from heinzel.kernel._offline_uv import fsync_directory  # noqa: PLC0415 - durable removal result
+            from heinzel.kernel.install._offline_uv import fsync_directory  # noqa: PLC0415 - durable removal result
 
             fsync_directory(Path(target["UV_TOOL_DIR"]))
             fsync_directory(Path(target["UV_TOOL_BIN_DIR"]))

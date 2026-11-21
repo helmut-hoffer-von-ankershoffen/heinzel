@@ -7,8 +7,8 @@ from typing import Any, get_type_hints
 
 from pydantic import ConfigDict, TypeAdapter, create_model
 
-from heinzel.kernel._capabilities import CAPABILITIES
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel.ai._capabilities import CAPABILITIES
 
 _MAX_SCHEMA_BYTES = 16_000
 

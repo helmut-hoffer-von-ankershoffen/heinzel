@@ -15,11 +15,11 @@ from heinzel import HeinzelError, Kernel
 from heinzel.kernel import CurrentUser
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._browser_relay import BrowserRelay
-from heinzel.kernel._chat_services import McpChatSessions
-from heinzel.kernel._chat_tools import AUTHENTICATION, HEAD, ChatTool, ChatToolError, chat_tools
 from heinzel.kernel._exposure import exposed
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._text import redact_emails
+from heinzel.kernel.session._chat_services import McpChatSessions
+from heinzel.kernel.session._chat_tools import AUTHENTICATION, HEAD, ChatTool, ChatToolError, chat_tools
 
 log = logging.getLogger(__name__)
 REFUSED = "This is not a browser tool of this chat."

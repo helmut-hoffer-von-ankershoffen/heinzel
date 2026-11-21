@@ -7,8 +7,8 @@ from typing import override
 
 import pytest
 
-import heinzel.kernel._ai as ai_module
-import heinzel.kernel._session_store as session_store
+import heinzel.kernel.ai._ai as ai_module
+import heinzel.kernel.session._session_store as session_store
 import heinzel.modules.heinzel._autonomous_schedule as schedule_module
 import heinzel.modules.heinzel._interactive_turn as interactive_turn
 import heinzel.modules.heinzel._service as service_module

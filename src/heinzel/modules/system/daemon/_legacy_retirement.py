@@ -278,7 +278,7 @@ class LegacyRetirement:
         service = self.service
         result = service.owned_manager_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"])
         if result.returncode:
-            from heinzel.modules.system.daemon._service import launchctl_records  # noqa: PLC0415 - one shared absence parser
+            from heinzel.modules.system.daemon._manager_commands import launchctl_records  # noqa: PLC0415 - one shared absence parser
 
             listing = service.owned_manager_command(["/bin/launchctl", "list"])
             records = launchctl_records(listing.stdout) if listing.returncode == 0 else None
@@ -569,7 +569,7 @@ class LegacyRetirement:
 
     def _replay_terminal(self, journal: dict[str, Any]) -> DaemonRecoveryResult:
         if self.service.recovery_token_matches(journal["token"], PENDING):
-            from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared lock boundary
+            from heinzel.modules.system.daemon._handover_files import handover_absolute_path  # noqa: PLC0415 - shared lock boundary
 
             with (
                 self.service.recovery_writer(),
@@ -602,7 +602,7 @@ class LegacyRetirement:
                 return self._replay_terminal(journal)
             _refuse()  # No mutation replay; an interrupted transaction needs its own restore confirmation.
         service = self.service
-        from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
+        from heinzel.modules.system.daemon._handover_files import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
 
         with service.recovery_writer(), private_lock(handover_absolute_path(service.state_dir / "tick.lock")):
             plan = self._plan(check_tick=False)
@@ -811,7 +811,7 @@ class LegacyRetirement:
     def restore(self, digest: str, confirmation: str) -> DaemonRecoveryResult:
         """Restore only an explicitly confirmed unchanged journal; never undo terminal retirement."""
         service = self.service
-        from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
+        from heinzel.modules.system.daemon._handover_files import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
 
         with service.recovery_writer(), private_lock(handover_absolute_path(service.state_dir / "tick.lock")):
             plan = self.restore_plan(digest, check_tick=False)

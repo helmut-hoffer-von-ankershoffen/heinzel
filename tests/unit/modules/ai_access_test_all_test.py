@@ -13,7 +13,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from heinzel import AccessStatus, AccessTest, HeinzelError, NotSupportedError, Progress, UsageEntry, UsageLog
 from heinzel.kernel import AiModelsSource, ModelOffer
-from heinzel.kernel._ai_models import list_offers
+from heinzel.kernel.ai._ai_models import list_offers
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._plugin_models import PROBE_TOKENS, PluginModelsAccess
 from heinzel.modules.ai.access._service import MAX_MODELS_TESTED, AccessService
@@ -390,7 +390,7 @@ def test_a_plugins_own_check_that_exits_is_a_failed_check_with_its_cause(tmp_pat
 
 
 def test_marks_of_models_the_plugin_dropped_are_pruned_and_never_crowd_out_new_ones(tmp_path):
-    from heinzel.kernel._ai_models import mark_answered
+    from heinzel.kernel.ai._ai_models import mark_answered
 
     access, found = option(tmp_path, Models())
     for i in range(600):
@@ -441,7 +441,7 @@ def test_a_second_run_is_refused_while_one_is_going_on(tmp_path):
 
 
 def test_the_single_check_of_the_chosen_model_clears_its_mark_but_never_sets_one(tmp_path, monkeypatch):
-    from heinzel.kernel._ai_models import mark_answered
+    from heinzel.kernel.ai._ai_models import mark_answered
 
     adapter = Models()
     found = option(tmp_path, adapter)[1]
@@ -519,7 +519,7 @@ def test_a_providers_error_text_never_reaches_the_detail_or_the_report(tmp_path)
 
 
 def test_a_new_mark_is_kept_however_many_stale_ids_the_file_holds(tmp_path):
-    from heinzel.kernel._ai_models import MAX_OFFERS, mark_answered
+    from heinzel.kernel.ai._ai_models import MAX_OFFERS, mark_answered
 
     access, found = option(tmp_path, Leaks())
     for i in range(MAX_OFFERS):

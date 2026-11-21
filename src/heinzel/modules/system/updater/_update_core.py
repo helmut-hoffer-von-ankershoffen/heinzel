@@ -27,7 +27,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.kernel._logging import log_event
-from heinzel.kernel._tool_python import PythonNeed, newer_python
+from heinzel.kernel.install._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import RELEASE_TIMEOUT
 from heinzel.modules.system.updater._adapter_state import FileInstallationState

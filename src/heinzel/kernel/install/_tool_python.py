@@ -17,8 +17,8 @@ from typing import cast
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from heinzel.kernel import _installation_continuity
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel.install import _installation_continuity
 
 type Runner = Callable[..., object]
 

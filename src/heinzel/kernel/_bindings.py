@@ -25,7 +25,13 @@ from typing import Any, ClassVar, Literal, cast, get_args, get_origin, get_type_
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
-from heinzel.kernel._capabilities import (
+from heinzel.kernel._config import ModuleSettings
+from heinzel.kernel._errors import HeinzelError, NotSupportedError
+from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
+from heinzel.kernel._logging import log_event
+from heinzel.kernel._protocols import Gathered, SourceFailure
+from heinzel.kernel._text import clean_text
+from heinzel.kernel.ai._capabilities import (
     CAPABILITIES,
     MODES,
     NO_ADAPTER,
@@ -34,12 +40,6 @@ from heinzel.kernel._capabilities import (
     Requirement,
     declared_unsupported,
 )
-from heinzel.kernel._config import ModuleSettings
-from heinzel.kernel._errors import HeinzelError, NotSupportedError
-from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
-from heinzel.kernel._logging import log_event
-from heinzel.kernel._protocols import Gathered, SourceFailure
-from heinzel.kernel._text import clean_text
 
 logger = logging.getLogger(__name__)
 

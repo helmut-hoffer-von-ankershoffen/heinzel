@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from heinzel.kernel._host_maintenance import host_maintenance_gate
+from heinzel.kernel.install._host_maintenance import host_maintenance_gate
 
 
 def installation_mutation_paths(prefix: Path, state: Path) -> tuple[Path, ...]:

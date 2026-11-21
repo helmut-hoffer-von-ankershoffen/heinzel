@@ -18,7 +18,7 @@ from heinzel import ActionGate, CurrentUser, HeinzelError, Module
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
 from heinzel.kernel import ChatTool
-from heinzel.kernel._chat_tools import RESULT_LIMIT
+from heinzel.kernel.session._chat_tools import RESULT_LIMIT
 from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit

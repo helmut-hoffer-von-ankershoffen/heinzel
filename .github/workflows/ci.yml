@@ -194,7 +194,7 @@ jobs:
           # Non-PR runs always retain the complete macOS matrix.
           macos_full=true
           if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
-            && ! grep -qvE '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
+            && ! grep -qvE '^(src/heinzel/(kernel/(look/_contributions|_exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
             && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
             macos_full=false
           fi

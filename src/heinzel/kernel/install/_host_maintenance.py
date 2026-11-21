@@ -15,8 +15,8 @@ from typing import Never, Self
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._private_control import private_directory, private_lock
 from heinzel.kernel._services import ServiceContract
-from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
-from heinzel.kernel._uninstall_recovery import manager_identity_matches, manager_properties
+from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.kernel.install._uninstall_recovery import manager_identity_matches, manager_properties
 
 STOP_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.1

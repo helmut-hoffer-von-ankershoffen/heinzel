@@ -7,8 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from heinzel.kernel import _uv_locate
-from heinzel.kernel._uv_locate import find_uv, missing_uv_message, search_path, standard_directories, with_search_path
+from heinzel.kernel.install import _uv_locate
+from heinzel.kernel.install._uv_locate import (
+    find_uv,
+    missing_uv_message,
+    search_path,
+    standard_directories,
+    with_search_path,
+)
 
 pytestmark = pytest.mark.unit
 

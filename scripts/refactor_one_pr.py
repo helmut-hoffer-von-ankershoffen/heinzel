@@ -408,7 +408,7 @@ def main() -> int:
     """Entry point."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["apply", "check", "repro"])
-    parser.add_argument("stage", choices=["python", "web", "lifecycle", "client"])
+    parser.add_argument("stage", choices=["python", "web", "lifecycle", "client", "kernel"])
     parser.add_argument("base", nargs="?")
     parser.add_argument("head", nargs="?")
     args = parser.parse_args()

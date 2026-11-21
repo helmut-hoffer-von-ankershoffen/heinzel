@@ -23,7 +23,7 @@ from heinzel.kernel import (
     Installation,
     WebHeadRefresh,
 )
-from heinzel.kernel._installation import _run
+from heinzel.kernel.install._installation import _run
 from heinzel.modules.system.updater._announced import Announcement, environment_versions
 from heinzel.modules.system.updater._update import UpdateService
 from tests.integration.auto_update_real_uv_test import private_python, unavailable, wheel

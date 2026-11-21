@@ -14,10 +14,10 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 from heinzel import __version__
-from heinzel.kernel._installation import CORE_DISTRIBUTION
 from heinzel.kernel._kernel import ModuleRecord, Origin
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
+from heinzel.kernel.install._installation import CORE_DISTRIBUTION
 
 BUILTIN_PACKAGE = "heinzel.modules"
 REPOSITORY_LABELS = ("source", "sourcecode", "repository", "homepage")

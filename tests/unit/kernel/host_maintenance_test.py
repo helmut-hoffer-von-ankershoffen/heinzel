@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.kernel._host_maintenance import (
+from heinzel.kernel.install._host_maintenance import (
     HostIntegration,
     HostIntegrationRemoval,
     HostServiceManager,
     MaintenanceLocks,
 )
-from heinzel.kernel._tool_uninstall import owned_file
+from heinzel.kernel.install._tool_uninstall import owned_file
 
 pytestmark = pytest.mark.unit
 

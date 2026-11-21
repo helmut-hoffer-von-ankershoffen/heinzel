@@ -11,9 +11,6 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
-from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._ai import AiAccess
-from heinzel.kernel._ai_models import AiModels
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -27,6 +24,9 @@ from heinzel.kernel._protocols import (
     Tracker,
     free_busy_people,
 )
+from heinzel.kernel.ai._agents import AgentRunner
+from heinzel.kernel.ai._ai import AiAccess
+from heinzel.kernel.ai._ai_models import AiModels
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")

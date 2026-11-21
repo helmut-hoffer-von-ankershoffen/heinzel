@@ -8,7 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel.kernel import CAPABILITIES, Requirement
-from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
     Attachment,
     Calendar,
@@ -34,6 +33,7 @@ from heinzel.kernel._protocols import (
     Window,
     free_busy_people,
 )
+from heinzel.kernel.ai._capabilities import capability_of, parse_requirements
 
 pytestmark = pytest.mark.unit
 

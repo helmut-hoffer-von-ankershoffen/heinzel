@@ -14,26 +14,7 @@ from typing import Any, Literal, overload
 from pydantic import BaseModel
 from rich.console import RenderableType
 
-from heinzel.kernel._agent_writes import AgentWrites, ByArguments
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ConfigEditor, ModuleSettings
-from heinzel.kernel._contributions import (
-    MAX_PER_MODULE,
-    ORDER_DEFAULT,
-    ActionLet,
-    ContributionLet,
-    Icon,
-    Navigate,
-    NavLet,
-    NavSettings,
-    OpenUrl,
-    RunCommand,
-    RunOperation,
-    Slot,
-    StatusLet,
-    View,
-    WidgetLet,
-)
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._layers import LayerLet
 from heinzel.kernel._lets import (
@@ -56,7 +37,13 @@ from heinzel.kernel._lets import (
     SetupPhase,
     host_of,
 )
-from heinzel.kernel._playbooks import (
+from heinzel.kernel._prerequisites import Homebrew, ManualInstall, PrerequisiteContext, PrerequisiteLet
+from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._sign_in import Grant, SignInLet, SignInProvider, grants_of
+from heinzel.kernel._spec import hookimpl
+from heinzel.kernel.ai._agent_writes import AgentWrites, ByArguments
+from heinzel.kernel.ai._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Mode, Requirement, parse_requirements
+from heinzel.kernel.ai._playbooks import (
     AssetType,
     ChatDraftTemplate,
     ContractTemplate,
@@ -64,15 +51,28 @@ from heinzel.kernel._playbooks import (
     PlaybookSetup,
     templates_in,
 )
-from heinzel.kernel._prerequisites import Homebrew, ManualInstall, PrerequisiteContext, PrerequisiteLet
-from heinzel.kernel._prompter import Prompter
-from heinzel.kernel._sign_in import Grant, SignInLet, SignInProvider, grants_of
-from heinzel.kernel._skills import SkillLet, skills_in
-from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
-from heinzel.kernel._spec import hookimpl
-from heinzel.kernel._theme_signals import SignalLet, ThemeSignals
-from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
-from heinzel.kernel._views import ViewLet, ViewSlot
+from heinzel.kernel.ai._skills import SkillLet, skills_in
+from heinzel.kernel.look._contributions import (
+    MAX_PER_MODULE,
+    ORDER_DEFAULT,
+    ActionLet,
+    ContributionLet,
+    Icon,
+    Navigate,
+    NavLet,
+    NavSettings,
+    OpenUrl,
+    RunCommand,
+    RunOperation,
+    Slot,
+    StatusLet,
+    View,
+    WidgetLet,
+)
+from heinzel.kernel.look._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
+from heinzel.kernel.look._theme_signals import SignalLet, ThemeSignals
+from heinzel.kernel.look._themes import Theme, ThemeLet, sourced_themes
+from heinzel.kernel.look._views import ViewLet, ViewSlot
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
 """Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""

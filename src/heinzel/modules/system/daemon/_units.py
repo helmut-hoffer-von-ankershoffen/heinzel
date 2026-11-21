@@ -13,6 +13,8 @@ from pathlib import Path
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon"
 """launchd label, reverse-DNS from the repository's home."""
 SYSTEMD_NAME = "hz-daemon"
+PLATFORMS = ("darwin", "linux")
+"""launchd and systemd read unit files; they hold no secrets."""
 INTERVALS = (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60)
 """Minutes that divide an hour, so slots fall at the same minutes every hour on both platforms."""
 TICK = ("system", "daemon", "tick")

@@ -18,7 +18,7 @@ from enum import StrEnum
 from typing import Any
 
 from heinzel.kernel._lets import NAME_PATTERN, Let
-from heinzel.kernel._playbooks import PlaybookLet
+from heinzel.kernel.ai._playbooks import PlaybookLet
 
 DISTRIBUTION_PREFIX = "heinzel-"
 """Plugin distributions are `heinzel-<name>` (ADR 0025): the plugin to install for a missing layer."""

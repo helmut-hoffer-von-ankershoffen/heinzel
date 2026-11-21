@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from heinzel.kernel._themes import DEFAULT_THEME
+from heinzel.kernel.look._themes import DEFAULT_THEME
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKENS = ROOT / "design" / "tokens.json"

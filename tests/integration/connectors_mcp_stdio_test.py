@@ -152,7 +152,7 @@ HANGING_KIT = textwrap.dedent(
         def model(self, model_id):
             raise AssertionError
 
-    import heinzel.kernel._ai_models as ai_models
+    import heinzel.kernel.ai._ai_models as ai_models
     ai_models.LIST_TIMEOUT = 0.2
     print(check_adapter(Hanging(), "ai-models", name="acme").failures[0])
     """

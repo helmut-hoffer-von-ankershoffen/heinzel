@@ -11,7 +11,13 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.heads.web._auto_update import AutoUpdater
 from heinzel.kernel import DaemonRecoverySelection, ProcessOutcome, private_write
-from heinzel.modules.system.daemon import DaemonService, DaemonSettings, _installation_lifecycle, _service
+from heinzel.modules.system.daemon import (
+    DaemonService,
+    DaemonSettings,
+    _installation_lifecycle,
+    _manager_commands,
+    _service,
+)
 from heinzel.modules.system.daemon import _package_handover_recovery as recovery_module
 from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.updater._announced import Announcement
@@ -310,10 +316,10 @@ def test_launchd_throttle_keeps_only_owned_kickstart_within_its_deadline(
         return child
 
     with Path(os.devnull).open("rb") as child.stdout:
-        monkeypatch.setattr(_service.subprocess, "Popen", spawn)
-        monkeypatch.setattr(_service.selectors, "DefaultSelector", ReplySelector)
-        monkeypatch.setattr(_service.time, "monotonic", lambda: elapsed_now)
-        result = _service.bounded_manager_command(command, deadline=explicit_deadline)
+        monkeypatch.setattr(_manager_commands.subprocess, "Popen", spawn)
+        monkeypatch.setattr(_manager_commands.selectors, "DefaultSelector", ReplySelector)
+        monkeypatch.setattr(_manager_commands.time, "monotonic", lambda: elapsed_now)
+        result = _manager_commands.bounded_manager_command(command, deadline=explicit_deadline)
     assert result.returncode == (0 if accepted else None)
     assert child.status == (0 if accepted else -9)
 

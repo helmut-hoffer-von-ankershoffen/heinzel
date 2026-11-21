@@ -41,7 +41,22 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from pydantic_core import to_jsonable_python
 
-from heinzel.kernel._agent_writes import (
+from heinzel.kernel._browser import (
+    BROWSER_MODULE,
+    BrowserBridge,
+    BrowserCaller,
+    BrowserCommitError,
+    PageImage,
+    browser_caller,
+)
+from heinzel.kernel._browser_relay import relay
+from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._exposure import Exposed, exposed, input_schema
+from heinzel.kernel._identity import CurrentUser
+from heinzel.kernel._kernel import Kernel
+from heinzel.kernel._logging import get_logger, log_event, step
+from heinzel.kernel._text import clean_text, redact_emails
+from heinzel.kernel.ai._agent_writes import (
     AgentWriteLog,
     AgentWrites,
     Caller,
@@ -53,25 +68,10 @@ from heinzel.kernel._agent_writes import (
     bound_to_caller,
     calling,
 )
-from heinzel.kernel._agents import ChatToolSet, ToolProfile
-from heinzel.kernel._browser import (
-    BROWSER_MODULE,
-    BrowserBridge,
-    BrowserCaller,
-    BrowserCommitError,
-    PageImage,
-    browser_caller,
-)
-from heinzel.kernel._browser_relay import relay
-from heinzel.kernel._chat import ActionGate, ProposedCall
-from heinzel.kernel._chat_services import FOUND_MODULE, FoundMcpServers, FoundMcpTool, McpChatSessions
-from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._exposure import Exposed, exposed, input_schema
-from heinzel.kernel._identity import CurrentUser
-from heinzel.kernel._kernel import Kernel
-from heinzel.kernel._logging import get_logger, log_event, step
-from heinzel.kernel._presence_marks import mark_authenticated_presence
-from heinzel.kernel._text import clean_text, redact_emails
+from heinzel.kernel.ai._agents import ChatToolSet, ToolProfile
+from heinzel.kernel.session._chat import ActionGate, ProposedCall
+from heinzel.kernel.session._chat_services import FOUND_MODULE, FoundMcpServers, FoundMcpTool, McpChatSessions
+from heinzel.kernel.session._presence_marks import mark_authenticated_presence
 
 if TYPE_CHECKING:
     from pydantic_ai import Tool

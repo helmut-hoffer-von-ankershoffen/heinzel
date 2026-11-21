@@ -19,7 +19,7 @@ from pathlib import Path
 
 from heinzel import Notice, NoticeKind, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import SelfChat, SelfChatLedger, process_alive
+from heinzel.kernel.session._self_chat import SelfChat, SelfChatLedger, process_alive
 
 _EVENTS = get_logger("system.notify")
 SENDING = "sending:"
