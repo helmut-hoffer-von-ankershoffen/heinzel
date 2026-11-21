@@ -124,3 +124,5 @@ owned web service is still serving 0.9.21, and check `hz ui status --json` for 0
 
 If confirmation was interrupted, check the archive and status. An existing archive records the move. Only the
 daemon's own fresh tick proves the handover. Leave other pending markers in place.
+
+<!-- probe: owner-opened draft PR to read the ruleset; never merged -->
