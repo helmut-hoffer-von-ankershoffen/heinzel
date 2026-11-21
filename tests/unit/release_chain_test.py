@@ -204,6 +204,75 @@ def test_the_merge_refuses_when_main_moved_since_the_candidate_base():
         chain.main_moved(reader({f"commits/{HEAD}": {"parents": []}}), HEAD)
 
 
+def content(files=None, commits=None, subject="chore(release): v0.9.54"):
+    files = (
+        files
+        if files is not None
+        else [("pyproject.toml", "modified"), ("uv.lock", "modified"), ("CHANGELOG.md", "modified")]
+    )
+    commits = commits if commits is not None else [{"sha": HEAD, "commit": {"message": f"{subject}\n\nbody"}}]
+    return {
+        "total_commits": len(commits),
+        "commits": commits,
+        "files": [{"filename": n, "status": st} for n, st in files],
+    }
+
+
+def content_reader(data):
+    return reader({f"commits/{HEAD}": {"parents": [{"sha": BASE}]}, f"compare/{BASE}...{HEAD}": data})
+
+
+def test_the_release_pr_holds_exactly_the_release_commit():
+    chain.verify_pr_content(content_reader(content()), pr(9, "release/v0.9.54"), "0.9.54")
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        (
+            content(files=[("pyproject.toml", "modified"), ("uv.lock", "modified"), ("src/x.py", "modified")]),
+            "src/x.py",
+        ),
+        (content(files=[("pyproject.toml", "modified"), ("uv.lock", "modified"), ("CHANGELOG.md", "added")]), "added"),
+        (content(files=[("CHANGELOG.md", "modified")]), "no version and lock"),
+        (
+            content(
+                commits=[{"sha": OTHER, "commit": {"message": "fix: x"}}, {"sha": HEAD, "commit": {"message": "x"}}]
+            ),
+            "exactly one commit",
+        ),
+        (content(subject="chore(release): v0.9.55"), "titled"),
+        (None, "cannot compare"),
+    ],
+)
+def test_a_release_pr_with_anything_else_is_refused(data, match):
+    with pytest.raises(chain.ChainError, match=match):
+        chain.verify_pr_content(content_reader(data), pr(9, "release/v0.9.54"), "0.9.54")
+
+
+def test_merge_checks_the_pr_content_before_anything_else(monkeypatch):
+    monkeypatch.setattr(chain, "run", lambda *_, **__: pytest.fail("merged a PR with foreign content"))
+    data = content(files=[("pyproject.toml", "modified"), ("uv.lock", "modified"), ("src/x.py", "modified")])
+    read = reader(
+        {
+            "pulls/9": {"merged": False, **pr(9, "release/v0.9.54")},
+            f"commits/{HEAD}": {"parents": [{"sha": BASE}]},
+            "commits/main": {"sha": BASE},
+            f"compare/{BASE}...{HEAD}": data,
+        }
+    )
+    with pytest.raises(chain.ChainError, match="more than the release files"):
+        chain.merge(read, 9, "0.9.54", "token")
+
+
+def test_a_real_release_needs_the_owner_token(monkeypatch, capsys):
+    monkeypatch.setenv("HAS_RELEASE_TOKEN", "false")
+    assert chain.main(["need-token"]) == 1
+    assert "RELEASE_TOKEN" in capsys.readouterr().out
+    monkeypatch.setenv("HAS_RELEASE_TOKEN", "true")
+    assert chain.main(["need-token"]) == 0
+
+
 def test_merge_never_runs_gh_when_main_moved(monkeypatch):
     calls = []
     monkeypatch.setattr(chain, "run", lambda argv, **_: calls.append(argv) or "")
@@ -212,6 +281,7 @@ def test_merge_never_runs_gh_when_main_moved(monkeypatch):
             "pulls/9": {"merged": False, **pr(9, "release/v0.9.54")},
             f"commits/{HEAD}": {"parents": [{"sha": BASE}]},
             "commits/main": {"sha": OTHER},
+            f"compare/{BASE}...{HEAD}": content(),
         }
     )
     with pytest.raises(chain.ChainError, match="main moved"):
@@ -237,6 +307,7 @@ def test_merge_is_pinned_to_the_verified_head(monkeypatch):
             f"commits/{HEAD}": {"parents": [{"sha": BASE}]},
             "commits/main": {"sha": BASE},
             f"commits/{TIP}": {"parents": [{"sha": BASE}]},
+            f"compare/{BASE}...{HEAD}": content(),
         }.get(path)
 
     assert chain.merge(read, 9, "0.9.54", "token") == TIP

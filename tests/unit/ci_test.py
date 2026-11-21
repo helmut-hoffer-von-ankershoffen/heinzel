@@ -127,7 +127,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "release-chain.yml": {
-        'if [ "$EVENT" = pull_request ]': "chooses a dry run and its throwaway version from the trigger",
+        'if [ "$EVENT" != pull_request ]': (
+            "allows a real release only from main, then chooses a dry run and its throwaway version"
+        ),
         'tip="$(gh api': "reads main's tip, the commit the plan gates",
         "echo /.chain/": "keeps the chain's own checkout out of the release tree",
         'if [ -n "$RELEASE_TOKEN" ]': "commits as the owner identity the ruleset needs",
@@ -139,7 +141,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
             "one step of the release chain, reading GitHub first"
         ),
-        "published() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
+        "newest() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
         'if curl -fsS -o /dev/null "https://pypi.org': "dispatches PyPI on the tag unless the version is there",
         'if gh release view "app-v': "dispatches the standard app composition unless it exists",
         'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",

@@ -43,7 +43,11 @@ on:
 
 permissions: {}
 
-# One real release chain at a time, never cancelled; dry runs and idle schedules stay out of its group.
+# One real release chain at a time, never cancelled; dry runs and idle schedules stay out of its group. GitHub keeps
+# the running run of a group and at most one pending run: a newer pending run (a dispatch or, with AUTO_CUT on, a
+# schedule) replaces an older pending one, which is then cancelled before it started. That loses nothing: whichever run
+# starts reads GitHub first and resumes the release in flight, and a replaced dispatch shows as cancelled, so dispatch
+# it again when its inputs (version, intro) mattered. A running chain is never cancelled by a newer run.
 concurrency:
   group: >-
     ${{ (github.event_name == 'pull_request' || inputs.dry_run || (github.event_name == 'schedule' && vars.AUTO_CUT != 'true'))
@@ -82,8 +86,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY: ${{ inputs.dry_run }}
           VERSION: ${{ inputs.version }}
+          REF: ${{ github.ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [ "$EVENT" != pull_request ] && [ "$DRY" != true ] && [ "$REF" != refs/heads/main ]; then
+            echo "error: a real release runs only from main (this run is on $REF); dispatch with --ref main or as a dry run" >&2
+            exit 1
+          fi
           if [ "$EVENT" = pull_request ] || [ "$DRY" = true ]; then
             echo "dry=true" >> "$GITHUB_OUTPUT"
             if [ -z "$VERSION" ]; then
@@ -96,6 +105,11 @@ jobs:
             echo "dry=false" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Require the owner's release token for a real release
+        if: steps.mode.outputs.dry != 'true'
+        env:
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py need-token
       - id: plan
         name: Read what is done, and gate a cut on main's first-attempt green tip
         env:
@@ -142,7 +156,7 @@ jobs:
         run: make install
       - name: Commit as the owner identity
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.dry != 'true' && secrets.RELEASE_TOKEN || '' }}
         run: |
           if [ -n "$RELEASE_TOKEN" ]; then
             user="$(GH_TOKEN="$RELEASE_TOKEN" gh api user --jq '"\(.login) \(.id)"')"
@@ -152,8 +166,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           else
-            echo "error: the secret RELEASE_TOKEN is missing: the release PR is opened and merged as the owner" >&2
-            exit 1
+            HAS_RELEASE_TOKEN=false uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py need-token
           fi
       - name: Prepare the release commit on the gated tip
         env:
@@ -180,7 +193,7 @@ jobs:
         name: Push the release branch and open the release PR as the owner
         if: needs.plan.outputs.dry != 'true'
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.dry != 'true' && secrets.RELEASE_TOKEN || '' }}
         run: |
           tip="$(GH_TOKEN="$RELEASE_TOKEN" gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
           if [ "$tip" != "$BASE" ]; then
@@ -266,7 +279,7 @@ jobs:
         name: Merge as the owner, only if main has not moved since the candidate base
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
           PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
@@ -304,6 +317,19 @@ jobs:
           enable-cache: false
       - name: Wait for the tag and the GitHub release (workflow "Release tag" calls Publish)
         run: |
+          # The newest run id of a workflow (filters as extra arguments), and the first run created after a given id:
+          # a dispatch is bound to the run it created, never to an older run of the same workflow.
+          newest() { local w="$1"; shift; gh run list -R "$GITHUB_REPOSITORY" -w "$w" "$@" -L 1 --json databaseId --jq '.[0].databaseId // 0'; }
+          created_after() {
+            local before="$1"; shift
+            for _ in $(seq 1 18); do
+              id="$(newest "$@")"
+              if [ "$id" -gt "$before" ]; then echo "$id"; return 0; fi
+              sleep 10
+            done
+            echo "error: the dispatch of $1 created no new run" >&2
+            return 1
+          }
           published() { gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx artifact-manifest.json; }
           if [ -n "$SHA" ]; then
             # The owner's merge pushes main, which starts "Release tag" on that commit; dispatch it only if it did not.
@@ -315,9 +341,9 @@ jobs:
             if [ -z "$run" ]; then
               test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SHA" \
                 || { echo "error: no Release tag run for $SHA and main moved on; tag it by hand" >&2; exit 1; }
+              before="$(newest release-tag.yml -e workflow_dispatch)"
               gh workflow run release-tag.yml -R "$GITHUB_REPOSITORY" --ref main
-              sleep 15
-              run="$(gh run list -R "$GITHUB_REPOSITORY" -w release-tag.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId')"
+              run="$(created_after "$before" release-tag.yml -e workflow_dispatch)"
             fi
             published || gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
           fi
@@ -326,17 +352,19 @@ jobs:
       - name: Publish the exact GitHub release bytes to PyPI
         run: |
           if curl -fsS -o /dev/null "https://pypi.org/pypi/heinzel/$VERSION/json"; then echo "ok   PyPI has $VERSION"; exit 0; fi
+          before="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // 0')"
           gh workflow run pypi.yml -R "$GITHUB_REPOSITORY" --ref "v$VERSION"
+          run=""
           for _ in $(seq 1 18); do
-            run="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // empty')"
-            [ -n "$run" ] && break
+            id="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // 0')"
+            if [ "$id" -gt "$before" ]; then run="$id"; break; fi
             sleep 10
           done
-          test -n "$run"
+          test -n "$run" || { echo "error: the PyPI dispatch created no new run" >&2; exit 1; }
           gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
       - name: Compose the standard app for this version
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
         run: |
           if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
           wheel="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/heinzel-$VERSION-py3-none-any.whl"

@@ -72,6 +72,12 @@ INTRO_LIMIT = 600
 PAGE = 100
 POLL = 20
 RUN_OUTPUT = "GITHUB_OUTPUT"
+NO_RELEASE_IDENTITY = (
+    "the repository secret RELEASE_TOKEN is missing: the release PR is opened and merged as the owner identity. Create "
+    "a fine-grained token of the owner for helmut-hoffer-von-ankershoffen/heinzel with Contents, Pull requests and "
+    "Actions read and write (and Actions read and write on heinzel-plugins, to dispatch compose), then "
+    "`gh secret set RELEASE_TOKEN -R helmut-hoffer-von-ankershoffen/heinzel`"
+)
 
 
 class ChainError(RuntimeError):
@@ -610,6 +616,40 @@ def pr_of(read: Callable[[str], Any], number: int, version: str) -> dict[str, An
     return pr
 
 
+def verify_pr_content(read: Callable[[str], Any], pr: dict[str, Any], version: str) -> None:
+    """The release PR holds exactly the release commit, checked at every resume and right before the merge.
+
+    One commit on its parent, titled chore(release): vX, that only modifies release files.
+
+    Raises:
+        ChainError: It holds anything else.
+    """
+    head = pr["head"]["sha"]
+    base = candidate_base(read, head)
+    data = read(f"compare/{base}...{head}")
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("commits"), list)
+        or not isinstance(data.get("files"), list)
+    ):
+        msg = f"cannot compare the release PR #{pr.get('number')} with its base"
+        raise ChainError(msg)
+    commits = data["commits"]
+    if data.get("total_commits") != 1 or len(commits) != 1 or commits[0].get("sha") != head:
+        msg = f"release PR #{pr.get('number')} is not exactly one commit on {base[:9]}"
+        raise ChainError(msg)
+    subject = str(commits[0].get("commit", {}).get("message", "")).split("\n", 1)[0]
+    if subject != f"chore(release): v{version}":
+        msg = f"release PR #{pr.get('number')}: the commit is titled {subject!r}, not chore(release): v{version}"
+        raise ChainError(msg)
+    files = {str(f.get("filename")): f.get("status") for f in data["files"]}
+    wrong = sorted(name for name, status in files.items() if name not in RELEASE_SCOPE or status != "modified")
+    if wrong or not {"pyproject.toml", "uv.lock"} <= set(files):
+        detail = ", ".join(f"{n} ({files[n]})" for n in wrong) or "no version and lock change"
+        msg = f"release PR #{pr.get('number')} changes more than the release files: {detail}"
+        raise ChainError(msg)
+
+
 def candidate_base(read: Callable[[str], Any], head: str) -> str:
     """The one parent of the release commit: the main commit the candidate ran on.
 
@@ -645,6 +685,7 @@ def verify_candidate(read: Callable[[str], Any], number: int, version: str) -> d
     """
     candidate = load_candidate_module()
     pr = pr_of(read, number, version)
+    verify_pr_content(read, pr, version)
     head = pr["head"]["sha"]
     tree = read(f"commits/{head}")["commit"]["tree"]["sha"]
 
@@ -689,6 +730,7 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
     if isinstance(pr, dict) and pr.get("merged"):
         return str(pr["merge_commit_sha"])
     pr = pr_of(read, number, version)
+    verify_pr_content(read, pr, version)
     head = pr["head"]["sha"]
     if refusal := main_moved(read, head):
         raise ChainError(refusal)
@@ -1011,6 +1053,7 @@ def parser() -> argparse.ArgumentParser:
             ("--previous", {"required": True}),
         ),
         "freeze-sync": (),
+        "need-token": (),
         "freeze-pr": (("--pr", {"type": int, "required": True}),),
         "candidate": (
             ("--pr", {"type": int, "required": True}),
@@ -1053,6 +1096,14 @@ def cmd_scope(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_need_token(_: argparse.Namespace) -> int:
+    """Refuse a real release early when the owner's token is not configured (HAS_RELEASE_TOKEN from the workflow)."""
+    if os.environ.get("HAS_RELEASE_TOKEN") == "true":
+        return 0
+    say(f"error: {NO_RELEASE_IDENTITY}")
+    return 1
+
+
 def cmd_freeze_sync(_: argparse.Namespace) -> int:
     """Post the freeze check on every open PR."""
     freeze_sync(get, post_check)
@@ -1078,7 +1129,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
     """Merge the verified release PR as the release identity."""
     token = os.environ.get("RELEASE_TOKEN", "")
     if not token:
-        say("error: RELEASE_TOKEN is not set: the release PR merges as the owner identity")
+        say(f"error: {NO_RELEASE_IDENTITY}")
         return 1
     sha = merge(get, args.pr, args.version, token)
     say(f"ok   merged release commit {sha[:9]}")
@@ -1114,6 +1165,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "plan": cmd_plan,
     "scope": cmd_scope,
     "freeze-sync": cmd_freeze_sync,
+    "need-token": cmd_need_token,
     "freeze-pr": cmd_freeze_pr,
     "candidate": cmd_candidate,
     "merge": cmd_merge,

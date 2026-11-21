@@ -45,7 +45,8 @@ Constraints per workflow:
   before its marker. Dispatch again to resume; a rerun of failed jobs never counts as acceptance. Auto-cut and resume
   on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run.
 - `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
-  candidate; the chain posts it on all open PRs at the cut and after the merge. Required by the ruleset.
+  candidate; the chain posts it on all open PRs at the cut and after the merge. Not required by the ruleset yet: it is
+  added after this workflow has been dispatched once, so every open PR carries the check first.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release
