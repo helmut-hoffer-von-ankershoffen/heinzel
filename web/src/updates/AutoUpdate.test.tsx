@@ -219,27 +219,25 @@ describe("automatic updates", () => {
       )
       .mockResolvedValue(build);
     const assets = vi.spyOn(updateTransport, "assets").mockResolvedValue(undefined);
-    let retry: (() => void) | undefined;
-    const timer = window.setTimeout.bind(window);
-    vi.spyOn(window, "setTimeout").mockImplementation((handler, delay, ...args) => {
-      if (delay === 30_000 && typeof handler === "function") {
-        retry = () => handler(...args);
-        return timer(() => {}, 2_147_483_647) as unknown as ReturnType<typeof setTimeout>;
-      }
-      return timer(handler, delay, ...args) as unknown as ReturnType<typeof setTimeout>;
-    });
+    // Fake timers make the 30 s retry exact. Spying on setTimeout(30_000) was a race: react-query's own 30 s
+    // staleTime timer shares that delay and could be captured before the failure, so the retry was already defined.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const release = registerReloadHold(() => true);
     try {
       show({ "/api/auto-update": { ...base, version: "1.1.0", phase: "idle", seconds_left: null } });
-      await waitFor(() => expect(frontend).toHaveBeenCalledTimes(1));
-      expect(retry).toBeUndefined();
+      await vi.waitFor(() => expect(frontend).toHaveBeenCalledTimes(1));
+      // While the first probe is pending, no second probe starts, however long it takes.
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(frontend).toHaveBeenCalledTimes(1);
       await act(async () => {
         fail(new Error("temporary"));
         await Promise.resolve();
       });
-      await waitFor(() => expect(retry).toBeDefined());
-      act(() => retry?.());
-      await waitFor(() => expect(assets).toHaveBeenCalledTimes(1));
+      // The retry waits the full 30 s after the failure, then probes once more.
+      await act(() => vi.advanceTimersByTimeAsync(29_999));
+      expect(frontend).toHaveBeenCalledTimes(1);
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      await vi.waitFor(() => expect(assets).toHaveBeenCalledTimes(1));
       expect(frontend).toHaveBeenCalledTimes(2);
     } finally {
       release();
