@@ -5215,12 +5215,29 @@ $ hz ui [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `attach`: Start the owned web service if needed and...
 * `install`: Install web availability after login,...
 * `open`: Open the owned web service, or run in the...
 * `restart`: Restart the owned web service with its...
 * `serve`: Run the web server in the foreground;...
 * `status`: Show exact OS ownership and the live web...
 * `uninstall`: Remove only the owned web login service,...
+
+### `hz ui attach`
+
+Start the owned web service if needed and print its session link; never serves.
+
+**Usage**:
+
+```console
+$ hz ui attach [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--bridge-token-stdin`: Read the desktop app&#x27;s browser-bridge token from standard input and register it.
+* `--help`: Show this message and exit.
 
 ### `hz ui install`
 
