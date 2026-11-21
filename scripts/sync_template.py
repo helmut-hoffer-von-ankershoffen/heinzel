@@ -238,10 +238,9 @@ def _without_release_candidate(text: str) -> str:
 def _without_core_node_selection(text: str) -> str:
     """Keep independent plugin Python lanes and their existing dependency groups unchanged."""
     text = text.replace(
-        "\n    env:\n"
         "      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.\n"
         "      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}\n",
-        "\n",
+        "",
     )
     text = text.replace(' ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}', "")
     text = text.replace("--group test --group build", "--group test")
