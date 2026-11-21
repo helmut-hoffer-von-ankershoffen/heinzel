@@ -8,7 +8,7 @@ The build also requires Node.js with `stripTypeScriptTypes` support (Node.js 22.
 - On macOS, install the matching `hz` CLI first. Quitting the Swift app stops the foreground process it launched.
   When testing a Debug build against a checkout, set `HZ_SPIKE_CLI` to the absolute path of that checkout's `hz` executable after running `make web-build`.
 - On iPhone and iPad, use the authenticated sign-in link for the host's private HTTPS origin. See [private web sharing](../docs/PRIVATE_WEB_SHARING.md). Once paired inside the workspace, use the server address to reconnect.
-- Run `apple/scripts/package-macos VERSION` to build a local arm64 archive. The managed install and update commands require the official version-matched, attested release assets.
+- Run `apple/scripts/package-macos` to build a local arm64 archive. Its version is Heinzel's version in `pyproject.toml`; a `VERSION` argument must equal it. The managed install and update commands require the official version-matched, attested release assets.
 
 Electron remains the release default during the spike. See [ADR 0147](../docs/adr/0147-use-a-swift-shell-for-apple-workspaces.md) for the acceptance criteria.
 
@@ -80,7 +80,13 @@ work the host may already have accepted. Prompt text is never saved in shared wi
 
 ### TestFlight upload
 
-Build the signed iOS archive with the intended build number and set
+Every Heinzel release ships the iOS app at the same version: Heinzel 0.9.54 is iOS 0.9.54. The release tooling
+archives the release tag with `MARKETING_VERSION` set to the version in `pyproject.toml`,
+`HEINZEL_SOURCE_REVISION` set to the tagged commit, and `CURRENT_PROJECT_VERSION` set to one above the highest build
+App Store Connect holds for the app. Because `ExportOptions-testflight.plist` sets
+`manageAppVersionAndBuildNumber` to false, the uploaded build keeps the numbers of the verified archive.
+
+To build by hand, build the signed iOS archive with the intended build number and set
 `HEINZEL_SOURCE_REVISION` to the full source commit. The app and widget extension
 must both contain those exact values. Use an App Store export options plist
 with `destination` set to `upload` and `manageAppVersionAndBuildNumber` set to
