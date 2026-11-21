@@ -3,17 +3,25 @@ import AppKit
 import Foundation
 import Synchronization
 
+/// Attach to this Mac's one owned web service (the launchd job) through `hz ui attach`; never serve.
+///
+/// `hz ui attach` installs or starts the service when needed, prints one session link and exits. The app keeps no
+/// hz process of its own, so quitting, crashing or updating the app leaves the service running, and a second server
+/// with its own auto-updater on old code can't exist.
 @MainActor
 final class LocalService: NSObject, NSApplicationDelegate {
-    private var child: Process?
     private var installation: ManagedInstallation?
-    private var readyChild: Process?
-    private var quitting = false
-    var onExit: (() -> Void)?
+    private var attached: (executable: String, environment: [String: String])?
+    private var attaching = false
+
+    /// The exact arguments: the app only ever attaches. Tests check that `serve` never appears.
+    static let attachArguments = ["ui", "attach"]
 
     func start() async throws -> Endpoint {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        guard child == nil else { throw ConnectionError.startup }
+        guard !attaching else { throw ConnectionError.startup }
+        attaching = true
+        defer { attaching = false }
         let executable: String
         if Bundle.main.object(forInfoDictionaryKey: "HeinzelManagedInstall") as? String == "YES" {
             let binding = try installation ?? ManagedInstallation(home: home)
@@ -26,7 +34,7 @@ final class LocalService: NSObject, NSApplicationDelegate {
         let child = Process()
         let stdout = Pipe()
         child.executableURL = URL(fileURLWithPath: executable)
-        child.arguments = ["ui", "serve", "--port", "0", "--no-browser"]
+        child.arguments = Self.attachArguments
         child.standardInput = FileHandle.nullDevice
         child.standardOutput = stdout
         child.standardError = FileHandle.nullDevice
@@ -36,33 +44,26 @@ final class LocalService: NSObject, NSApplicationDelegate {
             environment["PATH"] ?? "/usr/bin:/bin",
         ].joined(separator: ":")
         child.environment = environment
-        child.terminationHandler = { [weak self] process in
-            Task { @MainActor in
-                guard self?.child === process else { return }
-                self?.child = nil
-                self?.readyChild = nil
-                if self?.quitting == false { self?.onExit?() }
-            }
+        let exited = AsyncStream<Int32>.makeStream()
+        child.terminationHandler = { process in
+            exited.continuation.yield(process.terminationReason == .exit ? process.terminationStatus : -1)
+            exited.continuation.finish()
         }
-
-        do {
-            try child.run()
-        } catch {
-            installation = nil
-            throw error
-        }
-        self.child = child
+        try child.run()
         let output = startupLine(from: stdout.fileHandleForReading)
 
         do {
             let endpoint = try await withThrowingTaskGroup(of: Endpoint.self) { group in
                 group.addTask {
-                    try await Task.sleep(for: .seconds(90))
+                    // Installing the service and its bounded readiness wait take well under this.
+                    try await Task.sleep(for: .seconds(60))
                     throw ConnectionError.startup
                 }
                 group.addTask {
                     var lines = output.makeAsyncIterator()
-                    guard let line = await lines.next(),
+                    var statuses = exited.stream.makeAsyncIterator()
+                    let line = await lines.next()
+                    guard await statuses.next() == 0, let line,
                           let value = String(data: line, encoding: .utf8),
                           let endpoint = Endpoint(value, loopback: true) else {
                         throw ConnectionError.startup
@@ -74,11 +75,11 @@ final class LocalService: NSObject, NSApplicationDelegate {
                 guard let endpoint = try await group.next() else { throw ConnectionError.startup }
                 return endpoint
             }
-            guard child.isRunning, !quitting else { throw ConnectionError.startup }
-            readyChild = child
+            attached = (executable, environment)
             return endpoint
         } catch {
-            await stop()
+            // Only the one-shot attach command is ours to end; the service it reached keeps running.
+            if child.isRunning { child.interrupt() }
             throw error
         }
     }
@@ -87,7 +88,6 @@ final class LocalService: NSObject, NSApplicationDelegate {
         let pending = Mutex<Data?>(Data())
         let (line, result) = AsyncStream<Data>.makeStream()
         handle.readabilityHandler = { reader in
-            // Keep draining until exit. Restarts and later output still use this pipe.
             let data = reader.availableData
             guard !data.isEmpty else {
                 reader.readabilityHandler = nil
@@ -130,42 +130,15 @@ final class LocalService: NSObject, NSApplicationDelegate {
         return executable
     }
 
+    /// Leave the local workspace. The owned service is not the app's to stop, so nothing ends; always true.
     @discardableResult
-    func stop() async -> Bool {
-        guard let child, child.isRunning else { return false }
-        readyChild = nil
-        child.interrupt()
-        for _ in 0..<80 {
-            if !child.isRunning {
-                return child.terminationReason == .exit && child.terminationStatus == 0
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        if child.isRunning { kill(child.processIdentifier, SIGKILL) }
-        for _ in 0..<20 {
-            if !child.isRunning { break }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return false
-    }
+    func stop() async -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if quitting { return .terminateLater }
-        guard let child, child.isRunning else { return .terminateNow }
-        let refresh = readyChild === child ? installation?.executable : nil
-        quitting = true
-        Task {
-            let graceful = await stop()
-            guard !child.isRunning else {
-                quitting = false
-                sender.reply(toApplicationShouldTerminate: false)
-                return
-            }
-            installation = nil
-            if graceful, let refresh { requestRefresh(executable: refresh, environment: child.environment) }
-            sender.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
+        let managed = installation != nil
+        installation = nil  // Releases the installer's desktop-use gate before the refresh needs it.
+        if managed, let attached { requestRefresh(executable: attached.executable, environment: attached.environment) }
+        return .terminateNow
     }
 
     private func requestRefresh(executable: String, environment: [String: String]?) {

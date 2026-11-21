@@ -1,6 +1,8 @@
 """Exercise the Mac app's foreground service without opening a window."""
 
+import os
 import platform
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -25,16 +27,16 @@ sys.path.insert(0, os.environ["HEINZEL_PROBE_REPO"])
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 mode = os.environ["HEINZEL_PROBE_MODE"]
-signal.alarm(20)
-signal.signal(signal.SIGINT, lambda *_: exit(0))
-
+with open("argv", "a") as calls:
+    calls.write(" ".join(sys.argv[1:]) + "\\n")
+if sys.argv[1:] != ["attach"]:
+    exit(2)  # anything but `hz ui attach`, such as `serve --port 0`, is refused
 if mode == "eof":
     os.write(1, b"unfinished line")
     exit(0)
 if mode == "oversized":
     os.write(1, b"x" * 4097)
-    signal.pause()
-    exit(1)
+    exit(0)
 
 token = "x" * 43
 class Handler(BaseHTTPRequestHandler):
@@ -46,17 +48,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'{"instance":"fixture","version":"1.0","restartable":true}')
-        elif self.path == "/noise":
-            print("x" * 1048576, flush=True)
-            self.send_response(204)
-            self.end_headers()
         else:
             self.send_error(404)
 
+# The owned service: not a child of the app. The attach command forks it off, prints its link and exits.
 server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
-address = f"http://127.0.0.1:{server.server_port}/#token={token}"
-os.write(1, (address + "\\ntrailing output\\n").encode())
-server.serve_forever()
+service = os.fork()
+if service == 0:
+    os.setsid()
+    signal.alarm(20)
+    server.serve_forever()
+    os._exit(0)
+with open("service.pid", "w") as record:
+    record.write(str(service))
+os.write(1, f"http://127.0.0.1:{server.server_port}/#token={token}\\n".encode())
+exit(1 if mode == "fails" else 0)
 """
 
 
@@ -87,8 +93,8 @@ def local_service_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.timeout(75)  # Includes a cold Swift compiler and SDK module cache.
-@pytest.mark.parametrize("mode", ["drain", "eof", "oversized"])
-def test_mac_local_service_reads_only_one_bounded_startup_line_and_drains(
+@pytest.mark.parametrize("mode", ["attach", "fails", "eof", "oversized"])
+def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     local_service_probe: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     # LocalService passes "ui" as the first argument, so Python runs this fixture file.
@@ -96,6 +102,12 @@ def test_mac_local_service_reads_only_one_bounded_startup_line_and_drains(
     monkeypatch.setenv("HZ_SPIKE_CLI", sys.executable)
     monkeypatch.setenv("HEINZEL_PROBE_MODE", mode)
     monkeypatch.setenv("HEINZEL_PROBE_REPO", str(ROOT))
-    subprocess.run(
-        [str(local_service_probe), "open" if mode == "drain" else "refuse"], cwd=tmp_path, check=True, timeout=15
-    )
+    try:
+        subprocess.run(
+            [str(local_service_probe), "open" if mode == "attach" else "refuse"], cwd=tmp_path, check=True, timeout=15
+        )
+        assert (tmp_path / "argv").read_text(encoding="utf-8") == "attach\n"  # one attach, never `serve`
+    finally:
+        record = tmp_path / "service.pid"
+        if record.exists():
+            os.kill(int(record.read_text(encoding="utf-8")), signal.SIGTERM)  # the fixture's own service only

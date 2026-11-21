@@ -2203,11 +2203,6 @@ struct ConnectionView: View {
         connecting = true
         error = nil
         defer { connecting = false }
-        service.onExit = {
-            guard endpoint?.origin.scheme == "http" else { return }
-            endpoint = nil
-            error = ConnectionError.stopped.errorDescription
-        }
         do {
             let target = try await service.start()
             if let snapshot = ActivityWidgetData.read(), snapshot.workspaceScope != ActivityWidgetData.scope(for: target.origin) {
