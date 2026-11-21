@@ -82,6 +82,12 @@ def test_a_source_mismatch_names_the_requirement_and_both_sources_and_is_logged(
     assert (record.requirement, record.expected) == ("heinzel-clock", "heinzel-clock from the package index")
 
 
+def test_a_git_mismatch_names_the_commit_that_was_found(tmp_path):
+    distribution(tmp_path, "heinzel", "0.4.0", git_source("https://example.test/other", "v0.4.0"))
+    with pytest.raises(HeinzelError, match=f"found heinzel 0.4.0 from https://example.test/other at commit {'a' * 40}"):
+        inspect_requirements(tmp_path, ["heinzel @ git+https://example.test/heinzel@v0.4.0"], "0.4.0")
+
+
 @pytest.mark.parametrize(
     ("installed", "requirements", "expected", "named"),
     [

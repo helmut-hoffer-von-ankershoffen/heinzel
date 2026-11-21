@@ -48,7 +48,7 @@ def _describe_direct(name: str, version: str, direct: dict[str, object] | None) 
     if direct is None:
         return f"{name} {version} from the package index"
     vcs = direct.get("vcs_info")
-    commit = vcs.get("commit_id") if isinstance(vcs, dict) else None
+    commit = cast("dict[str, object]", vcs).get("commit_id") if isinstance(vcs, dict) else None
     url = direct.get("url")
     return f"{name} {version} from {url}" + (f" at commit {commit}" if isinstance(commit, str) else "")
 
