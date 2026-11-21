@@ -5,7 +5,10 @@ run-name: Acceptance ${{ inputs.candidate_wheel_url || inputs.expected_version }
 # Public installer acceptance on hosted macOS and Linux runners (scripts/acceptance/). It installs what is published
 # today with the literal public commands, in private homes, with no credentials, and publishes nothing. Its only output
 # is result.json, uploaded as an artifact: the receipt that a promotion to stable can read. A pull request that changes
-# the harness or this workflow is a real dry run against what is published now.
+# the harness or this workflow is a real dry run against what is published now. The release PR is the exception: its
+# commit adds a version row to run_acceptance.py, which would start a dry run of the PREVIOUS release, not of the
+# candidate, so the job is skipped on release/* heads. The candidate's own proof is its release run; the published
+# build of the new release is accepted after publish (dispatch with expected_version).
 #
 # A candidate run takes a held release's wheel URL and sha256 plus the app profile URL. It proves those bytes, never the
 # public path, and its verdict says so.
@@ -102,6 +105,7 @@ permissions: {}
 jobs:
   acceptance:
     name: Acceptance (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     permissions:
