@@ -315,3 +315,12 @@ def test_on_linux_a_refused_start_names_the_managers_reason_at_once(tmp_path):
         web.attach(8737)
     assert "sleep" not in web.calls  # no readiness wait: the reason is known
     assert "open" not in web.calls
+
+
+def test_a_nonzero_load_of_a_job_that_is_loaded_after_all_is_no_refusal(tmp_path):
+    unloaded = WebStatus(installed=True, loaded=False, ready=False, port=8737)
+    loaded = WebStatus(installed=True, loaded=True, ready=False, port=8737)
+    systemd = _Systemctl("Service already loaded")
+    web = _Attachable(tmp_path, [unloaded, loaded, READY], platform="darwin", runner=systemd)
+    assert web.attach(8737).startswith("http://127.0.0.1:8737/")
+    assert systemd.commands[0][:2] == ["/usr/bin/launchctl", "bootstrap"]

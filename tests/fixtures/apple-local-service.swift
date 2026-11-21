@@ -49,6 +49,25 @@ struct LocalServiceProbe {
                 return false
             }
             guard !never, attempts == 5, waits == LocalService.reattachDelays else { throw ProbeFailure.backoff }
+            // Busy (another start runs) is no failure: no backoff step is used up for it.
+            waits = []
+            attempts = 0
+            let afterBusy = await LocalService.retrying(wait: { waits.append($0) }) {
+                attempts += 1
+                return attempts <= 2 ? nil : attempts == 4
+            }
+            guard afterBusy, waits == [.milliseconds(250), .milliseconds(250), .seconds(5)] else {
+                throw ProbeFailure.backoff
+            }
+            // The person switched to a remote workspace during the backoff: no further attempt.
+            waits = []
+            attempts = 0
+            var remote = false
+            let switched = await LocalService.retrying(wait: { waits.append($0); remote = true }, cancelled: { remote }) {
+                attempts += 1
+                return false
+            }
+            guard !switched, attempts == 1, waits == [.seconds(5)] else { throw ProbeFailure.backoff }
             return
         }
         if CommandLine.arguments.last == "lost" {

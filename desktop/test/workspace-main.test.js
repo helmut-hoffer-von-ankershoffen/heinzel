@@ -89,6 +89,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   let finishStartup, failStartup;
   const startup = new Promise((resolve, reject) => { finishStartup = resolve; failStartup = reject; });
   const cliOptions = [], losses = [], waits = [];
+  let onWait = () => {};
   let failuresLeft = reattachFailures;
   const cli = (options = {}) => {
     serviceCount++;
@@ -102,7 +103,12 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
         events.push("start-local");
         if (deferredStartup && serviceCount === 1) await startup;
         if (startupFails) throw new Error("startup");
-        if (serviceCount > 1 && failuresLeft > 0) { failuresLeft--; throw new Error("service still restarting"); }
+        if (serviceCount > 1 && failuresLeft > 0) {
+          failuresLeft--;
+          // As the real handle does: a failed attach also settles its exited() with failedToStart.
+          lose({ code: null, signal: null, failedToStart: true });
+          throw new Error("service still restarting");
+        }
         running = true; return connection;
       },
       stop: async () => { events.push("stop-local"); running = false; return { outcome: "graceful" }; },
@@ -138,7 +144,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     installSignalQuit: () => ({}), createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
     createPublicMediaHandler: () => () => {}, appMenuTemplate, menuLogLine: () => "menu", stopWithReport,
     developmentCli: () => "hz",
-    reattach: (attempt, options) => reattach(attempt, { ...options, wait: async (ms) => { waits.push(ms); } }),
+    reattach: (attempt, options) => reattach(attempt, { ...options, wait: async (ms) => { waits.push(ms); await onWait(ms); } }),
   });
   await flush(); await flush();
   const openPicker = async () => {
@@ -148,7 +154,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   const request = (picker, value) => handlers.get("hz:workspace")({ sender: picker.webContents, senderFrame: picker.webContents.mainFrame }, value);
   const surface = (window, name, value) => handlers.get(name)({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, value);
   return { windows, sessions, handlers, events, openPicker, request, surface, services: () => serviceCount,
-    cliOptions, waits, loseService: () => losses.at(-1)(),
+    cliOptions, waits, loseService: () => losses.at(-1)(), duringWait: (callback) => { onWait = callback; },
     reject: () => { rejected = true; }, stopLocal: () => { running = false; }, finishStartup, failStartup, finishLoad, failLoad,
     expireLoad: () => expireLoad() };
 }
@@ -428,4 +434,36 @@ test("when every re-attach fails the connection screen opens with Try Again", as
   const picker = f.windows.find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
   assert.ok(picker && picker.isVisible(), "the connection screen is shown");
   assert.equal((await f.request(picker, { kind: "back" })).canRetry, true, "it offers Try Again");
+});
+
+
+test("a failed re-attach attempt never opens the connection screen before the last attempt", async () => {
+  const f = await fixture({ reattachFailures: 99 });
+  const pickerShown = () => f.windows.some((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs") && window.isVisible());
+  const shownDuringBackoff = [];
+  f.duringWait(async () => { await flush(); await flush(); shownDuringBackoff.push(pickerShown()); });
+  f.loseService();
+  for (let i = 0; i < 120 && f.waits.length < 4; i++) await flush();
+  for (let i = 0; i < 10; i++) await flush();
+  assert.deepEqual(shownDuringBackoff, [false, false, false, false]);
+  assert.deepEqual(f.waits, [5000, 10000, 20000, 40000], "one backoff, not one per failed attempt");
+  assert.equal(f.services(), 6);
+  assert.equal(f.events.includes("error-box"), false);
+  assert.equal(pickerShown(), true, "after the last attempt it opens");
+});
+
+test("switching to a remote workspace during the backoff ends the re-attach", async () => {
+  const f = await fixture({ reattachFailures: 99 });
+  let switched = false;
+  f.duringWait(async () => {
+    if (switched) return;
+    switched = true;
+    const picker = await f.openPicker();
+    assert.equal((await f.request(picker, remote)).message, "Connected");
+  });
+  f.loseService();
+  for (let i = 0; i < 120; i++) await flush();
+  assert.deepEqual(f.waits, [5000], "no attempt after the person chose a remote workspace");
+  assert.equal(f.services(), 2);
+  assert.match(f.windows.at(-1).options.webPreferences.preload, /workspace-remote-preload/);
 });

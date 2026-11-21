@@ -280,6 +280,9 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   let serviceStarted = false;
   let unexpectedExitReported = false;
   function watchLocalService() { void ownedCli.exited().then(async (result) => {
+    // Only a loss of the attached service starts a re-attach. A failed attach (one of the re-attach attempts, or the
+    // person's own) is reported by whoever started it, so it must not open the connection screen mid-backoff.
+    if (!result?.serviceLost) return;
     if (serviceStarted && !stopping && !quitting) {
       localConnection = null;
       browserBridge.stop();
@@ -288,11 +291,13 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
       if (!local) return;
       // The owned service restarted (a crash, a reboot of its job): attach again, with a fresh link and bridge token,
       // now and then with a bounded backoff. Only when every attempt failed does the connection screen offer Try Again.
-      const back = result?.serviceLost && workspaceController && await reattach(async () => {
+      // The person switching to a remote workspace during the backoff ends it: that choice wins.
+      const remote = () => { try { return Boolean(instance.currentConnection().remote); } catch { return false; } };
+      const back = workspaceController && await reattach(async () => {
         const state = await workspaceController.connect({ kind: "local" }, true);
         return !state.problem;
-      }, { cancelled: () => stopping || quitting });
-      if (back || stopping || quitting) return;
+      }, { cancelled: () => stopping || quitting || remote() });
+      if (back || stopping || quitting || remote()) return;
       unexpectedExitReported = true;
       workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
       showConnection();

@@ -852,6 +852,10 @@ class WebService:
         )
         result = self.runner(command)
         if result.returncode != 0:
+            # An already loaded job also exits nonzero (launchctl bootstrap: "already loaded"): not a refusal.
+            observed = self.status()
+            if observed.loaded or observed.ready:
+                return
             # The manager's own words, e.g. a Linux login without a `systemd --user` session, not a readiness timeout.
             detail = (result.stderr or result.stdout).strip().splitlines()
             reason = detail[-1][:300] if detail else f"exit {result.returncode}"

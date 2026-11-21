@@ -2200,16 +2200,20 @@ struct ConnectionView: View {
     /// Attach again after the owned service was lost, with bounded backoff; only when every attempt failed does the
     /// connection screen open, where Start Local Workspace tries again.
     private func reattachLocal() async {
-        let back = await LocalService.retrying { await startLocal() }
+        // The person choosing another workspace (or none) during the backoff ends it: that choice wins.
+        let back = await LocalService.retrying(cancelled: { endpoint?.origin.scheme != "http" }) {
+            await startLocal()
+        }
         guard !back, endpoint?.origin.scheme == "http" else { return }
         endpoint = nil
         error = ConnectionError.stopped.errorDescription
         showConnection = true
     }
 
+    /// True when attached, false when attaching failed, nil when another connection attempt is running (busy).
     @discardableResult
-    private func startLocal(initialStartup: Bool = false) async -> Bool {
-        guard !connecting else { return false }
+    private func startLocal(initialStartup: Bool = false) async -> Bool? {
+        guard !connecting else { return nil }
         let menuRevision = initialStartup ? 0 : connectionMenuIntent.revision
         connecting = true
         error = nil

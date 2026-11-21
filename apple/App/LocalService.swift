@@ -24,16 +24,35 @@ final class LocalService: NSObject, NSApplicationDelegate {
     /// The waits between attempts to attach again after a loss (bounded backoff).
     static let reattachDelays: [Duration] = [.seconds(5), .seconds(10), .seconds(20), .seconds(40)]
 
-    /// Try `attempt` now, then after each delay; true at the first success, false when all failed.
+    /// Try `attempt` now, then after each delay; true at the first success, false when all failed or `cancelled`.
+    ///
+    /// `attempt` answers nil when it could not try (another start is running): that is neither a success nor a
+    /// failure, so it is asked again after `busyWait` without using up a backoff step, up to `busyLimit` times.
     static func retrying(
         delays: [Duration] = reattachDelays,
         wait: (Duration) async -> Void = { try? await Task.sleep(for: $0) },
-        attempt: () async -> Bool
+        busyWait: Duration = .milliseconds(250),
+        busyLimit: Int = 240,
+        cancelled: () -> Bool = { false },
+        attempt: () async -> Bool?
     ) async -> Bool {
-        for index in 0...delays.count {
-            if Task.isCancelled { return false }
-            if await attempt() { return true }
+        var index = 0
+        var busy = 0
+        while index <= delays.count {
+            if Task.isCancelled || cancelled() { return false }
+            switch await attempt() {
+            case true?:
+                return true
+            case nil where busy < busyLimit:
+                busy += 1
+                await wait(busyWait)
+                continue
+            default:
+                break
+            }
+            if cancelled() { return false }
             if index < delays.count { await wait(delays[index]) }
+            index += 1
         }
         return false
     }
