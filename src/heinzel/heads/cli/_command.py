@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import Annotated, Any, Literal, cast, get_args, get_origin
 
 import typer
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -159,6 +159,12 @@ def _present(
         epilogue()
 
 
+def _hidden(field: FieldInfo) -> bool:
+    """Whether the operation's `Field(json_schema_extra={"hidden": True})` keeps this option out of `--help`."""
+    extra: object = field.json_schema_extra
+    return isinstance(extra, dict) and bool(cast("dict[str, object]", extra).get("hidden"))
+
+
 def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
     annotation = parameter.annotation
     description, hidden = None, False
@@ -166,7 +172,7 @@ def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
         annotation, *metadata = get_args(annotation)
         fields = [m for m in metadata if isinstance(m, FieldInfo)]
         description = next((m.description for m in fields), None)
-        hidden = any(isinstance(m.json_schema_extra, dict) and m.json_schema_extra.get("hidden") for m in fields)
+        hidden = any(_hidden(m) for m in fields)
     parser = _json_parser(annotation) if _structured(annotation) else None
     info = (
         typer.Argument(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
