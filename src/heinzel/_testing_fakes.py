@@ -7,6 +7,7 @@ Imported through `heinzel.testing`. Each fake is held to the same contract as it
 from __future__ import annotations
 
 import contextlib
+import importlib
 import itertools
 import subprocess
 import threading
@@ -432,11 +433,15 @@ def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the
     server's clock runs ahead by the seconds in `clock` there; the installation counts as a uv tool on a release tag.
     """
     from heinzel import __version__  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
-    from heinzel.heads.web import _auto_update  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+
+    _auto_update = importlib.import_module("heinzel.heads.web._auto_update")
     from heinzel.kernel import CorePin, Installation, PluginNews, PluginRelease, ReleaseFacts  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
-    from heinzel.modules.system import _service  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+
+    _service = importlib.import_module("heinzel.modules.system._service")
     from heinzel.modules.system._models import AnnouncedUpdate  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
-    from heinzel.modules.system.updater import _plugin_releases, _update  # noqa: PLC0415
+
+    _plugin_releases = importlib.import_module("heinzel.modules.system.updater._plugin_releases")
+    _update = importlib.import_module("heinzel.modules.system.updater._update")
 
     long_ago = datetime(2026, 1, 1, tzinfo=UTC)  # old enough for any minimum age
     applied = folder / "applied"
@@ -479,6 +484,9 @@ def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the
             updated=started, after=__version__, restored=not started, refused=not started, message="Fake update."
         )
 
+    def accepted(self: object, version: str, timeout: float) -> bool:  # noqa: ARG001
+        return True
+
     def now() -> datetime:
         try:
             ahead = float((folder / "clock").read_text(encoding="utf-8"))
@@ -489,17 +497,17 @@ def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the
     def core_pin(self: object) -> CorePin:  # noqa: ARG001
         return CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel")
 
-    _service.GitHubReleases.latest_version = latest_version  # type: ignore[method-assign]
-    _plugin_releases.PyPIPluginReleases.newer = newer  # type: ignore[method-assign]
-    _plugin_releases.PyPIPluginReleases.newer_releases = newer_releases  # type: ignore[method-assign]
-    _service.GitHubReleases.release_facts = release_facts  # type: ignore[method-assign]
-    _service.GitHubReleases.accepted = lambda _self, _version, _timeout: True  # type: ignore[method-assign, assignment]
-    _update.UpdateService.apply_announced = apply_announced  # type: ignore[method-assign, assignment]
-    _plugin_releases.PyPIPluginReleases.release = release  # type: ignore[method-assign]
-    _plugin_releases.PyPIPluginReleases.announceable = announceable  # type: ignore[method-assign]
-    _auto_update._now = now  # noqa: SLF001 - the point of this fake
-    _auto_update.FIRST_CHECK = (timedelta(seconds=1), timedelta(seconds=2))
-    _auto_update.CHECK_EVERY = timedelta(seconds=2)
-    _auto_update.JITTER = timedelta(0)
+    _service.GitHubReleases.latest_version = latest_version
+    _plugin_releases.PyPIPluginReleases.newer = newer
+    _plugin_releases.PyPIPluginReleases.newer_releases = newer_releases
+    _service.GitHubReleases.release_facts = release_facts
+    _service.GitHubReleases.accepted = accepted
+    _update.UpdateService.apply_announced = apply_announced
+    _plugin_releases.PyPIPluginReleases.release = release
+    _plugin_releases.PyPIPluginReleases.announceable = announceable
+    setattr(_auto_update, "_now", now)  # noqa: B010 - a name this module does not declare
+    setattr(_auto_update, "FIRST_CHECK", (timedelta(seconds=1), timedelta(seconds=2)))  # noqa: B010 - a name this module does not declare
+    setattr(_auto_update, "CHECK_EVERY", timedelta(seconds=2))  # noqa: B010 - a name this module does not declare
+    setattr(_auto_update, "JITTER", timedelta(0))  # noqa: B010 - a name this module does not declare
 
     Installation.core_pin = core_pin  # type: ignore[method-assign]
