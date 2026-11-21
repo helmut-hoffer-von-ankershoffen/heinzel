@@ -6,12 +6,14 @@ import { runInNewContext } from "node:vm";
 import { hideWindows, quitLogLine, shouldRefresh, showWindows, stopWithReport } from "../src/shutdown.js";
 import { createPublicMediaHandler } from "../src/public-media.js";
 import { installSignalQuit } from "../src/signal-quit.js";
+import { mainScript, mainSource, sourceOf } from "./main-source.js";
 
-const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+const main = mainSource();
 const preload = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
 test("startup acquires the single-instance guard before launching the owned CLI", () => {
-  assert.ok(main.indexOf("instance.acquire(process.argv") < main.indexOf("app.whenReady()"));
+  const entry = sourceOf("main.js");
+  assert.ok(entry.indexOf("ctx.instance.acquire(process.argv") < entry.indexOf("startWhenReady()"));
   assert.match(main, /instance\.setConnection\(connection\)/);
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
@@ -19,7 +21,7 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.match(main, /activations\.set\(window\.webContents, guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\), \{/);
   assert.match(main, /ipcMain\.handle\("hz:user-activation", \(event\) => \{\n    try \{\n      if \(isOwnedMainFrame\(event, \{/);
   assert.match(main, /openProductUi\(/);
-  assert.match(main, /cancelled: \(\) => stopping \|\| quitting/);
+  assert.match(main, /cancelled: \(\) => ctx\.stopping \|\| ctx\.quitting/);
   assert.doesNotMatch(main, /data:text\/html/);
   assert.match(preload, /lifecycle: \(\) => ipcRenderer\.invoke\("hz:lifecycle"\)/);
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
@@ -28,13 +30,14 @@ test("startup acquires the single-instance guard before launching the owned CLI"
 test("Electron readiness starts the CLI and retains the picker after startup errors", () => {
   assert.doesNotMatch(main, /await\s+app\.whenReady\(\)/);
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
-  assert.ok(main.indexOf("acquireDesktopGate()") < main.indexOf("return ownedCli.start()"));
-  assert.match(main, /workspaceController\?\.failed\(failedConnection, new Error\(message\)\);\n    showConnection\(\)/);
+  const startup = sourceOf("main-startup.js");
+  assert.ok(startup.indexOf("acquireDesktopGate()") < startup.indexOf("return ctx.ownedCli.start()"));
+  assert.match(main, /ctx\.workspaceController\?\.failed\(failedConnection, new Error\(message\)\);\n    showConnection\(\)/);
 });
 
 test("Quit stops the owned CLI without adding background integration", () => {
   assert.match(main, /app\.on\("before-quit", \(event\) =>/);
-  assert.match(main, /stopWithReport\(ownedCli,/);
+  assert.match(main, /stopWithReport\(ctx\.ownedCli,/);
   assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|Notification/);
 });
 
@@ -70,7 +73,7 @@ function quitHarness(result, rejects = false) {
       return result;
     },
   };
-  runInNewContext(main.replace(/^import .*;\n/gm, "").replaceAll("import.meta.url", "moduleUrl"), {
+  runInNewContext(mainScript(), {
     moduleUrl: new URL("../src/main.js", import.meta.url).href, URL,
     process: proc, app,
     console: { ...console, warn: (line) => warnings.push(line) },

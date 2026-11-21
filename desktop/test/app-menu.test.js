@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ACTIONS, aboutLinkUrl, appMenuTemplate, helpLogLine, menuLogLine, HELP_URLS, isAllowedHelpUrl, menuScript } from "../src/app-menu.js";
+import { mainSource } from "./main-source.js";
 
 test("About link keys produce only the project page and canonical release tags", () => {
   const repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
@@ -118,8 +119,7 @@ test("About opens the web dialog, never the native panel", async () => {
   assert.equal(about.role, undefined);
   about.click();
   assert.deepEqual(sent, ["about"]);
-  const { readFile } = await import("node:fs/promises");
-  const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+  const main = mainSource();
   assert.match(main, /setAboutPanelOptions\(\{ applicationName: app\.name, applicationVersion: app\.getVersion\(\), version: "" \}\)/);
 });
 
