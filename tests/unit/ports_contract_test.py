@@ -231,7 +231,18 @@ def test_a_release_source_names_the_latest_and_what_is_known_about_it(releases):
 @pytest.fixture(params=["memory", "files"])
 def state(request, tmp_path) -> InstallationState:
     folder = tmp_path / "state"
-    return MemoryInstallationState(folder) if request.param == "memory" else FileInstallationState(folder)
+    receipt = '{"release": "0.9.53"}'
+    if request.param == "memory":
+        return MemoryInstallationState(folder, {"Library/receipt.json": receipt})
+    (tmp_path / "home/Library").mkdir(parents=True)
+    (tmp_path / "home/Library/receipt.json").write_text(receipt, encoding="utf-8")
+    return FileInstallationState(folder, tmp_path / "home")
+
+
+def test_a_home_file_reads_the_desktop_receipt_and_nothing_outside_home(state):
+    assert state.home_file("Library/receipt.json") == '{"release": "0.9.53"}'
+    assert state.home_file("Library/missing.json") is None
+    assert state.home_file("../escape.txt") is None
 
 
 def test_a_journal_reads_back_what_was_appended_in_order(state):

@@ -316,9 +316,10 @@ class FakeReleaseSource:
 class MemoryInstallationState:
     """A state folder in memory: locks and journals shared by every "server" that is given the same instance."""
 
-    def __init__(self, folder: Path) -> None:
-        """Use `folder` as the state folder's path; its content is not touched."""
+    def __init__(self, folder: Path, home_files: Mapping[str, str] | None = None) -> None:
+        """Use `folder` as the state folder's path (its content is not touched); `home_files` are files under home."""
         self._folder = folder
+        self._home_files = dict(home_files or {})
         self._locks: dict[str, threading.RLock] = {}
         self._journals: dict[str, list[str]] = {}
         self._guard = threading.Lock()
@@ -343,6 +344,10 @@ class MemoryInstallationState:
     def journal(self, name: str) -> Iterator[str]:
         """The lines of journal `name`."""
         return iter(list(self._journals.get(name, [])))
+
+    def home_file(self, relative: str) -> str | None:
+        """The text the test put under home at `relative`, or None."""
+        return self._home_files.get(relative)
 
     def append(self, name: str, line: str) -> None:
         """Add a line to journal `name`."""

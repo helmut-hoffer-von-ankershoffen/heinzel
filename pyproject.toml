@@ -423,6 +423,8 @@ ignore_imports = [
     "heinzel.heads.web._workspace_version -> heinzel.modules.system.client",
     # The head's terminal and browser half of web supervision wraps the lifecycle context's service.
     "heinzel.heads.web._supervision -> heinzel.modules.system.lifecycle._supervision",
+    # The restart-verification routes serve the lifecycle context's models and comparison.
+    "heinzel.heads.web._lifecycle -> heinzel.modules.system.lifecycle._verify",
 ]
 
 # BEGIN generated from contexts.toml (scripts/contexts.py write); do not edit by hand
