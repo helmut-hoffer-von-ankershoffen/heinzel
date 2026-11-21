@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 
 from heinzel import HeinzelError
 from heinzel.heads import web
-from heinzel.heads.web import _auto_update as auto
 from heinzel.heads.web._auto_update import AutoUpdater
 from heinzel.modules.system.client import _state_directory as storage
 from heinzel.modules.system.client._devices import Devices
+from heinzel.modules.system.updater import StateFiles
+from heinzel.modules.system.updater import _schedule as auto
 
 pytestmark = pytest.mark.integration
 TOKEN = "shared-directory-session"
@@ -246,7 +247,7 @@ def test_concurrent_path_replacement_cannot_redirect_verified_descriptor(make_ke
             assert replaced.wait(5), "replacement thread did not complete"
             yield folder
 
-    monkeypatch.setattr(auto, "private_directory", replace_after_verification)
+    monkeypatch.setattr(AutoUpdater, "files", StateFiles(replace_after_verification, storage.open_updater_file))
     from heinzel.modules.system.client import _devices
 
     monkeypatch.setattr(_devices, "private_directory", replace_after_verification)
@@ -260,7 +261,7 @@ def test_concurrent_path_replacement_cannot_redirect_verified_descriptor(make_ke
         elif operation == "read":
             assert updater._read().message == "trusted original"
         elif operation == "apply-lock":
-            handle = auto._try_lock(updater._apply_lock)
+            handle = auto._try_lock(updater._apply_lock, updater.files)
             assert handle is not None
             auto._unlock(handle)
             assert (moved / "auto-update-apply.lock").is_file()
@@ -299,7 +300,7 @@ def test_private_directory_updater_files_do_not_follow_links(make_kernel, tmp_pa
     updater.plan.message = "must not overwrite a linked entry"
     updater._save()
     if name == "auto-update-apply.lock":
-        assert auto._try_lock(updater._apply_lock) is None
+        assert auto._try_lock(updater._apply_lock, updater.files) is None
     assert (directory / name).is_symlink()
     assert outside.read_bytes() == b"outside must remain untouched"
 
