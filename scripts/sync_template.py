@@ -284,9 +284,30 @@ def _plugin_coverage(text: str) -> str:
     return text[:start] + coverage + text[end:]
 
 
+def _without_main_lanes(text: str) -> str:
+    """Keep the core's Linux and coalesced macOS main lanes out of the plugin workflow, which runs per commit."""
+    text = re.sub(r"(?m)^    inputs:\n      lane: # main lanes[^\n]*\n(?:        [^\n]*\n)+", "", text)
+    text = re.sub(r"(?m)^# main lanes:[^\n]*\n(?:# [^\n]*\n)*", "", text)
+    text = text.replace(
+        "  group: ${{ github.event_name == 'workflow_dispatch' && inputs.lane == 'macos' && 'ci-main-macos' || "
+        "format('ci-{0}-{1}', github.workflow, github.ref == 'refs/heads/main' && github.sha || github.ref) }}",
+        "  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}",
+    )
+    text = re.sub(r"\n  macos-main: # main lanes\n.*?(?=\n  [a-z-]+:\n)", "", text, flags=re.DOTALL)
+    for lane in ("macos", "linux"):
+        text = text.replace(f" && needs.changes.outputs.lane != '{lane}'", "")
+    text = re.sub(r"(?m)^(    if: )\((.*)\)((?: # [^\n]*)?)$", r"\1\2\3", text)
+    text = text.replace("needs.changes.outputs.lane == 'linux' && '[]' || ", "")
+    text = re.sub(r"(?m)^ *- id: lane # main lanes\n(?:          [^\n]*\n|        [^\n]*\n)+(?= *- id: )", "", text)
+    text = re.sub(r"(?m)^[^\n]*# main lanes\n", "", text)
+    return text.replace(", focused-tests, macos-main]", ", focused-tests]")
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
-    text = _without_focused_admission((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    text = _without_focused_admission(
+        _without_main_lanes((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    )
     # Batch admission is core queue coordination; plugins retain their complete workflow.
     text = _without_batch_admission(text)
     text = re.sub(r"(?m)^run-name:.*\n", "", text)
