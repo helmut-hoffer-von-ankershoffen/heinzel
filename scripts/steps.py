@@ -31,7 +31,7 @@ TAIL = 40
 POLL = 0.05
 STOP_GRACE = 0.5
 REAP_TIMEOUT = 2.0
-ANSI = re.compile(r"\x1b\[" r"[0-9;?]*[A-Za-z]")  # split so Copier sees none of its delimiters
+ANSI = re.compile(r"\x1b\x5b[0-9;?]*[A-Za-z]")  # \x5b is `[`: written out so Copier sees none of its delimiters
 # `uv run --script` points VIRTUAL_ENV at this script's own environment; steps run project commands (`uv run ...`),
 # which would warn on every step that it doesn't match the project's .venv.
 ENV = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"} | {
