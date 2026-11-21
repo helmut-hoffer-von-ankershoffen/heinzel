@@ -150,3 +150,15 @@ preflight and case durations against the serial control; report preparation, PR 
 acceptance and automatic rollout separately. This experiment has no observed latency result yet and establishes no
 release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing
 reliability, not a replacement for any release gate.
+
+## End-to-end upgrade scenario, slice 1 (advisory)
+
+`scenario.py` (workflow `acceptance-scenario.yml`, jobs `Scenario slice 1 (<os>)`) is the first slice of the
+end-to-end acceptance story: the release before N, installed as published with user state (an extra plugin, a
+disabled default, settings, the local test model), then two `hz ui serve` on one state folder that the real
+automatic updater moves to N by its own scheduled check, with no button and no update command. It checks N on both
+servers and the CLI, the Core bytes against N's wheel, the kept configuration and plugin choices, one web chat answered
+by the `dummy` model, and the forbidden-error scan, and writes `reports/acceptance/scenario.json` with one status per
+step. It reuses this harness's private homes, owned processes and byte checks. It is advisory: no release, merge or
+promotion reads it yet, and its job names never start with `Acceptance (`. It sets the update age gates to 0 hours,
+as a user can, so a release of minutes installs itself; the daemon and apps are later slices.
