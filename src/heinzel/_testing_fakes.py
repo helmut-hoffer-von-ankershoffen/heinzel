@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
     from pathlib import Path
 
+    from heinzel.modules.system.updater._announced import Announcement
     from heinzel.ports import RunningProcess, ServiceJob
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "FakeStatus",
     "MemoryInstallationState",
     "ScriptedProcessRunner",
+    "install_fake_release",
     "installation",
 ]
 
@@ -419,3 +421,85 @@ def installation(
         for s in servers
     ]
     return FakeInstallation(folder, built, top, web_label)
+
+
+def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the running installation
+    """Install the fake newer release of the automatic-update end-to-end test (ADR 0116); nothing is fetched.
+
+    `tests/fixtures/auto_update/fake_release.py` calls it when `python -m heinzel` starts in that test (the module is
+    free of pytest, so the tool-installed hz can import it). Once the test writes `release` in `folder`, the newest
+    stable release is 99.0.0 and a plugin has 9.0.0 (which needs no other plugin), until an update "installs" them; the
+    server's clock runs ahead by the seconds in `clock` there; the installation counts as a uv tool on a release tag.
+    """
+    from heinzel import __version__  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+    from heinzel.heads.web import _auto_update  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+    from heinzel.kernel import CorePin, Installation, PluginNews, PluginRelease, ReleaseFacts  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+    from heinzel.modules.system import _service  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+    from heinzel.modules.system._models import AnnouncedUpdate  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
+    from heinzel.modules.system.updater import _plugin_releases, _update  # noqa: PLC0415
+
+    long_ago = datetime(2026, 1, 1, tzinfo=UTC)  # old enough for any minimum age
+    applied = folder / "applied"
+
+    def released() -> bool:
+        return (folder / "release").exists() and not applied.exists()
+
+    seen: list[bool] = []
+    """hz 99.0.0 was answered: the plugin's news comes no sooner, so one check never finds the plugin alone (the
+    server asks about hz first, then the plugins, and the test may publish the release between the two)."""
+
+    def latest_version(self: object, timeout: float) -> str:  # noqa: ARG001
+        if released():
+            seen.append(True)
+            return "99.0.0"
+        return __version__
+
+    def newer(self: object, timeout: float) -> dict[str, str]:  # noqa: ARG001
+        return {"heinzel-example": "9.0.0"} if released() and seen else {}
+
+    def newer_releases(self: object, timeout: float) -> dict[str, PluginRelease]:
+        return {name: PluginRelease(version, long_ago) for name, version in newer(self, timeout).items()}
+
+    def release_facts(self: object, version: str, timeout: float) -> ReleaseFacts:  # noqa: ARG001
+        return ReleaseFacts(version, long_ago, None)
+
+    def announceable(self: object, timeout: float, old_enough: Callable[[PluginRelease], bool]) -> PluginNews:
+        """The fake plugin release needs nothing, so it moves alone; its closure has its own unit tests."""
+        return PluginNews({name: r for name, r in newer_releases(self, timeout).items() if old_enough(r)})
+
+    def release(self: object, name: str, version: str, timeout: float) -> PluginRelease:  # noqa: ARG001
+        return PluginRelease(version, long_ago)
+
+    def apply_announced(self: object, announced: Announcement, **kwargs: Callable[[str], bool]) -> AnnouncedUpdate:  # noqa: ARG001
+        """Instead of uv: record what would be installed, then the real trial start of this hz."""
+        what = f"{announced.core} {dict(announced.plugins)}"
+        applied.write_text(f"fake update applied: {what}\n", encoding="utf-8")
+        started = kwargs["trial"](__version__)
+        return AnnouncedUpdate(
+            updated=started, after=__version__, restored=not started, refused=not started, message="Fake update."
+        )
+
+    def now() -> datetime:
+        try:
+            ahead = float((folder / "clock").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            ahead = 0.0
+        return datetime.now(UTC) + timedelta(seconds=ahead)
+
+    def core_pin(self: object) -> CorePin:  # noqa: ARG001
+        return CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel")
+
+    _service.GitHubReleases.latest_version = latest_version  # type: ignore[method-assign]
+    _plugin_releases.PyPIPluginReleases.newer = newer  # type: ignore[method-assign]
+    _plugin_releases.PyPIPluginReleases.newer_releases = newer_releases  # type: ignore[method-assign]
+    _service.GitHubReleases.release_facts = release_facts  # type: ignore[method-assign]
+    _service.GitHubReleases.accepted = lambda _self, _version, _timeout: True  # type: ignore[method-assign, assignment]
+    _update.UpdateService.apply_announced = apply_announced  # type: ignore[method-assign, assignment]
+    _plugin_releases.PyPIPluginReleases.release = release  # type: ignore[method-assign]
+    _plugin_releases.PyPIPluginReleases.announceable = announceable  # type: ignore[method-assign]
+    _auto_update._now = now  # noqa: SLF001 - the point of this fake
+    _auto_update.FIRST_CHECK = (timedelta(seconds=1), timedelta(seconds=2))
+    _auto_update.CHECK_EVERY = timedelta(seconds=2)
+    _auto_update.JITTER = timedelta(0)
+
+    Installation.core_pin = core_pin  # type: ignore[method-assign]

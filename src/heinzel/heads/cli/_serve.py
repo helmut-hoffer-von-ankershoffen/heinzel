@@ -28,8 +28,7 @@ from heinzel.kernel import (
 )
 
 if TYPE_CHECKING:
-    from heinzel.modules.system.client._devices import Devices
-    from heinzel.modules.system.client._mcp_tokens import McpToken, McpTokens
+    from heinzel.modules.system.client import Devices, McpToken, McpTokens
 
 
 class Transport(StrEnum):
@@ -600,7 +599,7 @@ def _print_revoked(gone: "list[McpToken]", *, json_output: bool) -> None:
 
 
 def _tokens() -> "McpTokens":
-    from heinzel.modules.system.client._mcp_tokens import tokens_for_user  # noqa: PLC0415 - only when managing tokens
+    from heinzel.modules.system.client import tokens_for_user  # noqa: PLC0415 - only when managing tokens
 
     return tokens_for_user()
 

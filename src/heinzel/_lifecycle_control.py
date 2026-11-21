@@ -1,34 +1,20 @@
-"""Present one closed private lifecycle pipe request without entering ordinary CLI writer ownership."""
+"""`python -m heinzel._lifecycle_control`: the pipe entry the desktop apps call; the logic lives in lifecycle.
+
+The path is a contract with already installed desktop apps, so it stays. It owns only the pipe: one bounded read of
+standard input and one JSON line on standard output.
+"""
 
 import json
 import sys
 
-from heinzel import HeinzelError
-from heinzel.modules.system.lifecycle._authority import Request, execute
+from heinzel.modules.system.lifecycle._control import MAX_REQUEST, answer
 
-MAX_REQUEST = 128 * 1024
-
-
-def _request() -> Request:
-    encoded = sys.stdin.buffer.read(MAX_REQUEST + 1)
-    if len(encoded) > MAX_REQUEST:
-        msg = "The lifecycle control request exceeds its budget"
-        raise ValueError(msg)
-    return Request.model_validate_json(encoded)
+__all__ = ["MAX_REQUEST", "main"]
 
 
 def main() -> None:
-    """Read one bounded private pipe message and emit safe structured results without raw paths or credentials."""
-    try:
-        result = execute(_request())
-    except (OSError, ValueError, HeinzelError):
-        answer: dict[str, object] = {
-            "ok": False,
-            "error": "The owned lifecycle action was refused; inspect this profile.",
-        }
-    else:
-        answer = {"ok": True, "value": result}
-    sys.stdout.write(json.dumps(answer) + "\n")
+    """Read one bounded private pipe message and print the answer."""
+    sys.stdout.write(json.dumps(answer(sys.stdin.buffer.read(MAX_REQUEST + 1))) + "\n")
     sys.stdout.flush()
 
 

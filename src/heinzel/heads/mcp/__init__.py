@@ -65,7 +65,7 @@ from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
-from heinzel.modules.system.client._mcp_tokens import (
+from heinzel.modules.system.client import (
     READ,
     SCOPES,
     WRITE,

@@ -49,6 +49,7 @@ _FAKES = (
     "FakeStatus",
     "MemoryInstallationState",
     "ScriptedProcessRunner",
+    "install_fake_release",
     "installation",
 )
 """The fakes of `heinzel.ports`, loaded on first use for the reason above: `from heinzel.testing import FakeClock`."""

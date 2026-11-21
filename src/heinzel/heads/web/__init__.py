@@ -88,8 +88,7 @@ from heinzel.kernel import (
     ViewLet,
     read_view_asset,
 )
-from heinzel.modules.system.client._devices import Devices
-from heinzel.modules.system.client._mcp_tokens import McpTokens, tokens_for_user
+from heinzel.modules.system.client import Devices, McpTokens, tokens_for_user
 
 HEAD = "web"
 WEB_LIFECYCLE_WAIT_SECONDS = 10.0

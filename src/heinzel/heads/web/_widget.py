@@ -18,7 +18,7 @@ from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._widget_fence_routes import add_widget_fence, paired_token
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, OperationLet
 from heinzel.kernel._identity import LOCAL_READ_PERMISSIONS
-from heinzel.modules.system.client._devices import Devices
+from heinzel.modules.system.client import Devices
 
 NO_STORE = {"Cache-Control": "no-store"}
 

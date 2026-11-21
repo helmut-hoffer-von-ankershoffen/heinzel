@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from heinzel.modules.system.client._devices import Devices
+from heinzel.modules.system.client import Devices
 
 FORBIDDEN = 403
 

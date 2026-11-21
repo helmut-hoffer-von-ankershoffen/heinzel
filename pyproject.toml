@@ -407,13 +407,29 @@ name = "Heads only know what the kernel discovered"
 type = "forbidden"
 source_modules = ["heinzel.heads"]
 forbidden_modules = ["heinzel.modules"]
+# The one planned exception: heads present what the `client` context owns (device and MCP tokens, the workspace
+# handshake) by importing the context's public entry, never a private file. Until the kernel injects it by type, each
+# importing file is listed; the list may only shrink.
+ignore_imports = [
+    "heinzel.heads.cli._serve -> heinzel.modules.system.client",
+    "heinzel.heads.mcp -> heinzel.modules.system.client",
+    "heinzel.heads.web -> heinzel.modules.system.client",
+    "heinzel.heads.web._auto_update -> heinzel.modules.system.client",
+    "heinzel.heads.web._mcp -> heinzel.modules.system.client",
+    "heinzel.heads.web._pairing -> heinzel.modules.system.client",
+    "heinzel.heads.web._widget -> heinzel.modules.system.client",
+    "heinzel.heads.web._widget_fence_routes -> heinzel.modules.system.client",
+    "heinzel.heads.web._workspace_version -> heinzel.modules.system.client",
+    # The head's terminal and browser half of web supervision wraps the lifecycle context's service.
+    "heinzel.heads.web._supervision -> heinzel.modules.system.lifecycle._supervision",
+]
 
 # BEGIN generated from contexts.toml (scripts/contexts.py write); do not edit by hand
 
 [[tool.importlinter.contracts]]
 name = "Contexts import the spec and the ports, not each other (contexts.toml)"
 type = "independence"
-modules = ["heinzel.modules.system.updater", "heinzel.modules.system.lifecycle", "heinzel.modules.system.daemon", "heinzel.modules.system.plugin", "heinzel.modules.heinzel", "heinzel.modules.ai", "heinzel.modules.ui.browser"]
+modules = ["heinzel.modules.system.updater", "heinzel.modules.system.lifecycle", "heinzel.modules.system.client", "heinzel.modules.system.daemon", "heinzel.modules.system.plugin", "heinzel.modules.heinzel", "heinzel.modules.ai", "heinzel.modules.ui.browser"]
 ignore_imports = [
     "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
@@ -442,7 +458,6 @@ ignore_imports = [
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
     "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.modules.system.client._devices",
     "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",

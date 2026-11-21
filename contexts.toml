@@ -31,7 +31,6 @@ src = [
     "src/heinzel/modules/ui/__init__.py",
     "src/heinzel/modules/ui/_overview.py",
     "src/heinzel/heads/web/_lifecycle.py",
-    "src/heinzel/heads/web/_supervision.py",
 ]
 tests = ["tests/unit/runtime/lifecycle/**"]
 package = "heinzel.modules.system.lifecycle"
@@ -39,7 +38,9 @@ adapters_only = true
 
 [context.client]
 summary = "the workspace handshake, device and MCP tokens: what connected clients present"
-src = ["src/heinzel/heads/web/_workspace_version.py", "src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/modules/system/client/_devices.py"]
+src = ["src/heinzel/modules/system/client/**"]
+tests = ["tests/integration/runtime/client/**", "tests/unit/runtime/client/**"]
+package = "heinzel.modules.system.client"
 
 [context.daemon]
 summary = "the daemon, its schedule and the runner"
@@ -132,9 +133,6 @@ exclude = [
     "src/heinzel/heads/web/_auto_update.py",
     "src/heinzel/heads/web/_updates.py",
     "src/heinzel/heads/web/_lifecycle.py",
-    "src/heinzel/heads/web/_supervision.py",
-    "src/heinzel/heads/web/_workspace_version.py",
-    "src/heinzel/modules/system/client/_devices.py",
 ]
 package = "heinzel.heads.web"
 head = true
@@ -188,7 +186,6 @@ heads = [
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
     "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.modules.system.client._devices",
     "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",

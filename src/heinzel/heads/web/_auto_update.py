@@ -51,7 +51,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel._logging import step as log_step
-from heinzel.modules.system.client._state_directory import open_updater_file, private_directory
+from heinzel.modules.system.client import open_updater_file, private_directory
 
 log = logging.getLogger(__name__)
 events = get_logger("web.auto_update")

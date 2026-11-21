@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from heinzel import HeinzelError, __version__
 from heinzel.heads import web
-from heinzel.heads.web import _workspace_version as subject
+from heinzel.modules.system.client import _workspace_version as subject
 
 pytestmark = pytest.mark.unit
 

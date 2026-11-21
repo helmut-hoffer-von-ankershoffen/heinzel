@@ -1,0 +1,43 @@
+import os, shutil, sys
+from pathlib import Path
+import pathlib
+from heinzel.modules.system._announced import MOVED_ASIDE, ToolSnapshot
+import heinzel
+assert heinzel.__version__ == "0.9.53"
+
+def make_prefix(root: Path) -> Path:
+    tool = root / "tool"
+    (tool / "lib/site").mkdir(parents=True)
+    (tool / "lib/site/heinzel.py").write_bytes(b"version = '0.9.53'\n")
+    (tool / "pyvenv.cfg").write_bytes(b"home = /usr/bin\n")
+    (tool / "bin").mkdir()
+    (tool / "bin/hz").symlink_to("../lib/site/heinzel.py")
+    return tool
+
+out = Path(sys.argv[1]); work = Path(sys.argv[2])
+for name in ("after_take", "interrupted"):
+    shutil.rmtree(work / name, ignore_errors=True)
+    prefix = make_prefix(work / name)
+    folder = work / name / "state"
+    snap = ToolSnapshot.take(prefix, folder)
+    if name == "interrupted":
+        (prefix / "lib/site/heinzel.py").write_bytes(b"version = '0.9.54'\n")
+        real = pathlib.Path.rename
+        calls = []
+        def boom(self, target):
+            calls.append(1)
+            if len(calls) == 4:
+                raise OSError("interrupted")
+            return real(self, target)
+        pathlib.Path.rename = boom
+        try:
+            snap.recover()
+        except OSError:
+            pass
+        finally:
+            pathlib.Path.rename = real
+    dest = out / name
+    shutil.rmtree(dest, ignore_errors=True)
+    shutil.copytree(folder, dest, symlinks=True)
+    # the prefix as it was left, so a test can set it up the same way
+    shutil.copytree(prefix, out / f"{name}_prefix", symlinks=True, dirs_exist_ok=True)
