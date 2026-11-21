@@ -76,6 +76,8 @@ TIMEOUT = 10.0
 """Seconds a release source may take per network operation."""
 STEP_SECONDS = 1.0
 """How often the server looks at its plan."""
+RELOAD_RETRY = timedelta(minutes=1)
+"""How soon a server that runs an older hz than is installed looks again, when work held off its restart."""
 FILENAME = "auto-update.json"
 
 UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
@@ -631,6 +633,8 @@ class AutoUpdater:
         """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
         """Held from the start of an apply until this process ends, so no other `hz ui serve` applies meanwhile."""
+        self._reloading: str | None = None
+        """The installed hz this process asked to restart into; asked once, the restart replaces the process."""
         self.plan = self._read(fresh=True) or Plan()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
@@ -789,7 +793,7 @@ class AutoUpdater:
         checking = now >= self._next_check
         if checking:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
-            self.check(now)
+            checking = self.check(now)  # False once this process restarts into an hz installed under it
         waiting = self.waiting_for()
         if waiting != self._waited:  # what holds the countdown off, in the log once per change
             self._waited = waiting
@@ -853,14 +857,20 @@ class AutoUpdater:
         except (HeinzelError, OSError, SubprocessError) as exc:
             log.warning("desktop automatic update could not finish: %s", exc)
 
-    def check(self, now: datetime) -> None:
+    def check(self, now: datetime) -> bool:
         """Ask for a newer stable hz and newer plugins old enough to install; what can't be asked stays as it was.
 
         A release counts only once its last file on PyPI is as old as `auto_update_min_age_hours` (hz) or
         `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release, a draft or a yanked one. For hz from
         a release tag, the commit its tag names now is recorded, so a tag moved later is refused at apply time and
         once installed. hz and the plugins are asked apart: GitHub or PyPI failing for one keeps the other's news.
+
+        Returns:
+            False, asking nothing, when another update installed a different hz under this process: it restarts into
+            that one instead (`_load_installed`), which then asks itself. True after asking.
         """
+        if self._load_installed(now):
+            return False
         settings = self._read_settings()
         core_ok = plugins_ok = True
         try:
@@ -893,6 +903,7 @@ class AutoUpdater:
                 plan.held_plugins = list(news.held)
             if (plan.core, plan.plugins) != before:
                 log.info("automatic update found: %s", update_summary(plan) or "nothing newer")
+        return True
 
     def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None, str | None]:
         """A newer stable, accepted hz old enough to install, its tag's commit, and a newer one held back.
@@ -944,6 +955,12 @@ class AutoUpdater:
         from must still name the commit it named when it was announced. Any failure keeps this process, the old
         version, running.
         """
+        if self._load_installed(self._clock()):
+            with self._editing() as plan:  # nothing applies from here: the restarted process asks for news itself
+                plan.applying = False
+                plan.apply_at = None
+                plan.window_at = self._clock() + RELOAD_RETRY
+            return
         if self._applying is None and (handle := _try_lock(self._apply_lock)) is not None:
             self._applying = handle
             weakref.finalize(self, _unlock, handle)  # closed with this updater at the latest
@@ -985,6 +1002,52 @@ class AutoUpdater:
                 f"hz {after} is installed, but this server couldn't restart into it, so hz {self._version} keeps "
                 "running. Restart hz ui to finish the update."
             )
+
+    def _installed_elsewhere(self) -> str | None:
+        """The hz version installed now when it isn't the one this process runs; None when it is, or can't be read.
+
+        `hz system update`, the footer of another window, another `hz ui serve` on this state folder or the desktop
+        app may have installed a release since this process started. Doubt counts as none: no restart on a guess.
+        """
+        try:
+            installed = self._kernel.resolve(Installation).installed_core_version()
+            return installed if Version(installed) != Version(self._version) else None
+        except Exception:
+            log.debug("the installed hz version couldn't be read", exc_info=True)
+            return None
+
+    def _load_installed(self, now: datetime) -> bool:
+        """Restart into the hz installed under this process, once idle; True while the installed one differs.
+
+        This process can't apply news then: `system.apply-announced` refuses an outdated process ("reload before
+        updating"), and that failure would hold every server on this state folder off for six hours, while the
+        footer keeps saying an update is available. The process that starts runs what is installed and asks for
+        news itself.
+        """
+        installed = self._installed_elsewhere()
+        if installed is None or self._restart is None:
+            return False
+        if self._reloading == installed:
+            return True
+        if waiting := self.waiting_for():
+            self._next_check = now + RELOAD_RETRY
+            log.info(
+                "automatic update: hz %s is installed; this server restarts into it after: %s",
+                installed,
+                ", ".join(waiting),
+            )
+            return True
+        log.info(
+            "automatic update: hz %s is installed, this server runs hz %s; restarting into it", installed, self._version
+        )
+        self._reloading = installed
+        try:
+            self._restart()
+        except Exception as exc:  # noqa: BLE001 - this process keeps running; the next look tries again
+            self._reloading = None
+            self._next_check = now + RELOAD_RETRY
+            log.warning("restarting into the installed hz %s failed: %s", installed, exc)
+        return True
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
