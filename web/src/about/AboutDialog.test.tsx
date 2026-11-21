@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordSurface } from "@/lib/surfaceDiagnostics";
-import { AboutDialog, detailsText } from "./AboutDialog";
+import { AboutDialog, clientHere, desktopApp, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
 const info = {
@@ -92,12 +92,51 @@ describe("About dialog", () => {
     expect(mascot).not.toHaveClass("overflow-visible");
   });
 
+  it("names the installed desktop app's variant, Native or Electron, with its version and path", () => {
+    const native = { path: "/Applications/Heinzelmaennchen.app", variant: "native", version: "0.9.53" };
+    expect(desktopApp({ ...info, desktop_app: native } as never, null)).toEqual({
+      name: "Native app 0.9.53",
+      path: "/Applications/Heinzelmaennchen.app",
+    });
+    const electron = { ...native, variant: "electron" };
+    expect(desktopApp({ ...info, desktop_app: electron } as never, null)?.name).toBe("Electron app 0.9.53");
+    expect(desktopApp({ ...info, desktop_app: { ...native, variant: null } } as never, null)?.name).toBe(
+      "Desktop app 0.9.53",
+    );
+    expect(desktopApp(info as never, null)).toBeNull();
+  });
+
+  it("tells which client shows the page from the bridge it injects", () => {
+    expect(clientHere(undefined)).toBe("browser");
+    expect(clientHere({})).toBe("native");
+    expect(clientHere({ about: () => Promise.resolve({ version: "1", path: "/A" }) })).toBe("electron");
+  });
+
+  it("shows the Native app row and the client it runs in", async () => {
+    current = {
+      ...info,
+      desktop_app: { path: "/Applications/Heinzelmaennchen.app", variant: "native", version: "0.9.53" },
+    };
+    Object.defineProperty(window, "heinzelDesktop", { value: {}, configurable: true });
+    try {
+      show();
+      act(() => requestMenuAction("about"));
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("Native app 0.9.53")).toBeInTheDocument();
+      expect(within(dialog).getByText("/Applications/Heinzelmaennchen.app")).toBeInTheDocument();
+      expect(within(dialog).getByText("Running in").nextSibling).toHaveTextContent("Native app");
+    } finally {
+      Reflect.deleteProperty(window, "heinzelDesktop");
+    }
+  });
+
   it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {
     const text = detailsText(info as never, { version: "0.9.29", path: "/Applications/H.app" });
     expect(text).toContain("hz 1.2.3\n");
     expect(text).toContain("installation uv tool (installed 2026-11-08)");
     expect(text).toContain("daemon running 1.2.3");
-    expect(text).toContain("desktop 0.9.29 /Applications/H.app");
+    expect(text).toContain("desktop Electron app 0.9.29 /Applications/H.app");
+    expect(text).toContain("client Browser");
     expect(text).toContain("plugin heinzel-b 0.4.0 git");
   });
 
@@ -109,7 +148,7 @@ describe("About dialog", () => {
       ["browser surface: overlay; bridge: ok; native last sample: unavailable"],
     );
     expect(text).toContain("hz 1.2.3");
-    expect(text).toContain("desktop 0.9.29");
+    expect(text).toContain("desktop Electron app 0.9.29");
     expect(text).toContain("loaded frontend entrypoint /assets/index-old.js");
     expect(text).toContain("browser surface: overlay");
   });

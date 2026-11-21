@@ -262,7 +262,7 @@ def test_swift_fetch_selects_and_verifies_only_swift_assets(fictional_archive, m
     )
     requested = []
     monkeypatch.setattr(release, "_release_assets", lambda _tag, names, _reporter: requested.append(names) or assets)
-    result = release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.SWIFT)
+    result = release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.NATIVE)
     assert result.name == archive
     assert result.read_bytes() == contents[archive]
     assert requested == [set(contents), set(contents)]
@@ -272,7 +272,7 @@ def test_swift_fetch_selects_and_verifies_only_swift_assets(fictional_archive, m
     payload["archive"]["name"] = old
     contents[manifest] = json.dumps(payload).encode()
     with pytest.raises(release.HeinzelError, match="different artifact"):
-        release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.SWIFT)
+        release.fetch_archive("1.2.3", tmp_path, flavor=release.DesktopFlavor.NATIVE)
 
 
 def test_fetch_archive_rejects_bad_version_and_missing_verifier(monkeypatch, tmp_path):

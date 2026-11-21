@@ -31,6 +31,9 @@ class HeadRefresh(BaseModel):
     restarted: bool | None = Field(default=None, description="Whether the update restarted it; none if not asked.")
     was_running: bool | None = Field(default=None, description="The desktop app only: whether it was open before.")
     reopened: bool | None = Field(default=None, description="The desktop app only: whether it was quit and reopened.")
+    variant: Literal["native", "electron"] | None = Field(
+        default=None, description="The desktop app only: native or electron, from its bundle id; none if unknown."
+    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -8292,6 +8292,42 @@ export interface components {
          */
         Delivery: "web" | "daemon";
         /**
+         * DesktopApp
+         * @description The desktop app bundle found in Applications, whoever installed it.
+         */
+        DesktopApp: {
+            /**
+             * Bundle Id
+             * @description Its CFBundleIdentifier; none if it can't be read.
+             */
+            bundle_id: string | null;
+            /**
+             * Executable
+             * @description Its CFBundleExecutable; none if it can't be read.
+             */
+            executable?: string | null;
+            /**
+             * Path
+             * @description Where the bundle is.
+             */
+            path: string;
+            /**
+             * Symlink
+             * @description Whether the path is a symbolic link, not the bundle itself.
+             * @default false
+             */
+            symlink: boolean;
+            /** @description native (bundle id team.heinzel.apple) or electron (org.heinzelmaennchen.desktop); none if it is neither. */
+            variant: components["schemas"]["DesktopVariant"] | null;
+            /**
+             * Version
+             * @description Its CFBundleShortVersionString; none if it can't be read.
+             */
+            version: string | null;
+        };
+        /** @enum {string} */
+        DesktopVariant: "native" | "electron";
+        /**
          * DetailLine
          * @description A line of an item's detail, shown on hover or focus.
          */
@@ -9495,6 +9531,11 @@ export interface components {
              * @enum {string}
              */
             status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            /**
+             * Variant
+             * @description The desktop app only: native or electron, from its bundle id; none if unknown.
+             */
+            variant?: ("native" | "electron") | null;
             /**
              * Version
              * @description The version its live process reported, when observed.
@@ -15774,6 +15815,8 @@ export interface components {
          * @description The state of this Heinzelmännchen installation.
          */
         SystemInfo: {
+            /** @description The desktop app in Applications on this Mac: native or electron, its version and path; none elsewhere or when there is none. */
+            desktop_app?: components["schemas"]["DesktopApp"] | null;
             /**
              * Installation
              * @description Whether hz runs from a uv tool environment or from another Python environment.
@@ -17040,6 +17083,11 @@ export interface components {
              * @default false
              */
             desktop_running: boolean;
+            /**
+             * Desktop Variant
+             * @description Which desktop app that is: native or electron, from its bundle id.
+             */
+            desktop_variant?: ("native" | "electron") | null;
             /**
              * Latest
              * @description The newest stable release, when it could be asked.
@@ -18773,6 +18821,8 @@ export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
 export type SchemaDelivery = components['schemas']['Delivery'];
+export type SchemaDesktopApp = components['schemas']['DesktopApp'];
+export type SchemaDesktopVariant = components['schemas']['DesktopVariant'];
 export type SchemaDetailLine = components['schemas']['DetailLine'];
 export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
