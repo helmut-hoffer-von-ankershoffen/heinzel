@@ -48,7 +48,7 @@ def missing(notes: str, subjects: list[str]) -> list[str]:
 def tag_subjects(tag: str) -> list[str]:
     """Subjects of every commit in `previous tag..tag`, newest first; the previous is the nearest earlier tag."""
     previous = subprocess.run(  # noqa: S603 - fixed git argv, the tag comes from the workflow's own ref
-        ["git", "describe", "--tags", "--abbrev=0", f"{tag}^"],  # noqa: S607
+        ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "--exclude", "*-*", f"{tag}^"],  # noqa: S607
         capture_output=True,
         text=True,
         check=False,

@@ -98,6 +98,9 @@ def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, m
             git("tag", tag)
     monkeypatch.chdir(tmp_path)
     assert release_notes.tag_subjects("v0.2.0") == ["chore(release): v0.2.0", "fix: in the candidate (#886)"]
+    git("tag", "v0.2.0-rc1", "HEAD~1")  # a prerelease tag between the releases is not the previous release
+    git("tag", "edge", "HEAD~1")
+    assert release_notes.tag_subjects("v0.2.0") == ["chore(release): v0.2.0", "fix: in the candidate (#886)"]
     assert release_notes.tag_subjects("v0.1.0") == []  # no earlier tag: nothing to add
     assert "- fix: in the candidate (#886)" in release_notes.with_missing(
         "- other\n", release_notes.tag_subjects("v0.2.0")
