@@ -159,7 +159,7 @@ def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope,
         coverage.run_lane(scope, lane, tmp_path / "evidence", 123, 1)
 
 
-def test_python_syncs_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):
+def test_python_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):
     from dataclasses import replace
 
     junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
@@ -180,10 +180,11 @@ def test_python_syncs_before_the_selected_tests(coverage, scope, monkeypatch, tm
     monkeypatch.setenv("UV_PYTHON", "3.15")
     monkeypatch.setattr(coverage, "_execute", execute)
     coverage.run_lane(scope, "python", out, 123, 1)
-    sync, tests = [command for command, _python in calls]
+    sync, bootstrap, tests = [command for command, _python in calls]
     assert sync[:2] == ["uv", "sync"]
     assert "--no-build" in sync
-    assert "--no-install-package" not in sync
+    assert sync[-2:] == ["--no-install-package", "pyyaml"]
+    assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
     assert tests[-1] == "tests/unit/focused_coverage_test.py"
     assert {python for _, python in calls} == {"3.15"}
 

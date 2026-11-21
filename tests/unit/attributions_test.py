@@ -136,23 +136,52 @@ def test_attributions_md_reads_back_one_heading_per_row_of_its_tables():
     assert "react" in {title.split()[0] for title in listed[attributions.WEB_SECTION]}
 
 
+class Recorder:
+    """Stands in for every external command; `needed` answers for the newest Python having no PyYAML wheel."""
+
+    def __init__(self, *, no_wheel: bool):
+        self.no_wheel = no_wheel
+        self.commands: list[list[str]] = []
+        self.listings: dict[str, str] = {}
+
+    def run(self, *command: str) -> str:
+        self.commands.append(list(command))
+        if command[0] == "uv":
+            self.listings[command[command.index("--python-platform") + 1]] = (
+                Path(command[-1]).read_text() if "-r" in command else ""
+            )
+        if command[-1] == "pins":
+            return '{"name": "pyyaml"}'
+        if "build" in command:
+            return "/work/reviewed/pyyaml-6.0.4-py3-none-any.whl\n"
+        return ""
+
+    def subprocess(self, command, **_options):
+        self.commands.append(list(command))
+        return type("Done", (), {"returncode": 1 if self.no_wheel is False else 0})()
+
+
 EXPORTED_WITH_PYYAML = EXPORTED + "pyyaml==6.0.4\n"
 
 
-def test_every_locked_package_is_installed_from_its_upstream_wheel(monkeypatch):
-    """PyYAML 6.0.4 ships wheels for every platform: it needs no special build any more."""
-    listings: dict[str, str] = {}
-    commands: list[list[str]] = []
-
-    def run(*command: str) -> str:
-        commands.append(list(command))
-        if command[0] == "uv":
-            listings[command[command.index("--python-platform") + 1]] = Path(command[-1]).read_text()
-        return ""
-
-    monkeypatch.setattr(attributions, "run", run)
+@pytest.mark.parametrize("no_wheel", [True, False])
+def test_a_package_without_an_upstream_wheel_comes_from_the_reviewed_pure_python_build(monkeypatch, no_wheel):
+    """Never a host-specific source build: a macOS wheel cannot install for a Linux target, nor the reverse."""
+    recorder = Recorder(no_wheel=no_wheel)
+    monkeypatch.setattr(attributions, "run", recorder.run)
+    monkeypatch.setattr(attributions.subprocess, "run", recorder.subprocess)
     monkeypatch.setattr(attributions, "distributions", lambda path: [])
     attributions.python_packages(EXPORTED_WITH_PYYAML)
-    assert sorted(listings) == sorted(attributions.PLATFORMS)
-    assert all("pyyaml==6.0.4" in listing for listing in listings.values())
-    assert not any(command[-1].endswith(".whl") for command in commands)
+    installs = [command for command in recorder.commands if command[:3] == ["uv", "pip", "install"]]
+    wheel_installs = [command for command in installs if command[-1].endswith(".whl")]
+    if no_wheel:
+        # every platform lists PyYAML only through the one built wheel, installed for that platform
+        assert all("pyyaml" not in listing.lower() for listing in recorder.listings.values())
+        assert sorted(command[command.index("--python-platform") + 1] for command in wheel_installs) == sorted(
+            attributions.PLATFORMS
+        )
+        assert all("--no-build" in command for command in wheel_installs)
+        assert sum("build" in command and command[0] != "uv" for command in recorder.commands) == 1  # one build
+    else:
+        assert wheel_installs == []
+        assert all("pyyaml==6.0.4" in listing for listing in recorder.listings.values())

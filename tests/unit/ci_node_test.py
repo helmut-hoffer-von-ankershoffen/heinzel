@@ -113,7 +113,10 @@ def test_python_cells_and_apple_build_select_locked_node():
     selected = next(
         step for step in steps if step.get("run") == "uv run --frozen --no-sync --no-build python scripts/ci_node.py"
     )
-    assert sync["run"] == "uv sync --frozen --no-build --no-dev --group test --group build\n"
+    assert sync["run"] == (
+        "uv sync --frozen --no-build --no-dev --group test --group build --no-install-package pyyaml\n"
+        "bash scripts/bootstrap-pyyaml.sh\n"
+    )
     assert (
         steps.index(sync)
         < steps.index(selected)
@@ -129,6 +132,7 @@ def test_python_cells_and_apple_build_select_locked_node():
         if step.get("run") == "uv run --frozen --no-sync --no-build python scripts/ci_node.py"
     )
     assert selected["if"] == "matrix.levels != 'integration'"
+    assert "if" not in next(step for step in test["steps"] if "bootstrap-pyyaml.sh" in step.get("run", ""))
     apple_steps = jobs["macos-specific"]["steps"]
     apple_sync = next(i for i, step in enumerate(apple_steps) if step.get("run", "").startswith("uv sync"))
     apple_node = next(i for i, step in enumerate(apple_steps) if "scripts/ci_node.py" in step.get("run", ""))
@@ -146,8 +150,10 @@ def test_python_cells_and_apple_build_select_locked_node():
 def test_python_sync_adds_only_existing_build_group_for_unit_bearing_cells(tmp_path, level):
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     steps = workflow["jobs"]["test"]["steps"]
-    name = "Install Python 3.15 dependencies"
+    name = "Install Python 3.15 dependencies with the verified PyYAML compatibility build"
     command = next(step["run"] for step in steps if step.get("name") == name)
+    # The PyYAML bootstrap itself is covered by its owning tests; inspect this sync's exact argument expansion.
+    command = command.splitlines()[0]
     record = tmp_path / "args.json"
     uv = tmp_path / "uv"
     import sys
@@ -166,6 +172,7 @@ def test_python_sync_adds_only_existing_build_group_for_unit_bearing_cells(tmp_p
     expected = ["sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
     if level != "integration":
         expected.append("--group=build")
+    expected.extend(["--no-install-package", "pyyaml"])
     assert json.loads(record.read_text()) == expected
 
 

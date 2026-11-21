@@ -22,7 +22,7 @@ COPY --chown=root:root pyproject.toml uv.lock .python-version hatch_build.py \
     CHANGELOG.md PYPI.md LICENSE ATTRIBUTIONS.md /work/
 COPY --chown=journey:journey src/ /work/src/
 COPY --chown=journey:journey agent-skills/skills/ /work/agent-skills/skills/
-COPY --chown=root:root scripts/web_build.py scripts/tools.py scripts/tools.toml /work/scripts/
+COPY --chown=root:root scripts/bootstrap-pyyaml.sh scripts/web_build.py scripts/tools.py scripts/tools.toml /work/scripts/
 COPY --chown=journey:journey web/package.json web/pnpm-lock.yaml web/index.html web/vite.config.ts web/tsconfig.json /work/web/
 COPY --chown=journey:journey web/src/ /work/web/src/
 COPY --chown=journey:journey web/public/ /work/web/public/
@@ -36,7 +36,8 @@ RUN mkdir .venv .tools && chown journey:journey .venv .tools
 USER journey
 ENV UV_LINK_MODE=copy
 # The editable wheel is built from this checkout with the backend already installed from uv.lock.
-RUN uv sync --frozen --no-build --no-dev --group build --no-install-project \
+RUN uv sync --frozen --no-build --no-dev --group build --no-install-project --no-install-package pyyaml \
+    && bash scripts/bootstrap-pyyaml.sh \
     && wheel_dir="$(mktemp -d)" \
     && .venv/bin/python -c \
       'from hatchling.build import build_editable; import sys; build_editable(sys.argv[1])' "$wheel_dir" \

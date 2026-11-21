@@ -120,9 +120,10 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int =
         return [["make", "e2e-prepare"], [*pytest, junit, *ids]]
     if kind == "pytest":
         ids = _paths(selector, "tests/", kind, max_ids)
-        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
+        sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test", "--no-install-package", "pyyaml"]
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
-        return [sync, [*pytest, junit, *ids]]
+        # `uv sync` is exact: it removed PyYAML again, so the reviewed build goes in after it (no 3.15 wheel).
+        return [sync, ["bash", "scripts/bootstrap-pyyaml.sh"], [*pytest, junit, *ids]]
     if kind == "vitest":
         web = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "exec", "vitest", "run", "--maxWorkers=2"]
         report = ["--reporter=default", "--reporter=junit", f"--outputFile.junit={out.resolve() / 'junit.xml'}"]

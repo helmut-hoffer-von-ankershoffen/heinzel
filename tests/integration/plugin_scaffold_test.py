@@ -167,6 +167,14 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
         "    assert not lock.exists(), 'setup must preserve an existing lock'\n"
         "    lock.write_text('version = 1\\nrevision = 3\\n[[package]]\\nname = '+json.dumps(project['name'])"
         "+'\\nversion = '+json.dumps(project['version'])+'\\nsource = { editable = '+json.dumps('.')+' }\\n')\n"
+        "elif args[0]=='venv':\n"
+        "    # what real uv leaves behind; this interpreter stands in for Core's PyYAML bootstrap (it downloads)\n"
+        "    python=Path('.venv/bin/python')\n"
+        "    if not python.exists():\n"
+        "        python.parent.mkdir(parents=True)\n"
+        f"        python.write_text('#!{sys.executable}\\nimport json,os,sys\\n'\n"
+        "            \"open(os.environ['TRACE'],'a').write(json.dumps(['python']+sys.argv[1:])+chr(10))\\n\")\n"
+        "        python.chmod(0o755)\n"
         "elif args[0]=='sync':\n"
         "    assert '--frozen' in args, 'installation must enforce the resolved lock'\n"
         "    record=tomllib.loads(lock.read_text())['package'][0]\n"
@@ -194,6 +202,11 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
     assert commands[0] == ["lock", "--quiet"]
     assert sum(command[0] == "lock" for command in commands) == 1
     assert sum(command[0] == "sync" for command in commands) == 2
-    # no PyYAML build step: the lock is followed by the sync, and nothing runs a bootstrap interpreter
-    assert not any(command[0] == "python" for command in commands)
+    # the reviewed PyYAML is built after the lock and before the first sync, by Core's own module run isolated
+    first = commands[: commands.index(next(command for command in commands if command[0] == "sync"))]
+    assert [command[0] for command in first] == ["lock", "venv", "python"]
+    bootstrap = first[2]
+    assert bootstrap[1:3] == ["-I", "-S"]
+    assert bootstrap[3].endswith("bootstrap_pyyaml.py")
+    assert bootstrap[4:] == ["install", "--lock", "uv.lock", "--python", ".venv/bin/python"]
     assert tomllib.loads((destination / "uv.lock").read_text())["package"][0]["name"] == "heinzel-harbor"

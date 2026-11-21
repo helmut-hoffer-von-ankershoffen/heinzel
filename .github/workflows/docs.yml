@@ -74,7 +74,9 @@ jobs:
       - name: Fonts for the terminal recordings
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono fonts-noto-color-emoji
       - name: Chromium's system libraries, for Playwright
-        run: uv run --quiet --frozen --no-build --group docs playwright install-deps chromium
+        run: uv run --quiet --frozen --no-build --no-install-package pyyaml --group docs playwright install-deps chromium
+      - name: Build the reviewed PyYAML once (no upstream wheel for Python 3.15)
+        run: make pyyaml
       - name: Record every scene
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
@@ -113,6 +115,8 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false # the site is published, and a poisoned cache must not be able to reach it (zizmor)
+      - name: Build the reviewed PyYAML once (no upstream wheel for Python 3.15)
+        run: make pyyaml
       # The hosted Azure mirror exhausted the existing browser-install deadline while fetching packages.
       # Change only its transport endpoint; suites, components and Ubuntu archive signing keys stay intact.
       - name: Use Ubuntu's primary archive for browser dependencies

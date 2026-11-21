@@ -386,9 +386,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install Python 3.15 dependencies
+      - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
         run: |
-          uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}
+          uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"} --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Select the locked wheel Node without executing it
         if: matrix.levels != 'integration'
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
@@ -426,9 +427,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - name: Install dependencies
+      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
         run: |
-          uv sync --frozen --no-build --no-dev --group test --group build
+          uv sync --frozen --no-build --no-dev --group test --group build --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Select the locked wheel Node without executing it
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
@@ -464,9 +466,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - name: Install dependencies
+      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
         run: |
-          uv sync --frozen --no-build --no-dev --group test
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - run: make test-perf
 
   site-tests:
@@ -599,7 +602,8 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Install what the tests need, and no more
         run: |
-          uv sync --frozen --no-build --no-dev --group test --group build
+          uv sync --frozen --no-build --no-dev --group test --group build --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - name: Select Xcode with the macOS 15 SDK or newer
         run: |
@@ -642,7 +646,8 @@ jobs:
           save-cache: false # pull requests reuse main's cache
       - name: Install what the tests need, and no more
         run: |
-          uv sync --frozen --no-build --no-dev --group test
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Build Heinzel Notifier for the real-launch tests
         run: make notifier
       - name: The CLI starts, and the tests that only exercise macOS behaviour pass (serially)
@@ -818,6 +823,10 @@ jobs:
           name: plugin-core
           path: candidate
       - uses: ./.github/actions/setup-uv
+      - name: Build the reviewed PyYAML wheel (Python 3.15 has none; the plugin tooling syncs with --no-build)
+        run: |
+          bash scripts/bootstrap-pyyaml.sh --wheel-dir "$RUNNER_TEMP/reviewed-pyyaml"
+          echo "UV_FIND_LINKS=$RUNNER_TEMP/reviewed-pyyaml" >> "$GITHUB_ENV"
       - id: core
         env:
           CORE_URL: ${{ vars.CORE_ARTIFACT }}
