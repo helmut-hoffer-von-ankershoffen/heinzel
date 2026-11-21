@@ -49,14 +49,6 @@ if TYPE_CHECKING:
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
-from heinzel.heads._mcp_tokens import (
-    READ,
-    SCOPES,
-    WRITE,
-    McpTokens,
-    require_reachable_only_as_asked,
-    tokens_for_user,
-)
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.mcp._skills import add_skills
@@ -73,6 +65,14 @@ from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
 from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
+from heinzel.modules.system.client import (
+    READ,
+    SCOPES,
+    WRITE,
+    McpTokens,
+    require_reachable_only_as_asked,
+    tokens_for_user,
+)
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)

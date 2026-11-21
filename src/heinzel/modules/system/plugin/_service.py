@@ -53,7 +53,6 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.modules.system._github import GITHUB_API, RateLimitedError
-from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._feed import feed_showcase, load_feed, raw_image_size, raw_text, soundscape_hints
 from heinzel.modules.system.plugin._models import (
     Action,
@@ -106,6 +105,7 @@ from heinzel.modules.system.plugin._sources import (
     required_by,
     siblings_from_github,
 )
+from heinzel.modules.system.updater._phases import Phases
 
 log = get_logger("plugin")
 

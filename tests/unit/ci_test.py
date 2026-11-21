@@ -1373,7 +1373,7 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, ci_paths, event
         (".github/workflows/ci.yml\nweb/package.json\n", "true"),
         ("src/heinzel/heads/web/_supervision.py\n", "true"),
         ("src/heinzel/kernel/_installation_mutations.py\n", "true"),
-        ("src/heinzel/modules/ui/_service.py\n", "true"),
+        ("src/heinzel/modules/system/lifecycle/_service.py\n", "true"),
         ("scripts/notifier.py\n", "true"),
         ("scripts/tools.toml\n", "true"),
         ("pyproject.toml\n", "true"),

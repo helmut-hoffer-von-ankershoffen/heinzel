@@ -53,12 +53,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from heinzel.heads import api
-from heinzel.heads._mcp_tokens import McpTokens, tokens_for_user
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _browser_bridge, _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
 from heinzel.heads.web._chatgpt_signin import ChatGptSignIn, local_callback_navigation
-from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._mcp import McpEndpoint, add_endpoint, add_routes
@@ -90,6 +88,7 @@ from heinzel.kernel import (
     ViewLet,
     read_view_asset,
 )
+from heinzel.modules.system.client import Devices, McpTokens, tokens_for_user
 
 HEAD = "web"
 WEB_LIFECYCLE_WAIT_SECONDS = 10.0

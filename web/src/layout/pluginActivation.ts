@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { t } from "@/i18n";
 import {
   type ApplyPhase,
   RestartApplyError,
   type RestartObservation,
   restartAndApply,
   resumeRestartAndApply,
-} from "@/lifecycle/controller";
+} from "@/features/runtime/lifecycle/controller";
+import { t } from "@/i18n";
 
 export const RECEIPT_STORAGE_KEY = "hz.plugin-add-operation.v1";
 

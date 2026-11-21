@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from heinzel.heads import web
-from heinzel.heads.web._devices import Devices, digest
+from heinzel.modules.system.client._devices import Devices, digest
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.integration

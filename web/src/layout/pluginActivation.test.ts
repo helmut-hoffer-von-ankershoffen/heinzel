@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const restart = vi.hoisted(() => vi.fn());
 const resume = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lifecycle/controller", async (original) => ({
-  ...(await original<typeof import("@/lifecycle/controller")>()),
+vi.mock("@/features/runtime/lifecycle/controller", async (original) => ({
+  ...(await original<typeof import("@/features/runtime/lifecycle/controller")>()),
   restartAndApply: restart,
   resumeRestartAndApply: resume,
 }));

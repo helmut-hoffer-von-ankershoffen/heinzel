@@ -9,8 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from heinzel.heads import web
-from heinzel.heads.web._devices import Devices
 from heinzel.kernel import DEFAULT_THEME
+from heinzel.modules.system.client._devices import Devices
 
 pytestmark = pytest.mark.integration
 

@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
-from heinzel.modules.system._plugin_standing import standing
+from heinzel.modules.system.updater._plugin_standing import standing
 
 if TYPE_CHECKING:
     from heinzel.modules.system._models import ToolReference

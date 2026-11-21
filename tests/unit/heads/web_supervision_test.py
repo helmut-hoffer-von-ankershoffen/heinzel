@@ -8,6 +8,7 @@ import pytest
 
 from heinzel.heads.web import _supervision
 from heinzel.kernel import HeinzelError
+from heinzel.modules.system.lifecycle import _supervision as lifecycle_supervision
 
 pytestmark = pytest.mark.unit
 
@@ -26,7 +27,7 @@ def test_publication_failure_keeps_shutdown_and_sanitizes_error(caplog, monkeypa
     def refused(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(_supervision, "SupervisedWeb", refused)
+    monkeypatch.setattr(lifecycle_supervision, "SupervisedWeb", refused)
     stopped, announced = [], []
     publication = _supervision.WebPublication(
         Path("/private/example"),

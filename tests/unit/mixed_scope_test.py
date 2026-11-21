@@ -870,7 +870,7 @@ def pairing_scope(candidate_scope):
     changed.extend(
         [
             "src/heinzel/heads/web/_auto_update.py",
-            "src/heinzel/heads/web/_state_directory.py",
+            "src/heinzel/modules/system/client/_state_directory.py",
             "tests/integration/web_state_directory_test.py",
         ]
     )
@@ -889,7 +889,7 @@ def pairing_scope(candidate_scope):
     "changed",
     [
         "src/heinzel/heads/web/_auto_update.py",
-        "src/heinzel/heads/web/_state_directory.py",
+        "src/heinzel/modules/system/client/_state_directory.py",
         "tests/integration/web_state_directory_test.py",
     ],
 )

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from heinzel.heads.web._widget_fence import FenceConflictError, FenceState, Request, transition
+from heinzel.modules.system.client._widget_fence import FenceConflictError, FenceState, Request, transition
 
 pytestmark = pytest.mark.unit
 

@@ -36,7 +36,6 @@ from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
 from heinzel.heads._stream import WORK
-from heinzel.heads.web._state_directory import open_updater_file, private_directory
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -52,6 +51,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel._logging import step as log_step
+from heinzel.modules.system.client import open_updater_file, private_directory
 
 log = logging.getLogger(__name__)
 events = get_logger("web.auto_update")

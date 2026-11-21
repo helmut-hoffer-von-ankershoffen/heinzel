@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { registerReloadHold, registerUpdatePreparation } from "@/updates/work";
+import { registerReloadHold, registerUpdatePreparation } from "@/features/runtime/updates/work";
 
 const PREFIX = "hz.durable.composer.";
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;

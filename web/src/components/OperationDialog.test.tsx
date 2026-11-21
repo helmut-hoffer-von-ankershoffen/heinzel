@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
+import { NeedsAttention } from "@/features/runtime/lifecycle/applySteps";
 import { DAEMON_INSTALL, DAEMON_PAUSE, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
 import {
   dismissOperation,
@@ -18,7 +19,6 @@ import {
   startOperation,
   trackOperation,
 } from "@/lib/operationRun";
-import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
 import { useEffectRunner } from "./Contributions";
 import { OperationDialog } from "./OperationDialog";

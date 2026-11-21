@@ -11,6 +11,7 @@ import pytest
 
 import heinzel
 import heinzel.kernel
+import heinzel.ports
 
 pytestmark = pytest.mark.unit
 
@@ -751,6 +752,16 @@ KERNEL = [
     "verify_integration_directory",
     "walk",
 ]
+PORTS = [
+    "Clock",
+    "InstallationState",
+    "ProcessRunner",
+    "ReleaseSource",
+    "RunningProcess",
+    "ServiceJob",
+    "ServiceManager",
+    "ServiceStatus",
+]
 HINT = "the public API changed: update the snapshot in tests/unit/public_api_test.py on purpose (see ADR 0026)"
 
 
@@ -774,7 +785,9 @@ def test_finds_api_changes():
 
 
 @pytest.mark.parametrize(
-    ("module", "snapshot"), [(heinzel, HEINZEL), (heinzel.kernel, KERNEL)], ids=["heinzel", "kernel"]
+    ("module", "snapshot"),
+    [(heinzel, HEINZEL), (heinzel.kernel, KERNEL), (heinzel.ports, PORTS)],
+    ids=["heinzel", "kernel", "ports"],
 )
 def test_public_api_matches_the_snapshot(module, snapshot):
     assert api_change(module.__all__, snapshot) == {"added": [], "removed": []}, HINT

@@ -63,7 +63,7 @@ then depends on the replacement's loaded state rather than transport reachabilit
 ### Confirmation
 
 `tests/integration/web_lifecycle_test.py` covers authentication, origin checks, streamed body limits, startup versus
-disk state, strict values and private/nested-secret exclusions. `web/src/lifecycle/controller.test.ts` covers
+disk state, strict values and private/nested-secret exclusions. `web/src/features/runtime/lifecycle/controller.test.ts` covers
 old-instance responses, dropped acknowledgements, exact version/settings verification, cancellation, bounded hung
 requests, observation-only retries and owned-cache cleanup. `RestartAndApply.test.tsx` covers explicit confirmation,
 target details, a retained open draft, failure recovery and unmount cleanup. Real rebuilt-server/browser verification,

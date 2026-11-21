@@ -201,8 +201,8 @@ if sys.argv[1:2] == ["automatic-015"]:
     from functools import partial
 
     from heinzel.kernel import boot
-    from heinzel.modules.system._announced import Announcement, trial_start
-    from heinzel.modules.system._update import UpdateService
+    from heinzel.modules.system.updater._announced import Announcement, trial_start
+    from heinzel.modules.system.updater._update import UpdateService
 
     kernel = boot()
     update = kernel.resolve(UpdateService)

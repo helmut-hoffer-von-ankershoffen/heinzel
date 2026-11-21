@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from heinzel import HeinzelError
 from heinzel.heads import web
-from heinzel.heads.web._devices import Devices, digest
-from heinzel.heads.web._widget_fence import FenceConflictError, Request
+from heinzel.modules.system.client._devices import Devices, digest
+from heinzel.modules.system.client._widget_fence import FenceConflictError, Request
 
 pytestmark = pytest.mark.integration
 SESSION = "fixture-session-token"
@@ -213,7 +213,7 @@ def test_pairing_ids_are_unique_and_duplicate_storage_is_rejected(tmp_path, monk
     def collision_then_unique(size):
         return next(candidates) if size == 4 else real_token_hex(size)
 
-    monkeypatch.setattr("heinzel.heads.web._devices.secrets.token_hex", collision_then_unique)
+    monkeypatch.setattr("heinzel.modules.system.client._devices.secrets.token_hex", collision_then_unique)
     second, _ = devices.pair("second")
     assert second.id == unique
     assert second.id != first.id
@@ -266,8 +266,8 @@ def test_separate_processes_cannot_both_rotate_same_revision(tmp_path):
     fence = devices.widget_fence_negotiate(device.id, paired_token, "owner")
     assert fence is not None
     script = (
-        "import sys,time; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
-        "from heinzel.heads.web._widget_fence import Request, FenceConflictError; "
+        "import sys,time; from pathlib import Path; from heinzel.modules.system.client._devices import Devices; "
+        "from heinzel.modules.system.client._widget_fence import Request, FenceConflictError; "
         "d=Devices(Path(sys.argv[1])); r=Request(sys.argv[4],sys.argv[5],sys.argv[6]*32,'issue',sys.argv[6]*64); "
         "Path(sys.argv[7],sys.argv[6]).touch(); "
         "exec(\"while not Path(sys.argv[7],'release').exists():\\n time.sleep(0.01)\"); "

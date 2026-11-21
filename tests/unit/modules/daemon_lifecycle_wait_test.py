@@ -284,9 +284,9 @@ def test_a_scheduled_tick_never_waits_even_with_the_terminals_budget_bound(servi
 
 def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_version(tmp_path, monkeypatch):
     """The owner saw "[1/9] Finding the newest version: failed": the version was found; taking the lifecycle failed."""
-    from heinzel.modules.system._update import UpdateService
-    from tests.unit.modules import system_update_test
-    from tests.unit.modules.system_update_test import (
+    from heinzel.modules.system.updater._update import UpdateService
+    from tests.unit.runtime.updater import system_update_test
+    from tests.unit.runtime.updater.system_update_test import (
         REPO,
         FakeMutationLifecycle,
         FakeReleases,
