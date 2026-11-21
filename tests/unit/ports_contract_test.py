@@ -25,6 +25,7 @@ from heinzel.testing import (
     FakeServiceManager,
     MemoryInstallationState,
     ScriptedProcessRunner,
+    scaled,
 )
 
 pytestmark = pytest.mark.unit
@@ -83,9 +84,9 @@ def runner(request) -> ProcessRunner:
 
 
 def test_a_runner_returns_output_and_the_exit_code_without_raising(runner):
-    ok = runner.run([sys.executable, "-c", "print('hi')"], timeout=20)
+    ok = runner.run([sys.executable, "-c", "print('hi')"], timeout=scaled(20))
     assert (ok.returncode, ok.stdout.strip()) == (0, "hi")
-    failed = runner.run([sys.executable, "-c", "raise SystemExit(3)"], timeout=20)
+    failed = runner.run([sys.executable, "-c", "raise SystemExit(3)"], timeout=scaled(20))
     assert failed.returncode == 3
 
 
@@ -94,22 +95,22 @@ def test_a_runner_spawns_a_child_that_can_be_watched_and_stopped(runner):
     assert child.pid > 0
     assert child.poll() is None
     child.kill()
-    assert child.wait(10) != 0
+    assert child.wait(scaled(10)) != 0
     assert child.poll() is not None
 
 
 def test_a_runner_that_cannot_start_a_program_raises_oserror():
     real = _adapter_system.SubprocessRunner()
     with pytest.raises(OSError):  # noqa: PT011 - the words are the OS's own
-        real.run(["/nonexistent/program"], timeout=5)
+        real.run(["/nonexistent/program"], timeout=scaled(5))
     scripted = ScriptedProcessRunner().raises("/nonexistent/program", error=FileNotFoundError("missing"))
     with pytest.raises(OSError, match="missing"):
-        scripted.run(["/nonexistent/program"], timeout=5)
+        scripted.run(["/nonexistent/program"], timeout=scaled(5))
 
 
 def test_a_real_run_that_takes_too_long_times_out():
     with pytest.raises(subprocess.TimeoutExpired):
-        _adapter_system.SubprocessRunner().run(SLEEPER, timeout=0.2)
+        _adapter_system.SubprocessRunner().run(SLEEPER, timeout=scaled(0.2))
 
 
 # --- ServiceManager ------------------------------------------------------------------------------------------------
@@ -249,12 +250,12 @@ def test_a_lock_is_exclusive_between_threads(state):
     def holder():
         with state.lock("update"):
             inside.set()
-            release.wait(5)
+            release.wait(scaled(5))
             order.append("holder")
 
     thread = threading.Thread(target=holder)
     thread.start()
-    assert inside.wait(5)
+    assert inside.wait(scaled(5))
 
     def waiter():
         with state.lock("update"):
@@ -262,11 +263,11 @@ def test_a_lock_is_exclusive_between_threads(state):
 
     second = threading.Thread(target=waiter)
     second.start()
-    second.join(0.2)
+    second.join(scaled(0.2))
     assert second.is_alive(), "the second holder got in while the first held the lock"
     release.set()
-    thread.join(5)
-    second.join(5)
+    thread.join(scaled(5))
+    second.join(scaled(5))
     assert order == ["holder", "waiter"]
 
 

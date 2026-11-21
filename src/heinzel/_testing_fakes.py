@@ -24,13 +24,16 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FakeClock",
+    "FakeInstallation",
     "FakeJob",
     "FakeProcess",
     "FakeReleaseSource",
+    "FakeServer",
     "FakeServiceManager",
     "FakeStatus",
     "MemoryInstallationState",
     "ScriptedProcessRunner",
+    "installation",
 ]
 
 
@@ -342,3 +345,77 @@ class MemoryInstallationState:
         """Add a line to journal `name`."""
         with self._guard:
             self._journals.setdefault(name, []).append(line)
+
+
+@dataclass
+class FakeServer:
+    """One `hz ui serve` process on the installation: how it was started, what it runs, how old it is."""
+
+    kind: str
+    """`launchd` (the supervised web job), `desktop` (spawned by the desktop app) or `stale` (left running)."""
+    version: str
+    started_days_ago: float = 0.0
+    job: FakeJob | None = None
+    """The manager's job of a `launchd` server."""
+
+
+class FakeInstallation:
+    """One installation, several servers: they share one state folder and see the same installed version."""
+
+    def __init__(self, folder: Path, servers: Sequence[FakeServer], installed: str, web_label: str = "web") -> None:
+        """Build the shared ports: a clock, a manager, a release source and the state folder every server uses."""
+        self.state = MemoryInstallationState(folder)
+        self.clock = FakeClock()
+        self.manager = FakeServiceManager(installed)
+        self.releases = FakeReleaseSource(installed)
+        self.installed = installed
+        self.servers = list(servers)
+        for server in self.servers:
+            if server.kind == "launchd":
+                server.job = FakeJob(web_label)
+                self.manager.upgrade(server.version)  # the job started on the version it reports
+                self.manager.load(server.job)
+        self.manager.upgrade(installed)
+
+    def upgrade(self, version: str) -> None:
+        """Another path (the daemon, the CLI, a footer in another window) installs `version` under every server.
+
+        Running processes keep what they imported; a restart picks the installed version up.
+        """
+        self.installed = version
+        self.releases.publish(version)
+        self.manager.upgrade(version)
+
+    def running(self, server: FakeServer) -> str:
+        """The version `server` runs now: its own until it restarts."""
+        if server.job is not None:
+            version = self.manager.status(server.job).version
+            return version or server.version
+        return server.version
+
+
+def installation(
+    folder: Path, *, servers: Sequence[Mapping[str, object] | str], installed: str | None = None, web_label: str = "web"
+) -> FakeInstallation:
+    """One installation with several servers of different versions on one state folder.
+
+    `servers` lists them as `{"kind": "launchd" | "desktop" | "stale", "version": "0.9.51", "started_days_ago": 5}` or
+    as a bare kind (running the installed version). `installed` is what is installed under them, by default the highest
+    version any of them runs; `web_label` names the supervised job. A web job, a desktop-spawned server and a stale
+    one on one state folder is what hit the Mini on 2026-11-21.
+    """
+    versions = [str(s["version"]) for s in servers if not isinstance(s, str) and "version" in s]
+    from packaging.version import Version  # noqa: PLC0415 - only this builder orders versions
+
+    top = installed or (max(versions, key=Version) if versions else "0.0.0")
+    built = [
+        FakeServer(s, top)
+        if isinstance(s, str)
+        else FakeServer(
+            str(s["kind"]),
+            str(s.get("version", top)),
+            float(s.get("started_days_ago", 0)),  # type: ignore[arg-type]
+        )
+        for s in servers
+    ]
+    return FakeInstallation(folder, built, top, web_label)

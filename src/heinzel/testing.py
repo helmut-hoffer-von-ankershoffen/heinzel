@@ -40,13 +40,16 @@ if TYPE_CHECKING:
 
 _FAKES = (
     "FakeClock",
+    "FakeInstallation",
     "FakeJob",
     "FakeProcess",
     "FakeReleaseSource",
+    "FakeServer",
     "FakeServiceManager",
     "FakeStatus",
     "MemoryInstallationState",
     "ScriptedProcessRunner",
+    "installation",
 )
 """The fakes of `heinzel.ports`, loaded on first use for the reason above: `from heinzel.testing import FakeClock`."""
 
