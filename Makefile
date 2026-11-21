@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -108,6 +108,14 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
 		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto $(UNIT_STOP) -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
+
+# The pre-push hook calls this: lint, format, types, contracts, lock and template parity, docs and attributions, and the unit
+# tests of UNIT_TARGETS only (the hook passes the ones related to the change). No web tests, no managed backend, no -x:
+# PR CI runs the full suites. Without UNIT_TARGETS this would run the whole unit suite, so the hook always passes some.
+check-push: ## Pre-push gate: check-fast without the web and managed suites, unit tests of the changed contexts only (UNIT_TARGETS)
+	@test -n "$(UNIT_TARGETS)" || { echo "check-push needs UNIT_TARGETS (the hook passes the related tests); make check-fast runs everything" >&2; exit 2; }
+	@$(MAKE) --no-print-directory check-fast WEB_TESTS= MANAGED_CHECK= UNIT_STOP= STEPS_KEEP_GOING=1 \
+		FAST_TYPES='"&lock=uv lock --check" $(if $(FAST_TYPES),$(FAST_TYPES),$(TYPES))' UNIT_TARGETS='$(UNIT_TARGETS)'
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"

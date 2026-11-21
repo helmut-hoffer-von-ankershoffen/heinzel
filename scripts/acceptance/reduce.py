@@ -1,4 +1,8 @@
-"""Reduce four same-run hosted-VM receipts per OS, refusing incomplete or mixed evidence. Stdlib only."""
+"""Reduce four same-run hosted-VM receipts per OS, refusing incomplete or mixed evidence. Stdlib only.
+
+`--release` writes the release receipt that `acceptance.yml` uploads as `acceptance-result-<OS>` and prints its one
+verdict line; without it the result is the sharding study's, which is never release evidence.
+"""
 
 import argparse
 import copy
@@ -256,16 +260,50 @@ def reduce_receipts(receipts, runner_os, expected_ci, wheel_sha256, profile_sha2
     }
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--receipts", type=Path, required=True)
-    parser.add_argument("--runner-os", choices=("macOS", "Linux"), required=True)
-    parser.add_argument("--wheel-sha256", required=True)
-    parser.add_argument("--profile-sha256", required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    files = sorted(args.receipts.glob("*/result.json"))
-    expected_names = {f"acceptance-study-shard-{args.runner_os}-{name}" for name in HARNESS.SHARDS}
+def release_receipt(study, supplied):
+    """The schema-2 receipt of one OS, made of four complete, validated shard receipts of the same run attempt.
+
+    Every case keeps its original record; identities were required equal across shards by `reduce_receipts`. The
+    verdict is the harness's own verdict over all thirteen cases, so a sharded run means what a serial run meant.
+    """
+    receipts = study["receipts"]
+    baseline = receipts["public"]
+    identity_key = "candidate_release" if baseline["mode"] == "candidate_release" else "published"
+    combined = study["combined_case_verdict"]
+    return {
+        "schema": 2,
+        "harness_sha256": study["reviewed_sources"]["harness_sha256"],
+        "guardian_sha256": study["reviewed_sources"]["guardian_sha256"],
+        "provenance_sha256": study["reviewed_sources"]["provenance_sha256"],
+        "reducer_sha256": study["reviewed_sources"]["reducer_sha256"],
+        "mode": baseline["mode"],
+        "public_path_proof": baseline["public_path_proof"],
+        "expectation_supplied": supplied,
+        "started": min(r["started"] for r in receipts.values()),
+        "finished": max(r["finished"] for r in receipts.values()),
+        "host": {name: copy.deepcopy(r.get("host")) for name, r in receipts.items()},
+        "ci": copy.deepcopy(baseline["ci"]),
+        "limits": copy.deepcopy(baseline["limits"]),
+        identity_key: copy.deepcopy(baseline[identity_key]),
+        "lifecycle": copy.deepcopy(study["lifecycle"]),
+        "isolation": {
+            "live_untouched": True,
+            "logs_containing_session_tokens": 0,
+            "shards": {name: copy.deepcopy(r["isolation"]) for name, r in receipts.items()},
+        },
+        "verdict": combined,
+        "cases": copy.deepcopy(study["cases"]),
+        "sharding": {
+            "shards": {name: list(HARNESS.SHARDS[name]) for name in HARNESS.SHARDS},
+            "timing": copy.deepcopy(study["timing"]),
+            "proof_roots": {name: r["proof_root"] for name, r in receipts.items()},
+        },
+    }
+
+
+def load_receipts(directory, prefix, runner_os):
+    files = sorted(directory.glob("*/result.json"))
+    expected_names = {f"{prefix}-{runner_os}-{name}" for name in HARNESS.SHARDS}
     require(
         {path.parent.name for path in files} == expected_names,
         "Unexpected artifact inventory",
@@ -274,10 +312,54 @@ def main():
     for path in files:
         receipt = json.loads(path.read_text(), object_pairs_hook=unique_object)
         require(
-            path.parent.name == f"acceptance-study-shard-{args.runner_os}-{receipt.get('shard', {}).get('name')}",
+            path.parent.name == f"{prefix}-{runner_os}-{receipt.get('shard', {}).get('name')}",
             "Artifact name differs from shard identity",
         )
         receipts.append(receipt)
+    return receipts
+
+
+def write_once(path, result):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as stream:
+        stream.write(json.dumps(result, indent=2) + "\n")
+
+
+def main_release(args):
+    """One verdict line, always: an incomplete or mixed set of shards is a failed acceptance, never a pass."""
+    try:
+        study = reduce_receipts(
+            load_receipts(args.receipts, args.artifact_prefix, args.runner_os),
+            args.runner_os,
+            HARNESS.ci_record(),
+            args.wheel_sha256,
+            args.profile_sha256,
+        )
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        print(json.dumps({"verdict": "INCOMPLETE", "why": HARNESS.redact(f"{type(error).__name__}: {error}")[:300]}))
+        return 1
+    result = release_receipt(study, args.supplied == "true")
+    write_once(args.output, result)
+    failed = [ident for ident, case in result["cases"].items() if case["status"] in ("FAIL", "REFUSED")]
+    print(json.dumps({"verdict": result["verdict"], "failed_cases": failed, "result": str(args.output)}))
+    return HARNESS.exit_code(result["verdict"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--receipts", type=Path, required=True)
+    parser.add_argument("--runner-os", choices=("macOS", "Linux"), required=True)
+    parser.add_argument("--wheel-sha256", required=True)
+    parser.add_argument("--profile-sha256", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--release", action="store_true", help="Write the release receipt, not the study's")
+    parser.add_argument("--artifact-prefix", default="acceptance-study-shard")
+    parser.add_argument("--supplied", choices=("true", "false"), default="true")
+    args = parser.parse_args()
+    if args.release:
+        return main_release(args)
+    receipts = load_receipts(args.receipts, args.artifact_prefix, args.runner_os)
     result = reduce_receipts(
         receipts,
         args.runner_os,
@@ -285,10 +367,7 @@ def main():
         args.wheel_sha256,
         args.profile_sha256,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "w") as stream:
-        stream.write(json.dumps(result, indent=2) + "\n")
+    write_once(args.output, result)
     print(json.dumps({"verdict": result["verdict"], "result": str(args.output)}))
     return 0 if result["verdict"] == "STUDY_COMPLETE" else 1
 

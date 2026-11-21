@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -24,7 +24,27 @@ async function setup(t) {
 async function archive(root, stage, label) {
   const target = path.join(root, `${label}.asar`);
   await createPackage(stage, target);
+  await archiveFlushed(target);
   return target;
+}
+
+// createPackage resolves when the last file is piped, before the write stream has flushed (it calls
+// out.end() without awaiting "finish"), so a prompt readFile can see a truncated archive. The header
+// is written first and lists every file size, so the final archive size is known exactly.
+function packedSize(node) {
+  if (node.files) return Object.values(node.files).reduce((sum, child) => sum + packedSize(child), 0);
+  return node.unpacked || node.link ? 0 : node.size;
+}
+
+async function archiveFlushed(file) {
+  const { header, headerSize } = getRawHeader(file);
+  uncacheAll();
+  const expected = 8 + headerSize + packedSize(header);
+  for (let attempt = 0; attempt < 500; attempt++) {
+    if ((await stat(file)).size === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`ASAR archive was not fully written: expected ${expected} bytes`);
 }
 
 test("accepts only the exact source and generated package metadata", async (t) => {

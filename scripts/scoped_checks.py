@@ -11,7 +11,7 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run only this hook's own test, never the whole suite: CI runs that). The push run
-has no `-x` and reports every failing step in one pass; anything else runs `make check-fast` in full.
+has no `-x` and reports every failing step in one pass; the hook runs `make check-push`, never the whole suite.
 `make check-fast` by hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for
 release candidates.
 
@@ -269,6 +269,16 @@ def python_overrides(changed: list[str], selected: list[str] | None = None) -> l
     if not related:  # None: cannot be mapped; []: nothing reaches it. pytest fails on an empty selection
         related = ["tests/unit/scoped_checks_test.py"]  # pins the hook itself
     return [*overrides, f"UNIT_TARGETS={' '.join(related)}"]
+
+
+def push_command(changed: list[str], selected: list[str] | None = None) -> list[str]:
+    """The pre-push check command.
+
+    `make check-push`: lint, types, contracts, parity, docs and attributions, plus the unit tests of the changed
+    contexts only. Web, desktop and build files, unknown paths, mixed changes and an empty diff select the hook's own
+    test only: PR CI runs the full suites, never this hook.
+    """
+    return ["make", "check-push", *python_overrides(changed, selected)]
 
 
 LOCAL_SCOPE_MAX = 32 * 1024
@@ -793,7 +803,7 @@ def configured_python_selection(
             json.dumps(
                 {
                     "early_guards": early_guard_commands(changed),
-                    "check": ["make", "check-fast", *python_overrides(changed, local_scope[0])],
+                    "check": push_command(changed, local_scope[0]),
                     "hosted_only": local_scope[1],
                 },
                 sort_keys=True,
@@ -856,14 +866,8 @@ def main() -> None:
             return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
-        if changed and not all(path.startswith("plugins/") for path in changed):
-            # Everything of the fast gate, with the related unit tests only (never the whole suite). Python, scripts,
-            # tests and documents also drop the web app's tests and the managed backend's check, which read nothing of
-            # them (the generated client is still checked by web-lint); web, desktop and root build files keep them.
-            overrides = python_overrides(changed, selected)
-            if touches_web(changed):
-                overrides = [item for item in overrides if not item.startswith(("WEB_TESTS=", "MANAGED_CHECK="))]
-            sys.exit(run_check(["make", "check-fast", *overrides], check=False, timeout=PUSH_TIMEOUT).returncode)
+        if not changed or not all(path.startswith("plugins/") for path in changed):
+            sys.exit(run_check(push_command(changed, selected), check=False, timeout=PUSH_TIMEOUT).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         run_check(

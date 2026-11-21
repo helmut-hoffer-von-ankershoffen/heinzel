@@ -1236,15 +1236,15 @@ def case_fresh_uvx(case):
 
 
 def case_retained(case):
-    case.provide_uv()
-    plist = case.root / "units" / f"{LABEL}.plist"
-    public_cycle(case, "fresh uvx")
-    case.step("write configuration to retain", lambda: _set_config(case))
-    if sys.platform != "darwin":
+    if sys.platform != "darwin":  # decided before any install: the home would prove nothing case 2 does not
         raise Unprovable(
             "The daemon unit steps need the quiescence proof, which reads the systemd user manager's private socket; "
             "a hosted Linux runner has none, and nothing is registered to obtain one."
         )
+    case.provide_uv()
+    plist = case.root / "units" / f"{LABEL}.plist"
+    public_cycle(case, "fresh uvx")
+    case.step("write configuration to retain", lambda: _set_config(case))
     case.step("generate trusted unit with intercepted registration", lambda: install_fixture(case))
     case.step("capture retained bytes", lambda: _capture(case))
     before = snapshot(case, retained_paths(case))
@@ -2505,25 +2505,27 @@ def app_cycle_keep(case, name, command, expected):
 
 
 def case_stopped_unit_update(case):
-    """An installed but stopped daemon unit (registration simulated) while the user updates."""
-    case.provide_uv()
-    bootstrap(case, "install")
+    """An installed but stopped daemon unit (registration simulated) while the user updates.
+
+    What makes the case UNPROVABLE or SKIPPED is known before anything is installed, so it is decided first.
+    """
     if sys.platform != "darwin":
         raise Unprovable(
             "The stopped-unit steps need the quiescence proof, which reads the systemd user manager's private socket; "
             "a hosted Linux runner has none, and nothing is registered to obtain one."
         )
+    target = case.ctx.get("update_target")
+    if not target:
+        raise Skipped("No update target to run with a retained unit")
+    if target["version"] == case.ctx["bootstrap"]["version"]:
+        raise Skipped("The installed Core already is the target")
+    case.provide_uv()
+    bootstrap(case, "install")
     plist = case.root / "units" / f"{LABEL}.plist"
     case.step("trusted unit with intercepted registration", lambda: install_fixture(case))
     before = snapshot(case, retained_paths_no_config(case))
-    target = case.ctx.get("update_target")
 
     def update():
-        if not target:
-            raise Skipped("No update target to run with a retained unit")
-        installed = case.expect_version
-        if target["version"] == installed:
-            raise Skipped("The installed Core already is the target")
         return _summarize(run_update(case, "hz-system-update-with-unit"))
 
     case.step("the user's update with a stopped unit present", update)
@@ -3034,6 +3036,57 @@ def check_release_ui(arguments):
     return 0
 
 
+SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def resolve_pins(environ):
+    """Pin one run's release bytes once, so every shard of it tests the same ones. Executes nothing.
+
+    Supplied inputs are kept as given (after validation). A run without them (a pull request's dry run) takes what is
+    published now, and `supplied=false` says so. A candidate run keeps its wheel hash and pins its profile's bytes.
+    """
+    version, app = environ.get("EXPECTED_VERSION", ""), environ.get("EXPECTED_APP_VERSION", "")
+    wheel, profile = environ.get("EXPECTED_WHEEL_SHA256", ""), environ.get("EXPECTED_PROFILE_SHA256", "")
+    candidate_url, candidate_sha = environ.get("CANDIDATE_PROFILE_URL", ""), environ.get("CANDIDATE_WHEEL_SHA256", "")
+    supplied = "published" not in (version, app) and "" not in (version, app)
+    for value in (wheel, profile, candidate_sha):
+        check(not value or SHA256.fullmatch(value), "A supplied digest is not a lowercase SHA-256")
+    if version in ("", "published"):
+        version = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))["info"]["version"]
+    if app in ("", "published"):
+        app = latest_app_version()
+    check(CANDIDATE_VERSION.fullmatch(version) and CANDIDATE_VERSION.fullmatch(app), "Unrecognized release versions")
+    if candidate_url:
+        match = RELEASE_PROFILE_URL.fullmatch(candidate_url)
+        check(match and match["version"] == app, "The candidate profile is not this app release's standard.json")
+        check(candidate_sha, "A candidate run needs its wheel's SHA-256")
+    elif not wheel:
+        pypi = json.loads(fetch(f"https://pypi.org/pypi/heinzel/{version}/json", 8 * 1024 * 1024))
+        wheels = [u["digests"]["sha256"] for u in pypi["urls"] if u["packagetype"] == "bdist_wheel" and not u.get("yanked")]
+        check(len(wheels) == 1, f"PyPI does not list exactly one wheel for {version}")
+        wheel = wheels[0]
+    if not profile:
+        profile = sha256(fetch(f"{COLLECTION}/releases/download/app-v{app}/standard.json", 1024 * 1024))
+    pins = {
+        "expected_version": version,
+        "expected_app_version": app,
+        "accept_wheel_sha256": wheel,
+        "accept_profile_sha256": profile,
+        "reduce_wheel_sha256": candidate_sha if candidate_url else wheel,
+        "supplied": "true" if supplied else "false",
+    }
+    check(all("\n" not in value and "=" not in value for value in pins.values()), "Unsafe pin")
+    return pins
+
+
+def print_pins():
+    """`--resolve-pins`: GITHUB_OUTPUT lines from the workflow's inputs in the environment."""
+    require_isolated_python()
+    for key, value in resolve_pins(os.environ).items():
+        print(f"{key}={value}")
+    return 0
+
+
 def main():
     args = parse_args()
     require_isolated_python()
@@ -3195,6 +3248,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--resolve-pins"]:
+        sys.exit(print_pins())
     if sys.argv[1:2] == ["--check-foreground-ui"]:
         sys.exit(check_release_ui(sys.argv[2:]))
     sys.exit(main())

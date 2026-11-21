@@ -731,7 +731,7 @@ def test_readonly_preview_matches_actual_normal_hook_commands(local_scope_packet
     assert plan["hosted_only"] == packet["hosted_only"]
     assert plan["check"] == [
         "make",
-        "check-fast",
+        "check-push",
         "WEB_TESTS=",
         "MANAGED_CHECK=",
         f"FAST_TYPES={scoped.TYPES}",
@@ -765,8 +765,49 @@ def test_every_push_check_is_capped_at_related_tests_even_when_web_or_build_file
     with pytest.raises(SystemExit):
         scoped.main()
     [(command, kwargs)] = calls
-    assert command[:2] == ["make", "check-fast"]
+    assert command[:2] == ["make", "check-push"]
+    assert "WEB_TESTS=" in command
+    assert "MANAGED_CHECK=" in command
     assert "UNIT_STOP=" in command
     assert "STEPS_KEEP_GOING=1" in command
     assert any(item.startswith("UNIT_TARGETS=tests/unit/") for item in command)
     assert kwargs["timeout"] == scoped.PUSH_TIMEOUT
+
+
+def run_push(monkeypatch, changed):
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setattr(scoped, "configured_mixed_plan", lambda *_, **__: False)
+    monkeypatch.setattr(scoped, "run_scoped_push", lambda *_: None)
+    calls = []
+    monkeypatch.setattr(
+        scoped, "run_check", lambda command, **kw: calls.append(command) or subprocess.CompletedProcess(command, 0)
+    )
+    with pytest.raises(SystemExit):
+        scoped.main()
+    return calls
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [[], ["uv.lock"], ["web/src/a.ts", "src/heinzel/x.py"], ["Makefile", "tests/unit/ship_test.py"], ["unknown.bin"]],
+)
+def test_push_unknown_mixed_or_empty_runs_only_the_hooks_own_test(monkeypatch, changed):
+    [command] = run_push(monkeypatch, changed)
+    assert command[:2] == ["make", "check-push"]
+    assert command[-1] == "UNIT_TARGETS=tests/unit/scoped_checks_test.py"
+    assert "check-fast" not in command
+
+
+def test_push_runs_unit_tests_of_the_changed_context_only(monkeypatch):
+    [command] = run_push(monkeypatch, ["tests/unit/ship_test.py"])
+    assert command[-1] == "UNIT_TARGETS=tests/unit/ship_test.py"
+
+
+def test_check_push_target_refuses_the_whole_suite_and_keeps_check_fast_for_humans():
+    makefile = (REPO / "Makefile").read_text()
+    assert "check-push: " in makefile
+    assert "check-push needs UNIT_TARGETS" in makefile
+    assert "WEB_TESTS= MANAGED_CHECK= UNIT_STOP=" in makefile
+    assert "\ncheck-fast: " in "\n" + makefile
