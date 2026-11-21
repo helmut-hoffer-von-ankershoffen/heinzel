@@ -113,7 +113,10 @@ describe("About dialog", () => {
   });
 
   it("shows the Native app row and the client it runs in", async () => {
-    current = { ...info, desktop_app: { path: "/Applications/Heinzelmaennchen.app", variant: "native", version: "0.9.53" } };
+    current = {
+      ...info,
+      desktop_app: { path: "/Applications/Heinzelmaennchen.app", variant: "native", version: "0.9.53" },
+    };
     Object.defineProperty(window, "heinzelDesktop", { value: {}, configurable: true });
     try {
       show();

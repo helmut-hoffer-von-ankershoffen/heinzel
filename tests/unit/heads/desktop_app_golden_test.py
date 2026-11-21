@@ -107,6 +107,7 @@ def mac(monkeypatch, tmp_path):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", system)
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    monkeypatch.setattr(desktop, "NEW_INSTALL_FLAVOR", desktop.DesktopFlavor.ELECTRON)  # the transcripts are Electron
     monkeypatch.setattr(desktop, "fetch_archive", _fetcher(clock))
     monkeypatch.setattr(desktop, "extract_bundle", _extract)
     monkeypatch.setattr(desktop, "_prepare_for_gatekeeper", lambda _bundle, **_options: None)
