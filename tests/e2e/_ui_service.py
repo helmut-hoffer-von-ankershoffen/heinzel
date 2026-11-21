@@ -455,9 +455,8 @@ class RunningService:
                     break
                 frames = []
                 snapshots.append(frames)
-            elif frames is not None and len(frames) < 32:
-                if (frame := _diagnostic_frame(line)) is not None:
-                    frames.append(frame)
+            elif frames is not None and len(frames) < 32 and (frame := _diagnostic_frame(line)) is not None:
+                frames.append(frame)
         return snapshots
 
     def native_state(self):

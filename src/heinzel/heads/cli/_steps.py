@@ -58,6 +58,8 @@ class StepBoard:
         self._steps: dict[str, Step] = {}
         self._lock = threading.Lock()
         self._live: Live | None = None
+        self._checklist = False
+        """Whether the operation draws one checklist (`checklist` in its events): its rows tick in place."""
         self._work: tuple[str, float | None, float] | None = None
         """What the running step does right now (a download, a wait), with its total and the amount done."""
 
@@ -73,6 +75,7 @@ class StepBoard:
         if self._mode == "off":
             return
         with self._lock:
+            self._checklist = self._checklist or bool(data.get("checklist"))
             before = self._steps.get(id_)
             step = self._steps[id_] = Step(label, state, None if detail is None else str(detail))
             if self._mode == "json":
@@ -86,7 +89,7 @@ class StepBoard:
             if self._mode == "plain":
                 self._print(self.line(id_))
                 return
-            if state in ENDED:
+            if state in ENDED and not self._checklist:
                 self._ensure_live().console.print(TerminalSafe(self.line(id_, mark=True)), highlight=False)
             self._refresh()
 
@@ -112,6 +115,7 @@ class StepBoard:
                 self._live = None
             self._steps.clear()
             self._work = None
+            self._checklist = False
 
     def line(self, id_: str, *, mark: bool = False) -> Text:
         """One step's line: `[2/5] Installing the update: done (Updated hz 0.9.31 → 0.9.33)`."""
@@ -138,6 +142,30 @@ class StepBoard:
         ended = sum(step.state in ENDED for step in steps)
         return Text.assemble(*parts, f"{ended}/{len(steps)}")
 
+    @staticmethod
+    def checklist(steps: list[Step], work: tuple[str, float | None, float] | None = None) -> RenderableType:
+        """Every row of a checklist: pending, running (a spinner), then ticked in place; skipped rows stay hidden."""
+        width = max([27, *(len(step.label) + 2 for step in steps)])
+        grid = Table.grid(padding=(0, 1))
+        for step in steps:
+            if step.state == "skipped":
+                continue
+            mark: RenderableType = (
+                Spinner("dots", style="cyan")
+                if step.state == "running"
+                else Text(MARKS.get(step.state, "·"), style=STYLES.get(step.state, "bright_black"))
+            )
+            detail = terminal_safe(step.detail or "") if step.state != "running" else ""
+            grid.add_row(
+                mark, Text(f"{step.label:<{width}}{detail}", style="" if step.state != "pending" else "bright_black")
+            )
+        rows: list[RenderableType] = [grid]
+        if work is not None:
+            description, total, done = work
+            amount = f" {min(done, total) / total:.0%}" if total else ""
+            rows.append(Text(f"    {terminal_safe(description)}{amount}", style="bright_black"))
+        return Group(*rows)
+
     def _print(self, text: Text) -> None:
         self._console.print(TerminalSafe(text), highlight=False, soft_wrap=True)
 
@@ -152,7 +180,7 @@ class StepBoard:
     def _refresh(self) -> None:
         if self._mode != "live":
             return
-        if not self.active:
+        if not self.active and not (self._checklist and self._live is not None):
             if self._live is not None:
                 self._live.stop()
                 self._live = None
@@ -162,6 +190,8 @@ class StepBoard:
     def _renderable(self) -> RenderableType:
         # Called from the live display's own thread: read snapshots, never the lock (refresh holds it).
         steps, work = list(self._steps.values()), self._work
+        if self._checklist:
+            return self.checklist(steps, work)
         running = next(((i, s) for i, s in enumerate(steps) if s.state == "running"), None)
         rows: list[RenderableType] = [self.bar()]
         if running is not None:

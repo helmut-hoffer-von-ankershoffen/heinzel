@@ -316,7 +316,6 @@ def test_a_refused_lifecycle_fails_the_install_step_not_finding_the_newest_versi
     with pytest.raises(HeinzelError, match="lifecycle is changing"):
         service.update(current="0.2.0")
     steps = final_steps(progress)
-    assert steps["check"] == ("done", None)
-    assert steps["install"][0] == "failed"
-    assert "background service" in str(steps["install"][1])
+    assert steps["check"][0] == "failed"  # hz is one row: finding and installing it
+    assert "background service" in str(steps["check"][1])
     assert not uv.commands

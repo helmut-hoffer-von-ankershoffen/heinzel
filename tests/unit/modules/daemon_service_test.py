@@ -2057,6 +2057,30 @@ def test_abort_unchanged_requires_exact_original_identity(make, bin_dir, changed
         assert not (service.state_dir / "mutation-pending.json").exists()
 
 
+def test_finish_without_handover_closes_a_verified_mutation_and_never_requests_one(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        scope.capture()
+        scope.verified_complete("a" * 64)
+        scope.finish_without_handover()
+        assert scope.requested is False
+        with pytest.raises(HeinzelError, match="unavailable or its pending token changed"):
+            scope.request(scope.plan)
+    assert not (service.state_dir / "mutation-pending.json").exists()
+
+
+def test_finish_without_handover_refuses_a_mutation_nobody_verified(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        scope.capture()
+        with pytest.raises(HeinzelError, match="not verified"):
+            scope.finish_without_handover()
+        scope.abort_unchanged()
+    assert not (service.state_dir / "mutation-pending.json").exists()  # the refused finish left it open until aborted
+
+
 def _fresh_quiescence_target(service, tmp_path):
     from heinzel import Progress
     from heinzel.kernel import Installation
