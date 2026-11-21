@@ -13,7 +13,8 @@ _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
 
 
 def _run(keep_going: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "STEPS_KEEP_GOING": keep_going}
+    env = {key: value for key, value in os.environ.items() if key != "VERBOSE"}  # CI sets VERBOSE=1
+    env["STEPS_KEEP_GOING"] = keep_going
     return subprocess.run(
         [sys.executable, str(_RUNNER), "a=exit 3", "&b=sleep 1", "&c=exit 4", "d=true"],
         capture_output=True,
