@@ -56,6 +56,7 @@ from heinzel.kernel import (
     WebHeadRefresh,
     subprocess_environment,
 )
+from heinzel.kernel._desktop_app import DesktopApp, app_hint, installed_desktop_app, label
 from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.kernel._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._announced import (
@@ -190,6 +191,7 @@ class UpdateService:
         need: PythonNeed | None = None,
         daemon: DaemonAttestation | None = None,
         running: Callable[[], bool] | None = None,
+        found: Callable[[], DesktopApp | None] | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
@@ -197,7 +199,8 @@ class UpdateService:
         `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
         plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
         `hz app install` (`restart=True`: `--restart`) and returns its exit code and output; `daemon` reads the version
-        the daemon runs and `running` whether the desktop app is open. Tests replace all of them.
+        the daemon runs, `running` whether the desktop app is open and `found` which app sits in Applications (with
+        `home`, only that home's Applications folder is looked at). Tests replace all of them.
         `need` keeps what the last update found about a release that needs a newer Python, for the doctor.
         """
         self._pinned_plugins = pinned
@@ -206,6 +209,7 @@ class UpdateService:
         self._desktop = desktop or self._app_install
         self._daemon = daemon
         self._running = running or _app_running
+        self._found = found or self._found_app
         self._restart_daemon = True
         """Whether the update in progress may restart the daemon and the web server (`--no-daemon` says not)."""
 
@@ -786,7 +790,11 @@ class UpdateService:
         app = self._desktop_state()
         ran = self._daemon_version()
         steps = self._steps = _Steps(
-            self._progress, _own_rows(names, shown), len(names), desktop=app is not None, daemon=ran is not None
+            self._progress,
+            _own_rows(names, shown),
+            len(names),
+            desktop=None if app is None else label(app.variant),
+            daemon=ran is not None,
         )
         try:
             steps.start("check")
@@ -840,6 +848,7 @@ class UpdateService:
             plugins=plans,
             desktop=self._desktop_installed(),
             desktop_running=self._desktop_installed() and self._running(),
+            desktop_variant=self._variant(self._found(), _recorded_flavor(self._receipt())),
             daemon=self._daemon_version() is not None,
             token=_plan_token(latest, plans),
         )
@@ -866,24 +875,58 @@ class UpdateService:
             newer = {}
         return found, newer
 
-    def _desktop_state(self) -> tuple[str | None, bool] | None:
-        """The installed desktop app's release and whether it is open; none if there is no managed app here."""
+    def _receipt(self) -> dict[str, object]:
+        with suppress(OSError, ValueError, RuntimeError):
+            found = json.loads((self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8"))
+            return found if isinstance(found, dict) else {}
+        return {}
+
+    def _found_app(self) -> DesktopApp | None:
+        """The app in Applications, whoever installed it; with a `home` (a test) only in that home's folder."""
+        with suppress(OSError, RuntimeError):
+            home = self._home or Path.home()
+            return installed_desktop_app(home, None if self._home is None else home / "Applications")
+        return None
+
+    @staticmethod
+    def _variant(found: DesktopApp | None, recorded: str | None) -> Literal["native", "electron"] | None:
+        if found is not None:
+            return found.variant
+        return "native" if recorded == "native" else "electron" if recorded == "electron" else None
+
+    def _desktop_state(self) -> "_App | None":
+        """The desktop app: its release, whether it is open, which variant and who updates it; none if none here."""
         if not self._desktop_installed():
             return None
-        release = None
-        with suppress(OSError, ValueError, AttributeError):
-            found = json.loads((self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8"))
-            release = found.get("release")
-        return release if isinstance(release, str) else None, self._running()
+        receipt, found = self._receipt(), self._found()
+        recorded = _recorded_flavor(receipt)
+        release = receipt.get("release")
+        if not isinstance(release, str):
+            release = found.version if found is not None else None
+        variant = self._variant(found, recorded)
+        # A native app hz did not record updates itself: hz app install never swaps it for Electron.
+        own = found is not None and found.variant == "native" and recorded != "native"
+        return _App(release, self._running(), variant, self_updating=own)
 
-    def _app_head(
-        self, result: UpdateResult, app: tuple[str | None, bool], asked: tuple[bool, bool, bool]
-    ) -> HeadRefresh:
+    def _app_head(self, result: UpdateResult, app: "_App", asked: tuple[bool, bool, bool]) -> HeadRefresh:
         """The desktop app's outcome: left alone, already newest, deferred until it is quit, or updated."""
+        head = self._app_outcome(result, app, asked)
+        return head.model_copy(update={"variant": app.variant})
+
+    def _app_outcome(self, result: UpdateResult, app: "_App", asked: tuple[bool, bool, bool]) -> HeadRefresh:
         desktop, restart, from_app = asked
-        release, running = app
+        release, running = app.release, app.running
         target = result.after
         known = (release, running)
+        if app.self_updating:
+            return HeadRefresh(
+                head="desktop",
+                status="verified" if release == target else "pending",
+                version=release,
+                detail="Already the newest." if release == target else "it updates itself; hz app install leaves it.",
+                before=release,
+                was_running=running,
+            )
         if not desktop:
             return HeadRefresh(
                 head="desktop",
@@ -1922,8 +1965,11 @@ class UpdateService:
         return None
 
     def _desktop_installed(self) -> bool:
+        """Whether a desktop app is here: one hz recorded, or one in Applications that hz did not install."""
         try:
-            return platform.system() == "Darwin" and (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists()
+            if platform.system() != "Darwin":
+                return False
+            return (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists() or self._found() is not None
         except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
             return False
 
@@ -2030,6 +2076,23 @@ class UpdateService:
 HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
 
 
+@dataclass(frozen=True, slots=True)
+class _App:
+    """The desktop app before the update: its release, whether it is open, its variant, whether it updates itself."""
+
+    release: str | None
+    running: bool
+    variant: Literal["native", "electron"] | None = None
+    self_updating: bool = False
+
+
+def _recorded_flavor(receipt: dict[str, object]) -> Literal["native", "electron"] | None:
+    """The variant hz's install record names (`swift` is the native app's earlier name); none without a record."""
+    if not receipt:
+        return None
+    return "native" if receipt.get("flavor") in {"swift", "native"} else "electron"
+
+
 def _app_running() -> bool:
     """Whether the managed desktop app is open now: one of its processes runs from inside its folder."""
     try:
@@ -2056,7 +2119,9 @@ class _Steps:
     row. Every event carries `checklist`, so a terminal draws the rows in place and a web app lists them as before.
     """
 
-    def __init__(self, progress: Progress, own: Sequence[str], count: int, *, desktop: bool, daemon: bool) -> None:
+    def __init__(
+        self, progress: Progress, own: Sequence[str], count: int, *, desktop: str | None, daemon: bool
+    ) -> None:
         self._own = list(own)
         self._count = count
         self._labels = {
@@ -2064,7 +2129,7 @@ class _Steps:
             **{f"plugin:{name}": name for name in own},
             **({"plugins": _plugins_label(count - len(own))} if count > len(own) else {}),
             **({"daemon": "Daemon, web server"} if daemon else {}),
-            **({"desktop": "Desktop app"} if desktop else {}),
+            **({"desktop": desktop} if desktop else {}),
         }
         self._phases = Phases(progress, list(self._labels.items()), operation="system.update", checklist=True)
         self._running: str | None = None
@@ -2122,7 +2187,7 @@ class _Steps:
         """Finish the desktop app's row: done, or a warning with what finishes it."""
         self._running = None
         if "desktop" in self._labels:
-            self._note("desktop", "done" if head.status == "verified" else "warn", _app_words(head))
+            self._note("desktop", "done" if head.status == "verified" else "warn", _app_words(head) + app_hint(head))
 
 
 def _plugins_label(count: int) -> str:

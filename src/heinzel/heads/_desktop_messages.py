@@ -68,6 +68,39 @@ def foreign_copy(app: Path, *, everyone: bool) -> Problem:
     )
 
 
+REASON_SYMLINK = "it is a link to another place, not the app itself"
+
+
+def reason_bundle_id(found: str | None, wanted: str) -> str:
+    """Another app under the same name: its identifier is not Heinzel's."""
+    return f"it is another app (identifier {found or 'unreadable'}, not {wanted})"
+
+
+def reason_other_variant(variant: str) -> str:
+    """The other Heinzel variant sits there: hz never swaps one for the other unasked."""
+    other = "electron" if variant == "native" else "native"
+    return f"it is the {'Native' if variant == 'native' else 'Electron'} app, not the {other.capitalize()} app"
+
+
+def reason_executable(found: str | None, wanted: str) -> str:
+    """The app starts another program than Heinzel's."""
+    return f"it starts {found or 'no program'}, not {wanted}"
+
+
+REASON_SIGNATURE = "its signature is broken, so macOS would call it damaged"
+
+
+def not_genuine(app: Path, reason: str, *, everyone: bool) -> Problem:
+    """A copy hz did not install and will not replace unasked, with the reason."""
+    variant = next((name for name in ("Native", "Electron") if f"the {name} app, not" in reason), None)
+    action = (
+        f"Run hz app install --flavor {variant.lower()} to keep the {variant} app, or --replace to switch it."
+        if variant
+        else "Move it out of the folder in Finder, or run hz app install --replace to move it to the Trash."
+    )
+    return Problem(f"The {app.name} in {folder(app.parent, everyone=everyone)} was left alone: {reason}.", action)
+
+
 def trashed_copy(app: Path, name: str) -> str:
     """The step row after --replace moved a foreign copy to the Trash."""
     return f"Moved      the copy hz did not install from {app.parent} to the Trash as {name}"
