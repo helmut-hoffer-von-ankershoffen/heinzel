@@ -837,11 +837,48 @@ class WebService:
                 "`hz system update` to finish it (or `hz system doctor` to see what holds it), then `hz ui restart`."
             )
             raise HeinzelError(msg)
-        response = self._control(record, pid, "restart")
+        try:
+            response = self._control(record, pid, "restart")
+        except (OSError, ValueError):
+            # The control channel is gone or silent (its /tmp folder was cleaned, or the server hangs): the service
+            # manager still owns the job, so it restarts it (runtime lifecycle design, section 2).
+            return self.restart_job(record)
         return WebRestart(
             requested=True,
             retiring_instance=str(response["instance"]),
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
+        )
+
+    def restart_job(self, record: dict[str, JsonValue] | None = None) -> WebRestart:
+        """Restart the owned web job through its service manager, which needs no control channel.
+
+        macOS: `launchctl kickstart -k`; Linux: `systemctl --user restart` of the user unit.
+
+        Raises:
+            HeinzelError: If the job is not owned and loaded, or the manager refuses.
+        """
+        record = record or self._record()
+        loaded, _pid = self._manager(record)
+        if record is None or not loaded:
+            msg = "No owned web service is loaded, so there is nothing to restart. Inspect `hz ui status`."
+            raise HeinzelError(msg)
+        if self.platform == "darwin":
+            command = self._command("kickstart", "-k", f"gui/{self.uid}/{LABEL}")
+        else:
+            command = self._command("restart", UNIT)
+        result = self.runner(command)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            msg = f"The service manager could not restart the web service ({detail or f'exit {result.returncode}'})."
+            raise HeinzelError(msg)
+        try:
+            retiring = str(TypeAdapter(dict[str, JsonValue]).validate_json(private_read(self.runtime))["instance"])
+        except (OSError, ValueError, KeyError, HeinzelError):
+            retiring = ""
+        return WebRestart(
+            requested=True,
+            retiring_instance=retiring,
+            message="The service manager restarted the web service. Use `hz ui status` to verify a ready instance.",
         )
 
     def _repaired(self) -> bool:
@@ -876,7 +913,7 @@ class WebService:
                 head="web", status="self", version=before.version, detail="This web server restarts itself next."
             )
         try:
-            retiring = self.restart().retiring_instance
+            retiring = self.restart_job().retiring_instance
         except (OSError, ValueError, HeinzelError, subprocess.SubprocessError) as exc:
             return HeadRefresh(
                 head="web",

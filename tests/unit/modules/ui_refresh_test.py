@@ -229,7 +229,7 @@ def service(tmp_path, statuses, *, restart=None):
         return WebRestart(requested=True, retiring_instance="a" * 32, message="")
 
     web.status = status  # type: ignore[method-assign]
-    web.restart = restarted  # type: ignore[method-assign]
+    web.restart_job = restarted  # type: ignore[method-assign]
     return web, restarts, clock
 
 
@@ -341,3 +341,200 @@ def test_restart_never_repairs_past_another_unfinished_change(tmp_path):
     with pytest.raises(HeinzelError, match="requires completion or recovery"):
         web.restart()
     assert (repairs, controls) == ([], [])
+
+
+def _managed(tmp_path, platform, *, returncode=0, loaded=True):
+    web, _marker, _controls = _restartable(tmp_path)
+    web.platform = platform
+    web.uid = 501
+    web._manager = lambda _record: (loaded, 4242)  # type: ignore[method-assign]
+    web._command = lambda *arguments: ["mgr", *arguments]  # type: ignore[method-assign]
+    commands: list[list[str]] = []
+
+    def runner(command):
+        commands.append(list(command))
+        return SimpleNamespace(returncode=returncode, stdout="", stderr="no such job")
+
+    web.runner = runner  # type: ignore[assignment]
+    return web, commands
+
+
+def test_restart_falls_back_to_the_launchd_job_when_the_control_folder_is_gone(tmp_path):
+    """The Mini, 0.9.52: the /tmp control folder was missing and `hz ui restart` printed only its path."""
+    web, commands = _managed(tmp_path, "darwin")
+
+    def gone(_record, _pid, _verb):
+        path = "/private/tmp/hz-ui-501-628f7bee6e0e5926"
+        raise FileNotFoundError(path)
+
+    web._control = gone  # type: ignore[method-assign]
+    result = web.restart()
+    assert result.requested
+    assert commands == [["mgr", "kickstart", "-k", "gui/501/io.github.helmut-hoffer-von-ankershoffen.heinzel.web"]]
+
+
+def test_restart_falls_back_when_the_control_socket_times_out(tmp_path):
+    web, commands = _managed(tmp_path, "linux")
+
+    def hung(_record, _pid, _verb):
+        raise TimeoutError
+
+    web._control = hung  # type: ignore[method-assign]
+    assert web.restart().requested
+    assert commands == [["mgr", "restart", "hz-web.service"]]
+
+
+def test_restart_job_names_a_manager_refusal_in_a_sentence(tmp_path):
+    web, _ = _managed(tmp_path, "darwin", returncode=113)
+    with pytest.raises(HeinzelError, match=r"service manager could not restart the web service \(no such job\)"):
+        web.restart_job()
+
+
+def test_restart_job_refuses_when_nothing_is_loaded(tmp_path):
+    web, commands = _managed(tmp_path, "darwin", loaded=False)
+    with pytest.raises(HeinzelError, match="nothing to restart"):
+        web.restart_job()
+    assert commands == []
+
+
+def test_update_restarts_through_the_job_and_checks_the_served_version(tmp_path):
+    """The old server hung but kept its port: the update kickstarts the job and accepts only the target version."""
+    web, restarts, _ = service(tmp_path, [ready("a" * 32, "0.9.51"), ready("b" * 32, "0.9.52")])
+    result = web.refresh("0.9.52")
+    assert (restarts, result.status, result.version) == ([1], "verified", "0.9.52")
+
+
+def test_restart_refuses_when_the_job_is_not_loaded(tmp_path):
+    web, _ = _managed(tmp_path, "darwin", loaded=False)
+    with pytest.raises(HeinzelError, match="No owned running web service can restart"):
+        web.restart()
+
+
+def test_restart_names_a_repair_that_fails(tmp_path):
+    def broken() -> bool:
+        msg = "locked"
+        raise OSError(msg)
+
+    web, marker, controls = _restartable(tmp_path, broken)
+    marker.touch()
+    with pytest.raises(HeinzelError, match="requires completion or recovery"):
+        web.restart()
+    assert controls == []
+
+
+def test_install_refuses_a_port_outside_the_range(tmp_path):
+    web, _ = _managed(tmp_path, "darwin")
+    with pytest.raises(HeinzelError, match="between 1 and 65535"):
+        web.install(70000)
+
+
+def test_an_unsupported_platform_has_no_service_manager(tmp_path):
+    web, _ = _managed(tmp_path, "win32")
+    web.__dict__.pop("_command")
+    with pytest.raises(HeinzelError, match="launchd or Linux systemd"):
+        web._command("print")
+
+
+def test_a_loaded_label_with_unknown_identity_is_refused(tmp_path):
+    web, _ = _managed(tmp_path, "darwin")
+    web.__dict__.pop("_command")
+    web.which = lambda _name: "/bin/launchctl"
+
+    def runner(command):
+        if "print" in command:
+            return SimpleNamespace(returncode=113, stdout="", stderr="")
+        listing = "PID\tStatus\tLabel\n-\t0\tio.github.helmut-hoffer-von-ankershoffen.heinzel.web\n"
+        return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+
+    web.runner = runner  # type: ignore[assignment]
+    with pytest.raises(HeinzelError, match="loaded identity is unknown"):
+        web._manager_darwin(None)
+
+
+def test_status_reports_a_pending_launcher_transition(tmp_path, monkeypatch):
+    from heinzel.modules.ui import _service
+
+    web, _ = _managed(tmp_path, "darwin")
+    transition = tmp_path / "transition.json"
+    transition.touch()
+    monkeypatch.setattr(_service, "LauncherTransition", lambda *_: SimpleNamespace(path=transition))
+    assert "transition requires" in (web.status().problem or "")
+
+
+class _Locks:
+    def __init__(self, _paths):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _in_transition(tmp_path, monkeypatch, *, pending, instance=None, loaded=True):
+    from heinzel.modules.ui import _service
+
+    web, _ = _managed(tmp_path, "darwin", loaded=loaded)
+    web._transition_needed = lambda: True  # type: ignore[method-assign]
+    path = tmp_path / "transition.json"
+    if pending:
+        path.touch()
+    migrated: list[str] = []
+    monkeypatch.setattr(_service, "MaintenanceLocks", _Locks)
+    monkeypatch.setattr(
+        _service,
+        "LauncherTransition",
+        lambda *_: SimpleNamespace(path=path, load=lambda: SimpleNamespace(retiring_instance=instance)),
+    )
+    web._transition = lambda action, **kw: migrated.append(kw["retiring_instance"])  # type: ignore[method-assign]
+    web._control = lambda *_: {"instance": "d" * 32}  # type: ignore[method-assign]
+    return web, migrated
+
+
+def test_restart_during_a_pending_transition_without_an_instance_names_the_command(tmp_path, monkeypatch):
+    web, migrated = _in_transition(tmp_path, monkeypatch, pending=True)
+    with pytest.raises(HeinzelError, match="Complete the pending launcher operation"):
+        web.restart()
+    assert migrated == []
+
+
+def test_restart_during_a_pending_transition_completes_it_for_the_recorded_instance(tmp_path, monkeypatch):
+    web, migrated = _in_transition(tmp_path, monkeypatch, pending=True, instance="e" * 32)
+    assert web.restart().retiring_instance == "e" * 32
+    assert migrated == ["e" * 32]
+
+
+def test_restart_migrates_a_historical_launcher_through_its_running_instance(tmp_path, monkeypatch):
+    web, migrated = _in_transition(tmp_path, monkeypatch, pending=False)
+    assert web.restart().retiring_instance == "d" * 32
+    assert migrated == ["d" * 32]
+
+
+def test_restart_cannot_migrate_a_historical_launcher_that_is_not_running(tmp_path, monkeypatch):
+    web, _ = _in_transition(tmp_path, monkeypatch, pending=False, loaded=False)
+    with pytest.raises(HeinzelError, match="use `hz ui install` to migrate"):
+        web.restart()
+
+
+def test_restart_job_reports_the_instance_the_runtime_record_names(tmp_path, monkeypatch):
+    from heinzel.modules.ui import _service
+
+    web, _ = _managed(tmp_path, "darwin")
+    monkeypatch.setattr(_service, "private_read", lambda _path: '{"instance": "' + "f" * 32 + '"}')
+    assert web.restart_job().retiring_instance == "f" * 32
+
+
+def test_the_default_runner_runs_the_fixed_vector_with_a_timeout(monkeypatch):
+    from heinzel.modules.ui import _service
+
+    seen: dict[str, object] = {}
+
+    def run(command, **kwargs):
+        seen.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(_service.subprocess, "run", run)
+    _service._run(["launchctl", "list"])
+    assert seen["command"] == ["launchctl", "list"]
+    assert seen["timeout"] == 10
