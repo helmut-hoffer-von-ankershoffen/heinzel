@@ -180,6 +180,7 @@ def apply(installation, tmp_path, *, starts, releases=None):
     return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts)
 
 
+@pytest.mark.timeout(60)  # two real uv installs: the first on a cold macOS runner took 15.25 s, past the 15 s level
 def test_real_uv_installs_exactly_the_announced_versions_and_the_receipt_stays_clean(tool, tmp_path):
     before = (tool.prefix / "uv-receipt.toml").read_bytes()
     result = apply(tool, tmp_path, starts=True)

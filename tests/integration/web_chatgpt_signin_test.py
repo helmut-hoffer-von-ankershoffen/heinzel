@@ -224,7 +224,9 @@ def test_declining_in_the_browser_prevents_exchange_and_leaves_no_credential(sig
 
 def test_an_expired_attempt_is_forgotten(sign_in, monkeypatch):
     client, backend, opened, _, _ = sign_in
-    monkeypatch.setattr(_chatgpt_signin, "SIGN_IN_TIMEOUT", 0.2)
+    monkeypatch.setattr(
+        _chatgpt_signin, "SIGN_IN_TIMEOUT", 2.0
+    )  # long enough that a loaded runner opens the browser before the attempt expires
     assert client.post(START, headers=AUTH).json() == {"outcome": "expired"}
     params = parse_qs(urlsplit(opened.get(timeout=4)).query)
     query = {"state": params["state"][0], "code": CODE, "client_id": CLIENT}

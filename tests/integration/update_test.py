@@ -187,19 +187,19 @@ def test_update_help_explains_automatic_updates_desktop_handoff_and_progress(app
     assert "2>&1" in help_text
 
 
-def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch):
+def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch, no_desktop_app):
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == (
-        f"Updated hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
+        f"Updated hz {__version__} → 99.0.0\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
     )
     # Not a terminal: one line when each step starts and ends, on stderr, the same steps the web dialog shows.
     assert result.stderr.splitlines() == [
         "[1/4] Finding the newest version ...",
         "[1/4] Finding the newest version: done",
         "[2/4] Installing the update ...",
-        f"[2/4] Installing the update: done (Updated hz {__version__} → 99.0.0.)",
+        f"[2/4] Installing the update: done (Updated hz {__version__} → 99.0.0)",
         "[3/4] Plugin heinzel-acme: done (Kept at 1.0.0 (pinned to v1.0.0; newer releases not checked))",
         "[4/4] Moving the background services onto it ...",
         "[4/4] Moving the background services onto it: done",
@@ -242,7 +242,7 @@ def test_the_latest_release_installed_is_said_not_silent(app, env, monkeypatch):
     assert uv_log(env) == []
 
 
-def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypatch):
+def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypatch, no_desktop_app):
     receipt = env / "uv-receipt.toml"
     receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=main"))
     (env / "main-version").write_text("99.0.0.dev7")
@@ -250,7 +250,7 @@ def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypat
     result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == (
-        f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
+        f"Updated hz {__version__} \u2192 99.0.0.dev7\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
     )
     [command] = uv_log(env)
     assert command.endswith(f"heinzel @ git+{REPO}@main --with {PLUGIN}")
@@ -277,7 +277,7 @@ def test_a_blocking_plugin_is_taken_out_and_hz_still_updates(app, env, monkeypat
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     output = " ".join(result.output.split())
-    assert f"Updated hz {__version__} → 99.0.0." in output
+    assert f"Updated hz {__version__} → 99.0.0" in output
     assert "Plugin heinzel-acme: failed." in output
     assert f"hz system plugin add '{PLUGIN}' --confirm" in output
     first, second, third = uv_log(env)
@@ -302,7 +302,7 @@ def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, mon
     github_releases(monkeypatch, "v99.0.0")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0."
+    assert result.stdout.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0"
     assert "rev=v99.0.0" in receipt.read_text()
 
 
@@ -336,7 +336,7 @@ def no_desktop_app(tmp_path, monkeypatch):
 
 
 PLAN = (
-    f"hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: kept at 1.0.0. Pinned to v1.0.0, which names no release "
+    f"hz {__version__} → 99.0.0\nPlugins:\n  heinzel-acme: kept at 1.0.0. Pinned to v1.0.0, which names no release "
     "to follow; an update leaves it as it is."
 )
 
@@ -384,7 +384,7 @@ def test_on_a_terminal_enter_agrees_and_the_update_runs(app, env, monkeypatch, n
     result = runner.invoke(app, ["system", "update"], input="\n", env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert "Update now? [Y/n]" in result.stdout
-    assert f"Updated hz {__version__} → 99.0.0." in result.stdout
+    assert f"Updated hz {__version__} → 99.0.0" in result.stdout
     assert len(uv_log(env)) == 1
 
 
@@ -393,7 +393,7 @@ def test_yes_updates_without_a_question_where_nobody_can_answer(app, env, monkey
     result = runner.invoke(app, ["system", "update", "--yes"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert "[Y/n]" not in result.stdout
-    assert result.stdout.startswith(f"Updated hz {__version__} → 99.0.0.")
+    assert result.stdout.startswith(f"Updated hz {__version__} → 99.0.0")
     assert len(uv_log(env)) == 1
 
 

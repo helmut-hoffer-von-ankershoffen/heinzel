@@ -266,8 +266,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
-         * @description Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         * Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
+         * @description Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
          *
          *     Raises:
          *         HeinzelError: If the uncertain outcome was not acknowledged.
@@ -14364,6 +14364,8 @@ export interface components {
              * @description Stored questions and their exact answer revisions.
              */
             questions?: components["schemas"]["Question"][];
+            /** @description The earliest accepted message without a recorded answer or resolution, across all pages. */
+            queue_head?: components["schemas"]["SessionMessage"] | null;
             /** @description The authoritative schedule and effective eligibility, when available. */
             schedule?: components["schemas"]["WakeScheduleView"] | null;
             /**
@@ -17689,6 +17691,12 @@ export interface components {
              * @description Confirm the outcome may be unknown and no retry or undo occurs.
              */
             acknowledge_uncertain: boolean;
+            /**
+             * Expected Status
+             * @description The exact state the owner acknowledged.
+             * @enum {string}
+             */
+            expected_status: "pending" | "unresolved";
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.

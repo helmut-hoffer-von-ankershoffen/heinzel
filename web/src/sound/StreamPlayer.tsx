@@ -249,8 +249,55 @@ function Player({
   }, [ready, level.gain, level.seconds, level.playing, send, deviceVolume]);
 
   if (!src) return null;
+  const helpPane = (
+    <PlayerHelp
+      inHeader={Boolean(guest)}
+      attention={help}
+      actions={
+        <>
+          {chooseAccount && (
+            <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
+              {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+            </PaneAction>
+          )}
+          {copyUrl && (
+            <PaneAction icon={Copy} onClick={() => void copyLink()}>
+              {t("sound.copyYouTubeLink")}
+            </PaneAction>
+          )}
+          <PaneAction icon={RotateCw} onClick={retry}>
+            {t("sound.retryPlayer")}
+          </PaneAction>
+          {!desktop && (
+            <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
+              {t("sound.playOnYouTube")}
+            </PaneAction>
+          )}
+        </>
+      }
+    >
+      <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+      {copyState !== "idle" && (
+        <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
+      )}
+      {copyState === "failed" && copyUrl && (
+        <input
+          aria-label={t("sound.videoLink")}
+          className="w-full rounded border border-border bg-transparent px-1"
+          readOnly
+          value={copyUrl}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      )}
+    </PlayerHelp>
+  );
   return (
-    <PlayerCard title={soundscape.title} watchUrl={desktop ? undefined : stream.watch_url} host="YouTube">
+    <PlayerCard
+      title={soundscape.title}
+      watchUrl={desktop ? undefined : stream.watch_url}
+      host="YouTube"
+      headerAction={guest ? helpPane : undefined}
+    >
       <div className="group/video relative">
         {guest ? (
           <div
@@ -278,45 +325,7 @@ function Player({
             allow={FRAME_ATTRIBUTES.allow}
           />
         )}
-        <PlayerHelp
-          attention={help}
-          actions={
-            <>
-              {chooseAccount && (
-                <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
-                  {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-                </PaneAction>
-              )}
-              {copyUrl && (
-                <PaneAction icon={Copy} onClick={() => void copyLink()}>
-                  {t("sound.copyYouTubeLink")}
-                </PaneAction>
-              )}
-              <PaneAction icon={RotateCw} onClick={retry}>
-                {t("sound.retryPlayer")}
-              </PaneAction>
-              {!desktop && (
-                <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
-                  {t("sound.playOnYouTube")}
-                </PaneAction>
-              )}
-            </>
-          }
-        >
-          <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-          {copyState !== "idle" && (
-            <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
-          )}
-          {copyState === "failed" && copyUrl && (
-            <input
-              aria-label={t("sound.videoLink")}
-              className="w-full rounded border border-border bg-transparent px-1"
-              readOnly
-              value={copyUrl}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          )}
-        </PlayerHelp>
+        {!guest && helpPane}
       </div>
       {guestUnavailable && (
         <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">

@@ -17,6 +17,15 @@ private var heinzelAppVersion: String {
     return "Version \(version) · Build \(build)"
 }
 
+private var heinzelAppBuild: AppBuildObservation.Build? {
+    let bundle = Bundle.main
+    return AppBuildObservation.Build(
+        version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+        number: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+        revision: bundle.object(forInfoDictionaryKey: "HeinzelSourceRevision") as? String
+    )
+}
+
 private enum ConnectionPalette {
     static let ink = Color(red: 0.149, green: 0.231, blue: 0.196)
     static let accent = Color(red: 0.188, green: 0.282, blue: 0.227)
@@ -39,6 +48,62 @@ private struct ConnectionFooter: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct WorkspaceVersionDetails: View {
+    let app: AppBuildObservation?
+    let workspace: WorkspaceVersionObservation?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let app {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("App \(app.build.version) · Build \(app.build.number)").fontWeight(.medium)
+                    Text("This build observed here since \(date(app.observedSince))")
+                }
+            } else {
+                Text("App build details are unavailable.")
+            }
+
+            if let workspace {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Workspace web \(workspace.version)").fontWeight(.medium)
+                    Text("Version last seen \(date(workspace.observedAt))")
+                    if let installed = workspace.installedVersion {
+                        Text("Installed hz \(installed)")
+                        if let updated = workspace.installedUpdatedAt {
+                            Text("Installed hz updated \(date(updated))")
+                        } else {
+                            Text("Workspace did not report an installation update date.")
+                        }
+                    } else {
+                        Text("Workspace did not report the installed hz version or update date.")
+                    }
+                    if let daemon = workspace.daemonLastVersion, let observed = workspace.daemonLastObservedAt {
+                        Text("Daemon \(daemon) · Last observed \(date(observed))")
+                        if let stale = workspace.daemonObservationStale {
+                            Text(stale ? "Daemon observation was stale when checked." : "Daemon observation was fresh when checked.")
+                        }
+                    } else {
+                        Text("Workspace did not report a daemon observation.")
+                    }
+                    if workspace.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
+                       let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v\(workspace.version)") {
+                        Link("Release details", destination: release)
+                    }
+                }
+            } else {
+                Text("No workspace version has been recorded here. Version details appear when the workspace can report them.")
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(ConnectionPalette.muted)
+        .connectionPanel()
+    }
+
+    private func date(_ value: Date) -> String {
+        value.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -239,7 +304,10 @@ struct ConnectionView: View {
     @AppStorage("workspaceHistory") private var workspaceHistory = Data()
     @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
     @AppStorage("workspaceBackendVersions") private var workspaceBackendVersions = Data()
+    @AppStorage("appBuildObservation") private var appBuildObservation = Data()
     @State private var syncedWorkspaces: [RecentWorkspace] = []
+    @State private var cloudDirectoryUnavailable = false
+    @State private var cloudDirectoryChecked = false
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
     #if os(macOS)
@@ -257,17 +325,16 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
-    #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
     @State private var nativeFooterWidth: CGFloat = 88
     @State private var nativeFooterBottom: CGFloat = 0
     @State private var nativeFooterGeneration = 0
     @State private var nativeFooterSlot: CGRect?
     #endif
     @State private var connectionSheetContentHeight: CGFloat = 350
-    @State private var connectionSheetFooterHeight: CGFloat = 40
     private var connectionSheetHeight: CGFloat {
-        min(520, max(300, (connectionSheetContentHeight + connectionSheetFooterHeight).rounded(.up)))
+        min(520, max(300, connectionSheetContentHeight.rounded(.up)))
     }
     @State private var showDisconnectConfirmation = false
     @State private var choosingWorkspace = false
@@ -284,6 +351,7 @@ struct ConnectionView: View {
     @State private var pickerHasSnapshot = false
     @State private var pickerTimedOut = false
     @State private var widgetRefreshRevision = 0
+    @State private var versionRefreshRevision = 0
     @State private var chatRequest: HeinzelChatRequest?
     @State private var showPromptComposer = false
     @State private var dismissingPromptComposer = false
@@ -657,6 +725,9 @@ struct ConnectionView: View {
         }) {
             if let endpoint { connectionSheet(for: endpoint) }
         }
+        .onChange(of: showConnection) { _, open in
+            if open { versionRefreshRevision &+= 1 }
+        }
         .sheet(isPresented: $showConnectionHelp) {
             ConnectionHelp(
                 origin: diagnosticOrigin,
@@ -688,6 +759,13 @@ struct ConnectionView: View {
         .task {
             guard !started else { return }
             started = true
+            if let build = heinzelAppBuild {
+                let previous = try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation)
+                let observation = AppBuildObservation.recording(build, previous: previous, now: .now)
+                if observation != previous, let encoded = try? JSONEncoder().encode(observation) {
+                    appBuildObservation = encoded
+                }
+            }
             // A short cold-start beat keeps the branded screen perceptible even when the host responds immediately.
             let earliest = ContinuousClock.now + .milliseconds(650)
             await openInitialWorkspace()
@@ -859,7 +937,7 @@ struct ConnectionView: View {
                 if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
             }
             #if os(iOS)
-            .overlay { workspaceFooterControl(for: endpoint, fallback: true) }
+            .safeAreaInset(edge: .bottom, spacing: 0) { recoveryWorkspaceFooter(for: endpoint) }
             #endif
         } else if let endpoint {
             let revision = loadRevision
@@ -882,7 +960,7 @@ struct ConnectionView: View {
                     self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
                     #endif
                 }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision,
-                footerWidth: nativeFooterWidthValue, footerBottom: nativeFooterBottomValue,
+                versionRefreshRevision: versionRefreshRevision, footerWidth: nativeFooterWidthValue, footerBottom: nativeFooterBottomValue,
                 footerGeneration: nativeFooterGenerationValue,
                 reportFooterSlot: { slot in
                     #if os(iOS)
@@ -1025,15 +1103,18 @@ struct ConnectionView: View {
                 #endif
             }
             #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if obscured { recoveryWorkspaceFooter(for: endpoint) }
+            }
             .overlay {
-                workspaceFooterControl(for: endpoint, fallback: obscured)
+                if !obscured { workspaceFooterControl(for: endpoint, fallback: false) }
             }
             #endif
         } else if connecting || showingColdStart {
             startup
             #if os(iOS)
-            .overlay {
-                if let saved = Endpoint(serverOrigin) { workspaceFooterControl(for: saved, fallback: true) }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let saved = Endpoint(serverOrigin) { recoveryWorkspaceFooter(for: saved) }
             }
             #endif
         } else if let target = sharedWorkspace {
@@ -1081,6 +1162,30 @@ struct ConnectionView: View {
     }
 
     #if os(iOS)
+    // Native recovery screens reserve their own space; the web footer uses reported geometry.
+    private func recoveryWorkspaceFooter(for endpoint: Endpoint) -> some View {
+        Button {
+            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
+                Text(workspaceName(endpoint.origin)).fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.down").accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Workspace: \(workspaceName(endpoint.origin))")
+        .accessibilityHint("Open connection details or switch workspace")
+        .foregroundStyle(ConnectionPalette.ink)
+        .environment(\.colorScheme, .light)
+        .background(Color("StartupBackground").ignoresSafeArea(.container, edges: .bottom))
+    }
+
     private func workspaceFooterControl(for endpoint: Endpoint, fallback: Bool) -> some View {
         GeometryReader { geometry in
             let bottom = geometry.safeAreaInsets.bottom
@@ -1173,38 +1278,6 @@ struct ConnectionView: View {
                         .textSelection(.enabled)
                 }
                 .connectionPanel()
-                #if os(iOS)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("App \(heinzelAppVersion)")
-                    Text("App last updated: Unknown")
-                    if let seen = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions))?[endpoint.origin.absoluteString] {
-                        Text("Workspace hz \(seen.version)")
-                        Text("Last seen \(seen.observedAt.formatted(date: .abbreviated, time: .shortened))")
-                        if let installed = seen.installedVersion { Text("Installed hz \(installed)") }
-                        if let updated = seen.installedUpdatedAt {
-                            Text("Workspace last updated \(updated.formatted(date: .abbreviated, time: .shortened))")
-                        } else {
-                            Text("Workspace last updated: Unknown")
-                        }
-                        if let daemon = seen.daemonLastVersion, let observed = seen.daemonLastObservedAt {
-                            Text("Daemon last verified run: \(daemon) · \(observed.formatted(date: .abbreviated, time: .shortened))\(seen.daemonObservationStale == true ? " · Stale when checked" : seen.daemonObservationStale == false ? " · Fresh when checked" : "")")
-                        } else {
-                            Text("Daemon last verified run: Unknown")
-                        }
-                        if seen.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
-                           let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v\(seen.version)") {
-                            Link("Release details", destination: release)
-                        }
-                    } else {
-                        Text("Workspace hz version: Unknown")
-                        Text("Workspace last updated: Unknown")
-                        Text("Daemon last verified run: Unknown")
-                    }
-                }
-                .font(.footnote)
-                .foregroundStyle(ConnectionPalette.muted)
-                .connectionPanel()
-                #endif
                 if let error {
                     Label(error, systemImage: "exclamationmark.circle")
                         .font(.callout)
@@ -1237,6 +1310,12 @@ struct ConnectionView: View {
                     .foregroundStyle(ConnectionPalette.warning)
                 }
                 .buttonStyle(.plain)
+                WorkspaceVersionDetails(
+                    app: (try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation))
+                        .flatMap { $0.build == heinzelAppBuild ? $0 : nil },
+                    workspace: (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self,
+                        from: workspaceBackendVersions))?[endpoint.origin.absoluteString]
+                )
                 #if os(macOS)
                 if endpoint.origin.scheme == "http", offersCloudSignIn {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1256,13 +1335,6 @@ struct ConnectionView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 connectionSheetContentHeight = height
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            ConnectionFooter()
-                .background(Color("StartupBackground"))
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                    connectionSheetFooterHeight = height
-                }
         }
         #if os(iOS)
         .refreshable { await refreshConnectionStatus(for: endpoint) }
@@ -1371,6 +1443,21 @@ struct ConnectionView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                Divider()
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(cloudDirectoryUnavailable
+                        ? "Synced sign-ins couldn’t be read on this device."
+                        : cloudDirectoryChecked
+                            ? "No synced sign-in for this workspace is available on this device."
+                            : "Checking for a synced sign-in…", systemImage: "icloud")
+                    if endpoint.origin.host?.hasSuffix(".ts.net") == true {
+                        Text("Enable private Tailscale sharing on the Mac, then Sync Sign-in with iCloud in the Mac app’s Connection screen. Both devices need the same Apple Account and iCloud Keychain. If that option is missing on the Mac, use a private sign-in link.")
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(ConnectionPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
                 Divider()
             }
             if endpoint.origin.host?.hasSuffix(".ts.net") == true {
@@ -1519,6 +1606,7 @@ struct ConnectionView: View {
             VStack(spacing: 14) {
                 brandHeader(loading: loading, compact: compactBrand || editingLink)
                 actions()
+                if !editingLink { ConnectionFooter(showTagline: !loading) }
             }
             .frame(maxWidth: 420)
             .padding(24)
@@ -1535,9 +1623,6 @@ struct ConnectionView: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingLink { ConnectionFooter(showTagline: !loading) }
-        }
         .overlay(alignment: .topTrailing) {
             if !loading || startupIsSlow && !stoppingLocalWorkspace {
                 helpButton.padding(.trailing, 12)
@@ -1554,8 +1639,9 @@ struct ConnectionView: View {
                 .accessibilityHidden(true)
             Text("Heinzelmännchen")
                 .font(.system(compact ? .title2 : .largeTitle, design: .serif, weight: .semibold))
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
         }
@@ -1774,7 +1860,13 @@ struct ConnectionView: View {
     }
 
     private func refreshSyncedWorkspaces() {
-        if let workspaces = WorkspaceKeychain.workspaces() { syncedWorkspaces = workspaces }
+        cloudDirectoryChecked = true
+        if let workspaces = WorkspaceKeychain.workspaces() {
+            syncedWorkspaces = workspaces
+            cloudDirectoryUnavailable = false
+        } else {
+            cloudDirectoryUnavailable = true
+        }
     }
 
     private func resumeCloudSignInIfReady() {
@@ -1995,7 +2087,8 @@ struct ConnectionView: View {
     }
 
     private func refreshConnectionStatus(for target: Endpoint) async {
-        guard !refreshingConnection else { return }
+        guard endpoint == target, !refreshingConnection else { return }
+        versionRefreshRevision &+= 1
         refreshingConnection = true
         defer {
             refreshingConnection = false

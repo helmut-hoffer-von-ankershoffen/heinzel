@@ -64,8 +64,10 @@ def test_results_are_kept_per_option_and_a_broken_file_reads_as_none(tmp_path):
 
 
 def gateway(run=None, **settings: object) -> GatewayAccess:
+    configured = AccessSettings.model_validate(settings)
     return GatewayAccess(
-        AccessSettings.model_validate(settings),
+        configured,
+        current_settings=lambda: configured,
         run=run or (lambda *_: Finished(0, "", "")),
         which=lambda n: f"/bin/{n}",
     )
@@ -78,7 +80,8 @@ def test_an_unconfigured_gateway_is_not_installed_and_says_how_to_set_it_up():
 
 
 def test_a_gateway_cli_missing_from_path_is_not_installed():
-    option = GatewayAccess(AccessSettings(gateway_status_command=["acme", "status"]), which=lambda _: None)
+    settings = AccessSettings(gateway_status_command=["acme", "status"])
+    option = GatewayAccess(settings, which=lambda _: None, current_settings=lambda: settings)
     assert "acme is not on PATH" in option.status().detail
 
 
@@ -169,13 +172,15 @@ def pydantic(  # noqa: PLR0913 - every seam of the option
     base_url: str | None = None,
     get=offline,
 ):
+    configured = AccessSettings(model=model, base_url=base_url)
     return PydanticAiAccess(
-        AccessSettings(model=model, base_url=base_url),
+        configured,
         credentials or Credentials(EnvironmentBackend(), [("ai.access", API_KEY)]),
         Config.empty().settings(Settings, "hz"),
         build=build or (lambda _model, _key, _base: TestModel(custom_output_text="OK")),
         installed=lambda _package: installed,
         get=get,
+        current_settings=lambda: configured,
     )
 
 

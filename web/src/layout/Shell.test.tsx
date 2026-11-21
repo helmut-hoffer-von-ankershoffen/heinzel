@@ -390,6 +390,7 @@ describe("Desktop menu actions", () => {
     renderAt("/doctor");
     await screen.findByRole("button", { name: "Open the browser" });
     act(() => requestMenuAction("browser"));
+    await user.click(screen.getByRole("button", { name: "More browser actions" }));
     await user.click(screen.getByRole("button", { name: "Browser settings" }));
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(await within(dialog).findByRole("heading", { name: "Browser" })).toBeVisible();

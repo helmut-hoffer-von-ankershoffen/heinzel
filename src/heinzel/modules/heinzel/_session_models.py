@@ -486,6 +486,10 @@ class SessionSnapshot(BaseModel):
     messages: list[SessionMessage] = Field(
         description="One ordered page of visible messages.", default_factory=list[SessionMessage]
     )
+    queue_head: SessionMessage | None = Field(
+        default=None,
+        description="The earliest accepted message without a recorded answer or resolution, across all pages.",
+    )
     pending_actions: list[ActionProposal] = Field(
         description="Stored actions awaiting a decision or reconciliation.", default_factory=list[ActionProposal]
     )
