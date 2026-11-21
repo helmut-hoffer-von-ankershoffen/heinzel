@@ -18,7 +18,16 @@ vi.mock("@/updates/controller", async (load) => ({
   readUpdatePlan: vi.fn(),
 }));
 /** A plan with nothing but Heinzel in it, for the tests that only pass through the confirmation. */
-const barePlan = { current: "0.1.0", latest: "0.2.0", core: "", desktop: false, plugins: [], token: "bare-plan" };
+const barePlan = {
+  current: "0.1.0",
+  latest: "0.2.0",
+  core: "",
+  desktop: false,
+  desktop_running: false,
+  daemon: false,
+  plugins: [],
+  token: "bare-plan",
+};
 beforeEach(() => {
   vi.mocked(startUpdate).mockClear();
   vi.mocked(readUpdatePlan).mockReset().mockResolvedValue(barePlan);
@@ -452,6 +461,8 @@ const updatePlan = {
   latest: "0.2.0",
   core: "hz 0.1.0 → 0.2.0.",
   desktop: true,
+  desktop_running: false,
+  daemon: false,
   token: "shown-plan",
   plugins: [
     {

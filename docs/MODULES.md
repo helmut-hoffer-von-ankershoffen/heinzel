@@ -252,7 +252,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | List every operation and tool with its heads, parameters and result, in four formats. | `hz system tools` | `system_tools` | `GET /system/tools` | `GET /api/system/tools` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
-| Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
 | Uninstall the verified Heinzel tool offline, keeping your data and configuration. | `hz system uninstall` | — | — | — | yes |  |
 | Show the update channel, or say what switching changes and, with `--yes`, switch. | `hz system channel` | `system_channel` | `POST /system/channel` | `POST /api/system/channel` | yes |  |
 

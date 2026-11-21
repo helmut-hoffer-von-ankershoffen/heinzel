@@ -88,6 +88,10 @@ class DaemonMutationScope(Protocol):
         """Request handover of the captured active service without reacquiring the lock."""
         ...
 
+    def finish_without_handover(self) -> None:
+        """Close a verified mutation and leave the running daemon as it is, for a person who asked for that."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class DaemonLifecycleWait:

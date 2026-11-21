@@ -231,6 +231,7 @@ def _without_release_candidate(text: str) -> str:
     )
     text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
     return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
 
 

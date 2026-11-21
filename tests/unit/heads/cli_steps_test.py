@@ -87,3 +87,32 @@ def test_json_progress_keeps_the_phases_off_stdout_and_as_json_lines():
     progress.finish()
     states = [json.loads(line)["state"] for line in console.export_text().splitlines()]
     assert states == ["pending", "done"]
+
+
+def test_a_checklist_draws_every_row_in_place_and_hides_the_skipped_ones():
+    console = Console(record=True, width=100)
+    board = StepBoard(console, "live")
+    rows = [
+        ("check", "hz"),
+        ("plugin:acme", "heinzel-acme"),
+        ("plugin:old", "heinzel-old"),
+        ("daemon", "Daemon, web server"),
+    ]
+    for id_, label in rows:
+        board.event({"id": id_, "label": label, "state": "pending", "checklist": True})
+    board.event({"id": "check", "label": "hz", "state": "done", "detail": "0.9.51 → 0.9.52", "checklist": True})
+    board.event({"id": "plugin:old", "label": "heinzel-old", "state": "skipped", "checklist": True})
+    board.event(
+        {"id": "plugin:acme", "label": "heinzel-acme", "state": "warn", "detail": "held back", "checklist": True}
+    )
+    board.event({"id": "daemon", "label": "Daemon, web server", "state": "running", "checklist": True})
+    try:
+        console.print(board.checklist(list(board._steps.values())))
+    finally:
+        board.close()
+    lines = [line.rstrip() for line in console.export_text().splitlines() if line.strip()]
+    assert lines[0] == "✓ hz                         0.9.51 → 0.9.52"
+    assert lines[1] == "! heinzel-acme               held back"
+    assert "heinzel-old" not in "\n".join(lines)
+    assert lines[2].endswith("Daemon, web server")
+    assert len(lines) == 3
