@@ -61,16 +61,17 @@ check: ## Everything CI checks that runs offline, in parallel: lint, types, test
 	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
 
 # The pre-push hook (scripts/scoped_checks.py push) narrows UNIT_TARGETS to the tests related to the branch and sets
-# FAST_TYPES to the type checks; by hand both stay empty and this is the full unit run.
+# FAST_TYPES to the type checks, and empties UNIT_STOP (no -x); by hand this is the full unit run, stopping at the first failure.
 FAST_TYPES ?=
 UNIT_TARGETS ?=
+UNIT_STOP ?= -x
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated pages, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
 		$(FAST_TYPES) \
-		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120"
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto $(UNIT_STOP) -q --session-timeout=120"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \

@@ -472,7 +472,7 @@ def test_actual_make_recipe_preserves_checks_and_receives_only_selected_test_arg
     assert (
         "unit=uv run pytest tests/unit/heads/widget_fence_test.py "
         f"--junitxml={tmp_path / 'unit.xml'} "
-        "-m 'unit and not perf' -n auto -x -q --session-timeout=120" in steps
+        "-m 'unit and not perf' -n auto  -q --session-timeout=120" in steps  # the hook sets UNIT_STOP empty: no -x
     )
     assert (
         "web-tests=uv run --quiet --script scripts/web_build.py exec vitest run "

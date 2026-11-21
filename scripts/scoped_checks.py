@@ -10,8 +10,10 @@ templates, assets and `mkdocs.yml`, and the site's own tooling (`scripts/site_*.
 only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/` nor the root build files run
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
-`conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for release candidates.
+`conftest.py` cannot be mapped and run only this hook's own test, never the whole suite: CI runs that). The push run
+has no `-x` and reports every failing step in one pass; anything else runs `make check-fast` in full.
+`make check-fast` by hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for
+release candidates.
 
 For a scoped web push, set WEB_TEST_FILES to a space-separated list of existing repo-relative Vitest files,
 for example `WEB_TEST_FILES=web/src/sound/StreamPlayer.test.tsx git push`. Leave it unset to run all web tests.
@@ -245,24 +247,27 @@ def touches_web(changed: list[str]) -> bool:
     return any(path.startswith(WEB_INPUTS) or path in WEB_ROOT_FILES for path in changed)
 
 
+PUSH_TIMEOUT = (
+    300  # the hard cap on the push check (target 120 s: the unit step's session timeout), room for a cold start
+)
 TYPES = '"&mypy=uv run mypy" "&pyright=uv run pyright"'
 
 
 def python_overrides(changed: list[str], selected: list[str] | None = None) -> list[str]:
     """Make variables for the pre-push run of `check-fast`: no web steps, the type checks, the related unit tests.
 
-    A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
-    nothing is related (a script no test mentions), only the hook's own test runs besides lint, contracts and types.
+    The hook is capped at lint, types and related tests: never the whole unit suite (CI runs that), no `-x`, and every
+    failing step reports in the one pass (`STEPS_KEEP_GOING`). A change that cannot be mapped to tests (configuration,
+    the lockfile, `conftest.py`) and a change nothing relates to run only the hook's own test besides lint, contracts
+    and types.
     """
-    overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}"]
+    overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}", "UNIT_STOP=", "STEPS_KEEP_GOING=1"]
     sys.path.insert(0, str(ROOT / "scripts"))
     from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
 
     related = selected if selected is not None else related_tests(changed)
-    if related is None:
-        return overrides
-    if not related:
-        related = ["tests/unit/scoped_checks_test.py"]  # pytest fails on an empty selection; this pins the hook itself
+    if not related:  # None: cannot be mapped; []: nothing reaches it. pytest fails on an empty selection
+        related = ["tests/unit/scoped_checks_test.py"]  # pins the hook itself
     return [*overrides, f"UNIT_TARGETS={' '.join(related)}"]
 
 
@@ -851,11 +856,14 @@ def main() -> None:
             return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
-        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
-            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
-            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", *python_overrides(changed, selected)]
-            sys.exit(run_check(command, check=False, timeout=1800).returncode)
+        if changed and not all(path.startswith("plugins/") for path in changed):
+            # Everything of the fast gate, with the related unit tests only (never the whole suite). Python, scripts,
+            # tests and documents also drop the web app's tests and the managed backend's check, which read nothing of
+            # them (the generated client is still checked by web-lint); web, desktop and root build files keep them.
+            overrides = python_overrides(changed, selected)
+            if touches_web(changed):
+                overrides = [item for item in overrides if not item.startswith(("WEB_TESTS=", "MANAGED_CHECK="))]
+            sys.exit(run_check(["make", "check-fast", *overrides], check=False, timeout=PUSH_TIMEOUT).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         run_check(
