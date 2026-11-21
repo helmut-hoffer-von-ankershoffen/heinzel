@@ -12,14 +12,14 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from heinzel.kernel._agents import AgentResult
+from heinzel.kernel.ai._agents import AgentResult
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from heinzel.kernel._kernel import Kernel
 
-from heinzel.kernel._agents import Billing, Effort
+from heinzel.kernel.ai._agents import Billing, Effort
 
 
 class AccessStatus(BaseModel):

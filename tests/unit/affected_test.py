@@ -47,7 +47,7 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
             "pytest_has": ["tests/unit/documentation_test.py"],
         },
     ),
-    ("kernel = full", ["src/heinzel/kernel/_session_store.py"], {"full": True, "pytest": ["ALL"]}),
+    ("kernel = full", ["src/heinzel/kernel/session/_session_store.py"], {"full": True, "pytest": ["ALL"]}),
     ("workflow = full", [".github/workflows/ci.yml"], {"full": True}),
     ("lockfile = full", ["uv.lock"], {"full": True}),
     ("daemon module = full", ["src/heinzel/modules/system/daemon/_service.py"], {"full": True}),

@@ -17,7 +17,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from heinzel import CurrentUser, HeinzelError, ModelOffer, UsageEntry
 from heinzel.kernel import AiModelsSource
-from heinzel.kernel._ai_models import list_offers
+from heinzel.kernel.ai._ai_models import list_offers
 from tests.unit.modules.user_chat_plugin_test import REPLY, Plugin, Settings, answer, answer_from, service
 from tests.unit.modules.user_chat_test import setup_chat
 

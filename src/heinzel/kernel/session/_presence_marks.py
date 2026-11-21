@@ -10,7 +10,7 @@ import logging
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import CurrentUser
 from heinzel.kernel._kernel import Kernel
-from heinzel.kernel._presence import Presence
+from heinzel.kernel.session._presence import Presence
 
 log = logging.getLogger(__name__)
 

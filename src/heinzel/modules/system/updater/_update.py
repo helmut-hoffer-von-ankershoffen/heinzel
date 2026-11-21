@@ -56,7 +56,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.kernel._logging import get_logger, log_event, step
-from heinzel.kernel._tool_python import PythonNeed, newer_python
+from heinzel.kernel.install._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._models import AnnouncedUpdate, PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by

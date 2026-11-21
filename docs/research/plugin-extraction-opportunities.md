@@ -51,7 +51,7 @@ for Directory, Claude inventory, Report/Telemetry and Graph; their remaining int
   [SettingsDialog](../../web/src/layout/SettingsDialog.tsx) and
   [settingsSections](../../web/src/layout/settingsSections.ts).
 - Soundscape declarations are registered by [Sound](../../src/heinzel/modules/system/sound/__init__.py).
-  Optional usage logging already has its seam in [the AI contracts](../../src/heinzel/kernel/_ai.py).
+  Optional usage logging already has its seam in [the AI contracts](../../src/heinzel/kernel/ai/_ai.py).
 - Native delivery is coupled through
   [NotifyService](../../src/heinzel/modules/system/notify/_service.py),
   [channel reporting](../../src/heinzel/modules/system/notify/_channels.py),

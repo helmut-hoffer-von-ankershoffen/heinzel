@@ -32,7 +32,7 @@ from heinzel.heads._tool_install import (
     verify_offline_managed_python,
 )
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
-from heinzel.kernel._uv_locate import find_uv
+from heinzel.kernel.install._uv_locate import find_uv
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
 PROFILE_LATEST = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/latest"

@@ -12,8 +12,8 @@ from rich.text import Text
 
 from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __version__
 from heinzel.kernel import ReleaseCache
-from heinzel.kernel._tool_python import PythonNeed, managed_root
-from heinzel.kernel._uv_locate import find_uv
+from heinzel.kernel.install._tool_python import PythonNeed, managed_root
+from heinzel.kernel.install._uv_locate import find_uv
 
 MINIMUM_PYTHON = (3, 15)
 

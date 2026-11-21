@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.kernel import _installation_continuity
-from heinzel.kernel._tool_python import managed_python, newer_python
+from heinzel.kernel.install import _installation_continuity
+from heinzel.kernel.install._tool_python import managed_python, newer_python
 
 pytestmark = pytest.mark.unit
 

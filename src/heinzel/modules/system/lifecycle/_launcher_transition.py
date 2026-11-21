@@ -19,8 +19,8 @@ from heinzel.kernel import (
     private_directory,
     private_read,
 )
-from heinzel.kernel._offline_uv import fsync_directory
-from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.kernel.install._offline_uv import fsync_directory
+from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 
 MAX_TRANSITION_BYTES = 256 * 1024
 IDENTITY_FIELDS = 7

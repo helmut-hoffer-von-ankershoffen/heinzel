@@ -18,7 +18,7 @@ from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet, Prompter
-from heinzel.kernel._agent_writes import Caller, calling
+from heinzel.kernel.ai._agent_writes import Caller, calling
 
 FORMAT_PARAMETER = "output_format"
 JSON_PARAMETER = "json_output"

@@ -21,7 +21,7 @@ from heinzel.kernel import (
     UninstallResult,
     WebHeadRefresh,
 )
-from heinzel.kernel._tool_python import PythonNeed
+from heinzel.kernel.install._tool_python import PythonNeed
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     AnnouncedUpdate,

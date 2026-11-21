@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel import HeinzelError, SessionEvent, SessionStore
-from heinzel.kernel import _session_store
+from heinzel.kernel.session import _session_store
 
 pytest_plugins = ("tests.fixtures.flushes",)
 

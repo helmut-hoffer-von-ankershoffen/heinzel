@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, ToolConstraintPolicy, _installation, requirement_from_receipt
+from heinzel.kernel import Installation, ToolConstraintPolicy, requirement_from_receipt
+from heinzel.kernel.install import _installation
 
 pytestmark = pytest.mark.unit
 

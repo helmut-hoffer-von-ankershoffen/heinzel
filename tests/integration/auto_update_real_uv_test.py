@@ -23,8 +23,9 @@ from typing import NoReturn
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, ReleaseSource, _installation_continuity
-from heinzel.kernel._installation import _run
+from heinzel.kernel import Installation, ReleaseSource
+from heinzel.kernel.install import _installation_continuity
+from heinzel.kernel.install._installation import _run
 from heinzel.modules.system.updater._announced import Announcement, environment_versions
 from heinzel.modules.system.updater._update import UpdateService
 

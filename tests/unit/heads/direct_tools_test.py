@@ -32,9 +32,9 @@ from heinzel.kernel import (
     pydantic_ai_tools,
 )
 from heinzel.kernel._browser import BrowserBridge
-from heinzel.kernel._chat_services import FoundMcpServers
-from heinzel.kernel._chat_tools import RESULT_LIMIT
 from heinzel.kernel._identity import CallIdentity
+from heinzel.kernel.session._chat_services import FoundMcpServers
+from heinzel.kernel.session._chat_tools import RESULT_LIMIT
 from heinzel.modules.system.runner.chat._service import ChatService
 from heinzel.modules.ui.browser._service import QUOTED_NOTICE
 from tests._fake_browser import FakeDesktop

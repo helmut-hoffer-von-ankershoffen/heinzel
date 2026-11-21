@@ -23,7 +23,7 @@ from heinzel.kernel import (
     discover,
     restricts,
 )
-from heinzel.kernel._agent_writes import (
+from heinzel.kernel.ai._agent_writes import (
     ATTENDED,
     HUMAN_AUTHENTICATIONS,
     UNATTENDED,
@@ -33,7 +33,7 @@ from heinzel.kernel._agent_writes import (
     stricter,
     target_of,
 )
-from heinzel.kernel._chat_tools import write_budget
+from heinzel.kernel.session._chat_tools import write_budget
 from heinzel.modules.heinzel import _connected_grants, _connected_read_set_preview, _connected_read_sets
 from heinzel.modules.system.bookmark import BookmarkService
 from heinzel.modules.system.runner.chat._service import ChatService

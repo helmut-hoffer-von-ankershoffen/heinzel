@@ -21,10 +21,10 @@ from heinzel.kernel import (
     host_maintenance_gate,
     host_maintenance_lock,
 )
-from heinzel.kernel._host_maintenance import HostIntegrationRemoval
-from heinzel.kernel._installation_mutations import installation_mutation_pending
-from heinzel.kernel._offline_uv import VerifiedUV, stage
-from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
+from heinzel.kernel.install._host_maintenance import HostIntegrationRemoval
+from heinzel.kernel.install._installation_mutations import installation_mutation_pending
+from heinzel.kernel.install._offline_uv import VerifiedUV, stage
+from heinzel.kernel.install._uninstall_journal import RemovalCapture, RemovalJournal
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService

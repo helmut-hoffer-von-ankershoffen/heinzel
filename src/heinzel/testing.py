@@ -259,7 +259,7 @@ def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("re
         ValueError: If `capability` is not one the core defines.
     """
     from heinzel.kernel import CAPABILITIES  # noqa: PLC0415 - see the module comment
-    from heinzel.kernel._capabilities import declared_unsupported  # noqa: PLC0415 - see the module comment
+    from heinzel.kernel.ai._capabilities import declared_unsupported  # noqa: PLC0415 - see the module comment
 
     spec = CAPABILITIES.get(capability)
     if spec is None:

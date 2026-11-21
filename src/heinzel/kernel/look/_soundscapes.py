@@ -21,8 +21,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationErr
 from heinzel.kernel._lets import Let
 from heinzel.kernel._notifications import NoticeKind
 from heinzel.kernel._signals import NUMERIC_SIGNALS
-from heinzel.kernel._theme_signals import DAYPARTS
-from heinzel.kernel._themes import _read_regular  # pyright: ignore[reportPrivateUsage] - one reader for theme and sound files
+from heinzel.kernel.look._theme_signals import DAYPARTS
+from heinzel.kernel.look._themes import _read_regular  # pyright: ignore[reportPrivateUsage] - one reader for theme and sound files
 
 SOUNDSCAPE_SUFFIX = ".toml"
 OFF = "off"

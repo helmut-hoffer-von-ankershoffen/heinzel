@@ -11,13 +11,13 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-import heinzel.kernel._chat_tools as chat_tools_module
+import heinzel.kernel.session._chat_tools as chat_tools_module
 from heinzel import ActionGate, CurrentUser, HeinzelError, Module, ProposedCall
 from heinzel.heads import mcp
 from heinzel.kernel import ChatToolError, chat_tools, found_tools
-from heinzel.kernel._agent_writes import AgentWriteLog, Caller, WriteBudget, calling
 from heinzel.kernel._browser import BrowserBridge
-from heinzel.kernel._chat_services import FoundMcpServers, FoundMcpTool
+from heinzel.kernel.ai._agent_writes import AgentWriteLog, Caller, WriteBudget, calling
+from heinzel.kernel.session._chat_services import FoundMcpServers, FoundMcpTool
 from heinzel.modules.heinzel._direct_tools import activity_name, turn_toolbox
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner.chat._service import ChatService

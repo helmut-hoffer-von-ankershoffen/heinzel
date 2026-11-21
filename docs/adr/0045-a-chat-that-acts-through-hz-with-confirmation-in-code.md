@@ -90,7 +90,7 @@ hide outside expert mode (`audience="expert"`, ADR 0041) is still a tool. In cha
   when proposed and again at confirm; the person runs them in a terminal. Daemon install and uninstall may also be
   initiated from the daemon Settings page, which has its own explicit confirmation and is not a chat action (ADR 0039).
 
-The kernel gains `ActionGate` and `ProposedCall` (`heinzel.kernel._chat`; not `ChatGate`, since `Chat` is the
+The kernel gains `ActionGate` and `ProposedCall` (`heinzel.kernel.session._chat`; not `ChatGate`, since `Chat` is the
 messaging capability), `McpServer`, `ToolProfile.mcp_servers` and `ToolProfile.read_files` in the agent runner
 protocol, `AgentResult.fix` (a command that fixes a failed run, such as `claude auth login`), `Progress.emitter()` and
 its `Emit` type for streaming (instead of a new `AgentRunner` parameter, so existing adapters keep working), and

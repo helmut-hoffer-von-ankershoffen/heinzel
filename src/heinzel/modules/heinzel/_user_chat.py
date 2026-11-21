@@ -30,8 +30,8 @@ from heinzel.kernel import (
 )
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
-from heinzel.kernel._agent_writes import caller_or_none
-from heinzel.kernel._ai_models import PluginModelChoice, PluginModelError, build_model, choose, list_offers
+from heinzel.kernel.ai._agent_writes import caller_or_none
+from heinzel.kernel.ai._ai_models import PluginModelChoice, PluginModelError, build_model, choose, list_offers
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants

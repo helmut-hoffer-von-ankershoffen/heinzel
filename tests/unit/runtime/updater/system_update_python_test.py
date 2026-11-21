@@ -76,7 +76,7 @@ def test_github_releases_read_requires_python_from_pypi(monkeypatch):
 def test_the_doctor_reports_the_running_python_and_what_the_last_update_found(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from heinzel.kernel._tool_python import PythonNeed
+    from heinzel.kernel.install._tool_python import PythonNeed
     from heinzel.modules.system import doctor
 
     settings = SimpleNamespace(cache_dir=tmp_path)
@@ -109,14 +109,14 @@ def test_the_doctor_reports_the_running_python_and_what_the_last_update_found(tm
 
 @pytest.mark.parametrize("body", ["not json", "[]", '{"release": 1, "python": "3.15"}', '{"release": "1"}'])
 def test_a_damaged_need_record_reads_as_none(tmp_path, body):
-    from heinzel.kernel._tool_python import NEED_FILENAME, PythonNeed
+    from heinzel.kernel.install._tool_python import NEED_FILENAME, PythonNeed
 
     (tmp_path / NEED_FILENAME).write_text(body)
     assert PythonNeed(tmp_path).read() is None
 
 
 def test_an_unwritable_need_record_only_loses_the_hint(tmp_path):
-    from heinzel.kernel._tool_python import PythonNeed
+    from heinzel.kernel.install._tool_python import PythonNeed
 
     blocker = tmp_path / "file"
     blocker.write_text("")
@@ -125,7 +125,7 @@ def test_an_unwritable_need_record_only_loses_the_hint(tmp_path):
 
 
 def test_a_managed_python_is_named_by_its_uv_folder(tmp_path, monkeypatch):
-    from heinzel.kernel._tool_python import managed_root
+    from heinzel.kernel.install._tool_python import managed_root
 
     managed = tmp_path / "uv" / "python" / "cpython-3.15.1-macos-aarch64-none" / "bin" / "python3.15"
     managed.parent.mkdir(parents=True)
@@ -161,7 +161,7 @@ class FakeInstallation:
 
 
 def interpreter_service(tmp_path, releases, installation):
-    from heinzel.kernel._tool_python import PythonNeed
+    from heinzel.kernel.install._tool_python import PythonNeed
 
     need = PythonNeed(tmp_path)
     return UpdateService(installation, releases, need=need), need

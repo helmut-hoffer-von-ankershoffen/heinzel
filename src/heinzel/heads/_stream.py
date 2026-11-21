@@ -22,10 +22,10 @@ from pydantic_core import to_jsonable_python
 
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.kernel import CurrentUser, Emit, HeinzelError, Kernel, OperationLet, Progress
-from heinzel.kernel._agent_writes import Caller, calling, person_caller
 from heinzel.kernel._errors import NotSupportedError, SubscriptionUsageLimitError
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._progress import Advance
+from heinzel.kernel.ai._agent_writes import Caller, calling, person_caller
 
 log = logging.getLogger(__name__)
 _SINK: contextvars.ContextVar[Emit | None] = contextvars.ContextVar("hz_stream_sink", default=None)

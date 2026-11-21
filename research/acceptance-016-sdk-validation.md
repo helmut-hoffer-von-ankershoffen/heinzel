@@ -54,7 +54,7 @@ candidate versions still refuse startup. Installed metadata must still equal the
 when one side is 0.9.17 and the other is 0.9.16. Every acceptance case, deadline and verdict is unchanged.
 
 The GitHub comparison from `v0.9.16` to SDK fix PR #515 source
-`e93d2d14695db11963ac59190b34d31a4b389524` lists only `src/heinzel/kernel/_installed_metadata.py` and its owning test.
+`e93d2d14695db11963ac59190b34d31a4b389524` lists only `src/heinzel/kernel/install/_installed_metadata.py` and its owning test.
 There are no CLI-head or UI-module changes; the canonical command remains `hz ui serve`. There is no published
 `v0.9.17` tag at this inspection, so this is source-contract preparation, not proof of installed 0.9.17 artifacts.
 

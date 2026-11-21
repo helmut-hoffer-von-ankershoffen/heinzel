@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
 
-from heinzel.kernel._agent_writes import Caller, current_caller
-from heinzel.kernel._ai_models import AiModelOptions, AiModels, AiModelsSource
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
@@ -22,11 +20,9 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of, declared_unsupported
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
-from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
@@ -47,14 +43,18 @@ from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
 from heinzel.kernel._org import OrgContext
-from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
-from heinzel.kernel._self_chat import SelfChat
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
+from heinzel.kernel.ai._agent_writes import Caller, current_caller
+from heinzel.kernel.ai._ai_models import AiModelOptions, AiModels, AiModelsSource
+from heinzel.kernel.ai._capabilities import CAPABILITIES, Capability, capability_of, declared_unsupported
+from heinzel.kernel.ai._playbooks import PlaybookLet
+from heinzel.kernel.install._installation import CORE_DISTRIBUTION, Installation
+from heinzel.kernel.session._self_chat import SelfChat
 
 if TYPE_CHECKING:
     from heinzel.kernel._source_loading import SourceDiscovery

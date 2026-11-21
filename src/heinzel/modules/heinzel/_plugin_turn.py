@@ -24,8 +24,8 @@ from pydantic_ai.settings import ModelSettings
 
 from heinzel import HeinzelError, UsageEntry
 from heinzel.kernel import ModelOffer, UsageCause
-from heinzel.kernel._ai_models import PluginModelError, effort_settings, model_failure
 from heinzel.kernel._logging import log_event
+from heinzel.kernel.ai._ai_models import PluginModelError, effort_settings, model_failure
 from heinzel.modules.heinzel._engine import TurnDeps
 
 logger = logging.getLogger(__name__)
