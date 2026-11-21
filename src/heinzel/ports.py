@@ -202,8 +202,11 @@ class InstallationState(Protocol):
         """The state folder; created on first use, readable and writable by this user only."""
         ...
 
-    def lock(self, name: str) -> AbstractContextManager[None]:
-        """Hold the exclusive lock `name` in the state folder; a second holder waits, in any process."""
+    def lock(self, name: str, wait: float | None = None) -> AbstractContextManager[None]:
+        """Hold the exclusive lock `name` in the state folder; a second holder waits, in any process.
+
+        With `wait`, it waits at most that many seconds and then raises `TimeoutError`; without, as long as it takes.
+        """
         ...
 
     def journal(self, name: str) -> Iterator[str]:
@@ -217,6 +220,7 @@ class InstallationState(Protocol):
     def home_file(self, relative: str) -> str | None:
         """The text of a file the installation keeps under the person's home folder (the desktop app's receipt).
 
-        None when it does not exist or cannot be read; `relative` may not leave the home folder.
+        None when it does not exist or cannot be read. `relative` may not leave the home folder by its own path (`..`
+        or an absolute path); a symlink under home (a dotfiles `~/.config`) is followed wherever it points.
         """
         ...

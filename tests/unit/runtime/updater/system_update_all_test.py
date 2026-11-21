@@ -7,11 +7,12 @@ import inspect
 import json
 import logging
 import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, Progress
 from heinzel.kernel import PluginRelease
 from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
@@ -858,6 +859,62 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
     assert seen["result"].plugins[0].after == "1.2.0"  # type: ignore[attr-defined]
     assert service._updating.acquire(blocking=False)  # and the lock is free again
     service._updating.release()
+
+
+class _Told(Progress):
+    """A progress that keeps the tasks it was told about."""
+
+    def __init__(self) -> None:
+        self.tasks: list[str] = []
+
+    @contextmanager
+    def task(self, description, total=None):
+        self.tasks.append(description)
+        yield lambda _amount: None
+
+
+def test_an_update_says_it_waits_for_another_and_gives_up_after_the_bound(tmp_path, monkeypatch):
+    monkeypatch.setattr(_update_core, "UPDATE_LOCK_NOTICE", 0.05)
+    monkeypatch.setattr(_update_core, "UPDATE_LOCK_SECONDS", 0.3)
+    uv = FakeUv("0.2.0")
+    told = _Told()
+    service = UpdateService(
+        tool(tmp_path, AT_VERSION, uv),
+        FakeReleases("0.4.0"),
+        progress=told,
+        state=FileInstallationState(tmp_path / "s"),
+    )
+    other = FileInstallationState(tmp_path / "s")  # another hz updates and does not finish in time
+    with other.lock("update"), pytest.raises(HeinzelError, match="Another update has held this installation"):
+        service.update(current="0.2.0")
+    assert "Waiting for another update…" in told.tasks
+    assert uv.commands == []  # nothing was installed
+
+
+def test_an_update_that_gets_the_lock_at_once_says_nothing_about_waiting(tmp_path):
+    uv = FakeUv("0.2.0")
+    told = _Told()
+    service = UpdateService(
+        tool(tmp_path, AT_VERSION, uv),
+        FakeReleases("0.4.0"),
+        progress=told,
+        state=FileInstallationState(tmp_path / "s"),
+    )
+    service.update(current="0.2.0")
+    assert "Waiting for another update…" not in told.tasks
+
+
+def test_an_automatic_update_waits_for_a_cli_update_on_the_same_state_folder(tmp_path):
+    service = UpdateService(tool(tmp_path, AT_VERSION, FakeUv("0.2.0")), FakeReleases("0.4.0"))
+    service._state = FileInstallationState(tmp_path / "s")
+    ran = threading.Event()
+    service._apply_announced = lambda *_a, **_k: ran.set()  # the apply itself is tested elsewhere
+    with FileInstallationState(tmp_path / "s").lock("update"):  # `hz system update` runs in another process
+        worker = threading.Thread(target=lambda: service.apply_announced(object(), trial=lambda _v: True))
+        worker.start()
+        assert not ran.wait(0.3)
+    assert ran.wait(10)
+    worker.join(10)
 
 
 def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(tmp_path):

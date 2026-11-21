@@ -329,15 +329,20 @@ class MemoryInstallationState:
         """The state folder's path."""
         return self._folder
 
-    def lock(self, name: str) -> contextlib.AbstractContextManager[None]:
-        """The lock `name`; a second holder waits."""
+    def lock(self, name: str, wait: float | None = None) -> contextlib.AbstractContextManager[None]:
+        """The lock `name`; a second holder waits, with `wait` at most that long (then `TimeoutError`)."""
         with self._guard:
             lock = self._locks.setdefault(name, threading.RLock())
 
         @contextlib.contextmanager
         def held() -> Generator[None]:
-            with lock:
+            if not lock.acquire(timeout=-1 if wait is None else wait):
+                msg = "the lock is still held by another holder"
+                raise TimeoutError(msg)
+            try:
                 yield
+            finally:
+                lock.release()
 
         return held()
 
