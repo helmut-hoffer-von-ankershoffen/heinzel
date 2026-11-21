@@ -22,12 +22,17 @@ from heinzel.kernel import (
     PluginReleases,
     ReleaseFacts,
     ReleaseSource,
+    discover,
 )
 
 pytestmark = pytest.mark.unit
 START = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 TOKEN = "t" * 43
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+# The first kernel built in a process imports every built-in module (about half a second warm, several seconds on a
+# loaded runner with cold bytecode). Importing them while the file is collected keeps that out of the 5 s test limit.
+discover(plugins=False)
 
 
 # The plan alone -------------------------------------------------------------------------------------------------------
