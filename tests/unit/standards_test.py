@@ -180,6 +180,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/template_coverage.yml.tmpl": "Core-only input to the template workflow generator",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
+    ".github/workflows/acceptance-scenario.yml": "advisory end-to-end upgrade scenario of the published core",
+    "scripts/acceptance/scenario.py": "the core's end-to-end upgrade scenario on hosted runners; plugins have none",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
     "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
     "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",

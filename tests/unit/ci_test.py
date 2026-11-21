@@ -109,6 +109,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv python install 3.15": "the isolated acceptance study interpreter",
         '"$(uv python find 3.15)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
     },
+    "acceptance-scenario.yml": {
+        "uv python install 3.15": "the interpreter the scenario runs on",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': "runs the advisory upgrade scenario on a hosted runner",
+    },
     "acceptance.yml": {
         "uv python install 3.15": "the interpreter the harness runs on",
         '"$(uv python find 3.15)" -I scripts/acceptance/': (
