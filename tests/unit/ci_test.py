@@ -60,6 +60,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
@@ -128,6 +129,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "publish.yml": {
         'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_apps.py": (
+            "promotes the release candidate's macOS apps by sha256 and tree instead of building them again"
+        ),
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
@@ -1826,17 +1830,48 @@ def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
     for trigger in ("workflow_dispatch", "workflow_call"):
         for name in ("expected_wheel_sha256", "expected_profile_sha256", "release_attempt"):
             assert events[trigger]["inputs"][name]["default"] == ""
-    job = workflow["jobs"]["acceptance"]
+    pins, job = workflow["jobs"]["pins"], workflow["jobs"]["shard"]
+    for variable in ("EXPECTED_WHEEL_SHA256", "EXPECTED_PROFILE_SHA256"):
+        assert f"inputs.{variable.lower()}" in pins["env"][variable]  # a supplied pin is the pin every shard tests
     command = next(step["run"] for step in job["steps"] if step.get("name") == "Run the acceptance harness")
     for flag, variable in (
         ("--accept-wheel-sha256", "EXPECTED_WHEEL_SHA256"),
         ("--accept-profile-sha256", "EXPECTED_PROFILE_SHA256"),
     ):
         assert f'{flag} "${variable}"' in command
-        assert variable in job["env"]
+        assert job["env"][variable].startswith("${{ needs.pins.outputs.")
     assert "inputs.release_attempt" in workflow["run-name"]
     assert workflow["permissions"] == {}
-    assert job["permissions"] == {"contents": "read"}
+    for name in ("pins", "shard", "acceptance"):
+        assert workflow["jobs"][name]["permissions"] == {"contents": "read"}
+
+
+def test_sharded_release_acceptance_keeps_one_named_job_receipt_and_verdict_per_os():
+    """The release driver reads `Acceptance (<os>)` jobs and `acceptance-result-<OS>` receipts; sharding keeps both."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    jobs = workflow["jobs"]
+    shard = jobs["shard"]
+    assert shard["strategy"]["fail-fast"] is False
+    assert shard["strategy"]["matrix"] == {
+        "os": ["macos-latest", "ubuntu-24.04"],
+        "shard": ["public", "update", "plugins", "browser"],
+    }
+    assert shard["name"].startswith("Acceptance shard (")  # never a name the driver counts as a verdict job
+    run = next(step["run"] for step in shard["steps"] if step.get("name") == "Run the acceptance harness")
+    assert '--shard "$SHARD"' in run
+    assert "--bridge-quota-wait-seconds 3900" in run
+    reduce = jobs["acceptance"]
+    assert reduce["name"] == "Acceptance (${{ matrix.os }})"
+    assert reduce["needs"] == ["pins", "shard"]
+    assert {(entry["os"], entry["runner_os"]) for entry in reduce["strategy"]["matrix"]["include"]} == {
+        ("macos-latest", "macOS"),
+        ("ubuntu-24.04", "Linux"),
+    }
+    steps = {step.get("name"): step for step in reduce["steps"]}
+    assert "--release" in steps["Reduce the four shard receipts of this OS"]["run"]
+    assert steps["Upload the receipt"]["with"]["name"] == "acceptance-result-${{ matrix.runner_os }}"
+    download = next(step for step in reduce["steps"] if "download-artifact@" in step.get("uses", ""))
+    assert download["with"]["pattern"] == "acceptance-shard-${{ matrix.runner_os }}-*"
 
 
 @pytest.mark.parametrize(

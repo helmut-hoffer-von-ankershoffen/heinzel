@@ -13,8 +13,13 @@ def summarize(result):
     if result.get("schema") == "acceptance-sharding-study/v1":
         return summarize_study(result)
     host = result.get("host", {})
+    where = (
+        f"{result.get('ci', {}).get('runner_os')}, {len(host)} shards"
+        if "sharding" in result
+        else f"{host.get('os') or 'macOS ' + str(host.get('macos', ''))} ({host.get('machine', '')})"
+    )
     lines = [
-        f"### Acceptance on {host.get('os') or 'macOS ' + str(host.get('macos', ''))} ({host.get('machine', '')})",
+        f"### Acceptance on {where}",
         "",
         f"**Verdict: {result.get('verdict')}** (mode `{result.get('mode')}`, public path proof: "
         f"{result.get('public_path_proof')}, expectation supplied: {result.get('expectation_supplied')})",
