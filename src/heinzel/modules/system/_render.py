@@ -1,7 +1,6 @@
 """How the CLI head presents system results."""
 
 import json
-import re
 from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Group, RenderableType
@@ -22,7 +21,8 @@ else:
         ToolReference = Any
 
 if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
-    from heinzel.modules.system._models import AutomaticUpdates, UpdatePlan
+    from heinzel.kernel import HeadRefresh
+    from heinzel.modules.system._models import AutomaticUpdates, PluginUpdate, UpdatePlan
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -89,7 +89,7 @@ def render_channel(report: ChannelReport) -> RenderableType:
 
 
 def render_update(result: UpdateResult) -> RenderableType:
-    """What the update did, or what the installation is pinned to and the command that moves it.
+    """What the update did as one checklist and a summary line, or the plan a preview shows.
 
     The hz that ran `hz system update` imports this file only after uv replaced it with the new release's, while it
     still holds its own `_models` in memory. So it names no model that is new, and reads a field that is new with a
@@ -99,29 +99,104 @@ def render_update(result: UpdateResult) -> RenderableType:
     if getattr(result, "previewed", False):
         shown = [plan_text(plan)] if plan is not None else []
         return Text("\n".join([*shown, result.message, *(f"To update: {command}" for command in result.next)]))
-    lines = [result.message]
-    unchanged = [p for p in result.plugins if p.status == "unchanged"]
-    if unchanged:
-        lines.append("Plugins:")
-        lines += [f"  {p.distribution}: {standing(p)}" for p in unchanged]
-    # After an agreed update (`plan`) what is still pinned stays on purpose; only an update nobody agreed to hints.
-    if plan is None and any(getattr(p, "checked", True) and _movable(getattr(p, "pinned", None)) for p in unchanged):
-        lines.append(PINNED_HINT)
+    if not hasattr(result, "after"):  # a result of an hz too old to say what it changed: its message, its plugins
+        plugins = [f"  {p.distribution}: {standing(p)}" for p in result.plugins]
+        return Text("\n".join([result.message, *(["Plugins:", *plugins] if plugins else [])]))
+    rows = update_rows(result)
+    width = max([27, *(len(label) + 2 for _, label, _ in rows)])
+    lines = [f" {mark} {label:<{width}}{detail}".rstrip() for mark, label, detail in rows]
+    lines.append(_summary(result, warned=any(mark != CHECK for mark, _, _ in rows)))
+    lines += [f"To update: {command}" for command in getattr(result, "next", [])]
     automatic = getattr(result, "automatic", None)
     if result.updated and automatic is not None:
         lines.append(_automatic(automatic))
     return Text("\n".join(lines))
 
 
-PINNED_HINT = (
-    "Pinned plugins stay where they are unless you agree to the plan: `hz system update --preview` shows what would "
-    "move, `hz system update --yes` moves them to their newest release."
-)
+CHECK, WARN, CROSS = "✓", "!", "✗"
+SETTLED = frozenset({"verified", "not-installed", "self"})
 
 
-def _movable(pinned: object) -> bool:
-    """Whether a pin is one `hz system plugin add` made: an exact version or a full commit, which an update can move."""
-    return isinstance(pinned, str) and (pinned.startswith("==") or re.fullmatch(r"[0-9a-f]{40}", pinned) is not None)
+def update_rows(result: UpdateResult) -> list[tuple[str, str, str]]:
+    """The checklist as (mark, label, detail): hz, plugins that changed or need a word, the rest as one, the rest."""
+    moved = result.updated and result.after != result.before
+    rows: list[tuple[str, str, str]] = []
+    heads = getattr(result, "heads", [])
+    if getattr(result, "pinned_to", None) is not None and not result.updated:
+        rows.append((WARN, f"hz {result.after}", result.message.splitlines()[0]))
+    elif moved:
+        rows.append((CHECK, "hz", f"{result.before} → {result.after}"))
+    elif result.updated and result.message.startswith("Reinstalled"):
+        rows.append((CHECK, f"hz {result.after}", "reinstalled"))
+    else:
+        rows.append((CHECK, f"hz {result.after}", "newest release"))
+    quiet = 0
+    for update in result.plugins:
+        if update.status == "upgraded":
+            rows.append((CHECK, update.distribution, f"{update.before or '?'} → {update.after or '?'}"))
+        elif update.status == "unchanged" and getattr(update, "checked", True):
+            if getattr(update, "pinned", None) is None:
+                quiet += 1
+            else:  # held where it is on purpose: a row of its own, no warning
+                rows.append((CHECK, update.distribution, _plugin_word(update)))
+        else:
+            rows.append((WARN, update.distribution, _plugin_word(update)))
+    if quiet:
+        count = f"{quiet} plugin{'' if quiet == 1 else 's'}"
+        rows.append((CHECK, count, "already newest" if len(rows) > 1 else "all newest"))
+    services = [head for head in heads if head.head in {"daemon", "web"} and head.status != "not-installed"]
+    app = next((head for head in heads if head.head == "desktop"), None)
+    ends = [_services_row(services, result.after)] if services else []
+    if app is not None:  # checked first when nothing was installed; after the services restarted when something was
+        ends = [*ends, _app_row(app, result.after)] if result.updated else [_app_row(app, result.after), *ends]
+    return [*rows, *ends]
+
+
+def _plugin_word(update: "PluginUpdate") -> str:
+    """Why a plugin has a row of its own although nothing moved: held back, taken out, failed or not asked."""
+    if update.status == "unchanged":
+        return standing(update).removesuffix(".")
+    if update.disabled:
+        return "taken out: it does not allow this hz yet"
+    return f"held back at {update.before or 'its version'}: it does not allow the new hz yet"
+
+
+def _services_row(services: "list[HeadRefresh]", after: str) -> tuple[str, str, str]:
+    """The daemon and web server as one row: restarted or already running the new version, or what finishes it."""
+    label = "Daemon, web server"
+    bad = next((head for head in services if head.status not in SETTLED), None)
+    if bad is not None:
+        return (WARN if bad.status == "pending" else CROSS), label, bad.detail.removesuffix(".")
+    ran = f"run {services[0].version or after}"
+    restarted = any(getattr(head, "restarted", None) for head in services)
+    return CHECK, label, f"restarted, {ran}" if restarted else ran
+
+
+def _app_row(head: "HeadRefresh", after: str) -> tuple[str, str, str]:
+    """The desktop app's row: its versions and whether it was quit and reopened, or the warning that finishes it."""
+    detail = head.detail.removesuffix(".")
+    before, running = getattr(head, "before", None), getattr(head, "was_running", None)
+    if head.status == "failed":
+        return CROSS, "Desktop app", detail
+    if head.status != "verified":
+        return WARN, "Desktop app" + (f" {before}" if before else ""), detail
+    if not detail.startswith("Updated") and (before is None or before == after):
+        return CHECK, f"Desktop app {after}", "newest, running" if running else "newest"
+    words = (f"{before} → {after}" if before else f"updated to {after}") + (
+        ", quit and reopened" if getattr(head, "reopened", None) else ""
+    )
+    return CHECK, "Desktop app", words
+
+
+def _summary(result: UpdateResult, *, warned: bool) -> str:
+    """The one line under the checklist."""
+    if warned:
+        return "Finished with warnings: the lines marked ! say what finishes the job."
+    if not result.updated:
+        return "Everything is up to date."
+    seconds = getattr(result, "seconds", None)
+    took = f" in {seconds:.0f} s" if seconds is not None else ""
+    return f"Updated to hz {result.after}{took}. What's new: hz system changelog --newer"
 
 
 def plan_text(plan: "UpdatePlan") -> str:
@@ -139,7 +214,12 @@ def plan_text(plan: "UpdatePlan") -> str:
         }[plugin.action]
         lines.append(f"  {plugin.distribution}: {head}{f'. {plugin.detail}' if plugin.detail else ''}")
     if plan.desktop:
-        lines.append("Desktop app: updated afterwards with `hz app install`, if you agree.")
+        lines.append(
+            "Desktop app: updated with `hz app install`"
+            + (", quit and reopened because it is open." if getattr(plan, "desktop_running", False) else ".")
+        )
+    if getattr(plan, "daemon", False):
+        lines.append("Daemon, web server: restarted when something changed or the daemon runs older code.")
     return "\n".join(lines)
 
 

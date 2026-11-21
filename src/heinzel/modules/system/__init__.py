@@ -1,17 +1,17 @@
 """The system module: what is installed and how it is configured."""
 
-import functools
-from collections.abc import Callable
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field
 from rich.console import RenderableType
 
-from heinzel import Homebrew, Kernel, ManualInstall, Module, Progress, Prompter, __version__
+from heinzel import Homebrew, Kernel, ManualInstall, Module, Progress, __version__
 from heinzel.kernel import (
     KERNEL_SECTION,
     CoreMetadataVerifier,
+    DaemonAttestation,
     DaemonInstallationLifecycle,
     Installation,
     OfflineUninstall,
@@ -91,6 +91,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
     web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
     plugins = kernel.resolve(PluginReleases) if kernel.provides(PluginReleases) else None
+    daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
     return UpdateService(
         installation,
         releases,
@@ -101,6 +102,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
         pinned=plugins.pinned if isinstance(plugins, PyPIPluginReleases) else None,
         newer=plugins.newer if plugins is not None else None,
         need=PythonNeed(kernel.settings.cache_dir),
+        daemon=daemon,
     )
 
 
@@ -187,11 +189,14 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     return service.release(requirements[0] if requirements else None)
 
 
+APP_CALLER = "desktop-app"
+"""The value of `HZ_CALLER` the desktop app sets for the service it starts: that service never quits the app."""
+
+
 @module.operation(read_only=False, audience="everyday", render=render_update, agents="approve")
-def update(  # noqa: PLR0913 - the services, where to install from, and each answer a person can give in advance
+def update(  # noqa: PLR0913 - the service, where to install from, and each answer a person can give in advance
     service: UpdateService,
     kernel: Kernel,
-    prompter: Prompter,
     source: Annotated[
         str | None,
         Field(description="Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel."),
@@ -208,17 +213,15 @@ def update(  # noqa: PLR0913 - the services, where to install from, and each ans
     yes: Annotated[
         bool,
         Field(
-            description="Agree to the plan without being asked: update hz and every plugin, also the ones pinned to "
-            "the version or commit they were added at, and the desktop app if one is installed. Whoever passes it "
-            "agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless "
-            "`desktop` is false, runs `hz app install` without another question."
+            description="Accepted and ignored: the update never asks, so there is nothing to agree to.",
+            json_schema_extra={"hidden": True},
         ),
     ] = False,
     plan: Annotated[
         str | None,
         Field(
-            description="The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs "
-            "exactly that plan; if a release appeared since, it changes nothing and answers with the new plan."
+            description="The `token` of the plan that was shown (`--preview`). The update then installs exactly "
+            "that plan; if a release appeared since, it changes nothing and answers with the new plan."
         ),
     ] = None,
     preview: Annotated[
@@ -230,21 +233,43 @@ def update(  # noqa: PLR0913 - the services, where to install from, and each ans
     desktop: Annotated[
         bool | None,
         Field(
-            description="Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked "
-            "on a terminal, yes with `--yes`, otherwise left for the app's own next update."
+            description="Earlier name of `desktop_app`: false leaves the desktop app alone.",
+            json_schema_extra={"hidden": True},
         ),
     ] = None,
+    desktop_app: Annotated[
+        bool,
+        Field(
+            description="Whether to bring an installed desktop app along with `hz app install`; "
+            "`--no-desktop-app` leaves it."
+        ),
+    ] = True,
+    desktop_app_restart: Annotated[
+        bool,
+        Field(
+            description="Whether an open desktop app is quit and reopened so it can be replaced. "
+            "`--no-desktop-app-restart` never quits it: it then installs when you quit it. The app's own service "
+            "never quits the app, whatever this says."
+        ),
+    ] = True,
+    daemon: Annotated[
+        bool,
+        Field(
+            description="Whether the daemon and the web server are restarted onto what was installed. "
+            "`--no-daemon` leaves them running and says which version they still run."
+        ),
+    ] = True,
 ) -> UpdateResult:
-    """Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+    """Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
 
-    See what the releases bring with `hz system changelog --newer`. One command for everything: on a terminal it
-    first shows the plan (hz, each plugin, the desktop app) and asks `Update now? [Y/n]`; `--yes` agrees in advance
-    and `--preview` only shows the plan. Once you agree, a plugin that `hz system plugin add` pinned to the exact
-    version or GitHub commit it installed moves too: to the newest release on the package index, which it follows
-    from then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a
-    folder, a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with
-    `--keep-pins`. Where nobody can answer (a script, `--json`, the REST API) and `--yes` is not given, nothing is
-    asked and pins stay.
+    See what the releases bring with `hz system changelog --newer`. The output is one checklist: hz, each plugin that
+    changed (the ones that did not are one row), the daemon and web server, and the desktop app. `--preview` shows
+    the plan and installs nothing. Pins move by default: a plugin that `hz system plugin add` pinned to the exact
+    version or GitHub commit it installed moves to the newest release on the package index, which it follows from
+    then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a folder,
+    a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with `--keep-pins`.
+    The terminal, `--json`, the REST API and MCP all run these defaults and never ask; `--yes` is accepted and does
+    nothing.
 
     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -259,21 +284,23 @@ def update(  # noqa: PLR0913 - the services, where to install from, and each ans
     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
     version, the error names it and the previous version stays installed.
 
+    The daemon and the web server restart onto the new version when hz or a plugin changed, or when the daemon runs
+    older code than is installed (`--no-daemon` leaves them). The desktop app is replaced with `hz app install`; an open
+    app is quit and reopened (`--no-desktop-app-restart`: it installs when you quit it, `--no-desktop-app`: left alone).
+
     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
-    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-    app is not part of the tool: after a change, a terminal asks `Update the desktop app now? [Y/n]`, and `--desktop`,
-    `--no-desktop` or `--yes` answer in advance. Left alone, it updates itself at the web server's next automatic
-    update check, or with `hz app install`. The output says which applies.
+    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait.
 
-    Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
-    only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
-    the output still parses.
+    Each step shows as it runs, on stderr: the checklist on a terminal, a line per step otherwise. With `--json`
+    stdout holds only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are
+    left out so the output still parses.
 
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
+    del yes  # accepted for scripts that still pass it; nothing is asked
     settings = kernel.settings
     automatic = AutomaticUpdates(
         enabled=settings.auto_update,
@@ -282,64 +309,30 @@ def update(  # noqa: PLR0913 - the services, where to install from, and each ans
         plugin_min_age_hours=settings.auto_update_plugin_min_age_hours,
     )
     chosen = channel or settings.update_channel
-    asking = prompter.interactive and not yes and not preview
-    planned = preview or asking or (yes and not keep_pins)
-    shown = service.plan(channel=chosen) if planned and source is None else None
+    shown = service.plan(channel=chosen) if source is None else None
     if preview:
         return _previewed(shown, "This was a preview; nothing was changed.", source)
-    if shown is not None:
-        again = functools.partial(service.plan, channel=chosen)
-        shown, refusal = _agreement(prompter, shown, again, token=plan, asking=asking)
-        if refusal is not None:
-            return _previewed(shown, refusal, source)
+    if shown is not None and plan is not None and plan != shown.token:
+        return _previewed(shown, PLAN_CHANGED, source)
     result = service.update(
         source,
         channel=chosen,
         agreed=None if keep_pins else shown,
-        desktop=desktop is True or (desktop is None and yes),
+        shown=shown,
+        desktop=desktop_app and desktop is not False,
+        restart=desktop_app_restart,
+        from_app=os.environ.get("HZ_CALLER") == APP_CALLER,
+        daemon=daemon,
     )
-    if (
-        desktop is None
-        and asking
-        and source is None  # a build from a source has no desktop release to bring along
-        and any(head.head == "desktop" and head.status == "pending" for head in result.heads)
-        and prompter.confirm("Update the desktop app now?", default=True)
-    ):
-        result = service.update_desktop(result)
     return result.model_copy(update={"automatic": automatic, "plan": shown})
 
 
 PLAN_CHANGED = "The plan changed since it was shown, so nothing was changed. This is the plan now."
-PLAN_ROUNDS = 3
-"""How often a person at a terminal is shown a plan that changed while they read it, before the update gives up."""
-
-
-def _agreement(
-    prompter: Prompter, shown: UpdatePlan, again: Callable[[], UpdatePlan], *, token: str | None, asking: bool
-) -> tuple[UpdatePlan, str | None]:
-    """The plan the update installs, exactly as a person saw it, or why nothing is changed.
-
-    Where nobody can answer, a `token` given must name the plan as it is now. On a terminal the plan is shown and
-    asked about, then read once more: if a release appeared meanwhile, the person sees the new plan and is asked
-    again, so nothing is ever installed that wasn't shown.
-    """
-    if not asking:
-        return shown, PLAN_CHANGED if token is not None and token != shown.token else None
-    for _ in range(PLAN_ROUNDS):
-        prompter.show(render_plan(shown))
-        if not prompter.confirm("Update now?", default=True):
-            return shown, "Nothing was changed."
-        fresh = again()
-        if fresh.token == shown.token:
-            return fresh, None
-        prompter.say("The plan changed while it was shown. This is the plan now:")
-        shown = fresh
-    return shown, "The plan kept changing, so nothing was changed. Try again in a moment."
 
 
 def _previewed(plan: UpdatePlan | None, message: str, source: str | None) -> UpdateResult:
     """The answer of an update that only showed its plan."""
-    command = "hz system update --yes" + (f" --source {source}" if source else "")
+    command = "hz system update" + (f" --source {source}" if source else "")
     return UpdateResult(
         before=__version__,
         after=__version__,
@@ -354,7 +347,7 @@ def _previewed(plan: UpdatePlan | None, message: str, source: str | None) -> Upd
 
 
 def render_plan(plan: UpdatePlan) -> RenderableType:
-    """What the update would change: hz, each plugin, the desktop app."""
+    """What the update would change: hz, each plugin, the desktop app and the daemon."""
     from heinzel.modules.system._render import render_plan  # noqa: PLC0415 - CLI presentation is loaded only when rendered
 
     return render_plan(plan)

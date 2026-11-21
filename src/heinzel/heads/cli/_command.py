@@ -161,15 +161,17 @@ def _present(
 
 def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
     annotation = parameter.annotation
-    description = None
+    description, hidden = None, False
     if get_origin(annotation) is Annotated:
         annotation, *metadata = get_args(annotation)
-        description = next((m.description for m in metadata if isinstance(m, FieldInfo)), None)
+        fields = [m for m in metadata if isinstance(m, FieldInfo)]
+        description = next((m.description for m in fields), None)
+        hidden = any(isinstance(m.json_schema_extra, dict) and m.json_schema_extra.get("hidden") for m in fields)
     parser = _json_parser(annotation) if _structured(annotation) else None
     info = (
-        typer.Argument(help=description, metavar=_metavar(annotation), parser=parser)
+        typer.Argument(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
         if parameter.default is inspect.Parameter.empty
-        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser)
+        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
     )
     return parameter.replace(annotation=Annotated[_as_text(annotation), info], kind=inspect.Parameter.KEYWORD_ONLY)
 

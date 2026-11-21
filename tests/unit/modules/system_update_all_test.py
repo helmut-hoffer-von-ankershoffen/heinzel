@@ -11,15 +11,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from heinzel import HeinzelError, Prompter
-from heinzel.kernel import PluginRelease, ScriptedPrompter
+from heinzel import HeinzelError
+from heinzel.kernel import PluginRelease
 from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
 from heinzel.modules.system import _update
 from heinzel.modules.system._models import PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._plugin_releases import PinnedPlugins, PyPIPluginReleases
 from heinzel.modules.system._plugin_standing import standing
-from heinzel.modules.system._render import PINNED_HINT, plan_text, render_update
+from heinzel.modules.system._render import plan_text, render_update
 from heinzel.modules.system._update import UpdateService
 from tests.unit.modules.system_update_test import (
     REPO,
@@ -96,7 +96,7 @@ def test_without_agreement_a_commit_pin_stays_and_the_result_says_how_to_move_it
     assert result.plugins[0].pinned == OLD
     text = render_update(result).plain
     assert f"kept at 1.0.0 (pinned to {OLD}; newer releases not checked)" in text
-    assert PINNED_HINT in text
+    assert "Pinned plugins stay" not in text  # pins move by default now: no hint to agree
 
 
 def test_an_exact_index_pin_follows_the_index_once_agreed(tmp_path):
@@ -128,7 +128,7 @@ def test_a_pinned_plugin_that_is_the_newest_release_is_already_newest_not_unchec
     result = agree(service)
     assert uv.commands[-1][-1].endswith(f"@{OLD}#subdirectory=plugins/heinzel-acme")
     assert standing(result.plugins[0]) == "already newest (1.0.0)"
-    assert PINNED_HINT not in render_update(result).plain
+    assert "1 plugin " in render_update(result).plain
 
 
 def test_an_exact_pin_at_the_newest_release_follows_the_index_from_now_on(tmp_path):
@@ -275,7 +275,11 @@ def test_the_plan_in_plain_lines():
         "  heinzel-a: 1.0.0 → 1.2.0. Moves.",
         "  heinzel-b: already newest (2.0.0)",
         "  heinzel-c: kept at version unknown. Pinned.",
-        "Desktop app: updated afterwards with `hz app install`, if you agree.",
+        "Desktop app: updated with `hz app install`.",
+    ]
+    assert plan_text(plan.model_copy(update={"desktop_running": True, "daemon": True})).splitlines()[-2:] == [
+        "Desktop app: updated with `hz app install`, quit and reopened because it is open.",
+        "Daemon, web server: restarted when something changed or the daemon runs older code.",
     ]
 
 
@@ -292,49 +296,106 @@ def desktop_home(tmp_path, monkeypatch):
     return home
 
 
-def with_desktop(tmp_path, home, app):
+def with_desktop(tmp_path, home, app, *, running=False):
     uv = FakeUv("0.2.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
-    return UpdateService(target, FakeReleases("0.4.0"), home=home, desktop=app)
+    return UpdateService(target, FakeReleases("0.4.0"), home=home, desktop=app, running=lambda: running)
 
 
-def test_the_desktop_app_is_left_pending_with_the_hint_unless_asked_for(tmp_path, desktop_home):
-    def never():
-        msg = "the desktop app was not asked for"
-        raise AssertionError(msg)
+class App:
+    """A fake `hz app install`: records whether it was asked to restart the app, and answers as told."""
 
-    result = with_desktop(tmp_path, desktop_home, never).update(current="0.2.0")
+    def __init__(self, code: int = 0, output: str = "Installed.") -> None:
+        self.calls: list[bool] = []
+        self.answer = (code, output)
+
+    def __call__(self, *, restart: bool = False) -> tuple[int, str]:
+        self.calls.append(restart)
+        return self.answer
+
+
+def test_the_desktop_app_is_left_alone_when_asked_to_and_the_row_says_how_to_update_it_later(tmp_path, desktop_home):
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app).update(current="0.2.0")
     [head] = result.heads
     assert (head.head, head.status) == ("desktop", "pending")
-    assert "Update it now with `hz app install`." in result.message
+    assert head.detail == "left alone; update it later with `hz app install`."
+    assert app.calls == []
 
 
 def test_the_desktop_app_is_updated_by_the_new_hz_when_asked_for(tmp_path, desktop_home, caplog):
-    ran = []
-
-    def app():
-        ran.append("hz app install")
-        return 0, "Installed."
-
+    app = App()
     service = with_desktop(tmp_path, desktop_home, app)
     with caplog.at_level(logging.INFO, logger="heinzel.update"):
         result = service.update(current="0.2.0", desktop=True)
-    assert ran == ["hz app install"]
+    assert app.calls == [False]  # not open: nothing to quit or reopen
     [head] = result.heads
     assert (head.status, head.version, head.detail) == ("verified", "0.4.0", "Updated by `hz app install`.")
+    assert (head.was_running, head.reopened) == (False, False)
     assert result.message.endswith("Desktop app: verified. Updated by `hz app install`.")
     assert "Not everything runs the new version yet" not in result.message
     events = [(r.__dict__.get("phase"), r.__dict__.get("outcome")) for r in caplog.records if r.msg == "update.desktop"]
     assert events == [("start", None), ("end", "ok")]
 
 
-def test_a_desktop_app_that_cannot_be_updated_never_undoes_the_update(tmp_path, desktop_home, caplog):
-    def app():
-        return (
-            1,
-            "Heinzelmaennchen is open, so the app cannot be replaced right now.\nQuit it, then run hz app install.",
-        )
+def test_an_open_app_is_quit_and_reopened_by_the_restart_install(tmp_path, desktop_home):
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True, restart=True)
+    assert app.calls == [True]  # `hz app install --restart` quits it, installs, and opens it again
+    [head] = result.heads
+    assert (head.status, head.was_running, head.reopened) == ("verified", True, True)
+    assert "quit and reopened" in render_update(result).plain
 
+
+def test_an_open_app_is_never_quit_without_the_restart(tmp_path, desktop_home):
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True)
+    assert app.calls == []
+    [head] = result.heads
+    assert (head.status, head.detail, head.was_running) == ("pending", "installs when you quit it.", True)
+    assert "installs when you quit it" in render_update(result).plain
+
+
+def test_the_app_that_runs_the_update_itself_is_never_quit(tmp_path, desktop_home):
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app, running=True).update(
+        current="0.2.0", desktop=True, restart=True, from_app=True
+    )
+    assert app.calls == []
+    assert result.heads[0].detail == "installs when you quit the app."
+
+
+def test_a_closed_app_is_updated_without_a_restart_even_when_one_is_asked_for(tmp_path, desktop_home):
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app, running=False).update(
+        current="0.2.0", desktop=True, restart=True
+    )
+    assert app.calls == [False]  # nothing to quit and nothing to reopen
+    assert (result.heads[0].was_running, result.heads[0].reopened) == (False, False)
+
+
+def test_an_app_still_open_after_the_wait_is_deferred_and_a_warning_never_a_failure(tmp_path, desktop_home):
+    app = App(_update.DEFERRED, "Heinzelmännchen is still open after 20 s, so it was not replaced.")
+    result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True, restart=True)
+    [head] = result.heads
+    assert (head.status, head.reopened) == ("pending", False)
+    assert head.detail == "still open after 20 s, so it installs when you quit it: `hz app install`."
+    assert (result.updated, result.after) == (True, "0.4.0")
+    assert render_update(result).plain.splitlines()[-2].startswith(" ! Desktop app")
+
+
+def test_the_deferred_code_and_the_wait_are_the_ones_the_installer_uses():
+    from heinzel.heads import _desktop_installation
+    from heinzel.heads.cli import _app
+
+    assert _update.QUIT_SECONDS == _desktop_installation.QUIT_SECONDS
+    assert _update.DEFERRED == _app.RESTART_DEFERRED
+
+
+def test_a_desktop_app_that_cannot_be_updated_never_undoes_the_update(tmp_path, desktop_home, caplog):
+    app = App(
+        1, "Heinzelmaennchen is open, so the app cannot be replaced right now.\nQuit it, then run hz app install."
+    )
     with caplog.at_level(logging.INFO, logger="heinzel.update"):
         result = with_desktop(tmp_path, desktop_home, app).update(current="0.2.0", desktop=True)
     assert (result.updated, result.after) == (True, "0.4.0")
@@ -347,7 +408,7 @@ def test_a_desktop_app_that_cannot_be_updated_never_undoes_the_update(tmp_path, 
 
 
 def test_a_desktop_install_that_cannot_start_is_a_failed_head(tmp_path, desktop_home):
-    def app():
+    def app(*, restart=False):
         msg = "no interpreter"
         raise OSError(msg)
 
@@ -357,24 +418,33 @@ def test_a_desktop_install_that_cannot_start_is_a_failed_head(tmp_path, desktop_
 
 
 def test_nothing_newer_leaves_the_desktop_app_alone(tmp_path, desktop_home):
-    def never():
-        msg = "nothing changed"
-        raise AssertionError(msg)
-
+    app = App()
     uv = FakeUv("0.4.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
-    service = UpdateService(target, FakeReleases("0.4.0"), home=desktop_home, desktop=never)
-    result = service.update(current="0.4.0", desktop=True)
-    assert (result.updated, result.heads) == (False, [])
+    service = UpdateService(target, FakeReleases("0.4.0"), home=desktop_home, desktop=app, running=lambda: True)
+    result = service.update(current="0.4.0", desktop=True, restart=True)
+    assert (result.updated, app.calls) == (False, [])
+    [head] = result.heads
+    assert (head.status, head.was_running) == ("verified", True)
 
 
-def test_agreeing_afterwards_updates_the_pending_desktop_app_and_rewrites_its_line(tmp_path, desktop_home):
-    service = with_desktop(tmp_path, desktop_home, lambda: (0, ""))
-    pending = service.update(current="0.2.0")
-    result = service.update_desktop(pending)
-    assert [head.status for head in result.heads] == ["verified"]
-    assert result.message == f"{pending.message.splitlines()[0]}\nDesktop app: verified. Updated by `hz app install`."
-    assert service.update_desktop(result) == result  # nothing pending: nothing runs again
+def test_an_app_already_at_the_new_version_is_not_installed_again(tmp_path, desktop_home):
+    (desktop_home / _update.DESKTOP_RECEIPT).write_text('{"release": "0.4.0"}', encoding="utf-8")
+    app = App()
+    result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True, restart=True)
+    assert app.calls == []
+    assert (result.heads[0].status, result.heads[0].before) == ("verified", "0.4.0")
+
+
+def test_an_app_behind_hz_is_updated_even_when_hz_itself_is_current(tmp_path, desktop_home):
+    (desktop_home / _update.DESKTOP_RECEIPT).write_text('{"release": "0.3.0"}', encoding="utf-8")
+    app = App()
+    uv = FakeUv("0.4.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
+    service = UpdateService(target, FakeReleases("0.4.0"), home=desktop_home, desktop=app, running=lambda: True)
+    result = service.update(current="0.4.0", desktop=True, restart=True)
+    assert app.calls == [True]
+    assert (result.heads[0].before, result.heads[0].version, result.heads[0].reopened) == ("0.3.0", "0.4.0", True)
 
 
 def test_the_real_desktop_step_runs_hz_app_install_in_a_fresh_interpreter(monkeypatch, tmp_path):
@@ -388,12 +458,14 @@ def test_the_real_desktop_step_runs_hz_app_install_in_a_fresh_interpreter(monkey
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases())
     assert service._app_install() == (3, "out")
-    [(command, kwargs)] = ran
+    assert service._app_install(restart=True) == (3, "out")
+    [(command, kwargs), (restarting, _)] = ran
     assert command[-4:] == ["-m", "heinzel", "app", "install"]
+    assert restarting[-5:] == ["-m", "heinzel", "app", "install", "--restart"]
     assert (kwargs["timeout"], kwargs["stdin"], kwargs["check"]) == (900, _update.subprocess.DEVNULL, False)
 
 
-# The operation: what a person is asked, and what answers in advance.
+# The operation: one pass, no questions, the flags that answer in advance.
 
 
 class Service:
@@ -402,10 +474,10 @@ class Service:
     `targets` are the plugin's newest release at each successive look, so a release can appear between two plans.
     """
 
-    def __init__(self, *, desktop: bool = True, updated: bool = True, targets: tuple[str, ...] = ("1.2.0",)) -> None:
+    def __init__(self, *, targets: tuple[str, ...] = ("1.2.0",)) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.agreed: UpdatePlan | None = None
-        self._desktop, self._updated, self._targets = desktop, updated, list(targets)
+        self._targets = list(targets)
 
     def plan(self, *, channel: str) -> UpdatePlan:
         self.calls.append(("plan", {"channel": channel}))
@@ -423,135 +495,144 @@ class Service:
             core="hz 0.2.0 → 0.4.0.",
             plugins=[plugin],
             desktop=True,
+            daemon=True,
             token=f"plan-{target}",
         )
 
-    def update(self, source, *, channel: str, agreed: UpdatePlan | None, desktop: bool) -> UpdateResult:
-        self.calls.append(("update", {"source": source, "move_pins": agreed is not None, "desktop": desktop}))
+    def update(  # noqa: PLR0913 - what the operation passes on
+        self,
+        source,
+        *,
+        channel: str,
+        agreed: UpdatePlan | None,
+        shown,
+        desktop: bool,
+        restart: bool,
+        from_app: bool,
+        daemon: bool,
+    ) -> UpdateResult:
+        self.calls.append(
+            (
+                "update",
+                {
+                    "source": source,
+                    "move_pins": agreed is not None,
+                    "planned": shown is not None,
+                    "desktop": desktop,
+                    "restart": restart,
+                    "from_app": from_app,
+                    "daemon": daemon,
+                },
+            )
+        )
         self.agreed = agreed
-        heads = []
-        if self._desktop and self._updated:
-            status = "verified" if desktop else "pending"
-            heads = [HeadRefresh(head="desktop", status=status, detail="Update it now with `hz app install`.")]
         return UpdateResult(
             before="0.2.0",
             after="0.4.0",
             latest="0.4.0",
             pinned_to=None,
-            updated=self._updated,
+            updated=True,
             message="Updated hz 0.2.0 → 0.4.0.",
             next=[],
             plugins=[PluginUpdate(distribution="heinzel-acme", status="upgraded", before="1.0.0", after="1.2.0")],
-            heads=heads,
         )
 
-    def update_desktop(self, result: UpdateResult) -> UpdateResult:
-        self.calls.append(("desktop", {}))
-        return result.model_copy(update={"heads": [HeadRefresh(head="desktop", status="verified")]})
 
-
-KERNEL = SimpleNamespace(
+KERNEL = SimpleNamespace(  # provides no Prompter: an update that asked anything would fail on it
     settings=SimpleNamespace(
         auto_update=False, auto_update_min_age_hours=6, auto_update_plugin_min_age_hours=24, update_channel="stable"
     )
 )
+DEFAULTS = {
+    "source": None,
+    "move_pins": True,
+    "planned": True,
+    "desktop": True,
+    "restart": True,
+    "from_app": False,
+    "daemon": True,
+}
 
 
-def run(service: Service, prompter: Prompter, **kwargs) -> UpdateResult:
-    return system.update(service, KERNEL, prompter, **kwargs)  # type: ignore[arg-type]
+def run(service: Service, **kwargs) -> UpdateResult:
+    return system.update(service, KERNEL, **kwargs)  # type: ignore[arg-type]
 
 
 def names(service: Service) -> list[str]:
     return [name for name, _ in service.calls]
 
 
-def test_on_a_terminal_the_plan_is_shown_and_enter_agrees_to_everything():
-    service, prompter = Service(), ScriptedPrompter(["", ""])
-    result = run(service, prompter)
-    # The plan is read again after the answer, so what is installed is what was shown.
-    assert names(service) == ["plan", "plan", "update", "desktop"]
-    assert service.calls[2][1] == {"source": None, "move_pins": True, "desktop": False}
-    assert [line for line in prompter.transcript if "[Y/n]" in line] == [
-        "Update now? [Y/n] ",
-        "Update the desktop app now? [Y/n] ",
-    ]
-    assert result.plan is not None
-    assert service.agreed is not None
-    assert service.agreed.token == "plan-1.2.0"
-    assert result.heads[0].status == "verified"
+def test_the_update_takes_no_prompter_and_never_asks_on_any_path():
+    assert "prompter" not in inspect.signature(system.update).parameters
+    for kwargs in ({}, {"yes": True}, {"keep_pins": True}, {"source": "git+https://example.test/x@v1"}):
+        service = Service()
+        run(service, **kwargs)  # KERNEL provides no Prompter, so a question would raise
+        assert names(service)[-1] == "update"
 
 
-def test_on_a_terminal_no_changes_nothing_and_says_so():
-    service, prompter = Service(), ScriptedPrompter(["n"])
-    result = run(service, prompter)
-    assert names(service) == ["plan"]
-    assert (result.updated, result.previewed, result.message) == (False, True, "Nothing was changed.")
-    assert result.next == ["hz system update --yes"]
-
-
-def test_on_a_terminal_a_release_that_appears_while_reading_is_shown_and_asked_again():
-    service = Service(targets=("1.2.0", "1.3.0"))
-    prompter = ScriptedPrompter(["", "", "n"])
-    run(service, prompter)
-    # Agreed to 1.2.0, but 1.3.0 appeared: the new plan is shown and only that one is installed, once agreed.
-    assert names(service) == ["plan", "plan", "plan", "update"]
-    assert "The plan changed while it was shown. This is the plan now:" in prompter.transcript
-    assert service.agreed is not None
-    assert service.agreed.plugins[0].moves_to == "heinzel-acme>=1.3.0"
-    assert [line for line in prompter.transcript if line.startswith("Update now?")] == ["Update now? [Y/n] "] * 2
-
-
-def test_on_a_terminal_a_changed_plan_can_still_be_declined():
-    service = Service(targets=("1.2.0", "1.3.0"))
-    result = run(service, ScriptedPrompter(["", "n"]))
-    assert "update" not in names(service)
-    assert (result.previewed, result.message) == (True, "Nothing was changed.")
-    assert result.plan is not None
-    assert result.plan.token == "plan-1.3.0"
-
-
-def test_on_a_terminal_a_plan_that_keeps_changing_installs_nothing():
-    service = Service(targets=("1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"))
-    result = run(service, ScriptedPrompter(["", "", ""]))
-    assert "update" not in names(service)
-    assert result.message == "The plan kept changing, so nothing was changed. Try again in a moment."
-
-
-def test_on_a_terminal_no_to_the_desktop_app_keeps_its_hint():
+def test_by_default_everything_updates_the_app_is_restarted_and_pins_move():
     service = Service()
-    result = run(service, ScriptedPrompter(["y", "n"]))
-    assert names(service) == ["plan", "plan", "update"]
-    assert (result.heads[0].status, result.heads[0].detail) == ("pending", "Update it now with `hz app install`.")
-
-
-def test_on_a_terminal_without_a_desktop_app_only_the_update_is_asked():
-    service, prompter = Service(desktop=False), ScriptedPrompter([""])
-    run(service, prompter)
-    assert names(service) == ["plan", "plan", "update"]
-    assert prompter.answers == []
-
-
-def test_yes_agrees_in_advance_to_the_plan_as_it_is_and_asks_nothing():
-    service, prompter = Service(), ScriptedPrompter([])
-    result = run(service, prompter, yes=True)
-    assert service.calls[1:] == [("update", {"source": None, "move_pins": True, "desktop": True})]
+    result = run(service)
     assert names(service) == ["plan", "update"]
-    assert result.plan is not None
+    assert service.calls[1][1] == DEFAULTS
     assert service.agreed is not None
-    assert result.plan.token == service.agreed.token
+    assert result.plan is not None
+    assert service.agreed.token == result.plan.token
 
 
-def test_yes_with_the_token_of_the_shown_plan_installs_exactly_that_plan():
+def test_the_flags_that_leave_things_alone():
+    for kwargs, changed in (
+        ({"desktop_app": False}, {"desktop": False}),
+        ({"desktop": False}, {"desktop": False}),  # the earlier `--no-desktop`, hidden
+        ({"desktop": True}, {}),  # the earlier `--desktop` is the default now
+        ({"desktop_app_restart": False}, {"restart": False}),
+        ({"daemon": False}, {"daemon": False}),
+        ({"keep_pins": True}, {"move_pins": False}),
+    ):
+        service = Service()
+        run(service, **kwargs)
+        assert service.calls[1][1] == DEFAULTS | changed, kwargs
+
+
+def test_yes_is_a_hidden_no_op():
+    plain, agreed = Service(), Service()
+    run(plain)
+    run(agreed, yes=True)
+    assert plain.calls == agreed.calls
+    extra = inspect.signature(system.update).parameters["yes"].annotation.__metadata__[0].json_schema_extra
+    assert extra == {"hidden": True}
+
+
+def test_the_service_of_the_desktop_app_never_quits_the_app(monkeypatch):
+    monkeypatch.setenv("HZ_CALLER", "desktop-app")
     service = Service()
-    run(service, Prompter(), yes=True, plan="plan-1.2.0")
+    run(service)
+    assert service.calls[1][1] == DEFAULTS | {"from_app": True}
+    monkeypatch.setenv("HZ_CALLER", "something-else")
+    other = Service()
+    run(other)
+    assert other.calls[1][1]["from_app"] is False
+
+
+def test_a_source_is_never_planned_and_never_moves_a_pin():
+    service = Service()
+    run(service, source="git+https://example.test/x@v1")
+    assert service.calls == [
+        ("update", DEFAULTS | {"source": "git+https://example.test/x@v1", "move_pins": False, "planned": False})
+    ]
+
+
+def test_the_token_of_the_shown_plan_installs_exactly_that_plan():
+    service = Service()
+    run(service, plan="plan-1.2.0")
     assert names(service) == ["plan", "update"]
     assert service.agreed is not None
     assert service.agreed.plugins[0].moves_to == "heinzel-acme>=1.2.0"
 
 
-def test_yes_with_the_token_of_a_plan_that_changed_installs_nothing_and_answers_with_the_new_plan():
-    service = Service(targets=("1.3.0",))  # the app showed 1.2.0; 1.3.0 was uploaded before the person agreed
-    result = run(service, Prompter(), yes=True, plan="plan-1.2.0")
+def test_the_token_of_a_plan_that_changed_installs_nothing_and_answers_with_the_new_plan():
+    service = Service(targets=("1.3.0",))  # the app showed 1.2.0; 1.3.0 was uploaded before the person ran it
+    result = run(service, plan="plan-1.2.0")
     assert names(service) == ["plan"]
     assert (result.updated, result.previewed) == (False, True)
     assert result.message == "The plan changed since it was shown, so nothing was changed. This is the plan now."
@@ -559,70 +640,129 @@ def test_yes_with_the_token_of_a_plan_that_changed_installs_nothing_and_answers_
     assert result.plan.token == "plan-1.3.0"
 
 
-def test_no_desktop_wins_over_yes_and_keep_pins_keeps_them_without_asking_any_release():
+def test_a_preview_only_shows_the_plan_and_names_the_command_without_yes():
     service = Service()
-    run(service, ScriptedPrompter([]), yes=True, desktop=False, keep_pins=True)
-    assert service.calls == [("update", {"source": None, "move_pins": False, "desktop": False})]
+    result = run(service, preview=True)
+    assert names(service) == ["plan"]
+    assert (result.previewed, result.updated) == (True, False)
+    assert result.plan is not None
+    assert result.plan.token == "plan-1.2.0"
+    text = render_update(result).plain
+    assert text.splitlines()[0] == "hz 0.2.0 → 0.4.0."
+    assert text.endswith("This was a preview; nothing was changed.\nTo update: hz system update")
 
 
-def test_on_a_terminal_keep_pins_still_shows_the_plan_but_moves_none():
-    service = Service()
-    run(service, ScriptedPrompter(["", "n"]), keep_pins=True)
-    assert service.calls[-1] == ("update", {"source": None, "move_pins": False, "desktop": False})
+# The checklist a person reads: the two transcripts of the design.
+
+PLUGINS_QUIET = [
+    PluginUpdate(distribution=f"heinzel-p{n}", status="unchanged", before="1.0.0", after="1.0.0") for n in range(17)
+]
 
 
-def test_the_desktop_flag_answers_the_second_question_on_a_terminal():
-    service, prompter = Service(), ScriptedPrompter([""])
-    run(service, prompter, desktop=True)
-    assert service.calls[-1] == ("update", {"source": None, "move_pins": True, "desktop": True})
-    assert prompter.answers == []
+def result_of(**fields) -> UpdateResult:
+    base = {
+        "before": "0.9.51",
+        "after": "0.9.51",
+        "latest": "0.9.51",
+        "pinned_to": None,
+        "updated": False,
+        "message": "hz 0.9.51 is the newest release.",
+        "next": [],
+        "plugins": PLUGINS_QUIET,
+    }
+    return UpdateResult(**(base | fields))
 
 
-def test_where_nobody_can_answer_nothing_is_asked_pins_stay_and_the_hint_stays():
-    service = Service()
-    result = run(service, Prompter())  # a script, --json, the REST API
-    assert service.calls == [("update", {"source": None, "move_pins": False, "desktop": False})]
-    assert result.heads[0].status == "pending"
-    assert result.plan is None
-
-
-def test_a_token_without_yes_agrees_to_nothing():
-    service = Service()
-    run(service, Prompter(), plan="plan-1.2.0")
-    assert service.calls == [("update", {"source": None, "move_pins": False, "desktop": False})]
-
-
-def test_where_nobody_can_answer_the_desktop_flag_still_counts():
-    service = Service()
-    run(service, Prompter(), desktop=True)
-    assert service.calls == [("update", {"source": None, "move_pins": False, "desktop": True})]
-
-
-def test_a_preview_only_shows_the_plan_wherever_it_is_asked():
-    for prompter in (Prompter(), ScriptedPrompter([])):
-        service = Service()
-        result = run(service, prompter, preview=True)
-        assert names(service) == ["plan"]
-        assert (result.previewed, result.updated) == (True, False)
-        assert result.plan is not None
-        assert result.plan.token == "plan-1.2.0"
-        text = render_update(result).plain
-        assert text.splitlines()[0] == "hz 0.2.0 → 0.4.0."
-        assert text.endswith("This was a preview; nothing was changed.\nTo update: hz system update --yes")
-
-
-def test_an_explicit_source_is_never_planned_and_keeps_its_question_out():
-    service, prompter = Service(), ScriptedPrompter([])
-    run(service, prompter, source="git+https://example.test/x@v1")
-    assert service.calls == [
-        ("update", {"source": "git+https://example.test/x@v1", "move_pins": False, "desktop": False})
+def test_transcript_a_nothing_new():
+    result = result_of(
+        heads=[
+            HeadRefresh(head="daemon", status="verified", version="0.9.51", detail="Already runs it.", restarted=False),
+            HeadRefresh(
+                head="desktop", status="verified", version="0.9.51", before="0.9.51", was_running=True, detail="x"
+            ),
+        ]
+    )
+    assert render_update(result).plain.splitlines() == [
+        " ✓ hz 0.9.51                  newest release",
+        " ✓ 17 plugins                 all newest",
+        " ✓ Desktop app 0.9.51         newest, running",
+        " ✓ Daemon, web server         run 0.9.51",
+        "Everything is up to date.",
     ]
 
 
-def test_the_yes_option_says_who_agrees_when_no_person_is_asked():
-    text = str(inspect.signature(system.update).parameters["yes"].annotation)
-    assert "an agent over MCP or a REST client then moves pins" in text
-    assert "runs `hz app install` without another question" in text
+def test_transcript_b_updates():
+    quiet = PLUGINS_QUIET[:15]
+    result = result_of(
+        after="0.9.52",
+        updated=True,
+        seconds=48.2,
+        plugins=[PluginUpdate(distribution="heinzel-clock", status="upgraded", before="1.4.2", after="1.5.0"), *quiet],
+        heads=[
+            HeadRefresh(head="daemon", status="verified", version="0.9.52", detail="restarted", restarted=True),
+            HeadRefresh(
+                head="desktop",
+                status="verified",
+                version="0.9.52",
+                before="0.9.51",
+                was_running=True,
+                reopened=True,
+                detail="Updated by `hz app install`.",
+            ),
+        ],
+    )
+    assert render_update(result).plain.splitlines() == [
+        " ✓ hz                         0.9.51 → 0.9.52",
+        " ✓ heinzel-clock              1.4.2 → 1.5.0",
+        " ✓ 15 plugins                 already newest",
+        " ✓ Daemon, web server         restarted, run 0.9.52",
+        " ✓ Desktop app                0.9.51 → 0.9.52, quit and reopened",
+        "Updated to hz 0.9.52 in 48 s. What's new: hz system changelog --newer",
+    ]
+
+
+def test_the_checklist_never_lists_the_plugins_three_times_and_shows_no_plan_or_agreement():
+    plan = UpdatePlan(current="0.9.51", latest="0.9.52", core="hz", plugins=[], token="t")
+    text = render_update(result_of(plan=plan, updated=True, after="0.9.52")).plain
+    assert "Plugins:" not in text
+    assert "if you agree" not in text
+    assert text.count("heinzel-p0") == 0
+
+
+def test_a_warning_row_carries_the_command_that_finishes_the_job():
+    result = result_of(
+        heads=[
+            HeadRefresh(head="daemon", status="pending", detail="still runs hz 0.9.50: `hz system daemon restart`."),
+            HeadRefresh(
+                head="desktop", status="pending", before="0.9.51", detail="installs when you quit it.", was_running=True
+            ),
+        ]
+    )
+    lines = render_update(result).plain.splitlines()
+    assert lines[2].startswith(" ! Desktop app 0.9.51")
+    assert lines[2].endswith("installs when you quit it")
+    assert lines[3].startswith(" ! Daemon, web server")
+    assert lines[3].endswith("still runs hz 0.9.50: `hz system daemon restart`")
+    assert lines[-1].startswith("Finished with warnings")
+
+
+def test_a_held_back_plugin_has_its_own_row_and_a_warning():
+    held = PluginUpdate(distribution="heinzel-old", status="failed", before="0.1.0", after="0.1.0")
+    text = render_update(result_of(plugins=[held, *PLUGINS_QUIET[:2]])).plain.splitlines()
+    assert text[1].startswith(" ! heinzel-old")
+    assert "held back at 0.1.0" in text[1]
+    assert text[2].startswith(" ✓ 2 plugins")
+    assert text[2].endswith("already newest")
+
+
+def test_one_quiet_plugin_is_singular_and_a_pinned_one_keeps_its_own_row():
+    pinned = PluginUpdate(
+        distribution="heinzel-pin", status="unchanged", before="1.0.0", after="1.0.0", pinned="==1.0.0"
+    )
+    lines = render_update(result_of(plugins=[pinned, PLUGINS_QUIET[0]])).plain.splitlines()
+    assert lines[1].startswith(" ✓ heinzel-pin")
+    assert "kept at 1.0.0 (pinned to ==1.0.0" in lines[1]
+    assert lines[2].startswith(" ✓ 1 plugin ")
 
 
 # An update never lowers a version, the agreement belongs to one call, and a plan always answers.
@@ -652,7 +792,6 @@ def test_an_exact_pin_newer_than_the_newest_stable_release_is_never_moved_back(t
     result = agree(service)
     assert uv.commands[-1][-1] == f"heinzel-acme=={installed}"
     assert (result.plugins[0].before, result.plugins[0].after) == (installed, installed)
-    assert PINNED_HINT not in render_update(result.model_copy(update={"plan": service.plan(current="0.2.0")})).plain
 
 
 def test_a_commit_pin_newer_than_its_newest_release_tag_is_kept_and_the_plan_says_so(tmp_path):
@@ -778,11 +917,11 @@ def test_the_plan_renders_through_the_module_and_marks_what_is_asked_again():
 
 def test_a_preview_from_a_source_says_it_installs_exactly_that():
     service = Service()
-    result = run(service, Prompter(), preview=True, source="git+https://example.test/x@v1")
+    result = run(service, preview=True, source="git+https://example.test/x@v1")
     assert service.calls == []
     assert result.plan is None
     assert result.message == "This was a preview; nothing was changed. `--source` installs exactly what it names."
-    assert result.next == ["hz system update --yes --source git+https://example.test/x@v1"]
+    assert result.next == ["hz system update --source git+https://example.test/x@v1"]
     assert render_update(result).plain.splitlines()[0] == result.message
 
 

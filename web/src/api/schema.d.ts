@@ -4680,17 +4680,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
-         * @description Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+         * Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
+         * @description Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
          *
-         *     See what the releases bring with `hz system changelog --newer`. One command for everything: on a terminal it
-         *     first shows the plan (hz, each plugin, the desktop app) and asks `Update now? [Y/n]`; `--yes` agrees in advance
-         *     and `--preview` only shows the plan. Once you agree, a plugin that `hz system plugin add` pinned to the exact
-         *     version or GitHub commit it installed moves too: to the newest release on the package index, which it follows
-         *     from then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a
-         *     folder, a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with
-         *     `--keep-pins`. Where nobody can answer (a script, `--json`, the REST API) and `--yes` is not given, nothing is
-         *     asked and pins stay.
+         *     See what the releases bring with `hz system changelog --newer`. The output is one checklist: hz, each plugin that
+         *     changed (the ones that did not are one row), the daemon and web server, and the desktop app. `--preview` shows
+         *     the plan and installs nothing. Pins move by default: a plugin that `hz system plugin add` pinned to the exact
+         *     version or GitHub commit it installed moves to the newest release on the package index, which it follows from
+         *     then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a folder,
+         *     a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with `--keep-pins`.
+         *     The terminal, `--json`, the REST API and MCP all run these defaults and never ask; `--yes` is accepted and does
+         *     nothing.
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -4705,17 +4705,18 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     The daemon and the web server restart onto the new version when hz or a plugin changed, or when the daemon runs
+         *     older code than is installed (`--no-daemon` leaves them). The desktop app is replaced with `hz app install`; an open
+         *     app is quit and reopened (`--no-desktop-app-restart`: it installs when you quit it, `--no-desktop-app`: left alone).
+         *
          *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
          *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
          *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
-         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-         *     app is not part of the tool: after a change, a terminal asks `Update the desktop app now? [Y/n]`, and `--desktop`,
-         *     `--no-desktop` or `--yes` answer in advance. Left alone, it updates itself at the web server's next automatic
-         *     update check, or with `hz app install`. The output says which applies.
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait.
          *
-         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
-         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
-         *     the output still parses.
+         *     Each step shows as it runs, on stderr: the checklist on a terminal, a line per step otherwise. With `--json`
+         *     stdout holds only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are
+         *     left out so the output still parses.
          *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
@@ -9462,6 +9463,11 @@ export interface components {
          */
         HeadRefresh: {
             /**
+             * Before
+             * @description The version it ran before the update, when it was asked.
+             */
+            before?: string | null;
+            /**
              * Detail
              * @description What happened, and the command that checks or finishes it.
              * @default
@@ -9474,6 +9480,16 @@ export interface components {
              */
             head: "daemon" | "web" | "notifier" | "desktop";
             /**
+             * Reopened
+             * @description The desktop app only: whether it was quit and reopened.
+             */
+            reopened?: boolean | null;
+            /**
+             * Restarted
+             * @description Whether the update restarted it; none if not asked.
+             */
+            restarted?: boolean | null;
+            /**
              * Status
              * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
              * @enum {string}
@@ -9484,6 +9500,11 @@ export interface components {
              * @description The version its live process reported, when observed.
              */
             version?: string | null;
+            /**
+             * Was Running
+             * @description The desktop app only: whether it was open before.
+             */
+            was_running?: boolean | null;
         };
         /**
          * HealthReport
@@ -17000,11 +17021,23 @@ export interface components {
              */
             current: string;
             /**
+             * Daemon
+             * @description Whether the daemon and the web server restart onto the update.
+             * @default false
+             */
+            daemon: boolean;
+            /**
              * Desktop
              * @description Whether a desktop app is installed that the update can bring along afterwards.
              * @default false
              */
             desktop: boolean;
+            /**
+             * Desktop Running
+             * @description Whether that desktop app is open now.
+             * @default false
+             */
+            desktop_running: boolean;
             /**
              * Latest
              * @description The newest stable release, when it could be asked.
@@ -17064,7 +17097,7 @@ export interface components {
              * @description The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.
              */
             pinned_to: string | null;
-            /** @description What the update would change, when this answer is a preview or the person was asked first. */
+            /** @description What the update would change, when this answer is a preview or what it was run with. */
             plan?: components["schemas"]["UpdatePlan"] | null;
             /**
              * Plugins
@@ -17073,10 +17106,15 @@ export interface components {
             plugins?: components["schemas"]["PluginUpdate"][];
             /**
              * Previewed
-             * @description Whether this was only a preview (`--preview`, or the question was answered with no): nothing was changed.
+             * @description Whether this was only a preview (`--preview`, or a plan that changed since it was shown): nothing was changed.
              * @default false
              */
             previewed: boolean;
+            /**
+             * Seconds
+             * @description How long the update took, in seconds.
+             */
+            seconds?: number | null;
             /**
              * Updated
              * @description Whether Heinzelmännchen was reinstalled.
@@ -25980,16 +26018,22 @@ export interface operations {
                 source?: string | null;
                 /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
-                /** @description Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question. */
+                /** @description Accepted and ignored: the update never asks, so there is nothing to agree to. */
                 yes?: boolean;
-                /** @description The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan. */
+                /** @description The `token` of the plan that was shown (`--preview`). The update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan. */
                 plan?: string | null;
                 /** @description Only show what the update would change (`plan`); nothing is installed. */
                 preview?: boolean;
                 /** @description Leave plugins pinned to an exact version or a commit where they are. */
                 keep_pins?: boolean;
-                /** @description Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update. */
+                /** @description Earlier name of `desktop_app`: false leaves the desktop app alone. */
                 desktop?: boolean | null;
+                /** @description Whether to bring an installed desktop app along with `hz app install`; `--no-desktop-app` leaves it. */
+                desktop_app?: boolean;
+                /** @description Whether an open desktop app is quit and reopened so it can be replaced. `--no-desktop-app-restart` never quits it: it then installs when you quit it. The app's own service never quits the app, whatever this says. */
+                desktop_app_restart?: boolean;
+                /** @description Whether the daemon and the web server are restarted onto what was installed. `--no-daemon` leaves them running and says which version they still run. */
+                daemon?: boolean;
             };
             header?: never;
             path?: never;
