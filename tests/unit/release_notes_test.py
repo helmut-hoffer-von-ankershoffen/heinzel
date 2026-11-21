@@ -85,6 +85,7 @@ def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, m
             cwd=tmp_path,
             check=True,
             capture_output=True,
+            timeout=60,
         )
 
     git("init", "-q")

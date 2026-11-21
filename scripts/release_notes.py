@@ -52,6 +52,7 @@ def tag_subjects(tag: str) -> list[str]:
         capture_output=True,
         text=True,
         check=False,
+        timeout=60,
     )
     if previous.returncode != 0:
         return []
@@ -60,6 +61,7 @@ def tag_subjects(tag: str) -> list[str]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=60,
     )
     return [line for line in log.stdout.splitlines() if line.strip()]
 
