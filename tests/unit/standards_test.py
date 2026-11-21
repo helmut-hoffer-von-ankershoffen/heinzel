@@ -227,6 +227,8 @@ def test_template_locks_the_reviewed_pyyaml():
     for source in (TEMPLATE / "pyproject.toml.jinja", REPO / "starter" / "pyproject.toml.jinja"):
         rendered = source.read_text(encoding="utf-8")
         assert f'constraint-dependencies = ["pyyaml=={reviewed.group(1)}"]' in rendered, source
+    starter = (REPO / "starter" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert f'"pyyaml=={reviewed.group(1)}"' in starter.split("[tool.uv]")[0]  # the toolkit locks the dependency groups
 
 
 def test_finds_parity_problems():
