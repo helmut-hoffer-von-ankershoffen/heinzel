@@ -52,6 +52,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
           ENABLED: ${{ vars.CLAUDE_REVIEW }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|scripts/(release_|release\.sh|merge_gate|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|focused_gate|release_policy|ci)_test\.py$)'
           # both sides of a rename: the API lists filename and previous_filename
@@ -64,7 +65,10 @@ jobs:
             hits+=$'\n'"pyproject.toml ([tool.importlinter])"
           fi
           hits="$(sed '/^$/d' <<<"$hits")"
-          if [[ -z "$hits" ]]; then
+          if (( CHANGED_FILES > 3000 )); then
+            mode=refuse # the files API stops at 3000: a gate path could hide beyond it
+            hits="more than 3000 changed files"
+          elif [[ -z "$hits" ]]; then
             mode=pass
             echo "No gate path touched: nothing to review."
           elif [[ "$SENDER_TYPE" == Bot || "$FORK" == true || "$DRAFT" == true || "$ENABLED" != true ]]; then
@@ -105,7 +109,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           github_token: ${{ github.token }}
-          claude_args: --model opus --max-turns 15 --setting-sources user --settings '{"hooks":{}}' --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+          claude_args: --model opus --max-turns 15 --setting-sources user --settings '{"disableAllHooks":true}' --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" --disallowedTools "Bash(git diff*--output*),Bash(git log*--output*),Bash(git show*--output*)"
           prompt: |
             You are the independent gate reviewer. The author is a builder model; you are not. The working tree is the
             base branch; the pull request head is the git ref refs/review/head. Read the change with

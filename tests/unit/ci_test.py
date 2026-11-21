@@ -1001,6 +1001,12 @@ def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
     assert "github.event.pull_request.head.sha" not in str(checkout)
 
 
+def test_gate_review_fails_closed_beyond_the_files_api_limit():
+    scope = _gate_scope_script()
+    assert "CHANGED_FILES > 3000" in scope
+    assert scope.index("CHANGED_FILES > 3000") < scope.index("mode=pass")  # checked before it can pass
+
+
 def test_gate_review_lists_both_sides_of_a_rename():
     assert "previous_filename" in _gate_scope_script()
 
@@ -1020,7 +1026,10 @@ def test_gate_review_guards_the_reviewers_own_instructions():
         step["with"]["claude_args"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "review"
     )
     assert "--setting-sources user" in claude_args
-    assert """--settings '{"hooks":{}}'""" in claude_args
+    assert """--settings '{"disableAllHooks":true}'""" in claude_args
+    assert "--disallowedTools" in claude_args
+    for tool in ("git diff", "git log", "git show"):
+        assert f"Bash({tool}*--output*)" in claude_args  # no file written by a git option
     assert "--model opus" in claude_args
 
 
