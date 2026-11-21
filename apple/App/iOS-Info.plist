@@ -34,6 +34,7 @@
     <key>NSMicrophoneUsageDescription</key><string>Use your microphone when you enable audio input in the Heinzelmännchen workspace.</string>
     <key>NSAudioCaptureUsageDescription</key><string>Show sound playing on this Mac in the Heinzelmännchen visualizer.</string>
     <key>NSScreenCaptureUsageDescription</key><string>Use audio from apps included in your system sharing selection to animate the Heinzelmännchen visualizer.</string>
+    <key>UIBackgroundModes</key><array><string>screen-capture</string></array>
     <key>HeinzelSourceRevision</key><string>$(HEINZEL_SOURCE_REVISION)</string>
     <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
     <key>HeinzelWidgetEnrollmentEnabled</key><true/>

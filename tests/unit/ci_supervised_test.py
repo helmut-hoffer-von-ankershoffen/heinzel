@@ -44,7 +44,7 @@ def test_supervised_stays_required_in_the_full_ci_matrix():
     assert set(e2e["strategy"]["matrix"]) == {"os", "suite"}
     assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert e2e["strategy"]["matrix"]["os"] == (
-        "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' "
+        "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' "
         '&& \'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}'
     )
     assert e2e["if"] == (

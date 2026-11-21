@@ -27,6 +27,10 @@ class HeadRefresh(BaseModel):
     )
     version: str | None = Field(default=None, description="The version its live process reported, when observed.")
     detail: str = Field(default="", description="What happened, and the command that checks or finishes it.")
+    before: str | None = Field(default=None, description="The version it ran before the update, when it was asked.")
+    restarted: bool | None = Field(default=None, description="Whether the update restarted it; none if not asked.")
+    was_running: bool | None = Field(default=None, description="The desktop app only: whether it was open before.")
+    reopened: bool | None = Field(default=None, description="The desktop app only: whether it was quit and reopened.")
 
 
 @dataclass(frozen=True, slots=True)

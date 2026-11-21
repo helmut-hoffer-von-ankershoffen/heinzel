@@ -855,8 +855,11 @@ def _register_user_chat_operations(module: Module) -> None:
         acknowledge_uncertain: Annotated[
             bool, Field(strict=True, description="Confirm the outcome may be unknown and no retry or undo occurs.")
         ],
+        expected_status: Annotated[
+            Literal["pending", "unresolved"], Field(description="The exact state the owner acknowledged.")
+        ],
     ) -> UserTurnResolution:
-        """Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+        """Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
 
         Raises:
             HeinzelError: If the uncertain outcome was not acknowledged.
@@ -864,7 +867,7 @@ def _register_user_chat_operations(module: Module) -> None:
         if not acknowledge_uncertain:
             msg = "Acknowledge the uncertain outcome before setting this turn aside"
             raise HeinzelError(msg)
-        return service.abandon(session_id, request_id)
+        return service.abandon(session_id, request_id, expected_status=expected_status)
 
     @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
     def input_snapshot_history(

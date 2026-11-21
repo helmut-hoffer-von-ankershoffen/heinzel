@@ -14,6 +14,13 @@ Intel large runners, or Intel self-hosted runners. Keep the shared bootstrap arc
 `make ci-macos-arm` check so an unexpected architecture fails closed. Preserve the full ARM Python-version,
 native, browser, Electron and release-acceptance coverage and its limits. Linux coverage is unchanged.
 
+macOS e2e, Electron and setup lanes run on push to main, schedule and dispatch, and on a release PR
+(`full_release`); an ordinary PR runs every Linux job plus macOS unit, integration, macOS-specific and notifier.
+Narrow by matrix, never by a job-level `if` on a required job. The nightly requires the full matrix (`CI OK`
+checks it), and a red nightly or main macOS lane blocks the next release. PR matrices use `fail-fast: false`, and the
+template job starts with the Linux jobs instead of waiting for lint. The pre-push hook is capped at lint, types and
+related tests (no `-x`, every failure in one pass, target 120 s, never the whole unit suite).
+
 Constraints per workflow:
 
 - `ci.yml`: ordinary PRs, main pushes and manual runs execute the full test, native, browser, build and

@@ -37,6 +37,8 @@ packages = ["src/[[ package_name ]]"]
 
 [tool.uv]
 required-version = ">=0.13.0"
+# A fresh plugin lock must resolve the reviewed PyYAML source the build bootstraps, never a newer release.
+constraint-dependencies = ["pyyaml==@REVIEWED_PYYAML@"]
 
 [tool.heinzel.plugin]
 requires = ["core:plugin-api@1"]
