@@ -105,8 +105,9 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
         if (startupFails) throw new Error("startup");
         if (serviceCount > 1 && failuresLeft > 0) {
           failuresLeft--;
-          // As the real handle does: a failed attach also settles its exited() with failedToStart.
-          lose({ code: null, signal: null, failedToStart: true });
+          // As the real handle does: a failed attach also settles its exited() with failedToStart. It settles once the
+          // controller is idle again, so a handler that wrongly reacts to it can start a connection of its own.
+          setImmediate(() => lose({ code: null, signal: null, failedToStart: true }));
           throw new Error("service still restarting");
         }
         running = true; return connection;
