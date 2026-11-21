@@ -3,17 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { Providers, queryClient } from "@/app/providers";
+import { KEY } from "@/features/runtime/updates/autoUpdateApi";
+import { readUpdatePlan, startUpdate } from "@/features/runtime/updates/controller";
 import { type Phase, type PhaseState, resetOperationRun } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
-import { KEY } from "@/updates/autoUpdateApi";
-import { readUpdatePlan, startUpdate } from "@/updates/controller";
 import { UpdateStatus } from "./UpdateStatus";
 
-vi.mock("@/updates/controller", async (load) => ({
-  ...(await load<typeof import("@/updates/controller")>()),
+vi.mock("@/features/runtime/updates/controller", async (load) => ({
+  ...(await load<typeof import("@/features/runtime/updates/controller")>()),
   startUpdate: vi.fn(async () => "Verified"),
   readUpdatePlan: vi.fn(),
 }));

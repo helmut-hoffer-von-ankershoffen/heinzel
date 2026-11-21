@@ -52,7 +52,7 @@ vi.mock("@/api/queries", () => ({
   useConfig: () => ({ data: { can_reveal: false } }),
   useInfo: () => ({ data: { modules: [{ qualname: "maple", summary: "Sample calendar" }] } }),
 }));
-vi.mock("@/lifecycle/RestartAndApply", () => ({
+vi.mock("@/features/runtime/lifecycle/RestartAndApply", () => ({
   RestartAndApply: ({
     changes,
     settings,

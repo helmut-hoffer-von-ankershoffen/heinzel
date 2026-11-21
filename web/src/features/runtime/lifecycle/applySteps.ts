@@ -1,9 +1,10 @@
 // The steps of a change that restarts hz, as one list for the operation dialog (ADR 0056): saving open work, the
 // change itself (the steps its server reports), restarting, waiting for hz to come back, reloading the page and the
 // final check. Each is told when it really starts and ends; nothing is timed or invented.
+
+import { saveOpenWork } from "@/features/runtime/updates/work";
 import { type MessageKey, t } from "@/i18n";
 import type { Phase, PhaseState } from "@/lib/operationRun";
-import { saveOpenWork } from "@/updates/work";
 import {
   type ApplyOptions,
   type ApplyPhase,

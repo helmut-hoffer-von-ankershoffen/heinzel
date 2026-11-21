@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { reloadHeld } from "@/updates/work";
+import { reloadHeld } from "@/features/runtime/updates/work";
 import { useDurableDraft } from "./durableDraft";
 
 afterEach(() => sessionStorage.clear());

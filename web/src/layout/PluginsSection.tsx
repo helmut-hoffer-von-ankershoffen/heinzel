@@ -41,6 +41,8 @@ import { PublicMediaLink } from "@/components/public-media-link";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
+import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/features/runtime/lifecycle/applySteps";
+import { RestartApplyError, type RestartObservation } from "@/features/runtime/lifecycle/controller";
 import { type MessageKey, t } from "@/i18n";
 import {
   type DrivenOperation,
@@ -53,8 +55,6 @@ import {
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { viewportBounds } from "@/lib/viewport";
-import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
-import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 import { PluginsPending } from "./PluginsPending";
 import {
   acknowledgePluginRestart,

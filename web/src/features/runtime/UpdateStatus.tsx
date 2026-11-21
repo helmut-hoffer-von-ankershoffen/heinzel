@@ -6,11 +6,9 @@ import type { SchemaUpdatePlan } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
-import { t } from "@/i18n";
-import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
-import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
-import { autoLoadInstalledCore } from "@/updates/autoLoad";
-import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
+import { AutoUpdateToggle } from "@/features/runtime/updates/AutoUpdateToggle";
+import { autoLoadInstalledCore } from "@/features/runtime/updates/autoLoad";
+import { checkNow, KEY, useAutoUpdateStatus } from "@/features/runtime/updates/autoUpdateApi";
 import {
   canVerifyUpdate,
   finishUpdate,
@@ -20,10 +18,12 @@ import {
   readUpdateStatus,
   startUpdate,
   type UpdateAnswers,
-} from "@/updates/controller";
-import { UpdatePlanDetails } from "@/updates/UpdatePlanDetails";
-import { describe, partSegments } from "@/updates/updateState";
-import { reloadHeld, workOnScreen } from "@/updates/work";
+} from "@/features/runtime/updates/controller";
+import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails";
+import { describe, partSegments } from "@/features/runtime/updates/updateState";
+import { reloadHeld, workOnScreen } from "@/features/runtime/updates/work";
+import { t } from "@/i18n";
+import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
 
 /** The update as the operation dialog asks for it: the call the person confirms there, after seeing its plan. */
 const updateCall = () => ({

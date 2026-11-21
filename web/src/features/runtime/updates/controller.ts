@@ -1,8 +1,6 @@
 import type { SchemaUpdatePlan, SchemaUpdateResult } from "@/api/client";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
-import { mergePhase, type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
-import { compareCodeUnits } from "@/lib/sort";
 import {
   type ApplyOptions,
   clearOwnedShellCaches,
@@ -11,7 +9,9 @@ import {
   lifecycleTransport,
   RestartApplyError,
   restartAndApply,
-} from "@/lifecycle/controller";
+} from "@/features/runtime/lifecycle/controller";
+import { mergePhase, type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
+import { compareCodeUnits } from "@/lib/sort";
 import { preserveUpdateWork } from "./work";
 
 export type UpdateStatus = {

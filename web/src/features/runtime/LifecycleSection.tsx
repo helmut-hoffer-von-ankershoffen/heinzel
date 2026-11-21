@@ -10,8 +10,8 @@ import { api, problem } from "@/api/client";
 import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { when } from "./when";
+import { ConfirmDialog } from "../../heinzel/page/ConfirmDialog";
+import { when } from "../../heinzel/page/when";
 
 type Snapshot = components["schemas"]["SessionSnapshot"];
 type Schedule = components["schemas"]["WakeScheduleView"];

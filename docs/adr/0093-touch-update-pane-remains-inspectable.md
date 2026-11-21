@@ -40,6 +40,6 @@ before the updater runs, including on hybrid devices.
 
 ### Confirmation
 
-`web/src/layout/UpdateStatus.test.tsx` tests the deliberate touch and pointer actions and missing metadata.
+`web/src/features/runtime/UpdateStatus.test.tsx` tests the deliberate touch and pointer actions and missing metadata.
 `web/e2e/mobile-responsive.mjs` checks the update button is visible without installing on phone-sized touch viewports.
 `tests/integration/web_update_test.py` tests the authenticated date and metadata boundaries.

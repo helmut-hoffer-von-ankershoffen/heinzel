@@ -1,13 +1,13 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
+import { loadInstalledCore, startUpdate } from "@/features/runtime/updates/controller";
 import { shell } from "@/test/fixtures";
 import { mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
-import { loadInstalledCore, startUpdate } from "@/updates/controller";
 
-vi.mock("@/updates/controller", async (load) => ({
-  ...(await load<typeof import("@/updates/controller")>()),
+vi.mock("@/features/runtime/updates/controller", async (load) => ({
+  ...(await load<typeof import("@/features/runtime/updates/controller")>()),
   startUpdate: vi.fn(async () => "Verified"),
   loadInstalledCore: vi.fn(async () => "Heinzel 0.2.0 is running."),
 }));
