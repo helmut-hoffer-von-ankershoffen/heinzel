@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { join } from "node:path";
 import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   createHeinzelWith,
   openChatJourney,
