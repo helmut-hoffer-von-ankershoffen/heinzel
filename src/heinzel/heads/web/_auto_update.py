@@ -1012,8 +1012,8 @@ class AutoUpdater:
         try:
             installed = self._kernel.resolve(Installation).installed_core_version()
             return installed if Version(installed) != Version(self._version) else None
-        except Exception:
-            log.debug("the installed hz version couldn't be read", exc_info=True)
+        except Exception:  # noqa: BLE001 - unreadable metadata keeps this process; the next check asks again
+            log_event(log, "update.auto.installed_version", level=logging.DEBUG, outcome="unreadable", exc_info=True)
             return None
 
     def _load_installed(self, now: datetime) -> bool:
@@ -1031,22 +1031,18 @@ class AutoUpdater:
             return True
         if waiting := self.waiting_for():
             self._next_check = now + RELOAD_RETRY
-            log.info(
-                "automatic update: hz %s is installed; this server restarts into it after: %s",
-                installed,
-                ", ".join(waiting),
-            )
+            log_event(log, "update.auto.reload", outcome="waiting", installed=installed, waiting=", ".join(waiting))
             return True
-        log.info(
-            "automatic update: hz %s is installed, this server runs hz %s; restarting into it", installed, self._version
-        )
+        log_event(log, "update.auto.reload", outcome="restarting", installed=installed, running=self._version)
         self._reloading = installed
         try:
             self._restart()
         except Exception as exc:  # noqa: BLE001 - this process keeps running; the next look tries again
             self._reloading = None
             self._next_check = now + RELOAD_RETRY
-            log.warning("restarting into the installed hz %s failed: %s", installed, exc)
+            log_event(
+                log, "update.auto.reload", level=logging.WARNING, outcome="error", installed=installed, error=str(exc)
+            )
         return True
 
     def _fail(self, message: str) -> None:
