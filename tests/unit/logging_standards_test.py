@@ -20,7 +20,7 @@ LOGGER_NAMES = {"log", "logger", "_log", "_logger", "LOG", "LOGGER", "_LOG", "_L
 FORMATTED_ALLOWED: dict[str, int] = {
     # Formatted logger calls from before ADR 0138; migrate to `log_event`/`step` and lower the count. Never add.
     "src/heinzel/heads/web/_auto_update.py": 14,
-    "src/heinzel/heads/web/_supervision.py": 1,
+    "src/heinzel/modules/system/lifecycle/_supervision.py": 1,
     "src/heinzel/modules/heinzel/_service.py": 2,
 }
 
