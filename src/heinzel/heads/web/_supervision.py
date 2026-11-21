@@ -77,6 +77,7 @@ class SupervisedWeb:
         version: str,
         url: str,
         restart: Callable[[], None],
+        register_bridge: Callable[[str], bool] | None = None,
     ) -> None:
         """Publish only after the server starts and only for its exact owned installation.
 
@@ -107,6 +108,10 @@ class SupervisedWeb:
         self.record = json.dumps({"socket": name, **self.identity})
 
         def handle(command: str) -> dict[str, JsonValue]:
+            verb, _, argument = command.partition(" ")
+            if verb == "bridge" and register_bridge is not None:
+                # `hz ui attach` hands over the desktop app's browser-bridge token; the reply never echoes it.
+                return {**self.identity, "version": version, "bridge": register_bridge(argument)}
             if command not in {"status", "open", "restart"}:
                 return {"error": "Unknown local web command."}
             response = {**self.identity, "version": version}
@@ -150,6 +155,7 @@ class WebPublication:
     restart: Callable[[], None]
     failed: Callable[[], None]
     control: SupervisedWeb | None = None
+    register_bridge: Callable[[str], bool] | None = None
 
     def publish(self, announce: Callable[[str], None], *, browser: bool) -> None:
         """Publish after readiness; a failed private publication stops rather than exposing a service URL."""
@@ -167,6 +173,7 @@ class WebPublication:
                 version=self.version,
                 url=self.url,
                 restart=self.restart,
+                register_bridge=self.register_bridge,
             )
         except (OSError, ValueError, HeinzelError) as exc:
             # Publication can contain a session bearer: log fixed categories, never exception text or paths.

@@ -37,7 +37,7 @@ from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
-from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
+from heinzel.heads.cli._serve import UI_HELP, attach_command, serve_group, ui_command
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import (
     DaemonLifecycleWait,
@@ -236,6 +236,9 @@ def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, 
     ui.command("serve", help="Run the web server in the foreground; Ctrl-C stops it.")(ui_command(kernel, error))
     ui.command("open", help="Open the owned web service, or run in the foreground when none is installed.")(
         ui_command(kernel, error, open_existing=True)
+    )
+    ui.command("attach", help="Start the owned web service if needed and print its session link; never serves.")(
+        attach_command(kernel, error)
     )
     if "ui" not in groups:
         app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)

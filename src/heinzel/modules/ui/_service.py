@@ -798,6 +798,66 @@ class WebService:
             raise HeinzelError(msg)
         return url
 
+    def attach(self, port: int, *, bridge: str | None = None) -> str:
+        """Ensure the one owned web service runs and return a fresh session link; never start a private server.
+
+        Installs the service when absent (at `port`), loads it when its manager lost it, and waits up to
+        `READY_SECONDS` for it. `bridge` is the desktop app's browser-bridge token, registered with the live server
+        over its owner-only control socket, never written down.
+
+        Raises:
+            HeinzelError: If the service can't be installed, loaded, made ready or registered with.
+        """
+        try:
+            self.marker.lstat()
+        except FileNotFoundError:
+            self.install(port)
+        deadline = self._clock() + READY_SECONDS
+        loaded_once = False
+        while True:
+            status = self.status()
+            if status.ready:
+                break
+            if status.installed and not status.loaded and not loaded_once:
+                loaded_once = True
+                self._load()
+            if self._clock() >= deadline:
+                msg = status.problem or "The web service did not become ready. Inspect `hz ui status`."
+                raise HeinzelError(msg)
+            self._sleep(READY_POLL_SECONDS)
+        url = self.open_local()
+        if url is None:
+            msg = "The web service record disappeared while attaching. Inspect `hz ui status`."
+            raise HeinzelError(msg)
+        if bridge is not None:
+            record = self._record()
+            if record is None or status.pid is None:
+                msg = "The web service changed while attaching. Inspect `hz ui status`."
+                raise HeinzelError(msg)
+            if self._control(record, status.pid, f"bridge {bridge}").get("bridge") is not True:
+                msg = "The web service refused the desktop app's browser bridge."
+                raise HeinzelError(msg)
+        return url
+
+    def _load(self) -> None:
+        """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it.
+
+        Raises:
+            HeinzelError: With the manager's own reason when it refuses.
+        """
+        command = (
+            self._command("bootstrap", f"gui/{self.uid}", str(self.unit))
+            if self.platform == "darwin"
+            else self._command("start", UNIT)
+        )
+        result = self.runner(command)
+        if result.returncode != 0:
+            # The manager's own words, e.g. a Linux login without a `systemd --user` session, not a readiness timeout.
+            detail = (result.stderr or result.stdout).strip().splitlines()
+            reason = detail[-1][:300] if detail else f"exit {result.returncode}"
+            msg = f"The service manager could not start the web service ({reason}). Inspect `hz ui status`."
+            raise HeinzelError(msg)
+
     def restart(self) -> WebRestart:
         """Ask the live owned web server to use its existing socket and token handoff.
 

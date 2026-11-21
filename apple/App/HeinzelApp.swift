@@ -2197,16 +2197,27 @@ struct ConnectionView: View {
         }
     }
 
-    private func startLocal(initialStartup: Bool = false) async {
-        guard !connecting else { return }
+    /// Attach again after the owned service was lost, with bounded backoff; only when every attempt failed does the
+    /// connection screen open, where Start Local Workspace tries again.
+    private func reattachLocal() async {
+        let back = await LocalService.retrying { await startLocal() }
+        guard !back, endpoint?.origin.scheme == "http" else { return }
+        endpoint = nil
+        error = ConnectionError.stopped.errorDescription
+        showConnection = true
+    }
+
+    @discardableResult
+    private func startLocal(initialStartup: Bool = false) async -> Bool {
+        guard !connecting else { return false }
         let menuRevision = initialStartup ? 0 : connectionMenuIntent.revision
         connecting = true
         error = nil
         defer { connecting = false }
-        service.onExit = {
+        service.onLost = {
+            // The owned service restarted with a new session: attach again rather than show a dead workspace.
             guard endpoint?.origin.scheme == "http" else { return }
-            endpoint = nil
-            error = ConnectionError.stopped.errorDescription
+            Task { await reattachLocal() }
         }
         do {
             let target = try await service.start()
@@ -2219,8 +2230,10 @@ struct ConnectionView: View {
             connectionIssue = nil
             loadingWorkspace = true
             endpoint = target
+            return true
         } catch {
             self.error = (error as? ConnectionError)?.errorDescription ?? ConnectionError.startup.errorDescription
+            return false
         }
     }
     #endif

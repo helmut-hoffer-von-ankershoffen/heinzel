@@ -14,7 +14,7 @@
  *
  * The credential is the bridge token, not the session token `connection()` holds: the product page has that one, and
  * a script in it must not be able to pose as the browser. The main process makes the bridge token at start, hands it
- * to the service it starts in that process's environment (`BRIDGE_TOKEN_ENV`) and sends it here as the first frame.
+ * to the owned service on `hz ui attach --bridge-token-stdin`, which registers it, and sends it here as the first frame.
  * It never goes into a URL, a window, a preload or an IPC answer. A frame the daemon sends may be 2 MB at most.
  */
 import { randomBytes } from "node:crypto";
@@ -23,7 +23,7 @@ import { hasExactKeys } from "./mini-browser-policy.js";
 
 export const BRIDGE_PATH = "/api/browser-bridge";
 export const BRIDGE_VERSION = 1;
-/** The variable that carries the bridge token to the service the app starts; `hz ui serve` reads and removes it. */
+/** The variable `hz ui serve` reads the bridge token from, for a server a test or dev script starts directly. */
 export const BRIDGE_TOKEN_ENV = "HEINZEL_UI_BROWSER_BRIDGE";
 /** A new bridge token: 32 random bytes, in the alphabet the web head takes for a token. */
 export const newBridgeToken = () => randomBytes(32).toString("base64url");

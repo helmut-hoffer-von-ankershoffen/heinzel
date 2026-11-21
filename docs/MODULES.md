@@ -639,6 +639,8 @@ Open the web workspace or manage its optional persistent service.
 | Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
 | Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |
 
+Health checks: reported by `hz system doctor`.
+
 ## `ui.browser`
 
 Let a Heinzel or an outside agent use its own tabs in the desktop app's browser.

@@ -1,7 +1,7 @@
 // Explicit opt-in real local CLI smoke: no production profile, configured service, token, or listener is used.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
+import { installIsolatedService, servicePid, stopService } from "./isolated-service.mjs";
 
 const electronDirectory = fileURLToPath(new URL("../node_modules/electron/", import.meta.url));
 const electronDist = join(electronDirectory, "dist");
@@ -30,7 +31,8 @@ let stopped = false;
 let launchAttempted = false;
 try {
   await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
-  await symlink(cli, join(root, "bin", "hz"));
+  // The app attaches; the fixture stands in for the owned service, so no launchd or systemd job is ever touched.
+  await installIsolatedService(join(root, "bin"), cli);
   await writeFile(join(root, "config", "config.toml"), '[hz]\ndisabled_modules = ["tailscale", "clock"]\nupdate_check = false\n', { mode: 0o600 });
   const env = {
     HOME: join(root, "home"), TMPDIR: join(root, "tmp"), PATH: `${join(root, "bin")}:/usr/bin:/bin:/usr/sbin:/sbin`,
@@ -57,10 +59,13 @@ try {
   const first = await page.evaluate(() => window.heinzelDesktop.lifecycle());
   assert.ok(first.instance && first.version);
   const port = Number(await readFile(join(root, "owned-port"), "utf8"));
+  const service = servicePid(root);
   assert.ok(Number.isSafeInteger(ownedPid) && ownedPid > 1);
   assert.ok(Number.isSafeInteger(port) && port > 0 && port <= 65535);
-  const parent = spawnSync("/bin/ps", ["-o", "ppid=", "-p", String(ownedPid)], { encoding: "utf8" });
-  assert.equal(Number(parent.stdout.trim()), electronProcess.pid, "The observed hz process must belong to this Electron instance.");
+  assert.deepEqual(JSON.parse(await readFile(join(root, "owned-exit"), "utf8")), { code: 0, signal: null }, "The attach command must exit 0.");
+  assert.equal(processExists(ownedPid), false, "The app's only hz process is the one-shot attach.");
+  const parent = spawnSync("/bin/ps", ["-o", "ppid=", "-p", String(service)], { encoding: "utf8" });
+  assert.notEqual(Number(parent.stdout.trim()), electronProcess.pid, "The service must not be a child of the app.");
   await page.reload();
   await waitForConnected(page);
   const reloaded = await page.evaluate(() => window.heinzelDesktop.lifecycle());
@@ -68,30 +73,26 @@ try {
   assert.equal(reloaded.version, first.version);
   const exited = new Promise((resolve) => electronProcess.once("exit", (code, signal) => resolve({ code, signal })));
   if (crashTest) {
-    assert.equal(await app.evaluate((_, expectedPid) => {
-      const child = globalThis.ownedTestChild;
-      return child && child.pid === expectedPid && child.exitCode === null && child.signalCode === null && child.kill("SIGKILL");
-    }, ownedPid), true, "The test-owned child was unavailable for the crash test.");
+    // A service crash is the service manager's to handle, not an app crash: the app closes cleanly all the same.
+    process.kill(service, "SIGKILL");
   }
-  else await page.close();
+  await page.close();
   const result = await withTimeout(exited, 15_000, "Electron did not exit after close.");
   stopped = true;
   assert.equal(result.code, 0, `Electron closed abnormally: ${JSON.stringify(result)}`);
   assert.equal(result.signal, null);
-  const ownedExit = JSON.parse(await readFile(join(root, "owned-exit"), "utf8"));
-  if (crashTest) {
-    assert.equal(await readFile(join(root, "error-title"), "utf8"), "Heinzelmännchen stopped unexpectedly");
-    assert.deepEqual(ownedExit, { code: null, signal: "SIGKILL" });
-  } else {
-    assert.equal(await exists(join(root, "error-title")), false, `The desktop reported a non-graceful shutdown: ${JSON.stringify(ownedExit)}`);
-    assert.deepEqual(ownedExit, { code: 0, signal: null }, "The owned CLI did not report a clean exit.");
+  assert.equal(await exists(join(root, "error-title")), false, "The desktop reported a non-graceful shutdown.");
+  if (!crashTest) {
+    assert.equal(processExists(service), true, "Quitting the app must leave the owned service running.");
+    assert.equal(await listenerPresent(port), true, "The owned service must keep listening after the app quit.");
   }
-  assert.equal(processExists(ownedPid), false, "The owned hz child remained alive after the window closed.");
-  assert.equal(await listenerPresent(port), false, "The temporary loopback listener remained after the child exited.");
+  assert.equal(await stopService(root), true, "The harness could not stop the service it started.");
+  assert.equal(await listenerPresent(port), false, "The temporary loopback listener remained after the service stopped.");
   console.log(crashTest
-    ? `Isolated Electron reported its hz ${first.version} child crash and removed its listener.`
-    : `Isolated Electron opened and reloaded with hz ${first.version}; closing the window stopped its owned child.`);
+    ? `Isolated Electron attached to hz ${first.version}; a service crash was not reported as an app crash.`
+    : `Isolated Electron attached to hz ${first.version}, reloaded, and quit without stopping the service.`);
 } finally {
+  if (!(await stopService(root))) console.error(`The isolated service did not stop; evidence kept at ${root}.`);
   await cleanupHarness({
     app, electronProcess, stopped, root, ownedPid, launchAttempted,
     loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),
