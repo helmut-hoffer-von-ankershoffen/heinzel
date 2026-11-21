@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.15"
-# dependencies = ["playwright==1.64.1"]
+# dependencies = ["playwright==1.65.2"]
 # ///
 """Record the scenes of every plugin's documentation page, and the README's intro (ADR 0082).
 
