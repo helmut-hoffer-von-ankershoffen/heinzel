@@ -123,6 +123,24 @@ def settled(status, version):
     )
 
 
+def default_state_folder(case):
+    """The state folder a user has: `platformdirs.user_state_path("hz")` under the case's private home.
+
+    The updater refuses any other state folder as development (ADR 0116), so the scenario must not set HZ_STATE_DIR.
+    The harness's checks keep reading `state_dir`, a link to that folder.
+    """
+    if sys.platform == "darwin":
+        folder = case.root / "home" / "Library" / "Application Support" / "hz"
+    else:
+        folder = Path(case.env["XDG_STATE_HOME"]) / "hz"
+    folder.mkdir(parents=True, mode=0o700, exist_ok=True)
+    link = case.root / "state_dir"
+    HARNESS.check(not os.path.lexists(link), "The private state link already exists")
+    link.symlink_to(folder, target_is_directory=True)
+    case.env.pop("HZ_STATE_DIR", None)
+    return {"state_folder": str(folder)}
+
+
 def prepare_state(case):
     """B2: what a user has before the update; the configuration snapshot is compared after it."""
     HARNESS.hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
@@ -264,6 +282,7 @@ def run_scenario(args, parent, result, ctx_base):
     current = "B1"
     try:
         case.provide_uv()
+        case.step("the user's default state folder, inside the private home", lambda: default_state_folder(case))
         case.env["HZ_APP_PROFILE"] = old["url"]
         try:
             HARNESS.app_cycle(case, f"published {old['version']} install", ["uvx", f"heinzel@{old['version']}"])
@@ -376,6 +395,8 @@ def main(argv=None):
             "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
             "one state folder.",
             "The age gates are set to 0 hours as a user can, so a release of minutes is installed by itself.",
+            "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
+            "updater treats any other state folder as development and never updates.",
             "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
         ],
         "verdict": "INCOMPLETE",

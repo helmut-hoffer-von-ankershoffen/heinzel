@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -106,3 +107,20 @@ def test_scenario_workflow_is_advisory_and_never_named_like_release_acceptance()
     assert job["permissions"] == {"contents": "read"}
     assert job["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
     assert "secrets." not in json.dumps(workflow)
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_the_scenario_uses_the_users_default_state_folder_inside_the_private_home(tmp_path, monkeypatch, platform):
+    """The updater calls any other state folder development and never updates (the first hosted run's B3)."""
+    monkeypatch.setattr(scenario.sys, "platform", platform)
+    (tmp_path / "home").mkdir()
+    case = SimpleNamespace(
+        root=tmp_path, env={"HZ_STATE_DIR": str(tmp_path / "state_dir"), "XDG_STATE_HOME": str(tmp_path / "xdg")}
+    )
+    folder = Path(scenario.default_state_folder(case)["state_folder"])
+    assert folder.name == "hz"
+    assert folder.is_relative_to(tmp_path)
+    assert "HZ_STATE_DIR" not in case.env
+    assert (tmp_path / "state_dir").resolve() == folder.resolve()
+    with pytest.raises(scenario.HARNESS.StepFailed, match="already exists"):
+        scenario.default_state_folder(case)
