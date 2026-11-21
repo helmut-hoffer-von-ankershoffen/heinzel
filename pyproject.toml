@@ -374,7 +374,16 @@ forbidden_modules = ["heinzel.heads"]
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: system's submodules don't import each other"
 type = "independence"
-modules = ["heinzel.modules.system.agent", "heinzel.modules.system.bookmark", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui", "heinzel.modules.system.write"]
+modules = ["heinzel.modules.system.agent", "heinzel.modules.system.bookmark", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui", "heinzel.modules.system.updater", "heinzel.modules.system.write"]
+# Edges the move into `updater` made visible (the files were system's own before); they may only shrink.
+ignore_imports = [
+    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
+    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
+]
 
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"
@@ -398,3 +407,42 @@ name = "Heads only know what the kernel discovered"
 type = "forbidden"
 source_modules = ["heinzel.heads"]
 forbidden_modules = ["heinzel.modules"]
+
+# BEGIN generated from contexts.toml (scripts/contexts.py write); do not edit by hand
+
+[[tool.importlinter.contracts]]
+name = "Contexts import the spec and the ports, not each other (contexts.toml)"
+type = "independence"
+modules = ["heinzel.modules.system.updater", "heinzel.modules.system.lifecycle", "heinzel.modules.system.daemon", "heinzel.modules.system.plugin", "heinzel.modules.heinzel", "heinzel.modules.ai", "heinzel.modules.ui"]
+ignore_imports = [
+    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.ui._overview -> heinzel.modules.system.daemon._overview",
+    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._historical_launcher",
+    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._launcher_transition",
+]
+
+[[tool.importlinter.contracts]]
+name = "Heads import the spec and the head kit, not each other (contexts.toml)"
+type = "independence"
+modules = ["heinzel.heads.cli", "heinzel.heads.api", "heinzel.heads.mcp", "heinzel.heads.web"]
+ignore_imports = [
+    "heinzel.heads._served_tools -> heinzel.heads.mcp",
+    "heinzel.heads.cli._serve -> heinzel.heads.api",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
+    "heinzel.heads.cli._serve -> heinzel.heads.web",
+    "heinzel.heads.cli._serve -> heinzel.heads.web._devices",
+    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
+    "heinzel.heads.web -> heinzel.heads.api",
+    "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
+    "heinzel.heads.web._mcp -> heinzel.heads.mcp",
+    "heinzel.heads.web._terminal -> heinzel.heads.api",
+]
+
+# END generated from contexts.toml

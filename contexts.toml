@@ -1,0 +1,198 @@
+# The map: every file of the Python package and of the three surfaces belongs to exactly one context.
+#
+# - `src` / `exclude`: repository-relative globs of the files the context owns (`**` crosses directories).
+# - `tests`: globs of the tests that belong to it; they may not overlap between contexts.
+# - `package`: the dotted package that is the context's own code; the generated import contracts use it.
+# - `adapters_only`: only files named `_adapter*.py` may touch the world (subprocess, sleeps, clocks, launchctl).
+# - `surface`: a client with its own toolchain that talks HTTP only (the selector's L0 level).
+#
+# `tests/unit/contexts_test.py` fails a file that no context owns or that two contexts own, checks that the import
+# contracts in pyproject.toml are what `scripts/contexts.py` generates from this file, and ratchets the allowlists.
+# Targets and rules: docs/ARCHITECTURE.md; the allowlists below may only shrink.
+
+[context.spec]
+summary = "lets, protocols, errors, settings, Module, the public `heinzel` names"
+src = ["src/_heinzel_launcher.py", "src/heinzel/*.py", "src/heinzel/py.typed", "src/heinzel/kernel/**", "src/heinzel/connectors/**"]
+exclude = ["src/heinzel/_lifecycle_control.py"]
+tests = ["tests/unit/kernel/**"]
+
+[context.runtime-update]
+summary = "update plan, apply, schedule and retry; the policy half of the web head's auto update stays in `heads/web` for now"
+src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_auto_update.py", "src/heinzel/heads/web/_updates.py"]
+tests = ["tests/unit/runtime/updater/**"]
+package = "heinzel.modules.system.updater"
+adapters_only = true
+
+[context.runtime-lifecycle]
+summary = "start, stop and restart of the web job and the daemon; the handover to a new version"
+src = [
+    "src/heinzel/modules/system/lifecycle/**",
+    "src/heinzel/_lifecycle_control.py",
+    "src/heinzel/modules/ui/_service.py",
+    "src/heinzel/heads/web/_lifecycle.py",
+    "src/heinzel/heads/web/_supervision.py",
+]
+tests = ["tests/unit/runtime/lifecycle/**"]
+package = "heinzel.modules.system.lifecycle"
+adapters_only = true
+
+[context.client]
+summary = "the workspace handshake, device and MCP tokens: what connected clients present"
+src = ["src/heinzel/heads/web/_workspace_version.py", "src/heinzel/heads/_mcp_tokens.py", "src/heinzel/heads/web/_devices.py"]
+
+[context.daemon]
+summary = "the daemon, its schedule and the runner"
+src = ["src/heinzel/modules/system/daemon/**", "src/heinzel/modules/system/runner/**", "src/heinzel/heads/daemon/**", "src/heinzel/heads/daemon_recovery.py"]
+package = "heinzel.modules.system.daemon"
+
+[context.plugins]
+summary = "plugins, layers, connectors, capabilities and skills"
+src = [
+    "src/heinzel/modules/system/plugin/**",
+    "src/heinzel/modules/system/layer/**",
+    "src/heinzel/modules/system/connector/**",
+    "src/heinzel/modules/system/capability/**",
+    "src/heinzel/modules/system/skill/**",
+]
+package = "heinzel.modules.system.plugin"
+
+[context.session]
+summary = "the heinzel module: sessions, chat, presence, connected reads"
+src = ["src/heinzel/modules/heinzel/**"]
+package = "heinzel.modules.heinzel"
+
+[context.ai]
+summary = "models, agents and experts"
+src = ["src/heinzel/modules/ai/**", "src/heinzel/modules/system/claude/**", "src/heinzel/modules/system/agent/**", "src/heinzel/modules/system/expert/**"]
+package = "heinzel.modules.ai"
+
+[context.look]
+summary = "ui, theme, sound, notifications"
+src = [
+    "src/heinzel/modules/ui/**",
+    "src/heinzel/modules/system/ui/**",
+    "src/heinzel/modules/system/theme/**",
+    "src/heinzel/modules/system/sound/**",
+    "src/heinzel/modules/system/notify/**",
+]
+exclude = ["src/heinzel/modules/ui/_service.py"]
+package = "heinzel.modules.ui"
+
+[context.leaf]
+summary = "small modules that stand alone: org, team, graph, document, telemetry and system's small parts"
+src = [
+    "src/heinzel/modules/org/**",
+    "src/heinzel/modules/team/**",
+    "src/heinzel/modules/graph/**",
+    "src/heinzel/modules/document/**",
+    "src/heinzel/modules/telemetry/**",
+    "src/heinzel/modules/system/bookmark/**",
+    "src/heinzel/modules/system/changelog/**",
+    "src/heinzel/modules/system/config/**",
+    "src/heinzel/modules/system/credential/**",
+    "src/heinzel/modules/system/directory/**",
+    "src/heinzel/modules/system/doctor/**",
+    "src/heinzel/modules/system/prerequisite/**",
+    "src/heinzel/modules/system/state/**",
+    "src/heinzel/modules/system/write/**",
+]
+
+[context.system-core]
+summary = "the system module's own files: service, models, tools, uninstall"
+src = ["src/heinzel/modules/__init__.py", "src/heinzel/modules/system/*.py"]
+
+[context.head-kit]
+summary = "what every head shares"
+src = ["src/heinzel/heads/*.py"]
+exclude = ["src/heinzel/heads/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py"]
+
+[context.head-cli]
+summary = "the Typer head"
+src = ["src/heinzel/heads/cli/**"]
+package = "heinzel.heads.cli"
+head = true
+
+[context.head-api]
+summary = "the FastAPI head"
+src = ["src/heinzel/heads/api/**"]
+package = "heinzel.heads.api"
+head = true
+
+[context.head-mcp]
+summary = "the MCP head"
+src = ["src/heinzel/heads/mcp/**"]
+package = "heinzel.heads.mcp"
+head = true
+
+[context.head-web]
+summary = "the web head: routes and the server of the web app"
+src = ["src/heinzel/heads/web/**"]
+exclude = [
+    "src/heinzel/heads/web/_auto_update.py",
+    "src/heinzel/heads/web/_updates.py",
+    "src/heinzel/heads/web/_lifecycle.py",
+    "src/heinzel/heads/web/_supervision.py",
+    "src/heinzel/heads/web/_workspace_version.py",
+    "src/heinzel/heads/web/_devices.py",
+]
+package = "heinzel.heads.web"
+head = true
+
+[context.web-runtime]
+summary = "the update and lifecycle panes of the web app"
+src = ["web/src/features/runtime/**"]
+surface = true
+
+[context.web]
+summary = "the web app"
+src = ["web/**"]
+exclude = ["web/src/features/runtime/**"]
+surface = true
+
+[context.desktop]
+summary = "the Electron app"
+src = ["desktop/**"]
+surface = true
+
+[context.apple]
+summary = "the iOS and macOS apps and widgets"
+src = ["apple/**"]
+surface = true
+
+# Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
+[allow]
+contexts = [
+    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.ui._overview -> heinzel.modules.system.daemon._overview",
+    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._historical_launcher",
+    "heinzel.modules.ui._service -> heinzel.modules.system.lifecycle._launcher_transition",
+]
+heads = [
+    "heinzel.heads._served_tools -> heinzel.heads.mcp",
+    "heinzel.heads.cli._serve -> heinzel.heads.api",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
+    "heinzel.heads.cli._serve -> heinzel.heads.web",
+    "heinzel.heads.cli._serve -> heinzel.heads.web._devices",
+    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
+    "heinzel.heads.web -> heinzel.heads.api",
+    "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
+    "heinzel.heads.web._mcp -> heinzel.heads.mcp",
+    "heinzel.heads.web._terminal -> heinzel.heads.api",
+]
+
+# Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
+# time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
+[allow.adapters]
+"src/heinzel/heads/web/_auto_update.py" = 1
+"src/heinzel/heads/web/_updates.py" = 1
+"src/heinzel/modules/system/updater/_announced.py" = 1
+"src/heinzel/modules/system/updater/_phases.py" = 1
+"src/heinzel/modules/system/updater/_update.py" = 4
+"src/heinzel/modules/ui/_service.py" = 7
